@@ -302,8 +302,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           let lastError: string | null = null;
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-              const idToken = await getFirebaseAuth().currentUser?.getIdToken();
-              if (!idToken) throw new Error("Not authenticated");
+              const idToken = await getFirebaseAuth().currentUser?.getIdToken(
+                attempt > 0
+              );
+              if (!idToken) throw new Error("Not authenticated. Sign in again.");
 
               const urlRes = await fetch("/api/backup/upload-url", {
                 method: "POST",
@@ -430,7 +432,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           setStorageVersion((v) => v + 1);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Sync failed";
+        const raw = err instanceof Error ? err.message : "Sync failed";
+        const message =
+          raw.toLowerCase().includes("insufficient") ||
+          raw.toLowerCase().includes("permission denied")
+            ? `${raw} — Run: firebase deploy --only firestore:rules`
+            : raw;
         setError(message);
         setSyncProgress((prev) =>
           prev

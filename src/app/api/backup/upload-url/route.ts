@@ -23,15 +23,25 @@ export async function POST(request: Request) {
     uid = userIdFromBody;
   } else {
     const authHeader = request.headers.get("Authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
     if (!token) {
-      return NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 });
+      return NextResponse.json(
+        {
+          error:
+            "Missing or invalid Authorization. Sign out and back in to refresh your session, then try again.",
+        },
+        { status: 401 }
+      );
     }
     try {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
-    } catch {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    } catch (e) {
+      const msg =
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+          ? "Invalid or expired token. Sign out and back in, then try again."
+          : "Server auth not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON (Vercel env).";
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
   }
 

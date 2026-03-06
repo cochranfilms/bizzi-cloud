@@ -39,6 +39,12 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 2. Create an Application Key with Read and Write access
 3. Add B2 env vars to Vercel (see `VERCEL_ENV.md`)
 
+### Troubleshooting: "Missing or insufficient permissions"
+
+- **Firestore**: Deploy rules and indexes: `firebase deploy --only firestore:rules` and `firebase deploy --only firestore:indexes`
+- **Auth/upload fails**: Sign out and back in to refresh your token. On Vercel, ensure `FIREBASE_SERVICE_ACCOUNT_JSON` is set for the upload API to verify tokens.
+- **Local dev**: Add `B2_SKIP_AUTH_FOR_TESTING=true` in `.env.local` to test B2 without a service account key (dev only)
+
 ## Stack
 
 - Next.js 15 (App Router)
