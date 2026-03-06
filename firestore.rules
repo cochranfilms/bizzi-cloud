@@ -13,7 +13,10 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
     match /backup_files/{fileId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null
+        && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && get(/databases/$(database)/documents/linked_drives/$(request.resource.data.linked_drive_id)).data.userId == request.auth.uid;
     }
   }
 }
