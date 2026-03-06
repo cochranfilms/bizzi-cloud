@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   collection,
+  doc,
+  deleteDoc,
   getDocs,
   query,
   where,
@@ -148,5 +150,15 @@ export function useCloudFiles() {
     [user, linkedDrives]
   );
 
-  return { driveFolders, recentFiles, loading, refetch: fetchCloudFiles, fetchDriveFiles };
+  const deleteFile = useCallback(
+    async (fileId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      await deleteDoc(doc(db, "backup_files", fileId));
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles]
+  );
+
+  return { driveFolders, recentFiles, loading, refetch: fetchCloudFiles, fetchDriveFiles, deleteFile };
 }

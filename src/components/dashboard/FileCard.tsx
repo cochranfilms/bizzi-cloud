@@ -2,10 +2,12 @@
 
 import { FileIcon } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import ItemActionsMenu from "./ItemActionsMenu";
 
 interface FileCardProps {
   file: RecentFile;
   onClick?: () => void;
+  onDelete?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -25,11 +27,18 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-export default function FileCard({ file, onClick }: FileCardProps) {
+export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
   const canPreview = !!file.objectKey;
+
+  const handleDelete = () => {
+    if (window.confirm(`Delete "${file.name}"? This action cannot be undone.`)) {
+      onDelete?.();
+    }
+  };
+
   return (
     <div
-      className={`flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+      className={`group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
         canPreview
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
           : ""
@@ -48,6 +57,22 @@ export default function FileCard({ file, onClick }: FileCardProps) {
           : undefined
       }
     >
+      {onDelete && (
+        <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
+          <ItemActionsMenu
+            actions={[
+              {
+                id: "delete",
+                label: "Delete",
+                onClick: handleDelete,
+                destructive: true,
+              },
+            ]}
+            ariaLabel="File actions"
+            alignRight
+          />
+        </div>
+      )}
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
         <FileIcon className="h-8 w-8" />
       </div>

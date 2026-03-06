@@ -16,6 +16,7 @@ import {
   getDoc,
   updateDoc,
   setDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -50,6 +51,7 @@ interface BackupContextValue {
   startSync: (drive: LinkedDrive) => Promise<void>;
   cancelSync: () => void;
   pickDirectory: () => Promise<FileSystemDirectoryHandle>;
+  unlinkDrive: (drive: LinkedDrive) => Promise<void>;
   fsAccessSupported: boolean;
 }
 
@@ -71,6 +73,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     requestPermission,
     saveHandleToStore,
     getStoredHandleByDrive,
+    deleteStoredHandle,
   } = useFileSystemAccess();
 
   const fetchDrives = useCallback(async () => {
@@ -502,6 +505,22 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
   const pickDirectory = useCallback(async () => pickDir(), [pickDir]);
 
+  const unlinkDrive = useCallback(
+    async (drive: LinkedDrive) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      await deleteDoc(doc(db, "linked_drives", drive.id));
+      try {
+        await deleteStoredHandle(drive.id);
+      } catch {
+        // Handle may not exist in IndexedDB
+      }
+      setLinkedDrives((prev) => prev.filter((d) => d.id !== drive.id));
+      setStorageVersion((v) => v + 1);
+    },
+    [user, deleteStoredHandle]
+  );
+
   const value = useMemo<BackupContextValue>(
     () => ({
       linkedDrives,
@@ -515,6 +534,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       startSync,
       cancelSync,
       pickDirectory,
+      unlinkDrive,
       fsAccessSupported,
     }),
     [
@@ -529,6 +549,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       startSync,
       cancelSync,
       pickDirectory,
+      unlinkDrive,
       fsAccessSupported,
     ]
   );

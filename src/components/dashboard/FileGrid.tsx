@@ -7,6 +7,8 @@ import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { useBackup } from "@/context/BackupContext";
+import ItemActionsMenu from "./ItemActionsMenu";
 
 export default function FileGrid() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -15,7 +17,8 @@ export default function FileGrid() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
-  const { driveFolders, recentFiles, loading, fetchDriveFiles } = useCloudFiles();
+  const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile } = useCloudFiles();
+  const { unlinkDrive, linkedDrives } = useBackup();
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -84,24 +87,52 @@ export default function FileGrid() {
             </h2>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {pinnedFolders.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                className="flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
-              >
-                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25">
-                  <Folder className="h-5 w-5" />
+            {pinnedFolders.map((item) => {
+              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+              return (
+                <div
+                  key={item.key}
+                  className="group relative flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
+                >
+                  <button
+                    type="button"
+                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    className="flex w-full flex-col items-center"
+                  >
+                    <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25">
+                      <Folder className="h-5 w-5" />
+                    </div>
+                    <p className="truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
+                      {item.name}
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Folder
+                    </p>
+                  </button>
+                  {drive && (
+                    <div className="absolute right-1 top-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <ItemActionsMenu
+                        actions={[
+                          {
+                            id: "delete",
+                            label: "Delete",
+                            onClick: async () => {
+                              if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
+                                await unlinkDrive(drive);
+                                if (currentDrive?.id === drive.id) closeDrive();
+                              }
+                            },
+                            destructive: true,
+                          },
+                        ]}
+                        ariaLabel="Folder actions"
+                        alignRight
+                      />
+                    </div>
+                  )}
                 </div>
-                <p className="truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
-                  {item.name}
-                </p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Folder
-                </p>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -174,6 +205,10 @@ export default function FileGrid() {
                   key={file.id}
                   file={file}
                   onClick={() => setPreviewFile(file)}
+                  onDelete={async () => {
+                    await deleteFile(file.id);
+                    if (currentDrive) loadDriveFiles(currentDrive.id);
+                  }}
                 />
               ))}
             </div>
@@ -194,13 +229,20 @@ export default function FileGrid() {
                   Your synced drives
                 </h3>
                 <div className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                  {folderItems.map((item) => (
-                    <FolderCard
-                      key={item.key}
-                      item={item}
-                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                    />
-                  ))}
+                  {folderItems.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    return (
+                      <FolderCard
+                        key={item.key}
+                        item={item}
+                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onDelete={drive ? async () => {
+                          await unlinkDrive(drive);
+                          if (currentDrive?.id === drive.id) closeDrive();
+                        } : undefined}
+                      />
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -215,6 +257,9 @@ export default function FileGrid() {
                       key={file.id}
                       file={file}
                       onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                      }}
                     />
                   ))}
                 </div>

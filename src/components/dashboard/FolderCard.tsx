@@ -3,6 +3,7 @@
 import { Folder, Share2 } from "lucide-react";
 import { useState } from "react";
 import ShareModal from "./ShareModal";
+import ItemActionsMenu from "./ItemActionsMenu";
 
 export interface FolderItem {
   name: string;
@@ -19,11 +20,18 @@ export interface FolderItem {
 interface FolderCardProps {
   item: FolderItem;
   onClick?: () => void;
+  onDelete?: () => void;
 }
 
-export default function FolderCard({ item, onClick }: FolderCardProps) {
+export default function FolderCard({ item, onClick, onDelete }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const canNavigate = !!item.driveId && !!onClick;
+
+  const handleDelete = () => {
+    if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
+      onDelete?.();
+    }
+  };
 
   return (
     <>
@@ -63,19 +71,35 @@ export default function FolderCard({ item, onClick }: FolderCardProps) {
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           {item.items} {item.items === 1 ? "item" : "items"}
         </p>
-        {!item.hideShare && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShareOpen(true);
-            }}
-            className="absolute right-2 top-2 rounded-lg p-2 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-700"
-            aria-label="Share folder"
-          >
-            <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
-          </button>
-        )}
+        <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {!item.hideShare && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShareOpen(true);
+              }}
+              className="rounded-lg p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+              aria-label="Share folder"
+            >
+              <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+            </button>
+          )}
+          {onDelete && (
+            <ItemActionsMenu
+              actions={[
+                {
+                  id: "delete",
+                  label: "Delete",
+                  onClick: handleDelete,
+                  destructive: true,
+                },
+              ]}
+              ariaLabel="Folder actions"
+              alignRight
+            />
+          )}
+        </div>
       </div>
 
       <ShareModal
