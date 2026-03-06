@@ -12,7 +12,7 @@ const store = new Store<{
   deviceId: string | null;
 }>({
   defaults: {
-    apiBaseUrl: "http://localhost:3000",
+    apiBaseUrl: "https://bizzi-cloud.vercel.app",
     cacheBaseDir: path.join(app.getPath("userData"), "BizziCloud"),
     streamCacheMaxBytes: 50 * 1024 * 1024 * 1024, // 50 GB
     deviceId: null,
@@ -70,12 +70,18 @@ ipcMain.handle("mount-status", () => ({
   isMounted: mountService.isMounted(),
   mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
 }));
-ipcMain.handle("mount-mount", async (_e, { apiBaseUrl }: { apiBaseUrl: string }) => {
+const PRODUCTION_URL = "https://bizzi-cloud.vercel.app";
+
+ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
   const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));
+  const baseUrl = apiBaseUrl || String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
+  if (!token) {
+    throw new Error("Not signed in. Sign in to Bizzi Cloud to mount.");
+  }
   await mountService.mount({
-    apiBaseUrl: apiBaseUrl || String(store.get("apiBaseUrl") ?? "http://localhost:3000"),
+    apiBaseUrl: baseUrl,
     cacheBaseDir,
-    getAuthToken: async () => null,
+    getAuthToken: async () => token,
   });
   return { mountPoint: mountService.getMountPoint() };
 });

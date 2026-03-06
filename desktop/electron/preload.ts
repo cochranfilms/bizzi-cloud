@@ -9,8 +9,8 @@ contextBridge.exposeInMainWorld("bizzi", {
   mount: {
     isFuseAvailable: () => ipcRenderer.invoke("mount-fuse-available"),
     getStatus: () => ipcRenderer.invoke("mount-status"),
-    mount: (apiBaseUrl: string) =>
-      ipcRenderer.invoke("mount-mount", { apiBaseUrl }),
+    mount: (apiBaseUrl: string, token: string) =>
+      ipcRenderer.invoke("mount-mount", { apiBaseUrl, token }),
     unmount: () => ipcRenderer.invoke("mount-unmount"),
   },
 });

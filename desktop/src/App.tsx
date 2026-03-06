@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AuthPanel } from "./components/AuthPanel";
 import { MountPanel } from "./components/MountPanel";
 import { LocalStorePanel } from "./components/LocalStorePanel";
 import { StreamCachePanel } from "./components/StreamCachePanel";
@@ -12,7 +13,7 @@ declare global {
       mount?: {
         isFuseAvailable: () => Promise<boolean>;
         getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
-        mount: (apiBaseUrl: string) => Promise<{ mountPoint: string }>;
+        mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
         unmount: () => Promise<void>;
       };
     };
@@ -39,18 +40,26 @@ export default function App() {
         </p>
       </header>
 
-      <div className="space-y-8 max-w-2xl">
-        <MountPanel
-          settings={settings}
-          onUpdate={updateSetting}
-        />
-        <StreamCachePanel
-          cacheBaseDir={String(settings.cacheBaseDir ?? "")}
-          maxBytes={Number(settings.streamCacheMaxBytes ?? 50 * 1024 ** 3)}
-          onUpdate={updateSetting}
-        />
-        <LocalStorePanel />
-      </div>
+      <AuthPanel>
+        {({ user, loading, getToken, signInForm }) => (
+          <div className="space-y-8 max-w-2xl">
+            {signInForm}
+            <MountPanel
+              settings={settings}
+              onUpdate={updateSetting}
+              getToken={getToken}
+              isSignedIn={!!user}
+              authLoading={loading}
+            />
+            <StreamCachePanel
+              cacheBaseDir={String(settings.cacheBaseDir ?? "")}
+              maxBytes={Number(settings.streamCacheMaxBytes ?? 50 * 1024 ** 3)}
+              onUpdate={updateSetting}
+            />
+            <LocalStorePanel />
+          </div>
+        )}
+      </AuthPanel>
     </div>
   );
 }

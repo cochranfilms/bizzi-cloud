@@ -4,10 +4,13 @@ import { HardDrive } from "lucide-react";
 interface MountPanelProps {
   settings: Record<string, unknown>;
   onUpdate: (key: string, value: unknown) => void;
+  getToken: () => Promise<string | null>;
+  isSignedIn: boolean;
+  authLoading: boolean;
 }
 
-export function MountPanel({ settings, onUpdate }: MountPanelProps) {
-  const apiBaseUrl = String(settings.apiBaseUrl ?? "http://localhost:3000");
+export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoading }: MountPanelProps) {
+  const apiBaseUrl = String(settings.apiBaseUrl ?? "https://bizzi-cloud.vercel.app");
   const [fuseAvailable, setFuseAvailable] = useState<boolean | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [mountPoint, setMountPoint] = useState<string | null>(null);
@@ -38,7 +41,12 @@ export function MountPanel({ settings, onUpdate }: MountPanelProps) {
         setIsMounted(false);
         setMountPoint(null);
       } else {
-        const { mountPoint: point } = await window.bizzi.mount.mount(apiBaseUrl);
+        const token = await getToken();
+        if (!token) {
+          setError("Not signed in. Sign in first.");
+          return;
+        }
+        const { mountPoint: point } = await window.bizzi.mount.mount(apiBaseUrl, token);
         setIsMounted(true);
         setMountPoint(point);
       }
@@ -49,7 +57,7 @@ export function MountPanel({ settings, onUpdate }: MountPanelProps) {
     }
   };
 
-  const canMount = fuseAvailable === true && !loading;
+  const canMount = fuseAvailable === true && isSignedIn && !loading && !authLoading;
   const buttonDisabled = !canMount || (isMounted && loading);
 
   return (
@@ -83,19 +91,29 @@ export function MountPanel({ settings, onUpdate }: MountPanelProps) {
         >
           {loading ? "Please wait…" : isMounted ? "Unmount" : "Mount"}
         </button>
-        {fuseAvailable === false && (
+        {!isSignedIn && !authLoading && (
           <p className="text-xs text-amber-500">
-            Install macFUSE (macOS) or WinFsp (Windows) to enable mounting.
+            Sign in to Bizzi Cloud above to mount your drive.
           </p>
         )}
-        {fuseAvailable === true && !isMounted && (
+        {fuseAvailable === false && isSignedIn && (
+          <p className="text-xs text-amber-500">
+            rclone not found. Install from <a href="https://rclone.org/downloads/" target="_blank" rel="noopener noreferrer" className="underline">rclone.org/downloads</a> to use the mount feature.
+          </p>
+        )}
+        {fuseAvailable === true && isSignedIn && !isMounted && (
           <p className="text-xs text-zinc-500">
-            macFUSE / WinFsp detected. Click Mount to create a local volume.
+            Click Mount to create a local volume. Requires rclone.
           </p>
         )}
         {isMounted && mountPoint && (
           <p className="text-xs text-emerald-500">
             Mounted at <code className="bg-zinc-800 px-1 rounded">{mountPoint}</code>
+            {mountPoint.startsWith("/Volumes/") && (
+              <span className="block mt-1 text-zinc-400">
+                A Finder window should open. Drag the Bizzi Cloud volume to the Finder sidebar under Locations to keep it visible.
+              </span>
+            )}
           </p>
         )}
         {error && (

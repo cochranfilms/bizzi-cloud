@@ -110,24 +110,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ entries });
   }
 
-  const drivesSnap = await db
-    .collection("linked_drives")
-    .where("user_id", "==", uid)
-    .get();
-
-  const driveEntries: MountMetadataEntry[] = drivesSnap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      name: data.name ?? "Drive",
-      path: "",
-      object_key: "",
-      size_bytes: 0,
-      modified_at: null,
-      type: "folder",
-      linked_drive_id: d.id,
-    };
-  });
+  const [byUserId, byUserIdSnake] = await Promise.all([
+    db.collection("linked_drives").where("userId", "==", uid).get(),
+    db.collection("linked_drives").where("user_id", "==", uid).get(),
+  ]);
+  const seen = new Set<string>();
+  const driveEntries: MountMetadataEntry[] = [];
+  for (const snap of [byUserId, byUserIdSnake]) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
+      const data = d.data();
+      driveEntries.push({
+        id: d.id,
+        name: data.name ?? "Drive",
+        path: "",
+        object_key: "",
+        size_bytes: 0,
+        modified_at: null,
+        type: "folder",
+        linked_drive_id: d.id,
+      });
+    }
+  }
 
   return NextResponse.json({ entries: driveEntries });
 }
