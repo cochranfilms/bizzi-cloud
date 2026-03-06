@@ -8,7 +8,42 @@ import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
+import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
+
+function PinnedFolderActions({
+  drive,
+  itemName,
+  currentDriveId,
+  unlinkDrive,
+  closeDrive,
+}: {
+  drive: LinkedDrive;
+  itemName: string;
+  currentDriveId: string | undefined;
+  unlinkDrive: (d: LinkedDrive) => Promise<void>;
+  closeDrive: () => void;
+}) {
+  return (
+    <ItemActionsMenu
+      actions={[
+        {
+          id: "delete",
+          label: "Delete",
+          onClick: async () => {
+            if (window.confirm(`Delete "${itemName}"? This will unlink the drive and remove it from your backups.`)) {
+              await unlinkDrive(drive);
+              if (currentDriveId === drive.id) closeDrive();
+            }
+          },
+          destructive: true,
+        },
+      ]}
+      ariaLabel="Folder actions"
+      alignRight
+    />
+  );
+}
 
 export default function FileGrid() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -57,6 +92,8 @@ export default function FileGrid() {
     setCurrentDrive(null);
     setDriveFiles([]);
   }, []);
+
+  const currentDriveId = currentDrive?.id;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -111,22 +148,12 @@ export default function FileGrid() {
                   </button>
                   {drive && (
                     <div className="absolute right-1 top-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <ItemActionsMenu
-                        actions={[
-                          {
-                            id: "delete",
-                            label: "Delete",
-                            onClick: async () => {
-                              if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
-                                await unlinkDrive(drive);
-                                if (currentDrive?.id === drive.id) closeDrive();
-                              }
-                            },
-                            destructive: true,
-                          },
-                        ]}
-                        ariaLabel="Folder actions"
-                        alignRight
+                      <PinnedFolderActions
+                        drive={drive}
+                        itemName={item.name}
+                        currentDriveId={undefined}
+                        unlinkDrive={unlinkDrive}
+                        closeDrive={closeDrive}
                       />
                     </div>
                   )}
@@ -231,6 +258,7 @@ export default function FileGrid() {
                 <div className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {folderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const driveId = drive?.id;
                     return (
                       <FolderCard
                         key={item.key}
@@ -238,7 +266,7 @@ export default function FileGrid() {
                         onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                         onDelete={drive ? async () => {
                           await unlinkDrive(drive);
-                          if (currentDrive?.id === drive.id) closeDrive();
+                          if (currentDriveId === driveId) closeDrive();
                         } : undefined}
                       />
                     );
