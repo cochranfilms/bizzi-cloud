@@ -33,6 +33,16 @@ function isImageFile(name: string): boolean {
 }
 
 export async function GET(request: Request) {
+  try {
+    return await handleThumbnail(request);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Thumbnail failed";
+    console.error("[thumbnail] Unhandled error:", err);
+    return new NextResponse(msg, { status: 500 });
+  }
+}
+
+async function handleThumbnail(request: Request) {
   if (!isB2Configured()) {
     return new NextResponse("B2 not configured", { status: 503 });
   }
@@ -46,9 +56,10 @@ export async function GET(request: Request) {
   let uid: string;
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  const userIdParam = url.searchParams.get("user_id");
 
-  if (isDevAuthBypass() && url.searchParams.get("user_id")) {
-    uid = url.searchParams.get("user_id")!;
+  if (isDevAuthBypass() && typeof userIdParam === "string") {
+    uid = userIdParam;
   } else if (!token) {
     return new NextResponse("Unauthorized", { status: 401 });
   } else {
@@ -88,10 +99,13 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
-    console.error("Thumbnail error:", err);
-    return new NextResponse(
-      err instanceof Error ? err.message : "Thumbnail generation failed",
-      { status: 500 }
-    );
+    const msg = err instanceof Error ? err.message : "Thumbnail generation failed";
+    const isNotFound =
+      typeof msg === "string" &&
+      (msg.includes("NoSuchKey") || msg.includes("NotFound") || msg.includes("not found"));
+    console.error("[thumbnail] Error:", msg, err);
+    return new NextResponse(msg, {
+      status: isNotFound ? 404 : 500,
+    });
   }
 }
