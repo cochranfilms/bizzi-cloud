@@ -87,7 +87,7 @@ export function useCloudFiles() {
       const recent: RecentFile[] = filesSnap.docs.map((d) => {
         const data = d.data();
         const path = data.relative_path ?? "";
-        const name = path.split("/").filter(Boolean).pop() ?? path || "?";
+        const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
         const drive = driveMap.get(data.linked_drive_id);
         return {
           id: d.id,
