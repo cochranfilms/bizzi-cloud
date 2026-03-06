@@ -230,6 +230,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         const existingSnap = await getDocs(
           query(
             collection(db, "backup_snapshots"),
+            where("userId", "==", user.uid),
             where("linked_drive_id", "==", drive.id),
             where("status", "==", "completed"),
             orderBy("completed_at", "desc"),
