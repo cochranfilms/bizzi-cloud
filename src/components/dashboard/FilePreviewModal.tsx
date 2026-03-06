@@ -5,9 +5,10 @@ import { X, Download, FileIcon, Loader2 } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
+import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
@@ -160,10 +161,8 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                   </div>
                 )}
                 {previewType === "video" && fullUrl && (
-                  <video
+                  <VideoWithLUT
                     src={fullUrl}
-                    controls
-                    preload="metadata"
                     className="max-h-[70vh] max-w-full rounded-lg"
                   />
                 )}

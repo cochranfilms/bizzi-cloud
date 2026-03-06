@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 
 export type ThumbnailSize = "thumb" | "preview";
 

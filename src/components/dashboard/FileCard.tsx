@@ -28,7 +28,7 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 function isVideoFile(name: string) {
   return VIDEO_EXT.test(name.toLowerCase());
 }
