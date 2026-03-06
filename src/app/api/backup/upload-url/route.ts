@@ -11,6 +11,19 @@ const isDevAuthBypass = () =>
   process.env.NODE_ENV === "development";
 
 export async function POST(request: Request) {
+  try {
+    return await handleUploadUrl(request);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[upload-url] Unhandled error:", err);
+    return NextResponse.json(
+      { error: message || "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleUploadUrl(request: Request) {
   if (!isB2Configured()) {
     return NextResponse.json(
       { error: "Backblaze B2 is not configured" },
