@@ -26,6 +26,7 @@ export interface RecentFile {
   id: string;
   name: string;
   path: string;
+  objectKey: string;
   size: number;
   modifiedAt: string | null;
   driveId: string;
@@ -93,6 +94,7 @@ export function useCloudFiles() {
           id: d.id,
           name,
           path,
+          objectKey: data.object_key ?? "",
           size: data.size_bytes ?? 0,
           modifiedAt: data.modified_at ?? null,
           driveId: data.linked_drive_id,
@@ -113,5 +115,38 @@ export function useCloudFiles() {
     fetchCloudFiles();
   }, [fetchCloudFiles, storageVersion]);
 
-  return { driveFolders, recentFiles, loading, refetch: fetchCloudFiles };
+  const fetchDriveFiles = useCallback(
+    async (driveId: string): Promise<RecentFile[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+      const drive = driveMap.get(driveId);
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", driveId),
+          orderBy("modified_at", "desc")
+        )
+      );
+      return filesSnap.docs.map((d) => {
+        const data = d.data();
+        const path = data.relative_path ?? "";
+        const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+        return {
+          id: d.id,
+          name,
+          path,
+          objectKey: data.object_key ?? "",
+          size: data.size_bytes ?? 0,
+          modifiedAt: data.modified_at ?? null,
+          driveId: data.linked_drive_id,
+          driveName: drive?.name ?? "Unknown drive",
+        };
+      });
+    },
+    [user, linkedDrives]
+  );
+
+  return { driveFolders, recentFiles, loading, refetch: fetchCloudFiles, fetchDriveFiles };
 }

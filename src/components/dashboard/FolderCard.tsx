@@ -12,27 +12,40 @@ export interface FolderItem {
   isShared?: boolean;
   /** Hide share button (e.g. for synced drives) */
   hideShare?: boolean;
+  /** Drive ID for navigation (when clickable) */
+  driveId?: string;
 }
 
 interface FolderCardProps {
   item: FolderItem;
+  onClick?: () => void;
 }
 
-export default function FolderCard({ item }: FolderCardProps) {
+export default function FolderCard({ item, onClick }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
+  const canNavigate = !!item.driveId && !!onClick;
 
   return (
     <>
       <div
-        className="group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            // Navigate to folder (placeholder)
-          }
-        }}
+        className={`group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+          canNavigate
+            ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+            : ""
+        }`}
+        role={canNavigate ? "button" : undefined}
+        tabIndex={canNavigate ? 0 : undefined}
+        onClick={canNavigate ? onClick : undefined}
+        onKeyDown={
+          canNavigate
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClick?.();
+                }
+              }
+            : undefined
+        }
       >
         <div className="relative mb-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">

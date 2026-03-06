@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { Folder, LayoutGrid, List } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Folder, LayoutGrid, List, ChevronLeft } from "lucide-react";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
+import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import type { RecentFile } from "@/hooks/useCloudFiles";
 
 export default function FileGrid() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
-  const { driveFolders, recentFiles, loading } = useCloudFiles();
+  const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
+  const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
+  const [driveFilesLoading, setDriveFilesLoading] = useState(false);
+  const { driveFolders, recentFiles, loading, fetchDriveFiles } = useCloudFiles();
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -17,46 +23,90 @@ export default function FileGrid() {
     key: d.key,
     items: d.items,
     hideShare: true,
+    driveId: d.id,
   }));
   const pinnedFolders = folderItems.slice(0, 3);
 
+  const loadDriveFiles = useCallback(
+    async (driveId: string) => {
+      setDriveFilesLoading(true);
+      try {
+        const files = await fetchDriveFiles(driveId);
+        setDriveFiles(files);
+      } catch {
+        setDriveFiles([]);
+      } finally {
+        setDriveFilesLoading(false);
+      }
+    },
+    [fetchDriveFiles]
+  );
+
+  const openDrive = useCallback(
+    (id: string, name: string) => {
+      setCurrentDrive({ id, name });
+      loadDriveFiles(id);
+    },
+    [loadDriveFiles]
+  );
+
+  const closeDrive = useCallback(() => {
+    setCurrentDrive(null);
+    setDriveFiles([]);
+  }, []);
+
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      {/* Pinned shortcuts */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900/50">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-            Pinned
-          </h2>
+      {/* Breadcrumb when inside a drive */}
+      {currentDrive && (
+        <div className="flex items-center gap-2 text-sm">
           <button
             type="button"
-            className="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-400"
-            aria-label="Dismiss"
+            onClick={closeDrive}
+            className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
-            ×
+            <ChevronLeft className="h-4 w-4" />
+            Back
           </button>
+          <span className="text-neutral-400 dark:text-neutral-500">/</span>
+          <span className="font-medium text-neutral-900 dark:text-white">
+            {currentDrive.name}
+          </span>
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {pinnedFolders.map((item) => (
-            <div
-              key={item.key}
-              className="flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
-            >
-              <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25">
-                <Folder className="h-5 w-5" />
-              </div>
-              <p className="truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
-                {item.name}
-              </p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Folder
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
+      )}
 
-      {/* Recents / Starred tabs + view toggle */}
+      {/* Pinned shortcuts (only at root) */}
+      {!currentDrive && (
+        <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Pinned
+            </h2>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {pinnedFolders.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                className="flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
+              >
+                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25">
+                  <Folder className="h-5 w-5" />
+                </div>
+                <p className="truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
+                  {item.name}
+                </p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Folder
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Recents / Starred tabs + view toggle (only at root, or when in drive show "Files") */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
@@ -112,7 +162,27 @@ export default function FileGrid() {
         </div>
 
         {/* File grid */}
-        {loading ? (
+        {currentDrive ? (
+          driveFilesLoading ? (
+            <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Loading files…
+            </div>
+          ) : driveFiles.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              {driveFiles.map((file) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  onClick={() => setPreviewFile(file)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              No files in this drive yet. Sync to add files.
+            </div>
+          )
+        ) : loading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading your files…
           </div>
@@ -125,7 +195,11 @@ export default function FileGrid() {
                 </h3>
                 <div className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {folderItems.map((item) => (
-                    <FolderCard key={item.key} item={item} />
+                    <FolderCard
+                      key={item.key}
+                      item={item}
+                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    />
                   ))}
                 </div>
               </>
@@ -137,7 +211,11 @@ export default function FileGrid() {
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {recentFiles.map((file) => (
-                    <FileCard key={file.id} file={file} />
+                    <FileCard
+                      key={file.id}
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                    />
                   ))}
                 </div>
               </>
@@ -154,6 +232,11 @@ export default function FileGrid() {
           </div>
         )}
       </section>
+
+      <FilePreviewModal
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 }

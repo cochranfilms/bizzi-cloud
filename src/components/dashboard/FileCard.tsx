@@ -5,6 +5,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 
 interface FileCardProps {
   file: RecentFile;
+  onClick?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -24,12 +25,28 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-export default function FileCard({ file }: FileCardProps) {
+export default function FileCard({ file, onClick }: FileCardProps) {
+  const canPreview = !!file.objectKey;
   return (
     <div
-      className="flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-      role="button"
-      tabIndex={0}
+      className={`flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+        canPreview
+          ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+          : ""
+      }`}
+      role={canPreview ? "button" : undefined}
+      tabIndex={canPreview ? 0 : undefined}
+      onClick={canPreview ? onClick : undefined}
+      onKeyDown={
+        canPreview
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
     >
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
         <FileIcon className="h-8 w-8" />

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const B2_ACCESS_KEY_ID = process.env.B2_ACCESS_KEY_ID;
@@ -35,6 +35,18 @@ export async function createPresignedUploadUrl(
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
     ContentType: contentType,
+  });
+  return getSignedUrl(client, command, { expiresIn });
+}
+
+export async function createPresignedDownloadUrl(
+  objectKey: string,
+  expiresIn = 3600
+): Promise<string> {
+  const client = getB2Client();
+  const command = new GetObjectCommand({
+    Bucket: B2_BUCKET_NAME,
+    Key: objectKey,
   });
   return getSignedUrl(client, command, { expiresIn });
 }
