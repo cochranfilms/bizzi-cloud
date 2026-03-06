@@ -88,6 +88,7 @@ export async function getObjectRange(
 ): Promise<{
   body: NodeJS.ReadableStream;
   contentLength: number;
+  contentType?: string;
   contentRange?: string;
 }> {
   const client = getB2Client();
@@ -107,6 +108,7 @@ export async function getObjectRange(
   return {
     body: body as NodeJS.ReadableStream,
     contentLength,
+    contentType: response.ContentType ?? undefined,
     contentRange: response.ContentRange ?? undefined,
   };
 }
@@ -114,7 +116,11 @@ export async function getObjectRange(
 /** Stream full object from B2 (for Local Store full downloads). */
 export async function getObject(
   objectKey: string
-): Promise<{ body: NodeJS.ReadableStream; contentLength: number }> {
+): Promise<{
+  body: NodeJS.ReadableStream;
+  contentLength: number;
+  contentType?: string;
+}> {
   const client = getB2Client();
   const response = await client.send(
     new GetObjectCommand({
@@ -130,6 +136,7 @@ export async function getObject(
   return {
     body: body as NodeJS.ReadableStream,
     contentLength,
+    contentType: response.ContentType ?? undefined,
   };
 }
 
