@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { X, Download, FileIcon, Loader2 } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { useThumbnail } from "@/hooks/useThumbnail";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
@@ -25,11 +26,18 @@ interface FilePreviewModalProps {
 }
 
 export default function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUrl = useCallback(async () => {
+  const previewType = file ? getPreviewType(file.name) : "other";
+  const lowResPreviewUrl = useThumbnail(
+    file?.objectKey,
+    file?.name ?? "",
+    "preview"
+  );
+
+  const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
     setLoading(true);
     setError(null);
@@ -49,7 +57,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Failed to load preview");
-      setPreviewUrl(data.url);
+      setFullUrl(data.url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -58,12 +66,12 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
   }, [file?.objectKey]);
 
   useEffect(() => {
-    if (file) fetchUrl();
+    if (file) fetchFullUrl();
     else {
-      setPreviewUrl(null);
+      setFullUrl(null);
       setError(null);
     }
-  }, [file, fetchUrl]);
+  }, [file, fetchFullUrl]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -74,8 +82,6 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
   }, [onClose]);
 
   if (!file) return null;
-
-  const previewType = getPreviewType(file.name);
 
   return (
     <div
@@ -92,12 +98,12 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             {file.name}
           </h2>
           <div className="flex items-center gap-2">
-            {previewUrl && (
+            {fullUrl && (
               <a
-                href={previewUrl}
+                href={fullUrl}
                 download={file.name}
                 className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white"
-                aria-label="Download"
+                aria-label="Download full resolution"
               >
                 <Download className="h-4 w-4" />
               </a>
@@ -115,7 +121,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
 
         {/* Content */}
         <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-950 p-6">
-          {loading && (
+          {loading && !(previewType === "image" && lowResPreviewUrl) && (
             <div className="flex flex-col items-center gap-3 text-neutral-400">
               <Loader2 className="h-10 w-10 animate-spin" />
               <p className="text-sm">Loading preview…</p>
@@ -125,9 +131,9 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             <div className="flex flex-col items-center gap-3 text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
-              {previewUrl && (
+              {fullUrl && (
                 <a
-                  href={previewUrl}
+                  href={fullUrl}
                   download={file.name}
                   className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
                 >
@@ -136,49 +142,58 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
               )}
             </div>
           )}
-          {previewUrl && !loading && !error && (
-            <>
-              {previewType === "image" && (
-                <img
-                  src={previewUrl}
-                  alt={file.name}
-                  className="max-h-[70vh] max-w-full rounded-lg object-contain"
-                />
-              )}
-              {previewType === "video" && (
-                <video
-                  src={previewUrl}
-                  controls
-                  className="max-h-[70vh] max-w-full rounded-lg"
-                />
-              )}
-              {previewType === "audio" && (
-                <div className="w-full max-w-md">
-                  <audio src={previewUrl} controls className="w-full" />
-                </div>
-              )}
-              {previewType === "pdf" && (
-                <iframe
-                  src={previewUrl}
-                  title={file.name}
-                  className="h-[70vh] w-full rounded-lg border-0"
-                />
-              )}
-              {previewType === "other" && (
-                <div className="flex flex-col items-center gap-4 text-neutral-400">
-                  <FileIcon className="h-16 w-16" />
-                  <p className="text-sm">Preview not available for this file type</p>
-                  <a
-                    href={previewUrl}
-                    download={file.name}
-                    className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
-                  >
-                    Download
-                  </a>
-                </div>
-              )}
-            </>
-          )}
+          {((previewType === "image" && lowResPreviewUrl) ||
+            (previewType !== "image" && fullUrl)) &&
+            !error && (
+              <>
+                {previewType === "image" && lowResPreviewUrl && (
+                  <div className="flex flex-col items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */}
+                    <img
+                      src={lowResPreviewUrl}
+                      alt={file.name}
+                      className="max-h-[70vh] max-w-full rounded-lg object-contain"
+                    />
+                    <p className="text-xs text-neutral-500">
+                      Low-resolution preview · Use Download for full quality
+                    </p>
+                  </div>
+                )}
+                {previewType === "video" && fullUrl && (
+                  <video
+                    src={fullUrl}
+                    controls
+                    preload="metadata"
+                    className="max-h-[70vh] max-w-full rounded-lg"
+                  />
+                )}
+                {previewType === "audio" && fullUrl && (
+                  <div className="w-full max-w-md">
+                    <audio src={fullUrl} controls className="w-full" />
+                  </div>
+                )}
+                {previewType === "pdf" && fullUrl && (
+                  <iframe
+                    src={fullUrl}
+                    title={file.name}
+                    className="h-[70vh] w-full rounded-lg border-0"
+                  />
+                )}
+                {previewType === "other" && fullUrl && (
+                  <div className="flex flex-col items-center gap-4 text-neutral-400">
+                    <FileIcon className="h-16 w-16" />
+                    <p className="text-sm">Preview not available for this file type</p>
+                    <a
+                      href={fullUrl}
+                      download={file.name}
+                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
+                    >
+                      Download
+                    </a>
+                  </div>
+                )}
+              </>
+            )}
         </div>
       </div>
     </div>

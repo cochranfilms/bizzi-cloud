@@ -132,3 +132,22 @@ export async function getObject(
     contentLength,
   };
 }
+
+/** Read object into a buffer, with optional max bytes limit (for thumbnail generation). */
+export async function getObjectBuffer(
+  objectKey: string,
+  maxBytes = 50 * 1024 * 1024
+): Promise<Buffer> {
+  const { body, contentLength } = await getObject(objectKey);
+  if (contentLength > maxBytes) {
+    throw new Error(`Object too large for processing (${contentLength} > ${maxBytes})`);
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Uint8Array>) {
+    chunks.push(Buffer.from(chunk));
+    if (chunks.reduce((sum, c) => sum + c.length, 0) > maxBytes) {
+      throw new Error(`Object too large for processing`);
+    }
+  }
+  return Buffer.concat(chunks);
+}

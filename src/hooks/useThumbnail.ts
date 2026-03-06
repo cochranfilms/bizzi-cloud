@@ -1,0 +1,76 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { getFirebaseAuth } from "@/lib/firebase/client";
+
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
+
+export type ThumbnailSize = "thumb" | "preview";
+
+function isImageFile(name: string): boolean {
+  return IMAGE_EXT.test(name.toLowerCase());
+}
+
+function isVideoFile(name: string): boolean {
+  return VIDEO_EXT.test(name.toLowerCase());
+}
+
+export function isPreviewableMedia(name: string): boolean {
+  return isImageFile(name) || isVideoFile(name);
+}
+
+/**
+ * Returns a blob URL for a low-res thumbnail (for cards) or preview (for modal).
+ * Images: server-generated resized JPEG. Videos: returns null (use icon/placeholder).
+ */
+export function useThumbnail(
+  objectKey: string | undefined,
+  fileName: string,
+  size: ThumbnailSize = "thumb"
+): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!objectKey || !isImageFile(fileName)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (!token || cancelled) return;
+        const params = new URLSearchParams({
+          object_key: objectKey,
+          size,
+          name: fileName,
+        });
+        const res = await fetch(`/api/backup/thumbnail?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const blobUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = blobUrl;
+        setUrl(blobUrl);
+      } catch {
+        // Ignore - component will show fallback icon
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+      setUrl(null);
+    };
+  }, [objectKey, fileName, size]);
+
+  return url;
+}

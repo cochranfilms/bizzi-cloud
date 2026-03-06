@@ -1,7 +1,8 @@
 "use client";
 
-import { FileIcon } from "lucide-react";
+import { FileIcon, Film, Play } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { useThumbnail } from "@/hooks/useThumbnail";
 import ItemActionsMenu from "./ItemActionsMenu";
 
 interface FileCardProps {
@@ -27,8 +28,15 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi)$/i;
+function isVideoFile(name: string) {
+  return VIDEO_EXT.test(name.toLowerCase());
+}
+
 export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
   const canPreview = !!file.objectKey;
+  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
+  const isVideo = isVideoFile(file.name);
 
   const handleDelete = () => {
     if (
@@ -77,8 +85,26 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           />
         </div>
       )}
-      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
-        <FileIcon className="h-8 w-8" />
+      <div className="mb-3 flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
+        {thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, not a static asset
+          <img
+            src={thumbnailUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : isVideo ? (
+          <div className="relative flex h-full w-full items-center justify-center">
+            <Film className="h-8 w-8 text-neutral-400 dark:text-neutral-500" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90">
+                <Play className="h-4 w-4 fill-neutral-700 text-neutral-700 dark:fill-neutral-300 dark:text-neutral-300" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <FileIcon className="h-8 w-8" />
+        )}
       </div>
       <h3 className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white" title={file.name}>
         {file.name}
