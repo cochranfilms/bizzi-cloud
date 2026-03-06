@@ -1,4 +1,8 @@
-import { createPresignedUploadUrl, isB2Configured } from "@/lib/b2";
+import {
+  createPresignedUploadUrl,
+  isB2Configured,
+  objectExists,
+} from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -63,7 +67,13 @@ export async function POST(request: Request) {
     }
   }
 
-  const { drive_id: driveId, relative_path: relativePath, content_type: contentType, validate_only: validateOnly } = body;
+  const {
+    drive_id: driveId,
+    relative_path: relativePath,
+    content_type: contentType,
+    content_hash: contentHash,
+    validate_only: validateOnly,
+  } = body;
 
   if (validateOnly === true) {
     return NextResponse.json({ ok: true, uid });
@@ -77,9 +87,26 @@ export async function POST(request: Request) {
   }
 
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-  const objectKey = `backups/${uid}/${driveId}/${safePath}`;
+
+  // Content-hash storage: store by SHA256 hash for deduplication
+  const objectKey =
+    contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
+      ? `content/${contentHash.toLowerCase()}`
+      : `backups/${uid}/${driveId}/${safePath}`;
 
   try {
+    // If using content-hash, check if object already exists (deduplication)
+    if (objectKey.startsWith("content/")) {
+      const exists = await objectExists(objectKey);
+      if (exists) {
+        return NextResponse.json({
+          uploadUrl: null,
+          objectKey,
+          alreadyExists: true,
+        });
+      }
+    }
+
     const url = await createPresignedUploadUrl(
       objectKey,
       contentType || "application/octet-stream",

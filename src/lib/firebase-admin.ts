@@ -1,5 +1,6 @@
 import { getApps, getApp, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 export function getAuthConfigStatus(): {
   configured: boolean;
@@ -38,6 +39,10 @@ function getAdminApp() {
     }
   }
   return getApp();
+}
+
+export function getAdminFirestore() {
+  return getFirestore(getAdminApp());
 }
 
 export async function verifyIdToken(

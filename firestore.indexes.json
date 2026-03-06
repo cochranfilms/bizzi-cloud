@@ -34,6 +34,14 @@
         { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
         { "fieldPath": "modified_at", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "object_key", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

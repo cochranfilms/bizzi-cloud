@@ -1,4 +1,9 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const B2_ACCESS_KEY_ID = process.env.B2_ACCESS_KEY_ID;
@@ -39,6 +44,26 @@ export async function createPresignedUploadUrl(
   return getSignedUrl(client, command, { expiresIn });
 }
 
+/** Check if an object exists in B2 (used for content-hash deduplication). */
+export async function objectExists(objectKey: string): Promise<boolean> {
+  const client = getB2Client();
+  try {
+    await client.send(
+      new HeadObjectCommand({
+        Bucket: B2_BUCKET_NAME,
+        Key: objectKey,
+      })
+    );
+    return true;
+  } catch (err: unknown) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e?.name === "NotFound" || e?.$metadata?.httpStatusCode === 404) {
+      return false;
+    }
+    throw err;
+  }
+}
+
 export async function createPresignedDownloadUrl(
   objectKey: string,
   expiresIn = 3600
@@ -49,4 +74,61 @@ export async function createPresignedDownloadUrl(
     Key: objectKey,
   });
   return getSignedUrl(client, command, { expiresIn });
+}
+
+export interface ByteRange {
+  start: number;
+  end: number;
+}
+
+/** Stream a byte range from B2. Used for mounted drive streaming and Local Store downloads. */
+export async function getObjectRange(
+  objectKey: string,
+  range: ByteRange
+): Promise<{
+  body: NodeJS.ReadableStream;
+  contentLength: number;
+  contentRange?: string;
+}> {
+  const client = getB2Client();
+  const rangeHeader = `bytes=${range.start}-${range.end}`;
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      Range: rangeHeader,
+    })
+  );
+  const body = response.Body;
+  if (!body) {
+    throw new Error("Empty response body from B2");
+  }
+  const contentLength = range.end - range.start + 1;
+  return {
+    body: body as NodeJS.ReadableStream,
+    contentLength,
+    contentRange: response.ContentRange ?? undefined,
+  };
+}
+
+/** Stream full object from B2 (for Local Store full downloads). */
+export async function getObject(
+  objectKey: string
+): Promise<{ body: NodeJS.ReadableStream; contentLength: number }> {
+  const client = getB2Client();
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+    })
+  );
+  const body = response.Body;
+  if (!body) {
+    throw new Error("Empty response body from B2");
+  }
+  const contentLength = response.ContentLength ?? 0;
+  return {
+    body: body as NodeJS.ReadableStream,
+    contentLength,
+  };
 }

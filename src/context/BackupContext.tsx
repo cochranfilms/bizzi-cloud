@@ -57,6 +57,14 @@ interface BackupContextValue {
   fsAccessSupported: boolean;
 }
 
+/** Compute SHA256 hash of a file for content-hash storage (browser). */
+async function sha256Hex(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 const BackupContext = createContext<BackupContextValue | null>(null);
 
 export function BackupProvider({ children }: { children: React.ReactNode }) {
@@ -333,13 +341,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               : null
           );
 
-          const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-          const objectKey = `backups/${user.uid}/${drive.id}/${safePath}`;
           const contentType = file.type || "application/octet-stream";
 
           let lastError: string | null = null;
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
+              const contentHash = await sha256Hex(file);
               const idToken = await getFirebaseAuth().currentUser?.getIdToken(
                 true
               );
@@ -355,19 +362,25 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   drive_id: drive.id,
                   relative_path: relativePath,
                   content_type: contentType,
+                  content_hash: contentHash,
                   user_id: user.uid,
                 }),
               });
 
+              let objectKey: string;
               if (urlRes.ok) {
-                const { uploadUrl } = await urlRes.json();
-                const putRes = await fetch(uploadUrl, {
-                  method: "PUT",
-                  body: file,
-                  headers: { "Content-Type": contentType },
-                  signal: controller.signal,
-                });
-                if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+                const res = await urlRes.json();
+                objectKey = res.objectKey;
+                if (!res.alreadyExists && res.uploadUrl) {
+                  const putRes = await fetch(res.uploadUrl, {
+                    method: "PUT",
+                    body: file,
+                    headers: { "Content-Type": contentType },
+                    signal: controller.signal,
+                  });
+                  if (!putRes.ok)
+                    throw new Error(`Upload failed: ${putRes.status}`);
+                }
               } else {
                 const data = await urlRes.json().catch(() => ({}));
                 if (urlRes.status === 503) {
@@ -577,9 +590,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const db = getFirebaseFirestore();
       const relativePath = file.name;
       const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-      const objectKey = `backups/${user.uid}/${drive.id}/${safePath}`;
       const contentType = file.type || "application/octet-stream";
       try {
+        const contentHash = await sha256Hex(file);
         const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
         if (!idToken) throw new Error("Not authenticated. Sign in again.");
         const urlRes = await fetch("/api/backup/upload-url", {
@@ -592,6 +605,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             drive_id: drive.id,
             relative_path: relativePath,
             content_type: contentType,
+            content_hash: contentHash,
             user_id: user.uid,
           }),
         });
@@ -599,13 +613,15 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const data = await urlRes.json().catch(() => ({}));
           throw new Error(data?.error ?? "Failed to get upload URL");
         }
-        const { uploadUrl } = await urlRes.json();
-        const putRes = await fetch(uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": contentType },
-        });
-        if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+        const { uploadUrl, objectKey, alreadyExists } = await urlRes.json();
+        if (!alreadyExists && uploadUrl) {
+          const putRes = await fetch(uploadUrl, {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": contentType },
+          });
+          if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+        }
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
           linked_drive_id: drive.id,
           userId: user.uid,
@@ -621,7 +637,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           relative_path: relativePath,
           object_key: objectKey,
           size_bytes: file.size,
-          modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+          modified_at: file.lastModified
+            ? new Date(file.lastModified).toISOString()
+            : null,
         });
         await updateDoc(doc(db, "linked_drives", drive.id), {
           last_synced_at: new Date().toISOString(),

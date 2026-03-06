@@ -7,6 +7,8 @@ node_modules
 .next
 out
 build
+desktop/dist
+desktop/dist-electron
 
 # debug
 npm-debug.log*
