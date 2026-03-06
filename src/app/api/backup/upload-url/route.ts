@@ -37,18 +37,28 @@ export async function POST(request: Request) {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
     } catch (e: unknown) {
-      const code = (e as { code?: string })?.code;
+      const err = e as Error & { code?: string };
+      const code = err?.code;
+      const message = err?.message ?? "";
       let msg: string;
-      if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-        msg = "Server auth not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.";
+      if (
+        !process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+        message.includes("is not set")
+      ) {
+        msg =
+          "FIREBASE_SERVICE_ACCOUNT_JSON is not set in Vercel. Add it (full JSON from Firebase Console > Service Accounts > Generate key).";
+      } else if (message.includes("invalid JSON") || message.includes("parse")) {
+        msg =
+          "FIREBASE_SERVICE_ACCOUNT_JSON has invalid JSON. Paste the full minified JSON—ensure newlines in private_key are \\n.";
       } else if (code === "auth/id-token-expired") {
         msg = "Token expired. Refresh the page, sign out and back in, then try again.";
       } else if (code === "auth/argument-error" || code === "auth/invalid-id-token") {
-        msg = "Invalid token. Ensure FIREBASE_SERVICE_ACCOUNT_JSON is from the same project as NEXT_PUBLIC_FIREBASE_PROJECT_ID. Sign out and back in.";
+        msg =
+          "Project mismatch: FIREBASE_SERVICE_ACCOUNT_JSON must be from the same Firebase project as NEXT_PUBLIC_FIREBASE_PROJECT_ID. Check /api/backup/auth-status";
       } else {
-        msg = "Invalid or expired token. Sign out and back in, then try again.";
+        msg = "Invalid or expired token. Sign out and back in. Check /api/backup/auth-status for config.";
       }
-      console.error("[upload-url] Token verification failed:", code ?? (e as Error)?.message);
+      console.error("[upload-url] Token verification failed:", code ?? message);
       return NextResponse.json({ error: msg }, { status: 401 });
     }
   }

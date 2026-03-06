@@ -32,6 +32,10 @@ Set these in **Vercel > Project > Settings > Environment Variables**:
 |----------|-------------|-----------------|
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Full service account JSON as string | Firebase Console > Project Settings > Service Accounts > Generate new private key. Minify the JSON and paste as one line. |
 
+### Debugging 401 on upload
+
+Visit `https://your-app.vercel.app/api/backup/auth-status` to check: project_id match, JSON validity, and config hints.
+
 ### FIREBASE_SERVICE_ACCOUNT_JSON format
 
 Either paste the raw JSON (minified) or escape it. Example value:

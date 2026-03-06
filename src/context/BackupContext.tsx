@@ -299,11 +299,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           });
           if (!preflight.ok) {
             const data = await preflight.json().catch(() => ({}));
-            const msg =
+            const fallback =
               preflight.status === 401
-                ? (data?.error ?? "Upload auth failed. Local dev: add B2_SKIP_AUTH_FOR_TESTING=true to .env.local. Production: set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.")
-                : data?.error ?? `Upload auth failed: ${preflight.status}`;
-            throw new Error(msg);
+                ? "Upload auth failed. Production: set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel. Check /api/backup/auth-status for config."
+                : `Upload auth failed: ${preflight.status}`;
+            throw new Error(data?.error ?? fallback);
           }
         }
 
