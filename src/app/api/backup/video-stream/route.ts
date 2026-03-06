@@ -1,5 +1,4 @@
 import { createHmac } from "crypto";
-import { Readable } from "stream";
 import {
   getObject,
   getObjectRange,
@@ -7,8 +6,38 @@ import {
 } from "@/lib/b2";
 import { NextResponse } from "next/server";
 
+async function* nodeStreamToIterator(
+  stream: AsyncIterable<Uint8Array>
+): AsyncGenerator<Uint8Array> {
+  for await (const chunk of stream) {
+    yield new Uint8Array(chunk);
+  }
+}
+
 function toWebStream(nodeStream: NodeJS.ReadableStream): ReadableStream {
-  return Readable.toWeb(nodeStream as Readable) as ReadableStream;
+  try {
+    const { Readable } = require("stream");
+    if (typeof Readable.toWeb === "function") {
+      return Readable.toWeb(nodeStream) as ReadableStream;
+    }
+  } catch {
+    /* fallthrough */
+  }
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of nodeStreamToIterator(
+          nodeStream as AsyncIterable<Uint8Array>
+        )) {
+          controller.enqueue(chunk);
+        }
+      } catch (e) {
+        controller.error(e);
+      } finally {
+        controller.close();
+      }
+    },
+  });
 }
 
 function verifyStreamSignature(
