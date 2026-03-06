@@ -35,3 +35,9 @@ yarn-error.log*
 # rclone downloads
 rclone-*.zip
 rclone-*/
+
+# icon build artifacts
+desktop/resources/icon.iconset/
+
+# electron-builder output
+desktop/release/

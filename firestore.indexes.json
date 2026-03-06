@@ -42,6 +42,14 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "object_key", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

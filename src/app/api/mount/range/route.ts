@@ -24,7 +24,8 @@ async function verifyObjectAccess(uid: string, objectKey: string): Promise<boole
       .where("object_key", "==", objectKey)
       .limit(1)
       .get();
-    return !snap.empty;
+    if (snap.empty) return false;
+    return !snap.docs[0].data().deleted_at;
   }
   const prefix = `backups/${uid}/`;
   return objectKey.startsWith(prefix);

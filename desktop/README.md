@@ -36,6 +36,14 @@ npm run electron:dev # Electron + Vite (run in another terminal: npm run dev)
 ```bash
 npm run build       # Vite build + Electron compile
 npm run electron    # Run built app (after build)
+npm run dist        # Build distributable .dmg for macOS
+```
+
+To regenerate the volume icon from `public/logo.png`:
+```bash
+mkdir -p desktop/resources/icon.iconset
+for size in 16 32 64 128 256 512; do sips -z $size $size public/logo.png --out desktop/resources/icon.iconset/icon_${size}x${size}.png; done
+iconutil -c icns desktop/resources/icon.iconset -o desktop/resources/icon.icns
 ```
 
 ## API Base URL

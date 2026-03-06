@@ -31,7 +31,11 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
   const canPreview = !!file.objectKey;
 
   const handleDelete = () => {
-    if (window.confirm(`Delete "${file.name}"? This action cannot be undone.`)) {
+    if (
+      window.confirm(
+        `Move "${file.name}" to trash? You can restore it from the Deleted files tab.`
+      )
+    ) {
       onDelete?.();
     }
   };
@@ -61,9 +65,9 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
         <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
           <ItemActionsMenu
             actions={[
-              {
-                id: "delete",
-                label: "Delete",
+            {
+              id: "delete",
+              label: "Move to trash",
                 onClick: handleDelete,
                 destructive: true,
               },

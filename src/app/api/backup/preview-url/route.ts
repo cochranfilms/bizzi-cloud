@@ -57,6 +57,9 @@ export async function POST(request: Request) {
     if (snap.empty) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
+    if (snap.docs[0].data().deleted_at) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
   } else {
     // Legacy user-scoped keys
     const prefix = `backups/${uid}/`;

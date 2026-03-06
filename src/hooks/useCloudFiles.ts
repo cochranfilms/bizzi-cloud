@@ -10,6 +10,8 @@ import {
   where,
   orderBy,
   limit,
+  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
@@ -33,6 +35,8 @@ export interface RecentFile {
   modifiedAt: string | null;
   driveId: string;
   driveName: string;
+  /** When set, file is in trash */
+  deletedAt?: string | null;
 }
 
 export function useCloudFiles() {
@@ -84,11 +88,14 @@ export function useCloudFiles() {
           collection(db, "backup_files"),
           where("userId", "==", user.uid),
           orderBy("modified_at", "desc"),
-          limit(24)
+          limit(50)
         )
       );
-      const recent: RecentFile[] = filesSnap.docs.map((d) => {
-        const data = d.data();
+      const recent: RecentFile[] = filesSnap.docs
+        .filter((d) => !d.data().deleted_at)
+        .slice(0, 24)
+        .map((d) => {
+          const data = d.data();
         const path = data.relative_path ?? "";
         const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
         const drive = driveMap.get(data.linked_drive_id);
@@ -131,10 +138,50 @@ export function useCloudFiles() {
           orderBy("modified_at", "desc")
         )
       );
+      return filesSnap.docs
+        .filter((d) => !d.data().deleted_at)
+        .map((d) => {
+          const data = d.data();
+          const path = data.relative_path ?? "";
+          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+          return {
+            id: d.id,
+            name,
+            path,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: data.modified_at ?? null,
+            driveId: data.linked_drive_id,
+            driveName: drive?.name ?? "Unknown drive",
+          };
+        });
+    },
+    [user, linkedDrives]
+  );
+
+  const fetchDeletedFiles = useCallback(
+    async (): Promise<RecentFile[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("deleted_at", "!=", null),
+          orderBy("deleted_at", "desc")
+        )
+      );
       return filesSnap.docs.map((d) => {
         const data = d.data();
         const path = data.relative_path ?? "";
         const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+        const drive = driveMap.get(data.linked_drive_id);
+        const deletedAt = data.deleted_at?.toDate?.()
+          ? data.deleted_at.toDate().toISOString()
+          : typeof data.deleted_at === "string"
+            ? data.deleted_at
+            : null;
         return {
           id: d.id,
           name,
@@ -144,6 +191,7 @@ export function useCloudFiles() {
           modifiedAt: data.modified_at ?? null,
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
+          deletedAt: deletedAt ?? undefined,
         };
       });
     },
@@ -154,11 +202,45 @@ export function useCloudFiles() {
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
       const db = getFirebaseFirestore();
+      await updateDoc(doc(db, "backup_files", fileId), {
+        deleted_at: serverTimestamp(),
+      });
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles]
+  );
+
+  const restoreFile = useCallback(
+    async (fileId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      await updateDoc(doc(db, "backup_files", fileId), {
+        deleted_at: null,
+      });
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles]
+  );
+
+  const permanentlyDeleteFile = useCallback(
+    async (fileId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
       await deleteDoc(doc(db, "backup_files", fileId));
       await fetchCloudFiles();
     },
     [user, fetchCloudFiles]
   );
 
-  return { driveFolders, recentFiles, loading, refetch: fetchCloudFiles, fetchDriveFiles, deleteFile };
+  return {
+    driveFolders,
+    recentFiles,
+    loading,
+    refetch: fetchCloudFiles,
+    fetchDriveFiles,
+    fetchDeletedFiles,
+    deleteFile,
+    restoreFile,
+    permanentlyDeleteFile,
+  };
 }

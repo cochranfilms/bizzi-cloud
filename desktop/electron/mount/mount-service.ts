@@ -13,6 +13,7 @@ export interface MountOptions {
   cacheBaseDir: string;
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
+  resourcesDir?: string;
 }
 
 const PRODUCTION_URL = "https://bizzi-cloud.vercel.app";
@@ -121,6 +122,12 @@ export class MountService {
     ];
     if (process.platform === "darwin") {
       args.push("--volname", "Bizzi Cloud");
+      const iconPath = options.resourcesDir
+        ? path.join(options.resourcesDir, "icon.icns")
+        : path.join(__dirname, "..", "..", "resources", "icon.icns");
+      if (fs.existsSync(iconPath)) {
+        args.push("--fuse-flag", `volicon=${iconPath}`);
+      }
     }
 
     let isHomebrewRclone = false;

@@ -78,10 +78,15 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
   if (!token) {
     throw new Error("Not signed in. Sign in to Bizzi Cloud to mount.");
   }
+  const resourcesDir =
+    process.resourcesPath && !process.defaultApp
+      ? process.resourcesPath
+      : path.join(app.getAppPath(), "resources");
   await mountService.mount({
     apiBaseUrl: baseUrl,
     cacheBaseDir,
     getAuthToken: async () => token,
+    resourcesDir,
   });
   return { mountPoint: mountService.getMountPoint() };
 });

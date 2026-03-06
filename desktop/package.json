@@ -1,14 +1,40 @@
 {
   "name": "bizzi-cloud-desktop",
   "version": "0.1.0",
+  "description": "Mount Bizzi Cloud as a local drive for NLE editing",
+  "author": "Bizzi Byte",
+  "repository": "https://github.com/cochranfilms/bizzi-cloud",
   "private": true,
   "main": "dist-electron/main.js",
+  "build": {
+    "publish": null,
+    "appId": "cloud.bizzi.desktop",
+    "productName": "Bizzi Cloud",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "resources/icon.icns",
+      "target": ["dmg"],
+      "extendInfo": {
+        "CFBundleName": "Bizzi Cloud"
+      }
+    },
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "resources/icon.icns",
+        "to": "icon.icns"
+      }
+    ]
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.electron.json",
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:dev": "tsc -p tsconfig.electron.json && concurrently \"vite\" \"electron .\"",
     "electron": "vite build && tsc -p tsconfig.electron.json && electron .",
+    "dist": "npm run build && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {

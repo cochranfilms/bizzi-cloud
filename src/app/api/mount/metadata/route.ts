@@ -60,6 +60,7 @@ export async function POST(request: Request) {
 
     for (const doc of filesSnap.docs) {
       const data = doc.data();
+      if (data.deleted_at) continue; // Exclude soft-deleted files
       const relativePath = data.relative_path ?? "";
       const pathDir = relativePath.includes("/")
         ? relativePath.slice(0, relativePath.lastIndexOf("/"))

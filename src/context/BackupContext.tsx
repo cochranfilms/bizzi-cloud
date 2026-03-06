@@ -399,6 +399,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 object_key: objectKey,
                 size_bytes: file.size,
                 modified_at: modifiedAt ? new Date(modifiedAt).toISOString() : null,
+                deleted_at: null,
               });
 
               bytesSynced += file.size;
@@ -640,6 +641,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           modified_at: file.lastModified
             ? new Date(file.lastModified).toISOString()
             : null,
+          deleted_at: null,
         });
         await updateDoc(doc(db, "linked_drives", drive.id), {
           last_synced_at: new Date().toISOString(),

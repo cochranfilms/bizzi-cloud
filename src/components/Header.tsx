@@ -8,6 +8,7 @@ const navLinks = [
   { href: "#features", label: "Features" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
+  { href: "https://github.com/cochranfilms/bizzi-cloud/releases", label: "Download", external: true },
   { href: "https://www.bizzibytestorage.com/", label: "Shop SSDs", external: true },
 ];
 

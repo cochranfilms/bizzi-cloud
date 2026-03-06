@@ -16,7 +16,8 @@ async function verifyObjectAccess(uid: string, objectKey: string): Promise<boole
       .where("object_key", "==", objectKey)
       .limit(1)
       .get();
-    return !snap.empty;
+    if (snap.empty) return false;
+    return !snap.docs[0].data().deleted_at;
   }
   return objectKey.startsWith(`backups/${uid}/`);
 }
@@ -28,7 +29,10 @@ async function getFileIdForObject(db: Firestore, uid: string, objectKey: string)
     .where("object_key", "==", objectKey)
     .limit(1)
     .get();
-  return snap.empty ? null : snap.docs[0].id;
+  if (snap.empty) return null;
+  const data = snap.docs[0].data();
+  if (data.deleted_at) return null;
+  return snap.docs[0].id;
 }
 
 export async function POST(request: Request) {
@@ -174,7 +178,10 @@ async function getObjectKeyForFile(
   fileId: string
 ): Promise<string | null> {
   const doc = await db.collection("backup_files").doc(fileId).get();
-  return doc.exists ? (doc.data()?.object_key ?? null) : null;
+  if (!doc.exists) return null;
+  const data = doc.data();
+  if (data?.deleted_at) return null;
+  return data?.object_key ?? null;
 }
 
 export async function DELETE(request: Request) {
