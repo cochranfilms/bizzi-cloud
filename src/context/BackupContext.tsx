@@ -40,6 +40,8 @@ interface BackupContextValue {
   linkedDrives: LinkedDrive[];
   loading: boolean;
   error: string | null;
+  /** Error from single-file upload (New → File Upload). Shown near the upload trigger, not at Sync. */
+  fileUploadError: string | null;
   syncProgress: SyncProgress | null;
   isSyncing: boolean;
   storageVersion: number;
@@ -54,6 +56,7 @@ interface BackupContextValue {
   unlinkDrive: (drive: LinkedDrive) => Promise<void>;
   uploadSingleFile: (file: File) => Promise<void>;
   uploadFolder: () => Promise<void>;
+  clearFileUploadError: () => void;
   fsAccessSupported: boolean;
 }
 
@@ -72,6 +75,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   const [linkedDrives, setLinkedDrives] = useState<LinkedDrive[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [abortController, setAbortController] =
     useState<AbortController | null>(null);
@@ -587,6 +591,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setError(null);
+      setFileUploadError(null);
       const drive = await getOrCreateUploadsDrive();
       const db = getFirebaseFirestore();
       const relativePath = file.name;
@@ -648,11 +653,17 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         });
         setStorageVersion((v) => v + 1);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed");
+        const msg =
+          err instanceof Error
+            ? err.message || (err as Error & { name?: string }).name || "Upload failed"
+            : "Upload failed";
+        setFileUploadError(msg);
       }
     },
     [user, getOrCreateUploadsDrive]
   );
+
+  const clearFileUploadError = useCallback(() => setFileUploadError(null), []);
 
   const uploadFolder = useCallback(async () => {
     if (!fsAccessSupported) return;
@@ -670,6 +681,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       linkedDrives,
       loading,
       error,
+      fileUploadError,
       syncProgress,
       isSyncing: !!abortController,
       storageVersion,
@@ -681,6 +693,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       unlinkDrive,
       uploadSingleFile,
       uploadFolder,
+      clearFileUploadError,
       fsAccessSupported,
     }),
     [
@@ -698,6 +711,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       unlinkDrive,
       uploadSingleFile,
       uploadFolder,
+      clearFileUploadError,
+      fileUploadError,
       fsAccessSupported,
     ]
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Plus, Upload, FolderPlus, Send, ChevronDown, Loader2 } from "lucide-react";
+import { Search, Plus, Upload, FolderPlus, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
@@ -21,7 +21,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const showCreateTransfer = pathname === "/dashboard/transfers";
-  const { uploadSingleFile, uploadFolder, fsAccessSupported } = useBackup();
+  const { uploadSingleFile, uploadFolder, fileUploadError, clearFileUploadError, fsAccessSupported } = useBackup();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -95,7 +95,22 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
             Create transfer
           </button>
         ) : (
-          <div className="relative" ref={newDropdownRef}>
+          <div className="relative flex flex-col items-end gap-1" ref={newDropdownRef}>
+            {fileUploadError && (
+              <div className="flex w-full max-w-sm items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span className="flex-1">{fileUploadError}</span>
+                <button
+                  type="button"
+                  onClick={clearFileUploadError}
+                  className="flex-shrink-0 rounded p-0.5 hover:bg-red-200/50 dark:hover:bg-red-900/30"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="relative">
             <button
               type="button"
               onClick={() => setNewDropdownOpen((o) => !o)}
@@ -141,6 +156,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
               className="hidden"
               aria-hidden
             />
+            </div>
           </div>
         )}
 
