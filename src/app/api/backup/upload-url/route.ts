@@ -18,7 +18,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request body: expected JSON" },
+      { status: 400 }
+    );
+  }
   const { user_id: userIdFromBody } = body;
 
   let uid: string;
@@ -114,10 +122,25 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ uploadUrl: url, objectKey });
   } catch (err) {
-    console.error("B2 presigned URL error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to create upload URL" },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : "Failed to create upload URL";
+    const name = err instanceof Error ? err.name : undefined;
+    console.error("[upload-url] B2 error:", name ?? "Unknown", message, err);
+
+    // Surface actionable hints for common B2 config issues
+    let userMessage = message;
+    if (
+      typeof message === "string" &&
+      (message.includes("InvalidAccessKeyId") ||
+        message.includes("SignatureDoesNotMatch") ||
+        message.includes("credentials"))
+    ) {
+      userMessage =
+        "B2 credentials invalid. Check B2_ACCESS_KEY_ID and B2_SECRET_ACCESS_KEY in your environment.";
+    } else if (typeof message === "string" && message.includes("NoSuchBucket")) {
+      userMessage =
+        "B2 bucket not found. Check B2_BUCKET_NAME and B2_ENDPOINT match your Backblaze B2 bucket.";
+    }
+
+    return NextResponse.json({ error: userMessage }, { status: 500 });
   }
 }
