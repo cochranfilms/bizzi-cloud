@@ -36,11 +36,19 @@ export async function POST(request: Request) {
     try {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
-    } catch (e) {
-      const msg =
-        process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-          ? "Invalid or expired token. Sign out and back in, then try again."
-          : "Server auth not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON (Vercel env).";
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      let msg: string;
+      if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+        msg = "Server auth not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.";
+      } else if (code === "auth/id-token-expired") {
+        msg = "Token expired. Refresh the page, sign out and back in, then try again.";
+      } else if (code === "auth/argument-error" || code === "auth/invalid-id-token") {
+        msg = "Invalid token. Ensure FIREBASE_SERVICE_ACCOUNT_JSON is from the same project as NEXT_PUBLIC_FIREBASE_PROJECT_ID. Sign out and back in.";
+      } else {
+        msg = "Invalid or expired token. Sign out and back in, then try again.";
+      }
+      console.error("[upload-url] Token verification failed:", code ?? (e as Error)?.message);
       return NextResponse.json({ error: msg }, { status: 401 });
     }
   }

@@ -336,7 +336,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
               const idToken = await getFirebaseAuth().currentUser?.getIdToken(
-                attempt > 0
+                true
               );
               if (!idToken) throw new Error("Not authenticated. Sign in again.");
 
