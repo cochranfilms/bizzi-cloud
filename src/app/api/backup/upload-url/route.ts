@@ -130,7 +130,7 @@ async function handleUploadUrl(request: Request) {
 
     const url = await createPresignedUploadUrl(
       objectKey,
-      contentType || "application/octet-stream",
+      typeof contentType === "string" ? contentType : "application/octet-stream",
       3600
     );
     return NextResponse.json({ uploadUrl: url, objectKey });
