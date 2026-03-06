@@ -21,7 +21,6 @@ import {
   orderBy,
   limit,
 } from "firebase/firestore";
-import { ref, uploadBytes } from "firebase/storage";
 import type { LinkedDrive } from "@/types/backup";
 import { enumerateFiles } from "@/lib/sync-engine";
 import {
@@ -31,7 +30,7 @@ import {
 import type { SyncProgress } from "@/types/backup";
 import {
   getFirebaseFirestore,
-  getFirebaseStorage,
+  getFirebaseAuth,
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
@@ -196,7 +195,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       });
 
       const db = getFirebaseFirestore();
-      const storage = getFirebaseStorage();
 
       try {
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
@@ -299,14 +297,46 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
           const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
           const objectKey = `backups/${user.uid}/${drive.id}/${safePath}`;
-          const storageRef = ref(storage, objectKey);
+          const contentType = file.type || "application/octet-stream";
 
           let lastError: string | null = null;
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-              await uploadBytes(storageRef, file, {
-                contentType: file.type || "application/octet-stream",
+              const idToken = await getFirebaseAuth().currentUser?.getIdToken();
+              if (!idToken) throw new Error("Not authenticated");
+
+              const urlRes = await fetch("/api/backup/upload-url", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  drive_id: drive.id,
+                  relative_path: relativePath,
+                  content_type: contentType,
+                  user_id: user.uid,
+                }),
               });
+
+              if (urlRes.ok) {
+                const { uploadUrl } = await urlRes.json();
+                const putRes = await fetch(uploadUrl, {
+                  method: "PUT",
+                  body: file,
+                  headers: { "Content-Type": contentType },
+                  signal: controller.signal,
+                });
+                if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+              } else {
+                const data = await urlRes.json().catch(() => ({}));
+                if (urlRes.status === 503) {
+                  throw new Error(
+                    data?.error ?? "Backblaze B2 is not configured. All backup storage uses B2."
+                  );
+                }
+                throw new Error(data?.error ?? "Failed to get upload URL");
+              }
 
               await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,

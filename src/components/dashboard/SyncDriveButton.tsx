@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { HardDrive, RefreshCw, Loader2, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+  HardDrive,
+  Loader2,
+  AlertCircle,
+  ChevronDown,
+  Plus,
+} from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 
 export default function SyncDriveButton() {
@@ -17,24 +23,49 @@ export default function SyncDriveButton() {
     pickDirectory,
   } = useBackup();
 
+  const [showDriveList, setShowDriveList] = useState(false);
   const [linking, setLinking] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  const handleSync = async () => {
-    if (!fsAccessSupported) return;
-
-    if (linkedDrives.length === 0) {
-      setLinking(true);
-      try {
-        const handle = await pickDirectory();
-        const drive = await linkDrive(handle.name, handle);
-        await startSync(drive);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLinking(false);
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (listRef.current && !listRef.current.contains(e.target as Node)) {
+        setShowDriveList(false);
       }
+    }
+    if (showDriveList) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [showDriveList]);
+
+  const handleSelectDrive = async (
+    drive: (typeof linkedDrives)[number]
+  ) => {
+    setShowDriveList(false);
+    await startSync(drive);
+  };
+
+  const handleAddNewDrive = async () => {
+    if (!fsAccessSupported) return;
+    setLinking(true);
+    try {
+      const handle = await pickDirectory();
+      const drive = await linkDrive(handle.name, handle);
+      setShowDriveList(false);
+      await startSync(drive);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleSyncClick = () => {
+    if (linkedDrives.length === 0) {
+      handleAddNewDrive();
     } else {
-      await startSync(linkedDrives[0]);
+      setShowDriveList((prev) => !prev);
     }
   };
 
@@ -57,27 +88,64 @@ export default function SyncDriveButton() {
   }
 
   return (
-    <div className="space-y-2">
-      <button
-        type="button"
-        onClick={handleSync}
-        disabled={isSyncing || linking}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        {isSyncing || linking ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {linking ? "Linking..." : "Syncing..."}
-          </>
-        ) : (
-          <>
-            <HardDrive className="h-4 w-4" />
-            {linkedDrives.length > 0
-              ? "Sync"
-              : "Sync drive"}
-          </>
+    <div className="space-y-2" ref={listRef}>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={handleSyncClick}
+          disabled={isSyncing || linking}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isSyncing || linking ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {linking ? "Linking..." : "Syncing..."}
+            </>
+          ) : (
+            <>
+              <HardDrive className="h-4 w-4" />
+              Sync
+              {linkedDrives.length > 0 && (
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${showDriveList ? "rotate-180" : ""}`}
+                />
+              )}
+            </>
+          )}
+        </button>
+
+        {showDriveList && linkedDrives.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+            <p className="border-b border-neutral-100 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+              Select drive to sync
+            </p>
+            {linkedDrives.map((drive) => (
+              <button
+                key={drive.id}
+                type="button"
+                onClick={() => handleSelectDrive(drive)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                <HardDrive className="h-4 w-4 flex-shrink-0 text-neutral-500" />
+                <span className="truncate">{drive.name}</span>
+                {drive.last_synced_at && (
+                  <span className="ml-auto shrink-0 text-xs text-neutral-400">
+                    {new Date(drive.last_synced_at).toLocaleDateString()}
+                  </span>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={handleAddNewDrive}
+              className="flex w-full items-center gap-2 border-t border-neutral-100 px-3 py-2.5 text-sm text-bizzi-blue transition-colors hover:bg-bizzi-blue/5 dark:border-neutral-700 dark:hover:bg-bizzi-blue/10"
+            >
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              Add new drive...
+            </button>
+          </div>
         )}
-      </button>
+      </div>
 
       {isSyncing && syncProgress && (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
@@ -140,12 +208,9 @@ export default function SyncDriveButton() {
         </p>
       )}
 
-      {linkedDrives.length > 0 && !isSyncing && (
+      {linkedDrives.length > 0 && !isSyncing && !showDriveList && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {linkedDrives[0].name}
-          {linkedDrives[0].last_synced_at && (
-            <> · Last: {new Date(linkedDrives[0].last_synced_at).toLocaleDateString()}</>
-          )}
+          {linkedDrives.length} drive{linkedDrives.length > 1 ? "s" : ""} linked
         </p>
       )}
     </div>

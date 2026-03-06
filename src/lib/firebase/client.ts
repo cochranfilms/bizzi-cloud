@@ -32,6 +32,10 @@ export function getFirebaseFirestore(): Firestore {
   return getFirestore(getApp());
 }
 
+/**
+ * Firebase Storage - used ONLY for user profile images.
+ * All backup/sync file storage goes to Backblaze B2.
+ */
 export function getFirebaseStorage(): FirebaseStorage {
   return getStorage(getApp());
 }

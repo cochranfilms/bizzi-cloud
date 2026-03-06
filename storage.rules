@@ -1,7 +1,8 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /backups/{userId}/{allPaths=**} {
+    // Profile images only - backup/sync storage is in Backblaze B2
+    match /profiles/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
