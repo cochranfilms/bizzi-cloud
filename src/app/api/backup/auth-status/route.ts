@@ -1,8 +1,8 @@
-import { isB2Configured } from "@/lib/b2";
-import { getAuthConfigStatus } from "@/lib/firebase-admin";
+import { isB2Configured, objectExists } from "@/lib/b2";
+import { getAuthConfigStatus, getAdminApp } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
   const status = getAuthConfigStatus();
   const clientProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const mismatch =
@@ -15,7 +15,10 @@ export async function GET() {
     ? "Set B2_ACCESS_KEY_ID, B2_SECRET_ACCESS_KEY, B2_BUCKET_NAME, B2_ENDPOINT in Vercel (Backblaze B2 Console)."
     : null;
 
-  return NextResponse.json({
+  const url = new URL(request.url);
+  const runConnectivityTests = url.searchParams.get("test") === "1";
+
+  const result: Record<string, unknown> = {
     ...status,
     clientProjectId: clientProjectId ?? null,
     projectMismatch: mismatch,
@@ -30,5 +33,33 @@ export async function GET() {
         : mismatch
           ? "Project mismatch: FIREBASE_SERVICE_ACCOUNT_JSON project_id must match NEXT_PUBLIC_FIREBASE_PROJECT_ID."
           : null,
-  });
+  };
+
+  if (runConnectivityTests) {
+    const tests: Record<string, { ok: boolean; error?: string }> = {};
+
+    if (b2Configured) {
+      try {
+        await objectExists("__diagnostic-nonexistent__");
+        tests.b2 = { ok: true };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        tests.b2 = { ok: false, error: msg };
+      }
+    }
+
+    if (status.configured && !status.parseError) {
+      try {
+        getAdminApp();
+        tests.firebase_init = { ok: true };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        tests.firebase_init = { ok: false, error: msg };
+      }
+    }
+
+    result.connectivityTests = tests;
+  }
+
+  return NextResponse.json(result);
 }

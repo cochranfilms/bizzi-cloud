@@ -344,6 +344,7 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
         <video
           ref={videoRef}
           src={src}
+          crossOrigin="anonymous"
           controls
           preload="metadata"
           className={className}
@@ -358,6 +359,7 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
         <video
           ref={videoRef}
           src={src}
+          crossOrigin="anonymous"
           controls={!lutEnabled}
           preload="metadata"
           playsInline

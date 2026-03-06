@@ -100,12 +100,23 @@ async function handleThumbnail(request: Request) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Thumbnail generation failed";
+    const stack = err instanceof Error ? err.stack : undefined;
     const isNotFound =
       typeof msg === "string" &&
       (msg.includes("NoSuchKey") || msg.includes("NotFound") || msg.includes("not found"));
-    console.error("[thumbnail] Error:", msg, err);
-    return new NextResponse(msg, {
+    console.error("[thumbnail] Error:", msg, stack ?? err);
+
+    // Sharp can fail on malformed images or Vercel/serverless env - surface the real error
+    const isSharpError =
+      typeof msg === "string" &&
+      (msg.toLowerCase().includes("sharp") ||
+        msg.includes("vips") ||
+        msg.includes("Invalid"));
+    const body = process.env.NODE_ENV === "development" && isSharpError ? msg : undefined;
+
+    return new NextResponse(body ?? (isNotFound ? msg : "Thumbnail generation failed"), {
       status: isNotFound ? 404 : 500,
+      headers: body ? { "Content-Type": "text/plain" } : undefined,
     });
   }
 }

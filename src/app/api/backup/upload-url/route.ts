@@ -137,7 +137,8 @@ async function handleUploadUrl(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create upload URL";
     const name = err instanceof Error ? err.name : undefined;
-    console.error("[upload-url] B2 error:", name ?? "Unknown", message, err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[upload-url] B2 error:", name ?? "Unknown", message, stack ?? err);
 
     // Surface actionable hints for common B2 config issues
     let userMessage = message;
@@ -152,8 +153,20 @@ async function handleUploadUrl(request: Request) {
     } else if (typeof message === "string" && message.includes("NoSuchBucket")) {
       userMessage =
         "B2 bucket not found. Check B2_BUCKET_NAME and B2_ENDPOINT match your Backblaze B2 bucket.";
+    } else if (
+      typeof message === "string" &&
+      (message.includes("ENOTFOUND") || message.includes("getaddrinfo"))
+    ) {
+      userMessage =
+        "B2 endpoint unreachable. Check B2_ENDPOINT (e.g. https://s3.us-west-004.backblazeb2.com) and B2_REGION match your bucket.";
     }
 
-    return NextResponse.json({ error: userMessage }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: userMessage,
+        debug: process.env.NODE_ENV === "development" ? message : undefined,
+      },
+      { status: 500 }
+    );
   }
 }
