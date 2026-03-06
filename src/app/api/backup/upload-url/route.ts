@@ -44,7 +44,7 @@ async function handleUploadUrl(request: Request) {
 
   let uid: string;
 
-  if (isDevAuthBypass() && userIdFromBody) {
+  if (isDevAuthBypass() && typeof userIdFromBody === "string") {
     uid = userIdFromBody;
   } else {
     const authHeader = request.headers.get("Authorization");
