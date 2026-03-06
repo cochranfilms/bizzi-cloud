@@ -1,5 +1,5 @@
 import { isB2Configured, objectExists } from "@/lib/b2";
-import { getAuthConfigStatus, getAdminApp } from "@/lib/firebase-admin";
+import { getAuthConfigStatus, getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 
     if (status.configured && !status.parseError) {
       try {
-        getAdminApp();
+        getAdminFirestore();
         tests.firebase_init = { ok: true };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
