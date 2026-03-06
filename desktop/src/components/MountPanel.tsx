@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { HardDrive } from "lucide-react";
 
 interface MountPanelProps {
@@ -7,7 +8,49 @@ interface MountPanelProps {
 
 export function MountPanel({ settings, onUpdate }: MountPanelProps) {
   const apiBaseUrl = String(settings.apiBaseUrl ?? "http://localhost:3000");
-  const isMounted = false; // placeholder until FUSE is wired
+  const [fuseAvailable, setFuseAvailable] = useState<boolean | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [mountPoint, setMountPoint] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.bizzi?.mount?.isFuseAvailable().then(setFuseAvailable).catch(() => setFuseAvailable(false));
+  }, []);
+
+  useEffect(() => {
+    if (!window.bizzi?.mount) return;
+    const refresh = () =>
+      window.bizzi?.mount?.getStatus().then((s) => {
+        setIsMounted(s.isMounted);
+        setMountPoint(s.mountPoint);
+      });
+    refresh();
+  }, [fuseAvailable]);
+
+  const handleMountToggle = async () => {
+    if (!window.bizzi?.mount) return;
+    setLoading(true);
+    setError(null);
+    try {
+      if (isMounted) {
+        await window.bizzi.mount.unmount();
+        setIsMounted(false);
+        setMountPoint(null);
+      } else {
+        const { mountPoint: point } = await window.bizzi.mount.mount(apiBaseUrl);
+        setIsMounted(true);
+        setMountPoint(point);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const canMount = fuseAvailable === true && !loading;
+  const buttonDisabled = !canMount || (isMounted && loading);
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
@@ -25,18 +68,39 @@ export function MountPanel({ settings, onUpdate }: MountPanelProps) {
             type="url"
             value={apiBaseUrl}
             onChange={(e) => onUpdate("apiBaseUrl", e.target.value)}
-            className="w-full px-3 py-2 rounded bg-zinc-800 border border-zinc-700 text-sm"
+            disabled={isMounted}
+            className="w-full px-3 py-2 rounded bg-zinc-800 border border-zinc-700 text-sm disabled:opacity-60"
           />
         </div>
         <button
-          disabled={true}
-          className="w-full py-2 rounded bg-zinc-700 text-zinc-400 cursor-not-allowed text-sm"
+          disabled={buttonDisabled}
+          onClick={handleMountToggle}
+          className={`w-full py-2 rounded text-sm transition-colors ${
+            canMount
+              ? "bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+              : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+          }`}
         >
-          {isMounted ? "Unmount" : "Mount (requires macFUSE / WinFsp)"}
+          {loading ? "Please wait…" : isMounted ? "Unmount" : "Mount"}
         </button>
-        <p className="text-xs text-zinc-500">
-          Install macFUSE (macOS) or WinFsp (Windows) to enable mounting.
-        </p>
+        {fuseAvailable === false && (
+          <p className="text-xs text-amber-500">
+            Install macFUSE (macOS) or WinFsp (Windows) to enable mounting.
+          </p>
+        )}
+        {fuseAvailable === true && !isMounted && (
+          <p className="text-xs text-zinc-500">
+            macFUSE / WinFsp detected. Click Mount to create a local volume.
+          </p>
+        )}
+        {isMounted && mountPoint && (
+          <p className="text-xs text-emerald-500">
+            Mounted at <code className="bg-zinc-800 px-1 rounded">{mountPoint}</code>
+          </p>
+        )}
+        {error && (
+          <p className="text-xs text-red-500">{error}</p>
+        )}
       </div>
     </section>
   );

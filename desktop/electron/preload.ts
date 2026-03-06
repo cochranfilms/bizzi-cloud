@@ -6,4 +6,11 @@ contextBridge.exposeInMainWorld("bizzi", {
     ipcRenderer.invoke("set-settings", key, value),
   getPath: (name: "userData" | "cacheBase") =>
     ipcRenderer.invoke("get-path", name),
+  mount: {
+    isFuseAvailable: () => ipcRenderer.invoke("mount-fuse-available"),
+    getStatus: () => ipcRenderer.invoke("mount-status"),
+    mount: (apiBaseUrl: string) =>
+      ipcRenderer.invoke("mount-mount", { apiBaseUrl }),
+    unmount: () => ipcRenderer.invoke("mount-unmount"),
+  },
 });

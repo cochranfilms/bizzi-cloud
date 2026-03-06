@@ -1,6 +1,9 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import Store from "electron-store";
+import { MountService } from "./mount/mount-service";
+
+const mountService = new MountService();
 
 const store = new Store<{
   apiBaseUrl: string;
@@ -60,3 +63,20 @@ ipcMain.handle("get-path", (_e, name: "userData" | "cacheBase") => {
   if (name === "cacheBase") return store.get("cacheBaseDir");
   return app.getPath("userData");
 });
+
+// Mount IPC
+ipcMain.handle("mount-fuse-available", () => mountService.isFuseAvailable());
+ipcMain.handle("mount-status", () => ({
+  isMounted: mountService.isMounted(),
+  mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
+}));
+ipcMain.handle("mount-mount", async (_e, { apiBaseUrl }: { apiBaseUrl: string }) => {
+  const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));
+  await mountService.mount({
+    apiBaseUrl: apiBaseUrl || String(store.get("apiBaseUrl") ?? "http://localhost:3000"),
+    cacheBaseDir,
+    getAuthToken: async () => null,
+  });
+  return { mountPoint: mountService.getMountPoint() };
+});
+ipcMain.handle("mount-unmount", () => mountService.unmount());

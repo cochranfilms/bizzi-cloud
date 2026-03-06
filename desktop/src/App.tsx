@@ -9,6 +9,12 @@ declare global {
       getSettings: () => Promise<Record<string, unknown>>;
       setSettings: (key: string, value: unknown) => Promise<Record<string, unknown>>;
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
+      mount?: {
+        isFuseAvailable: () => Promise<boolean>;
+        getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
+        mount: (apiBaseUrl: string) => Promise<{ mountPoint: string }>;
+        unmount: () => Promise<void>;
+      };
     };
   }
 }
