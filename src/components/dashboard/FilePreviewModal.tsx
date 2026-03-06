@@ -28,6 +28,7 @@ interface FilePreviewModalProps {
 
 export default function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
+  const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,49 +43,63 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
     if (!file?.objectKey) return;
     setLoading(true);
     setError(null);
+    setVideoStreamUrl(null);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
-      const res = await fetch("/api/backup/preview-url", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          object_key: file.objectKey,
-          user_id: getFirebaseAuth().currentUser?.uid,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Failed to load preview");
-      setFullUrl(data.url);
+      const uid = getFirebaseAuth().currentUser?.uid;
+      const payload = {
+        object_key: file.objectKey,
+        user_id: uid,
+      };
+
+      if (previewType === "video") {
+        const [previewRes, streamRes] = await Promise.all([
+          fetch("/api/backup/preview-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          }),
+          fetch("/api/backup/video-stream-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          }),
+        ]);
+        const previewData = await previewRes.json();
+        const streamData = await streamRes.json();
+        if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
+        setFullUrl(previewData.url);
+        if (streamRes.ok && streamData.streamUrl) {
+          setVideoStreamUrl(streamData.streamUrl);
+        } else {
+          setVideoStreamUrl(previewData.url);
+        }
+      } else {
+        const res = await fetch("/api/backup/preview-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? "Failed to load preview");
+        setFullUrl(data.url);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [file?.objectKey]);
-
-  const getVideoStreamUrl = useCallback(async () => {
-    if (!file?.objectKey) throw new Error("No file");
-    const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-    if (!token) throw new Error("Not authenticated");
-    const res = await fetch("/api/backup/video-stream-url", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        object_key: file.objectKey,
-        user_id: getFirebaseAuth().currentUser?.uid,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error ?? "Failed to get stream URL");
-    return data.streamUrl as string;
-  }, [file?.objectKey]);
+  }, [file?.objectKey, previewType]);
 
   useEffect(() => {
     if (file) fetchFullUrl();
@@ -165,7 +180,10 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType !== "image" && fullUrl)) &&
+            (previewType === "video" && (videoStreamUrl || fullUrl)) ||
+            (previewType !== "image" &&
+              previewType !== "video" &&
+              fullUrl)) &&
             !error && (
               <>
                 {previewType === "image" && lowResPreviewUrl && (
@@ -181,10 +199,9 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                     </p>
                   </div>
                 )}
-                {previewType === "video" && fullUrl && (
+                {previewType === "video" && (videoStreamUrl || fullUrl) && (
                   <VideoWithLUT
-                    src={fullUrl}
-                    getStreamUrl={getVideoStreamUrl}
+                    src={videoStreamUrl || fullUrl || ""}
                     className="max-h-[70vh] max-w-full rounded-lg"
                   />
                 )}
