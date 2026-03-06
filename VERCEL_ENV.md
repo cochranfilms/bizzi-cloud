@@ -26,6 +26,16 @@ Set these in **Vercel > Project > Settings > Environment Variables**:
 | `B2_ENDPOINT` | S3-compatible endpoint | Bucket Settings > S3 Endpoint, e.g. `https://s3.us-west-004.backblazeb2.com` |
 | `B2_REGION` | Region code | From endpoint, e.g. `us-west-004` |
 
+### CORS (required for browser uploads)
+
+After adding B2 env vars, run once to allow your app origin to upload to B2:
+
+```bash
+npm run b2:cors
+```
+
+Uses `.env.local` or env vars. Edit `scripts/set-b2-cors.mjs` to add custom domains (e.g. preview URLs).
+
 ## Required for API auth (Backblaze uploads)
 
 | Variable | Description | Where to get it |
@@ -38,7 +48,9 @@ Visit `https://your-app.vercel.app/api/backup/auth-status` to check: project_id 
 
 ### FIREBASE_SERVICE_ACCOUNT_JSON format
 
-Either paste the raw JSON (minified) or escape it. Example value:
-```json
-{"type":"service_account","project_id":"bizzi-cloud","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"firebase-adminsdk-...@bizzi-cloud.iam.gserviceaccount.com","client_id":"...","auth_uri":"...","token_uri":"...","auth_provider_x509_cert_url":"...","client_x509_cert_url":"..."}
-```
+**Best method:** Download the key from Firebase Console → Service Accounts → Generate new private key. Open the `.json` file, copy everything (it’s one line), and paste into Vercel. Do not edit or reformat it.
+
+The `private_key` field must be a quoted string with `\n` for newlines, e.g.:
+`"private_key":"-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"`
+
+If you see "No number after minus sign" – the private_key is unquoted. Paste the full JSON from the downloaded file unchanged.

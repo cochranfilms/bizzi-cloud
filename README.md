@@ -38,6 +38,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 1. Create a bucket in Backblaze B2
 2. Create an Application Key with Read and Write access
 3. Add B2 env vars to Vercel (see `VERCEL_ENV.md`)
+4. **Configure CORS** on the bucket (required for browser uploads): run `npm run b2:cors` with B2 env vars set
 
 ### Troubleshooting: "Missing or insufficient permissions"
 

@@ -16,7 +16,9 @@ export async function GET() {
     hint: !status.configured
       ? "Set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel (full JSON from Firebase Console)."
       : status.parseError
-        ? "Fix the JSON: ensure it's valid, minified, with escaped newlines in private_key."
+        ? status.parseError.includes("minus sign")
+          ? "The private_key value is unquoted or broken. Paste the ENTIRE JSON from the downloaded file—don't edit it. In the .json file, private_key must be a quoted string with \\n for newlines."
+          : "Fix the JSON: ensure it's valid, minified, with escaped newlines in private_key."
         : mismatch
           ? "Project mismatch: FIREBASE_SERVICE_ACCOUNT_JSON project_id must match NEXT_PUBLIC_FIREBASE_PROJECT_ID."
           : null,
