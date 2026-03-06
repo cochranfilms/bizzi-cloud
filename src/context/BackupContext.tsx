@@ -195,8 +195,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       });
 
       const db = getFirebaseFirestore();
+      let failStep = "";
 
       try {
+        failStep = "create backup snapshot";
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
           linked_drive_id: drive.id,
           userId: user.uid,
@@ -224,6 +226,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           bytesTotal += entry.size;
         }
 
+        failStep = "query backup snapshots";
         const existingSnap = await getDocs(
           query(
             collection(db, "backup_snapshots"),
@@ -235,6 +238,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         );
         const existingFiles: { relative_path: string; modified_at: string | null }[] = [];
         if (!existingSnap.empty) {
+          failStep = "query backup files";
           const filesSnap = await getDocs(
             query(
               collection(db, "backup_files"),
@@ -343,6 +347,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
                 linked_drive_id: drive.id,
+                userId: user.uid,
                 relative_path: relativePath,
                 object_key: objectKey,
                 size_bytes: file.size,
@@ -373,6 +378,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               ? `${failedFiles.length} file(s) failed`
               : null;
 
+        failStep = "update backup snapshot";
         await updateDoc(doc(db, "backup_snapshots", snapshotId), {
           status:
             controller.signal.aborted || failedFiles.length > 0
@@ -385,6 +391,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!controller.signal.aborted && failedFiles.length === 0) {
+          failStep = "update drive / profile";
           await updateDoc(doc(db, "linked_drives", drive.id), {
             last_synced_at: new Date().toISOString(),
           });
@@ -433,11 +440,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         const raw = err instanceof Error ? err.message : "Sync failed";
-        const message =
+        const permHint =
           raw.toLowerCase().includes("insufficient") ||
-          raw.toLowerCase().includes("permission denied")
-            ? `${raw} — Run: firebase deploy --only firestore:rules`
-            : raw;
+          raw.toLowerCase().includes("permission denied");
+        const message = permHint
+          ? failStep
+            ? `[${failStep}] ${raw} — Deploy rules: firebase deploy --only firestore:rules (confirm project: firebase use)`
+            : `${raw} — Deploy rules: firebase deploy --only firestore:rules (confirm project: firebase use)`
+          : raw;
         setError(message);
         setSyncProgress((prev) =>
           prev

@@ -14,9 +14,11 @@ service cloud.firestore {
     }
     match /backup_files/{fileId} {
       allow read, write: if request.auth != null
-        && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid;
+        && (resource.data.userId == request.auth.uid
+          || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
+            && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid));
       allow create: if request.auth != null
-        && get(/databases/$(database)/documents/linked_drives/$(request.resource.data.linked_drive_id)).data.userId == request.auth.uid;
+        && request.auth.uid == request.resource.data.userId;
     }
   }
 }
