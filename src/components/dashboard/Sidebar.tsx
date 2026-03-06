@@ -11,6 +11,7 @@ import {
   Trash2,
   Send,
   Search,
+  Settings,
 } from "lucide-react";
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
   { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
   { href: "/dashboard/trash", label: "Deleted files", icon: Trash2 },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export default function Sidebar() {

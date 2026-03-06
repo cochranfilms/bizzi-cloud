@@ -5,8 +5,10 @@ import {
   collection,
   doc,
   deleteDoc,
+  getDoc,
   getDocs,
   query,
+  runTransaction,
   where,
   orderBy,
   limit,
@@ -226,7 +228,27 @@ export function useCloudFiles() {
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
       const db = getFirebaseFirestore();
-      await deleteDoc(doc(db, "backup_files", fileId));
+      const fileRef = doc(db, "backup_files", fileId);
+      const profileRef = doc(db, "profiles", user.uid);
+
+      await runTransaction(db, async (tx) => {
+        const fileSnap = await tx.get(fileRef);
+        if (!fileSnap.exists()) return;
+
+        const fileData = fileSnap.data();
+        const sizeBytes = typeof fileData.size_bytes === "number" ? fileData.size_bytes : 0;
+
+        const profileSnap = await tx.get(profileRef);
+        const currentUsed =
+          profileSnap.exists() && typeof profileSnap.data()?.storage_used_bytes === "number"
+            ? profileSnap.data()!.storage_used_bytes
+            : 0;
+        const newUsed = Math.max(0, currentUsed - sizeBytes);
+
+        tx.update(profileRef, { storage_used_bytes: newUsed });
+        tx.delete(fileRef);
+      });
+
       await fetchCloudFiles();
     },
     [user, fetchCloudFiles]

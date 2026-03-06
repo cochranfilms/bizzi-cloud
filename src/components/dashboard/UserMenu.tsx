@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Settings, LogOut, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
@@ -20,7 +21,8 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
   const { user } = useAuth();
 
   const displayName = user?.displayName ?? user?.email?.split("@")[0] ?? "User";
-  const initials = (user?.email ?? "U").slice(0, 2).toUpperCase();
+  const initials = (user?.displayName ?? user?.email ?? "U").slice(0, 2).toUpperCase();
+  const photoURL = user?.photoURL ?? null;
   const email = user?.email ?? "";
 
   useEffect(() => {
@@ -44,16 +46,38 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
         onClick={() => setOpen(!open)}
         className={
           compact
-            ? "flex h-8 w-8 items-center justify-center rounded-full bg-bizzi-blue text-sm font-medium text-white transition-opacity hover:opacity-90"
+            ? "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-bizzi-blue text-sm font-medium text-white transition-opacity hover:opacity-90"
             : "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
         }
       >
         {compact ? (
-          initials
+          photoURL ? (
+            <Image
+              src={photoURL}
+              alt=""
+              width={32}
+              height={32}
+              className="h-full w-full object-cover"
+              unoptimized
+            />
+          ) : (
+            initials
+          )
         ) : (
           <>
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-bizzi-blue text-sm font-medium text-white">
-              {initials}
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-bizzi-blue text-sm font-medium text-white">
+              {photoURL ? (
+                <Image
+                  src={photoURL}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                initials
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
@@ -84,6 +108,10 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
           </div>
           <button
             type="button"
+            onClick={() => {
+              setOpen(false);
+              router.push("/dashboard/settings");
+            }}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
             <Settings className="h-4 w-4" />
