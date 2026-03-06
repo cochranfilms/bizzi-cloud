@@ -175,6 +175,7 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
   }, []);
 
   useEffect(() => {
+    if (!lutEnabled) return;
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -226,8 +227,9 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
       gl.deleteShader(vs);
       gl.deleteShader(fs);
       gl.deleteProgram(program);
+      setLutReady(false);
     };
-  }, [loadLUT]);
+  }, [loadLUT, lutEnabled]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -240,8 +242,8 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
-      const w = Math.floor(rect.width * dpr);
-      const h = Math.floor(rect.height * dpr);
+      const w = Math.max(1, Math.floor(rect.width * dpr));
+      const h = Math.max(1, Math.floor(rect.height * dpr));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
@@ -255,6 +257,11 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
         return;
       }
       resize();
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        requestAnimationFrame(render);
+        return;
+      }
       gl.useProgram(program);
 
       const posLoc = gl.getAttribLocation(program, "a_position");
@@ -411,9 +418,10 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
               className={className}
               style={{
                 width: "100%",
-                height: "auto",
                 maxHeight: "70vh",
                 objectFit: "contain",
+                aspectRatio: "16 / 9",
+                minHeight: 200,
               }}
             />
             {lutReady && (
