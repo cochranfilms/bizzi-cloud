@@ -1,16 +1,9 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { Play, Pause } from "lucide-react";
 
 const LUT_SIZE = 33;
 const LUT_URL = "/CINECOLOR_S-LOG3.cube";
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 /**
  * Parse a .cube file and return raw RGBA data for a 2D texture (size*size x size).
@@ -163,9 +156,6 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
     lutTexture: WebGLTexture;
     videoTexture: WebGLTexture;
   } | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   const loadLUT = useCallback(async () => {
     const res = await fetch(LUT_URL);
@@ -313,32 +303,6 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
     };
   }, [lutEnabled, lutReady]);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
-    const onDurationChange = () => setDuration(video.duration);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    video.addEventListener("timeupdate", onTimeUpdate);
-    video.addEventListener("durationchange", onDurationChange);
-    video.addEventListener("play", onPlay);
-    video.addEventListener("pause", onPause);
-    return () => {
-      video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeEventListener("durationchange", onDurationChange);
-      video.removeEventListener("play", onPlay);
-      video.removeEventListener("pause", onPause);
-    };
-  }, []);
-
-  const handlePlayPause = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) video.play();
-    else video.pause();
-  };
-
   const effectiveSrc = lutEnabled && streamUrl ? streamUrl : src;
 
   const handleLUTToggle = async () => {
@@ -360,14 +324,6 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
     } else {
       setLutEnabled(true);
     }
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const t = parseFloat(e.target.value);
-    video.currentTime = t;
-    setCurrentTime(t);
   };
 
   if (error) {
@@ -401,57 +357,23 @@ export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWith
           ref={videoRef}
           src={effectiveSrc}
           crossOrigin="anonymous"
-          controls={!lutEnabled}
-          preload="metadata"
+          controls
+          preload="auto"
           playsInline
           key={effectiveSrc}
-          className={
-            lutEnabled
-              ? "absolute h-0 w-0 overflow-hidden opacity-0"
-              : `max-h-[70vh] w-full rounded-lg ${className ?? ""}`
-          }
+          className={`max-h-[70vh] w-full rounded-lg ${className ?? ""}`}
         />
         {lutEnabled && (
-          <>
-            <canvas
-              ref={canvasRef}
-              className={className}
-              style={{
-                width: "100%",
-                maxHeight: "70vh",
-                objectFit: "contain",
-                aspectRatio: "16 / 9",
-                minHeight: 200,
-              }}
-            />
-            {lutReady && (
-              <div className="mt-2 flex items-center gap-3 rounded-lg bg-neutral-800/90 px-3 py-2">
-                <button
-                  type="button"
-                  onClick={handlePlayPause}
-                  className="rounded p-1.5 text-neutral-300 hover:bg-neutral-600 hover:text-white"
-                  aria-label={isPlaying ? "Pause" : "Play"}
-                >
-                  {isPlaying ? (
-                    <Pause className="h-5 w-5" />
-                  ) : (
-                    <Play className="h-5 w-5" />
-                  )}
-                </button>
-                <span className="text-xs text-neutral-400">
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  value={currentTime}
-                  onChange={handleSeek}
-                  className="flex-1 accent-bizzi-blue"
-                />
-              </div>
-            )}
-          </>
+          <canvas
+            ref={canvasRef}
+            className="absolute left-0 right-0 top-0 rounded-t-lg"
+            style={{
+              width: "100%",
+              height: "calc(100% - 50px)",
+              maxHeight: "calc(70vh - 50px)",
+              pointerEvents: "none",
+            }}
+          />
         )}
       </div>
       <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
