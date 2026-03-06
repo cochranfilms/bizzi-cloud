@@ -45,7 +45,11 @@ export async function POST(request: Request) {
     }
   }
 
-  const { drive_id: driveId, relative_path: relativePath, content_type: contentType } = body;
+  const { drive_id: driveId, relative_path: relativePath, content_type: contentType, validate_only: validateOnly } = body;
+
+  if (validateOnly === true) {
+    return NextResponse.json({ ok: true, uid });
+  }
 
   if (!driveId || !relativePath || typeof relativePath !== "string") {
     return NextResponse.json(

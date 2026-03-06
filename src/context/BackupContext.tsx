@@ -279,6 +279,34 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           currentFile: toUpload[0]?.relativePath ?? null,
         });
 
+        if (toUpload.length > 0) {
+          failStep = "upload auth (pre-flight)";
+          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+          if (!idToken) throw new Error("Not authenticated. Sign out and back in, then try again.");
+          const preflight = await fetch("/api/backup/upload-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              drive_id: drive.id,
+              relative_path: toUpload[0].relativePath,
+              content_type: toUpload[0].file.type || "application/octet-stream",
+              user_id: user.uid,
+              validate_only: true,
+            }),
+          });
+          if (!preflight.ok) {
+            const data = await preflight.json().catch(() => ({}));
+            const msg =
+              preflight.status === 401
+                ? (data?.error ?? "Upload auth failed. Local dev: add B2_SKIP_AUTH_FOR_TESTING=true to .env.local. Production: set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.")
+                : data?.error ?? `Upload auth failed: ${preflight.status}`;
+            throw new Error(msg);
+          }
+        }
+
         let bytesSynced = 0;
         let filesCompleted = 0;
         const failedFiles: string[] = [];
