@@ -3,25 +3,22 @@
 import { useState } from "react";
 import { Folder, LayoutGrid, List } from "lucide-react";
 import FolderCard, { type FolderItem } from "./FolderCard";
-
-const mockFolders: FolderItem[] = [
-  { name: "Projects", type: "folder", key: "Projects/", items: 0 },
-  { name: "Clients", type: "folder", key: "Clients/", items: 0, isShared: true },
-  { name: "Vlog Content", type: "folder", key: "Vlog Content/", items: 0 },
-  { name: "Contracts", type: "folder", key: "Contracts/", items: 0 },
-  { name: "James Williams", type: "folder", key: "James Williams/", items: 0 },
-  { name: "Dr. Raya Package", type: "folder", key: "Dr. Raya Package/", items: 0 },
-];
-
-const suggestedFolders = [
-  { name: "Projects", type: "folder", key: "Projects/", items: 0 },
-  { name: "Clients", type: "folder", key: "Clients/", items: 0 },
-  { name: "Vlog Content", type: "folder", key: "Vlog Content/", items: 0 },
-];
+import FileCard from "./FileCard";
+import { useCloudFiles } from "@/hooks/useCloudFiles";
 
 export default function FileGrid() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
+  const { driveFolders, recentFiles, loading } = useCloudFiles();
+
+  const folderItems: FolderItem[] = driveFolders.map((d) => ({
+    name: d.name,
+    type: "folder" as const,
+    key: d.key,
+    items: d.items,
+    hideShare: true,
+  }));
+  const pinnedFolders = folderItems.slice(0, 3);
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -40,7 +37,7 @@ export default function FileGrid() {
           </button>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-1">
-          {suggestedFolders.map((item) => (
+          {pinnedFolders.map((item) => (
             <div
               key={item.key}
               className="flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
@@ -115,11 +112,47 @@ export default function FileGrid() {
         </div>
 
         {/* File grid */}
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {mockFolders.map((item) => (
-            <FolderCard key={item.key} item={item} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Loading your files…
+          </div>
+        ) : activeTab === "recents" ? (
+          <>
+            {folderItems.length > 0 && (
+              <>
+                <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                  Your synced drives
+                </h3>
+                <div className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {folderItems.map((item) => (
+                    <FolderCard key={item.key} item={item} />
+                  ))}
+                </div>
+              </>
+            )}
+            {recentFiles.length > 0 && (
+              <>
+                <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                  Recently synced files
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {recentFiles.map((file) => (
+                    <FileCard key={file.id} file={file} />
+                  ))}
+                </div>
+              </>
+            )}
+            {!loading && folderItems.length === 0 && recentFiles.length === 0 && (
+              <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                No files yet. Click Sync in the Backup section to sync a drive.
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Starred files coming soon. Use Recents to see your synced drives and recent files.
+          </div>
+        )}
       </section>
     </div>
   );

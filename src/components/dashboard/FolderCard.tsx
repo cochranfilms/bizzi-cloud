@@ -10,6 +10,8 @@ export interface FolderItem {
   key: string;
   items: number;
   isShared?: boolean;
+  /** Hide share button (e.g. for synced drives) */
+  hideShare?: boolean;
 }
 
 interface FolderCardProps {
@@ -48,17 +50,19 @@ export default function FolderCard({ item }: FolderCardProps) {
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           {item.items} {item.items === 1 ? "item" : "items"}
         </p>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShareOpen(true);
-          }}
-          className="absolute right-2 top-2 rounded-lg p-2 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-700"
-          aria-label="Share folder"
-        >
-          <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
-        </button>
+        {!item.hideShare && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShareOpen(true);
+            }}
+            className="absolute right-2 top-2 rounded-lg p-2 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-700"
+            aria-label="Share folder"
+          >
+            <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+          </button>
+        )}
       </div>
 
       <ShareModal
