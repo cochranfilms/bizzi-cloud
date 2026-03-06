@@ -37,7 +37,7 @@ export class MountService {
   }
 
   private async findRclone(): Promise<string | null> {
-    return new Promise((resolve) => {
+    const fromPath = await new Promise<string | null>((resolve) => {
       const proc = spawn("which", ["rclone"], { stdio: ["ignore", "pipe", "pipe"] });
       let out = "";
       proc.stdout?.on("data", (d) => { out += d.toString(); });
@@ -46,6 +46,24 @@ export class MountService {
         else resolve(null);
       });
     });
+    if (fromPath) return fromPath;
+
+    // On macOS, GUI apps get a minimal PATH (no /usr/local/bin or /opt/homebrew/bin).
+    // Check common install locations directly when `which` fails.
+    if (process.platform === "darwin") {
+      const candidates = [
+        "/usr/local/bin/rclone",
+        "/opt/homebrew/bin/rclone",
+      ];
+      for (const p of candidates) {
+        try {
+          if (fs.existsSync(p)) return p;
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return null;
   }
 
   isMounted(): boolean {
