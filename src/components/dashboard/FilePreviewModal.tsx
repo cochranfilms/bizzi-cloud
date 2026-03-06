@@ -28,7 +28,6 @@ interface FilePreviewModalProps {
 
 export default function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
-  const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,12 +42,9 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
     if (!file?.objectKey) return;
     setLoading(true);
     setError(null);
-    setVideoStreamUrl(null);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
-      const uid = getFirebaseAuth().currentUser?.uid;
-
       const res = await fetch("/api/backup/preview-url", {
         method: "POST",
         headers: {
@@ -57,38 +53,38 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
         },
         body: JSON.stringify({
           object_key: file.objectKey,
-          user_id: uid,
+          user_id: getFirebaseAuth().currentUser?.uid,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Failed to load preview");
       setFullUrl(data.url);
-
-      if (previewType === "video") {
-        const streamRes = await fetch("/api/backup/video-stream-url", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            object_key: file.objectKey,
-            user_id: uid,
-          }),
-        });
-        const streamData = await streamRes.json();
-        if (streamRes.ok && streamData.streamUrl) {
-          setVideoStreamUrl(streamData.streamUrl);
-        } else {
-          setVideoStreamUrl(data.url);
-        }
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [file?.objectKey, previewType]);
+  }, [file?.objectKey]);
+
+  const getVideoStreamUrl = useCallback(async () => {
+    if (!file?.objectKey) throw new Error("No file");
+    const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+    if (!token) throw new Error("Not authenticated");
+    const res = await fetch("/api/backup/video-stream-url", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        object_key: file.objectKey,
+        user_id: getFirebaseAuth().currentUser?.uid,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error ?? "Failed to get stream URL");
+    return data.streamUrl as string;
+  }, [file?.objectKey]);
 
   useEffect(() => {
     if (file) fetchFullUrl();
@@ -97,6 +93,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
       setError(null);
     }
   }, [file, fetchFullUrl]);
+
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -168,10 +165,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType === "video" && (videoStreamUrl || fullUrl)) ||
-            (previewType !== "image" &&
-              previewType !== "video" &&
-              fullUrl)) &&
+            (previewType !== "image" && fullUrl)) &&
             !error && (
               <>
                 {previewType === "image" && lowResPreviewUrl && (
@@ -187,9 +181,10 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                     </p>
                   </div>
                 )}
-                {previewType === "video" && (videoStreamUrl || fullUrl) && (
+                {previewType === "video" && fullUrl && (
                   <VideoWithLUT
-                    src={videoStreamUrl || fullUrl || ""}
+                    src={fullUrl}
+                    getStreamUrl={getVideoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
                   />
                 )}

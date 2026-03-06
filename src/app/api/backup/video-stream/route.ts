@@ -1,10 +1,15 @@
 import { createHmac } from "crypto";
+import { Readable } from "stream";
 import {
   getObject,
   getObjectRange,
   isB2Configured,
 } from "@/lib/b2";
 import { NextResponse } from "next/server";
+
+function toWebStream(nodeStream: NodeJS.ReadableStream): ReadableStream {
+  return Readable.toWeb(nodeStream as Readable) as ReadableStream;
+}
 
 function verifyStreamSignature(
   objectKey: string,
@@ -62,7 +67,7 @@ export async function GET(request: Request) {
       if (contentType) headers["Content-Type"] = contentType;
       if (contentRange) headers["Content-Range"] = contentRange;
 
-      return new NextResponse(body as unknown as ReadableStream, {
+      return new NextResponse(toWebStream(body), {
         status: 206,
         headers,
       });
@@ -76,7 +81,7 @@ export async function GET(request: Request) {
     };
     if (contentType) headers["Content-Type"] = contentType;
 
-    return new NextResponse(body as unknown as ReadableStream, {
+    return new NextResponse(toWebStream(body), {
       status: 200,
       headers,
     });

@@ -145,14 +145,17 @@ void main() {
 
 interface VideoWithLUTProps {
   src: string;
+  getStreamUrl?: () => Promise<string>;
   className?: string;
 }
 
-export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
+export default function VideoWithLUT({ src, getStreamUrl, className }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
   const [lutReady, setLutReady] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [lutLoading, setLutLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const glRef = useRef<{
     gl: WebGL2RenderingContext;
@@ -329,6 +332,29 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
     else video.pause();
   };
 
+  const effectiveSrc = lutEnabled && streamUrl ? streamUrl : src;
+
+  const handleLUTToggle = async () => {
+    if (lutEnabled) {
+      setLutEnabled(false);
+      return;
+    }
+    if (getStreamUrl && !streamUrl) {
+      setLutLoading(true);
+      try {
+        const url = await getStreamUrl();
+        setStreamUrl(url);
+        setLutEnabled(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load stream for LUT");
+      } finally {
+        setLutLoading(false);
+      }
+    } else {
+      setLutEnabled(true);
+    }
+  };
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const video = videoRef.current;
     if (!video) return;
@@ -356,13 +382,22 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative w-full" style={{ maxHeight: "70vh" }}>
+        {lutLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-900/90 rounded-lg">
+            <div className="flex flex-col items-center gap-2 text-neutral-400">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              <span className="text-sm">Loading LUT preview…</span>
+            </div>
+          </div>
+        )}
         <video
           ref={videoRef}
-          src={src}
+          src={effectiveSrc}
           crossOrigin="anonymous"
           controls={!lutEnabled}
           preload="metadata"
           playsInline
+          key={effectiveSrc}
           className={
             lutEnabled
               ? "absolute h-0 w-0 overflow-hidden opacity-0"
@@ -414,7 +449,8 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
       <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
         <button
           type="button"
-          onClick={() => setLutEnabled((v) => !v)}
+          onClick={handleLUTToggle}
+          disabled={lutLoading}
           className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
             lutEnabled
               ? "bg-bizzi-blue text-white"

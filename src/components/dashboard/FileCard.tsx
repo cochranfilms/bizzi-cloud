@@ -85,7 +85,11 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           />
         </div>
       )}
-      <div className="mb-3 flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
+      <div
+        className={`mb-3 flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
+          isVideo ? "w-full aspect-video" : "h-16 w-16"
+        }`}
+      >
         {thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, not a static asset
           <img
