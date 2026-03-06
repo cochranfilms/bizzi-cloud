@@ -1,0 +1,22 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "linked_drives",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "completed_at", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
