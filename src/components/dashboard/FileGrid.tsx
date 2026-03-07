@@ -20,6 +20,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
+import { useConfirm } from "@/hooks/useConfirm";
 import { useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -93,6 +94,7 @@ export default function FileGrid() {
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
+  const { confirm } = useConfirm();
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -318,12 +320,11 @@ export default function FileGrid() {
       folderCount > 0
         ? `${folderCount} drive${folderCount === 1 ? "" : "s"} will be moved to trash (or unlinked if empty). `
         : "";
-    if (
-      !window.confirm(
-        `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      message: `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`,
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       let didUnlinkCurrentDrive = false;
@@ -361,6 +362,7 @@ export default function FileGrid() {
     clearSelection,
     refetch,
     loadDriveFiles,
+    confirm,
   ]);
 
   return (
@@ -420,7 +422,8 @@ export default function FileGrid() {
                               const msg = item.items === 0
                                 ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
                                 : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                              if (window.confirm(msg)) {
+                              const ok = await confirm({ message: msg, destructive: true });
+                              if (ok) {
                                 await deleteFolder(drive, item.items);
                                 await refetch();
                                 await refetchPinned();
@@ -595,7 +598,8 @@ export default function FileGrid() {
                                   const msg = item.items === 0
                                     ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
                                     : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                                  if (window.confirm(msg)) {
+                                  const ok = await confirm({ message: msg, destructive: true });
+                                  if (ok) {
                                     await deleteFolder(drive, item.items);
                                     if (currentDriveId === driveId) closeDrive();
                                     await refetch();

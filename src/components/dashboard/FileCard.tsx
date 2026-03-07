@@ -14,6 +14,7 @@ import ShareModal from "./ShareModal";
 import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
+import { useConfirm } from "@/hooks/useConfirm";
 
 interface FileCardProps {
   file: RecentFile;
@@ -80,15 +81,15 @@ export default function FileCard({
   });
   const isImage = isImageFile(file.name);
   const hasLargePreview = isVideo || isImage;
+  const { confirm } = useConfirm();
 
-  const handleDelete = () => {
-    if (
-      window.confirm(
-        `Move "${file.name}" to trash? You can restore it from the Deleted files tab.`
-      )
-    ) {
-      onDelete?.();
-    }
+  const handleDelete = async () => {
+    const ok = await confirm({
+      message: `Move "${file.name}" to trash? You can restore it from the Deleted files tab.`,
+      destructive: true,
+      confirmLabel: "Move to trash",
+    });
+    if (ok) onDelete?.();
   };
 
   return (

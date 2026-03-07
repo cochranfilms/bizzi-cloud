@@ -10,6 +10,7 @@ import CreateFolderModal from "./CreateFolderModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export interface FolderItem {
   name: string;
@@ -49,11 +50,14 @@ export default function FolderCard({
   const { createFolder, linkedDrives } = useBackup();
   const { isPinned, pinItem, unpinItem } = usePinned();
   const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
+  const { confirm } = useConfirm();
 
-  const handleDelete = () => {
-    if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
-      onDelete?.();
-    }
+  const handleDelete = async () => {
+    const ok = await confirm({
+      message: `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`,
+      destructive: true,
+    });
+    if (ok) onDelete?.();
   };
 
   return (

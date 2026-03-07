@@ -5,6 +5,7 @@ import { FileIcon, Folder, RotateCcw, Trash2 } from "lucide-react";
 import TopBar from "@/components/dashboard/TopBar";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCloudFiles";
+import { useConfirm } from "@/hooks/useConfirm";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -129,6 +130,7 @@ export default function TrashPage() {
   const [deletedFiles, setDeletedFiles] = useState<RecentFile[]>([]);
   const [deletedDrives, setDeletedDrives] = useState<DeletedDrive[]>([]);
   const [loading, setLoading] = useState(true);
+  const { confirm } = useConfirm();
   const {
     fetchDeletedFiles,
     fetchDeletedDrives,
@@ -171,12 +173,11 @@ export default function TrashPage() {
   };
 
   const handlePermanentDeleteFile = async (file: RecentFile) => {
-    if (
-      !window.confirm(
-        `Permanently delete "${file.name}"? This action cannot be undone.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      message: `Permanently delete "${file.name}"? This action cannot be undone.`,
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await permanentlyDeleteFile(file.id);
       refetch();
@@ -197,12 +198,11 @@ export default function TrashPage() {
   };
 
   const handlePermanentDeleteDrive = async (folder: DeletedDrive) => {
-    if (
-      !window.confirm(
-        `Permanently delete "${folder.name}" and all its contents? This action cannot be undone.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      message: `Permanently delete "${folder.name}" and all its contents? This action cannot be undone.`,
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await permanentlyDeleteDrive(folder.id);
       refetch();

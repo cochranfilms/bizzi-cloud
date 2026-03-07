@@ -12,6 +12,7 @@ import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -88,6 +89,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     currentY: number;
   } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
+  const { confirm } = useConfirm();
 
   const filesHref = `${basePath}/files`;
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
@@ -277,12 +279,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       folderCount > 0
         ? `${folderCount} folder${folderCount === 1 ? "" : "s"} will be moved to trash (or unlinked if empty). `
         : "";
-    if (
-      !window.confirm(
-        `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      message: `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`,
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       if (fileIds.length > 0) await deleteFiles(fileIds);
@@ -312,6 +313,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     refetch,
     refetchPinned,
     loadPinnedFiles,
+    confirm,
   ]);
 
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
@@ -373,7 +375,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                               const msg = item.items === 0
                                 ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
                                 : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                              if (window.confirm(msg)) {
+                              const ok = await confirm({ message: msg, destructive: true });
+                              if (ok) {
                                 await deleteFolder(drive, item.items);
                                 await refetch();
                                 await refetchPinned();
@@ -444,7 +447,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                             const msg = item.items === 0
                               ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
                               : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                            if (window.confirm(msg)) {
+                            const ok = await confirm({ message: msg, destructive: true });
+                            if (ok) {
                               await deleteFolder(drive, item.items);
                               await refetch();
                             }

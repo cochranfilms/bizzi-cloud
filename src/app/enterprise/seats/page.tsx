@@ -6,6 +6,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { Users, UserPlus, Loader2, Trash2, HardDrive } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
+import { useConfirm } from "@/hooks/useConfirm";
 import { ENTERPRISE_OWNER_STORAGE_BYTES } from "@/lib/enterprise-constants";
 
 interface Seat {
@@ -25,6 +26,7 @@ interface Seat {
 export default function EnterpriseSeatsPage() {
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
+  const { confirm } = useConfirm();
   const [seats, setSeats] = useState<Seat[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -147,8 +149,12 @@ export default function EnterpriseSeatsPage() {
       setInviteError("You cannot remove yourself. Use Leave organization instead.");
       return;
     }
-    if (!window.confirm("Remove this user from the organization? They will lose access."))
-      return;
+    const ok = await confirm({
+      message: "Remove this user from the organization? They will lose access.",
+      destructive: true,
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
     setRemovingId(seatId);
     setInviteError(null);
     try {
