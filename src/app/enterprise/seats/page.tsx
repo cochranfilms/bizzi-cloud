@@ -6,6 +6,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { Users, UserPlus, Loader2, Trash2, HardDrive } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
+import { ENTERPRISE_OWNER_STORAGE_BYTES } from "@/lib/enterprise-constants";
 
 interface Seat {
   id: string;
@@ -46,6 +47,10 @@ export default function EnterpriseSeatsPage() {
 
   const formatStorage = (bytes: number | null) =>
     bytes === null ? "Unlimited" : `${(bytes / (1024 ** 3)).toFixed(0)} GB`;
+
+  /** Admin/owner always shows 16GB; others show their seat quota from dropdown */
+  const getDisplayQuota = (seat: Seat) =>
+    seat.role === "admin" ? ENTERPRISE_OWNER_STORAGE_BYTES : (seat.storage_quota_bytes ?? null);
 
   const handleStorageChange = async (seatId: string, newQuota: number | null) => {
     if (!isAdmin) return;
@@ -253,12 +258,16 @@ export default function EnterpriseSeatsPage() {
                   const canRemove =
                     isAdmin && !isSelf && removingId !== seat.id;
 
+                  const isOwner = seat.role === "admin";
+                  const displayQuotaBytes = isOwner
+                    ? ENTERPRISE_OWNER_STORAGE_BYTES
+                    : (seat.storage_quota_bytes ?? null);
                   return (
                     <li
                       key={seat.id}
-                      className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
+                      className="group grid grid-cols-[1fr_auto_auto] items-center gap-4 py-4 first:pt-0 last:pb-0"
                     >
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0">
                         <p className="truncate font-medium text-neutral-900 dark:text-white">
                           {seat.display_name || seat.email || "—"}
                         </p>
@@ -280,61 +289,70 @@ export default function EnterpriseSeatsPage() {
                           {(seat.storage_used_bytes ?? 0) / (1024 ** 3) >= 1024
                             ? `${((seat.storage_used_bytes ?? 0) / (1024 ** 4)).toFixed(1)} TB`
                             : `${((seat.storage_used_bytes ?? 0) / (1024 ** 3)).toFixed(1)} GB`}{" "}
-                          of {formatStorage(seat.storage_quota_bytes ?? null)} used
+                          of {formatStorage(displayQuotaBytes)} used
                         </p>
                       </div>
                       {isAdmin && (
-                        <div className="flex shrink-0 items-center gap-2">
-                          <select
-                            value={
-                              seat.storage_quota_bytes === null
-                                ? "unlimited"
-                                : String(seat.storage_quota_bytes)
-                            }
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              const quota =
-                                v === "unlimited"
-                                  ? null
-                                  : (STORAGE_OPTIONS.find((o) => String(o.value) === v)
-                                      ?.value ?? null);
-                              if (quota !== undefined) handleStorageChange(seat.id, quota);
-                            }}
-                            disabled={updatingStorageId === seat.id}
-                            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                          >
-                            {STORAGE_OPTIONS.map((opt) => (
-                              <option
-                                key={opt.label}
-                                value={opt.value === null ? "unlimited" : String(opt.value)}
+                        <div className="flex w-28 shrink-0 items-center justify-end gap-2">
+                          {isOwner ? (
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                              16 GB
+                            </span>
+                          ) : (
+                            <>
+                              <select
+                                value={
+                                  seat.storage_quota_bytes === null
+                                    ? "unlimited"
+                                    : String(seat.storage_quota_bytes)
+                                }
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const quota =
+                                    v === "unlimited"
+                                      ? null
+                                      : (STORAGE_OPTIONS.find((o) => String(o.value) === v)
+                                          ?.value ?? null);
+                                  if (quota !== undefined) handleStorageChange(seat.id, quota);
+                                }}
+                                disabled={updatingStorageId === seat.id}
+                                className="w-full min-w-0 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                               >
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          {updatingStorageId === seat.id && (
-                            <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                                {STORAGE_OPTIONS.map((opt) => (
+                                  <option
+                                    key={opt.label}
+                                    value={opt.value === null ? "unlimited" : String(opt.value)}
+                                  >
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {updatingStorageId === seat.id && (
+                                <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                              )}
+                            </>
                           )}
                         </div>
                       )}
-                      {canRemove && (
-                        <ItemActionsMenu
-                          actions={[
-                            {
-                              id: "remove",
-                              label: "Remove from organization",
-                              icon: <Trash2 className="h-4 w-4" />,
-                              onClick: () => handleRemove(seat.id, seat.user_id),
-                              destructive: true,
-                            },
-                          ]}
-                          ariaLabel="Seat actions"
-                          alignRight
-                        />
-                      )}
-                      {removingId === seat.id && (
-                        <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
-                      )}
+                      <div className="flex w-10 shrink-0 justify-end">
+                        {removingId === seat.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                        ) : canRemove ? (
+                          <ItemActionsMenu
+                            actions={[
+                              {
+                                id: "remove",
+                                label: "Remove from organization",
+                                icon: <Trash2 className="h-4 w-4" />,
+                                onClick: () => handleRemove(seat.id, seat.user_id),
+                                destructive: true,
+                              },
+                            ]}
+                            ariaLabel="Seat actions"
+                            alignRight
+                          />
+                        ) : null}
+                      </div>
                     </li>
                   );
                 })}

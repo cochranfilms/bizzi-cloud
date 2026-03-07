@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, createContext, useContext } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
+import { useRouter } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
+import { useEnterprise } from "@/context/EnterpriseContext";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -22,6 +24,18 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const { org, loading: orgLoading } = useEnterprise();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!orgLoading && org) {
+      router.replace("/enterprise");
+    }
+  }, [org, orgLoading, router]);
+
+  if (!orgLoading && org) {
+    return null;
+  }
 
   return (
     <RightPanelContext.Provider

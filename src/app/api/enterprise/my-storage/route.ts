@@ -1,6 +1,9 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
-import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import {
+  DEFAULT_SEAT_STORAGE_BYTES,
+  ENTERPRISE_OWNER_STORAGE_BYTES,
+} from "@/lib/enterprise-storage";
 
 /** GET - Current user's storage quota and used (for enterprise users). */
 export async function GET(request: Request) {
@@ -42,9 +45,11 @@ export async function GET(request: Request) {
   const seatId = `${orgId}_${uid}`;
   const seatSnap = await db.collection("organization_seats").doc(seatId).get();
   const seatData = seatSnap.data();
+  const isOwner = seatData?.role === "admin";
   const seatQuota = seatData?.storage_quota_bytes;
-  const storageQuotaBytes =
-    typeof seatQuota === "number"
+  const storageQuotaBytes = isOwner
+    ? ENTERPRISE_OWNER_STORAGE_BYTES
+    : typeof seatQuota === "number"
       ? seatQuota
       : seatQuota === null
         ? null

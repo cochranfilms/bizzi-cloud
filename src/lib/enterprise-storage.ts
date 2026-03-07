@@ -1,26 +1,21 @@
 /**
- * Enterprise storage allocation constants and utilities.
- * Org gets 16TB total to distribute across seats.
+ * Enterprise storage allocation utilities (server-only).
+ * Constants are in enterprise-constants.ts for client-safe imports.
  */
 
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import {
+  ENTERPRISE_OWNER_STORAGE_BYTES,
+  DEFAULT_SEAT_STORAGE_BYTES,
+} from "./enterprise-constants";
 
-/** 16TB total for enterprise orgs to distribute */
-export const ENTERPRISE_ORG_STORAGE_BYTES = 16 * 1024 * 1024 * 1024 * 1024;
-
-/** Per-seat storage tier options (bytes). null = Unlimited */
-export const SEAT_STORAGE_TIERS = {
-  "100GB": 100 * 1024 * 1024 * 1024,
-  "500GB": 500 * 1024 * 1024 * 1024,
-  "1TB": 1024 * 1024 * 1024 * 1024,
-  "2TB": 2 * 1024 * 1024 * 1024 * 1024,
-  unlimited: null as number | null,
-} as const;
-
-export type SeatStorageTier = keyof typeof SEAT_STORAGE_TIERS;
-
-/** Default allocation for new seats */
-export const DEFAULT_SEAT_STORAGE_BYTES = SEAT_STORAGE_TIERS["1TB"];
+export {
+  ENTERPRISE_ORG_STORAGE_BYTES,
+  ENTERPRISE_OWNER_STORAGE_BYTES,
+  SEAT_STORAGE_TIERS,
+  DEFAULT_SEAT_STORAGE_BYTES,
+} from "./enterprise-constants";
+export type { SeatStorageTier } from "./enterprise-constants";
 
 /**
  * Check if a user can upload additional bytes.
@@ -45,9 +40,11 @@ export async function checkUserCanUpload(
     const seatId = `${orgId}_${uid}`;
     const seatSnap = await db.collection("organization_seats").doc(seatId).get();
     const seatData = seatSnap.data();
+    const isOwner = seatData?.role === "admin";
     const seatQuota = seatData?.storage_quota_bytes;
-    quotaBytes =
-      typeof seatQuota === "number"
+    quotaBytes = isOwner
+      ? ENTERPRISE_OWNER_STORAGE_BYTES
+      : typeof seatQuota === "number"
         ? seatQuota
         : seatQuota === null
           ? null

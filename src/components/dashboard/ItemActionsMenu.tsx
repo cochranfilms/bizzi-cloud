@@ -45,7 +45,7 @@ export default function ItemActionsMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="rounded-lg p-2 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+        className="rounded-lg p-2 text-neutral-500 transition-opacity hover:bg-neutral-100 hover:opacity-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-haspopup="true"
