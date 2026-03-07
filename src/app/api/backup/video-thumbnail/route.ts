@@ -88,7 +88,7 @@ export async function GET(request: Request) {
     const cacheKey = getVideoThumbnailCacheKey(objectKey);
     if (await objectExists(cacheKey)) {
       const cached = await getObjectBuffer(cacheKey, 512 * 1024);
-      return new NextResponse(cached, {
+      return new NextResponse(Uint8Array.from(cached), {
         status: 200,
         headers: {
           "Content-Type": "image/jpeg",
