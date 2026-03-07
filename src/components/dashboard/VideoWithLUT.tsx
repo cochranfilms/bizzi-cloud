@@ -420,7 +420,7 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
           ref={videoRef}
           src={src}
           crossOrigin="anonymous"
-          controls={!lutEnabled}
+          controls={false}
           preload="auto"
           playsInline
           className={`max-h-[70vh] w-full ${className ?? ""}`}
@@ -428,16 +428,16 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
         {lutEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute inset-0"
+            className="absolute inset-0 transition-opacity duration-200"
             style={{
               width: "100%",
               height: "100%",
               pointerEvents: "none",
+              opacity: lutReady ? 1 : 0,
             }}
           />
         )}
-        {lutEnabled && lutReady && (
-          <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-6">
+        <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-6 transition-opacity duration-200">
             <div
               className="h-1 cursor-pointer rounded-full bg-neutral-600"
               onClick={handleProgressClick}
@@ -491,7 +491,6 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
               </button>
             </div>
           </div>
-        )}
       </div>
       <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
         <button
