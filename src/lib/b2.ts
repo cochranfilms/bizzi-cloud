@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import {
   S3Client,
   PutObjectCommand,
@@ -208,6 +209,35 @@ export async function getObject(
     contentLength,
     contentType: response.ContentType ?? undefined,
   };
+}
+
+/** Upload a buffer to B2 (e.g. cached video thumbnails). */
+export async function putObject(
+  objectKey: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+): Promise<void> {
+  const client = getB2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+}
+
+/** Deterministic cache key for video thumbnails. Same objectKey = same cache key. */
+export function getVideoThumbnailCacheKey(objectKey: string): string {
+  const hash = createHash("sha256").update(objectKey).digest("hex").slice(0, 32);
+  return `thumbnails/${hash}.jpg`;
+}
+
+/** Deterministic key for proxy video. Same objectKey = same proxy key. */
+export function getProxyObjectKey(objectKey: string): string {
+  const hash = createHash("sha256").update(objectKey).digest("hex").slice(0, 32);
+  return `proxies/${hash}.mp4`;
 }
 
 /** Read object into a buffer, with optional max bytes limit (for thumbnail generation). */

@@ -45,6 +45,8 @@ interface BackupContextValue {
   syncProgress: SyncProgress | null;
   isSyncing: boolean;
   storageVersion: number;
+  /** Call after delete/restore/permanent-delete to refresh storage display */
+  bumpStorageVersion: () => void;
   fetchDrives: () => Promise<void>;
   linkDrive: (
     name: string,
@@ -59,6 +61,9 @@ interface BackupContextValue {
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
 }
+
+/** Video extensions that trigger proxy generation (720p H.264). */
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
 /** B2 minimum part size 5MB; use 8MB for throughput. Must match server. */
 const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
@@ -596,6 +601,17 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 deleted_at: null,
               });
 
+              if (VIDEO_EXT.test(relativePath)) {
+                fetch("/api/backup/generate-proxy", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                  body: JSON.stringify({ object_key: objectKey }),
+                }).catch(() => {});
+              }
+
               state.bytesSynced += file.size;
               state.filesCompleted++;
               progressState.lastReport = 0; // Force immediate update on completion
@@ -891,6 +907,16 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             : null,
           deleted_at: null,
         });
+        if (VIDEO_EXT.test(relativePath)) {
+          fetch("/api/backup/generate-proxy", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ object_key: objectKey }),
+          }).catch(() => {});
+        }
         await updateDoc(doc(db, "linked_drives", drive.id), {
           last_synced_at: new Date().toISOString(),
         });
@@ -913,6 +939,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);
 
+  const bumpStorageVersion = useCallback(
+    () => setStorageVersion((v) => v + 1),
+    []
+  );
+
   const uploadFolder = useCallback(async () => {
     if (!fsAccessSupported) return;
     try {
@@ -933,6 +964,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       syncProgress,
       isSyncing: !!abortController,
       storageVersion,
+      bumpStorageVersion,
       fetchDrives,
       linkDrive,
       startSync,
@@ -951,6 +983,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       syncProgress,
       abortController,
       storageVersion,
+      bumpStorageVersion,
       fetchDrives,
       linkDrive,
       startSync,

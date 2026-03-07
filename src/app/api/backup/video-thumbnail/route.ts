@@ -1,6 +1,12 @@
 import { spawn } from "child_process";
-import { isB2Configured } from "@/lib/b2";
-import { createPresignedDownloadUrl } from "@/lib/b2";
+import {
+  isB2Configured,
+  createPresignedDownloadUrl,
+  objectExists,
+  getObjectBuffer,
+  putObject,
+  getVideoThumbnailCacheKey,
+} from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
@@ -79,17 +85,35 @@ export async function GET(request: Request) {
   }
 
   try {
+    const cacheKey = getVideoThumbnailCacheKey(objectKey);
+    if (await objectExists(cacheKey)) {
+      const cached = await getObjectBuffer(cacheKey, 512 * 1024);
+      return new NextResponse(cached, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    }
+
     const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
 
     const thumbBuffer = await new Promise<Buffer>((resolve, reject) => {
       const args = [
         "-y",
+        "-probesize",
+        "32K",
+        "-analyzeduration",
+        "500000",
         "-ss",
         "0.5",
         "-i",
         presignedUrl,
         "-vframes",
         "1",
+        "-vf",
+        "scale=480:-1",
         "-f",
         "image2",
         "-q:v",
@@ -119,6 +143,10 @@ export async function GET(request: Request) {
     if (!thumbBuffer.length) {
       return new NextResponse("Failed to generate thumbnail", { status: 500 });
     }
+
+    putObject(cacheKey, thumbBuffer, "image/jpeg").catch((e) =>
+      console.error("[video-thumbnail] Cache upload failed:", e)
+    );
 
     return new NextResponse(new Uint8Array(thumbBuffer), {
       status: 200,

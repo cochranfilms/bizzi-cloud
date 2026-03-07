@@ -97,9 +97,13 @@ export default function TrashPage() {
   }, [fetchDeletedFiles]);
 
   const handleRestore = async (fileId: string) => {
-    await restoreFile(fileId);
-    refetch();
-    setDeletedFiles((prev) => prev.filter((f) => f.id !== fileId));
+    try {
+      await restoreFile(fileId);
+      refetch();
+      setDeletedFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch {
+      await loadDeleted();
+    }
   };
 
   const handlePermanentDelete = async (file: RecentFile) => {
@@ -109,9 +113,13 @@ export default function TrashPage() {
       )
     )
       return;
-    await permanentlyDeleteFile(file.id);
-    refetch();
-    setDeletedFiles((prev) => prev.filter((f) => f.id !== file.id));
+    try {
+      await permanentlyDeleteFile(file.id);
+      refetch();
+      setDeletedFiles((prev) => prev.filter((f) => f.id !== file.id));
+    } catch {
+      await loadDeleted();
+    }
   };
 
   return (

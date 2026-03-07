@@ -5,10 +5,8 @@ import {
   collection,
   doc,
   deleteDoc,
-  getDoc,
   getDocs,
   query,
-  runTransaction,
   where,
   orderBy,
   limit,
@@ -16,7 +14,11 @@ import {
   serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
-import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
+import {
+  getFirebaseAuth,
+  getFirebaseFirestore,
+  isFirebaseConfigured,
+} from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 
@@ -44,7 +46,7 @@ export interface RecentFile {
 
 export function useCloudFiles() {
   const { user } = useAuth();
-  const { linkedDrives, storageVersion } = useBackup();
+  const { linkedDrives, storageVersion, bumpStorageVersion } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,6 +203,21 @@ export function useCloudFiles() {
     [user, linkedDrives]
   );
 
+  const recalculateStorage = useCallback(async () => {
+    if (!isFirebaseConfigured() || !user) return;
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/storage/recalculate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) bumpStorageVersion();
+    } catch (err) {
+      console.error("Recalculate storage:", err);
+    }
+  }, [user, bumpStorageVersion]);
+
   const deleteFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
@@ -208,9 +225,10 @@ export function useCloudFiles() {
       await updateDoc(doc(db, "backup_files", fileId), {
         deleted_at: serverTimestamp(),
       });
+      await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles]
+    [user, fetchCloudFiles, recalculateStorage]
   );
 
   const deleteFiles = useCallback(
@@ -228,9 +246,10 @@ export function useCloudFiles() {
         }
         await batch.commit();
       }
+      await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles]
+    [user, fetchCloudFiles, recalculateStorage]
   );
 
   const restoreFile = useCallback(
@@ -240,9 +259,10 @@ export function useCloudFiles() {
       await updateDoc(doc(db, "backup_files", fileId), {
         deleted_at: null,
       });
+      await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles]
+    [user, fetchCloudFiles, recalculateStorage]
   );
 
   const permanentlyDeleteFile = useCallback(
@@ -250,29 +270,11 @@ export function useCloudFiles() {
       if (!isFirebaseConfigured() || !user) return;
       const db = getFirebaseFirestore();
       const fileRef = doc(db, "backup_files", fileId);
-      const profileRef = doc(db, "profiles", user.uid);
-
-      await runTransaction(db, async (tx) => {
-        const fileSnap = await tx.get(fileRef);
-        if (!fileSnap.exists()) return;
-
-        const fileData = fileSnap.data();
-        const sizeBytes = typeof fileData.size_bytes === "number" ? fileData.size_bytes : 0;
-
-        const profileSnap = await tx.get(profileRef);
-        const currentUsed =
-          profileSnap.exists() && typeof profileSnap.data()?.storage_used_bytes === "number"
-            ? profileSnap.data()!.storage_used_bytes
-            : 0;
-        const newUsed = Math.max(0, currentUsed - sizeBytes);
-
-        tx.update(profileRef, { storage_used_bytes: newUsed });
-        tx.delete(fileRef);
-      });
-
+      await deleteDoc(fileRef);
+      await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles]
+    [user, fetchCloudFiles, recalculateStorage]
   );
 
   return {

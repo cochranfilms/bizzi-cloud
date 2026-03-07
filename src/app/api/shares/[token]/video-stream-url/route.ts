@@ -1,5 +1,5 @@
 import { createHmac } from "crypto";
-import { isB2Configured } from "@/lib/b2";
+import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
@@ -90,9 +90,11 @@ export async function POST(
   }
 
   try {
+    const proxyKey = getProxyObjectKey(objectKey);
+    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
     const exp = Math.floor(Date.now() / 1000) + STREAM_EXPIRY_SEC;
-    const sig = signStreamUrl(objectKey, exp);
-    const streamUrl = `/api/backup/video-stream?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${sig}`;
+    const sig = signStreamUrl(effectiveKey, exp);
+    const streamUrl = `/api/backup/video-stream?object_key=${encodeURIComponent(effectiveKey)}&exp=${exp}&sig=${sig}`;
     return NextResponse.json({ streamUrl });
   } catch (err) {
     console.error("[share video-stream-url] Error:", err);

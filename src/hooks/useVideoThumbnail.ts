@@ -6,21 +6,14 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 const VIDEO_EXT =
   /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
-// Browser can decode these natively - client-side capture is much faster (byte-range, no server FFmpeg)
-const BROWSER_PLAYABLE = /\.(mp4|webm|ogg|mov|m4v|3gp)$/i;
-
 function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
 }
 
-function isBrowserPlayable(name: string): boolean {
-  return BROWSER_PLAYABLE.test(name.toLowerCase());
-}
-
 /**
  * Returns a blob URL for a video thumbnail.
- * For MP4/WebM/MOV: tries client-side first (fast - byte-range, no server round-trip).
- * For ProRes/MXF etc: tries server FFmpeg first.
+ * Always tries server first (cache hit on repeat views, optimized FFmpeg on first).
+ * Falls back to client-side capture if server fails.
  */
 export function useVideoThumbnail(
   objectKey: string | undefined,
@@ -147,9 +140,9 @@ export function useVideoThumbnail(
         const token = await getFirebaseAuth().currentUser?.getIdToken(true);
         if (!token || cancelled) return;
 
-        const clientFirst = isBrowserPlayable(fileName);
-        const first = clientFirst ? tryClientSide : tryServerSide;
-        const second = clientFirst ? tryServerSide : tryClientSide;
+        // Always try server first: hits cache on repeat views, optimized FFmpeg on first
+        const first = tryServerSide;
+        const second = tryClientSide;
 
         const ok = await first(token);
         if (ok || cancelled) return;

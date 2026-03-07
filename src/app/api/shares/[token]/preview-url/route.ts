@@ -1,3 +1,4 @@
+import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
@@ -80,7 +81,9 @@ export async function POST(
   }
 
   try {
-    const url = await getDownloadUrl(objectKey, 3600);
+    const proxyKey = getProxyObjectKey(objectKey);
+    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const url = await getDownloadUrl(effectiveKey, 3600);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Share preview URL error:", err);
