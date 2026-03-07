@@ -112,9 +112,8 @@ export function useVideoThumbnail(
 
         const onLoadedData = () => {
           if (cancelled || !videoEl) return;
-          if (!captureFrame()) {
-            videoEl.currentTime = 0;
-          }
+          const seekTo = Math.min(1, (videoEl.duration || 1) * 0.05);
+          videoEl.currentTime = seekTo;
         };
 
         const onSeeked = () => {

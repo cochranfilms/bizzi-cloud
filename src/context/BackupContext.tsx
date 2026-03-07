@@ -73,6 +73,48 @@ async function sha256Hex(file: File): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Upload blob via PUT with real-time progress. Returns ETag for multipart. */
+function putWithProgress(
+  blob: Blob,
+  url: string,
+  contentType: string,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+  }
+): Promise<{ etag: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+
+    if (options.signal) {
+      options.signal.addEventListener("abort", () => {
+        xhr.abort();
+      });
+    }
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && options.onProgress) {
+        options.onProgress(e.loaded, e.total);
+      }
+    });
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const etag = xhr.getResponseHeader("etag") ?? xhr.getResponseHeader("ETag");
+        if (!etag) return reject(new Error("Response missing ETag"));
+        resolve({ etag: etag.replace(/^"|"$/g, "") });
+      } else {
+        reject(new Error(`Upload failed: ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onabort = () => reject(new Error("Upload aborted"));
+    xhr.send(blob);
+  });
+}
+
 async function uploadWithMultipart(
   file: File,
   driveId: string,
@@ -81,7 +123,8 @@ async function uploadWithMultipart(
   contentHash: string,
   idToken: string,
   userId: string | null,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (loaded: number, total: number) => void
 ): Promise<{ objectKey: string }> {
   const initRes = await fetch("/api/backup/multipart-init", {
     method: "POST",
@@ -110,27 +153,42 @@ async function uploadWithMultipart(
     throw new Error("Invalid multipart init response");
   }
 
+  const partProgress = new Array<number>(parts.length).fill(0);
+  let lastReportTime = 0;
+  const reportProgress = () => {
+    if (!onProgress) return;
+    const now = Date.now();
+    if (now - lastReportTime < 80) return; // throttle ~12 updates/sec
+    lastReportTime = now;
+    const loaded = partProgress.reduce((a, b) => a + b, 0);
+    onProgress(loaded, file.size);
+  };
+
   const uploadResults = await Promise.all(
     parts.map(
-      async ({
-        partNumber,
-        uploadUrl,
-      }: {
-        partNumber: number;
-        uploadUrl: string;
-      }) => {
+      async (
+        {
+          partNumber,
+          uploadUrl,
+        }: {
+          partNumber: number;
+          uploadUrl: string;
+        },
+        idx: number
+      ) => {
         const start = (partNumber - 1) * MULTIPART_PART_SIZE;
         const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
         const blob = file.slice(start, end);
-        const putRes = await fetch(uploadUrl, {
-          method: "PUT",
-          body: blob,
+        const { etag } = await putWithProgress(blob, uploadUrl, contentType, {
           signal,
+          onProgress: (loaded) => {
+            partProgress[idx] = loaded;
+            reportProgress();
+          },
         });
-        if (!putRes.ok) throw new Error(`Part ${partNumber} upload failed: ${putRes.status}`);
-        const etag = putRes.headers.get("etag") ?? putRes.headers.get("ETag");
-        if (!etag) throw new Error(`Part ${partNumber} missing ETag`);
-        return { partNumber, etag: etag.replace(/^"|"$/g, "") };
+        partProgress[idx] = end - start;
+        reportProgress();
+        return { partNumber, etag };
       }
     )
   );
@@ -417,6 +475,30 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           filesCompleted: 0,
           failedFiles: [] as string[],
         };
+        const progressState = {
+          completedBytes: 0,
+          inFlight: new Map<number, number>(),
+          lastReport: 0,
+        };
+
+        const reportSyncProgress = (currentFile: string | null) => {
+          const now = Date.now();
+          if (now - progressState.lastReport < 80) return;
+          progressState.lastReport = now;
+          const inFlightSum = [...progressState.inFlight.values()].reduce((a, b) => a + b, 0);
+          const bytesSynced = progressState.completedBytes + inFlightSum;
+          setSyncProgress((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  bytesSynced,
+                  filesCompleted: state.filesCompleted,
+                  currentFile,
+                }
+              : null
+          );
+        };
+
         const MAX_RETRIES = 2;
 
         async function uploadOne(
@@ -438,6 +520,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
               let objectKey: string;
               if (file.size > MULTIPART_THRESHOLD) {
+                progressState.inFlight.set(index, 0);
                 const res = await uploadWithMultipart(
                   file,
                   drive.id,
@@ -446,7 +529,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   contentHash,
                   idToken,
                   uid,
-                  controller.signal
+                  controller.signal,
+                  (loaded) => {
+                    progressState.inFlight.set(index, loaded);
+                    reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
+                  }
                 );
                 objectKey = res.objectKey;
               } else {
@@ -477,16 +564,24 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 const res = await urlRes.json();
                 objectKey = res.objectKey;
                 if (!res.alreadyExists && res.uploadUrl) {
-                  const putRes = await fetch(res.uploadUrl, {
-                    method: "PUT",
-                    body: file,
-                    headers: { "Content-Type": contentType },
-                    signal: controller.signal,
-                  });
-                  if (!putRes.ok)
-                    throw new Error(`Upload failed: ${putRes.status}`);
+                  progressState.inFlight.set(index, 0);
+                  await putWithProgress(
+                    file,
+                    res.uploadUrl,
+                    contentType,
+                    {
+                      signal: controller.signal,
+                      onProgress: (loaded) => {
+                        progressState.inFlight.set(index, loaded);
+                        reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
+                      },
+                    }
+                  );
                 }
               }
+
+              progressState.inFlight.delete(index);
+              progressState.completedBytes += file.size;
 
               await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
@@ -503,16 +598,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
               state.bytesSynced += file.size;
               state.filesCompleted++;
-              setSyncProgress((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      currentFile: toUpload[index + 1]?.relativePath ?? null,
-                      filesCompleted: state.filesCompleted,
-                      bytesSynced: state.bytesSynced,
-                    }
-                  : null
-              );
+              progressState.lastReport = 0; // Force immediate update on completion
+              reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
               lastError = null;
               break;
             } catch (err) {
@@ -714,10 +801,22 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
       setError(null);
       setFileUploadError(null);
+
       const drive = await getOrCreateUploadsDrive();
       const db = getFirebaseFirestore();
       const relativePath = file.name;
       const contentType = file.type || "application/octet-stream";
+
+      setSyncProgress({
+        snapshotId: "",
+        status: "in_progress",
+        filesTotal: 1,
+        filesCompleted: 0,
+        bytesTotal: file.size,
+        bytesSynced: 0,
+        currentFile: file.name,
+      });
+
       try {
         const contentHash = await sha256Hex(file);
         const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
@@ -732,7 +831,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             contentType,
             contentHash,
             idToken,
-            user.uid
+            user.uid,
+            undefined,
+            (loaded) => {
+              setSyncProgress((prev) =>
+                prev ? { ...prev, bytesSynced: loaded } : null
+              );
+            }
           );
           objectKey = res.objectKey;
         } else {
@@ -757,12 +862,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const { uploadUrl, objectKey: ok, alreadyExists } = await urlRes.json();
           objectKey = ok;
           if (!alreadyExists && uploadUrl) {
-            const putRes = await fetch(uploadUrl, {
-              method: "PUT",
-              body: file,
-              headers: { "Content-Type": contentType },
+            await putWithProgress(file, uploadUrl, contentType, {
+              onProgress: (loaded) => {
+                setSyncProgress((prev) =>
+                  prev ? { ...prev, bytesSynced: loaded } : null
+                );
+              },
             });
-            if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
           }
         }
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
@@ -789,12 +895,17 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           last_synced_at: new Date().toISOString(),
         });
         setStorageVersion((v) => v + 1);
+        setSyncProgress((prev) =>
+          prev ? { ...prev, status: "completed", bytesSynced: file.size } : null
+        );
+        setTimeout(() => setSyncProgress(null), 2000);
       } catch (err) {
         const msg =
           err instanceof Error
             ? err.message || (err as Error & { name?: string }).name || "Upload failed"
             : "Upload failed";
         setFileUploadError(msg);
+        setSyncProgress(null);
       }
     },
     [user, getOrCreateUploadsDrive]

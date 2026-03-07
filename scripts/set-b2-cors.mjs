@@ -45,7 +45,7 @@ const corsConfig = {
   CORSRules: [
     {
       AllowedOrigins: [
-        "https://bizzi-cloud.vercel.app",
+        "https://www.bizzicloud.io",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
       ],
@@ -64,7 +64,7 @@ try {
     })
   );
   console.log("CORS configured successfully on bucket:", B2_BUCKET_NAME);
-  console.log("Allowed origins: bizzi-cloud.vercel.app, localhost:3000");
+  console.log("Allowed origins: www.bizzicloud.io, localhost:3000");
   console.log("For preview deployments, add https://<preview>.vercel.app to the script and run again.");
 } catch (err) {
   console.error("Failed to set CORS:", err.message);

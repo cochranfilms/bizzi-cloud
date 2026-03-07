@@ -48,7 +48,7 @@ iconutil -c icns desktop/resources/icon.iconset -o desktop/resources/icon.icns
 
 ## API Base URL
 
-Defaults to **https://bizzi-cloud.vercel.app** (production). Change in Settings if using a different backend.
+Defaults to **https://www.bizzicloud.io** (production). Change in Settings if using a different backend.
 
 ## Architecture
 

@@ -12,7 +12,7 @@ const store = new Store<{
   deviceId: string | null;
 }>({
   defaults: {
-    apiBaseUrl: "https://bizzi-cloud.vercel.app",
+    apiBaseUrl: "https://www.bizzicloud.io",
     cacheBaseDir: path.join(app.getPath("userData"), "BizziCloud"),
     streamCacheMaxBytes: 50 * 1024 * 1024 * 1024, // 50 GB
     deviceId: null,
@@ -70,7 +70,7 @@ ipcMain.handle("mount-status", () => ({
   isMounted: mountService.isMounted(),
   mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
 }));
-const PRODUCTION_URL = "https://bizzi-cloud.vercel.app";
+const PRODUCTION_URL = "https://www.bizzicloud.io";
 
 ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
   const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));

@@ -1,7 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, Folder, LayoutGrid, List, Trash2 } from "lucide-react";
+
+const DRAG_THRESHOLD_PX = 5;
+
+function rectsIntersect(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: DOMRect
+): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
@@ -100,6 +109,14 @@ export default function FileGrid() {
   const { unlinkDrive, linkedDrives } = useBackup();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
+  const [dragState, setDragState] = useState<{
+    isActive: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const gridSectionRef = useRef<HTMLElement | null>(null);
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -166,7 +183,85 @@ export default function FileGrid() {
     setSelectedFolderKeys(new Set());
   }, []);
 
+  const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[]) => {
+    setSelectedFileIds(new Set(fileIds));
+    setSelectedFolderKeys(new Set(folderKeys));
+  }, []);
+
   const currentDriveId = currentDrive?.id;
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
+      if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
+      setDragState({
+        isActive: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+
+    const updateDrag = (e: MouseEvent) => {
+      setDragState((prev) =>
+        prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
+      );
+    };
+
+    const endDrag = (e: MouseEvent) => {
+      const moved =
+        Math.abs(e.clientX - dragState.startX) > DRAG_THRESHOLD_PX ||
+        Math.abs(e.clientY - dragState.startY) > DRAG_THRESHOLD_PX;
+      if (moved) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener("mousemove", updateDrag);
+    window.addEventListener("mouseup", endDrag, true);
+    return () => {
+      window.removeEventListener("mousemove", updateDrag);
+      window.removeEventListener("mouseup", endDrag, true);
+    };
+  }, [dragState?.isActive, dragState?.startX, dragState?.startY]);
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+    const moved =
+      Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+      Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX;
+    if (!moved) return;
+
+    const left = Math.min(dragState.startX, dragState.currentX);
+    const right = Math.max(dragState.startX, dragState.currentX);
+    const top = Math.min(dragState.startY, dragState.currentY);
+    const bottom = Math.max(dragState.startY, dragState.currentY);
+    const dragRect = { left, top, right, bottom };
+
+    const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
+    const fileIds: string[] = [];
+    const folderKeys: string[] = [];
+
+    items?.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (!rectsIntersect(dragRect, rect)) return;
+      const type = el.getAttribute("data-item-type");
+      const id = el.getAttribute("data-item-id");
+      const key = el.getAttribute("data-item-key");
+      if (type === "file" && id) fileIds.push(id);
+      if (type === "folder" && key) folderKeys.push(key);
+    });
+
+    setSelectionFromDrag(fileIds, folderKeys);
+  }, [dragState, setSelectionFromDrag]);
 
   const handleBulkDelete = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
@@ -296,7 +391,26 @@ export default function FileGrid() {
       )}
 
       {/* Recents / Starred tabs + view toggle (only at root, or when in drive show "Files") */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <section
+        ref={gridSectionRef}
+        className={`relative rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50 ${
+          dragState?.isActive ? "select-none" : ""
+        }`}
+        onMouseDown={handleMouseDown}
+      >
+        {dragState?.isActive &&
+        (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+          Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX) ? (
+          <div
+            className="pointer-events-none fixed z-40 border-2 border-bizzi-blue bg-bizzi-blue/10"
+            style={{
+              left: Math.min(dragState.startX, dragState.currentX),
+              top: Math.min(dragState.startY, dragState.currentY),
+              width: Math.abs(dragState.currentX - dragState.startX),
+              height: Math.abs(dragState.currentY - dragState.startY),
+            }}
+          />
+        ) : null}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
             <button
@@ -357,20 +471,24 @@ export default function FileGrid() {
               Loading files…
             </div>
           ) : driveFiles.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <div
+              data-selectable-grid
+              className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+            >
               {driveFiles.map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  onClick={() => setPreviewFile(file)}
-                  onDelete={async () => {
-                    await deleteFile(file.id);
-                    if (currentDrive) loadDriveFiles(currentDrive.id);
-                  }}
-                  selectable
-                  selected={selectedFileIds.has(file.id)}
-                  onSelect={() => toggleFileSelection(file.id)}
-                />
+                <div key={file.id} data-selectable-item data-item-type="file" data-item-id={file.id}>
+                  <FileCard
+                    file={file}
+                    onClick={() => setPreviewFile(file)}
+                    onDelete={async () => {
+                      await deleteFile(file.id);
+                      if (currentDrive) loadDriveFiles(currentDrive.id);
+                    }}
+                    selectable
+                    selected={selectedFileIds.has(file.id)}
+                    onSelect={() => toggleFileSelection(file.id)}
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -389,27 +507,36 @@ export default function FileGrid() {
                 <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Your synced drives
                 </h3>
-                <div className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div
+                  data-selectable-grid
+                  className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                >
                   {folderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                     const driveId = drive?.id;
                     return (
-                      <FolderCard
+                      <div
                         key={item.key}
-                        item={item}
-                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                        onDelete={
-                          drive
-                            ? async () => {
-                                await unlinkDrive(drive);
-                                if (currentDriveId === driveId) closeDrive();
-                              }
-                            : undefined
-                        }
-                        selectable={!!drive}
-                        selected={selectedFolderKeys.has(item.key)}
-                        onSelect={() => toggleFolderSelection(item.key)}
-                      />
+                        data-selectable-item
+                        data-item-type="folder"
+                        data-item-key={item.key}
+                      >
+                        <FolderCard
+                          item={item}
+                          onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                          onDelete={
+                            drive
+                              ? async () => {
+                                  await unlinkDrive(drive);
+                                  if (currentDriveId === driveId) closeDrive();
+                                }
+                              : undefined
+                          }
+                          selectable={!!drive}
+                          selected={selectedFolderKeys.has(item.key)}
+                          onSelect={() => toggleFolderSelection(item.key)}
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -420,19 +547,23 @@ export default function FileGrid() {
                 <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Recently synced files
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div
+                  data-selectable-grid
+                  className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                >
                   {recentFiles.map((file) => (
-                    <FileCard
-                      key={file.id}
-                      file={file}
-                      onClick={() => setPreviewFile(file)}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                      }}
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                    />
+                    <div key={file.id} data-selectable-item data-item-type="file" data-item-id={file.id}>
+                      <FileCard
+                        file={file}
+                        onClick={() => setPreviewFile(file)}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                        }}
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                      />
+                    </div>
                   ))}
                 </div>
               </>

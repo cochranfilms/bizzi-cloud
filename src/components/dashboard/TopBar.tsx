@@ -19,7 +19,21 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const showCreateTransfer = pathname === "/dashboard/transfers";
-  const { uploadSingleFile, uploadFolder, fileUploadError, clearFileUploadError, fsAccessSupported } = useBackup();
+  const {
+    uploadSingleFile,
+    uploadFolder,
+    fileUploadError,
+    clearFileUploadError,
+    fsAccessSupported,
+    syncProgress,
+  } = useBackup();
+
+  const formatBytes = (n: number) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -65,11 +79,15 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     }
   };
 
+  const showUploadProgress =
+    syncProgress?.status === "in_progress" && syncProgress.bytesTotal > 0;
+
   return (
-    <div className="flex h-12 flex-shrink-0 items-center justify-between gap-4 border-b border-neutral-200 bg-white px-4 md:px-6 dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
-      <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
-        {title}
-      </h1>
+    <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
+      <div className="flex h-12 items-center justify-between gap-4 px-4 md:px-6">
+        <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
+          {title}
+        </h1>
 
       <div className="flex items-center gap-2">
         {showCreateTransfer ? (
@@ -147,6 +165,28 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           </div>
         )}
       </div>
+      </div>
+
+      {showUploadProgress && (
+        <div className="border-t border-neutral-100 px-4 pb-2 pt-1 md:px-6 dark:border-neutral-800">
+          <div className="flex items-center justify-between gap-3">
+            <span className="truncate text-xs text-neutral-600 dark:text-neutral-400">
+              {syncProgress.currentFile}
+            </span>
+            <span className="shrink-0 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              {formatBytes(syncProgress.bytesSynced)} / {formatBytes(syncProgress.bytesTotal)}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
+            <div
+              className="h-full rounded-full bg-bizzi-blue transition-all duration-150"
+              style={{
+                width: `${Math.min(100, (syncProgress.bytesSynced / syncProgress.bytesTotal) * 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <CreateTransferModal
         open={transferModalOpen}

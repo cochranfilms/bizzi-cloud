@@ -10,7 +10,7 @@ interface MountPanelProps {
 }
 
 export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoading }: MountPanelProps) {
-  const apiBaseUrl = String(settings.apiBaseUrl ?? "https://bizzi-cloud.vercel.app");
+  const apiBaseUrl = String(settings.apiBaseUrl ?? "https://www.bizzicloud.io");
   const [fuseAvailable, setFuseAvailable] = useState<boolean | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [mountPoint, setMountPoint] = useState<string | null>(null);

@@ -147,7 +147,7 @@ export default function SyncDriveButton() {
         )}
       </div>
 
-      {isSyncing && syncProgress && (
+      {(isSyncing || syncProgress?.status === "in_progress") && syncProgress && (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="text-neutral-600 dark:text-neutral-400">
@@ -178,13 +178,15 @@ export default function SyncDriveButton() {
               {syncProgress.currentFile}
             </p>
           )}
-          <button
-            type="button"
-            onClick={cancelSync}
-            className="mt-2 text-xs text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
-          >
-            Cancel
-          </button>
+          {isSyncing && (
+            <button
+              type="button"
+              onClick={cancelSync}
+              className="mt-2 text-xs text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 

@@ -85,7 +85,7 @@ export async function GET(request: Request) {
       const args = [
         "-y",
         "-ss",
-        "0",
+        "1",
         "-i",
         presignedUrl,
         "-vframes",

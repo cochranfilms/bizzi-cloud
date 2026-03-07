@@ -16,7 +16,7 @@ export interface MountOptions {
   resourcesDir?: string;
 }
 
-const PRODUCTION_URL = "https://bizzi-cloud.vercel.app";
+const PRODUCTION_URL = "https://www.bizzicloud.io";
 
 export class MountService {
   private webdav: WebDAVServer | null = null;
