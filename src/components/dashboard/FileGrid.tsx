@@ -67,15 +67,19 @@ function BulkActionBar({
 function PinnedFolderActions({
   drive,
   itemName,
+  itemCount,
   currentDriveId,
-  unlinkDrive,
+  deleteFolder,
   closeDrive,
+  refetch,
 }: {
   drive: LinkedDrive;
   itemName: string;
+  itemCount: number;
   currentDriveId: string | undefined;
-  unlinkDrive: (d: LinkedDrive) => Promise<void>;
+  deleteFolder: (d: { id: string; name: string }, count: number) => Promise<void>;
   closeDrive: () => void;
+  refetch: () => Promise<void>;
 }) {
   return (
     <ItemActionsMenu
@@ -84,9 +88,13 @@ function PinnedFolderActions({
           id: "delete",
           label: "Delete",
           onClick: async () => {
-            if (window.confirm(`Delete "${itemName}"? This will unlink the drive and remove it from your backups.`)) {
-              await unlinkDrive(drive);
+            const msg = itemCount === 0
+              ? `Delete "${itemName}"? This will unlink the drive and remove it from your backups.`
+              : `Delete "${itemName}"? The folder and its ${itemCount} item${itemCount === 1 ? "" : "s"} will be moved to trash.`;
+            if (window.confirm(msg)) {
+              await deleteFolder(drive, itemCount);
               if (currentDriveId === drive.id) closeDrive();
+              await refetch();
             }
           },
           destructive: true,
@@ -105,9 +113,9 @@ export default function FileGrid() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
-  const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile, deleteFiles, refetch } =
+  const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile, deleteFiles, deleteFolder, refetch } =
     useCloudFiles();
-  const { unlinkDrive, linkedDrives, storageVersion } = useBackup();
+  const { linkedDrives, storageVersion } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -287,7 +295,7 @@ export default function FileGrid() {
         : "";
     const folderMsg =
       folderCount > 0
-        ? `${folderCount} drive${folderCount === 1 ? "" : "s"} will be unlinked and removed from backups. `
+        ? `${folderCount} drive${folderCount === 1 ? "" : "s"} will be moved to trash (or unlinked if empty). `
         : "";
     if (
       !window.confirm(
@@ -302,8 +310,9 @@ export default function FileGrid() {
       for (const key of folderKeys) {
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
         const drive = linkedDrives.find((d) => d.id === driveId);
+        const itemCount = folderItems.find((f) => f.key === key)?.items ?? 0;
         if (drive) {
-          await unlinkDrive(drive);
+          await deleteFolder(drive, itemCount);
           if (currentDriveId === driveId) {
             closeDrive();
             didUnlinkCurrentDrive = true;
@@ -321,8 +330,9 @@ export default function FileGrid() {
   }, [
     selectedFileIds,
     selectedFolderKeys,
+    folderItems,
     deleteFiles,
-    unlinkDrive,
+    deleteFolder,
     linkedDrives,
     currentDriveId,
     currentDrive,
@@ -388,9 +398,11 @@ export default function FileGrid() {
                       <PinnedFolderActions
                         drive={drive}
                         itemName={item.name}
+                        itemCount={item.items}
                         currentDriveId={undefined}
-                        unlinkDrive={unlinkDrive}
+                        deleteFolder={deleteFolder}
                         closeDrive={closeDrive}
+                        refetch={refetch}
                       />
                     </div>
                   )}
@@ -539,8 +551,14 @@ export default function FileGrid() {
                           onDelete={
                             drive
                               ? async () => {
-                                  await unlinkDrive(drive);
-                                  if (currentDriveId === driveId) closeDrive();
+                                  const msg = item.items === 0
+                                    ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                    : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                                  if (window.confirm(msg)) {
+                                    await deleteFolder(drive, item.items);
+                                    if (currentDriveId === driveId) closeDrive();
+                                    await refetch();
+                                  }
                                 }
                               : undefined
                           }

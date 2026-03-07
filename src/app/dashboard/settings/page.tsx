@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import TopBar from "@/components/dashboard/TopBar";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { useAuth } from "@/context/AuthContext";
 import {
   User,
   Camera,
@@ -11,6 +14,7 @@ import {
   CreditCard,
   Loader2,
   Check,
+  Building2,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -263,6 +267,84 @@ function AccountSection() {
   );
 }
 
+function CreateOrganizationSection() {
+  const router = useRouter();
+  const { org, loading: orgLoading, refetch } = useEnterprise();
+  const { user } = useAuth();
+  const [orgName, setOrgName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = orgName.trim();
+    if (trimmed.length < 2) {
+      setError("Organization name must be at least 2 characters");
+      return;
+    }
+    setError(null);
+    setCreating(true);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch("/api/enterprise/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to create organization");
+      }
+      await refetch();
+      router.push("/enterprise");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (orgLoading || org) return null;
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+        <Building2 className="h-5 w-5 text-bizzi-blue" />
+        Create organization
+      </h2>
+      <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+        Create an enterprise organization to invite team members, customize branding, and manage shared storage.
+      </p>
+      <form onSubmit={handleCreate} className="flex gap-2">
+        <input
+          type="text"
+          value={orgName}
+          onChange={(e) => {
+            setOrgName(e.target.value);
+            setError(null);
+          }}
+          placeholder="Your company name"
+          disabled={creating}
+          className="flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+        />
+        <button
+          type="submit"
+          disabled={creating || orgName.trim().length < 2}
+          className="shrink-0 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+        >
+          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+        </button>
+      </form>
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
+  );
+}
+
 function SubscriptionSection() {
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
@@ -288,6 +370,7 @@ export default function SettingsPage() {
         <div className="mx-auto max-w-2xl space-y-6">
           <ProfileSection />
           <AccountSection />
+          <CreateOrganizationSection />
           <SubscriptionSection />
         </div>
       </main>

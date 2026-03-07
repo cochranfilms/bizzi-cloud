@@ -4,6 +4,7 @@ import { useState, createContext, useContext } from "react";
 import { PanelRight } from "lucide-react";
 import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
+import PendingInvitesBanner from "./PendingInvitesBanner";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -29,6 +30,7 @@ export default function DashboardShell({
       <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
         {/* Top navbar - main nav */}
         <TopNavbar />
+        <PendingInvitesBanner />
 
         {/* Mobile right panel overlay */}
         {rightPanelOpen && (
@@ -60,7 +62,7 @@ export default function DashboardShell({
 
           {/* Right panel - desktop: always visible on xl; mobile: slide-out */}
           <div
-            className={`fixed bottom-0 right-0 top-14 z-50 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${
+            className={`fixed bottom-0 right-0 top-14 z-40 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${
               rightPanelOpen ? "translate-x-0" : "translate-x-full xl:translate-x-0"
             }`}
           >

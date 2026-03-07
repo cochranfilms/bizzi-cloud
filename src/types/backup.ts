@@ -41,3 +41,20 @@ export interface SyncProgress {
   currentFile: string | null;
   error?: string;
 }
+
+/** Per-file state for New button multi-file uploads. */
+export interface FileUploadItem {
+  id: string;
+  name: string;
+  size: number;
+  bytesSynced: number;
+  status: "pending" | "uploading" | "completed" | "cancelled" | "error";
+  error?: string;
+}
+
+export interface FileUploadProgress {
+  status: "in_progress" | "completed" | "failed";
+  files: FileUploadItem[];
+  bytesTotal: number;
+  bytesSynced: number;
+}

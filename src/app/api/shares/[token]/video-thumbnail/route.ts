@@ -6,6 +6,7 @@ import {
   getObjectBuffer,
   putObject,
   getVideoThumbnailCacheKey,
+  getProxyObjectKey,
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
@@ -97,62 +98,104 @@ export async function GET(
 
   try {
     const cacheKey = getVideoThumbnailCacheKey(objectKey);
-    if (await objectExists(cacheKey)) {
-      const cached = await getObjectBuffer(cacheKey, 512 * 1024);
-      return new NextResponse(Uint8Array.from(cached), {
-        status: 200,
-        headers: {
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "private, max-age=3600",
-        },
-      });
+    try {
+      if (await objectExists(cacheKey)) {
+        const cached = await getObjectBuffer(cacheKey, 512 * 1024);
+        if (cached.length > 0) {
+          return new NextResponse(Uint8Array.from(cached), {
+            status: 200,
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Cache-Control": "private, max-age=3600",
+            },
+          });
+        }
+      }
+    } catch (cacheErr) {
+      console.warn("[share video-thumbnail] Cache read failed, regenerating:", cacheErr);
     }
 
-    const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
+    // Use proxy when available for more reliable FFmpeg processing
+    const proxyKey = getProxyObjectKey(objectKey);
+    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 
-    const thumbBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const args = [
-        "-y",
-        "-probesize",
-        "32K",
-        "-analyzeduration",
-        "500000",
-        "-ss",
-        "0.5",
-        "-i",
-        presignedUrl,
-        "-vframes",
-        "1",
-        "-vf",
-        "scale=480:-1",
-        "-f",
-        "image2",
-        "-q:v",
-        "3",
-        "pipe:1",
-      ];
+    const FFMPEG_TIMEOUT_MS = 45000;
 
-      const proc = spawn(ffmpegPath!, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
+    const runFfmpeg = async (seekSeconds: number): Promise<Buffer> =>
+      new Promise((resolve, reject) => {
+        const stderrChunks: string[] = [];
+        const args = [
+          "-y",
+          "-nostdin",
+          "-probesize",
+          "32K",
+          "-analyzeduration",
+          "500000",
+          "-ss",
+          String(seekSeconds),
+          "-t",
+          "5",
+          "-i",
+          presignedUrl,
+          "-vframes",
+          "1",
+          "-vf",
+          "scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2",
+          "-f",
+          "image2",
+          "-q:v",
+          "3",
+          "pipe:1",
+        ];
+
+        const proc = spawn(ffmpegPath!, args, {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
+        });
+
+        const chunks: Buffer[] = [];
+        proc.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proc.stderr?.on("data", (chunk: Buffer) =>
+          stderrChunks.push(chunk.toString())
+        );
+
+        const timeoutId = setTimeout(() => {
+          proc.kill("SIGKILL");
+          reject(new Error("FFmpeg timeout"));
+        }, FFMPEG_TIMEOUT_MS);
+
+        proc.on("close", (code) => {
+          clearTimeout(timeoutId);
+          if (code === 0) {
+            resolve(Buffer.concat(chunks));
+          } else {
+            const stderr = stderrChunks.join("").slice(-500);
+            reject(new Error(`FFmpeg exited ${code}: ${stderr || "no stderr"}`));
+          }
+        });
+        proc.on("error", (e) => {
+          clearTimeout(timeoutId);
+          reject(new Error(`FFmpeg spawn failed: ${e.message}`));
+        });
       });
 
-      const chunks: Buffer[] = [];
-      proc.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
-      proc.stderr?.on("data", () => {});
-
-      proc.on("close", (code) => {
-        if (code === 0) {
-          resolve(Buffer.concat(chunks));
-        } else {
-          reject(new Error(`FFmpeg exited with code ${code}`));
-        }
-      });
-      proc.on("error", reject);
-    });
+    let thumbBuffer: Buffer;
+    try {
+      thumbBuffer = await runFfmpeg(0.5);
+    } catch (firstErr) {
+      try {
+        thumbBuffer = await runFfmpeg(0);
+      } catch (secondErr) {
+        const msg =
+          firstErr instanceof Error ? firstErr.message : "Video thumbnail failed";
+        console.error("[share video-thumbnail] FFmpeg failed:", msg);
+        return new NextResponse("Video thumbnail not available", { status: 503 });
+      }
+    }
 
     if (!thumbBuffer.length) {
-      return new NextResponse("Failed to generate thumbnail", { status: 500 });
+      return new NextResponse("Video thumbnail not available", { status: 503 });
     }
 
     putObject(cacheKey, thumbBuffer, "image/jpeg").catch((e) =>
@@ -169,6 +212,6 @@ export async function GET(
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Video thumbnail failed";
     console.error("[share video-thumbnail] Error:", msg);
-    return new NextResponse(msg, { status: 500 });
+    return new NextResponse("Video thumbnail not available", { status: 503 });
   }
 }

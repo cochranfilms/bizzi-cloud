@@ -33,6 +33,13 @@ export interface DriveFolder {
   lastSyncedAt: string | null;
 }
 
+export interface DeletedDrive {
+  id: string;
+  name: string;
+  items: number;
+  deletedAt: string | null;
+}
+
 export interface RecentFile {
   id: string;
   name: string;
@@ -66,10 +73,29 @@ export function useCloudFiles() {
     try {
       setLoading(true);
       const db = getFirebaseFirestore();
-      const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+      // Fetch linked drives from Firestore so refetch() after delete uses fresh data
+      // (React state may not have propagated yet when refetch runs)
+      const drivesSnap = await getDocs(
+        query(
+          collection(db, "linked_drives"),
+          where("userId", "==", user.uid),
+          orderBy("createdAt", "desc")
+        )
+      );
+      const drives = drivesSnap.docs
+        .filter((d) => !d.data().deleted_at)
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name ?? "Folder",
+            last_synced_at: data.last_synced_at ?? null,
+          };
+        });
+      const driveMap = new Map(drives.map((d) => [d.id, d]));
 
       const folders: DriveFolder[] = [];
-      for (const drive of linkedDrives) {
+      for (const drive of drives) {
         const countSnap = await getCountFromServer(
           query(
             collection(db, "backup_files"),
@@ -126,7 +152,7 @@ export function useCloudFiles() {
     } finally {
       setLoading(false);
     }
-  }, [user, linkedDrives]);
+  }, [user]);
 
   useEffect(() => {
     fetchCloudFiles();
@@ -172,7 +198,20 @@ export function useCloudFiles() {
     async (): Promise<RecentFile[]> => {
       if (!isFirebaseConfigured() || !user) return [];
       const db = getFirebaseFirestore();
-      const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+      // Fetch all drives (including deleted) so drive names show correctly for files in deleted folders
+      const drivesSnap = await getDocs(
+        query(
+          collection(db, "linked_drives"),
+          where("userId", "==", user.uid),
+          orderBy("createdAt", "desc")
+        )
+      );
+      const driveMap = new Map(
+        drivesSnap.docs.map((d) => {
+          const data = d.data();
+          return [d.id, { id: d.id, name: data.name ?? "Folder" }];
+        })
+      );
       const filesSnap = await getDocs(
         query(
           collection(db, "backup_files"),
@@ -296,9 +335,10 @@ export function useCloudFiles() {
       parts[parts.length - 1] = newName.trim();
       const newPath = parts.join("/");
       await updateDoc(fileRef, { relative_path: newPath });
+      bumpStorageVersion();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles]
+    [user, fetchCloudFiles, bumpStorageVersion]
   );
 
   const renameFolder = useCallback(
@@ -384,6 +424,135 @@ export function useCloudFiles() {
     [user, linkedDrives, unlinkDrive, fetchCloudFiles, recalculateStorage]
   );
 
+  const deleteFolder = useCallback(
+    async (drive: { id: string; name: string }, itemCount: number) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      if (itemCount === 0) {
+        const linkedDrive = linkedDrives.find((d) => d.id === drive.id);
+        if (linkedDrive) await unlinkDrive(linkedDrive);
+      } else {
+        const filesSnap = await getDocs(
+          query(
+            collection(db, "backup_files"),
+            where("userId", "==", user.uid),
+            where("linked_drive_id", "==", drive.id),
+            where("deleted_at", "==", null)
+          )
+        );
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < filesSnap.docs.length; i += BATCH_SIZE) {
+          const chunk = filesSnap.docs.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const d of chunk) {
+            batch.update(doc(db, "backup_files", d.id), {
+              deleted_at: serverTimestamp(),
+            });
+          }
+          await batch.commit();
+        }
+        await updateDoc(doc(db, "linked_drives", drive.id), {
+          deleted_at: serverTimestamp(),
+        });
+        await recalculateStorage();
+        await fetchDrives();
+      }
+      bumpStorageVersion();
+      await fetchCloudFiles();
+    },
+    [user, linkedDrives, unlinkDrive, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+  );
+
+  const fetchDeletedDrives = useCallback(async (): Promise<DeletedDrive[]> => {
+    if (!isFirebaseConfigured() || !user) return [];
+    const db = getFirebaseFirestore();
+    const drivesSnap = await getDocs(
+      query(
+        collection(db, "linked_drives"),
+        where("userId", "==", user.uid),
+        where("deleted_at", "!=", null),
+        orderBy("deleted_at", "desc")
+      )
+    );
+    const result: DeletedDrive[] = [];
+    for (const d of drivesSnap.docs) {
+      const data = d.data();
+      const countSnap = await getCountFromServer(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", d.id),
+          where("deleted_at", "!=", null)
+        )
+      );
+      const deletedAt = data.deleted_at?.toDate?.()
+        ? data.deleted_at.toDate().toISOString()
+        : typeof data.deleted_at === "string"
+          ? data.deleted_at
+          : null;
+      result.push({
+        id: d.id,
+        name: data.name ?? "Folder",
+        items: countSnap.data().count,
+        deletedAt,
+      });
+    }
+    return result;
+  }, [user]);
+
+  const restoreDrive = useCallback(
+    async (driveId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", driveId),
+          where("deleted_at", "!=", null)
+        )
+      );
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < filesSnap.docs.length; i += BATCH_SIZE) {
+        const chunk = filesSnap.docs.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const d of chunk) {
+          batch.update(doc(db, "backup_files", d.id), { deleted_at: null });
+        }
+        await batch.commit();
+      }
+      await updateDoc(doc(db, "linked_drives", driveId), { deleted_at: null });
+      await recalculateStorage();
+      await fetchDrives();
+      bumpStorageVersion();
+      await fetchCloudFiles();
+    },
+    [user, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+  );
+
+  const permanentlyDeleteDrive = useCallback(
+    async (driveId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", driveId)
+        )
+      );
+      for (const d of filesSnap.docs) {
+        await deleteDoc(doc(db, "backup_files", d.id));
+      }
+      await deleteDoc(doc(db, "linked_drives", driveId));
+      await recalculateStorage();
+      await fetchDrives();
+      bumpStorageVersion();
+      await fetchCloudFiles();
+    },
+    [user, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+  );
+
   return {
     driveFolders,
     recentFiles,
@@ -391,10 +560,14 @@ export function useCloudFiles() {
     refetch: fetchCloudFiles,
     fetchDriveFiles,
     fetchDeletedFiles,
+    fetchDeletedDrives,
     deleteFile,
     deleteFiles,
+    deleteFolder,
     restoreFile,
+    restoreDrive,
     permanentlyDeleteFile,
+    permanentlyDeleteDrive,
     renameFile,
     renameFolder,
     moveFile,

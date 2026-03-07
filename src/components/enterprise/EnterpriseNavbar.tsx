@@ -8,37 +8,41 @@ import {
   Home,
   FolderOpen,
   Share2,
-  FileQuestion,
   Trash2,
   Send,
-  Search,
+  Users,
   Settings,
   Menu,
   X,
-  Building2,
+  Search,
 } from "lucide-react";
-import UserMenu from "./UserMenu";
+import UserMenu from "@/components/dashboard/UserMenu";
 import { useEnterprise } from "@/context/EnterpriseContext";
 
 const navItems = [
-  { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/dashboard/files", label: "All files", icon: FolderOpen },
-  { href: "/dashboard/shared", label: "Shared", icon: Share2 },
-  { href: "/dashboard/transfers", label: "Transfers", icon: Send },
-  { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
-  { href: "/dashboard/trash", label: "Deleted files", icon: Trash2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/enterprise", label: "Home", icon: Home },
+  { href: "/enterprise/files", label: "All files", icon: FolderOpen },
+  { href: "/enterprise/shared", label: "Shared", icon: Share2 },
+  { href: "/enterprise/transfers", label: "Transfers", icon: Send },
+  { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },
+  { href: "/enterprise/seats", label: "Seats", icon: Users },
+  { href: "/enterprise/settings", label: "Settings", icon: Settings },
 ];
 
-export default function TopNavbar() {
+export default function EnterpriseNavbar() {
   const pathname = usePathname();
   const { org } = useEnterprise();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
 
+  const logoUrl = org?.logo_url;
+  const theme = org?.theme ?? "bizzi";
+
   return (
-    <header className="sticky top-0 z-[60] flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-6 md:px-6">
-      {/* Mobile menu button - before logo on small screens */}
+    <header
+      className="sticky top-0 z-50 flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-6 md:px-6"
+      data-org-theme={theme}
+    >
       <button
         type="button"
         onClick={() => setMobileOpen((o) => !o)}
@@ -48,49 +52,46 @@ export default function TopNavbar() {
         {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>
 
-      {/* Logo */}
       <Link
-        href="/"
+        href="/enterprise"
         className="flex flex-shrink-0 items-center gap-2"
         onClick={() => setMobileOpen(false)}
       >
-        <Image
-          src="/logo.png"
-          alt="Bizzi Byte"
-          width={24}
-          height={24}
-          className="object-contain"
-        />
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={org?.name ?? "Organization"}
+            width={24}
+            height={24}
+            className="h-6 w-6 object-contain"
+          />
+        ) : (
+          <Image
+            src="/logo.png"
+            alt="Bizzi Byte"
+            width={24}
+            height={24}
+            className="object-contain"
+          />
+        )}
         <span className="font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-          Bizzi <span className="text-bizzi-blue">Cloud</span>
+          {org?.name ?? "Enterprise"}
         </span>
       </Link>
 
-      {/* Desktop nav - horizontal */}
       <nav className="hidden md:flex items-center gap-0.5">
-        {org && (
-          <Link
-            href="/enterprise"
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-              pathname.startsWith("/enterprise")
-                ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-            }`}
-          >
-            <Building2 className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden lg:inline">Enterprise</span>
-          </Link>
-        )}
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/enterprise" && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors enterprise-nav-link ${
                 isActive
-                  ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                  ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
                   : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
               }`}
             >
@@ -101,7 +102,6 @@ export default function TopNavbar() {
         })}
       </nav>
 
-      {/* Search - grows to fill space */}
       <div
         className={`relative flex-1 min-w-0 max-w-xl transition-all ${
           searchFocused ? "flex-[1.5]" : ""
@@ -113,16 +113,20 @@ export default function TopNavbar() {
           placeholder="Search files..."
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
-          className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20"
+          className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500"
         />
       </div>
 
-      {/* User menu */}
-      <div className="flex flex-shrink-0 items-center">
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <Link
+          href="/dashboard"
+          className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+        >
+          Personal
+        </Link>
         <UserMenu compact />
       </div>
 
-      {/* Mobile nav overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 top-14 z-40 bg-black/30 md:hidden"
@@ -136,25 +140,11 @@ export default function TopNavbar() {
         }`}
       >
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
-          {org && (
-            <li>
-              <Link
-                href="/enterprise"
-                onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  pathname.startsWith("/enterprise")
-                    ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                    : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-                }`}
-              >
-                <Building2 className="h-4 w-4 flex-shrink-0" />
-                Enterprise
-              </Link>
-            </li>
-          )}
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/enterprise" && pathname.startsWith(item.href));
             return (
               <li key={item.href}>
                 <Link
@@ -162,7 +152,7 @@ export default function TopNavbar() {
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     isActive
-                      ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                      ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
                       : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
                 >

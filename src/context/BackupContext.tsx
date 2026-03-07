@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -28,7 +29,7 @@ import {
   useFileSystemAccess,
   isFileSystemAccessSupported,
 } from "@/hooks/useFileSystemAccess";
-import type { SyncProgress } from "@/types/backup";
+import type { SyncProgress, FileUploadProgress, FileUploadItem } from "@/types/backup";
 import {
   getFirebaseFirestore,
   getFirebaseAuth,
@@ -57,6 +58,11 @@ interface BackupContextValue {
   pickDirectory: () => Promise<FileSystemDirectoryHandle>;
   unlinkDrive: (drive: LinkedDrive) => Promise<void>;
   uploadSingleFile: (file: File, targetDriveId?: string) => Promise<void>;
+  /** Upload multiple files sequentially with per-file progress. Used by New → File Upload. */
+  uploadFiles: (files: File[], targetDriveId?: string) => Promise<void>;
+  /** Cancel a specific file's upload and remove any partial chunks from Backblaze. */
+  cancelFileUpload: (fileId: string) => void;
+  fileUploadProgress: FileUploadProgress | null;
   uploadFolder: () => Promise<void>;
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
@@ -131,7 +137,8 @@ async function uploadWithMultipart(
   idToken: string,
   userId: string | null,
   signal?: AbortSignal,
-  onProgress?: (loaded: number, total: number) => void
+  onProgress?: (loaded: number, total: number) => void,
+  onMultipartAbort?: (objectKey: string, uploadId: string) => Promise<void>
 ): Promise<{ objectKey: string }> {
   const initRes = await fetch("/api/backup/multipart-init", {
     method: "POST",
@@ -171,52 +178,60 @@ async function uploadWithMultipart(
     onProgress(loaded, file.size);
   };
 
-  const uploadResults = await Promise.all(
-    parts.map(
-      async (
-        {
-          partNumber,
-          uploadUrl,
-        }: {
-          partNumber: number;
-          uploadUrl: string;
-        },
-        idx: number
-      ) => {
-        const start = (partNumber - 1) * MULTIPART_PART_SIZE;
-        const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
-        const blob = file.slice(start, end);
-        const { etag } = await putWithProgress(blob, uploadUrl, contentType, {
-          signal,
-          onProgress: (loaded) => {
-            partProgress[idx] = loaded;
-            reportProgress();
+  try {
+    const uploadResults = await Promise.all(
+      parts.map(
+        async (
+          {
+            partNumber,
+            uploadUrl,
+          }: {
+            partNumber: number;
+            uploadUrl: string;
           },
-        });
-        partProgress[idx] = end - start;
-        reportProgress();
-        return { partNumber, etag };
-      }
-    )
-  );
+          idx: number
+        ) => {
+          const start = (partNumber - 1) * MULTIPART_PART_SIZE;
+          const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
+          const blob = file.slice(start, end);
+          const { etag } = await putWithProgress(blob, uploadUrl, contentType, {
+            signal,
+            onProgress: (loaded) => {
+              partProgress[idx] = loaded;
+              reportProgress();
+            },
+          });
+          partProgress[idx] = end - start;
+          reportProgress();
+          return { partNumber, etag };
+        }
+      )
+    );
 
-  const completeRes = await fetch("/api/backup/multipart-complete", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({
-      object_key: objectKey,
-      upload_id: uploadId,
-      parts: uploadResults,
-    }),
-  });
-  if (!completeRes.ok) {
-    const data = await completeRes.json().catch(() => ({}));
-    throw new Error(data?.error ?? "Failed to complete multipart upload");
+    const completeRes = await fetch("/api/backup/multipart-complete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        object_key: objectKey,
+        upload_id: uploadId,
+        parts: uploadResults,
+      }),
+    });
+    if (!completeRes.ok) {
+      const data = await completeRes.json().catch(() => ({}));
+      throw new Error(data?.error ?? "Failed to complete multipart upload");
+    }
+    return { objectKey };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Upload failed";
+    if (msg === "Upload aborted" && onMultipartAbort) {
+      await onMultipartAbort(objectKey, uploadId);
+    }
+    throw err;
   }
-  return { objectKey };
 }
 
 const BackupContext = createContext<BackupContextValue | null>(null);
@@ -231,6 +246,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   const [abortController, setAbortController] =
     useState<AbortController | null>(null);
   const [storageVersion, setStorageVersion] = useState(0);
+  const [fileUploadProgress, setFileUploadProgress] =
+    useState<FileUploadProgress | null>(null);
+  const fileUploadAbortRef = useRef<Map<string, AbortController>>(new Map());
+  const fileUploadMultipartRef = useRef<
+    Map<string, { objectKey: string; uploadId: string }>
+  >(new Map());
 
   const {
     supported: fsAccessSupported,
@@ -257,18 +278,20 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         orderBy("createdAt", "desc")
       );
       const snapshot = await getDocs(q);
-      const drives: LinkedDrive[] = snapshot.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          user_id: data.userId,
-          name: data.name,
-          mount_path: data.mount_path ?? null,
-          permission_handle_id: data.permission_handle_id ?? null,
-          last_synced_at: data.last_synced_at ?? null,
-          created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-        };
-      });
+      const drives: LinkedDrive[] = snapshot.docs
+        .filter((d) => !d.data().deleted_at)
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            user_id: data.userId,
+            name: data.name,
+            mount_path: data.mount_path ?? null,
+            permission_handle_id: data.permission_handle_id ?? null,
+            last_synced_at: data.last_synced_at ?? null,
+            created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+          };
+        });
       setLinkedDrives(drives);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -768,8 +791,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
       setLinkedDrives((prev) => prev.filter((d) => d.id !== drive.id));
       setStorageVersion((v) => v + 1);
+      // Refresh from server so all consumers (e.g. FileGrid driveFolders) update immediately
+      await fetchDrives();
     },
-    [user, deleteStoredHandle]
+    [user, deleteStoredHandle, fetchDrives]
   );
 
   const getOrCreateUploadsDrive = useCallback(async (): Promise<LinkedDrive> => {
@@ -841,7 +866,241 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const cancelFileUpload = useCallback((fileId: string) => {
+    const controller = fileUploadAbortRef.current.get(fileId);
+    if (controller) {
+      controller.abort();
+    }
+    fileUploadAbortRef.current.delete(fileId);
+    setFileUploadProgress((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        files: prev.files.map((f) =>
+          f.id === fileId ? { ...f, status: "cancelled" as const } : f
+        ),
+      };
+    });
+  }, []);
+
+  const uploadFiles = useCallback(
+    async (files: File[], targetDriveId?: string) => {
+      if (!isFirebaseConfigured() || !user) {
+        setError("Please sign in to upload.");
+        return;
+      }
+      if (files.length === 0) return;
+      setError(null);
+      setFileUploadError(null);
+
+      const drive = targetDriveId
+        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
+        : await getOrCreateUploadsDrive();
+      const db = getFirebaseFirestore();
+      const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+      const fileItems = files.map((f, i) => ({
+        id: `upload-${Date.now()}-${i}-${f.name}`,
+        name: f.name,
+        size: f.size,
+        bytesSynced: 0,
+        status: "pending" as const,
+      }));
+      setFileUploadProgress({
+        status: "in_progress",
+        files: fileItems,
+        bytesTotal,
+        bytesSynced: 0,
+      });
+
+      let bytesSynced = 0;
+      const updateFile = (
+        id: string,
+        update: Partial<FileUploadItem>
+      ) => {
+        setFileUploadProgress((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            files: prev.files.map((f) =>
+              f.id === id ? { ...f, ...update } : f
+            ),
+            bytesSynced,
+          };
+        });
+      };
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const item = fileItems[i];
+        const controller = new AbortController();
+        fileUploadAbortRef.current.set(item.id, controller);
+
+        updateFile(item.id, { status: "uploading" });
+        const contentType = file.type || "application/octet-stream";
+        const relativePath = file.name;
+
+        try {
+          const contentHash = await sha256Hex(file);
+          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+          if (!idToken) throw new Error("Not authenticated. Sign in again.");
+
+          let objectKey: string;
+          if (file.size > MULTIPART_THRESHOLD) {
+            const onMultipartAbort = async (objKey: string, uploadId: string) => {
+              const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+              await fetch("/api/backup/multipart-abort", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ object_key: objKey, upload_id: uploadId }),
+              });
+            };
+            const res = await uploadWithMultipart(
+              file,
+              drive.id,
+              relativePath,
+              contentType,
+              contentHash,
+              idToken,
+              user.uid,
+              controller.signal,
+              (loaded) => {
+                updateFile(item.id, { bytesSynced: loaded });
+              },
+              onMultipartAbort
+            );
+            objectKey = res.objectKey;
+          } else {
+            const urlRes = await fetch("/api/backup/upload-url", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                drive_id: drive.id,
+                relative_path: relativePath,
+                content_type: contentType,
+                content_hash: contentHash,
+                user_id: user.uid,
+              }),
+            });
+            if (!urlRes.ok) {
+              const data = await urlRes.json().catch(() => ({}));
+              throw new Error(data?.error ?? "Failed to get upload URL");
+            }
+            const res = await urlRes.json();
+            objectKey = res.objectKey;
+            if (!res.alreadyExists && res.uploadUrl) {
+              await putWithProgress(file, res.uploadUrl, contentType, {
+                signal: controller.signal,
+                onProgress: (loaded) => {
+                  updateFile(item.id, { bytesSynced: loaded });
+                },
+              });
+            }
+          }
+
+          bytesSynced += file.size;
+          const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
+            linked_drive_id: drive.id,
+            userId: user.uid,
+            status: "completed",
+            files_count: 1,
+            bytes_synced: file.size,
+            completed_at: new Date(),
+          });
+          await addDoc(collection(db, "backup_files"), {
+            backup_snapshot_id: snapshotRef.id,
+            linked_drive_id: drive.id,
+            userId: user.uid,
+            relative_path: relativePath,
+            object_key: objectKey,
+            size_bytes: file.size,
+            content_type: contentType,
+            modified_at: file.lastModified
+              ? new Date(file.lastModified).toISOString()
+              : null,
+            deleted_at: null,
+          });
+          if (VIDEO_EXT.test(relativePath)) {
+            fetch("/api/backup/generate-proxy", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                object_key: objectKey,
+                name: relativePath,
+              }),
+            }).catch(() => {});
+          }
+          await updateDoc(doc(db, "linked_drives", drive.id), {
+            last_synced_at: new Date().toISOString(),
+          });
+          updateFile(item.id, {
+            status: "completed",
+            bytesSynced: file.size,
+          });
+        } catch (err) {
+          const msg =
+            err instanceof Error
+              ? err.message
+              : "Upload failed";
+          if (msg === "Upload aborted") {
+            updateFile(item.id, { status: "cancelled" });
+          } else {
+            setFileUploadError(msg);
+            updateFile(item.id, { status: "error", error: msg });
+          }
+        } finally {
+          fileUploadAbortRef.current.delete(item.id);
+        }
+      }
+
+      setFileUploadProgress((prev) => {
+        if (!prev) return null;
+        const completed = prev.files.every(
+          (f) =>
+            f.status === "completed" ||
+            f.status === "cancelled" ||
+            f.status === "error"
+        );
+        return {
+          ...prev,
+          status: completed ? "completed" : "failed",
+          bytesSynced,
+        };
+      });
+      setTimeout(() => {
+        setFileUploadProgress(null);
+        setStorageVersion((v) => v + 1);
+      }, 2000);
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        await fetch(`${base}/api/storage/recalculate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Non-fatal
+      }
+    },
+    [user, getOrCreateUploadsDrive, linkedDrives]
+  );
+
   const uploadSingleFile = useCallback(
+    async (file: File, targetDriveId?: string) => {
+      await uploadFiles([file], targetDriveId);
+    },
+    [uploadFiles]
+  );
+
+  const _uploadSingleFileLegacy = useCallback(
     async (file: File, targetDriveId?: string) => {
       if (!isFirebaseConfigured() || !user) {
         setError("Please sign in to upload.");
@@ -1021,6 +1280,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       pickDirectory,
       unlinkDrive,
       uploadSingleFile,
+      uploadFiles,
+      cancelFileUpload,
+      fileUploadProgress,
       uploadFolder,
       clearFileUploadError,
       fsAccessSupported,
@@ -1041,6 +1303,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       pickDirectory,
       unlinkDrive,
       uploadSingleFile,
+      uploadFiles,
+      cancelFileUpload,
+      fileUploadProgress,
       uploadFolder,
       clearFileUploadError,
       fileUploadError,

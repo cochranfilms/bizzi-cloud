@@ -96,7 +96,7 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
 
       {open && (
         <div
-          className={`absolute z-50 min-w-[200px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 ${dropdownPosition}`}
+          className={`absolute z-[100] min-w-[200px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 ${dropdownPosition}`}
         >
           <div className="border-b border-neutral-100 px-3 py-2 dark:border-neutral-700">
             <p className="text-sm font-medium text-neutral-900 dark:text-white">

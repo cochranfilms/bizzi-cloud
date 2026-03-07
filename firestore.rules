@@ -32,5 +32,30 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.owner_id == request.auth.uid;
       allow read, update, delete: if request.auth != null && resource.data.owner_id == request.auth.uid;
     }
+    match /organizations/{orgId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/organization_seats/$(orgId + '_' + request.auth.uid));
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+        && exists(/databases/$(database)/documents/organization_seats/$(orgId + '_' + request.auth.uid))
+        && get(/databases/$(database)/documents/organization_seats/$(orgId + '_' + request.auth.uid)).data.role == 'admin';
+    }
+    match /organization_seats/{seatId} {
+      allow read: if request.auth != null
+        && (resource.data.user_id == request.auth.uid
+          || (exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
+      allow create: if request.auth != null
+        && request.resource.data.organization_id is string
+        && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organization_id))
+        && (request.resource.data.user_id == request.auth.uid
+          && get(/databases/$(database)/documents/organizations/$(request.resource.data.organization_id)).data.created_by == request.auth.uid
+          || exists(/databases/$(database)/documents/organization_seats/$(request.resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(request.resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin');
+      allow update, delete: if request.auth != null
+        && (resource.data.user_id == request.auth.uid
+          || (exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
+    }
   }
 }

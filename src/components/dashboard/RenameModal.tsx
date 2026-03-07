@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -22,13 +22,31 @@ export default function RenameModal({
   const [name, setName] = useState(currentName);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Only reset name when modal opens - don't overwrite while user is typing (prevents
+  // parent re-renders from wiping input and fixes "file appearing" / premature closure)
   useEffect(() => {
     if (open) {
       setName(currentName);
       setError(null);
+      // Ensure input gets focus (fixes Space key being captured by FileCard when focus
+      // briefly stays on the menu trigger after clicking Rename)
+      requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [open, currentName]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- only sync on open
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -61,15 +79,19 @@ export default function RenameModal({
   const modal = (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
       role="dialog"
       aria-modal="true"
       aria-labelledby="rename-modal-title"
     >
-      <div className="absolute inset-0 bg-black/50" aria-hidden />
+      <div
+        className="absolute inset-0 bg-black/70"
+        aria-hidden
+        onClick={onClose}
+      />
       <div
         className="relative z-10 w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 id="rename-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
@@ -93,6 +115,7 @@ export default function RenameModal({
               Name
             </label>
             <input
+              ref={inputRef}
               id="rename-input"
               type="text"
               value={name}

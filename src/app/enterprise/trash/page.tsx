@@ -55,7 +55,7 @@ function DeletedFolderCard({
           alignRight
         />
       </div>
-      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)]">
         <Folder className="h-8 w-8" />
       </div>
       <h3
@@ -125,7 +125,7 @@ function DeletedFileCard({
   );
 }
 
-export default function TrashPage() {
+export default function EnterpriseTrashPage() {
   const [deletedFiles, setDeletedFiles] = useState<RecentFile[]>([]);
   const [deletedDrives, setDeletedDrives] = useState<DeletedDrive[]>([]);
   const [loading, setLoading] = useState(true);

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { withThumbnailSlot } from "@/lib/thumbnailQueue";
 
 const VIDEO_EXT =
   /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
@@ -122,18 +123,29 @@ export function useVideoThumbnail(
     };
 
     const tryServerSide = async (token: string): Promise<boolean> => {
-      const params = new URLSearchParams({
-        object_key: objectKey,
-        name: fileName,
+      return withThumbnailSlot(async () => {
+        const params = new URLSearchParams({
+          object_key: objectKey,
+          name: fileName,
+        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        try {
+          const res = await fetch(`/api/backup/video-thumbnail?${params}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (!res.ok || cancelled) return false;
+          const blob = await res.blob();
+          if (cancelled || blob.size === 0) return false;
+          setBlobUrl(URL.createObjectURL(blob));
+          return true;
+        } catch {
+          clearTimeout(timeoutId);
+          return false;
+        }
       });
-      const res = await fetch(`/api/backup/video-thumbnail?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok || cancelled) return false;
-      const blob = await res.blob();
-      if (cancelled || blob.size === 0) return false;
-      setBlobUrl(URL.createObjectURL(blob));
-      return true;
     };
 
     (async () => {

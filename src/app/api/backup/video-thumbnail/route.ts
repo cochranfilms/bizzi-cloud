@@ -129,17 +129,22 @@ export async function GET(request: Request) {
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 
-    const runFfmpeg = async (seekSeconds: number): Promise<Buffer> =>
-      new Promise((resolve, reject) => {
+    const FFMPEG_TIMEOUT_MS = 45000;
+
+    const runFfmpeg = async (seekSeconds: number): Promise<Buffer> => {
+      return new Promise((resolve, reject) => {
         const stderrChunks: string[] = [];
         const args = [
           "-y",
+          "-nostdin",
           "-probesize",
           "32K",
           "-analyzeduration",
           "500000",
           "-ss",
           String(seekSeconds),
+          "-t",
+          "5",
           "-i",
           presignedUrl,
           "-vframes",
@@ -164,7 +169,13 @@ export async function GET(request: Request) {
           stderrChunks.push(chunk.toString())
         );
 
-        proc.on("close", (code) => {
+        const timeoutId = setTimeout(() => {
+          proc.kill("SIGKILL");
+          reject(new Error("FFmpeg timeout"));
+        }, FFMPEG_TIMEOUT_MS);
+
+        proc.on("close", (code, signal) => {
+          clearTimeout(timeoutId);
           if (code === 0) {
             resolve(Buffer.concat(chunks));
           } else {
@@ -173,9 +184,11 @@ export async function GET(request: Request) {
           }
         });
         proc.on("error", (e) => {
+          clearTimeout(timeoutId);
           reject(new Error(`FFmpeg spawn failed: ${e.message}`));
         });
       });
+    };
 
     let thumbBuffer: Buffer;
     try {

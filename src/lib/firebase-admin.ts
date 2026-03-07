@@ -1,6 +1,7 @@
 import { getApps, getApp, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 export function getAuthConfigStatus(): {
   configured: boolean;
@@ -30,7 +31,13 @@ function getAdminApp() {
     }
     try {
       const parsed = JSON.parse(serviceAccount) as Parameters<typeof cert>[0];
-      initializeApp({ credential: cert(parsed) });
+      const storageBucket =
+        process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ??
+        (parsed as { project_id?: string }).project_id + ".appspot.com";
+      initializeApp({
+        credential: cert(parsed),
+        storageBucket,
+      });
     } catch (e) {
       const msg = e instanceof SyntaxError
         ? "FIREBASE_SERVICE_ACCOUNT_JSON has invalid JSON. Paste the full minified JSON from Firebase Console."
@@ -43,6 +50,10 @@ function getAdminApp() {
 
 export function getAdminFirestore() {
   return getFirestore(getAdminApp());
+}
+
+export function getAdminStorage() {
+  return getStorage(getAdminApp());
 }
 
 export async function verifyIdToken(

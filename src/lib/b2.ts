@@ -7,6 +7,7 @@ import {
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   type CompletedPart,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -88,6 +89,21 @@ export async function createPresignedPartUrl(
     PartNumber: partNumber,
   });
   return getSignedUrl(client, command, { expiresIn });
+}
+
+/** Abort multipart upload and remove any uploaded parts from B2. */
+export async function abortMultipartUpload(
+  objectKey: string,
+  uploadId: string
+): Promise<void> {
+  const client = getB2Client();
+  await client.send(
+    new AbortMultipartUploadCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      UploadId: uploadId,
+    })
+  );
 }
 
 /** Complete multipart upload with part ETags. */
