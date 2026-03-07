@@ -93,6 +93,8 @@ uniform sampler2D u_video;
 uniform sampler2D u_lut;
 uniform float u_lutSize;
 uniform float u_lutEnabled;
+uniform float u_videoAspect;
+uniform float u_canvasAspect;
 in vec2 v_texCoord;
 out vec4 fragColor;
 
@@ -106,8 +108,6 @@ vec4 sampleLUT(vec3 rgb) {
   vec3 i1 = min(i0 + 1.0, size - 1.0);
   vec3 t = fract(f);
 
-  float sx = size2;
-  float sy = size;
   vec4 c000 = texelFetch(u_lut, ivec2(i0.r + i0.g * size, i0.b), 0);
   vec4 c100 = texelFetch(u_lut, ivec2(i1.r + i0.g * size, i0.b), 0);
   vec4 c010 = texelFetch(u_lut, ivec2(i0.r + i1.g * size, i0.b), 0);
@@ -127,7 +127,21 @@ vec4 sampleLUT(vec3 rgb) {
 }
 
 void main() {
-  vec4 v = texture(u_video, v_texCoord);
+  float videoAspect = u_videoAspect;
+  float canvasAspect = u_canvasAspect;
+  vec2 uv = v_texCoord;
+  if (videoAspect > 0.0 && canvasAspect > 0.0) {
+    if (canvasAspect > videoAspect) {
+      uv.y = (v_texCoord.y - 0.5) * (videoAspect / canvasAspect) + 0.5;
+    } else {
+      uv.x = (v_texCoord.x - 0.5) * (canvasAspect / videoAspect) + 0.5;
+    }
+  }
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  vec4 v = texture(u_video, uv);
   if (u_lutEnabled > 0.5) {
     fragColor = vec4(sampleLUT(v.rgb).rgb, v.a);
   } else {
@@ -281,10 +295,19 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, lutTexture);
 
+      const videoAspect = video.videoWidth > 0 && video.videoHeight > 0
+        ? video.videoWidth / video.videoHeight
+        : 0.0;
+      const canvasAspect = rect.width > 0 && rect.height > 0
+        ? rect.width / rect.height
+        : 0.0;
+
       gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
       gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(program, "u_videoAspect"), videoAspect);
+      gl.uniform1f(gl.getUniformLocation(program, "u_canvasAspect"), canvasAspect);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       requestAnimationFrame(render);

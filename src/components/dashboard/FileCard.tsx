@@ -50,7 +50,9 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
 
   return (
     <div
-      className={`group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+      className={`group relative flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+        isVideo ? "items-stretch" : "items-center"
+      } ${
         canPreview
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
           : ""
@@ -87,7 +89,7 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
       )}
       <div
         className={`mb-3 flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
-          isVideo ? "w-full aspect-video" : "h-16 w-16"
+          isVideo ? "w-full min-w-0 aspect-video" : "h-16 w-16"
         }`}
       >
         {thumbnailUrl ? (
