@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus } from "lucide-react";
+import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
@@ -68,6 +69,8 @@ export default function FileCard({
   const [cardRef, isInView] = useInView<HTMLDivElement>();
   const { renameFile, moveFile } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+  const { isPinned, pinItem, unpinItem } = usePinned();
+  const filePinned = isPinned("file", file.id);
   const canPreview = !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
   const isVideo = isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false);
@@ -150,6 +153,12 @@ export default function FileCard({
                     },
                   ]
                 : []),
+              {
+                id: filePinned ? "unpin" : "pin",
+                label: filePinned ? "Unpin" : "Pin",
+                icon: <Pin className="h-4 w-4" />,
+                onClick: () => (filePinned ? unpinItem("file", file.id) : pinItem("file", file.id)),
+              },
               {
                 id: "rename",
                 label: "Rename",

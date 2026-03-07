@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Folder, LayoutGrid, List, Trash2 } from "lucide-react";
+import { ChevronLeft, LayoutGrid, List, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -16,8 +16,10 @@ import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
+import { useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
 
@@ -64,48 +66,6 @@ function BulkActionBar({
   );
 }
 
-function PinnedFolderActions({
-  drive,
-  itemName,
-  itemCount,
-  currentDriveId,
-  deleteFolder,
-  closeDrive,
-  refetch,
-}: {
-  drive: LinkedDrive;
-  itemName: string;
-  itemCount: number;
-  currentDriveId: string | undefined;
-  deleteFolder: (d: { id: string; name: string }, count: number) => Promise<void>;
-  closeDrive: () => void;
-  refetch: () => Promise<void>;
-}) {
-  return (
-    <ItemActionsMenu
-      actions={[
-        {
-          id: "delete",
-          label: "Delete",
-          onClick: async () => {
-            const msg = itemCount === 0
-              ? `Delete "${itemName}"? This will unlink the drive and remove it from your backups.`
-              : `Delete "${itemName}"? The folder and its ${itemCount} item${itemCount === 1 ? "" : "s"} will be moved to trash.`;
-            if (window.confirm(msg)) {
-              await deleteFolder(drive, itemCount);
-              if (currentDriveId === drive.id) closeDrive();
-              await refetch();
-            }
-          },
-          destructive: true,
-        },
-      ]}
-      ariaLabel="Folder actions"
-      alignRight
-    />
-  );
-}
-
 export default function FileGrid() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
@@ -115,6 +75,7 @@ export default function FileGrid() {
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile, deleteFiles, deleteFolder, refetch } =
     useCloudFiles();
+  const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
   const { linkedDrives, storageVersion } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
@@ -126,6 +87,8 @@ export default function FileGrid() {
     currentX: number;
     currentY: number;
   } | null>(null);
+  const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
+  const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const gridSectionRef = useRef<HTMLElement | null>(null);
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
@@ -136,7 +99,7 @@ export default function FileGrid() {
     hideShare: false,
     driveId: d.id,
   }));
-  const pinnedFolders = folderItems.slice(0, 3);
+  const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadDriveFiles = useCallback(
     async (driveId: string) => {
@@ -178,6 +141,38 @@ export default function FileGrid() {
       loadDriveFiles(currentDrive.id);
     }
   }, [storageVersion, currentDrive?.id, loadDriveFiles]);
+
+  // Fetch pinned file details when pinned file IDs change
+  const loadPinnedFiles = useCallback(async () => {
+    const ids = Array.from(pinnedFileIds);
+    if (ids.length === 0) {
+      setPinnedFiles([]);
+      return;
+    }
+    setPinnedFilesLoading(true);
+    try {
+      const files = await fetchPinnedFiles(ids);
+      setPinnedFiles(files);
+    } catch {
+      setPinnedFiles([]);
+    } finally {
+      setPinnedFilesLoading(false);
+    }
+  }, [pinnedFileIds]);
+
+  useEffect(() => {
+    loadPinnedFiles();
+  }, [loadPinnedFiles]);
+
+  // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const driveId = searchParams.get("drive");
+    if (driveId && !currentDrive) {
+      const folder = driveFolders.find((d) => d.id === driveId);
+      if (folder) openDrive(driveId, folder.name);
+    }
+  }, [searchParams, currentDrive, driveFolders, openDrive]);
 
   const toggleFileSelection = useCallback((id: string) => {
     setSelectedFileIds((prev) => {
@@ -362,54 +357,60 @@ export default function FileGrid() {
         </div>
       )}
 
-      {/* Pinned shortcuts (only at root) */}
-      {!currentDrive && (
+      {/* Pinned shortcuts (only at root) - user-pinned folders and files */}
+      {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0 || pinnedFilesLoading) && (
         <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900/50">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Pinned
             </h2>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {pinnedFolders.map((item) => {
-              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-              return (
-                <div
-                  key={item.key}
-                  className="group relative flex min-w-[120px] flex-col items-center rounded-xl bg-neutral-50 p-4 transition-colors hover:bg-bizzi-blue/5 dark:bg-neutral-800/50 dark:hover:bg-bizzi-blue/10"
-                >
-                  <button
-                    type="button"
-                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                    className="flex w-full flex-col items-center"
-                  >
-                    <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25">
-                      <Folder className="h-5 w-5" />
-                    </div>
-                    <p className="truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Folder
-                    </p>
-                  </button>
-                  {drive && (
-                    <div className="absolute right-1 top-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <PinnedFolderActions
-                        drive={drive}
-                        itemName={item.name}
-                        itemCount={item.items}
-                        currentDriveId={undefined}
-                        deleteFolder={deleteFolder}
-                        closeDrive={closeDrive}
-                        refetch={refetch}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {pinnedFilesLoading ? (
+            <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Loading…
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              {pinnedFolderItems.map((item) => {
+                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                return (
+                  <div key={item.key} className="relative">
+                    <FolderCard
+                      item={item}
+                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      onDelete={
+                        drive
+                          ? async () => {
+                              const msg = item.items === 0
+                                ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                              if (window.confirm(msg)) {
+                                await deleteFolder(drive, item.items);
+                                await refetch();
+                                await refetchPinned();
+                              }
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
+              {pinnedFiles.map((file) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  onClick={() => setPreviewFile(file)}
+                  onDelete={async () => {
+                    await deleteFile(file.id);
+                    await refetch();
+                    await refetchPinned();
+                    loadPinnedFiles();
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </section>
       )}
 

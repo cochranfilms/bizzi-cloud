@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   deleteDoc,
   getDocs,
@@ -190,6 +191,55 @@ export function useCloudFiles() {
             contentType: data.content_type ?? null,
           };
         });
+    },
+    [user, linkedDrives]
+  );
+
+  /** Fetches RecentFile[] from backup_files by document IDs (max 30, batched for Firestore 'in' limit of 10). */
+  const fetchFilesByIds = useCallback(
+    async (ids: string[]): Promise<RecentFile[]> => {
+      if (!isFirebaseConfigured() || !user || ids.length === 0) return [];
+      const db = getFirebaseFirestore();
+      const limited = ids.slice(0, 30);
+      const driveMap = new Map(linkedDrives.map((d) => [d.id, d.name]));
+      const allFiles: RecentFile[] = [];
+      const IN_LIMIT = 10;
+      for (let i = 0; i < limited.length; i += IN_LIMIT) {
+        const chunk = limited.slice(i, i + IN_LIMIT);
+        const filesSnap = await getDocs(
+          query(collection(db, "backup_files"), where(documentId(), "in", chunk))
+        );
+        const missingDriveIds = [...new Set(
+          filesSnap.docs
+            .map((d) => d.data().linked_drive_id as string)
+            .filter((id) => id && !driveMap.has(id))
+        )];
+        for (let j = 0; j < missingDriveIds.length; j += IN_LIMIT) {
+          const driveChunk = missingDriveIds.slice(j, j + IN_LIMIT);
+          const drivesSnap = await getDocs(
+            query(collection(db, "linked_drives"), where(documentId(), "in", driveChunk))
+          );
+          drivesSnap.docs.forEach((d) => driveMap.set(d.id, d.data().name ?? "Folder"));
+        }
+        filesSnap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.deleted_at) return;
+          const path = data.relative_path ?? "";
+          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+          allFiles.push({
+            id: d.id,
+            name,
+            path,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: data.modified_at ?? null,
+            driveId: data.linked_drive_id,
+            driveName: driveMap.get(data.linked_drive_id) ?? "Unknown drive",
+            contentType: data.content_type ?? null,
+          });
+        });
+      }
+      return allFiles;
     },
     [user, linkedDrives]
   );
@@ -559,6 +609,7 @@ export function useCloudFiles() {
     loading,
     refetch: fetchCloudFiles,
     fetchDriveFiles,
+    fetchFilesByIds,
     fetchDeletedFiles,
     fetchDeletedDrives,
     deleteFile,

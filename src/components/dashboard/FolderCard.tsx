@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus } from "lucide-react";
+import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useState } from "react";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -8,6 +8,7 @@ import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 
 export interface FolderItem {
@@ -46,6 +47,8 @@ export default function FolderCard({
   const canNavigate = !!item.driveId && !!onClick;
   const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+  const { isPinned, pinItem, unpinItem } = usePinned();
+  const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
 
   const handleDelete = () => {
     if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
@@ -144,6 +147,15 @@ export default function FolderCard({
                   : []),
                 ...(item.driveId
                   ? [
+                      {
+                        id: folderPinned ? "unpin" : "pin",
+                        label: folderPinned ? "Unpin" : "Pin",
+                        icon: <Pin className="h-4 w-4" />,
+                        onClick: () =>
+                          folderPinned
+                            ? unpinItem("folder", item.driveId!)
+                            : pinItem("folder", item.driveId!),
+                      },
                       {
                         id: "rename",
                         label: "Rename",
