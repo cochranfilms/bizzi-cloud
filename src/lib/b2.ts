@@ -131,12 +131,17 @@ export async function objectExists(objectKey: string): Promise<boolean> {
 
 export async function createPresignedDownloadUrl(
   objectKey: string,
-  expiresIn = 3600
+  expiresIn = 3600,
+  /** When provided, adds ResponseContentDisposition to force download instead of inline display */
+  downloadFilename?: string
 ): Promise<string> {
   const client = getB2Client();
   const command = new GetObjectCommand({
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
+    ...(downloadFilename && {
+      ResponseContentDisposition: `attachment; filename="${downloadFilename.replace(/"/g, '\\"')}"`,
+    }),
   });
   return getSignedUrl(client, command, { expiresIn });
 }

@@ -54,7 +54,7 @@ function ShareFileRow({
     shareToken,
     file.object_key,
     file.name,
-    { enabled: isInView, getAuthToken }
+    { enabled: true, getAuthToken }
   );
   const isVideo = isVideoFile(file.name);
   const isImage = isImageFile(file.name);
@@ -134,7 +134,7 @@ function ShareFileRow({
         className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
       >
         <Download className="h-4 w-4" />
-        {downloadingId === file.id ? "Opening…" : "Download"}
+        {downloadingId === file.id ? "Downloading…" : "Download"}
       </button>
     </div>
   );
@@ -204,14 +204,22 @@ export default function ShareView({ token }: ShareViewProps) {
         const res = await fetch(`/api/shares/${encodeURIComponent(token)}/download`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ object_key: file.object_key }),
+          body: JSON.stringify({ object_key: file.object_key, name: file.name }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.message ?? body.error ?? "Download failed");
         }
         const { url } = await res.json();
-        window.open(url, "_blank", "noopener,noreferrer");
+        const downloadRes = await fetch(url);
+        if (!downloadRes.ok) throw new Error("Download failed");
+        const blob = await downloadRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
       } catch (err) {
         console.error("Download error:", err);
       } finally {

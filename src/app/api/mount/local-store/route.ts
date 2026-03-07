@@ -1,4 +1,5 @@
-import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
+import { getDownloadUrl } from "@/lib/cdn";
+import { isB2Configured } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
     const doc = existing.docs[0];
     entryId = doc.id;
     if (doc.data().store_status === "completed") {
-      const url = await createPresignedDownloadUrl(resolvedObjectKey, 7200);
+      const url = await getDownloadUrl(resolvedObjectKey, 7200);
       return NextResponse.json({
         entry_id: doc.id,
         status: "completed",
@@ -162,7 +163,7 @@ export async function POST(request: Request) {
     entryId = ref.id;
   }
 
-  const url = await createPresignedDownloadUrl(resolvedObjectKey, 7200);
+  const url = await getDownloadUrl(resolvedObjectKey, 7200);
 
   return NextResponse.json({
     entry_id: entryId,

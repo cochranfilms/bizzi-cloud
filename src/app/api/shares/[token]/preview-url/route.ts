@@ -1,4 +1,4 @@
-import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
+import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
@@ -80,7 +80,7 @@ export async function POST(
   }
 
   try {
-    const url = await createPresignedDownloadUrl(objectKey, 3600);
+    const url = await getDownloadUrl(objectKey, 3600);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Share preview URL error:", err);

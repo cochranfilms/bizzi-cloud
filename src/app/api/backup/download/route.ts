@@ -1,4 +1,5 @@
-import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
+import { createHmac } from "node:crypto";
+import { isB2Configured } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -14,21 +15,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = await request.json();
-  const { object_key: objectKey, user_id: userIdFromBody } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const { object_key: objectKey, name: fileName, user_id: userIdFromBody } = body;
 
   let uid: string;
-
-  if (isDevAuthBypass() && userIdFromBody) {
+  if (isDevAuthBypass() && typeof userIdFromBody === "string") {
     uid = userIdFromBody;
   } else {
     const authHeader = request.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
     if (!token) {
-      return NextResponse.json(
-        { error: "Missing or invalid Authorization" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 });
     }
     try {
       const decoded = await verifyIdToken(token);
@@ -39,13 +42,11 @@ export async function POST(request: Request) {
   }
 
   if (!objectKey || typeof objectKey !== "string") {
-    return NextResponse.json(
-      { error: "object_key is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "object_key is required" }, { status: 400 });
   }
 
-  // Content-hash keys: verify user owns a backup_files entry with this object_key
+  const name = (typeof fileName === "string" ? fileName : null) ?? "download";
+
   if (objectKey.startsWith("content/")) {
     const db = getAdminFirestore();
     const snap = await db
@@ -61,7 +62,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
   } else {
-    // Legacy user-scoped keys
     const prefix = `backups/${uid}/`;
     if (!objectKey.startsWith(prefix)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -69,12 +69,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const url = await getDownloadUrl(objectKey, 3600);
-    return NextResponse.json({ url });
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const secret = process.env.B2_SECRET_ACCESS_KEY;
+    if (!secret) throw new Error("B2_SECRET_ACCESS_KEY not set");
+    const payload = `backup-download|${objectKey}|${exp}`;
+    const sig = createHmac("sha256", secret).update(payload).digest("base64url");
+    const downloadUrl = `/api/backup/download-stream?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${sig}&name=${encodeURIComponent(name)}`;
+    return NextResponse.json({ url: downloadUrl });
   } catch (err) {
-    console.error("Preview URL error:", err);
+    console.error("[backup download] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to create preview URL" },
+      { error: err instanceof Error ? err.message : "Failed to create download URL" },
       { status: 500 }
     );
   }

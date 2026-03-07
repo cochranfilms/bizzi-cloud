@@ -30,6 +30,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const previewType = file ? getPreviewType(file.name) : "other";
@@ -106,6 +107,46 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
     return () => document.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
+  const handleDownload = useCallback(async () => {
+    if (!file?.objectKey) return;
+    setDownloading(true);
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!token) throw new Error("Not authenticated");
+      const uid = getFirebaseAuth().currentUser?.uid;
+      const res = await fetch("/api/backup/download", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          object_key: file.objectKey,
+          name: file.name,
+          user_id: uid,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Download failed");
+      }
+      const { url } = await res.json();
+      const downloadRes = await fetch(url);
+      if (!downloadRes.ok) throw new Error("Download failed");
+      const blob = await downloadRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("Download error:", err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [file?.objectKey, file?.name]);
+
   if (!file) return null;
 
   return (
@@ -123,16 +164,15 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             {file.name}
           </h2>
           <div className="flex items-center gap-2">
-            {fullUrl && (
-              <a
-                href={fullUrl}
-                download={file.name}
-                className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white"
-                aria-label="Download full resolution"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+              aria-label="Download full resolution"
+            >
+              <Download className="h-4 w-4" />
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -156,15 +196,14 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             <div className="flex flex-col items-center gap-3 text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
-              {fullUrl && (
-                <a
-                  href={fullUrl}
-                  download={file.name}
-                  className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
-                >
-                  Download
-                </a>
-              )}
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+              >
+                Download
+              </button>
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
@@ -208,13 +247,14 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                   <div className="flex flex-col items-center gap-4 text-neutral-400">
                     <FileIcon className="h-16 w-16" />
                     <p className="text-sm">Preview not available for this file type</p>
-                    <a
-                      href={fullUrl}
-                      download={file.name}
-                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      disabled={downloading}
+                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
                     >
                       Download
-                    </a>
+                    </button>
                   </div>
                 )}
               </>

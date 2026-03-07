@@ -1,3 +1,4 @@
+import { getDownloadUrl, isCdnConfigured } from "@/lib/cdn";
 import { getObject, getObjectRange, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";

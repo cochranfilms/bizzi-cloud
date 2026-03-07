@@ -43,6 +43,7 @@ const corsRules = [
     allowedOrigins: ALLOWED_ORIGINS,
     allowedHeaders: ["*"],
     allowedOperations: ["s3_put", "s3_get", "s3_head"],
+    exposeHeaders: ["ETag"],
     maxAgeSeconds: 3600,
   },
   {

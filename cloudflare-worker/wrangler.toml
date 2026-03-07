@@ -1,0 +1,11 @@
+name = "bizzi-cdn"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "cdn.bizzicloud.io/*", zone_name = "bizzicloud.io" }
+]
+
+[vars]
+# Your Vercel/production API base URL (no trailing slash)
+API_BASE_URL = "https://bizzicloud.io"

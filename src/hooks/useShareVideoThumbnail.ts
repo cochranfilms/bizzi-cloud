@@ -162,13 +162,10 @@ export function useShareVideoThumbnail(
         const headers = await getHeaders();
         if (cancelled) return;
 
-        const clientFirst = isBrowserPlayable(fileName);
-        const first = clientFirst ? tryClientSide : tryServerSide;
-        const second = clientFirst ? tryServerSide : tryClientSide;
-
-        const ok = await first(headers);
+        // Server-side first for shares: more reliable for ProRes/Sony/RAW formats
+        const ok = await tryServerSide(headers);
         if (ok || cancelled) return;
-        await second(headers);
+        await tryClientSide(headers);
       } catch {
         // Both paths failed - placeholder will show
       } finally {

@@ -43,6 +43,7 @@ export default function SharePreviewModal({
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const previewType = file ? getPreviewType(file.name) : "other";
@@ -119,6 +120,44 @@ export default function SharePreviewModal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
+  const handleDownload = useCallback(async () => {
+    if (!file?.object_key) return;
+    setDownloading(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (getAuthToken) {
+        const token = await getAuthToken();
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(
+        `/api/shares/${encodeURIComponent(shareToken)}/download`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ object_key: file.object_key, name: file.name }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? data?.message ?? "Download failed");
+      }
+      const { url } = await res.json();
+      const downloadRes = await fetch(url);
+      if (!downloadRes.ok) throw new Error("Download failed");
+      const blob = await downloadRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("Download error:", err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [shareToken, file?.object_key, file?.name, getAuthToken]);
+
   if (!file) return null;
 
   return (
@@ -135,16 +174,15 @@ export default function SharePreviewModal({
             {file.name}
           </h2>
           <div className="flex items-center gap-2">
-            {fullUrl && (
-              <a
-                href={fullUrl}
-                download={file.name}
-                className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white"
-                aria-label="Download full resolution"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+              aria-label="Download full resolution"
+            >
+              <Download className="h-4 w-4" />
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -167,15 +205,14 @@ export default function SharePreviewModal({
             <div className="flex flex-col items-center gap-3 text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
-              {fullUrl && (
-                <a
-                  href={fullUrl}
-                  download={file.name}
-                  className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
-                >
-                  Download
-                </a>
-              )}
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+              >
+                Download
+              </button>
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
@@ -221,13 +258,14 @@ export default function SharePreviewModal({
                   <div className="flex flex-col items-center gap-4 text-neutral-400">
                     <FileIcon className="h-16 w-16" />
                     <p className="text-sm">Preview not available for this file type</p>
-                    <a
-                      href={fullUrl}
-                      download={file.name}
-                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90"
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      disabled={downloading}
+                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
                     >
                       Download
-                    </a>
+                    </button>
                   </div>
                 )}
               </>
