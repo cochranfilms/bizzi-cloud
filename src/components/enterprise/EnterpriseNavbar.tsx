@@ -118,6 +118,12 @@ export default function EnterpriseNavbar() {
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">
+        <Link
+          href="/dashboard"
+          className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+        >
+          Personal
+        </Link>
         <UserMenu compact />
       </div>
 
