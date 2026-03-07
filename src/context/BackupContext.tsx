@@ -608,7 +608,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${idToken}`,
                   },
-                  body: JSON.stringify({ object_key: objectKey }),
+                  body: JSON.stringify({
+                    object_key: objectKey,
+                    name: relativePath,
+                  }),
                 }).catch(() => {});
               }
 
@@ -914,7 +917,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               "Content-Type": "application/json",
               Authorization: `Bearer ${idToken}`,
             },
-            body: JSON.stringify({ object_key: objectKey }),
+            body: JSON.stringify({
+              object_key: objectKey,
+              name: relativePath,
+            }),
           }).catch(() => {});
         }
         await updateDoc(doc(db, "linked_drives", drive.id), {

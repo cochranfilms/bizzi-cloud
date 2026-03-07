@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { object_key: objectKey, user_id: userIdFromBody } = body;
+  const { object_key: objectKey, name: fileName, user_id: userIdFromBody } = body;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -86,7 +86,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key required" }, { status: 400 });
   }
 
-  if (!isVideoFile(objectKey)) {
+  // Content-hash keys (content/xxx) have no extension; use fileName when provided
+  const nameToCheck = (typeof fileName === "string" ? fileName : null) || objectKey;
+  if (!isVideoFile(nameToCheck)) {
     return NextResponse.json({ error: "Not a video file" }, { status: 400 });
   }
 
