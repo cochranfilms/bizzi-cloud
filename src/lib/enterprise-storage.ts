@@ -72,8 +72,69 @@ export async function checkUserCanUpload(
   if (quotaBytes !== null && usedBytes + additionalBytes > quotaBytes) {
     const usedGB = (usedBytes / (1024 ** 3)).toFixed(1);
     const quotaGB = (quotaBytes / (1024 ** 3)).toFixed(1);
-    throw new Error(
-      `Storage limit reached. You're using ${usedGB} GB of ${quotaGB} GB. Contact your organization admin to increase your allocation.`
-    );
+    const msg = orgId
+      ? `Storage limit reached. You're using ${usedGB} GB of ${quotaGB} GB. Contact your organization owner to upgrade your storage allocation.`
+      : `Storage limit reached. You're using ${usedGB} GB of ${quotaGB} GB. Upgrade your storage plan to add more space.`;
+    throw new Error(msg);
   }
+}
+
+export interface StorageStatus {
+  storage_used_bytes: number;
+  storage_quota_bytes: number | null;
+  is_organization_user: boolean;
+}
+
+/**
+ * Get current storage status for a user (used for pre-upload checks).
+ * Works for both personal and organization users.
+ */
+export async function getStorageStatus(uid: string): Promise<StorageStatus> {
+  const db = getAdminFirestore();
+
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const profileData = profileSnap.data();
+  const orgId = profileData?.organization_id as string | undefined;
+
+  let quotaBytes: number | null;
+  let usedBytes: number;
+
+  if (orgId) {
+    const seatId = `${orgId}_${uid}`;
+    const seatSnap = await db.collection("organization_seats").doc(seatId).get();
+    const seatData = seatSnap.data();
+    const isOwner = seatData?.role === "admin";
+    const seatQuota = seatData?.storage_quota_bytes;
+    quotaBytes = isOwner
+      ? ENTERPRISE_OWNER_STORAGE_BYTES
+      : typeof seatQuota === "number"
+        ? seatQuota
+        : seatQuota === null
+          ? null
+          : DEFAULT_SEAT_STORAGE_BYTES;
+  } else {
+    const profileQuota = profileData?.storage_quota_bytes;
+    quotaBytes =
+      typeof profileQuota === "number"
+        ? profileQuota
+        : 50 * 1024 * 1024 * 1024;
+  }
+
+  const filesSnap = await db
+    .collection("backup_files")
+    .where("userId", "==", uid)
+    .get();
+
+  usedBytes = 0;
+  for (const docSnap of filesSnap.docs) {
+    const data = docSnap.data();
+    if (data.deleted_at) continue;
+    usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  }
+
+  return {
+    storage_used_bytes: usedBytes,
+    storage_quota_bytes: quotaBytes,
+    is_organization_user: !!orgId,
+  };
 }

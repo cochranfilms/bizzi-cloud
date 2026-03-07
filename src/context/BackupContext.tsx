@@ -36,6 +36,7 @@ import {
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
+import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceededModal";
 
 interface BackupContextValue {
   linkedDrives: LinkedDrive[];
@@ -78,12 +79,29 @@ const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
 const UPLOAD_CONCURRENCY = 6;
 
-/** Compute SHA256 hash of a file for content-hash storage (browser). */
+/** Chunk size for streaming hash (avoids loading entire file into memory). */
+const HASH_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB
+
+/** Compute SHA256 hash of a file for content-hash storage (browser).
+ * Uses streaming for large files to avoid memory issues; same hash for duplicates. */
 async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (file.size <= HASH_CHUNK_SIZE) {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  const { createSHA256 } = await import("hash-wasm");
+  const sha256 = await createSHA256();
+  sha256.init();
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, offset + HASH_CHUNK_SIZE);
+    const buf = await chunk.arrayBuffer();
+    sha256.update(new Uint8Array(buf));
+    offset += HASH_CHUNK_SIZE;
+  }
+  return sha256.digest("hex");
 }
 
 /** Upload blob via PUT with real-time progress. Returns ETag for multipart. */
@@ -248,6 +266,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   const [storageVersion, setStorageVersion] = useState(0);
   const [fileUploadProgress, setFileUploadProgress] =
     useState<FileUploadProgress | null>(null);
+  const [storageQuotaExceeded, setStorageQuotaExceeded] = useState<{
+    attemptedBytes: number;
+    usedBytes: number;
+    quotaBytes: number | null;
+    isOrganizationUser: boolean;
+  } | null>(null);
   const fileUploadAbortRef = useRef<Map<string, AbortController>>(new Map());
   const fileUploadMultipartRef = useRef<
     Map<string, { objectKey: string; uploadId: string }>
@@ -893,12 +917,47 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       if (files.length === 0) return;
       setError(null);
       setFileUploadError(null);
+      setStorageQuotaExceeded(null);
+
+      const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+
+      // Pre-check storage: only cap is remaining space; show modal if over quota
+      try {
+        const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (idToken) {
+          const base = typeof window !== "undefined" ? window.location.origin : "";
+          const res = await fetch(`${base}/api/storage/status`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (res.ok) {
+            const data = (await res.json()) as {
+              storage_used_bytes: number;
+              storage_quota_bytes: number | null;
+              is_organization_user: boolean;
+            };
+            const { storage_used_bytes, storage_quota_bytes, is_organization_user } = data;
+            if (
+              storage_quota_bytes !== null &&
+              storage_used_bytes + bytesTotal > storage_quota_bytes
+            ) {
+              setStorageQuotaExceeded({
+                attemptedBytes: bytesTotal,
+                usedBytes: storage_used_bytes,
+                quotaBytes: storage_quota_bytes,
+                isOrganizationUser: is_organization_user,
+              });
+              return;
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: proceed with upload; server will reject if over quota
+      }
 
       const drive = targetDriveId
         ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
         : await getOrCreateUploadsDrive();
       const db = getFirebaseFirestore();
-      const bytesTotal = files.reduce((s, f) => s + f.size, 0);
       const fileItems = files.map((f, i) => ({
         id: `upload-${Date.now()}-${i}-${f.name}`,
         name: f.name,
@@ -1318,7 +1377,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <BackupContext.Provider value={value}>{children}</BackupContext.Provider>
+    <BackupContext.Provider value={value}>
+      {children}
+      {storageQuotaExceeded && (
+        <StorageQuotaExceededModal
+          open
+          onClose={() => setStorageQuotaExceeded(null)}
+          attemptedBytes={storageQuotaExceeded.attemptedBytes}
+          usedBytes={storageQuotaExceeded.usedBytes}
+          quotaBytes={storageQuotaExceeded.quotaBytes}
+          isOrganizationUser={storageQuotaExceeded.isOrganizationUser}
+        />
+      )}
+    </BackupContext.Provider>
   );
 }
 
