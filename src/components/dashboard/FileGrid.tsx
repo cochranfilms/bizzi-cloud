@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Folder, LayoutGrid, List, ChevronLeft } from "lucide-react";
+import { ChevronLeft, Folder, LayoutGrid, List, Trash2 } from "lucide-react";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
@@ -10,6 +10,49 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
 import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
+
+function BulkActionBar({
+  selectedFileCount,
+  selectedFolderCount,
+  onDelete,
+  onClear,
+}: {
+  selectedFileCount: number;
+  selectedFolderCount: number;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  const total = selectedFileCount + selectedFolderCount;
+  const parts: string[] = [];
+  if (selectedFileCount > 0) parts.push(`${selectedFileCount} file${selectedFileCount === 1 ? "" : "s"}`);
+  if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} drive${selectedFolderCount === 1 ? "" : "s"}`);
+  const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
+
+  return (
+    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+        {label} selected
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function PinnedFolderActions({
   drive,
@@ -52,8 +95,11 @@ export default function FileGrid() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
-  const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile } = useCloudFiles();
+  const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile, deleteFiles, refetch } =
+    useCloudFiles();
   const { unlinkDrive, linkedDrives } = useBackup();
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -84,6 +130,8 @@ export default function FileGrid() {
     (id: string, name: string) => {
       setCurrentDrive({ id, name });
       loadDriveFiles(id);
+      setSelectedFileIds(new Set());
+      setSelectedFolderKeys(new Set());
     },
     [loadDriveFiles]
   );
@@ -91,7 +139,90 @@ export default function FileGrid() {
   const closeDrive = useCallback(() => {
     setCurrentDrive(null);
     setDriveFiles([]);
+    setSelectedFileIds(new Set());
+    setSelectedFolderKeys(new Set());
   }, []);
+
+  const toggleFileSelection = useCallback((id: string) => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleFolderSelection = useCallback((key: string) => {
+    setSelectedFolderKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedFileIds(new Set());
+    setSelectedFolderKeys(new Set());
+  }, []);
+
+  const handleBulkDelete = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    const folderKeys = Array.from(selectedFolderKeys);
+    const fileCount = fileIds.length;
+    const folderCount = folderKeys.length;
+    const total = fileCount + folderCount;
+
+    const fileMsg =
+      fileCount > 0
+        ? `${fileCount} file${fileCount === 1 ? "" : "s"} will be moved to trash. `
+        : "";
+    const folderMsg =
+      folderCount > 0
+        ? `${folderCount} drive${folderCount === 1 ? "" : "s"} will be unlinked and removed from backups. `
+        : "";
+    if (
+      !window.confirm(
+        `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`
+      )
+    )
+      return;
+
+    try {
+      let didUnlinkCurrentDrive = false;
+      if (fileIds.length > 0) await deleteFiles(fileIds);
+      for (const key of folderKeys) {
+        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+        const drive = linkedDrives.find((d) => d.id === driveId);
+        if (drive) {
+          await unlinkDrive(drive);
+          if (currentDriveId === driveId) {
+            closeDrive();
+            didUnlinkCurrentDrive = true;
+          }
+        }
+      }
+      clearSelection();
+      await refetch();
+      if (currentDrive && fileIds.length > 0 && !didUnlinkCurrentDrive) {
+        loadDriveFiles(currentDrive.id);
+      }
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+    }
+  }, [
+    selectedFileIds,
+    selectedFolderKeys,
+    deleteFiles,
+    unlinkDrive,
+    linkedDrives,
+    currentDriveId,
+    currentDrive,
+    closeDrive,
+    clearSelection,
+    refetch,
+    loadDriveFiles,
+  ]);
 
   const currentDriveId = currentDrive?.id;
 
@@ -236,6 +367,9 @@ export default function FileGrid() {
                     await deleteFile(file.id);
                     if (currentDrive) loadDriveFiles(currentDrive.id);
                   }}
+                  selectable
+                  selected={selectedFileIds.has(file.id)}
+                  onSelect={() => toggleFileSelection(file.id)}
                 />
               ))}
             </div>
@@ -264,10 +398,17 @@ export default function FileGrid() {
                         key={item.key}
                         item={item}
                         onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                        onDelete={drive ? async () => {
-                          await unlinkDrive(drive);
-                          if (currentDriveId === driveId) closeDrive();
-                        } : undefined}
+                        onDelete={
+                          drive
+                            ? async () => {
+                                await unlinkDrive(drive);
+                                if (currentDriveId === driveId) closeDrive();
+                              }
+                            : undefined
+                        }
+                        selectable={!!drive}
+                        selected={selectedFolderKeys.has(item.key)}
+                        onSelect={() => toggleFolderSelection(item.key)}
                       />
                     );
                   })}
@@ -288,6 +429,9 @@ export default function FileGrid() {
                       onDelete={async () => {
                         await deleteFile(file.id);
                       }}
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
                     />
                   ))}
                 </div>
@@ -305,6 +449,15 @@ export default function FileGrid() {
           </div>
         )}
       </section>
+
+      {selectedFileIds.size + selectedFolderKeys.size > 0 && (
+        <BulkActionBar
+          selectedFileCount={selectedFileIds.size}
+          selectedFolderCount={selectedFolderKeys.size}
+          onDelete={handleBulkDelete}
+          onClear={clearSelection}
+        />
+      )}
 
       <FilePreviewModal
         file={previewFile}

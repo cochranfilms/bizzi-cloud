@@ -95,7 +95,7 @@ export async function GET(
       const args = [
         "-y",
         "-ss",
-        "1",
+        "0",
         "-i",
         presignedUrl,
         "-vframes",

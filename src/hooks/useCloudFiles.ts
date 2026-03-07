@@ -14,6 +14,7 @@ import {
   limit,
   updateDoc,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
@@ -212,6 +213,26 @@ export function useCloudFiles() {
     [user, fetchCloudFiles]
   );
 
+  const deleteFiles = useCallback(
+    async (fileIds: string[]) => {
+      if (!isFirebaseConfigured() || !user || fileIds.length === 0) return;
+      const db = getFirebaseFirestore();
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+        const chunk = fileIds.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const id of chunk) {
+          batch.update(doc(db, "backup_files", id), {
+            deleted_at: serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles]
+  );
+
   const restoreFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
@@ -262,6 +283,7 @@ export function useCloudFiles() {
     fetchDriveFiles,
     fetchDeletedFiles,
     deleteFile,
+    deleteFiles,
     restoreFile,
     permanentlyDeleteFile,
   };

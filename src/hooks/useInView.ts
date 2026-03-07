@@ -21,7 +21,7 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(): [
       ([entry]) => {
         if (entry?.isIntersecting) setIsInView(true);
       },
-      { rootMargin: "50px", threshold: 0 }
+      { rootMargin: "200px", threshold: 0 }
     );
     observer.observe(el);
     return () => observer.disconnect();

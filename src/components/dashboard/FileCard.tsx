@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileIcon, Film, Play, Share2 } from "lucide-react";
+import { Check, FileIcon, Film, Play, Share2 } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
@@ -13,6 +13,9 @@ interface FileCardProps {
   file: RecentFile;
   onClick?: () => void;
   onDelete?: () => void;
+  selected?: boolean;
+  onSelect?: () => void;
+  selectable?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -42,7 +45,14 @@ function isImageFile(name: string) {
   return IMAGE_EXT.test(name.toLowerCase());
 }
 
-export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
+export default function FileCard({
+  file,
+  onClick,
+  onDelete,
+  selected = false,
+  onSelect,
+  selectable = false,
+}: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [cardRef, isInView] = useInView<HTMLDivElement>();
   const canPreview = !!file.objectKey;
@@ -67,12 +77,18 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
   return (
     <div
       ref={cardRef}
-      className={`group relative flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+      className={`group relative flex flex-col rounded-xl border p-6 transition-colors ${
         hasLargePreview ? "items-stretch" : "items-center"
       } ${
-        canPreview
+        selected
+          ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
+          : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+      } ${
+        canPreview && !selected
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-          : ""
+          : canPreview && selected
+            ? "cursor-pointer"
+            : ""
       }`}
       role={canPreview ? "button" : undefined}
       tabIndex={canPreview ? 0 : undefined}
@@ -88,6 +104,24 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           : undefined
       }
     >
+      {selectable && onSelect && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+          }}
+          className={`absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-700 ${
+            selected
+              ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue"
+              : "border-neutral-300 bg-transparent dark:border-neutral-600"
+          }`}
+          aria-label={selected ? "Deselect" : "Select"}
+          aria-pressed={selected}
+        >
+          {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
+        </button>
+      )}
       {(onDelete || file.driveId) && (
         <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
           <ItemActionsMenu

@@ -5,8 +5,14 @@ import { useEffect, useRef, useState } from "react";
 const VIDEO_EXT =
   /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
+const BROWSER_PLAYABLE = /\.(mp4|webm|ogg|mov|m4v|3gp)$/i;
+
 function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
+}
+
+function isBrowserPlayable(name: string): boolean {
+  return BROWSER_PLAYABLE.test(name.toLowerCase());
 }
 
 export interface UseShareVideoThumbnailOptions {
@@ -17,8 +23,8 @@ export interface UseShareVideoThumbnailOptions {
 
 /**
  * Returns a blob URL for a share video thumbnail.
- * 1. Tries server-side FFmpeg first
- * 2. Falls back to client-side canvas capture for browser-playable formats
+ * For MP4/WebM/MOV: tries client-side first (faster).
+ * For ProRes/MXF etc: tries server FFmpeg first.
  */
 export function useShareVideoThumbnail(
   shareToken: string | undefined,
@@ -56,102 +62,112 @@ export function useShareVideoThumbnail(
       videoEl = null;
     };
 
+    const getHeaders = async (): Promise<Record<string, string>> => {
+      const headers: Record<string, string> = {};
+      if (getAuthToken) {
+        const token = await getAuthToken();
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
+      return headers;
+    };
+
+    const tryClientSide = async (headers: Record<string, string>): Promise<boolean> => {
+      const streamRes = await fetch(
+        `/api/shares/${encodeURIComponent(shareToken)}/video-stream-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ object_key: objectKey }),
+        }
+      );
+      if (!streamRes.ok || cancelled) return false;
+
+      const data = (await streamRes.json()) as { streamUrl?: string };
+      const streamUrl = data?.streamUrl;
+      if (!streamUrl || cancelled) return false;
+
+      const fullUrl = streamUrl.startsWith("/")
+        ? `${window.location.origin}${streamUrl}`
+        : streamUrl;
+
+      return new Promise<boolean>((resolve) => {
+        videoEl = document.createElement("video");
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        videoEl.crossOrigin = "anonymous";
+
+        const captureFrame = () => {
+          if (cancelled || !videoEl || videoEl.videoWidth === 0) return false;
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return false;
+            ctx.drawImage(videoEl, 0, 0);
+            canvas.toBlob(
+              (blob) => {
+                if (cancelled || !blob) {
+                  resolve(false);
+                  return;
+                }
+                setBlobUrl(URL.createObjectURL(blob));
+                resolve(true);
+              },
+              "image/jpeg",
+              0.7
+            );
+            return true;
+          } catch {
+            return false;
+          }
+        };
+
+        const onLoadedData = () => {
+          if (cancelled || !videoEl) return;
+          if (!captureFrame()) videoEl.currentTime = 0;
+        };
+
+        const onSeeked = () => {
+          if (!captureFrame()) resolve(false);
+        };
+
+        videoEl.addEventListener("loadeddata", onLoadedData, { once: true });
+        videoEl.addEventListener("seeked", onSeeked, { once: true });
+        videoEl.addEventListener("error", () => resolve(false), { once: true });
+        videoEl.src = fullUrl;
+      });
+    };
+
+    const tryServerSide = async (headers: Record<string, string>): Promise<boolean> => {
+      const params = new URLSearchParams({
+        object_key: objectKey,
+        name: fileName,
+      });
+      const res = await fetch(
+        `/api/shares/${encodeURIComponent(shareToken)}/video-thumbnail?${params}`,
+        { headers }
+      );
+      if (!res.ok || cancelled) return false;
+      const blob = await res.blob();
+      if (cancelled || blob.size === 0) return false;
+      setBlobUrl(URL.createObjectURL(blob));
+      return true;
+    };
+
     (async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (getAuthToken) {
-          const token = await getAuthToken();
-          if (token) headers.Authorization = `Bearer ${token}`;
-        }
+        const headers = await getHeaders();
         if (cancelled) return;
 
-        // 1. Try server-side FFmpeg thumbnail
-        const params = new URLSearchParams({
-          object_key: objectKey,
-          name: fileName,
-        });
-        const res = await fetch(
-          `/api/shares/${encodeURIComponent(shareToken)}/video-thumbnail?${params}`,
-          { headers }
-        );
+        const clientFirst = isBrowserPlayable(fileName);
+        const first = clientFirst ? tryClientSide : tryServerSide;
+        const second = clientFirst ? tryServerSide : tryClientSide;
 
-        if (res.ok && !cancelled) {
-          const blob = await res.blob();
-          if (!cancelled && blob.size > 0) {
-            setBlobUrl(URL.createObjectURL(blob));
-            return;
-          }
-        }
-
-        // 2. Fallback: client-side capture
-        if (cancelled) return;
-        const streamRes = await fetch(
-          `/api/shares/${encodeURIComponent(shareToken)}/video-stream-url`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({ object_key: objectKey }),
-          }
-        );
-        if (!streamRes.ok || cancelled) return;
-
-        const data = (await streamRes.json()) as { streamUrl?: string };
-        const streamUrl = data?.streamUrl;
-        if (!streamUrl || cancelled) return;
-
-        const fullUrl = streamUrl.startsWith("/")
-          ? `${window.location.origin}${streamUrl}`
-          : streamUrl;
-
-        await new Promise<void>((resolve) => {
-          videoEl = document.createElement("video");
-          videoEl.muted = true;
-          videoEl.playsInline = true;
-          videoEl.preload = "metadata";
-          videoEl.crossOrigin = "anonymous";
-
-          const onCanPlay = () => {
-            if (cancelled) return;
-            videoEl!.currentTime = Math.min(1, videoEl!.duration * 0.05);
-          };
-
-          const onSeeked = () => {
-            if (cancelled || !videoEl) {
-              resolve();
-              return;
-            }
-            try {
-              const canvas = document.createElement("canvas");
-              canvas.width = videoEl!.videoWidth;
-              canvas.height = videoEl!.videoHeight;
-              const ctx = canvas.getContext("2d");
-              if (!ctx) {
-                resolve();
-                return;
-              }
-              ctx.drawImage(videoEl!, 0, 0);
-              canvas.toBlob(
-                (blob) => {
-                  if (cancelled || !blob) {
-                    resolve();
-                    return;
-                  }
-                  setBlobUrl(URL.createObjectURL(blob));
-                  resolve();
-                },
-                "image/jpeg",
-                0.85
-              );
-            } catch {
-              resolve();
-            }
-          };
-
-          videoEl.addEventListener("canplay", onCanPlay, { once: true });
-          videoEl.addEventListener("seeked", onSeeked, { once: true });
-          videoEl.addEventListener("error", () => resolve(), { once: true });
-          videoEl.src = fullUrl;
-        });
+        const ok = await first(headers);
+        if (ok || cancelled) return;
+        await second(headers);
       } catch {
         // Both paths failed - placeholder will show
       } finally {
