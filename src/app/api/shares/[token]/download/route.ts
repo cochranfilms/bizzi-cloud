@@ -1,5 +1,4 @@
-import { getDownloadUrl, isCdnConfigured } from "@/lib/cdn";
-import { isB2Configured } from "@/lib/b2";
+import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
@@ -87,14 +86,10 @@ export async function POST(
   }
 
   try {
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    const { createHmac } = await import("crypto");
-    const secret = process.env.B2_SECRET_ACCESS_KEY;
-    if (!secret) throw new Error("B2_SECRET_ACCESS_KEY not set");
-    const payload = `download|${objectKey}|${exp}`;
-    const sig = createHmac("sha256", secret).update(payload).digest("base64url");
-    const downloadUrl = `/api/shares/${encodeURIComponent(token)}/download-stream?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${sig}&name=${encodeURIComponent(name)}`;
-    return NextResponse.json({ url: downloadUrl });
+    // Use B2 presigned URL with Content-Disposition: attachment so browser downloads
+    // directly from B2. Avoids serverless response size limit (~4.5MB on Vercel).
+    const url = await createPresignedDownloadUrl(objectKey, 3600, name);
+    return NextResponse.json({ url });
   } catch (err) {
     console.error("Share download URL error:", err);
     return NextResponse.json(

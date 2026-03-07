@@ -1,5 +1,4 @@
-import { createHmac } from "node:crypto";
-import { isB2Configured } from "@/lib/b2";
+import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -69,13 +68,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    const secret = process.env.B2_SECRET_ACCESS_KEY;
-    if (!secret) throw new Error("B2_SECRET_ACCESS_KEY not set");
-    const payload = `backup-download|${objectKey}|${exp}`;
-    const sig = createHmac("sha256", secret).update(payload).digest("base64url");
-    const downloadUrl = `/api/backup/download-stream?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${sig}&name=${encodeURIComponent(name)}`;
-    return NextResponse.json({ url: downloadUrl });
+    // Use B2 presigned URL with Content-Disposition: attachment so browser downloads
+    // directly from B2. Avoids serverless response size limit (~4.5MB on Vercel).
+    const url = await createPresignedDownloadUrl(objectKey, 3600, name);
+    return NextResponse.json({ url });
   } catch (err) {
     console.error("[backup download] Error:", err);
     return NextResponse.json(

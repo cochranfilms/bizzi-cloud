@@ -142,15 +142,11 @@ export default function SharePreviewModal({
         throw new Error(data?.error ?? data?.message ?? "Download failed");
       }
       const { url } = await res.json();
-      const downloadRes = await fetch(url);
-      if (!downloadRes.ok) throw new Error("Download failed");
-      const blob = await downloadRes.blob();
-      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = blobUrl;
+      a.href = url.startsWith("/") ? `${window.location.origin}${url}` : url;
       a.download = file.name;
+      a.rel = "noopener noreferrer";
       a.click();
-      URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error("Download error:", err);
     } finally {
