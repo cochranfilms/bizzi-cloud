@@ -27,7 +27,7 @@ export function useVideoThumbnail(
     if (!objectKey || !isVideoFile(fileName) || !enabled) return;
 
     let cancelled = false;
-    let video: HTMLVideoElement | null = null;
+    let videoEl: HTMLVideoElement | null = null;
     let canvas: HTMLCanvasElement | null = null;
 
     const cleanup = () => {
@@ -36,8 +36,8 @@ export function useVideoThumbnail(
         urlRef.current = null;
       }
       setUrl(null);
-      video?.remove();
-      video = null;
+      videoEl?.remove();
+      videoEl = null;
       canvas?.remove();
       canvas = null;
     };
@@ -65,30 +65,30 @@ export function useVideoThumbnail(
           ? `${window.location.origin}${streamUrl}`
           : streamUrl;
 
-        await new Promise<void>((resolve, reject) => {
-          video = document.createElement("video");
-          video.muted = true;
-          video.playsInline = true;
-          video.preload = "metadata";
-          video.crossOrigin = "anonymous";
+        await new Promise<void>((resolve) => {
+          videoEl = document.createElement("video");
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+          videoEl.preload = "metadata";
+          videoEl.crossOrigin = "anonymous";
 
           const onCanPlay = () => {
             if (cancelled) return;
-            video!.currentTime = Math.min(1, video!.duration * 0.05);
+            videoEl!.currentTime = Math.min(1, videoEl!.duration * 0.05);
           };
 
           const onSeeked = () => {
-            if (cancelled || !video) return;
+            if (cancelled || !videoEl) return;
             try {
               canvas = document.createElement("canvas");
-              canvas.width = video!.videoWidth;
-              canvas.height = video!.videoHeight;
+              canvas.width = videoEl!.videoWidth;
+              canvas.height = videoEl!.videoHeight;
               const ctx = canvas.getContext("2d");
               if (!ctx) {
                 resolve();
                 return;
               }
-              ctx.drawImage(video!, 0, 0);
+              ctx.drawImage(videoEl!, 0, 0);
               canvas.toBlob(
                 (blob) => {
                   if (cancelled || !blob) {
@@ -117,17 +117,16 @@ export function useVideoThumbnail(
             resolve();
           };
 
-          video.addEventListener("canplay", onCanPlay, { once: true });
-          video.addEventListener("seeked", onSeeked, { once: true });
-          video.addEventListener("error", onError, { once: true });
-          video.src = fullUrl;
+          videoEl.addEventListener("canplay", onCanPlay, { once: true });
+          videoEl.addEventListener("seeked", onSeeked, { once: true });
+          videoEl.addEventListener("error", onError, { once: true });
+          videoEl.src = fullUrl;
         });
       } catch {
         // Ignore - fallback to icon
       } finally {
-        if (video && !cancelled) {
-          video.remove();
-        }
+        const el = videoEl as HTMLVideoElement | null;
+        if (el) el.remove();
       }
     })();
 
