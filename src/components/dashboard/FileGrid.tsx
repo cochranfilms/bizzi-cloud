@@ -166,6 +166,8 @@ export default function FileGrid() {
     setSelectedFolderKeys(new Set());
   }, []);
 
+  const currentDriveId = currentDrive?.id;
+
   const handleBulkDelete = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
@@ -223,8 +225,6 @@ export default function FileGrid() {
     refetch,
     loadDriveFiles,
   ]);
-
-  const currentDriveId = currentDrive?.id;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
