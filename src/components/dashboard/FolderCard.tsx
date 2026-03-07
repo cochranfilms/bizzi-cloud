@@ -106,6 +106,7 @@ export default function FolderCard({ item, onClick, onDelete }: FolderCardProps)
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         folderName={item.name}
+        linkedDriveId={item.driveId}
       />
     </>
   );

@@ -1,21 +1,78 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useState, useCallback } from "react";
+import { X, Copy, Check } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface ShareModalProps {
   open: boolean;
   onClose: () => void;
   folderName: string;
+  linkedDriveId?: string;
 }
 
 export default function ShareModal({
   open,
   onClose,
   folderName,
+  linkedDriveId,
 }: ShareModalProps) {
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [permission, setPermission] = useState<"view" | "edit">("edit");
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleInvite = useCallback(async () => {
+    if (!linkedDriveId || !user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          linked_drive_id: linkedDriveId,
+          permission,
+          invited_emails: email.trim() ? [email.trim()] : [],
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to create share");
+      }
+      const data = await res.json();
+      const fullUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}${data.share_url}`
+          : data.share_url;
+      setShareUrl(fullUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create share");
+    } finally {
+      setLoading(false);
+    }
+  }, [linkedDriveId, user, permission, email]);
+
+  const copyLink = useCallback(() => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [shareUrl]);
+
+  const handleClose = useCallback(() => {
+    setShareUrl(null);
+    setError(null);
+    setCopied(false);
+    onClose();
+  }, [onClose]);
 
   if (!open) return null;
 
@@ -90,20 +147,61 @@ export default function ShareModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-          >
-            Invite
-          </button>
+        <div className="space-y-4 border-t border-neutral-200 p-4 dark:border-neutral-700">
+          {error && (
+            <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+          )}
+          {shareUrl ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Share link created
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  className="flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                />
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 text-green-600" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              {shareUrl ? "Done" : "Cancel"}
+            </button>
+            {!shareUrl && (
+              <button
+                type="button"
+                onClick={handleInvite}
+                disabled={!linkedDriveId || !user || loading}
+                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                {loading ? "Creating…" : "Invite"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

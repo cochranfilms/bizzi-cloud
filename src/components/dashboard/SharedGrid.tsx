@@ -1,66 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LayoutGrid, List, Folder, File } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
-
-const mockSharedItems: SharedItem[] = [
-  {
-    name: "Client Assets",
-    type: "folder",
-    key: "shared-1",
-    sharedBy: "sarah@studio.com",
-    permission: "edit",
-    items: 12,
-  },
-  {
-    name: "Q1 Brand Guidelines.pdf",
-    type: "file",
-    key: "shared-2",
-    sharedBy: "mike@agency.io",
-    permission: "view",
-  },
-  {
-    name: "Video B-Roll",
-    type: "folder",
-    key: "shared-3",
-    sharedBy: "alex@films.co",
-    permission: "edit",
-    items: 8,
-  },
-  {
-    name: "Contract Draft v2.docx",
-    type: "file",
-    key: "shared-4",
-    sharedBy: "legal@bizzicloud.com",
-    permission: "edit",
-  },
-  {
-    name: "Project Icons",
-    type: "folder",
-    key: "shared-5",
-    sharedBy: "design@creative.studio",
-    permission: "view",
-    items: 24,
-  },
-  {
-    name: "Music Stems",
-    type: "folder",
-    key: "shared-6",
-    sharedBy: "jordan@audio.pro",
-    permission: "edit",
-    items: 6,
-  },
-];
+import { useShares } from "@/hooks/useShares";
 
 export default function SharedGrid() {
+  const { owned, invited, loading, error } = useShares();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [filter, setFilter] = useState<"all" | "folders" | "files">("all");
 
+  const sharedItems: SharedItem[] = useMemo(() => {
+    const invitedItems: SharedItem[] = invited.map((s) => ({
+      name: s.folder_name,
+      type: "folder" as const,
+      key: s.token,
+      sharedBy: s.sharedBy ?? "Someone",
+      permission: s.permission,
+      href: s.share_url,
+    }));
+    const ownedItems: SharedItem[] = owned.map((s) => ({
+      name: s.folder_name,
+      type: "folder" as const,
+      key: s.token,
+      sharedBy: "You",
+      permission: s.permission,
+      href: s.share_url,
+    }));
+    return [...invitedItems, ...ownedItems];
+  }, [invited, owned]);
+
   const filteredItems =
     filter === "all"
-      ? mockSharedItems
-      : mockSharedItems.filter(
+      ? sharedItems
+      : sharedItems.filter(
           (item) => item.type === (filter === "folders" ? "folder" : "file")
         );
 
@@ -134,7 +107,18 @@ export default function SharedGrid() {
       </div>
 
       {/* Content */}
-      {filteredItems.length === 0 ? (
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 py-8 text-center dark:border-red-800 dark:bg-red-950/50">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      ) : loading ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
+          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            Loading shares…
+          </p>
+        </div>
+      ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
           <Folder className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
           <p className="mb-1 text-lg font-medium text-neutral-700 dark:text-neutral-300">

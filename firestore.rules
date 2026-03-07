@@ -28,5 +28,9 @@ service cloud.firestore {
       allow read, write: if request.auth != null && resource.data.user_id == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
     }
+    match /folder_shares/{shareId} {
+      allow create: if request.auth != null && request.resource.data.owner_id == request.auth.uid;
+      allow read, update, delete: if request.auth != null && resource.data.owner_id == request.auth.uid;
+    }
   }
 }

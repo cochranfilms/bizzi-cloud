@@ -60,7 +60,7 @@ export default function FileGrid() {
     type: "folder" as const,
     key: d.key,
     items: d.items,
-    hideShare: true,
+    hideShare: false,
     driveId: d.id,
   }));
   const pinnedFolders = folderItems.slice(0, 3);
