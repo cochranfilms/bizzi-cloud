@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useBackup } from "@/context/BackupContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 
 interface TopBarProps {
   title?: string;
@@ -21,6 +22,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const showCreateTransfer = pathname === "/dashboard/transfers";
+  const { currentDriveId } = useCurrentFolder();
   const {
     uploadSingleFile,
     uploadFolder,
@@ -55,20 +57,25 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Capture files synchronously - React may recycle the event before async work completes
+    const fileList = e.target.files;
+    const files = fileList ? Array.from(fileList) : [];
     e.target.value = "";
-    if (!files || files.length === 0) return;
+    if (files.length === 0) return;
     setFileUploading(true);
-    try {
-      for (let i = 0; i < files.length; i++) {
-        await uploadSingleFile(files[i]!);
+    const driveId = currentDriveId ?? undefined;
+    (async () => {
+      try {
+        for (const file of files) {
+          await uploadSingleFile(file, driveId);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setFileUploading(false);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setFileUploading(false);
-    }
+    })();
   };
 
   const handleCreateFolderClick = () => {

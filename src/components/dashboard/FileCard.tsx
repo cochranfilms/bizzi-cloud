@@ -21,6 +21,8 @@ interface FileCardProps {
   selected?: boolean;
   onSelect?: () => void;
   selectable?: boolean;
+  /** Called after a successful rename to refresh the view */
+  onAfterRename?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -57,6 +59,7 @@ export default function FileCard({
   selected = false,
   onSelect,
   selectable = false,
+  onAfterRename,
 }: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -67,10 +70,11 @@ export default function FileCard({
   const { createFolder, linkedDrives } = useBackup();
   const canPreview = !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
+  const isVideo = isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false);
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
-    enabled: isInView && !!file.objectKey,
+    enabled: !!file.objectKey && isVideo,
+    isVideo,
   });
-  const isVideo = isVideoFile(file.name);
   const isImage = isImageFile(file.name);
   const hasLargePreview = isVideo || isImage;
 
@@ -235,7 +239,10 @@ export default function FileCard({
         open={renameOpen}
         onClose={() => setRenameOpen(false)}
         currentName={file.name}
-        onRename={(newName) => renameFile(file.id, newName)}
+        onRename={async (newName) => {
+          await renameFile(file.id, newName);
+          onAfterRename?.();
+        }}
         itemType="file"
       />
       <MoveModal

@@ -18,14 +18,15 @@ function isVideoFile(name: string): boolean {
 export function useVideoThumbnail(
   objectKey: string | undefined,
   fileName: string,
-  options: { enabled?: boolean } = {}
+  options: { enabled?: boolean; isVideo?: boolean } = {}
 ): string | null {
-  const { enabled = true } = options;
+  const { enabled = true, isVideo: isVideoOverride = false } = options;
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!objectKey || !isVideoFile(fileName) || !enabled) return;
+    const isVideo = isVideoOverride || isVideoFile(fileName);
+    if (!objectKey || !isVideo || !enabled) return;
 
     let cancelled = false;
     let videoEl: HTMLVideoElement | null = null;

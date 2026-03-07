@@ -6,6 +6,7 @@ import {
   getObjectBuffer,
   putObject,
   getVideoThumbnailCacheKey,
+  getProxyObjectKey,
 } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -75,7 +76,27 @@ export async function GET(request: Request) {
     return new NextResponse("object_key required", { status: 400 });
   }
 
-  if (!isVideoFile(fileName || objectKey)) {
+  // Resolve video check: filename, path from DB, or content_type (persists across rename)
+  let isVideo = isVideoFile(fileName || objectKey);
+  if (!isVideo) {
+    const db = getAdminFirestore();
+    const snap = await db
+      .collection("backup_files")
+      .where("userId", "==", uid)
+      .where("object_key", "==", objectKey)
+      .limit(1)
+      .get();
+    if (!snap.empty) {
+      const data = snap.docs[0].data();
+      const path = (data.relative_path as string) ?? "";
+      const nameFromPath = path.split("/").filter(Boolean).pop() ?? "";
+      const contentType = (data.content_type as string) ?? "";
+      isVideo =
+        isVideoFile(nameFromPath) ||
+        contentType.startsWith("video/");
+    }
+  }
+  if (!isVideo) {
     return new NextResponse("Not a video file", { status: 400 });
   }
 
@@ -103,7 +124,10 @@ export async function GET(request: Request) {
       console.warn("[video-thumbnail] Cache read failed, regenerating:", cacheErr);
     }
 
-    const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
+    // Use proxy (720p H.264) when available - more reliable for FFmpeg than original codecs
+    const proxyKey = getProxyObjectKey(objectKey);
+    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 
     const runFfmpeg = async (seekSeconds: number): Promise<Buffer> =>
       new Promise((resolve, reject) => {
@@ -121,7 +145,7 @@ export async function GET(request: Request) {
           "-vframes",
           "1",
           "-vf",
-          "scale=480:-1",
+          "scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2",
           "-f",
           "image2",
           "-q:v",

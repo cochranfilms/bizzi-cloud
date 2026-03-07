@@ -17,6 +17,7 @@ import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
 
@@ -106,7 +107,8 @@ export default function FileGrid() {
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const { driveFolders, recentFiles, loading, fetchDriveFiles, deleteFile, deleteFiles, refetch } =
     useCloudFiles();
-  const { unlinkDrive, linkedDrives } = useBackup();
+  const { unlinkDrive, linkedDrives, storageVersion } = useBackup();
+  const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [dragState, setDragState] = useState<{
@@ -145,20 +147,29 @@ export default function FileGrid() {
 
   const openDrive = useCallback(
     (id: string, name: string) => {
+      setCurrentFolderDriveId(id);
       setCurrentDrive({ id, name });
       loadDriveFiles(id);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
     },
-    [loadDriveFiles]
+    [loadDriveFiles, setCurrentFolderDriveId]
   );
 
   const closeDrive = useCallback(() => {
+    setCurrentFolderDriveId(null);
     setCurrentDrive(null);
     setDriveFiles([]);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
-  }, []);
+  }, [setCurrentFolderDriveId]);
+
+  // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time
+  useEffect(() => {
+    if (currentDrive && storageVersion > 0) {
+      loadDriveFiles(currentDrive.id);
+    }
+  }, [storageVersion, currentDrive?.id, loadDriveFiles]);
 
   const toggleFileSelection = useCallback((id: string) => {
     setSelectedFileIds((prev) => {
@@ -487,6 +498,7 @@ export default function FileGrid() {
                     selectable
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
+                    onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
                   />
                 </div>
               ))}

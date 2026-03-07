@@ -56,7 +56,7 @@ interface BackupContextValue {
   cancelSync: () => void;
   pickDirectory: () => Promise<FileSystemDirectoryHandle>;
   unlinkDrive: (drive: LinkedDrive) => Promise<void>;
-  uploadSingleFile: (file: File) => Promise<void>;
+  uploadSingleFile: (file: File, targetDriveId?: string) => Promise<void>;
   uploadFolder: () => Promise<void>;
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
@@ -597,6 +597,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 relative_path: relativePath,
                 object_key: objectKey,
                 size_bytes: file.size,
+                content_type: contentType,
                 modified_at: modifiedAt
                   ? new Date(modifiedAt).toISOString()
                   : null,
@@ -841,7 +842,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   );
 
   const uploadSingleFile = useCallback(
-    async (file: File) => {
+    async (file: File, targetDriveId?: string) => {
       if (!isFirebaseConfigured() || !user) {
         setError("Please sign in to upload.");
         return;
@@ -849,7 +850,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setFileUploadError(null);
 
-      const drive = await getOrCreateUploadsDrive();
+      const drive = targetDriveId
+        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
+        : await getOrCreateUploadsDrive();
       const db = getFirebaseFirestore();
       const relativePath = file.name;
       const contentType = file.type || "application/octet-stream";
@@ -933,6 +936,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           relative_path: relativePath,
           object_key: objectKey,
           size_bytes: file.size,
+          content_type: contentType,
           modified_at: file.lastModified
             ? new Date(file.lastModified).toISOString()
             : null,
@@ -954,11 +958,22 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         await updateDoc(doc(db, "linked_drives", drive.id), {
           last_synced_at: new Date().toISOString(),
         });
-        setStorageVersion((v) => v + 1);
         setSyncProgress((prev) =>
           prev ? { ...prev, status: "completed", bytesSynced: file.size } : null
         );
         setTimeout(() => setSyncProgress(null), 2000);
+        // Recalculate storage first so profile is updated, then bump version to refresh UI
+        try {
+          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const base = typeof window !== "undefined" ? window.location.origin : "";
+          await fetch(`${base}/api/storage/recalculate`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {
+          // Non-fatal; storage will refresh on next manual action
+        }
+        setStorageVersion((v) => v + 1);
       } catch (err) {
         const msg =
           err instanceof Error
@@ -968,7 +983,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         setSyncProgress(null);
       }
     },
-    [user, getOrCreateUploadsDrive]
+    [user, getOrCreateUploadsDrive, linkedDrives]
   );
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);

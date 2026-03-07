@@ -7,6 +7,7 @@ import {
   getDoc,
   deleteDoc,
   getDocs,
+  getCountFromServer,
   query,
   where,
   orderBy,
@@ -41,13 +42,15 @@ export interface RecentFile {
   modifiedAt: string | null;
   driveId: string;
   driveName: string;
+  /** MIME type from upload - persists across rename, used for video thumbnail detection */
+  contentType?: string | null;
   /** When set, file is in trash */
   deletedAt?: string | null;
 }
 
 export function useCloudFiles() {
   const { user } = useAuth();
-  const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive } = useBackup();
+  const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,17 +70,15 @@ export function useCloudFiles() {
 
       const folders: DriveFolder[] = [];
       for (const drive of linkedDrives) {
-        const snapSnap = await getDocs(
+        const countSnap = await getCountFromServer(
           query(
-            collection(db, "backup_snapshots"),
+            collection(db, "backup_files"),
             where("userId", "==", user.uid),
             where("linked_drive_id", "==", drive.id),
-            where("status", "==", "completed"),
-            orderBy("completed_at", "desc"),
-            limit(1)
+            where("deleted_at", "==", null)
           )
         );
-        const filesCount = snapSnap.empty ? 0 : snapSnap.docs[0].data().files_count ?? 0;
+        const filesCount = countSnap.data().count;
         folders.push({
           id: drive.id,
           name: drive.name,
@@ -114,6 +115,7 @@ export function useCloudFiles() {
           modifiedAt: data.modified_at ?? null,
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
+          contentType: data.content_type ?? null,
         };
       });
       setRecentFiles(recent);
@@ -159,6 +161,7 @@ export function useCloudFiles() {
             modifiedAt: data.modified_at ?? null,
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Unknown drive",
+            contentType: data.content_type ?? null,
           };
         });
     },
@@ -197,6 +200,7 @@ export function useCloudFiles() {
           modifiedAt: data.modified_at ?? null,
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
+          contentType: data.content_type ?? null,
           deletedAt: deletedAt ?? undefined,
         };
       });
@@ -303,10 +307,11 @@ export function useCloudFiles() {
       const db = getFirebaseFirestore();
       const driveRef = doc(db, "linked_drives", driveId);
       await updateDoc(driveRef, { name: newName.trim() || "Folder" });
+      await fetchDrives();
       bumpStorageVersion();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles, bumpStorageVersion]
+    [user, fetchCloudFiles, bumpStorageVersion, fetchDrives]
   );
 
   const moveFile = useCallback(
