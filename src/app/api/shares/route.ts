@@ -1,3 +1,4 @@
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
 import { NextResponse } from "next/server";
@@ -25,17 +26,30 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const linkedDriveIdParam = url.searchParams.get("linked_drive_id");
+  const backupFileIdParam = url.searchParams.get("backup_file_id");
 
   const db = getAdminFirestore();
 
-  // Get existing share for a specific drive (for ShareModal get-or-create)
+  // Get existing share for a specific drive or file (for ShareModal get-or-create)
   if (linkedDriveIdParam) {
-    const existingSnap = await db
-      .collection("folder_shares")
-      .where("owner_id", "==", uid)
-      .where("linked_drive_id", "==", linkedDriveIdParam)
-      .limit(1)
-      .get();
+    let existingSnap;
+    if (backupFileIdParam) {
+      existingSnap = await db
+        .collection("folder_shares")
+        .where("owner_id", "==", uid)
+        .where("linked_drive_id", "==", linkedDriveIdParam)
+        .where("backup_file_id", "==", backupFileIdParam)
+        .limit(1)
+        .get();
+    } else {
+      existingSnap = await db
+        .collection("folder_shares")
+        .where("owner_id", "==", uid)
+        .where("linked_drive_id", "==", linkedDriveIdParam)
+        .where("backup_file_id", "==", null)
+        .limit(1)
+        .get();
+    }
 
     if (existingSnap.empty) {
       return NextResponse.json({ error: "Share not found" }, { status: 404 });
@@ -55,6 +69,7 @@ export async function GET(request: Request) {
       permission: data.permission ?? "view",
       invited_emails: data.invited_emails ?? [],
       linked_drive_id: data.linked_drive_id,
+      backup_file_id: data.backup_file_id ?? null,
     });
   }
 
@@ -70,6 +85,7 @@ export async function GET(request: Request) {
     token: string;
     linked_drive_id: string;
     folder_name: string;
+    item_type: "file" | "folder";
     permission: string;
     created_at: string;
     share_url: string;
@@ -81,18 +97,39 @@ export async function GET(request: Request) {
   for (const d of ownedSnap.docs) {
     const data = d.data();
     const driveId = data.linked_drive_id as string;
+    const backupFileId = data.backup_file_id as string | null | undefined;
+    const isFileShare = !!backupFileId;
+
     const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-    const folderName = driveSnap.exists
-      ? (driveSnap.data()?.name ?? "Folder")
-      : "Folder";
+
+    // Skip if drive was deleted
+    if (!driveSnap.exists) continue;
+
     const expiresAt = data.expires_at?.toDate?.();
     if (expiresAt && expiresAt < new Date()) continue;
+
+    // Only show in Shared tab if actually shared with someone by email (not just URL copy)
+    const invitedEmails = (data.invited_emails as string[] | undefined) ?? [];
+    if (invitedEmails.length === 0) continue;
+
+    let itemName: string;
+    if (isFileShare) {
+      const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
+      if (!fileSnap.exists) continue;
+      const fileData = fileSnap.data();
+      if (fileData?.deleted_at) continue;
+      const path = (fileData?.relative_path ?? "") as string;
+      itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+    } else {
+      itemName = driveSnap.data()?.name ?? "Folder";
+    }
 
     owned.push({
       id: d.id,
       token: data.token as string,
       linked_drive_id: driveId,
-      folder_name: folderName,
+      folder_name: itemName,
+      item_type: isFileShare ? "file" : "folder",
       permission: (data.permission as string) ?? "view",
       created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
       share_url: `/s/${data.token}`,
@@ -111,12 +148,31 @@ export async function GET(request: Request) {
       const data = d.data();
       if (data.owner_id === uid) continue; // already in owned
       const driveId = data.linked_drive_id as string;
+      const backupFileId = data.backup_file_id as string | null | undefined;
+      const isFileShare = !!backupFileId;
+
       const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-      const folderName = driveSnap.exists
-        ? (driveSnap.data()?.name ?? "Folder")
-        : "Folder";
+
+      // Skip if drive was deleted by owner
+      if (!driveSnap.exists) continue;
+
       const expiresAt = data.expires_at?.toDate?.();
       if (expiresAt && expiresAt < new Date()) continue;
+
+      // Invited list is already filtered by array-contains email; if owner removed
+      // this user, they won't be in invited_emails and won't appear here.
+
+      let itemName: string;
+      if (isFileShare) {
+        const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
+        if (!fileSnap.exists) continue;
+        const fileData = fileSnap.data();
+        if (fileData?.deleted_at) continue;
+        const path = (fileData?.relative_path ?? "") as string;
+        itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+      } else {
+        itemName = driveSnap.data()?.name ?? "Folder";
+      }
 
       const ownerSnap = await db
         .collection("profiles")
@@ -133,7 +189,8 @@ export async function GET(request: Request) {
         id: d.id,
         token: data.token as string,
         linked_drive_id: driveId,
-        folder_name: folderName,
+        folder_name: itemName,
+        item_type: isFileShare ? "file" : "folder",
         permission: (data.permission as string) ?? "view",
         created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         share_url: `/s/${data.token}`,
@@ -170,6 +227,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const {
     linked_drive_id: linkedDriveId,
+    backup_file_id: backupFileId,
     permission = "view",
     access_level = "private",
     expires_at: expiresAt,
@@ -215,17 +273,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  // Get-or-create: check for existing share for this drive
-  const existingSnap = await db
-    .collection("folder_shares")
-    .where("owner_id", "==", uid)
-    .where("linked_drive_id", "==", linkedDriveId)
-    .limit(1)
-    .get();
+  let backupFileIdToStore: string | null = null;
+  if (backupFileId && typeof backupFileId === "string") {
+    const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
+    if (!fileSnap.exists) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+    const fileData = fileSnap.data();
+    if (fileData?.userId !== uid) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    if (fileData?.linked_drive_id !== linkedDriveId) {
+      return NextResponse.json({ error: "File is not in this drive" }, { status: 400 });
+    }
+    if (fileData?.deleted_at) {
+      return NextResponse.json({ error: "Cannot share deleted file" }, { status: 400 });
+    }
+    backupFileIdToStore = backupFileId;
+  }
 
-  if (!existingSnap.empty) {
-    const d = existingSnap.docs[0];
-    const data = d.data();
+  // Get-or-create: check for existing share
+  let existingDoc: { data: () => Record<string, unknown> } | null = null;
+  if (backupFileIdToStore) {
+    const snap = await db
+      .collection("folder_shares")
+      .where("owner_id", "==", uid)
+      .where("linked_drive_id", "==", linkedDriveId)
+      .where("backup_file_id", "==", backupFileIdToStore)
+      .limit(1)
+      .get();
+    if (!snap.empty) existingDoc = snap.docs[0];
+  } else {
+    const snap = await db
+      .collection("folder_shares")
+      .where("owner_id", "==", uid)
+      .where("linked_drive_id", "==", linkedDriveId)
+      .get();
+    const folderShare = snap.docs.find((d) => !d.data().backup_file_id);
+    if (folderShare) existingDoc = folderShare;
+  }
+
+  if (existingDoc) {
+    const data = existingDoc.data();
     const shareToken = data.token as string;
     return NextResponse.json({
       token: shareToken,
@@ -241,6 +330,7 @@ export async function POST(request: Request) {
     token: shareToken,
     owner_id: uid,
     linked_drive_id: linkedDriveId,
+    backup_file_id: backupFileIdToStore,
     permission: permission as "view" | "edit",
     access_level: access_level as "private" | "public",
     expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,

@@ -48,36 +48,66 @@ export async function GET(
 
   const linkedDriveId = share.linked_drive_id as string;
   const ownerId = share.owner_id as string;
+  const backupFileId = share.backup_file_id as string | null | undefined;
+  const isFileShare = !!backupFileId;
 
-  // Get drive name
-  const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
-  const driveName = driveSnap.exists
-    ? (driveSnap.data()?.name ?? "Shared folder")
-    : "Shared folder";
+  let folderName: string;
+  let files: { id: string; name: string; path: string; object_key: string; size_bytes: number }[];
 
-  // Get files in this drive (non-deleted)
-  const filesSnap = await db
-    .collection("backup_files")
-    .where("userId", "==", ownerId)
-    .where("linked_drive_id", "==", linkedDriveId)
-    .where("deleted_at", "==", null)
-    .get();
+  if (isFileShare) {
+    const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
+    if (!fileSnap.exists) {
+      return NextResponse.json({ error: "Shared file not found" }, { status: 404 });
+    }
+    const fileData = fileSnap.data();
+    if (fileData?.deleted_at) {
+      return NextResponse.json({ error: "Shared file was deleted" }, { status: 410 });
+    }
+    if (fileData?.userId !== ownerId || fileData?.linked_drive_id !== linkedDriveId) {
+      return NextResponse.json({ error: "Invalid share" }, { status: 404 });
+    }
+    const path = (fileData.relative_path ?? "") as string;
+    const name = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+    folderName = name;
+    files = [
+      {
+        id: fileSnap.id,
+        name,
+        path,
+        object_key: (fileData.object_key ?? "") as string,
+        size_bytes: (fileData.size_bytes ?? 0) as number,
+      },
+    ];
+  } else {
+    const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
+    folderName = driveSnap.exists
+      ? (driveSnap.data()?.name ?? "Shared folder")
+      : "Shared folder";
 
-  const files = filesSnap.docs.map((d) => {
-    const data = d.data();
-    const path = (data.relative_path ?? "") as string;
-    const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
-    return {
-      id: d.id,
-      name,
-      path,
-      object_key: data.object_key ?? "",
-      size_bytes: data.size_bytes ?? 0,
-    };
-  });
+    const filesSnap = await db
+      .collection("backup_files")
+      .where("userId", "==", ownerId)
+      .where("linked_drive_id", "==", linkedDriveId)
+      .where("deleted_at", "==", null)
+      .get();
+
+    files = filesSnap.docs.map((d) => {
+      const data = d.data();
+      const path = (data.relative_path ?? "") as string;
+      const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+      return {
+        id: d.id,
+        name,
+        path,
+        object_key: data.object_key ?? "",
+        size_bytes: data.size_bytes ?? 0,
+      };
+    });
+  }
 
   return NextResponse.json({
-    folder_name: driveName,
+    folder_name: folderName,
+    item_type: isFileShare ? "file" : "folder",
     permission: share.permission ?? "view",
     access_level: share.access_level ?? "public",
     files,

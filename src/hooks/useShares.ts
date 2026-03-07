@@ -7,6 +7,7 @@ export interface ShareListItem {
   id: string;
   token: string;
   folder_name: string;
+  item_type: "file" | "folder";
   permission: "view" | "edit";
   share_url: string;
   sharedBy?: string;
@@ -48,20 +49,22 @@ export function useShares(): UseSharesResult {
       }
       const data = await res.json();
       setOwned(
-        (data.owned ?? []).map((s: { id: string; token: string; folder_name: string; permission: string; share_url: string }) => ({
+        (data.owned ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string }) => ({
           id: s.id,
           token: s.token,
           folder_name: s.folder_name,
+          item_type: s.item_type === "file" ? "file" : "folder",
           permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
           share_url: s.share_url,
           sharedBy: "You",
         }))
       );
       setInvited(
-        (data.invited ?? []).map((s: { id: string; token: string; folder_name: string; permission: string; share_url: string; sharedBy?: string }) => ({
+        (data.invited ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; sharedBy?: string }) => ({
           id: s.id,
           token: s.token,
           folder_name: s.folder_name,
+          item_type: s.item_type === "file" ? "file" : "folder",
           permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
           share_url: s.share_url,
           sharedBy: s.sharedBy ?? "Someone",

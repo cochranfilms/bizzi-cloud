@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Check, FileIcon, Film, Play, Share2 } from "lucide-react";
+import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useBackup } from "@/context/BackupContext";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { useInView } from "@/hooks/useInView";
 import ItemActionsMenu from "./ItemActionsMenu";
 import ShareModal from "./ShareModal";
+import RenameModal from "./RenameModal";
+import MoveModal from "./MoveModal";
+import CreateFolderModal from "./CreateFolderModal";
 
 interface FileCardProps {
   file: RecentFile;
@@ -54,7 +59,12 @@ export default function FileCard({
   selectable = false,
 }: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [cardRef, isInView] = useInView<HTMLDivElement>();
+  const { renameFile, moveFile } = useCloudFiles();
+  const { createFolder, linkedDrives } = useBackup();
   const canPreview = !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
@@ -136,6 +146,24 @@ export default function FileCard({
                     },
                   ]
                 : []),
+              {
+                id: "rename",
+                label: "Rename",
+                icon: <Pencil className="h-4 w-4" />,
+                onClick: () => setRenameOpen(true),
+              },
+              {
+                id: "move",
+                label: "Move",
+                icon: <FolderInput className="h-4 w-4" />,
+                onClick: () => setMoveOpen(true),
+              },
+              {
+                id: "create-folder",
+                label: "Create New Folder",
+                icon: <FolderPlus className="h-4 w-4" />,
+                onClick: () => setCreateFolderOpen(true),
+              },
               ...(onDelete
                 ? [
                     {
@@ -199,8 +227,34 @@ export default function FileCard({
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
-        folderName={file.driveName}
+        folderName={file.name}
         linkedDriveId={file.driveId}
+        backupFileId={file.id}
+      />
+      <RenameModal
+        open={renameOpen}
+        onClose={() => setRenameOpen(false)}
+        currentName={file.name}
+        onRename={(newName) => renameFile(file.id, newName)}
+        itemType="file"
+      />
+      <MoveModal
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        itemName={file.name}
+        itemType="file"
+        excludeDriveId={file.driveId}
+        folders={linkedDrives}
+        onMove={(targetDriveId) => moveFile(file.id, targetDriveId)}
+      />
+      <CreateFolderModal
+        open={createFolderOpen}
+        onClose={() => setCreateFolderOpen(false)}
+        selectedFileIds={[file.id]}
+        onCreateAndMove={async (folderName) => {
+          const drive = await createFolder(folderName);
+          await moveFile(file.id, drive.id);
+        }}
       />
     </div>
   );

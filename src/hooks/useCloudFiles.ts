@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   collection,
   doc,
+  getDoc,
   deleteDoc,
   getDocs,
   query,
@@ -46,7 +47,7 @@ export interface RecentFile {
 
 export function useCloudFiles() {
   const { user } = useAuth();
-  const { linkedDrives, storageVersion, bumpStorageVersion } = useBackup();
+  const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -277,6 +278,107 @@ export function useCloudFiles() {
     [user, fetchCloudFiles, recalculateStorage]
   );
 
+  const renameFile = useCallback(
+    async (fileId: string, newName: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const fileRef = doc(db, "backup_files", fileId);
+      const fileSnap = await getDoc(fileRef);
+      if (!fileSnap.exists()) return;
+      const data = fileSnap.data();
+      if (data?.userId !== user.uid) return;
+      const path = (data.relative_path as string) ?? "";
+      const parts = path.split("/").filter(Boolean);
+      parts[parts.length - 1] = newName.trim();
+      const newPath = parts.join("/");
+      await updateDoc(fileRef, { relative_path: newPath });
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles]
+  );
+
+  const renameFolder = useCallback(
+    async (driveId: string, newName: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const driveRef = doc(db, "linked_drives", driveId);
+      await updateDoc(driveRef, { name: newName.trim() || "Folder" });
+      bumpStorageVersion();
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles, bumpStorageVersion]
+  );
+
+  const moveFile = useCallback(
+    async (fileId: string, targetDriveId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const fileSnap = await getDoc(doc(db, "backup_files", fileId));
+      if (!fileSnap.exists()) return;
+      const data = fileSnap.data();
+      if (data?.userId !== user.uid) return;
+      const path = (data.relative_path as string) ?? "";
+      const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
+      await updateDoc(doc(db, "backup_files", fileId), {
+        linked_drive_id: targetDriveId,
+        relative_path: fileName,
+      });
+      await recalculateStorage();
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles, recalculateStorage]
+  );
+
+  const moveFilesToFolder = useCallback(
+    async (fileIds: string[], targetDriveId: string) => {
+      if (!isFirebaseConfigured() || !user || fileIds.length === 0) return;
+      const db = getFirebaseFirestore();
+      for (const fileId of fileIds) {
+        const fileSnap = await getDoc(doc(db, "backup_files", fileId));
+        if (!fileSnap.exists() || fileSnap.data()?.userId !== user.uid) continue;
+        const data = fileSnap.data()!;
+        const path = (data.relative_path as string) ?? "";
+        const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
+        await updateDoc(doc(db, "backup_files", fileId), {
+          linked_drive_id: targetDriveId,
+          relative_path: fileName,
+        });
+      }
+      await recalculateStorage();
+      await fetchCloudFiles();
+    },
+    [user, fetchCloudFiles, recalculateStorage]
+  );
+
+  const moveFolderContentsToFolder = useCallback(
+    async (sourceDriveId: string, targetDriveId: string) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const db = getFirebaseFirestore();
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", sourceDriveId),
+          where("deleted_at", "==", null)
+        )
+      );
+      for (const d of filesSnap.docs) {
+        const data = d.data();
+        const path = (data.relative_path as string) ?? "";
+        const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
+        await updateDoc(doc(db, "backup_files", d.id), {
+          linked_drive_id: targetDriveId,
+          relative_path: fileName,
+        });
+      }
+      const sourceDrive = linkedDrives.find((d) => d.id === sourceDriveId);
+      if (sourceDrive) await unlinkDrive(sourceDrive);
+      await recalculateStorage();
+      await fetchCloudFiles();
+    },
+    [user, linkedDrives, unlinkDrive, fetchCloudFiles, recalculateStorage]
+  );
+
   return {
     driveFolders,
     recentFiles,
@@ -288,5 +390,10 @@ export function useCloudFiles() {
     deleteFiles,
     restoreFile,
     permanentlyDeleteFile,
+    renameFile,
+    renameFolder,
+    moveFile,
+    moveFilesToFolder,
+    moveFolderContentsToFolder,
   };
 }

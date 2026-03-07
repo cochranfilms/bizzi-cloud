@@ -60,6 +60,8 @@ interface BackupContextValue {
   uploadFolder: () => Promise<void>;
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
+  /** Create a new empty folder (linked drive). */
+  createFolder: (name: string) => Promise<LinkedDrive>;
 }
 
 /** Video extensions that trigger proxy generation (720p H.264). */
@@ -812,6 +814,32 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     return drive;
   }, [user]);
 
+  const createFolder = useCallback(
+    async (name: string): Promise<LinkedDrive> => {
+      if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
+      const db = getFirebaseFirestore();
+      const docRef = await addDoc(collection(db, "linked_drives"), {
+        userId: user.uid,
+        name: name.trim() || "New folder",
+        permission_handle_id: `manual-${Date.now()}`,
+        createdAt: new Date(),
+      });
+      const drive: LinkedDrive = {
+        id: docRef.id,
+        user_id: user.uid,
+        name: name.trim() || "New folder",
+        mount_path: null,
+        permission_handle_id: `manual-${Date.now()}`,
+        last_synced_at: null,
+        created_at: new Date().toISOString(),
+      };
+      setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
+      setStorageVersion((v) => v + 1);
+      return drive;
+    },
+    [user]
+  );
+
   const uploadSingleFile = useCallback(
     async (file: File) => {
       if (!isFirebaseConfigured() || !user) {
@@ -981,6 +1009,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       uploadFolder,
       clearFileUploadError,
       fsAccessSupported,
+      createFolder,
     }),
     [
       linkedDrives,
@@ -1001,6 +1030,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       clearFileUploadError,
       fileUploadError,
       fsAccessSupported,
+      createFolder,
     ]
   );
 

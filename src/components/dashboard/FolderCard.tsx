@@ -1,9 +1,14 @@
 "use client";
 
-import { Check, Folder, Share2 } from "lucide-react";
+import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus } from "lucide-react";
 import { useState } from "react";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
+import RenameModal from "./RenameModal";
+import MoveModal from "./MoveModal";
+import CreateFolderModal from "./CreateFolderModal";
+import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useBackup } from "@/context/BackupContext";
 
 export interface FolderItem {
   name: string;
@@ -35,7 +40,12 @@ export default function FolderCard({
   selectable = false,
 }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const canNavigate = !!item.driveId && !!onClick;
+  const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
+  const { createFolder, linkedDrives } = useBackup();
 
   const handleDelete = () => {
     if (window.confirm(`Delete "${item.name}"? This will unlink the drive and remove it from your backups.`)) {
@@ -132,6 +142,28 @@ export default function FolderCard({
                       },
                     ]
                   : []),
+                ...(item.driveId
+                  ? [
+                      {
+                        id: "rename",
+                        label: "Rename",
+                        icon: <Pencil className="h-4 w-4" />,
+                        onClick: () => setRenameOpen(true),
+                      },
+                      {
+                        id: "move",
+                        label: "Move",
+                        icon: <FolderInput className="h-4 w-4" />,
+                        onClick: () => setMoveOpen(true),
+                      },
+                      {
+                        id: "create-folder",
+                        label: "Create New Folder",
+                        icon: <FolderPlus className="h-4 w-4" />,
+                        onClick: () => setCreateFolderOpen(true),
+                      },
+                    ]
+                  : []),
                 ...(onDelete
                   ? [
                       {
@@ -156,6 +188,35 @@ export default function FolderCard({
         folderName={item.name}
         linkedDriveId={item.driveId}
       />
+      {item.driveId && (
+        <>
+          <RenameModal
+            open={renameOpen}
+            onClose={() => setRenameOpen(false)}
+            currentName={item.name}
+            onRename={(newName) => renameFolder(item.driveId!, newName)}
+            itemType="folder"
+          />
+          <MoveModal
+            open={moveOpen}
+            onClose={() => setMoveOpen(false)}
+            itemName={item.name}
+            itemType="folder"
+            excludeDriveId={item.driveId}
+            folders={linkedDrives}
+            onMove={(targetDriveId) => moveFolderContentsToFolder(item.driveId!, targetDriveId)}
+          />
+          <CreateFolderModal
+            open={createFolderOpen}
+            onClose={() => setCreateFolderOpen(false)}
+            selectedFolderKeys={[item.key]}
+            onCreateAndMove={async (folderName) => {
+              const drive = await createFolder(folderName);
+              await moveFolderContentsToFolder(item.driveId!, drive.id);
+            }}
+          />
+        </>
+      )}
     </>
   );
 }

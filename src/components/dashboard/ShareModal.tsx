@@ -8,8 +8,11 @@ import { useAuth } from "@/context/AuthContext";
 interface ShareModalProps {
   open: boolean;
   onClose: () => void;
+  /** Display name (file or folder name) */
   folderName: string;
   linkedDriveId?: string;
+  /** When sharing a single file, pass the backup_file id */
+  backupFileId?: string;
 }
 
 export default function ShareModal({
@@ -17,6 +20,7 @@ export default function ShareModal({
   onClose,
   folderName,
   linkedDriveId,
+  backupFileId,
 }: ShareModalProps) {
   const { user } = useAuth();
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -37,8 +41,10 @@ export default function ShareModal({
     if (!linkedDriveId || !user) return;
     try {
       const token = await user.getIdToken();
+      const params = new URLSearchParams({ linked_drive_id: linkedDriveId });
+      if (backupFileId) params.set("backup_file_id", backupFileId);
       const res = await fetch(
-        `/api/shares?linked_drive_id=${encodeURIComponent(linkedDriveId)}`,
+        `/api/shares?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.ok) {
@@ -50,7 +56,7 @@ export default function ShareModal({
     } catch {
       // No existing share, will create on first action
     }
-  }, [linkedDriveId, user]);
+  }, [linkedDriveId, backupFileId, user]);
 
   useEffect(() => {
     if (open && linkedDriveId) {
@@ -79,6 +85,7 @@ export default function ShareModal({
         },
         body: JSON.stringify({
           linked_drive_id: linkedDriveId,
+          backup_file_id: backupFileId ?? undefined,
           permission,
           access_level: accessLevel,
           invited_emails: invitedEmails,
@@ -97,7 +104,7 @@ export default function ShareModal({
     } finally {
       setLoading(false);
     }
-  }, [linkedDriveId, user, shareToken, permission, accessLevel, invitedEmails]);
+  }, [linkedDriveId, backupFileId, user, shareToken, permission, accessLevel, invitedEmails]);
 
   const copyLink = useCallback(async () => {
     const token = await ensureShare();

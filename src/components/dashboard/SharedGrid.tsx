@@ -13,7 +13,7 @@ export default function SharedGrid() {
   const sharedItems: SharedItem[] = useMemo(() => {
     const invitedItems: SharedItem[] = invited.map((s) => ({
       name: s.folder_name,
-      type: "folder" as const,
+      type: s.item_type,
       key: s.token,
       sharedBy: s.sharedBy ?? "Someone",
       permission: s.permission,
@@ -21,7 +21,7 @@ export default function SharedGrid() {
     }));
     const ownedItems: SharedItem[] = owned.map((s) => ({
       name: s.folder_name,
-      type: "folder" as const,
+      type: s.item_type,
       key: s.token,
       sharedBy: "You",
       permission: s.permission,

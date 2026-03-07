@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Upload, FolderPlus, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
+import { Plus, Upload, FolderPlus, Folder, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
+import CreateFolderModal from "./CreateFolderModal";
 import { useBackup } from "@/context/BackupContext";
 
 interface TopBarProps {
@@ -15,6 +16,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
   const [folderUploading, setFolderUploading] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const newDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
@@ -22,6 +24,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const {
     uploadSingleFile,
     uploadFolder,
+    createFolder,
     fileUploadError,
     clearFileUploadError,
     fsAccessSupported,
@@ -53,17 +56,24 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = e.target.files;
     e.target.value = "";
-    if (!file) return;
+    if (!files || files.length === 0) return;
     setFileUploading(true);
     try {
-      await uploadSingleFile(file);
+      for (let i = 0; i < files.length; i++) {
+        await uploadSingleFile(files[i]!);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setFileUploading(false);
     }
+  };
+
+  const handleCreateFolderClick = () => {
+    setNewDropdownOpen(false);
+    setCreateFolderOpen(true);
   };
 
   const handleFolderUploadClick = async () => {
@@ -134,6 +144,14 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
               <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
                 <button
                   type="button"
+                  onClick={handleCreateFolderClick}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  <Folder className="h-4 w-4 flex-shrink-0" />
+                  Create New Folder
+                </button>
+                <button
+                  type="button"
                   onClick={handleFileUploadClick}
                   disabled={fileUploading}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
@@ -156,7 +174,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
             <input
               ref={fileInputRef}
               type="file"
-              multiple={false}
+              multiple
               onChange={handleFileChange}
               className="hidden"
               aria-hidden
@@ -191,6 +209,14 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
       <CreateTransferModal
         open={transferModalOpen}
         onClose={() => setTransferModalOpen(false)}
+      />
+      <CreateFolderModal
+        open={createFolderOpen}
+        onClose={() => setCreateFolderOpen(false)}
+        onCreateEmpty={async (folderName) => {
+          await createFolder(folderName);
+          setCreateFolderOpen(false);
+        }}
       />
     </div>
   );
