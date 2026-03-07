@@ -54,30 +54,21 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
       };
 
       if (previewType === "video") {
-        const [previewRes, streamRes] = await Promise.all([
-          fetch("/api/backup/preview-url", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-          }),
-          fetch("/api/backup/video-stream-url", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-          }),
-        ]);
+        const previewRes = await fetch("/api/backup/preview-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
         const previewData = await previewRes.json();
-        const streamData = await streamRes.json();
         if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
-        if (!streamRes.ok) throw new Error(streamData?.error ?? "Failed to load video stream");
         setFullUrl(previewData.url);
-        if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+        fetch("/api/backup/video-stream-url", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) })
+          .then((r) => r.json())
+          .then((d) => d?.streamUrl && setVideoStreamUrl(d.streamUrl))
+          .catch(() => {});
       } else {
         const res = await fetch("/api/backup/preview-url", {
           method: "POST",
@@ -177,7 +168,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType === "video" && videoStreamUrl) ||
+            (previewType === "video" && fullUrl) ||
             (previewType !== "image" && previewType !== "video" && fullUrl)) &&
             !error && (
               <>
@@ -194,9 +185,10 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                     </p>
                   </div>
                 )}
-                {previewType === "video" && videoStreamUrl && (
+                {previewType === "video" && fullUrl && (
                   <VideoWithLUT
-                    src={videoStreamUrl}
+                    src={fullUrl}
+                    streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
                   />
                 )}

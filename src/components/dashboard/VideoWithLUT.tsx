@@ -138,10 +138,11 @@ void main() {
 
 interface VideoWithLUTProps {
   src: string;
+  streamUrl?: string | null;
   className?: string;
 }
 
-export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
+export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
@@ -352,7 +353,7 @@ export default function VideoWithLUT({ src, className }: VideoWithLUTProps) {
               ? "bg-bizzi-blue text-white"
               : "bg-neutral-700/50 text-neutral-300 hover:bg-neutral-600"
           }`}
-          title="S-Log3 → Rec 709"
+          title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
         >
           <span className="inline-block h-3 w-3 rounded-full border border-current bg-current opacity-80" />
           Rec 709 LUT
