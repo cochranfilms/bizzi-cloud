@@ -1,5 +1,6 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -44,6 +45,23 @@ export async function POST(
   const expiresAt = share.expires_at?.toDate?.();
   if (expiresAt && expiresAt < new Date()) {
     return NextResponse.json({ error: "Share expired" }, { status: 410 });
+  }
+
+  const authHeader = request.headers.get("Authorization");
+  const access = await verifyShareAccess(
+    {
+      owner_id: share.owner_id as string,
+      access_level: share.access_level as string | undefined,
+      invited_emails: share.invited_emails as string[] | undefined,
+    },
+    authHeader
+  );
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.code, message: access.message },
+      { status: 403 }
+    );
   }
 
   const linkedDriveId = share.linked_drive_id as string;

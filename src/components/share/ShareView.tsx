@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { File, Download, FolderOpen } from "lucide-react";
+import { File, Download, FolderOpen, Lock } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface ShareViewProps {
   token: string;
@@ -24,22 +25,36 @@ interface ShareData {
 }
 
 export default function ShareView({ token }: ShareViewProps) {
+  const { user } = useAuth();
   const [data, setData] = useState<ShareData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function fetchShare() {
+      setError(null);
+      setErrorCode(null);
       try {
-        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`);
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `Failed to load (${res.status})`);
+        const headers: Record<string, string> = {};
+        if (user) {
+          const idToken = await user.getIdToken();
+          headers.Authorization = `Bearer ${idToken}`;
         }
-        const json = await res.json();
-        if (!cancelled) setData(json);
+        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
+          headers,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!cancelled) {
+            setError(body.message ?? body.error ?? `Failed to load (${res.status})`);
+            setErrorCode(body.error ?? null);
+          }
+          return;
+        }
+        if (!cancelled) setData(body);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load");
@@ -52,20 +67,25 @@ export default function ShareView({ token }: ShareViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, user]);
 
   const handleDownload = useCallback(
     async (file: ShareFile) => {
       setDownloadingId(file.id);
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (user) {
+          const idToken = await user.getIdToken();
+          headers.Authorization = `Bearer ${idToken}`;
+        }
         const res = await fetch(`/api/shares/${encodeURIComponent(token)}/download`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ object_key: file.object_key }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? "Download failed");
+          throw new Error(body.message ?? body.error ?? "Download failed");
         }
         const { url } = await res.json();
         window.open(url, "_blank", "noopener,noreferrer");
@@ -75,7 +95,7 @@ export default function ShareView({ token }: ShareViewProps) {
         setDownloadingId(null);
       }
     },
-    [token]
+    [token, user]
   );
 
   function formatSize(bytes: number): string {
@@ -95,6 +115,37 @@ export default function ShareView({ token }: ShareViewProps) {
 
   if (error || !data) {
     const isExpired = error?.toLowerCase().includes("expired");
+    const isPrivateAuth = errorCode === "private_share_requires_auth";
+
+    if (isPrivateAuth) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
+          <div className="w-full max-w-sm space-y-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+                <Lock className="h-7 w-7" />
+              </div>
+              <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
+                This folder is private
+              </h1>
+              <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+                {error ?? "Sign in to access if you have been invited."}
+              </p>
+            </div>
+            <Link
+              href={`/login?redirect=${encodeURIComponent(`/s/${token}`)}`}
+              className="flex w-full items-center justify-center rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+            >
+              Sign in to access
+            </Link>
+            <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+              Don&apos;t have access? Ask the owner to add you by email.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <FolderOpen className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />

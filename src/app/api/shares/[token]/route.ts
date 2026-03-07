@@ -1,8 +1,9 @@
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
@@ -26,6 +27,23 @@ export async function GET(
   const expiresAt = share.expires_at?.toDate?.();
   if (expiresAt && expiresAt < new Date()) {
     return NextResponse.json({ error: "Share expired" }, { status: 410 });
+  }
+
+  const authHeader = request.headers.get("Authorization");
+  const access = await verifyShareAccess(
+    {
+      owner_id: share.owner_id as string,
+      access_level: share.access_level as string | undefined,
+      invited_emails: share.invited_emails as string[] | undefined,
+    },
+    authHeader
+  );
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.code, message: access.message },
+      { status: 403 }
+    );
   }
 
   const linkedDriveId = share.linked_drive_id as string;
@@ -61,6 +79,70 @@ export async function GET(
   return NextResponse.json({
     folder_name: driveName,
     permission: share.permission ?? "view",
+    access_level: share.access_level ?? "public",
     files,
   });
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const authHeader = request.headers.get("Authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+
+  if (!bearerToken) {
+    return NextResponse.json(
+      { error: "Missing or invalid Authorization" },
+      { status: 401 }
+    );
+  }
+
+  let uid: string;
+  try {
+    const decoded = await verifyIdToken(bearerToken);
+    uid = decoded.uid;
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  const { token: shareToken } = await params;
+
+  if (!shareToken || typeof shareToken !== "string") {
+    return NextResponse.json({ error: "Invalid token" }, { status: 400 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const { access_level: accessLevel, invited_emails: invitedEmails } = body;
+
+  const db = getAdminFirestore();
+  const shareRef = db.collection("folder_shares").doc(shareToken);
+  const shareSnap = await shareRef.get();
+
+  if (!shareSnap.exists) {
+    return NextResponse.json({ error: "Share not found" }, { status: 404 });
+  }
+
+  const share = shareSnap.data();
+  if (share?.owner_id !== uid) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const updates: Record<string, unknown> = {};
+
+  if (accessLevel === "private" || accessLevel === "public") {
+    updates.access_level = accessLevel;
+  }
+
+  if (Array.isArray(invitedEmails)) {
+    updates.invited_emails = invitedEmails.filter((e: unknown) => typeof e === "string");
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ ok: true });
+  }
+
+  await shareRef.update(updates);
+
+  return NextResponse.json({ ok: true });
 }

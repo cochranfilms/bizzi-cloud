@@ -60,6 +60,14 @@
       ]
     },
     {
+      "collectionGroup": "folder_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "backup_files",
       "queryScope": "COLLECTION",
       "fields": [

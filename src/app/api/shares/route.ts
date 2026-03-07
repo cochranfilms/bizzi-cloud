@@ -23,7 +23,40 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const linkedDriveIdParam = url.searchParams.get("linked_drive_id");
+
   const db = getAdminFirestore();
+
+  // Get existing share for a specific drive (for ShareModal get-or-create)
+  if (linkedDriveIdParam) {
+    const existingSnap = await db
+      .collection("folder_shares")
+      .where("owner_id", "==", uid)
+      .where("linked_drive_id", "==", linkedDriveIdParam)
+      .limit(1)
+      .get();
+
+    if (existingSnap.empty) {
+      return NextResponse.json({ error: "Share not found" }, { status: 404 });
+    }
+
+    const d = existingSnap.docs[0];
+    const data = d.data();
+    const expiresAt = data.expires_at?.toDate?.();
+    if (expiresAt && expiresAt < new Date()) {
+      return NextResponse.json({ error: "Share expired" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      token: data.token,
+      share_url: `/s/${data.token}`,
+      access_level: data.access_level ?? "public",
+      permission: data.permission ?? "view",
+      invited_emails: data.invited_emails ?? [],
+      linked_drive_id: data.linked_drive_id,
+    });
+  }
 
   // Shares I created (owner)
   const ownedSnap = await db
@@ -138,6 +171,7 @@ export async function POST(request: Request) {
   const {
     linked_drive_id: linkedDriveId,
     permission = "view",
+    access_level = "private",
     expires_at: expiresAt,
     invited_emails: invitedEmails,
   } = body;
@@ -152,6 +186,13 @@ export async function POST(request: Request) {
   if (permission !== "view" && permission !== "edit") {
     return NextResponse.json(
       { error: "permission must be 'view' or 'edit'" },
+      { status: 400 }
+    );
+  }
+
+  if (access_level !== "private" && access_level !== "public") {
+    return NextResponse.json(
+      { error: "access_level must be 'private' or 'public'" },
       { status: 400 }
     );
   }
@@ -174,6 +215,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  // Get-or-create: check for existing share for this drive
+  const existingSnap = await db
+    .collection("folder_shares")
+    .where("owner_id", "==", uid)
+    .where("linked_drive_id", "==", linkedDriveId)
+    .limit(1)
+    .get();
+
+  if (!existingSnap.empty) {
+    const d = existingSnap.docs[0];
+    const data = d.data();
+    const shareToken = data.token as string;
+    return NextResponse.json({
+      token: shareToken,
+      share_url: `/s/${shareToken}`,
+      existing: true,
+    });
+  }
+
   const shareToken = generateShareToken();
   const now = new Date();
 
@@ -182,6 +242,7 @@ export async function POST(request: Request) {
     owner_id: uid,
     linked_drive_id: linkedDriveId,
     permission: permission as "view" | "edit",
+    access_level: access_level as "private" | "public",
     expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
     created_at: now,
     invited_emails: Array.isArray(invitedEmails)
@@ -194,5 +255,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     token: shareToken,
     share_url: `/s/${shareToken}`,
+    existing: false,
   });
 }

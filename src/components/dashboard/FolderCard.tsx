@@ -85,15 +85,29 @@ export default function FolderCard({ item, onClick, onDelete }: FolderCardProps)
               <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
             </button>
           )}
-          {onDelete && (
+          {(onDelete || (!item.hideShare && item.driveId)) && (
             <ItemActionsMenu
               actions={[
-                {
-                  id: "delete",
-                  label: "Delete",
-                  onClick: handleDelete,
-                  destructive: true,
-                },
+                ...(!item.hideShare && item.driveId
+                  ? [
+                      {
+                        id: "share",
+                        label: "Share",
+                        icon: <Share2 className="h-4 w-4" />,
+                        onClick: () => setShareOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(onDelete
+                  ? [
+                      {
+                        id: "delete",
+                        label: "Delete",
+                        onClick: handleDelete,
+                        destructive: true,
+                      },
+                    ]
+                  : []),
               ]}
               ariaLabel="Folder actions"
               alignRight

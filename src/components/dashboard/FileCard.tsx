@@ -1,9 +1,11 @@
 "use client";
 
-import { FileIcon, Film, Play } from "lucide-react";
+import { useState } from "react";
+import { FileIcon, Film, Play, Share2 } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import ItemActionsMenu from "./ItemActionsMenu";
+import ShareModal from "./ShareModal";
 
 interface FileCardProps {
   file: RecentFile;
@@ -34,6 +36,7 @@ function isVideoFile(name: string) {
 }
 
 export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
+  const [shareOpen, setShareOpen] = useState(false);
   const canPreview = !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
   const isVideo = isVideoFile(file.name);
@@ -71,16 +74,30 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           : undefined
       }
     >
-      {onDelete && (
+      {(onDelete || file.driveId) && (
         <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
           <ItemActionsMenu
             actions={[
-            {
-              id: "delete",
-              label: "Move to trash",
-                onClick: handleDelete,
-                destructive: true,
-              },
+              ...(file.driveId
+                ? [
+                    {
+                      id: "share",
+                      label: "Share",
+                      icon: <Share2 className="h-4 w-4" />,
+                      onClick: () => setShareOpen(true),
+                    },
+                  ]
+                : []),
+              ...(onDelete
+                ? [
+                    {
+                      id: "delete",
+                      label: "Move to trash",
+                      onClick: handleDelete,
+                      destructive: true,
+                    },
+                  ]
+                : []),
             ]}
             ariaLabel="File actions"
             alignRight
@@ -101,10 +118,10 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           />
         ) : isVideo ? (
           <div className="relative flex h-full w-full items-center justify-center">
-            <Film className="h-full w-full p-6 text-neutral-400 dark:text-neutral-500" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-              <div className="flex h-1/3 min-h-16 w-1/3 min-w-16 max-h-20 max-w-20 items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90">
-                <Play className="h-1/2 w-1/2 min-h-8 min-w-8 fill-neutral-700 text-neutral-700 dark:fill-neutral-300 dark:text-neutral-300" />
+            <Film className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] text-neutral-500 dark:text-neutral-400" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
+                <Play className="ml-1 h-6 w-6 fill-white text-white" />
               </div>
             </div>
           </div>
@@ -121,6 +138,13 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
       <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
         {formatDate(file.modifiedAt)}
       </p>
+
+      <ShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        folderName={file.driveName}
+        linkedDriveId={file.driveId}
+      />
     </div>
   );
 }
