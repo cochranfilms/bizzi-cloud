@@ -1,15 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { Cloud } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Cloud, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
+import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
+
+const DRAG_THRESHOLD_PX = 5;
+
+function rectsIntersect(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: DOMRect
+): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
+
+function BulkActionBar({
+  selectedFileCount,
+  selectedFolderCount,
+  onDelete,
+  onClear,
+}: {
+  selectedFileCount: number;
+  selectedFolderCount: number;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  const total = selectedFileCount + selectedFolderCount;
+  const parts: string[] = [];
+  if (selectedFileCount > 0) parts.push(`${selectedFileCount} file${selectedFileCount === 1 ? "" : "s"}`);
+  if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} folder${selectedFolderCount === 1 ? "" : "s"}`);
+  const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
+
+  return (
+    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+        {label} selected
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface HomeStorageViewProps {
   /** Base path for links: "/dashboard" or "/enterprise" */
@@ -17,12 +70,23 @@ interface HomeStorageViewProps {
 }
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
-  const { driveFolders, loading, deleteFile, deleteFolder, refetch } = useCloudFiles();
+  const { driveFolders, loading, deleteFile, deleteFiles, deleteFolder, refetch } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
+  const { linkedDrives } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
+  const [dragState, setDragState] = useState<{
+    isActive: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const gridSectionRef = useRef<HTMLDivElement | null>(null);
 
   const filesHref = `${basePath}/files`;
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
@@ -69,11 +133,169 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     [filesHref, setCurrentFolderDriveId]
   );
 
+  const toggleFileSelection = useCallback((id: string) => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleFolderSelection = useCallback((key: string) => {
+    setSelectedFolderKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedFileIds(new Set());
+    setSelectedFolderKeys(new Set());
+  }, []);
+
+  const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[]) => {
+    setSelectedFileIds(new Set(fileIds));
+    setSelectedFolderKeys(new Set(folderKeys));
+  }, []);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
+      if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
+      setDragState({
+        isActive: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+
+    const updateDrag = (e: MouseEvent) => {
+      setDragState((prev) =>
+        prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
+      );
+    };
+
+    const endDrag = (e: MouseEvent) => {
+      const moved =
+        Math.abs(e.clientX - dragState.startX) > DRAG_THRESHOLD_PX ||
+        Math.abs(e.clientY - dragState.startY) > DRAG_THRESHOLD_PX;
+      if (moved) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener("mousemove", updateDrag);
+    window.addEventListener("mouseup", endDrag, true);
+    return () => {
+      window.removeEventListener("mousemove", updateDrag);
+      window.removeEventListener("mouseup", endDrag, true);
+    };
+  }, [dragState?.isActive, dragState?.startX, dragState?.startY]);
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+    const moved =
+      Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+      Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX;
+    if (!moved) return;
+
+    const left = Math.min(dragState.startX, dragState.currentX);
+    const right = Math.max(dragState.startX, dragState.currentX);
+    const top = Math.min(dragState.startY, dragState.currentY);
+    const bottom = Math.max(dragState.startY, dragState.currentY);
+    const dragRect = { left, top, right, bottom };
+
+    const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
+    const fileIds: string[] = [];
+    const folderKeys: string[] = [];
+
+    items?.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (!rectsIntersect(dragRect, rect)) return;
+      const type = el.getAttribute("data-item-type");
+      const id = el.getAttribute("data-item-id");
+      const key = el.getAttribute("data-item-key");
+      if (type === "file" && id) fileIds.push(id);
+      if (type === "folder" && key) folderKeys.push(key);
+    });
+
+    setSelectionFromDrag(fileIds, folderKeys);
+  }, [dragState, setSelectionFromDrag]);
+
+  const handleBulkDelete = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    const folderKeys = Array.from(selectedFolderKeys);
+    const fileCount = fileIds.length;
+    const folderCount = folderKeys.length;
+    const total = fileCount + folderCount;
+
+    const fileMsg =
+      fileCount > 0
+        ? `${fileCount} file${fileCount === 1 ? "" : "s"} will be moved to trash. `
+        : "";
+    const folderMsg =
+      folderCount > 0
+        ? `${folderCount} folder${folderCount === 1 ? "" : "s"} will be moved to trash (or unlinked if empty). `
+        : "";
+    if (
+      !window.confirm(
+        `Delete ${total} item${total === 1 ? "" : "s"}? ${fileMsg}${folderMsg}You can restore files from the Deleted files tab.`
+      )
+    )
+      return;
+
+    try {
+      if (fileIds.length > 0) await deleteFiles(fileIds);
+      for (const key of folderKeys) {
+        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+        const drive = linkedDrives.find((d) => d.id === driveId);
+        const itemCount = folderItems.find((f) => f.key === key)?.items ?? 0;
+        if (drive) {
+          await deleteFolder(drive, itemCount);
+        }
+      }
+      clearSelection();
+      await refetch();
+      await refetchPinned();
+      loadPinnedFiles();
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+    }
+  }, [
+    selectedFileIds,
+    selectedFolderKeys,
+    folderItems,
+    deleteFiles,
+    deleteFolder,
+    linkedDrives,
+    clearSelection,
+    refetch,
+    refetchPinned,
+    loadPinnedFiles,
+  ]);
+
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
   const isLoading = loading || pinnedLoading;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div
+      ref={gridSectionRef}
+      className={`mx-auto max-w-6xl space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
+      data-selectable-grid
+      onMouseDown={handleMouseDown}
+    >
       {/* Section 1: Pinned */}
       {(hasPinned || isLoading) && (
         <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
@@ -86,25 +308,56 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             </div>
           ) : hasPinned ? (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {pinnedFolderItems.map((item) => (
-                <FolderCard
-                  key={item.key}
-                  item={item}
-                  onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                />
-              ))}
+              {pinnedFolderItems.map((item) => {
+                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                return (
+                  <div
+                    key={item.key}
+                    data-selectable-item
+                    data-item-type="folder"
+                    data-item-key={item.key}
+                  >
+                    <FolderCard
+                      item={item}
+                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      onDelete={
+                        drive
+                          ? async () => {
+                              const msg = item.items === 0
+                                ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                              if (window.confirm(msg)) {
+                                await deleteFolder(drive, item.items);
+                                await refetch();
+                                await refetchPinned();
+                                loadPinnedFiles();
+                              }
+                            }
+                          : undefined
+                      }
+                      selectable={!!drive}
+                      selected={selectedFolderKeys.has(item.key)}
+                      onSelect={() => toggleFolderSelection(item.key)}
+                    />
+                  </div>
+                );
+              })}
               {pinnedFiles.map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  onClick={() => setPreviewFile(file)}
-                  onDelete={async () => {
-                    await deleteFile(file.id);
-                    await refetch();
-                    await refetchPinned();
-                    loadPinnedFiles();
-                  }}
-                />
+                <div key={file.id} data-selectable-item data-item-type="file" data-item-id={file.id}>
+                  <FileCard
+                    file={file}
+                    onClick={() => setPreviewFile(file)}
+                    onDelete={async () => {
+                      await deleteFile(file.id);
+                      await refetch();
+                      await refetchPinned();
+                      loadPinnedFiles();
+                    }}
+                    selectable
+                    selected={selectedFileIds.has(file.id)}
+                    onSelect={() => toggleFileSelection(file.id)}
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -126,13 +379,38 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </div>
         ) : folderItems.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {folderItems.map((item) => (
-              <FolderCard
-                key={item.key}
-                item={item}
-                onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-              />
-            ))}
+            {folderItems.map((item) => {
+              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+              return (
+                <div
+                  key={item.key}
+                  data-selectable-item
+                  data-item-type="folder"
+                  data-item-key={item.key}
+                >
+                  <FolderCard
+                    item={item}
+                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    onDelete={
+                      drive
+                        ? async () => {
+                            const msg = item.items === 0
+                              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                            if (window.confirm(msg)) {
+                              await deleteFolder(drive, item.items);
+                              await refetch();
+                            }
+                          }
+                        : undefined
+                    }
+                    selectable={!!drive}
+                    selected={selectedFolderKeys.has(item.key)}
+                    onSelect={() => toggleFolderSelection(item.key)}
+                  />
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
@@ -163,6 +441,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </Link>
         </div>
       </section>
+
+      {selectedFileIds.size + selectedFolderKeys.size > 0 && (
+        <BulkActionBar
+          selectedFileCount={selectedFileIds.size}
+          selectedFolderCount={selectedFolderKeys.size}
+          onDelete={handleBulkDelete}
+          onClear={clearSelection}
+        />
+      )}
 
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
     </div>

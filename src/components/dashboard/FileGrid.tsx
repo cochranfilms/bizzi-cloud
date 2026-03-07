@@ -89,7 +89,7 @@ export default function FileGrid() {
   } | null>(null);
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
-  const gridSectionRef = useRef<HTMLElement | null>(null);
+  const gridSectionRef = useRef<HTMLDivElement | null>(null);
 
   const folderItems: FolderItem[] = driveFolders.map((d) => ({
     name: d.name,
@@ -338,7 +338,12 @@ export default function FileGrid() {
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div
+      ref={gridSectionRef}
+      className={`mx-auto max-w-6xl space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
+      data-selectable-grid
+      onMouseDown={handleMouseDown}
+    >
       {/* Breadcrumb when inside a drive */}
       {currentDrive && (
         <div className="flex items-center gap-2 text-sm">
@@ -374,7 +379,12 @@ export default function FileGrid() {
               {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 return (
-                  <div key={item.key} className="relative">
+                  <div
+                    key={item.key}
+                    data-selectable-item
+                    data-item-type="folder"
+                    data-item-key={item.key}
+                  >
                     <FolderCard
                       item={item}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
@@ -392,22 +402,29 @@ export default function FileGrid() {
                             }
                           : undefined
                       }
+                      selectable={!!drive}
+                      selected={selectedFolderKeys.has(item.key)}
+                      onSelect={() => toggleFolderSelection(item.key)}
                     />
                   </div>
                 );
               })}
               {pinnedFiles.map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  onClick={() => setPreviewFile(file)}
-                  onDelete={async () => {
-                    await deleteFile(file.id);
-                    await refetch();
-                    await refetchPinned();
-                    loadPinnedFiles();
-                  }}
-                />
+                <div key={file.id} data-selectable-item data-item-type="file" data-item-id={file.id}>
+                  <FileCard
+                    file={file}
+                    onClick={() => setPreviewFile(file)}
+                    onDelete={async () => {
+                      await deleteFile(file.id);
+                      await refetch();
+                      await refetchPinned();
+                      loadPinnedFiles();
+                    }}
+                    selectable
+                    selected={selectedFileIds.has(file.id)}
+                    onSelect={() => toggleFileSelection(file.id)}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -415,13 +432,7 @@ export default function FileGrid() {
       )}
 
       {/* Recents / Starred tabs + view toggle (only at root, or when in drive show "Files") */}
-      <section
-        ref={gridSectionRef}
-        className={`relative rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50 ${
-          dragState?.isActive ? "select-none" : ""
-        }`}
-        onMouseDown={handleMouseDown}
-      >
+      <section className="relative rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         {dragState?.isActive &&
         (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
           Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX) ? (
