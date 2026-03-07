@@ -23,17 +23,20 @@ export function isPreviewableMedia(name: string): boolean {
 /**
  * Returns a blob URL for a low-res thumbnail (for cards) or preview (for modal).
  * Images: server-generated resized JPEG. Videos: returns null (use icon/placeholder).
+ * When enabled=false (e.g. when not in viewport), skips fetch to reduce bandwidth.
  */
 export function useThumbnail(
   objectKey: string | undefined,
   fileName: string,
-  size: ThumbnailSize = "thumb"
+  size: ThumbnailSize = "thumb",
+  options?: { enabled?: boolean }
 ): string | null {
+  const { enabled = true } = options ?? {};
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!objectKey || !isImageFile(fileName)) return;
+    if (!objectKey || !isImageFile(fileName) || !enabled) return;
     let cancelled = false;
     (async () => {
       try {
@@ -70,7 +73,7 @@ export function useThumbnail(
       }
       setUrl(null);
     };
-  }, [objectKey, fileName, size]);
+  }, [objectKey, fileName, size, enabled]);
 
   return url;
 }

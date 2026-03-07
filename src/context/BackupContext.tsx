@@ -146,6 +146,56 @@ function putWithProgress(
   });
 }
 
+/** Retry a part upload on transient network errors (e.g. ERR_NETWORK_CHANGED).
+ * Uses exponential backoff with jitter to handle flaky connections and slow HDs. */
+async function putPartWithRetry(
+  blob: Blob,
+  url: string,
+  contentType: string,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+  },
+  maxRetries = 6
+): Promise<{ etag: string }> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await putWithProgress(blob, url, contentType, options);
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (lastErr.message === "Upload aborted") throw lastErr;
+      if (attempt < maxRetries - 1) {
+        const baseDelay = Math.min(2000 * 2 ** attempt, 20000);
+        const jitter = Math.random() * 2000;
+        await new Promise((r) => setTimeout(r, baseDelay + jitter));
+      }
+    }
+  }
+  throw lastErr ?? new Error("Upload failed");
+}
+
+/** Run async tasks with limited concurrency. */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, idx: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  async function worker(): Promise<void> {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () =>
+    worker()
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 async function uploadWithMultipart(
   file: File,
   driveId: string,
@@ -197,33 +247,38 @@ async function uploadWithMultipart(
   };
 
   try {
-    const uploadResults = await Promise.all(
-      parts.map(
-        async (
+    // Use lower concurrency for very large files to avoid overwhelming slow/unstable connections
+    const concurrency =
+      file.size > 1024 * 1024 * 1024 ? 3 : UPLOAD_CONCURRENCY;
+    const uploadResults = await runWithConcurrency(
+      parts,
+      concurrency,
+      async (
+        {
+          partNumber,
+          uploadUrl,
+        }: { partNumber: number; uploadUrl: string },
+        idx: number
+      ) => {
+        const start = (partNumber - 1) * MULTIPART_PART_SIZE;
+        const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
+        const blob = file.slice(start, end);
+        const { etag } = await putPartWithRetry(
+          blob,
+          uploadUrl,
+          contentType,
           {
-            partNumber,
-            uploadUrl,
-          }: {
-            partNumber: number;
-            uploadUrl: string;
-          },
-          idx: number
-        ) => {
-          const start = (partNumber - 1) * MULTIPART_PART_SIZE;
-          const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
-          const blob = file.slice(start, end);
-          const { etag } = await putWithProgress(blob, uploadUrl, contentType, {
             signal,
             onProgress: (loaded) => {
               partProgress[idx] = loaded;
               reportProgress();
             },
-          });
-          partProgress[idx] = end - start;
-          reportProgress();
-          return { partNumber, etag };
-        }
-      )
+          }
+        );
+        partProgress[idx] = end - start;
+        reportProgress();
+        return { partNumber, etag };
+      }
     );
 
     const completeRes = await fetch("/api/backup/multipart-complete", {

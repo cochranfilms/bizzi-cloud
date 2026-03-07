@@ -80,7 +80,7 @@ async function handleThumbnail(request: Request) {
       status: 200,
       headers: {
         "Content-Type": "image/jpeg",
-        "Cache-Control": "private, max-age=3600",
+        "Cache-Control": "private, max-age=604800",
       },
     });
   } catch (err) {

@@ -73,10 +73,12 @@ export default function FileCard({
   const { isPinned, pinItem, unpinItem } = usePinned();
   const filePinned = isPinned("file", file.id);
   const canPreview = !!file.objectKey;
-  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb");
+  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
+    enabled: isInView,
+  });
   const isVideo = isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false);
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isVideo,
+    enabled: !!file.objectKey && isVideo && isInView,
     isVideo,
   });
   const isImage = isImageFile(file.name);

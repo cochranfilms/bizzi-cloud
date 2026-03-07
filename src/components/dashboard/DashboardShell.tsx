@@ -5,6 +5,7 @@ import { PanelRight } from "lucide-react";
 import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
+import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -31,6 +32,7 @@ export default function DashboardShell({
         {/* Top navbar - main nav */}
         <TopNavbar />
         <PendingInvitesBanner />
+        <BackgroundUploadIndicator />
 
         {/* Mobile right panel overlay */}
         {rightPanelOpen && (

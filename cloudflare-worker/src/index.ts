@@ -46,6 +46,26 @@ export default {
     const presignedUrl = `${apiBase}/api/cdn-presigned?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${encodeURIComponent(sig)}${downloadFilename ? `&download=${encodeURIComponent(downloadFilename)}` : ""}`;
 
     const rangeHeader = request.headers.get("Range");
+    const cacheKey = rangeHeader
+      ? `cdn:${objectKey}:${rangeHeader}`
+      : `cdn:${objectKey}`;
+
+    // Check edge cache first (reduces B2 egress and Cloudflare bandwidth)
+    const cache = caches.default;
+    const cacheRequest = new Request(`https://cdn-cache/${cacheKey}`, {
+      method: "GET",
+    });
+    const cachedRes = await cache.match(cacheRequest);
+    if (cachedRes) {
+      const headers = new Headers(cachedRes.headers);
+      cors.forEach((v, k) => headers.set(k, v));
+      return new Response(cachedRes.body, {
+        status: cachedRes.status,
+        statusText: cachedRes.statusText,
+        headers,
+      });
+    }
+
     const fetchOpts: RequestInit = {
       method: "GET",
       headers: rangeHeader ? { Range: rangeHeader } : {},
@@ -67,12 +87,35 @@ export default {
     const headers = new Headers(objectRes.headers);
     if (objectKey.startsWith("content/")) {
       headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      headers.set("Cache-Control", "public, max-age=3600");
     }
     cors.forEach((v, k) => headers.set(k, v));
 
-    return new Response(objectRes.body, {
-      status: objectRes.status,
-      statusText: objectRes.statusText,
+    // Clone for cache; return original (body can only be consumed once)
+    const [toReturn, toCache] = [objectRes, objectRes.clone()];
+    const cacheHeaders = new Headers(toCache.headers);
+    if (objectKey.startsWith("content/")) {
+      cacheHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      cacheHeaders.set("Cache-Control", "public, max-age=3600");
+    }
+    cors.forEach((v, k) => cacheHeaders.set(k, v));
+
+    ctx.waitUntil(
+      cache.put(
+        cacheRequest,
+        new Response(toCache.body, {
+          status: toCache.status,
+          statusText: toCache.statusText,
+          headers: cacheHeaders,
+        })
+      )
+    );
+
+    return new Response(toReturn.body, {
+      status: toReturn.status,
+      statusText: toReturn.statusText,
       headers,
     });
   },
