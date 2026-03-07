@@ -93,8 +93,6 @@ uniform sampler2D u_video;
 uniform sampler2D u_lut;
 uniform float u_lutSize;
 uniform float u_lutEnabled;
-uniform float u_videoAspect;
-uniform float u_canvasAspect;
 in vec2 v_texCoord;
 out vec4 fragColor;
 
@@ -127,19 +125,7 @@ vec4 sampleLUT(vec3 rgb) {
 }
 
 void main() {
-  vec2 uv = v_texCoord;
-  if (u_videoAspect > 0.0 && u_canvasAspect > 0.0) {
-    if (u_canvasAspect > u_videoAspect) {
-      uv.x = (v_texCoord.x - 0.5) * (u_canvasAspect / u_videoAspect) + 0.5;
-    } else {
-      uv.y = (v_texCoord.y - 0.5) * (u_videoAspect / u_canvasAspect) + 0.5;
-    }
-  }
-  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
-    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
-  }
-  vec4 v = texture(u_video, uv);
+  vec4 v = texture(u_video, v_texCoord);
   if (u_lutEnabled > 0.5) {
     fragColor = vec4(sampleLUT(v.rgb).rgb, v.a);
   } else {
@@ -180,7 +166,7 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
     const video = videoRef.current;
     if (!canvas || !video) return;
 
-    const gl = canvas.getContext("webgl2");
+    const gl = canvas.getContext("webgl2", { alpha: true });
     if (!gl) {
       setError("WebGL2 not supported");
       return;
@@ -239,15 +225,16 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
 
     const { gl, program, lutTexture, videoTexture } = ctx;
 
+    const CONTROLS_RESERVE_PX = 52;
+    const dpr = window.devicePixelRatio || 1;
+
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
+      const rect = video.getBoundingClientRect();
       const w = Math.max(1, Math.floor(rect.width * dpr));
       const h = Math.max(1, Math.floor(rect.height * dpr));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
-        gl.viewport(0, 0, w, h);
       }
     };
 
@@ -257,11 +244,21 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
         return;
       }
       resize();
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w === 0 || h === 0) {
         requestAnimationFrame(render);
         return;
       }
+
+      gl.viewport(0, 0, w, h);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      const reservePx = Math.round(CONTROLS_RESERVE_PX * dpr);
+      gl.scissor(0, 0, w, Math.max(1, h - reservePx));
+      gl.enable(gl.SCISSOR_TEST);
+
       gl.useProgram(program);
 
       const posLoc = gl.getAttribLocation(program, "a_position");
@@ -293,21 +290,14 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, lutTexture);
 
-      const videoAspectVal = video.videoWidth > 0 && video.videoHeight > 0
-        ? video.videoWidth / video.videoHeight
-        : 0.0;
-      const canvasAspectVal = rect.width > 0 && rect.height > 0
-        ? rect.width / rect.height
-        : 0.0;
-
       gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
       gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
-      gl.uniform1f(gl.getUniformLocation(program, "u_videoAspect"), videoAspectVal);
-      gl.uniform1f(gl.getUniformLocation(program, "u_canvasAspect"), canvasAspectVal);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      gl.disable(gl.SCISSOR_TEST);
       requestAnimationFrame(render);
     };
 
@@ -355,11 +345,10 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
         {lutEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute left-0 right-0 top-0 rounded-t-lg"
+            className="absolute inset-0 rounded-lg"
             style={{
               width: "100%",
-              height: "calc(100% - 56px)",
-              maxHeight: "calc(70vh - 56px)",
+              height: "100%",
               pointerEvents: "none",
             }}
           />
