@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
+import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 
 const LUT_SIZE = 33;
 const LUT_URL = "/CINECOLOR_S-LOG3.cube";
@@ -140,12 +141,26 @@ interface VideoWithLUTProps {
   className?: string;
 }
 
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
   const [lutReady, setLutReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const glRef = useRef<{
     gl: WebGL2RenderingContext;
     program: WebGLProgram;
@@ -308,6 +323,76 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
 
   const handleLUTToggle = () => setLutEnabled((v) => !v);
 
+  // Sync video state for custom controls (when LUT is on)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onDurationChange = () => setDuration(video.duration);
+    const onVolumeChange = () => {
+      setVolume(video.volume);
+      setIsMuted(video.muted);
+    };
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("volumechange", onVolumeChange);
+    setCurrentTime(video.currentTime);
+    setDuration(video.duration);
+    setVolume(video.volume);
+    setIsMuted(video.muted);
+    return () => {
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("durationchange", onDurationChange);
+      video.removeEventListener("volumechange", onVolumeChange);
+    };
+  }, []);
+
+  const togglePlayPause = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) video.play();
+    else video.pause();
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const video = videoRef.current;
+    const bar = e.currentTarget;
+    if (!video || !bar || !Number.isFinite(video.duration)) return;
+    const rect = bar.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    video.currentTime = frac * video.duration;
+  };
+
+  const toggleMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+  };
+
+  const toggleFullscreen = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen?.();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg bg-red-900/20 p-4 text-red-400">
@@ -326,26 +411,86 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="relative w-full" style={{ maxHeight: "70vh" }}>
+      <div
+        ref={containerRef}
+        className="relative w-full overflow-hidden rounded-lg bg-black"
+        style={{ maxHeight: "70vh" }}
+      >
         <video
           ref={videoRef}
           src={src}
           crossOrigin="anonymous"
-          controls
+          controls={!lutEnabled}
           preload="auto"
           playsInline
-          className={`max-h-[70vh] w-full rounded-lg ${className ?? ""}`}
+          className={`max-h-[70vh] w-full ${className ?? ""}`}
         />
         {lutEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 rounded-lg"
+            className="absolute inset-0"
             style={{
               width: "100%",
               height: "100%",
               pointerEvents: "none",
             }}
           />
+        )}
+        {lutEnabled && lutReady && (
+          <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-6">
+            <div
+              className="h-1 cursor-pointer rounded-full bg-neutral-600"
+              onClick={handleProgressClick}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={duration}
+              aria-valuenow={currentTime}
+            >
+              <div
+                className="h-full rounded-full bg-bizzi-blue transition-[width]"
+                style={{
+                  width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={togglePlayPause}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/20"
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? (
+                  <Pause className="h-5 w-5" fill="currentColor" />
+                ) : (
+                  <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
+                )}
+              </button>
+              <span className="min-w-[4.5rem] text-sm text-white/90">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="flex h-8 w-8 shrink-0 items-center justify-center text-white hover:bg-white/20 rounded-full"
+                aria-label={isMuted ? "Unmute" : "Mute"}
+              >
+                {isMuted ? (
+                  <VolumeX className="h-4 w-4" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-white hover:bg-white/20 rounded-full"
+                aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                <Maximize className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
       <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">

@@ -92,6 +92,7 @@ export async function GET(request: Request) {
       const headers: Record<string, string> = {
         "Accept-Ranges": "bytes",
         "Content-Length": String(contentLength),
+        "Access-Control-Allow-Origin": "*",
       };
       if (contentType) headers["Content-Type"] = contentType;
       if (contentRange) headers["Content-Range"] = contentRange;
@@ -107,6 +108,7 @@ export async function GET(request: Request) {
     const headers: Record<string, string> = {
       "Accept-Ranges": "bytes",
       "Content-Length": String(contentLength),
+      "Access-Control-Allow-Origin": "*",
     };
     if (contentType) headers["Content-Type"] = contentType;
 

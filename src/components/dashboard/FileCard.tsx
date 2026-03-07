@@ -32,7 +32,7 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 
 function isVideoFile(name: string) {

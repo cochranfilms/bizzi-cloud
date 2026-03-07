@@ -11,7 +11,7 @@ const isDevAuthBypass = () =>
 
 export const maxDuration = 60;
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
 function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
