@@ -225,7 +225,7 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
 
     const { gl, program, lutTexture, videoTexture } = ctx;
 
-    const CONTROLS_RESERVE_PX = 52;
+    const CONTROLS_RESERVE_PX = 60;
     const dpr = window.devicePixelRatio || 1;
 
     const resize = () => {
@@ -256,7 +256,8 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       const reservePx = Math.round(CONTROLS_RESERVE_PX * dpr);
-      gl.scissor(0, 0, w, Math.max(1, h - reservePx));
+      const drawHeight = Math.max(1, h - reservePx);
+      gl.scissor(0, reservePx, w, drawHeight);
       gl.enable(gl.SCISSOR_TEST);
 
       gl.useProgram(program);
