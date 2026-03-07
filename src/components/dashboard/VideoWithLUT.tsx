@@ -130,9 +130,9 @@ void main() {
   vec2 uv = v_texCoord;
   if (u_videoAspect > 0.0 && u_canvasAspect > 0.0) {
     if (u_canvasAspect > u_videoAspect) {
-      uv.x = (v_texCoord.x - 0.5) * (u_videoAspect / u_canvasAspect) + 0.5;
+      uv.x = (v_texCoord.x - 0.5) * (u_canvasAspect / u_videoAspect) + 0.5;
     } else {
-      uv.y = (v_texCoord.y - 0.5) * (u_canvasAspect / u_videoAspect) + 0.5;
+      uv.y = (v_texCoord.y - 0.5) * (u_videoAspect / u_canvasAspect) + 0.5;
     }
   }
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
@@ -358,8 +358,8 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
             className="absolute left-0 right-0 top-0 rounded-t-lg"
             style={{
               width: "100%",
-              height: "calc(100% - 50px)",
-              maxHeight: "calc(70vh - 50px)",
+              height: "calc(100% - 56px)",
+              maxHeight: "calc(70vh - 56px)",
               pointerEvents: "none",
             }}
           />
