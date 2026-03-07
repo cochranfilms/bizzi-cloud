@@ -3,6 +3,10 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  type CompletedPart,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -30,6 +34,12 @@ function getB2Client(): S3Client {
   });
 }
 
+/** B2 minimum part size is 5MB. Use 8MB for balance of throughput and memory. */
+export const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
+
+/** Use multipart for files larger than this (must be > 5MB for B2). */
+export const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+
 export async function createPresignedUploadUrl(
   objectKey: string,
   contentType: string,
@@ -42,6 +52,61 @@ export async function createPresignedUploadUrl(
     ContentType: contentType,
   });
   return getSignedUrl(client, command, { expiresIn });
+}
+
+/** Initiate multipart upload for large files. Returns uploadId for subsequent part uploads. */
+export async function createMultipartUpload(
+  objectKey: string,
+  contentType: string
+): Promise<{ uploadId: string }> {
+  const client = getB2Client();
+  const response = await client.send(
+    new CreateMultipartUploadCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      ContentType: contentType,
+    })
+  );
+  const uploadId = response.UploadId;
+  if (!uploadId) throw new Error("CreateMultipartUpload did not return uploadId");
+  return { uploadId };
+}
+
+/** Create presigned URL for a single part of a multipart upload. */
+export async function createPresignedPartUrl(
+  objectKey: string,
+  uploadId: string,
+  partNumber: number,
+  expiresIn = 3600
+): Promise<string> {
+  const client = getB2Client();
+  const command = new UploadPartCommand({
+    Bucket: B2_BUCKET_NAME,
+    Key: objectKey,
+    UploadId: uploadId,
+    PartNumber: partNumber,
+  });
+  return getSignedUrl(client, command, { expiresIn });
+}
+
+/** Complete multipart upload with part ETags. */
+export async function completeMultipartUpload(
+  objectKey: string,
+  uploadId: string,
+  parts: { partNumber: number; etag: string }[]
+): Promise<void> {
+  const client = getB2Client();
+  const completedParts: CompletedPart[] = parts
+    .sort((a, b) => a.partNumber - b.partNumber)
+    .map((p) => ({ ETag: p.etag, PartNumber: p.partNumber }));
+  await client.send(
+    new CompleteMultipartUploadCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      UploadId: uploadId,
+      MultipartUpload: { Parts: completedParts },
+    })
+  );
 }
 
 /** Check if an object exists in B2 (used for content-hash deduplication). */

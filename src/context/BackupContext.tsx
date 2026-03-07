@@ -60,12 +60,98 @@ interface BackupContextValue {
   fsAccessSupported: boolean;
 }
 
+/** B2 minimum part size 5MB; use 8MB for throughput. Must match server. */
+const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
+const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+const UPLOAD_CONCURRENCY = 6;
+
 /** Compute SHA256 hash of a file for content-hash storage (browser). */
 async function sha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function uploadWithMultipart(
+  file: File,
+  driveId: string,
+  relativePath: string,
+  contentType: string,
+  contentHash: string,
+  idToken: string,
+  userId: string | null,
+  signal?: AbortSignal
+): Promise<{ objectKey: string }> {
+  const initRes = await fetch("/api/backup/multipart-init", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      drive_id: driveId,
+      relative_path: relativePath,
+      content_type: contentType,
+      content_hash: contentHash,
+      size_bytes: file.size,
+      user_id: userId,
+    }),
+  });
+  if (!initRes.ok) {
+    const data = await initRes.json().catch(() => ({}));
+    throw new Error(data?.error ?? "Failed to init multipart upload");
+  }
+  const init = await initRes.json();
+  if (init.alreadyExists) return { objectKey: init.objectKey };
+
+  const { uploadId, parts, objectKey } = init;
+  if (!uploadId || !Array.isArray(parts) || parts.length === 0 || !objectKey) {
+    throw new Error("Invalid multipart init response");
+  }
+
+  const uploadResults = await Promise.all(
+    parts.map(
+      async ({
+        partNumber,
+        uploadUrl,
+      }: {
+        partNumber: number;
+        uploadUrl: string;
+      }) => {
+        const start = (partNumber - 1) * MULTIPART_PART_SIZE;
+        const end = Math.min(start + MULTIPART_PART_SIZE, file.size);
+        const blob = file.slice(start, end);
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: blob,
+          signal,
+        });
+        if (!putRes.ok) throw new Error(`Part ${partNumber} upload failed: ${putRes.status}`);
+        const etag = putRes.headers.get("etag") ?? putRes.headers.get("ETag");
+        if (!etag) throw new Error(`Part ${partNumber} missing ETag`);
+        return { partNumber, etag: etag.replace(/^"|"$/g, "") };
+      }
+    )
+  );
+
+  const completeRes = await fetch("/api/backup/multipart-complete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      object_key: objectKey,
+      upload_id: uploadId,
+      parts: uploadResults,
+    }),
+  });
+  if (!completeRes.ok) {
+    const data = await completeRes.json().catch(() => ({}));
+    throw new Error(data?.error ?? "Failed to complete multipart upload");
+  }
+  return { objectKey };
 }
 
 const BackupContext = createContext<BackupContextValue | null>(null);
@@ -171,10 +257,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
   const startSync = useCallback(
     async (drive: LinkedDrive) => {
-      if (!user) {
+      const currentUser = user;
+      if (!currentUser) {
         setError("Please sign in to sync.");
         return;
       }
+      const uid = currentUser.uid;
       if (!isFileSystemAccessSupported()) {
         setError("File System Access API is not supported. Use Chrome or Edge.");
         return;
@@ -218,7 +306,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         failStep = "create backup snapshot";
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
           linked_drive_id: drive.id,
-          userId: user.uid,
+          userId: uid,
           status: "in_progress",
           files_count: 0,
           bytes_synced: 0,
@@ -247,7 +335,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         const existingSnap = await getDocs(
           query(
             collection(db, "backup_snapshots"),
-            where("userId", "==", user.uid),
+            where("userId", "==", uid),
             where("linked_drive_id", "==", drive.id),
             where("status", "==", "completed"),
             orderBy("completed_at", "desc"),
@@ -310,7 +398,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               drive_id: drive.id,
               relative_path: toUpload[0].relativePath,
               content_type: toUpload[0].file.type || "application/octet-stream",
-              user_id: user.uid,
+              user_id: uid,
               validate_only: true,
             }),
           });
@@ -324,55 +412,68 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        let bytesSynced = 0;
-        let filesCompleted = 0;
-        const failedFiles: string[] = [];
+        const state = {
+          bytesSynced: 0,
+          filesCompleted: 0,
+          failedFiles: [] as string[],
+        };
         const MAX_RETRIES = 2;
 
-        for (let i = 0; i < toUpload.length; i++) {
-          if (controller.signal.aborted) break;
-
-          const { file, relativePath, modifiedAt } = toUpload[i];
-
-          setSyncProgress((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  currentFile: relativePath,
-                  filesCompleted,
-                  bytesSynced,
-                }
-              : null
-          );
-
+        async function uploadOne(
+          item: (typeof toUpload)[0],
+          index: number
+        ): Promise<void> {
+          if (controller.signal.aborted) return;
+          const { file, relativePath, modifiedAt } = item;
           const contentType = file.type || "application/octet-stream";
 
           let lastError: string | null = null;
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (controller.signal.aborted) return;
             try {
               const contentHash = await sha256Hex(file);
-              const idToken = await getFirebaseAuth().currentUser?.getIdToken(
-                true
-              );
+              const idToken =
+                await getFirebaseAuth().currentUser?.getIdToken(true);
               if (!idToken) throw new Error("Not authenticated. Sign in again.");
 
-              const urlRes = await fetch("/api/backup/upload-url", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({
-                  drive_id: drive.id,
-                  relative_path: relativePath,
-                  content_type: contentType,
-                  content_hash: contentHash,
-                  user_id: user.uid,
-                }),
-              });
-
               let objectKey: string;
-              if (urlRes.ok) {
+              if (file.size > MULTIPART_THRESHOLD) {
+                const res = await uploadWithMultipart(
+                  file,
+                  drive.id,
+                  relativePath,
+                  contentType,
+                  contentHash,
+                  idToken,
+                  uid,
+                  controller.signal
+                );
+                objectKey = res.objectKey;
+              } else {
+                const urlRes = await fetch("/api/backup/upload-url", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                  body: JSON.stringify({
+                    drive_id: drive.id,
+                    relative_path: relativePath,
+                    content_type: contentType,
+                    content_hash: contentHash,
+                    user_id: uid,
+                  }),
+                });
+                if (!urlRes.ok) {
+                  const data = await urlRes.json().catch(() => ({}));
+                  if (urlRes.status === 503) {
+                    throw new Error(
+                      data?.error ??
+                        "Backblaze B2 is not configured. All backup storage uses B2."
+                    );
+                  }
+                  throw new Error(data?.error ?? "Failed to get upload URL");
+                }
                 const res = await urlRes.json();
                 objectKey = res.objectKey;
                 if (!res.alreadyExists && res.uploadUrl) {
@@ -385,29 +486,33 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   if (!putRes.ok)
                     throw new Error(`Upload failed: ${putRes.status}`);
                 }
-              } else {
-                const data = await urlRes.json().catch(() => ({}));
-                if (urlRes.status === 503) {
-                  throw new Error(
-                    data?.error ?? "Backblaze B2 is not configured. All backup storage uses B2."
-                  );
-                }
-                throw new Error(data?.error ?? "Failed to get upload URL");
               }
 
               await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
                 linked_drive_id: drive.id,
-                userId: user.uid,
+                userId: uid,
                 relative_path: relativePath,
                 object_key: objectKey,
                 size_bytes: file.size,
-                modified_at: modifiedAt ? new Date(modifiedAt).toISOString() : null,
+                modified_at: modifiedAt
+                  ? new Date(modifiedAt).toISOString()
+                  : null,
                 deleted_at: null,
               });
 
-              bytesSynced += file.size;
-              filesCompleted++;
+              state.bytesSynced += file.size;
+              state.filesCompleted++;
+              setSyncProgress((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      currentFile: toUpload[index + 1]?.relativePath ?? null,
+                      filesCompleted: state.filesCompleted,
+                      bytesSynced: state.bytesSynced,
+                    }
+                  : null
+              );
               lastError = null;
               break;
             } catch (err) {
@@ -419,9 +524,26 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             }
           }
           if (lastError) {
-            failedFiles.push(`${relativePath}: ${lastError}`);
+            state.failedFiles.push(`${relativePath}: ${lastError}`);
           }
         }
+
+        // Run uploads with concurrency limit
+        let nextIndex = 0;
+        async function worker(): Promise<void> {
+          while (nextIndex < toUpload.length && !controller.signal.aborted) {
+            const i = nextIndex++;
+            await uploadOne(toUpload[i], i);
+          }
+        }
+        const workers = Array.from(
+          { length: Math.min(UPLOAD_CONCURRENCY, toUpload.length) },
+          () => worker()
+        );
+        await Promise.all(workers);
+
+        const { bytesSynced, filesCompleted } = state;
+        const failedFiles = state.failedFiles;
 
         const completeError =
           controller.signal.aborted
@@ -448,7 +570,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             last_synced_at: new Date().toISOString(),
           });
 
-          const profileRef = doc(db, "profiles", user.uid);
+          const profileRef = doc(db, "profiles", uid);
           const profileSnap = await getDoc(profileRef);
           const current = profileSnap.exists()
             ? (profileSnap.data().storage_used_bytes ?? 0) + bytesSynced
@@ -456,8 +578,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           await setDoc(
             profileRef,
             {
-              userId: user.uid,
-              email: user.email ?? null,
+              userId: uid,
+              email: currentUser.email ?? null,
               storage_used_bytes: current,
               storage_quota_bytes: 53687091200,
             },
@@ -595,38 +717,53 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const drive = await getOrCreateUploadsDrive();
       const db = getFirebaseFirestore();
       const relativePath = file.name;
-      const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
       const contentType = file.type || "application/octet-stream";
       try {
         const contentHash = await sha256Hex(file);
         const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
         if (!idToken) throw new Error("Not authenticated. Sign in again.");
-        const urlRes = await fetch("/api/backup/upload-url", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            drive_id: drive.id,
-            relative_path: relativePath,
-            content_type: contentType,
-            content_hash: contentHash,
-            user_id: user.uid,
-          }),
-        });
-        if (!urlRes.ok) {
-          const data = await urlRes.json().catch(() => ({}));
-          throw new Error(data?.error ?? "Failed to get upload URL");
-        }
-        const { uploadUrl, objectKey, alreadyExists } = await urlRes.json();
-        if (!alreadyExists && uploadUrl) {
-          const putRes = await fetch(uploadUrl, {
-            method: "PUT",
-            body: file,
-            headers: { "Content-Type": contentType },
+
+        let objectKey: string;
+        if (file.size > MULTIPART_THRESHOLD) {
+          const res = await uploadWithMultipart(
+            file,
+            drive.id,
+            relativePath,
+            contentType,
+            contentHash,
+            idToken,
+            user.uid
+          );
+          objectKey = res.objectKey;
+        } else {
+          const urlRes = await fetch("/api/backup/upload-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              drive_id: drive.id,
+              relative_path: relativePath,
+              content_type: contentType,
+              content_hash: contentHash,
+              user_id: user.uid,
+            }),
           });
-          if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+          if (!urlRes.ok) {
+            const data = await urlRes.json().catch(() => ({}));
+            throw new Error(data?.error ?? "Failed to get upload URL");
+          }
+          const { uploadUrl, objectKey: ok, alreadyExists } = await urlRes.json();
+          objectKey = ok;
+          if (!alreadyExists && uploadUrl) {
+            const putRes = await fetch(uploadUrl, {
+              method: "PUT",
+              body: file,
+              headers: { "Content-Type": contentType },
+            });
+            if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+          }
         }
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
           linked_drive_id: drive.id,
