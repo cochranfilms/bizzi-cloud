@@ -1,6 +1,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
+import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
 
 /** POST - Invite a user to the organization by email. */
 export async function POST(request: Request) {
@@ -107,6 +108,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const inviteToken = crypto.randomUUID();
   const pendingId = `${orgId}_invite_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const now = FieldValue.serverTimestamp();
 
@@ -120,12 +122,21 @@ export async function POST(request: Request) {
     accepted_at: null,
     status: "pending",
     invited_by: uid,
+    invite_token: inviteToken,
+    storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
+
+  const inviteLink =
+    typeof process.env.NEXT_PUBLIC_APP_URL === "string"
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/invite/join?token=${inviteToken}`
+      : null;
 
   return NextResponse.json({
     success: true,
     email,
+    invite_token: inviteToken,
+    invite_link: inviteLink,
     message:
-      "Invite sent. The user will see the invite when they log in with this email.",
+      "Invite sent. The user will see the invite when they log in with this email. For testing without email, share the invite link.",
   });
 }

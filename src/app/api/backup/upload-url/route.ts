@@ -4,6 +4,7 @@ import {
   objectExists,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -94,6 +95,7 @@ async function handleUploadUrl(request: Request) {
     content_type: contentType,
     content_hash: contentHash,
     validate_only: validateOnly,
+    size_bytes: sizeBytes,
   } = body;
 
   if (validateOnly === true) {
@@ -108,6 +110,17 @@ async function handleUploadUrl(request: Request) {
   }
 
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
+
+  // Storage quota check (when size provided)
+  const size = typeof sizeBytes === "number" && sizeBytes > 0 ? sizeBytes : 0;
+  if (size > 0) {
+    try {
+      await checkUserCanUpload(uid, size);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Storage limit reached";
+      return NextResponse.json({ error: msg }, { status: 403 });
+    }
+  }
 
   // Content-hash storage: store by SHA256 hash for deduplication
   const objectKey =

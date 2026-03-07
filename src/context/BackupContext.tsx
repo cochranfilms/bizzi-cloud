@@ -579,6 +579,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                     content_type: contentType,
                     content_hash: contentHash,
                     user_id: uid,
+                    size_bytes: file.size,
                   }),
                 });
                 if (!urlRes.ok) {
@@ -985,6 +986,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 content_type: contentType,
                 content_hash: contentHash,
                 user_id: user.uid,
+                size_bytes: file.size,
               }),
             });
             if (!urlRes.ok) {
@@ -1162,6 +1164,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               content_type: contentType,
               content_hash: contentHash,
               user_id: user.uid,
+              size_bytes: file.size,
             }),
           });
           if (!urlRes.ok) {

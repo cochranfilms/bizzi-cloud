@@ -18,9 +18,10 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/dashboard";
   const mode = searchParams.get("mode");
+  const emailParam = searchParams.get("email") ?? "";
 
   const [isSignUp, setIsSignUp] = useState(mode === "signup");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(emailParam);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

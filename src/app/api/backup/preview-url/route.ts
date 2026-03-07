@@ -1,6 +1,7 @@
 import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -46,27 +47,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // Content-hash keys: verify user owns a backup_files entry with this object_key
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-    if (snap.docs[0].data().deleted_at) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-  } else {
-    // Legacy user-scoped keys
-    const prefix = `backups/${uid}/`;
-    if (!objectKey.startsWith(prefix)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  if (!hasAccess) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
   try {

@@ -42,20 +42,37 @@ export async function GET(request: Request) {
     .where("organization_id", "==", orgId)
     .get();
 
-  const seats = seatsSnap.docs.map((doc) => {
-    const d = doc.data();
-    return {
-      id: doc.id,
-      organization_id: d.organization_id,
-      user_id: d.user_id,
-      role: d.role,
-      email: d.email,
-      display_name: d.display_name ?? null,
-      status: d.status,
-      invited_at: d.invited_at?.toDate?.()?.toISOString() ?? null,
-      accepted_at: d.accepted_at?.toDate?.()?.toISOString() ?? null,
-    };
-  });
+  const seats = await Promise.all(
+    seatsSnap.docs.map(async (doc) => {
+      const d = doc.data();
+      const userId = d.user_id as string | undefined;
+      let storage_used_bytes = 0;
+      if (userId && userId.length > 0) {
+        const filesSnap = await db
+          .collection("backup_files")
+          .where("userId", "==", userId)
+          .get();
+        for (const f of filesSnap.docs) {
+          const data = f.data();
+          if (data.deleted_at) continue;
+          storage_used_bytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+        }
+      }
+      return {
+        id: doc.id,
+        organization_id: d.organization_id,
+        user_id: d.user_id,
+        role: d.role,
+        email: d.email,
+        display_name: d.display_name ?? null,
+        status: d.status,
+        invited_at: d.invited_at?.toDate?.()?.toISOString() ?? null,
+        accepted_at: d.accepted_at?.toDate?.()?.toISOString() ?? null,
+        storage_quota_bytes: d.storage_quota_bytes ?? null,
+        storage_used_bytes,
+      };
+    })
+  );
 
   return NextResponse.json({ seats });
 }

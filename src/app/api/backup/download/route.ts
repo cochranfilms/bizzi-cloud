@@ -1,5 +1,6 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -46,25 +47,9 @@ export async function POST(request: Request) {
 
   const name = (typeof fileName === "string" ? fileName : null) ?? "download";
 
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-    if (snap.docs[0].data().deleted_at) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-  } else {
-    const prefix = `backups/${uid}/`;
-    if (!objectKey.startsWith(prefix)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  if (!hasAccess) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
   try {

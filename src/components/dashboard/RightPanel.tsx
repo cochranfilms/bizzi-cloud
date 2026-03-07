@@ -12,18 +12,27 @@ import {
 import StorageBadge from "./StorageBadge";
 import SyncDriveButton from "./SyncDriveButton";
 
-const quickAccessItems = [
-  { href: "/dashboard/starred", label: "Starred", icon: Star },
-  { href: "/dashboard/recent", label: "Recent", icon: Clock },
-  { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+const quickAccessItems = (basePath: string) => [
+  { href: `${basePath}/starred`, label: "Starred", icon: Star },
+  { href: `${basePath}/recent`, label: "Recent", icon: Clock },
+  { href: `${basePath}/projects`, label: "Projects", icon: FolderKanban },
 ];
 
 interface RightPanelProps {
   onMobileClose?: () => void;
+  /** Base path for links (e.g. /dashboard or /enterprise). Default: /dashboard */
+  basePath?: string;
+  /** Optional custom storage component (e.g. EnterpriseStorageBadge). Default: StorageBadge */
+  storageComponent?: React.ReactNode;
 }
 
-export default function RightPanel({ onMobileClose }: RightPanelProps) {
+export default function RightPanel({
+  onMobileClose,
+  basePath = "/dashboard",
+  storageComponent,
+}: RightPanelProps) {
   const pathname = usePathname();
+  const items = quickAccessItems(basePath);
 
   return (
     <aside className="flex h-full w-56 flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950 xl:shadow-none">
@@ -33,7 +42,7 @@ export default function RightPanel({ onMobileClose }: RightPanelProps) {
           Quick access
         </h3>
         <ul className="space-y-0.5">
-          {quickAccessItems.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (
@@ -59,7 +68,7 @@ export default function RightPanel({ onMobileClose }: RightPanelProps) {
       {/* Activity */}
       <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
         <Link
-          href="/dashboard/activity"
+          href={`${basePath}/activity`}
           onClick={onMobileClose}
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
         >
@@ -71,7 +80,7 @@ export default function RightPanel({ onMobileClose }: RightPanelProps) {
       {/* Shared shortcut */}
       <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
         <Link
-          href="/dashboard/shared"
+          href={`${basePath}/shared`}
           onClick={onMobileClose}
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
         >
@@ -99,7 +108,7 @@ export default function RightPanel({ onMobileClose }: RightPanelProps) {
 
       {/* Storage */}
       <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-        <StorageBadge />
+        {storageComponent ?? <StorageBadge />}
       </div>
     </aside>
   );

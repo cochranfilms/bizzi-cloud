@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { organization_id?: string };
+  let body: { organization_id?: string; invite_token?: string };
   try {
     body = await request.json();
   } catch {
@@ -39,13 +39,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const orgId = typeof body.organization_id === "string" ? body.organization_id.trim() : "";
-  if (!orgId) {
-    return NextResponse.json(
-      { error: "organization_id is required" },
-      { status: 400 }
-    );
-  }
+  const inviteToken = typeof body.invite_token === "string" ? body.invite_token.trim() : "";
+  const orgIdParam = typeof body.organization_id === "string" ? body.organization_id.trim() : "";
 
   const db = getAdminFirestore();
 
@@ -57,12 +52,64 @@ export async function POST(request: Request) {
     );
   }
 
-  const pendingSnap = await db
-    .collection("organization_seats")
-    .where("organization_id", "==", orgId)
-    .where("email", "==", (email ?? "").toLowerCase())
-    .where("status", "==", "pending")
-    .get();
+  let orgId: string;
+  let pendingSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+
+  if (inviteToken) {
+    const tokenSnap = await db
+      .collection("organization_seats")
+      .where("invite_token", "==", inviteToken)
+      .where("status", "==", "pending")
+      .limit(1)
+      .get();
+
+    if (!tokenSnap.empty) {
+      const seatData = tokenSnap.docs[0].data();
+      const inviteEmail = (seatData.email as string)?.toLowerCase() ?? "";
+      if (inviteEmail && email?.toLowerCase() !== inviteEmail) {
+        return NextResponse.json(
+          { error: "This invite was sent to a different email address" },
+          { status: 403 }
+        );
+      }
+      orgId = seatData.organization_id as string;
+      pendingSnap = tokenSnap;
+    } else if (orgIdParam && email) {
+      const emailSnap = await db
+        .collection("organization_seats")
+        .where("organization_id", "==", orgIdParam)
+        .where("email", "==", email.toLowerCase())
+        .where("status", "==", "pending")
+        .get();
+      if (!emailSnap.empty) {
+        orgId = orgIdParam;
+        pendingSnap = emailSnap;
+      } else {
+        return NextResponse.json(
+          { error: "Invite not found or already accepted" },
+          { status: 404 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: "Invite not found or already accepted" },
+        { status: 404 }
+      );
+    }
+  } else if (orgIdParam) {
+    orgId = orgIdParam;
+    pendingSnap = await db
+      .collection("organization_seats")
+      .where("organization_id", "==", orgId)
+      .where("email", "==", (email ?? "").toLowerCase())
+      .where("status", "==", "pending")
+      .get();
+  } else {
+    return NextResponse.json(
+      { error: "organization_id or invite_token is required" },
+      { status: 400 }
+    );
+  }
 
   if (pendingSnap.empty) {
     return NextResponse.json(
@@ -80,6 +127,7 @@ export async function POST(request: Request) {
     batch.delete(docSnap.ref);
   }
 
+  const pendingSeatData = pendingSnap.docs[0].data();
   const seatRef = db.collection("organization_seats").doc(seatId);
   batch.set(seatRef, {
     organization_id: orgId,
@@ -90,6 +138,11 @@ export async function POST(request: Request) {
     invited_at: now,
     accepted_at: now,
     status: "active",
+    storage_quota_bytes:
+      typeof pendingSeatData.storage_quota_bytes === "number" ||
+      pendingSeatData.storage_quota_bytes === null
+        ? pendingSeatData.storage_quota_bytes
+        : 1024 * 1024 * 1024 * 1024,
   });
 
   const profileRef = db.collection("profiles").doc(uid);

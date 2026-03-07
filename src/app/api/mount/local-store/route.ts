@@ -1,5 +1,6 @@
 import { getDownloadUrl } from "@/lib/cdn";
 import { isB2Configured } from "@/lib/b2";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -7,21 +8,6 @@ import { NextResponse } from "next/server";
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
-
-async function verifyObjectAccess(uid: string, objectKey: string): Promise<boolean> {
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) return false;
-    return !snap.docs[0].data().deleted_at;
-  }
-  return objectKey.startsWith(`backups/${uid}/`);
-}
 
 async function getFileIdForObject(db: Firestore, uid: string, objectKey: string): Promise<string | null> {
   const snap = await db
@@ -105,7 +91,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const hasAccess = await verifyObjectAccess(uid, resolvedObjectKey);
+  const hasAccess = await verifyBackupFileAccess(uid, resolvedObjectKey);
   if (!hasAccess) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }

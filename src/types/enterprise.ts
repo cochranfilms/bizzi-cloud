@@ -26,6 +26,9 @@ export interface Organization {
   created_by: string;
 }
 
+/** Per-seat storage allocation. null = Unlimited. */
+export type SeatStorageQuotaBytes = number | null;
+
 export interface OrganizationSeat {
   id: string;
   organization_id: string;
@@ -36,6 +39,8 @@ export interface OrganizationSeat {
   invited_at: string;
   accepted_at?: string | null;
   status: SeatStatus;
+  /** Per-seat storage limit in bytes. null = Unlimited. */
+  storage_quota_bytes?: SeatStorageQuotaBytes;
 }
 
 export interface EnterpriseTheme {

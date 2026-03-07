@@ -2,8 +2,10 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { EnterpriseThemeId } from "@/types/enterprise";
-
-const DEFAULT_ENTERPRISE_STORAGE_BYTES = 500 * 1024 * 1024 * 1024; // 500 GB
+import {
+  ENTERPRISE_ORG_STORAGE_BYTES,
+  DEFAULT_SEAT_STORAGE_BYTES,
+} from "@/lib/enterprise-storage";
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
   batch.set(orgRef, {
     name,
     theme: "bizzi" as EnterpriseThemeId,
-    storage_quota_bytes: DEFAULT_ENTERPRISE_STORAGE_BYTES,
+    storage_quota_bytes: ENTERPRISE_ORG_STORAGE_BYTES,
     storage_used_bytes: 0,
     created_at: now,
     created_by: uid,
@@ -89,6 +91,7 @@ export async function POST(request: Request) {
     invited_at: now,
     accepted_at: now,
     status: "active",
+    storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
 
   const profileRef = db.collection("profiles").doc(uid);

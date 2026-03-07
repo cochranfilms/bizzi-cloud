@@ -9,7 +9,8 @@ import {
   objectExists,
   putObject,
 } from "@/lib/b2";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 
@@ -23,22 +24,6 @@ const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
 function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
-}
-
-async function verifyObjectAccess(uid: string, objectKey: string): Promise<boolean> {
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) return false;
-    return !snap.docs[0].data().deleted_at;
-  }
-  const prefix = `backups/${uid}/`;
-  return objectKey.startsWith(prefix);
 }
 
 export async function POST(request: Request) {
@@ -92,7 +77,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not a video file" }, { status: 400 });
   }
 
-  const hasAccess = await verifyObjectAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
   if (!hasAccess) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }

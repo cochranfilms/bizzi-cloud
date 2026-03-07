@@ -6,6 +6,7 @@ import {
   MULTIPART_PART_SIZE,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -87,6 +88,13 @@ async function handleMultipartInit(request: Request) {
     contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
       ? `content/${contentHash.toLowerCase()}`
       : `backups/${uid}/${driveId}/${safePath}`;
+
+  try {
+    await checkUserCanUpload(uid, sizeBytes);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Storage limit reached";
+    return NextResponse.json({ error: msg }, { status: 403 });
+  }
 
   try {
     if (objectKey.startsWith("content/")) {

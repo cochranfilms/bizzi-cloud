@@ -1,6 +1,7 @@
 import { getDownloadUrl, isCdnConfigured } from "@/lib/cdn";
 import { getObject, getObjectRange, isB2Configured } from "@/lib/b2";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -14,22 +15,6 @@ function parseRange(rangeHeader: string | null): { start: number; end?: number }
   const start = parseInt(match[1], 10);
   const end = match[2] ? parseInt(match[2], 10) : undefined;
   return { start, end };
-}
-
-async function verifyObjectAccess(uid: string, objectKey: string): Promise<boolean> {
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) return false;
-    return !snap.docs[0].data().deleted_at;
-  }
-  const prefix = `backups/${uid}/`;
-  return objectKey.startsWith(prefix);
 }
 
 export async function GET(request: Request) {
@@ -73,7 +58,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const hasAccess = await verifyObjectAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
   if (!hasAccess) {
     return new NextResponse(
       JSON.stringify({ error: "Access denied" }),

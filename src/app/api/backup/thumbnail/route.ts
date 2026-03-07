@@ -1,4 +1,5 @@
 import { getObjectBuffer, isB2Configured } from "@/lib/b2";
+import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -11,22 +12,6 @@ const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic)$/i;
 
 type ThumbSize = "thumb" | "preview";
 const SIZES: Record<ThumbSize, number> = { thumb: 256, preview: 1024 };
-
-async function verifyObjectAccess(uid: string, objectKey: string): Promise<boolean> {
-  if (objectKey.startsWith("content/")) {
-    const db = getAdminFirestore();
-    const snap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("object_key", "==", objectKey)
-      .limit(1)
-      .get();
-    if (snap.empty) return false;
-    return !snap.docs[0].data().deleted_at;
-  }
-  const prefix = `backups/${uid}/`;
-  return objectKey.startsWith(prefix);
-}
 
 function isImageFile(name: string): boolean {
   return IMAGE_EXT.test(name.toLowerCase());
@@ -79,7 +64,7 @@ async function handleThumbnail(request: Request) {
     return new NextResponse("Not an image file", { status: 400 });
   }
 
-  const hasAccess = await verifyObjectAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
   if (!hasAccess) {
     return new NextResponse("Access denied", { status: 403 });
   }
