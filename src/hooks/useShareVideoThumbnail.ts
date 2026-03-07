@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getFirebaseAuth } from "@/lib/firebase/client";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 
@@ -9,22 +8,28 @@ function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
 }
 
+export interface UseShareVideoThumbnailOptions {
+  enabled?: boolean;
+  /** For private shares, provide a function to get the auth token */
+  getAuthToken?: () => Promise<string | null>;
+}
+
 /**
- * Returns a blob URL for a video thumbnail.
+ * Returns a blob URL for a share video thumbnail.
  * Uses server-side FFmpeg to extract a frame (works for ProRes, MXF, etc. that browsers can't decode).
- * Falls back to placeholder when disabled or on error.
  */
-export function useVideoThumbnail(
+export function useShareVideoThumbnail(
+  shareToken: string | undefined,
   objectKey: string | undefined,
   fileName: string,
-  options: { enabled?: boolean } = {}
+  options: UseShareVideoThumbnailOptions = {}
 ): string | null {
-  const { enabled = true } = options;
+  const { enabled = true, getAuthToken } = options;
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!objectKey || !isVideoFile(fileName) || !enabled) return;
+    if (!shareToken || !objectKey || !isVideoFile(fileName) || !enabled) return;
 
     let cancelled = false;
 
@@ -38,16 +43,21 @@ export function useVideoThumbnail(
 
     (async () => {
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-        if (!token || cancelled) return;
-
         const params = new URLSearchParams({
           object_key: objectKey,
           name: fileName,
         });
-        const res = await fetch(`/api/backup/video-thumbnail?${params}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const headers: Record<string, string> = {};
+        if (getAuthToken) {
+          const token = await getAuthToken();
+          if (token) headers.Authorization = `Bearer ${token}`;
+        }
+        if (cancelled) return;
+
+        const res = await fetch(
+          `/api/shares/${encodeURIComponent(shareToken)}/video-thumbnail?${params}`,
+          { headers }
+        );
         if (!res.ok || cancelled) return;
 
         const blob = await res.blob();
@@ -70,7 +80,7 @@ export function useVideoThumbnail(
       cancelled = true;
       cleanup();
     };
-  }, [objectKey, fileName, enabled]);
+  }, [shareToken, objectKey, fileName, enabled, getAuthToken]);
 
   return url;
 }

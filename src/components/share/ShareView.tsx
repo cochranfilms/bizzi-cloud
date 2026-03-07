@@ -3,25 +3,147 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { File, Download, FolderOpen, Lock } from "lucide-react";
+import { File, Download, FolderOpen, Film, Lock, Play } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useShareThumbnail } from "@/hooks/useShareThumbnail";
+import { useShareVideoThumbnail } from "@/hooks/useShareVideoThumbnail";
+import { useInView } from "@/hooks/useInView";
+import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
 
 interface ShareViewProps {
   token: string;
-}
-
-interface ShareFile {
-  id: string;
-  name: string;
-  path: string;
-  object_key: string;
-  size_bytes: number;
 }
 
 interface ShareData {
   folder_name: string;
   permission: string;
   files: ShareFile[];
+}
+
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
+
+function isVideoFile(name: string) {
+  return VIDEO_EXT.test(name.toLowerCase());
+}
+function isImageFile(name: string) {
+  return IMAGE_EXT.test(name.toLowerCase());
+}
+
+function ShareFileRow({
+  shareToken,
+  file,
+  getAuthToken,
+  onDownload,
+  onPreview,
+  downloadingId,
+}: {
+  shareToken: string;
+  file: ShareFile;
+  getAuthToken?: () => Promise<string | null>;
+  onDownload: (file: ShareFile) => void;
+  onPreview: (file: ShareFile) => void;
+  downloadingId: string | null;
+}) {
+  const [rowRef, isInView] = useInView<HTMLDivElement>();
+  const thumbnailUrl = useShareThumbnail(shareToken, file.object_key, file.name, {
+    size: "thumb",
+    getAuthToken,
+  });
+  const videoThumbnailUrl = useShareVideoThumbnail(
+    shareToken,
+    file.object_key,
+    file.name,
+    { enabled: isInView, getAuthToken }
+  );
+  const isVideo = isVideoFile(file.name);
+  const isImage = isImageFile(file.name);
+  const canPreview = !!file.object_key;
+
+  return (
+    <div
+      ref={rowRef}
+      className={`flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+        canPreview
+          ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+          : ""
+      }`}
+      role={canPreview ? "button" : undefined}
+      tabIndex={canPreview ? 0 : undefined}
+      onClick={canPreview ? () => onPreview(file) : undefined}
+      onKeyDown={
+        canPreview
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onPreview(file);
+              }
+            }
+          : undefined
+      }
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="relative flex h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+          {(thumbnailUrl || videoThumbnailUrl) ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+              {isVideo && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
+                    <Play className="ml-1 h-5 w-5 fill-white text-white" />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : isVideo ? (
+            <div className="relative flex h-full w-full items-center justify-center">
+              <Film className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
+                  <Play className="ml-1 h-5 w-5 fill-white text-white" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <File className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate font-medium text-neutral-900 dark:text-white">
+            {file.name}
+          </p>
+          <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+            {formatSize(file.size_bytes)}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDownload(file);
+        }}
+        disabled={downloadingId === file.id}
+        className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+      >
+        <Download className="h-4 w-4" />
+        {downloadingId === file.id ? "Opening…" : "Download"}
+      </button>
+    </div>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function ShareView({ token }: ShareViewProps) {
@@ -31,6 +153,7 @@ export default function ShareView({ token }: ShareViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<ShareFile | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,11 +221,9 @@ export default function ShareView({ token }: ShareViewProps) {
     [token, user]
   );
 
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
+  const getAuthToken = useCallback(async () => {
+    return user ? user.getIdToken() : null;
+  }, [user]);
 
   if (loading) {
     return (
@@ -197,37 +318,27 @@ export default function ShareView({ token }: ShareViewProps) {
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {data.files.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
-                    <File className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-neutral-900 dark:text-white">
-                      {file.name}
-                    </p>
-                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-                      {formatSize(file.size_bytes)}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleDownload(file)}
-                  disabled={downloadingId === file.id}
-                  className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-                >
-                  <Download className="h-4 w-4" />
-                  {downloadingId === file.id ? "Opening…" : "Download"}
-                </button>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="space-y-2">
+              {data.files.map((file) => (
+                <ShareFileRow
+                  key={file.id}
+                  shareToken={token}
+                  file={file}
+                  getAuthToken={user ? getAuthToken : undefined}
+                  onDownload={handleDownload}
+                  onPreview={setPreviewFile}
+                  downloadingId={downloadingId}
+                />
+              ))}
+            </div>
+            <SharePreviewModal
+              shareToken={token}
+              file={previewFile}
+              onClose={() => setPreviewFile(null)}
+              getAuthToken={user ? getAuthToken : undefined}
+            />
+          </>
         )}
       </main>
     </div>
