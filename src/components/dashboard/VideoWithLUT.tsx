@@ -93,6 +93,8 @@ uniform sampler2D u_video;
 uniform sampler2D u_lut;
 uniform float u_lutSize;
 uniform float u_lutEnabled;
+uniform float u_videoAspect;
+uniform float u_canvasAspect;
 in vec2 v_texCoord;
 out vec4 fragColor;
 
@@ -125,7 +127,19 @@ vec4 sampleLUT(vec3 rgb) {
 }
 
 void main() {
-  vec4 v = texture(u_video, v_texCoord);
+  vec2 uv = v_texCoord;
+  if (u_videoAspect > 0.0 && u_canvasAspect > 0.0) {
+    if (u_canvasAspect > u_videoAspect) {
+      uv.x = (v_texCoord.x - 0.5) * (u_videoAspect / u_canvasAspect) + 0.5;
+    } else {
+      uv.y = (v_texCoord.y - 0.5) * (u_canvasAspect / u_videoAspect) + 0.5;
+    }
+  }
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  vec4 v = texture(u_video, uv);
   if (u_lutEnabled > 0.5) {
     fragColor = vec4(sampleLUT(v.rgb).rgb, v.a);
   } else {
@@ -145,7 +159,6 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
   const videoRef = useRef<HTMLVideoElement>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
   const [lutReady, setLutReady] = useState(false);
-  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const glRef = useRef<{
     gl: WebGL2RenderingContext;
@@ -153,13 +166,6 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
     lutTexture: WebGLTexture;
     videoTexture: WebGLTexture;
   } | null>(null);
-
-  const onVideoLoadedMetadata = useCallback(() => {
-    const v = videoRef.current;
-    if (v && v.videoWidth > 0 && v.videoHeight > 0) {
-      setVideoAspect(v.videoWidth / v.videoHeight);
-    }
-  }, []);
 
   const loadLUT = useCallback(async () => {
     const res = await fetch(LUT_URL);
@@ -287,10 +293,19 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, lutTexture);
 
+      const videoAspectVal = video.videoWidth > 0 && video.videoHeight > 0
+        ? video.videoWidth / video.videoHeight
+        : 0.0;
+      const canvasAspectVal = rect.width > 0 && rect.height > 0
+        ? rect.width / rect.height
+        : 0.0;
+
       gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
       gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
       gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(program, "u_videoAspect"), videoAspectVal);
+      gl.uniform1f(gl.getUniformLocation(program, "u_canvasAspect"), canvasAspectVal);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       requestAnimationFrame(render);
@@ -325,17 +340,9 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
     );
   }
 
-  const aspectRatio = videoAspect ?? 16 / 9;
-
   return (
     <div className="flex flex-col items-center gap-2">
-      <div
-        className="relative w-full rounded-lg"
-        style={{
-          maxHeight: "70vh",
-          aspectRatio: `${aspectRatio}`,
-        }}
-      >
+      <div className="relative w-full" style={{ maxHeight: "70vh" }}>
         <video
           ref={videoRef}
           src={src}
@@ -343,16 +350,16 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
           controls
           preload="auto"
           playsInline
-          onLoadedMetadata={onVideoLoadedMetadata}
-          className={`absolute inset-0 h-full w-full rounded-lg object-contain ${className ?? ""}`}
+          className={`max-h-[70vh] w-full rounded-lg ${className ?? ""}`}
         />
         {lutEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 rounded-t-lg"
+            className="absolute left-0 right-0 top-0 rounded-t-lg"
             style={{
               width: "100%",
-              height: "100%",
+              height: "calc(100% - 50px)",
+              maxHeight: "calc(70vh - 50px)",
               pointerEvents: "none",
             }}
           />
