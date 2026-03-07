@@ -54,28 +54,30 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
       };
 
       if (previewType === "video") {
-        const previewRes = await fetch("/api/backup/preview-url", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
+        const [previewRes, streamRes] = await Promise.all([
+          fetch("/api/backup/preview-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          }),
+          fetch("/api/backup/video-stream-url", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          }),
+        ]);
         const previewData = await previewRes.json();
+        const streamData = await streamRes.json();
         if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
+        if (!streamRes.ok) throw new Error(streamData?.error ?? "Failed to load video stream");
         setFullUrl(previewData.url);
-        fetch("/api/backup/video-stream-url", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        })
-          .then((r) => r.json())
-          .then((d) => d.streamUrl && setVideoStreamUrl(d.streamUrl))
-          .catch(() => {});
+        if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
       } else {
         const res = await fetch("/api/backup/preview-url", {
           method: "POST",
@@ -95,29 +97,6 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
       setLoading(false);
     }
   }, [file?.objectKey, previewType]);
-
-  const getVideoStreamUrl = useCallback(async () => {
-    if (!file?.objectKey) throw new Error("No file");
-    if (videoStreamUrl) return videoStreamUrl;
-    const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-    if (!token) throw new Error("Not authenticated");
-    const res = await fetch("/api/backup/video-stream-url", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        object_key: file.objectKey,
-        user_id: getFirebaseAuth().currentUser?.uid,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error ?? "Failed to get stream");
-    const url = data.streamUrl;
-    if (url) setVideoStreamUrl(url);
-    return url;
-  }, [file?.objectKey, videoStreamUrl]);
 
   useEffect(() => {
     if (file) fetchFullUrl();
@@ -198,7 +177,8 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType !== "image" && fullUrl)) &&
+            (previewType === "video" && videoStreamUrl) ||
+            (previewType !== "image" && previewType !== "video" && fullUrl)) &&
             !error && (
               <>
                 {previewType === "image" && lowResPreviewUrl && (
@@ -214,11 +194,9 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                     </p>
                   </div>
                 )}
-                {previewType === "video" && fullUrl && (
+                {previewType === "video" && videoStreamUrl && (
                   <VideoWithLUT
-                    src={fullUrl}
-                    streamUrl={videoStreamUrl}
-                    getStreamUrl={getVideoStreamUrl}
+                    src={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
                   />
                 )}

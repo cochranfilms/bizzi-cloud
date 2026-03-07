@@ -99,10 +99,10 @@ export default function FileCard({ file, onClick, onDelete }: FileCardProps) {
           />
         ) : isVideo ? (
           <div className="relative flex h-full w-full items-center justify-center">
-            <Film className="h-8 w-8 text-neutral-400 dark:text-neutral-500" />
+            <Film className="h-full w-full p-6 text-neutral-400 dark:text-neutral-500" />
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90">
-                <Play className="h-4 w-4 fill-neutral-700 text-neutral-700 dark:fill-neutral-300 dark:text-neutral-300" />
+              <div className="flex h-1/3 min-h-16 w-1/3 min-w-16 max-h-20 max-w-20 items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90">
+                <Play className="h-1/2 w-1/2 min-h-8 min-w-8 fill-neutral-700 text-neutral-700 dark:fill-neutral-300 dark:text-neutral-300" />
               </div>
             </div>
           </div>
