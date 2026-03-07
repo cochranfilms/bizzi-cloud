@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
@@ -161,10 +162,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     setSelectedFolderKeys(new Set(folderKeys));
   }, []);
 
+  const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
       if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
+      lastSelectionRef.current = null;
       setDragState({
         isActive: true,
         startX: e.clientX,
@@ -204,6 +208,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     };
   }, [dragState?.isActive, dragState?.startX, dragState?.startY]);
 
+  const selectionUpdateRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!dragState?.isActive) return;
     const moved =
@@ -211,27 +217,49 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX;
     if (!moved) return;
 
-    const left = Math.min(dragState.startX, dragState.currentX);
-    const right = Math.max(dragState.startX, dragState.currentX);
-    const top = Math.min(dragState.startY, dragState.currentY);
-    const bottom = Math.max(dragState.startY, dragState.currentY);
-    const dragRect = { left, top, right, bottom };
+    const runUpdate = () => {
+      const left = Math.min(dragState.startX, dragState.currentX);
+      const right = Math.max(dragState.startX, dragState.currentX);
+      const top = Math.min(dragState.startY, dragState.currentY);
+      const bottom = Math.max(dragState.startY, dragState.currentY);
+      const dragRect = { left, top, right, bottom };
 
-    const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
-    const fileIds: string[] = [];
-    const folderKeys: string[] = [];
+      const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
+      const fileIds: string[] = [];
+      const folderKeys: string[] = [];
 
-    items?.forEach((el) => {
-      const rect = el.getBoundingClientRect();
-      if (!rectsIntersect(dragRect, rect)) return;
-      const type = el.getAttribute("data-item-type");
-      const id = el.getAttribute("data-item-id");
-      const key = el.getAttribute("data-item-key");
-      if (type === "file" && id) fileIds.push(id);
-      if (type === "folder" && key) folderKeys.push(key);
-    });
+      items?.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (!rectsIntersect(dragRect, rect)) return;
+        const type = el.getAttribute("data-item-type");
+        const id = el.getAttribute("data-item-id");
+        const key = el.getAttribute("data-item-key");
+        if (type === "file" && id) fileIds.push(id);
+        if (type === "folder" && key) folderKeys.push(key);
+      });
 
-    setSelectionFromDrag(fileIds, folderKeys);
+      const filesKey = [...fileIds].sort().join(",");
+      const foldersKey = [...folderKeys].sort().join(",");
+      if (
+        lastSelectionRef.current?.files === filesKey &&
+        lastSelectionRef.current?.folders === foldersKey
+      ) {
+        return;
+      }
+      lastSelectionRef.current = { files: filesKey, folders: foldersKey };
+      setSelectionFromDrag(fileIds, folderKeys);
+    };
+
+    if (selectionUpdateRef.current !== null) {
+      cancelAnimationFrame(selectionUpdateRef.current);
+    }
+    selectionUpdateRef.current = requestAnimationFrame(runUpdate);
+    return () => {
+      if (selectionUpdateRef.current !== null) {
+        cancelAnimationFrame(selectionUpdateRef.current);
+        selectionUpdateRef.current = null;
+      }
+    };
   }, [dragState, setSelectionFromDrag]);
 
   const handleBulkDelete = useCallback(async () => {
@@ -289,6 +317,24 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
   const isLoading = loading || pinnedLoading;
 
+  const showDragRect =
+    dragState?.isActive &&
+    (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+      Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX);
+
+  const dragRectEl =
+    showDragRect && dragState ? (
+      <div
+        className="pointer-events-none fixed z-[9999] border-2 border-bizzi-blue bg-bizzi-blue/20 shadow-lg shadow-bizzi-blue/30"
+        style={{
+          left: Math.min(dragState.startX, dragState.currentX),
+          top: Math.min(dragState.startY, dragState.currentY),
+          width: Math.abs(dragState.currentX - dragState.startX),
+          height: Math.abs(dragState.currentY - dragState.startY),
+        }}
+      />
+    ) : null;
+
   return (
     <div
       ref={gridSectionRef}
@@ -296,6 +342,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
+      {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
       {/* Section 1: Pinned */}
       {(hasPinned || isLoading) && (
         <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
