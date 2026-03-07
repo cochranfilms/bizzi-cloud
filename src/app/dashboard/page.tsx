@@ -1,12 +1,12 @@
 import TopBar from "@/components/dashboard/TopBar";
-import DashboardContent from "@/components/dashboard/DashboardContent";
+import HomeStorageView from "@/components/dashboard/HomeStorageView";
 
 export default function DashboardPage() {
   return (
     <>
-      <TopBar title="All files" />
+      <TopBar title="Home" />
       <main className="flex-1 overflow-auto p-6">
-        <DashboardContent />
+        <HomeStorageView basePath="/dashboard" />
       </main>
     </>
   );
