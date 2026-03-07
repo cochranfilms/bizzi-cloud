@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Copy, Check, Link2, Lock, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -205,16 +206,25 @@ export default function ShareModal({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const modal = (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      onClick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="share-modal-title"
+    >
       <div
         className="absolute inset-0 bg-black/50"
         onClick={handleClose}
         aria-hidden
       />
-      <div className="relative w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div
+        className="relative z-10 w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
-          <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+          <h3 id="share-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
             Share &quot;{folderName}&quot;
           </h3>
           <button
@@ -411,4 +421,8 @@ export default function ShareModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(modal, document.body)
+    : null;
 }
