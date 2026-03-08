@@ -187,7 +187,7 @@ export default function SharedGrid() {
                     {item.name}
                   </p>
                   <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-                    Shared by {item.sharedBy} · {item.permission === "edit" ? "Can edit" : "Can view"}
+                    Shared by {item.sharedBy} · {item.permission === "edit" ? "Can download" : "Can view"}
                   </p>
                 </div>
                 <span
@@ -197,7 +197,7 @@ export default function SharedGrid() {
                       : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
                   }`}
                 >
-                  {item.permission === "edit" ? "Can edit" : "Can view"}
+                  {item.permission === "edit" ? "Can download" : "Can view"}
                 </span>
                 {item.isOwned && (
                   <button

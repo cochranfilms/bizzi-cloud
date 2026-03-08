@@ -2,9 +2,11 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { Send, Lock, ExternalLink, BarChart2, Trash2 } from "lucide-react";
+import { Send, Lock, ExternalLink, BarChart2, Trash2, Pencil } from "lucide-react";
 import { useTransfers } from "@/context/TransferContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import EditTransferModal from "@/components/dashboard/EditTransferModal";
+import type { Transfer } from "@/types/transfer";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -24,6 +26,7 @@ export default function TransferGrid() {
   const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
   const { confirm } = useConfirm();
 
   const handleDelete = useCallback(
@@ -182,6 +185,19 @@ export default function TransferGrid() {
                         </a>
                         <button
                           type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditingTransfer(t);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-bizzi-blue dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-bizzi-cyan"
+                          aria-label="Edit transfer"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
                           onClick={(ev) => handleDelete(ev, t)}
                           disabled={deletingSlug === t.slug}
                           className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-neutral-400 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:opacity-50"
@@ -199,6 +215,12 @@ export default function TransferGrid() {
           </table>
         </div>
       )}
+
+      <EditTransferModal
+        open={!!editingTransfer}
+        onClose={() => setEditingTransfer(null)}
+        transfer={editingTransfer}
+      />
     </div>
   );
 }

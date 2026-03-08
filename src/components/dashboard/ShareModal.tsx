@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Copy, Check, Link2, Lock, UserPlus } from "lucide-react";
+import { X, Copy, Check, Link2, Lock, UserPlus, Download, File } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface ShareModalProps {
@@ -346,35 +346,42 @@ export default function ShareModal({
             </p>
           </div>
 
-          {/* Permission */}
+          {/* Permission: View vs Download (matches transfer UI) */}
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Permission
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setPermission("view")}
-                className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "view"
-                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
+                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
                     : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
                 }`}
               >
-                View
+                <File className="h-4 w-4" />
+                View only
               </button>
               <button
                 type="button"
                 onClick={() => setPermission("edit")}
-                className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "edit"
-                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
+                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
                     : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
                 }`}
               >
-                Edit
+                <Download className="h-4 w-4" />
+                Download
               </button>
             </div>
+            <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+              {permission === "edit"
+                ? "Recipients can view and download files"
+                : "Recipients can view only; downloads are disabled"}
+            </p>
           </div>
 
           {/* Add people */}

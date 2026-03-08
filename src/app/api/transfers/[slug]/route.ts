@@ -72,12 +72,36 @@ export async function PATCH(
 
   const body = await request.json().catch(() => ({}));
   const permission = body.permission as string | undefined;
+  const expiresAt = body.expiresAt as string | null | undefined;
+  const password = body.password as string | null | undefined;
 
-  if (permission !== "view" && permission !== "downloadable") {
+  const updates: Record<string, unknown> = {};
+
+  if (permission === "view" || permission === "downloadable") {
+    updates.permission = permission;
+  } else if (permission !== undefined) {
     return NextResponse.json(
       { error: "permission must be 'view' or 'downloadable'" },
       { status: 400 }
     );
+  }
+
+  if (expiresAt !== undefined) {
+    updates.expires_at =
+      expiresAt !== null && typeof expiresAt === "string" && expiresAt.trim()
+        ? expiresAt.trim()
+        : null;
+  }
+
+  if (password !== undefined) {
+    updates.password =
+      password !== null && typeof password === "string" && password.trim()
+        ? password.trim()
+        : null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
   const db = getAdminFirestore();
@@ -95,9 +119,9 @@ export async function PATCH(
     return NextResponse.json({ error: "You can only edit transfers you created" }, { status: 403 });
   }
 
-  await docRef.update({ permission });
+  await docRef.update(updates);
 
-  return NextResponse.json({ ok: true, permission });
+  return NextResponse.json({ ok: true, ...updates });
 }
 
 export async function GET(

@@ -65,6 +65,15 @@ export async function POST(
     );
   }
 
+  // Only "edit" permission allows downloads (matches transfer: "downloadable")
+  const permission = (share.permission as string) ?? "view";
+  if (permission === "view") {
+    return NextResponse.json(
+      { error: "downloads_disabled", message: "Downloads are disabled for this share" },
+      { status: 403 }
+    );
+  }
+
   const ownerId = share.owner_id as string;
   const referencedFileIds = share.referenced_file_ids as string[] | undefined;
   const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;

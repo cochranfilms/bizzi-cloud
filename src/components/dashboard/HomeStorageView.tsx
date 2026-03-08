@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FolderInput, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
@@ -108,6 +109,7 @@ interface HomeStorageViewProps {
 }
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
+  const router = useRouter();
   const {
     driveFolders,
     loading,
@@ -188,11 +190,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const openDrive = useCallback(
     (driveId: string, name: string) => {
       setCurrentFolderDriveId(driveId);
-      if (typeof window !== "undefined") {
-        window.location.href = `${filesHref}?drive=${driveId}`;
-      }
+      router.push(`${filesHref}?drive=${driveId}`);
     },
-    [filesHref, setCurrentFolderDriveId]
+    [filesHref, setCurrentFolderDriveId, router]
   );
 
   const toggleFileSelection = useCallback((id: string) => {

@@ -47,7 +47,7 @@ export default function SharedItemCard({ item, isOwned, onDelete }: SharedItemCa
             : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
         }`}
       >
-        {item.permission === "edit" ? "Can edit" : "Can view"}
+        {item.permission === "edit" ? "Can download" : "Can view"}
       </span>
     </>
   );

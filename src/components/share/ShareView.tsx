@@ -37,6 +37,7 @@ function ShareFileRow({
   onDownload,
   onPreview,
   downloadingId,
+  canDownload,
 }: {
   shareToken: string;
   file: ShareFile;
@@ -44,6 +45,7 @@ function ShareFileRow({
   onDownload: (file: ShareFile) => void;
   onPreview: (file: ShareFile) => void;
   downloadingId: string | null;
+  canDownload: boolean;
 }) {
   const [rowRef, isInView] = useInView<HTMLDivElement>();
   const thumbnailUrl = useShareThumbnail(shareToken, file.object_key, file.name, {
@@ -124,18 +126,20 @@ function ShareFileRow({
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDownload(file);
-        }}
-        disabled={downloadingId === file.id}
-        className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-      >
-        <Download className="h-4 w-4" />
-        {downloadingId === file.id ? "Downloading…" : "Download"}
-      </button>
+      {canDownload && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload(file);
+          }}
+          disabled={downloadingId === file.id}
+          className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+        >
+          <Download className="h-4 w-4" />
+          {downloadingId === file.id ? "Downloading…" : "Download"}
+        </button>
+      )}
     </div>
   );
 }
@@ -333,6 +337,7 @@ export default function ShareView({ token }: ShareViewProps) {
                   onDownload={handleDownload}
                   onPreview={setPreviewFile}
                   downloadingId={downloadingId}
+                  canDownload={data.permission !== "view"}
                 />
               ))}
             </div>

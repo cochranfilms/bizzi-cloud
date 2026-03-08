@@ -54,6 +54,12 @@ interface TransferContextValue {
   deleteTransfer: (slug: string) => Promise<void>;
   /** Update permission (view | downloadable) for a transfer. Calls API and updates local state. */
   updateTransferPermission: (slug: string, permission: "view" | "downloadable") => Promise<void>;
+  /** Update transfer settings: permission, expiresAt, password. Partial updates supported. */
+  updateTransfer: (slug: string, updates: {
+    permission?: "view" | "downloadable";
+    expiresAt?: string | null;
+    password?: string | null;
+  }) => Promise<void>;
 }
 
 const TransferContext = createContext<TransferContextValue | null>(null);
@@ -213,6 +219,58 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const updateTransfer = useCallback(
+    async (
+      slug: string,
+      updates: {
+        permission?: "view" | "downloadable";
+        expiresAt?: string | null;
+        password?: string | null;
+      }
+    ) => {
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!idToken) throw new Error("Not authenticated");
+
+      const body: Record<string, unknown> = {};
+      if (updates.permission !== undefined) body.permission = updates.permission;
+      if (updates.expiresAt !== undefined) body.expiresAt = updates.expiresAt;
+      if (updates.password !== undefined) body.password = updates.password;
+
+      if (Object.keys(body).length === 0) return;
+
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to update transfer");
+      }
+
+      setTransfers((prev) => {
+        const next = prev.map((t) => {
+          if (t.slug !== slug && t.id !== slug) return t;
+          return {
+            ...t,
+            ...(updates.permission !== undefined && { permission: updates.permission }),
+            ...(updates.expiresAt !== undefined && { expiresAt: updates.expiresAt }),
+            ...(updates.password !== undefined && { password: updates.password }),
+          };
+        });
+        saveTransfers(next);
+        return next;
+      });
+    },
+    []
+  );
+
   const value = useMemo<TransferContextValue>(
     () => ({
       transfers,
@@ -224,6 +282,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       cancelTransfer,
       deleteTransfer,
       updateTransferPermission,
+      updateTransfer,
     }),
     [
       transfers,
@@ -235,6 +294,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       cancelTransfer,
       deleteTransfer,
       updateTransferPermission,
+      updateTransfer,
     ]
   );
 

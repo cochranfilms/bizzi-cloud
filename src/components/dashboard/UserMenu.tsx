@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { ChevronDown, Settings, LogOut, Sun, Moon, Building2 } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
@@ -19,6 +19,8 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { org } = useEnterprise();
@@ -123,7 +125,7 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
             type="button"
             onClick={() => {
               setOpen(false);
-              router.push("/dashboard/settings");
+              router.push(isEnterprise ? "/enterprise/settings" : "/dashboard/settings");
             }}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
