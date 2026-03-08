@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic)$/i;
-const SIZES = { thumb: 256, small: 512, medium: 1024, large: 1920 } as const;
+const SIZES = { thumb: 256, small: 512, medium: 1024, large: 1920, preview: 1920 } as const;
 
 function isImageFile(name: string): boolean {
   return IMAGE_EXT.test(name.toLowerCase());

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback } from "react";
 
 interface CoverFocalPointEditorProps {
   imageUrl: string | null;
@@ -17,56 +17,63 @@ export default function CoverFocalPointEditor({
 }: CoverFocalPointEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, focalX: 0, focalY: 0 });
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       setIsDragging(true);
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        focalX,
+        focalY,
+      };
     },
-    []
+    [focalX, focalY]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-      onChange(x, y);
+      const dx = ((e.clientX - dragStartRef.current.x) / rect.width) * 100;
+      const dy = ((e.clientY - dragStartRef.current.y) / rect.height) * 100;
+      const newX = Math.max(0, Math.min(100, dragStartRef.current.focalX - dx));
+      const newY = Math.max(0, Math.min(100, dragStartRef.current.focalY - dy));
+      onChange(newX, newY);
     },
     [isDragging, onChange]
   );
 
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-      setIsDragging(false);
-    },
-    []
-  );
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    setIsDragging(false);
+  }, []);
 
-  const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-      onChange(x, y);
-    },
-    [onChange]
-  );
+  const handlePointerLeave = useCallback((e: React.PointerEvent) => {
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    setIsDragging(false);
+  }, []);
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        Drag the crosshair or click on the image to set the focal point. This controls which part of the image stays visible in the banner.
+        Click and drag the image to position it. The visible area in the banner follows where you place it.
       </p>
       <div
         ref={containerRef}
-        role="button"
+        role="slider"
         tabIndex={0}
-        onClick={handleContainerClick}
+        aria-label={`Crop position: ${Math.round(focalX)}% horizontal, ${Math.round(focalY)}% vertical`}
+        aria-valuenow={focalX}
+        aria-valuemin={0}
+        aria-valuemax={100}
         onKeyDown={(e) => {
           const step = 5;
           if (e.key === "ArrowLeft") onChange(Math.max(0, focalX - step), focalY);
@@ -74,7 +81,9 @@ export default function CoverFocalPointEditor({
           if (e.key === "ArrowUp") onChange(focalX, Math.max(0, focalY - step));
           if (e.key === "ArrowDown") onChange(focalX, Math.min(100, focalY + step));
         }}
-        className="relative aspect-video w-full cursor-crosshair overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800"
+        className={`relative aspect-video w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 ${
+          isDragging ? "cursor-grabbing" : "cursor-grab"
+        }`}
         style={{ touchAction: "none" }}
       >
         {imageUrl ? (
@@ -83,35 +92,21 @@ export default function CoverFocalPointEditor({
             <img
               src={imageUrl}
               alt=""
-              className="h-full w-full object-cover"
-              style={{ objectPosition: `${focalX}% ${focalY}%` }}
+              className="h-full w-full select-none object-cover"
+              style={{
+                objectPosition: `${focalX}% ${focalY}%`,
+                pointerEvents: "none",
+              }}
               draggable={false}
             />
             <div
-              className="absolute left-0 top-0 h-full w-full"
+              className="absolute inset-0"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              onPointerLeave={handlePointerUp}
+              onPointerLeave={handlePointerLeave}
               style={{ touchAction: "none" }}
             />
-            {/* Crosshair focal point */}
-            <div
-              className="pointer-events-none absolute h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-lg ring-2 ring-black/30"
-              style={{
-                left: `${focalX}%`,
-                top: `${focalY}%`,
-              }}
-            >
-              <div
-                className="absolute left-1/2 top-1/2 h-px w-6 -translate-x-1/2 -translate-y-1/2 bg-white shadow-sm"
-                style={{ boxShadow: "0 0 2px rgba(0,0,0,0.5)" }}
-              />
-              <div
-                className="absolute left-1/2 top-1/2 h-6 w-px -translate-x-1/2 -translate-y-1/2 bg-white shadow-sm"
-                style={{ boxShadow: "0 0 2px rgba(0,0,0,0.5)" }}
-              />
-            </div>
           </>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-neutral-400">
@@ -120,7 +115,7 @@ export default function CoverFocalPointEditor({
         )}
       </div>
       <p className="text-xs text-neutral-400">
-        Position: {Math.round(focalX)}%, {Math.round(focalY)}%
+        Position: {Math.round(focalX)}%, {Math.round(focalY)}% — drag to adjust
       </p>
     </div>
   );
