@@ -13,6 +13,11 @@ interface ShareModalProps {
   linkedDriveId?: string;
   /** When sharing a single file, pass the backup_file id */
   backupFileId?: string;
+  /** When share already exists (e.g. virtual bulk share), pass token and initial state */
+  initialShareToken?: string;
+  initialAccessLevel?: "private" | "public";
+  initialPermission?: "view" | "edit";
+  initialInvitedEmails?: string[];
 }
 
 export default function ShareModal({
@@ -21,12 +26,16 @@ export default function ShareModal({
   folderName,
   linkedDriveId,
   backupFileId,
+  initialShareToken,
+  initialAccessLevel = "private",
+  initialPermission = "view",
+  initialInvitedEmails = [],
 }: ShareModalProps) {
   const { user } = useAuth();
-  const [shareToken, setShareToken] = useState<string | null>(null);
-  const [accessLevel, setAccessLevel] = useState<"private" | "public">("private");
-  const [permission, setPermission] = useState<"view" | "edit">("view");
-  const [invitedEmails, setInvitedEmails] = useState<string[]>([]);
+  const [shareToken, setShareToken] = useState<string | null>(initialShareToken ?? null);
+  const [accessLevel, setAccessLevel] = useState<"private" | "public">(initialAccessLevel);
+  const [permission, setPermission] = useState<"view" | "edit">(initialPermission);
+  const [invitedEmails, setInvitedEmails] = useState<string[]>(initialInvitedEmails);
   const [emailInput, setEmailInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,19 +68,35 @@ export default function ShareModal({
   }, [linkedDriveId, backupFileId, user]);
 
   useEffect(() => {
-    if (open && linkedDriveId) {
-      fetchExistingShare();
-    } else if (!open) {
-      setShareToken(null);
+    if (open) {
+      if (initialShareToken) {
+        setShareToken(initialShareToken);
+        setAccessLevel(initialAccessLevel);
+        setPermission(initialPermission);
+        setInvitedEmails(initialInvitedEmails);
+      } else if (linkedDriveId) {
+        fetchExistingShare();
+      }
+    } else {
+      setShareToken(initialShareToken ?? null);
       setError(null);
       setCopied(false);
       setEmailInput("");
     }
-  }, [open, linkedDriveId, fetchExistingShare]);
+  }, [
+    open,
+    linkedDriveId,
+    initialShareToken,
+    initialAccessLevel,
+    initialPermission,
+    initialInvitedEmails,
+    fetchExistingShare,
+  ]);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
-    if (!linkedDriveId || !user) return null;
-    if (shareToken) return shareToken;
+    if (!user) return null;
+    if (initialShareToken || shareToken) return initialShareToken ?? shareToken;
+    if (!linkedDriveId) return null;
 
     setLoading(true);
     setError(null);
@@ -104,7 +129,7 @@ export default function ShareModal({
     } finally {
       setLoading(false);
     }
-  }, [linkedDriveId, backupFileId, user, shareToken, permission, accessLevel, invitedEmails]);
+  }, [linkedDriveId, backupFileId, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails]);
 
   const copyLink = useCallback(async () => {
     const token = await ensureShare();
@@ -254,7 +279,7 @@ export default function ShareModal({
             <button
               type="button"
               onClick={copyLink}
-              disabled={!linkedDriveId || !user || loading}
+              disabled={(!linkedDriveId && !initialShareToken) || !user || loading}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:opacity-50"
             >
               <Link2 className="h-4 w-4" />

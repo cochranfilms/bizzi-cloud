@@ -19,6 +19,8 @@ export interface UseSharesResult {
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  /** Delete a share (owner only). Removes the share record; original files stay. */
+  deleteShare: (token: string) => Promise<void>;
 }
 
 export function useShares(): UseSharesResult {
@@ -79,9 +81,26 @@ export function useShares(): UseSharesResult {
     }
   }, [user]);
 
+  const deleteShare = useCallback(
+    async (token: string) => {
+      if (!user) return;
+      const idToken = await user.getIdToken(true);
+      const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete share");
+      }
+      await fetchShares();
+    },
+    [user, fetchShares]
+  );
+
   useEffect(() => {
     fetchShares();
   }, [fetchShares]);
 
-  return { owned, invited, loading, error, refetch: fetchShares };
+  return { owned, invited, loading, error, refetch: fetchShares, deleteShare };
 }

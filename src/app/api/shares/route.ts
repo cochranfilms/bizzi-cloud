@@ -96,6 +96,32 @@ export async function GET(request: Request) {
 
   for (const d of ownedSnap.docs) {
     const data = d.data();
+    const referencedFileIds = data.referenced_file_ids as string[] | undefined;
+    const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
+
+    const expiresAt = data.expires_at?.toDate?.();
+    if (expiresAt && expiresAt < new Date()) continue;
+
+    // Show all owned shares immediately (including before inviting anyone)
+    let itemName: string;
+    let itemType: "file" | "folder";
+
+    if (isVirtualShare) {
+      itemName = (data.folder_name as string) ?? "Shared folder";
+      itemType = "folder";
+      owned.push({
+        id: d.id,
+        token: data.token as string,
+        linked_drive_id: "",
+        folder_name: itemName,
+        item_type: itemType,
+        permission: (data.permission as string) ?? "view",
+        created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        share_url: `/s/${data.token}`,
+      });
+      continue;
+    }
+
     const driveId = data.linked_drive_id as string;
     const backupFileId = data.backup_file_id as string | null | undefined;
     const isFileShare = !!backupFileId;
@@ -105,14 +131,6 @@ export async function GET(request: Request) {
     // Skip if drive was deleted
     if (!driveSnap.exists) continue;
 
-    const expiresAt = data.expires_at?.toDate?.();
-    if (expiresAt && expiresAt < new Date()) continue;
-
-    // Only show in Shared tab if actually shared with someone by email (not just URL copy)
-    const invitedEmails = (data.invited_emails as string[] | undefined) ?? [];
-    if (invitedEmails.length === 0) continue;
-
-    let itemName: string;
     if (isFileShare) {
       const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
       if (!fileSnap.exists) continue;
@@ -120,8 +138,10 @@ export async function GET(request: Request) {
       if (fileData?.deleted_at) continue;
       const path = (fileData?.relative_path ?? "") as string;
       itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+      itemType = "file";
     } else {
       itemName = driveSnap.data()?.name ?? "Folder";
+      itemType = "folder";
     }
 
     owned.push({
@@ -129,7 +149,7 @@ export async function GET(request: Request) {
       token: data.token as string,
       linked_drive_id: driveId,
       folder_name: itemName,
-      item_type: isFileShare ? "file" : "folder",
+      item_type: itemType,
       permission: (data.permission as string) ?? "view",
       created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
       share_url: `/s/${data.token}`,
@@ -232,11 +252,19 @@ export async function POST(request: Request) {
     access_level = "private",
     expires_at: expiresAt,
     invited_emails: invitedEmails,
+    referenced_file_ids: referencedFileIds,
+    folder_name: folderName,
   } = body;
 
-  if (!linkedDriveId || typeof linkedDriveId !== "string") {
+  const isVirtualShare =
+    Array.isArray(referencedFileIds) &&
+    referencedFileIds.length > 0 &&
+    typeof folderName === "string" &&
+    folderName.trim().length > 0;
+
+  if (!isVirtualShare && (!linkedDriveId || typeof linkedDriveId !== "string")) {
     return NextResponse.json(
-      { error: "linked_drive_id is required" },
+      { error: "linked_drive_id is required, or referenced_file_ids + folder_name for virtual share" },
       { status: 400 }
     );
   }
@@ -257,7 +285,63 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
 
-  // Verify user owns the linked drive
+  if (isVirtualShare) {
+    // Virtual share: reference files by ID, no linked_drive created
+    const fileIds = (referencedFileIds as string[]).filter(
+      (id): id is string => typeof id === "string" && id.length > 0
+    );
+    const uniqueIds = [...new Set(fileIds)];
+    if (uniqueIds.length === 0) {
+      return NextResponse.json(
+        { error: "referenced_file_ids must contain at least one file id" },
+        { status: 400 }
+      );
+    }
+
+    for (const fileId of uniqueIds) {
+      const fileSnap = await db.collection("backup_files").doc(fileId).get();
+      if (!fileSnap.exists) {
+        return NextResponse.json({ error: `File ${fileId} not found` }, { status: 404 });
+      }
+      const fileData = fileSnap.data();
+      if (fileData?.userId !== uid) {
+        return NextResponse.json({ error: "Access denied: you do not own all files" }, { status: 403 });
+      }
+      if (fileData?.deleted_at) {
+        return NextResponse.json({ error: "Cannot share deleted file" }, { status: 400 });
+      }
+    }
+
+    const shareToken = generateShareToken();
+    const now = new Date();
+
+    const shareData = {
+      token: shareToken,
+      owner_id: uid,
+      referenced_file_ids: uniqueIds,
+      folder_name: folderName.trim(),
+      permission: permission as "view" | "edit",
+      access_level: access_level as "private" | "public",
+      expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
+      created_at: now,
+      invited_emails: Array.isArray(invitedEmails)
+        ? invitedEmails.filter((e: unknown) => typeof e === "string")
+        : [],
+    };
+
+    await db.collection("folder_shares").doc(shareToken).set(shareData);
+
+    return NextResponse.json({
+      token: shareToken,
+      share_url: `/s/${shareToken}`,
+      existing: false,
+      access_level: shareData.access_level,
+      permission: shareData.permission,
+      invited_emails: shareData.invited_emails,
+    });
+  }
+
+  // Standard share: linked_drive_id based
   const driveSnap = await db
     .collection("linked_drives")
     .doc(linkedDriveId)

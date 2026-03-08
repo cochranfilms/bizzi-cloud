@@ -21,7 +21,7 @@ function formatExpires(iso: string | null) {
 }
 
 export default function TransferGrid() {
-  const { transfers, deleteTransfer } = useTransfers();
+  const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const { confirm } = useConfirm();
@@ -45,6 +45,17 @@ export default function TransferGrid() {
       }
     },
     [deleteTransfer, confirm]
+  );
+
+  const handlePermissionChange = useCallback(
+    async (slug: string, permission: "view" | "downloadable") => {
+      try {
+        await updateTransferPermission(slug, permission);
+      } catch (err) {
+        console.error("Update permission failed:", err);
+      }
+    },
+    [updateTransferPermission]
   );
 
   const filtered =
@@ -99,6 +110,7 @@ export default function TransferGrid() {
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Files</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Views</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Downloads</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Permission</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Expires</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white"></th>
               </tr>
@@ -133,6 +145,19 @@ export default function TransferGrid() {
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
                       {totalDownloads}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={t.permission ?? "downloadable"}
+                        onChange={(e) =>
+                          handlePermissionChange(t.slug, e.target.value as "view" | "downloadable")
+                        }
+                        className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
+                        aria-label="Permission"
+                      >
+                        <option value="view">View only</option>
+                        <option value="downloadable">Downloadable</option>
+                      </select>
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
                       {formatExpires(t.expiresAt)}

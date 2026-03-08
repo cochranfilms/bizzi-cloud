@@ -52,6 +52,8 @@ interface TransferContextValue {
   cancelTransfer: (id: string) => void;
   /** Delete a transfer (only if user owns it). Calls API and removes from local state. */
   deleteTransfer: (slug: string) => Promise<void>;
+  /** Update permission (view | downloadable) for a transfer. Calls API and updates local state. */
+  updateTransferPermission: (slug: string, permission: "view" | "downloadable") => Promise<void>;
 }
 
 const TransferContext = createContext<TransferContextValue | null>(null);
@@ -179,6 +181,38 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateTransferPermission = useCallback(
+    async (slug: string, permission: "view" | "downloadable") => {
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!idToken) throw new Error("Not authenticated");
+
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ permission }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to update permission");
+      }
+
+      setTransfers((prev) => {
+        const next = prev.map((t) =>
+          t.slug === slug || t.id === slug ? { ...t, permission } : t
+        );
+        saveTransfers(next);
+        return next;
+      });
+    },
+    []
+  );
+
   const value = useMemo<TransferContextValue>(
     () => ({
       transfers,
@@ -189,6 +223,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       recordDownload,
       cancelTransfer,
       deleteTransfer,
+      updateTransferPermission,
     }),
     [
       transfers,
@@ -199,6 +234,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       recordDownload,
       cancelTransfer,
       deleteTransfer,
+      updateTransferPermission,
     ]
   );
 

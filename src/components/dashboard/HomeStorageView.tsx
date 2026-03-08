@@ -49,7 +49,7 @@ function BulkActionBar({
   if (selectedFileCount > 0) parts.push(`${selectedFileCount} file${selectedFileCount === 1 ? "" : "s"}`);
   if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} folder${selectedFolderCount === 1 ? "" : "s"}`);
   const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
-  const canShare = total > 1;
+  const canShare = total >= 1;
 
   return (
     <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
@@ -117,11 +117,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     deleteFolder,
     refetch,
     fetchFilesByIds,
+    getFileIdsForBulkShare,
     moveFilesToFolder,
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
-  const { linkedDrives, createFolder } = useBackup();
+  const { linkedDrives } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
@@ -142,6 +143,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
   const [shareDriveId, setShareDriveId] = useState<string | null>(null);
+  const [shareInitialData, setShareInitialData] = useState<{
+    token: string;
+    accessLevel: "private" | "public";
+    permission: "view" | "edit";
+    invitedEmails: string[];
+  } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
 
   const filesHref = `${basePath}/files`;
@@ -473,27 +480,45 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const handleBulkShare = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
+    const folderDriveIds = folderKeys
+      .map((k) => (k.startsWith("drive-") ? k.slice(6) : k))
+      .filter(Boolean);
     const folderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
 
     try {
-      const drive = await createFolder(folderName);
-      const newDriveId = drive.id;
+      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds);
+      if (allFileIds.length === 0) return;
 
-      if (fileIds.length > 0) {
-        await moveFilesToFolder(fileIds, newDriveId);
-      }
-      for (const key of folderKeys) {
-        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
-        if (driveId !== newDriveId) {
-          const sourceDrive = linkedDrives.find((d) => d.id === driveId);
-          if (sourceDrive) {
-            await moveFolderContentsToFolder(driveId, newDriveId);
-          }
-        }
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!token) return;
+
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          referenced_file_ids: allFileIds,
+          folder_name: folderName,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to create share");
       }
 
+      const data = await res.json();
       setShareFolderName(folderName);
-      setShareDriveId(newDriveId);
+      setShareDriveId(null);
+      setShareInitialData({
+        token: data.token,
+        accessLevel: data.access_level ?? "private",
+        permission: data.permission ?? "view",
+        invitedEmails: data.invited_emails ?? [],
+      });
       setShareModalOpen(true);
       clearSelection();
       await refetch();
@@ -505,10 +530,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   }, [
     selectedFileIds,
     selectedFolderKeys,
-    createFolder,
-    moveFilesToFolder,
-    moveFolderContentsToFolder,
-    linkedDrives,
+    getFileIdsForBulkShare,
     clearSelection,
     refetch,
     refetchPinned,
@@ -757,15 +779,20 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         initialFiles={transferInitialFiles}
       />
 
-      {shareDriveId && (
+      {shareModalOpen && (
         <ShareModal
           open={shareModalOpen}
           onClose={() => {
             setShareModalOpen(false);
             setShareDriveId(null);
+            setShareInitialData(null);
           }}
           folderName={shareFolderName}
-          linkedDriveId={shareDriveId}
+          linkedDriveId={shareDriveId ?? undefined}
+          initialShareToken={shareInitialData?.token}
+          initialAccessLevel={shareInitialData?.accessLevel}
+          initialPermission={shareInitialData?.permission}
+          initialInvitedEmails={shareInitialData?.invitedEmails}
         />
       )}
 

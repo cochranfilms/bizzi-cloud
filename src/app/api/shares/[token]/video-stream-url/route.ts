@@ -67,16 +67,31 @@ export async function POST(
     );
   }
 
-  const linkedDriveId = share.linked_drive_id as string;
   const ownerId = share.owner_id as string;
+  const referencedFileIds = share.referenced_file_ids as string[] | undefined;
+  const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
 
-  const fileSnap = await db
-    .collection("backup_files")
-    .where("userId", "==", ownerId)
-    .where("linked_drive_id", "==", linkedDriveId)
-    .where("object_key", "==", objectKey)
-    .limit(1)
-    .get();
+  let fileSnap;
+  if (isVirtualShare) {
+    fileSnap = await db
+      .collection("backup_files")
+      .where("userId", "==", ownerId)
+      .where("object_key", "==", objectKey)
+      .limit(1)
+      .get();
+    if (!fileSnap.empty && !referencedFileIds.includes(fileSnap.docs[0].id)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+  } else {
+    const linkedDriveId = share.linked_drive_id as string;
+    fileSnap = await db
+      .collection("backup_files")
+      .where("userId", "==", ownerId)
+      .where("linked_drive_id", "==", linkedDriveId)
+      .where("object_key", "==", objectKey)
+      .limit(1)
+      .get();
+  }
 
   if (fileSnap.empty || fileSnap.docs[0].data().deleted_at) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });

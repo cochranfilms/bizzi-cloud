@@ -46,68 +46,95 @@ export async function GET(
     );
   }
 
-  const linkedDriveId = share.linked_drive_id as string;
   const ownerId = share.owner_id as string;
-  const backupFileId = share.backup_file_id as string | null | undefined;
-  const isFileShare = !!backupFileId;
+  const referencedFileIds = share.referenced_file_ids as string[] | undefined;
+  const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
 
   let folderName: string;
+  let itemType: "file" | "folder";
   let files: { id: string; name: string; path: string; object_key: string; size_bytes: number }[];
 
-  if (isFileShare) {
-    const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
-    if (!fileSnap.exists) {
-      return NextResponse.json({ error: "Shared file not found" }, { status: 404 });
-    }
-    const fileData = fileSnap.data();
-    if (fileData?.deleted_at) {
-      return NextResponse.json({ error: "Shared file was deleted" }, { status: 410 });
-    }
-    if (fileData?.userId !== ownerId || fileData?.linked_drive_id !== linkedDriveId) {
-      return NextResponse.json({ error: "Invalid share" }, { status: 404 });
-    }
-    const path = (fileData.relative_path ?? "") as string;
-    const name = path.split("/").filter(Boolean).pop() ?? path ?? "File";
-    folderName = name;
-    files = [
-      {
+  if (isVirtualShare) {
+    folderName = (share.folder_name as string) ?? "Shared folder";
+    itemType = "folder";
+    files = [];
+    for (const fileId of referencedFileIds) {
+      const fileSnap = await db.collection("backup_files").doc(fileId).get();
+      if (!fileSnap.exists) continue;
+      const fileData = fileSnap.data();
+      if (fileData?.deleted_at) continue;
+      if (fileData?.userId !== ownerId) continue;
+      const path = (fileData.relative_path ?? "") as string;
+      const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+      files.push({
         id: fileSnap.id,
         name,
         path,
         object_key: (fileData.object_key ?? "") as string,
         size_bytes: (fileData.size_bytes ?? 0) as number,
-      },
-    ];
+      });
+    }
   } else {
-    const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
-    folderName = driveSnap.exists
-      ? (driveSnap.data()?.name ?? "Shared folder")
-      : "Shared folder";
+    const linkedDriveId = share.linked_drive_id as string;
+    const backupFileId = share.backup_file_id as string | null | undefined;
+    const isFileShare = !!backupFileId;
+    itemType = isFileShare ? "file" : "folder";
 
-    const filesSnap = await db
-      .collection("backup_files")
-      .where("userId", "==", ownerId)
-      .where("linked_drive_id", "==", linkedDriveId)
-      .where("deleted_at", "==", null)
-      .get();
+    if (isFileShare) {
+      const fileSnap = await db.collection("backup_files").doc(backupFileId!).get();
+      if (!fileSnap.exists) {
+        return NextResponse.json({ error: "Shared file not found" }, { status: 404 });
+      }
+      const fileData = fileSnap.data();
+      if (fileData?.deleted_at) {
+        return NextResponse.json({ error: "Shared file was deleted" }, { status: 410 });
+      }
+      if (fileData?.userId !== ownerId || fileData?.linked_drive_id !== linkedDriveId) {
+        return NextResponse.json({ error: "Invalid share" }, { status: 404 });
+      }
+      const path = (fileData.relative_path ?? "") as string;
+      const name = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+      folderName = name;
+      files = [
+        {
+          id: fileSnap.id,
+          name,
+          path,
+          object_key: (fileData.object_key ?? "") as string,
+          size_bytes: (fileData.size_bytes ?? 0) as number,
+        },
+      ];
+    } else {
+      const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
+      folderName = driveSnap.exists
+        ? (driveSnap.data()?.name ?? "Shared folder")
+        : "Shared folder";
 
-    files = filesSnap.docs.map((d) => {
-      const data = d.data();
-      const path = (data.relative_path ?? "") as string;
-      const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
-      return {
-        id: d.id,
-        name,
-        path,
-        object_key: data.object_key ?? "",
-        size_bytes: data.size_bytes ?? 0,
-      };
-    });
+      const filesSnap = await db
+        .collection("backup_files")
+        .where("userId", "==", ownerId)
+        .where("linked_drive_id", "==", linkedDriveId)
+        .where("deleted_at", "==", null)
+        .get();
+
+      files = filesSnap.docs.map((d) => {
+        const data = d.data();
+        const path = (data.relative_path ?? "") as string;
+        const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+        return {
+          id: d.id,
+          name,
+          path,
+          object_key: data.object_key ?? "",
+          size_bytes: data.size_bytes ?? 0,
+        };
+      });
+    }
   }
 
   return NextResponse.json({
     folder_name: folderName,
-    item_type: isFileShare ? "file" : "folder",
+    item_type: itemType,
     permission: share.permission ?? "view",
     access_level: share.access_level ?? "public",
     files,
@@ -173,6 +200,54 @@ export async function PATCH(
   }
 
   await shareRef.update(updates);
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const authHeader = request.headers.get("Authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+
+  if (!bearerToken) {
+    return NextResponse.json(
+      { error: "Missing or invalid Authorization" },
+      { status: 401 }
+    );
+  }
+
+  let uid: string;
+  try {
+    const decoded = await verifyIdToken(bearerToken);
+    uid = decoded.uid;
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  const { token: shareToken } = await params;
+
+  if (!shareToken || typeof shareToken !== "string") {
+    return NextResponse.json({ error: "Invalid token" }, { status: 400 });
+  }
+
+  const db = getAdminFirestore();
+  const shareRef = db.collection("folder_shares").doc(shareToken);
+  const shareSnap = await shareRef.get();
+
+  if (!shareSnap.exists) {
+    return NextResponse.json({ error: "Share not found" }, { status: 404 });
+  }
+
+  const share = shareSnap.data();
+  if (share?.owner_id !== uid) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  // Delete share record only - never delete backup_files. Virtual shares reference
+  // files by ID; standard shares point to linked_drives. Originals stay in place.
+  await shareRef.delete();
 
   return NextResponse.json({ ok: true });
 }

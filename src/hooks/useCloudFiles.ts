@@ -475,6 +475,27 @@ export function useCloudFiles() {
     [user, fetchCloudFiles, recalculateStorage]
   );
 
+  const getFileIdsForBulkShare = useCallback(
+    async (fileIds: string[], folderDriveIds: string[]): Promise<string[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const ids = new Set<string>(fileIds);
+      for (const driveId of folderDriveIds) {
+        const snap = await getDocs(
+          query(
+            collection(db, "backup_files"),
+            where("userId", "==", user.uid),
+            where("linked_drive_id", "==", driveId),
+            where("deleted_at", "==", null)
+          )
+        );
+        snap.docs.forEach((d) => ids.add(d.id));
+      }
+      return Array.from(ids);
+    },
+    [user]
+  );
+
   const moveFolderContentsToFolder = useCallback(
     async (sourceDriveId: string, targetDriveId: string) => {
       if (!isFirebaseConfigured() || !user) return;
@@ -660,5 +681,6 @@ export function useCloudFiles() {
     moveFile,
     moveFilesToFolder,
     moveFolderContentsToFolder,
+    getFileIdsForBulkShare,
   };
 }

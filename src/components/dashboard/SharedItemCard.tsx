@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { File, Folder } from "lucide-react";
+import { File, Folder, Trash2 } from "lucide-react";
 
 export interface SharedItem {
   name: string;
@@ -17,12 +17,14 @@ export interface SharedItem {
 
 interface SharedItemCardProps {
   item: SharedItem;
+  isOwned?: boolean;
+  onDelete?: (e: React.MouseEvent) => void;
 }
 
 const cardClassName =
-  "group flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
+  "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
 
-export default function SharedItemCard({ item }: SharedItemCardProps) {
+export default function SharedItemCard({ item, isOwned, onDelete }: SharedItemCardProps) {
   const content = (
     <>
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
@@ -50,10 +52,30 @@ export default function SharedItemCard({ item }: SharedItemCardProps) {
     </>
   );
 
+  const cardContent = (
+    <div className="relative">
+      {content}
+      {isOwned && onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDelete(e);
+          }}
+          className="absolute right-2 top-2 rounded p-1.5 text-neutral-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+          aria-label="Delete share"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+
   if (item.href) {
     return (
       <Link href={item.href} className={cardClassName}>
-        {content}
+        {cardContent}
       </Link>
     );
   }
@@ -67,7 +89,7 @@ export default function SharedItemCard({ item }: SharedItemCardProps) {
         if (e.key === "Enter" || e.key === " ") e.preventDefault();
       }}
     >
-      {content}
+      {cardContent}
     </div>
   );
 }

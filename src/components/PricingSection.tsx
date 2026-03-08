@@ -121,61 +121,54 @@ export default function PricingSection() {
         </div>
 
         {/* Enterprise Plan */}
-        <div className="mb-20 flex justify-center">
-          <div
-            className={`
-              relative w-full max-w-md rounded-2xl border-2 bg-white p-6 md:p-7 flex flex-col
-              transition-all duration-200 hover:shadow-lg hover:shadow-neutral-200/50
-              border-neutral-200 hover:border-neutral-300
-            `}
-          >
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-neutral-200 text-neutral-700">
-                For teams
-              </span>
-            </div>
-            <div className="mb-4">
-              <h3 className="text-xl font-semibold text-neutral-900">
-                Enterprise
-              </h3>
-              <p className="text-2xl font-semibold text-neutral-700 mt-2">
-                Custom pricing
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-lg font-semibold text-neutral-900">
+                  Enterprise
+                </h3>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-700">
+                  For teams
+                </span>
+              </div>
+              <p className="text-neutral-600 text-sm mb-4">
+                Shared storage and collaboration for teams. Dedicated support,
+                priority infrastructure, and flexible terms for high-volume workflows.
               </p>
+              <button
+                type="button"
+                className="inline-flex px-4 py-2 rounded-xl font-medium bg-neutral-100 text-neutral-900 hover:bg-neutral-200 transition-colors text-sm"
+              >
+                Contact sales
+              </button>
             </div>
-            <div className="mb-1">
-              <span className="text-sm font-medium text-neutral-500">
-                Storage included
-              </span>
-              <p className="text-lg font-semibold text-neutral-900">
-                16TB
-              </p>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100">
+                <span className="text-sm font-medium text-neutral-500">
+                  Storage
+                </span>
+                <span className="text-lg font-semibold text-neutral-900 mt-0.5">
+                  16TB
+                </span>
+              </div>
+              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100">
+                <span className="text-sm font-medium text-neutral-500">
+                  Seats
+                </span>
+                <span className="text-lg font-semibold text-neutral-900 mt-0.5">
+                  Up to 10
+                </span>
+              </div>
+              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+                <span className="text-sm font-medium text-neutral-500">
+                  Ideal for
+                </span>
+                <span className="text-sm font-semibold text-neutral-900 mt-0.5 leading-tight">
+                  Agencies, post houses & studios
+                </span>
+              </div>
             </div>
-            <div className="mb-4">
-              <span className="text-sm font-medium text-neutral-500">
-                Seats
-              </span>
-              <p className="text-lg font-semibold text-neutral-900">
-                Up to 10
-              </p>
-            </div>
-            <div className="mb-6">
-              <span className="text-sm font-medium text-neutral-500">
-                Ideal for
-              </span>
-              <p className="text-neutral-700 font-medium">
-                Agencies, post houses & studios
-              </p>
-            </div>
-            <p className="text-sm text-neutral-600 mb-6 leading-relaxed flex-grow">
-              Shared storage and collaboration for teams. Dedicated support, priority
-              infrastructure, and flexible terms for high-volume workflows.
-            </p>
-            <button
-              type="button"
-              className="w-full py-3 px-4 rounded-xl font-medium bg-neutral-100 text-neutral-900 hover:bg-neutral-200 transition-colors"
-            >
-              Contact sales
-            </button>
           </div>
         </div>
 

@@ -20,7 +20,7 @@ function formatDate(iso: string) {
 }
 
 export default function TransferAnalytics({ transferId }: TransferAnalyticsProps) {
-  const { transfers, deleteTransfer } = useTransfers();
+  const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,6 +95,23 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
             </span>
           )}
         </p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-sm text-neutral-500 dark:text-neutral-400">Permission:</span>
+          <select
+            value={transfer.permission ?? "downloadable"}
+            onChange={(e) =>
+              updateTransferPermission(
+                transfer.slug,
+                e.target.value as "view" | "downloadable"
+              )
+            }
+            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
+            aria-label="Permission"
+          >
+            <option value="view">View only</option>
+            <option value="downloadable">Downloadable</option>
+          </select>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

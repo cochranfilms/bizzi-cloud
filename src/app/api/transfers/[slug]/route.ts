@@ -45,6 +45,61 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const authHeader = request.headers.get("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+
+  if (!token) {
+    return NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 });
+  }
+
+  let uid: string;
+  try {
+    const decoded = await verifyIdToken(token);
+    uid = decoded.uid;
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  const { slug } = await params;
+
+  if (!slug || typeof slug !== "string") {
+    return NextResponse.json({ error: "Invalid slug" }, { status: 400 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const permission = body.permission as string | undefined;
+
+  if (permission !== "view" && permission !== "downloadable") {
+    return NextResponse.json(
+      { error: "permission must be 'view' or 'downloadable'" },
+      { status: 400 }
+    );
+  }
+
+  const db = getAdminFirestore();
+  const docRef = db.collection("transfers").doc(slug);
+  const doc = await docRef.get();
+
+  if (!doc.exists) {
+    return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+  }
+
+  const data = doc.data();
+  const transferUserId = data?.user_id ?? data?.userId ?? null;
+
+  if (transferUserId !== uid) {
+    return NextResponse.json({ error: "You can only edit transfers you created" }, { status: 403 });
+  }
+
+  await docRef.update({ permission });
+
+  return NextResponse.json({ ok: true, permission });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ slug: string }> }

@@ -1,34 +1,59 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { LayoutGrid, List, Folder, File } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
+import { LayoutGrid, List, Folder, File, Trash2 } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import { useShares } from "@/hooks/useShares";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export default function SharedGrid() {
-  const { owned, invited, loading, error } = useShares();
+  const { owned, invited, loading, error, deleteShare } = useShares();
+  const { confirm } = useConfirm();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [filter, setFilter] = useState<"all" | "folders" | "files">("all");
 
-  const sharedItems: SharedItem[] = useMemo(() => {
-    const invitedItems: SharedItem[] = invited.map((s) => ({
+  const sharedItems: (SharedItem & { token: string; isOwned?: boolean })[] = useMemo(() => {
+    const invitedItems = invited.map((s) => ({
       name: s.folder_name,
       type: s.item_type,
       key: s.token,
+      token: s.token,
       sharedBy: s.sharedBy ?? "Someone",
       permission: s.permission,
       href: s.share_url,
+      isOwned: false,
     }));
-    const ownedItems: SharedItem[] = owned.map((s) => ({
+    const ownedItems = owned.map((s) => ({
       name: s.folder_name,
       type: s.item_type,
       key: s.token,
+      token: s.token,
       sharedBy: "You",
       permission: s.permission,
       href: s.share_url,
+      isOwned: true,
     }));
     return [...invitedItems, ...ownedItems];
   }, [invited, owned]);
+
+  const handleDeleteShare = useCallback(
+    async (e: React.MouseEvent, token: string, name: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ok = await confirm({
+        message: `Remove share "${name}"? People with the link will no longer have access. Your original files will not be deleted.`,
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await deleteShare(token);
+      } catch (err) {
+        console.error("Delete share failed:", err);
+      }
+    },
+    [deleteShare, confirm]
+  );
 
   const filteredItems =
     filter === "all"
@@ -131,46 +156,73 @@ export default function SharedGrid() {
       ) : viewMode === "grid" ? (
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {filteredItems.map((item) => (
-            <SharedItemCard key={item.key} item={item} />
+            <SharedItemCard
+              key={item.key}
+              item={item}
+              isOwned={item.isOwned}
+              onDelete={
+                item.isOwned ? (e) => handleDeleteShare(e, item.token, item.name) : undefined
+              }
+            />
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
-          {filteredItems.map((item, i) => (
-            <div
-              key={item.key}
-              className={`flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${
-                i > 0 ? "border-t border-neutral-200 dark:border-neutral-700" : ""
-              }`}
-              role="button"
-              tabIndex={0}
-            >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
-                {item.type === "folder" ? (
-                  <Folder className="h-5 w-5" />
-                ) : (
-                  <File className="h-5 w-5" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-neutral-900 dark:text-white">
-                  {item.name}
-                </p>
-                <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-                  Shared by {item.sharedBy} · {item.permission === "edit" ? "Can edit" : "Can view"}
-                </p>
-              </div>
-              <span
-                className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                  item.permission === "edit"
-                    ? "bg-bizzi-blue/20 text-bizzi-blue dark:bg-bizzi-blue/30 dark:text-bizzi-cyan"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+          {filteredItems.map((item, i) => {
+            const rowContent = (
+              <div
+                className={`flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${
+                  i > 0 ? "border-t border-neutral-200 dark:border-neutral-700" : ""
                 }`}
               >
-                {item.permission === "edit" ? "Can edit" : "Can view"}
-              </span>
-            </div>
-          ))}
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+                  {item.type === "folder" ? (
+                    <Folder className="h-5 w-5" />
+                  ) : (
+                    <File className="h-5 w-5" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-neutral-900 dark:text-white">
+                    {item.name}
+                  </p>
+                  <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+                    Shared by {item.sharedBy} · {item.permission === "edit" ? "Can edit" : "Can view"}
+                  </p>
+                </div>
+                <span
+                  className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    item.permission === "edit"
+                      ? "bg-bizzi-blue/20 text-bizzi-blue dark:bg-bizzi-blue/30 dark:text-bizzi-cyan"
+                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+                  }`}
+                >
+                  {item.permission === "edit" ? "Can edit" : "Can view"}
+                </span>
+                {item.isOwned && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteShare(e, item.token, item.name);
+                    }}
+                    className="flex-shrink-0 rounded p-2 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                    aria-label="Delete share"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            );
+            return item.href ? (
+              <Link href={item.href} key={item.key}>
+                {rowContent}
+              </Link>
+            ) : (
+              <div key={item.key}>{rowContent}</div>
+            );
+          })}
         </div>
       )}
     </div>
