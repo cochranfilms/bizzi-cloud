@@ -50,6 +50,8 @@ interface TransferContextValue {
   recordView: (slug: string, fileId: string) => void;
   recordDownload: (slug: string, fileId: string) => void;
   cancelTransfer: (id: string) => void;
+  /** Delete a transfer (only if user owns it). Calls API and removes from local state. */
+  deleteTransfer: (slug: string) => Promise<void>;
 }
 
 const TransferContext = createContext<TransferContextValue | null>(null);
@@ -154,6 +156,29 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const deleteTransfer = useCallback(async (slug: string) => {
+    const { getFirebaseAuth } = await import("@/lib/firebase/client");
+    const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+    if (!idToken) throw new Error("Not authenticated");
+
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error ?? "Failed to delete transfer");
+    }
+
+    setTransfers((prev) => {
+      const next = prev.filter((t) => t.slug !== slug && t.id !== slug);
+      saveTransfers(next);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<TransferContextValue>(
     () => ({
       transfers,
@@ -163,6 +188,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       recordView,
       recordDownload,
       cancelTransfer,
+      deleteTransfer,
     }),
     [
       transfers,
@@ -172,6 +198,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       recordView,
       recordDownload,
       cancelTransfer,
+      deleteTransfer,
     ]
   );
 

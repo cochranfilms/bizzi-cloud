@@ -1,44 +1,7 @@
 import { createHmac } from "crypto";
-import {
-  getObject,
-  getObjectRange,
-  isB2Configured,
-} from "@/lib/b2";
+import { isB2Configured } from "@/lib/b2";
+import { getDownloadUrl } from "@/lib/cdn";
 import { NextResponse } from "next/server";
-
-async function* nodeStreamToIterator(
-  stream: AsyncIterable<Uint8Array>
-): AsyncGenerator<Uint8Array> {
-  for await (const chunk of stream) {
-    yield new Uint8Array(chunk);
-  }
-}
-
-function toWebStream(nodeStream: NodeJS.ReadableStream): ReadableStream {
-  try {
-    const { Readable } = require("stream");
-    if (typeof Readable.toWeb === "function") {
-      return Readable.toWeb(nodeStream) as ReadableStream;
-    }
-  } catch {
-    /* fallthrough */
-  }
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of nodeStreamToIterator(
-          nodeStream as AsyncIterable<Uint8Array>
-        )) {
-          controller.enqueue(chunk);
-        }
-      } catch (e) {
-        controller.error(e);
-      } finally {
-        controller.close();
-      }
-    },
-  });
-}
 
 function verifyStreamSignature(
   objectKey: string,
@@ -52,15 +15,7 @@ function verifyStreamSignature(
   return sig === expected && exp > Math.floor(Date.now() / 1000);
 }
 
-function parseRange(rangeHeader: string | null): { start: number; end?: number } | null {
-  if (!rangeHeader || !rangeHeader.startsWith("bytes=")) return null;
-  const match = rangeHeader.replace(/^bytes=/, "").match(/(\d+)-(\d*)/);
-  if (!match) return null;
-  const start = parseInt(match[1], 10);
-  const end = match[2] ? parseInt(match[2], 10) : undefined;
-  return { start, end };
-}
-
+/** Redirect to direct B2/CDN URL. No file bytes through Vercel (4.5 MB limit). */
 export async function GET(request: Request) {
   if (!isB2Configured()) {
     return new NextResponse("B2 not configured", { status: 503 });
@@ -80,44 +35,12 @@ export async function GET(request: Request) {
     return new NextResponse("Invalid or expired stream URL", { status: 403 });
   }
 
-  const rangeHeader = request.headers.get("Range");
-  const parsed = parseRange(rangeHeader);
-
   try {
-    if (parsed) {
-      const end = parsed.end ?? Number.MAX_SAFE_INTEGER;
-      const { body, contentLength, contentType, contentRange } =
-        await getObjectRange(objectKey, { start: parsed.start, end });
-
-      const headers: Record<string, string> = {
-        "Accept-Ranges": "bytes",
-        "Content-Length": String(contentLength),
-        "Access-Control-Allow-Origin": "*",
-      };
-      if (contentType) headers["Content-Type"] = contentType;
-      if (contentRange) headers["Content-Range"] = contentRange;
-
-      return new NextResponse(toWebStream(body), {
-        status: 206,
-        headers,
-      });
-    }
-
-    const { body, contentLength, contentType } = await getObject(objectKey);
-
-    const headers: Record<string, string> = {
-      "Accept-Ranges": "bytes",
-      "Content-Length": String(contentLength),
-      "Access-Control-Allow-Origin": "*",
-    };
-    if (contentType) headers["Content-Type"] = contentType;
-
-    return new NextResponse(toWebStream(body), {
-      status: 200,
-      headers,
-    });
+    const remainingSec = Math.max(60, exp - Math.floor(Date.now() / 1000));
+    const directUrl = await getDownloadUrl(objectKey, remainingSec);
+    return NextResponse.redirect(directUrl, 302);
   } catch (err) {
-    console.error("[video-stream] Error:", err);
+    console.error("[video-stream] Redirect error:", err);
     return new NextResponse(
       err instanceof Error ? err.message : "Stream failed",
       { status: 500 }

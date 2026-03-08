@@ -1,5 +1,6 @@
 import { createHmac } from "crypto";
-import { getObject, isB2Configured } from "@/lib/b2";
+import { isB2Configured } from "@/lib/b2";
+import { getDownloadUrl } from "@/lib/cdn";
 import { NextResponse } from "next/server";
 
 function verifyDownloadSignature(
@@ -14,41 +15,7 @@ function verifyDownloadSignature(
   return sig === expected && exp > Math.floor(Date.now() / 1000);
 }
 
-async function* nodeStreamToIterator(
-  stream: AsyncIterable<Uint8Array>
-): AsyncGenerator<Uint8Array> {
-  for await (const chunk of stream) {
-    yield new Uint8Array(chunk);
-  }
-}
-
-function toWebStream(nodeStream: NodeJS.ReadableStream): ReadableStream {
-  try {
-    const { Readable } = require("stream");
-    if (typeof Readable.toWeb === "function") {
-      return Readable.toWeb(nodeStream) as ReadableStream;
-    }
-  } catch {
-    /* fallthrough */
-  }
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of nodeStreamToIterator(
-          nodeStream as AsyncIterable<Uint8Array>
-        )) {
-          controller.enqueue(chunk);
-        }
-      } catch (e) {
-        controller.error(e);
-      } finally {
-        controller.close();
-      }
-    },
-  });
-}
-
-/** Stream file with Content-Disposition: attachment for instant download (no new tab). */
+/** Redirect to B2/CDN - no file bytes through Vercel (4.5 MB limit). */
 export async function GET(request: Request) {
   if (!isB2Configured()) {
     return new NextResponse("B2 not configured", { status: 503 });
@@ -70,19 +37,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { body, contentLength, contentType } = await getObject(objectKey);
     const safeName = name.replace(/[^\w\s.-]/g, "_").replace(/\s+/g, "_") || "download";
-
-    const headers: Record<string, string> = {
-      "Content-Length": String(contentLength),
-      "Content-Disposition": `attachment; filename="${safeName}"`,
-    };
-    if (contentType) headers["Content-Type"] = contentType;
-
-    return new NextResponse(toWebStream(body), {
-      status: 200,
-      headers,
-    });
+    const remainingSec = Math.max(60, exp - Math.floor(Date.now() / 1000));
+    const directUrl = await getDownloadUrl(objectKey, remainingSec, safeName);
+    return NextResponse.redirect(directUrl, 302);
   } catch (err) {
     console.error("[backup download-stream] Error:", err);
     return new NextResponse(

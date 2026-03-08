@@ -1,16 +1,9 @@
-import { createHmac } from "crypto";
 import { objectExists, getProxyObjectKey, isB2Configured } from "@/lib/b2";
+import { getDownloadUrl } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 const STREAM_EXPIRY_SEC = 600;
-
-function signStreamUrl(objectKey: string, exp: number): string {
-  const secret = process.env.B2_SECRET_ACCESS_KEY;
-  if (!secret) throw new Error("B2_SECRET_ACCESS_KEY not set");
-  const payload = `${objectKey}|${exp}`;
-  return createHmac("sha256", secret).update(payload).digest("base64url");
-}
 
 export async function POST(
   request: Request,
@@ -96,9 +89,8 @@ export async function POST(
   try {
     const proxyKey = getProxyObjectKey(objKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
-    const exp = Math.floor(Date.now() / 1000) + STREAM_EXPIRY_SEC;
-    const sig = signStreamUrl(effectiveKey, exp);
-    const streamUrl = `/api/backup/video-stream?object_key=${encodeURIComponent(effectiveKey)}&exp=${exp}&sig=${sig}`;
+    // Return direct B2/CDN URL - no file bytes through Vercel (4.5 MB limit).
+    const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({ streamUrl });
   } catch (err) {
     console.error("[transfer video-stream-url] Error:", err);

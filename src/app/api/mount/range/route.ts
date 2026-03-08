@@ -1,5 +1,5 @@
-import { getDownloadUrl, isCdnConfigured } from "@/lib/cdn";
-import { getObject, getObjectRange, isB2Configured } from "@/lib/b2";
+import { getDownloadUrl } from "@/lib/cdn";
+import { isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -8,15 +8,7 @@ const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
-function parseRange(rangeHeader: string | null): { start: number; end?: number } | null {
-  if (!rangeHeader || !rangeHeader.startsWith("bytes=")) return null;
-  const match = rangeHeader.replace(/^bytes=/, "").match(/(\d+)-(\d*)/);
-  if (!match) return null;
-  const start = parseInt(match[1], 10);
-  const end = match[2] ? parseInt(match[2], 10) : undefined;
-  return { start, end };
-}
-
+/** Redirect to B2/CDN. Client re-sends Range header to presigned URL. No file bytes through Vercel (4.5 MB limit). */
 export async function GET(request: Request) {
   if (!isB2Configured()) {
     return new NextResponse(
@@ -66,37 +58,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const rangeHeader = request.headers.get("Range");
-  const parsed = parseRange(rangeHeader);
-
   try {
-    if (parsed) {
-      const end = parsed.end ?? Number.MAX_SAFE_INTEGER;
-      const { body, contentLength, contentRange } = await getObjectRange(objectKey, {
-        start: parsed.start,
-        end,
-      });
-
-      const headers: Record<string, string> = {
-        "Accept-Ranges": "bytes",
-        "Content-Length": String(contentLength),
-      };
-      if (contentRange) headers["Content-Range"] = contentRange;
-
-      return new NextResponse(body as unknown as ReadableStream, {
-        status: 206,
-        headers,
-      });
-    }
-
-    const { body, contentLength } = await getObject(objectKey);
-    return new NextResponse(body as unknown as ReadableStream, {
-      status: 200,
-      headers: {
-        "Content-Length": String(contentLength),
-        "Accept-Ranges": "bytes",
-      },
-    });
+    const directUrl = await getDownloadUrl(objectKey, 3600);
+    return NextResponse.redirect(directUrl, 302);
   } catch (err) {
     console.error("Mount range error:", err);
     return new NextResponse(

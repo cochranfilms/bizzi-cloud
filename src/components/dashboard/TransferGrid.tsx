@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
-import { Send, Lock, ExternalLink, BarChart2 } from "lucide-react";
+import { Send, Lock, ExternalLink, BarChart2, Trash2 } from "lucide-react";
 import { useTransfers } from "@/context/TransferContext";
+import { useConfirm } from "@/hooks/useConfirm";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -20,8 +21,31 @@ function formatExpires(iso: string | null) {
 }
 
 export default function TransferGrid() {
-  const { transfers } = useTransfers();
+  const { transfers, deleteTransfer } = useTransfers();
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const { confirm } = useConfirm();
+
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, t: { name: string; slug: string }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ok = await confirm({
+        message: `Delete transfer "${t.name}"? This cannot be undone.`,
+        destructive: true,
+      });
+      if (!ok) return;
+      setDeletingSlug(t.slug);
+      try {
+        await deleteTransfer(t.slug);
+      } catch (err) {
+        console.error("Delete transfer failed:", err);
+      } finally {
+        setDeletingSlug(null);
+      }
+    },
+    [deleteTransfer, confirm]
+  );
 
   const filtered =
     filter === "all"
@@ -131,6 +155,16 @@ export default function TransferGrid() {
                           <ExternalLink className="h-4 w-4" />
                           View
                         </a>
+                        <button
+                          type="button"
+                          onClick={(ev) => handleDelete(ev, t)}
+                          disabled={deletingSlug === t.slug}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-neutral-400 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:opacity-50"
+                          aria-label="Delete transfer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

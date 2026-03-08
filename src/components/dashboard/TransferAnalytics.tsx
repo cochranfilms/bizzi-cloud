@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useTransfers } from "@/context/TransferContext";
-import { File, Eye, Download, Lock, Loader2 } from "lucide-react";
+import { File, Eye, Download, Lock, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useConfirm } from "@/hooks/useConfirm";
 
 interface TransferAnalyticsProps {
   transferId: string;
@@ -18,9 +20,30 @@ function formatDate(iso: string) {
 }
 
 export default function TransferAnalytics({ transferId }: TransferAnalyticsProps) {
-  const { transfers } = useTransfers();
+  const { transfers, deleteTransfer } = useTransfers();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const transfer = transfers.find((t) => t.id === transferId);
+  const { confirm } = useConfirm();
+
+  const handleDelete = useCallback(async () => {
+    if (!transfer) return;
+    const ok = await confirm({
+      message: `Delete transfer "${transfer.name}"? This cannot be undone.`,
+      destructive: true,
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteTransfer(transfer.slug);
+      router.push("/dashboard/transfers");
+    } catch (err) {
+      console.error("Delete transfer failed:", err);
+    } finally {
+      setDeleting(false);
+    }
+  }, [transfer, deleteTransfer, confirm, router]);
 
   useEffect(() => {
     setMounted(true);
@@ -151,7 +174,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
         </div>
       </div>
 
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
         <a
           href={`/t/${transfer.slug}`}
           target="_blank"
@@ -160,6 +183,15 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
         >
           View as client
         </a>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30 disabled:opacity-50"
+        >
+          <Trash2 className="h-4 w-4" />
+          {deleting ? "Deleting…" : "Delete transfer"}
+        </button>
       </div>
     </div>
   );
