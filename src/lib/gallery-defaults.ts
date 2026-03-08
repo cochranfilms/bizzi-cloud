@@ -8,6 +8,7 @@ export const DEFAULT_BRANDING: GalleryBrandingSettings = {
   logo_url: null,
   business_name: null,
   accent_color: "#00BFFF",
+  background_theme: "warm-beige",
   secondary_color: "#1a1a1a",
   font_family: null,
   welcome_message: null,

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Save, Check, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
 
 interface GallerySettingsFormProps {
   galleryId: string;
@@ -43,6 +44,9 @@ export default function GallerySettingsForm({
 
   const [businessName, setBusinessName] = useState(
     (initialData.branding?.business_name as string) ?? ""
+  );
+  const [backgroundTheme, setBackgroundTheme] = useState(
+    (initialData.branding?.background_theme as string) ?? "warm-beige"
   );
   const [accentColor, setAccentColor] = useState(
     (initialData.branding?.accent_color as string) ?? "#00BFFF"
@@ -99,6 +103,7 @@ export default function GallerySettingsForm({
         layout,
         branding: {
           business_name: businessName.trim() || null,
+          background_theme: backgroundTheme || null,
           accent_color: accentColor || null,
           welcome_message: welcomeMessage.trim() || null,
           contact_email: contactEmail.trim() || null,
@@ -310,6 +315,37 @@ export default function GallerySettingsForm({
               placeholder="Your Studio Name"
               className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
             />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Gallery background
+            </label>
+            <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+              Choose a background color for your client gallery view.
+            </p>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+              {GALLERY_BACKGROUND_THEMES.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => setBackgroundTheme(theme.id)}
+                  className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors ${
+                    backgroundTheme === theme.id
+                      ? "border-bizzi-blue ring-2 ring-bizzi-blue/20"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+                  }`}
+                  title={theme.name}
+                >
+                  <div
+                    className="h-8 w-8 rounded-full border border-neutral-200 dark:border-neutral-600"
+                    style={{ backgroundColor: theme.background }}
+                  />
+                  <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    {theme.name}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">

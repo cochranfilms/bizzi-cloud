@@ -76,7 +76,7 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
     >
       <div
         ref={cardRef}
-        className="relative flex h-32 shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800"
+        className="relative flex aspect-video shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800"
       >
         {thumbUrl ? (
           <>

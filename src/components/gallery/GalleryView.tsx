@@ -17,6 +17,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 
 interface GalleryData {
   id: string;
@@ -30,6 +31,7 @@ interface GalleryData {
     logo_url?: string | null;
     business_name?: string | null;
     accent_color?: string | null;
+    background_theme?: string | null;
     welcome_message?: string | null;
   };
   download_settings: {
@@ -290,6 +292,7 @@ function GalleryAssetCard({
   isFavorited,
   canDownload,
   downloading,
+  masonryLayout,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -301,6 +304,7 @@ function GalleryAssetCard({
   isFavorited: boolean;
   canDownload: boolean;
   downloading: boolean;
+  masonryLayout?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
@@ -350,7 +354,7 @@ function GalleryAssetCard({
 
   return (
     <div
-      className="group relative cursor-pointer overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800"
+      className={`group relative cursor-pointer overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800 ${masonryLayout ? "mb-4 break-inside-avoid" : ""}`}
       onClick={onPreview}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -446,6 +450,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [previewComments, setPreviewComments] = useState<
     { id: string; body: string; client_name?: string | null; created_at: string }[]
   >([]);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
 
   const fetchGallery = useCallback(
     async (pwd?: string) => {
@@ -536,6 +541,55 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       });
     };
   }, [previewAsset, galleryId, password, user]);
+
+  const bannerAsset = data
+    ? data.assets.find(
+        (a) =>
+          a.id === data.gallery.cover_asset_id && isImage(a.name)
+      ) ?? data.assets.find((a) => isImage(a.name))
+    : null;
+
+  useEffect(() => {
+    if (!bannerAsset || !data) {
+      setBannerUrl(null);
+      return () => {};
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          object_key: bannerAsset.object_key,
+          name: bannerAsset.name,
+          size: "large",
+        });
+        if (password) params.set("password", password);
+        const headers: Record<string, string> = {};
+        if (user) {
+          const t = await user.getIdToken();
+          if (t) headers.Authorization = `Bearer ${t}`;
+        }
+        const res = await fetch(
+          `/api/galleries/${galleryId}/thumbnail?${params}`,
+          { headers }
+        );
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (!cancelled) setBannerUrl(url);
+        else URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setBannerUrl((u) => {
+        if (u) URL.revokeObjectURL(u);
+        return null;
+      });
+    };
+  }, [bannerAsset, galleryId, password, user, data]);
 
   const toggleFavorite = useCallback((assetId: string) => {
     setSelectedFavorites((prev) => {
@@ -759,49 +813,111 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const { gallery, assets } = data;
   const accent = gallery.branding.accent_color ?? "#00BFFF";
+  const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
+  const isDarkBg = bgTheme.textTone === "light";
+
+  const scrollToGallery = () => {
+    document.getElementById("gallery-grid")?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+    <div
+      className="min-h-screen transition-colors"
+      style={{ backgroundColor: bgTheme.background }}
+    >
       <header
-        className="border-b border-neutral-200 dark:border-neutral-800"
+        className={`border-b ${isDarkBg ? "border-white/10" : "border-neutral-200 dark:border-neutral-800"}`}
         style={{ ["--accent" as string]: accent }}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <Link
             href="/"
-            className="flex items-center gap-2"
+            className={`flex items-center gap-2 ${isDarkBg ? "text-white" : "text-neutral-900"}`}
           >
             <Image
               src="/logo.png"
               alt="Bizzi Cloud"
-              width={28}
-              height={28}
+              width={24}
+              height={24}
               className="object-contain"
             />
-            <span className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
-              {gallery.branding.business_name || "Bizzi"} {gallery.branding.business_name ? "" : "Cloud"}
+            <span className="text-base font-semibold tracking-tight">
+              {gallery.branding.business_name || "Bizzi"}
+              {gallery.branding.business_name ? "" : " Cloud"}
             </span>
           </Link>
         </div>
       </header>
 
+      {bannerUrl && (
+        <div className="relative w-full overflow-hidden">
+          <img
+            src={bannerUrl}
+            alt=""
+            className="w-full object-cover"
+            style={{ maxHeight: "50vh", objectPosition: "center" }}
+          />
+        </div>
+      )}
+
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-semibold text-neutral-900 dark:text-white">
-            {gallery.title}
-          </h1>
-          {gallery.description && (
-            <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-              {gallery.description}
-            </p>
-          )}
+        <div className="mb-8 text-center">
           {gallery.event_date && (
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+            <p
+              className={`mb-1 text-xs font-medium uppercase tracking-widest ${
+                isDarkBg ? "text-white/80" : "text-neutral-500"
+              }`}
+            >
               {new Date(gallery.event_date).toLocaleDateString(undefined, {
                 month: "long",
                 day: "numeric",
                 year: "numeric",
               })}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+            {(gallery.branding.logo_url || gallery.branding.business_name) && (
+              <div className="flex items-center gap-2">
+                {gallery.branding.logo_url && (
+                  <img
+                    src={gallery.branding.logo_url}
+                    alt=""
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                )}
+                <span
+                  className={`text-xs font-medium uppercase tracking-wider ${
+                    isDarkBg ? "text-white/90" : "text-neutral-600"
+                  }`}
+                >
+                  {gallery.branding.business_name || ""}
+                </span>
+              </div>
+            )}
+            <h1
+              className={`text-3xl font-semibold sm:text-4xl ${
+                isDarkBg ? "text-white" : "text-neutral-900"
+              }`}
+              style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
+            >
+              {gallery.title}
+            </h1>
+            <button
+              type="button"
+              onClick={scrollToGallery}
+              className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: accent }}
+            >
+              View gallery
+            </button>
+          </div>
+          {gallery.description && (
+            <p
+              className={`mt-4 max-w-2xl mx-auto text-sm ${
+                isDarkBg ? "text-white/80" : "text-neutral-600"
+              }`}
+            >
+              {gallery.description}
             </p>
           )}
         </div>
@@ -826,21 +942,32 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         )}
 
         {assets.length === 0 ? (
-          <div className="rounded-xl border border-neutral-200 bg-white py-16 text-center dark:border-neutral-700 dark:bg-neutral-900">
-            <ImageIcon className="mx-auto mb-4 h-12 w-12 text-neutral-300 dark:text-neutral-600" />
-            <p className="text-neutral-500 dark:text-neutral-400">
+          <div
+            className={`rounded-xl border py-16 text-center ${
+              isDarkBg
+                ? "border-white/20 bg-white/5"
+                : "border-neutral-200 bg-white/50 dark:border-neutral-700 dark:bg-neutral-900/50"
+            }`}
+          >
+            <ImageIcon
+              className={`mx-auto mb-4 h-12 w-12 ${
+                isDarkBg ? "text-white/40" : "text-neutral-400"
+              }`}
+            />
+            <p className={isDarkBg ? "text-white/70" : "text-neutral-500"}>
               This gallery has no photos or videos yet.
             </p>
           </div>
         ) : (
           <div
-            className={`grid gap-4 ${
+            id="gallery-grid"
+            className={
               gallery.layout === "cinematic"
-                ? "grid-cols-1 sm:grid-cols-2"
+                ? "grid grid-cols-1 gap-4 sm:grid-cols-2"
                 : gallery.layout === "justified"
-                  ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"
-                  : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"
-            }`}
+                  ? "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+                  : "columns-2 gap-4 sm:columns-3 md:columns-4"
+            }
           >
             {assets.map((asset) => (
               <GalleryAssetCard
@@ -862,6 +989,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 isFavorited={selectedFavorites.has(asset.id)}
                 canDownload={!!gallery.download_settings?.allow_single_download}
                 downloading={downloadingId === asset.id}
+                masonryLayout={gallery.layout === "masonry"}
               />
             ))}
           </div>

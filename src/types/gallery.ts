@@ -35,6 +35,8 @@ export interface GalleryBrandingSettings {
   logo_url?: string | null;
   business_name?: string | null;
   accent_color?: string | null;   // hex e.g. "#00BFFF"
+  /** Gallery background theme id from GALLERY_BACKGROUND_THEMES */
+  background_theme?: string | null;
   secondary_color?: string | null;
   font_family?: string | null;   // e.g. "Inter", "Playfair Display"
   welcome_message?: string | null;
