@@ -681,10 +681,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     };
   }, [bannerAsset, galleryId, password, user, data]);
 
-  // Scroll to top when entering gallery so banner is immediately visible
+  // Scroll to top when entering gallery, then scroll to gallery grid after transition
   useEffect(() => {
     if (!hasEnteredGallery) return;
     window.scrollTo({ top: 0, behavior: "smooth" });
+    const t = setTimeout(() => {
+      document.getElementById("gallery-grid")?.scrollIntoView({ behavior: "smooth" });
+    }, 500);
+    return () => clearTimeout(t);
   }, [hasEnteredGallery]);
 
   const toggleFavorite = useCallback((assetId: string) => {

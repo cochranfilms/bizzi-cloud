@@ -33,7 +33,9 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     clearFileUploadError,
     fsAccessSupported,
     syncProgress,
+    creatorRawDriveId,
   } = useBackup();
+  const isRawFolder = creatorRawDriveId && currentDriveId === creatorRawDriveId;
 
   const formatBytes = (n: number) => {
     if (n < 1024) return `${n} B`;
@@ -157,22 +159,25 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
                   <Upload className="h-4 w-4 flex-shrink-0" />
                   File Upload
                 </button>
-                <button
-                  type="button"
-                  onClick={handleFolderUploadClick}
-                  disabled={folderUploading || !fsAccessSupported}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  title={!fsAccessSupported ? "Folder upload requires Chrome or Edge" : undefined}
-                >
-                  <FolderPlus className="h-4 w-4 flex-shrink-0" />
-                  Folder Upload
-                </button>
+                {!isRawFolder && (
+                  <button
+                    type="button"
+                    onClick={handleFolderUploadClick}
+                    disabled={folderUploading || !fsAccessSupported}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                    title={!fsAccessSupported ? "Folder upload requires Chrome or Edge" : undefined}
+                  >
+                    <FolderPlus className="h-4 w-4 flex-shrink-0" />
+                    Folder Upload
+                  </button>
+                )}
               </div>
             )}
             <input
               ref={fileInputRef}
               type="file"
               multiple
+              accept={isRawFolder ? "video/*,.mp4,.mov,.webm,.m4v,.avi,.mxf,.mts,.mkv,.3gp" : undefined}
               onChange={handleFileChange}
               className="hidden"
               aria-hidden
@@ -212,7 +217,8 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
         open={createFolderOpen}
         onClose={() => setCreateFolderOpen(false)}
         onCreateEmpty={async (folderName) => {
-          await createFolder(folderName);
+          const isCreator = pathname === "/dashboard/creator" || pathname === "/enterprise/creator";
+          await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
           setCreateFolderOpen(false);
         }}
       />

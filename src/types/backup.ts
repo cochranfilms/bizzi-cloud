@@ -8,6 +8,10 @@ export interface LinkedDrive {
   created_at: string;
   /** null = personal storage; orgId = enterprise storage (billed at org level) */
   organization_id?: string | null;
+  /** When true, drive appears only in Creator tab (excluded from All files) */
+  creator_section?: boolean;
+  /** When true, permanent RAW drive; video-only; cannot delete/rename */
+  is_creator_raw?: boolean;
 }
 
 export interface BackupSnapshot {

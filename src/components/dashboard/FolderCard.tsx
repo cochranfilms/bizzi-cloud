@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useCallback, useState } from "react";
 import ShareModal from "./ShareModal";
@@ -22,6 +23,12 @@ export interface FolderItem {
   hideShare?: boolean;
   /** Drive ID for navigation (when clickable) */
   driveId?: string;
+  /** Custom icon (e.g. Film for RAW folder) */
+  customIcon?: LucideIcon;
+  /** When true, folder cannot be deleted (e.g. permanent RAW) */
+  preventDelete?: boolean;
+  /** When true, folder cannot be renamed (e.g. permanent RAW) */
+  preventRename?: boolean;
 }
 
 interface FolderCardProps {
@@ -149,7 +156,9 @@ export default function FolderCard({
         )}
         <div className="relative mb-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
-            {item.name === "Storage" ? (
+            {item.customIcon ? (
+              <item.customIcon className="h-8 w-8" />
+            ) : item.name === "Storage" ? (
               <Cloud className="h-8 w-8" />
             ) : (
               <Folder className="h-8 w-8" />
@@ -205,12 +214,16 @@ export default function FolderCard({
                             ? unpinItem("folder", item.driveId!)
                             : pinItem("folder", item.driveId!),
                       },
-                      {
-                        id: "rename",
-                        label: "Rename",
-                        icon: <Pencil className="h-4 w-4" />,
-                        onClick: () => setRenameOpen(true),
-                      },
+                      ...(!item.preventRename
+                        ? [
+                            {
+                              id: "rename",
+                              label: "Rename",
+                              icon: <Pencil className="h-4 w-4" />,
+                              onClick: () => setRenameOpen(true),
+                            },
+                          ]
+                        : []),
                       {
                         id: "move",
                         label: "Move",
@@ -225,7 +238,7 @@ export default function FolderCard({
                       },
                     ]
                   : []),
-                ...(onDelete
+                ...(onDelete && !item.preventDelete
                   ? [
                       {
                         id: "delete",

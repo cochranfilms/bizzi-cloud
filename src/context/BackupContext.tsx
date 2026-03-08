@@ -77,7 +77,11 @@ interface BackupContextValue {
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
   /** Create a new empty folder (linked drive). */
-  createFolder: (name: string) => Promise<LinkedDrive>;
+  createFolder: (name: string, options?: { creatorSection?: boolean }) => Promise<LinkedDrive>;
+  /** Get or create the permanent RAW drive for Creator tab (video-only). */
+  getOrCreateCreatorRawDrive: () => Promise<LinkedDrive>;
+  /** ID of the Creator RAW drive, if any (for LUT preview gating). */
+  creatorRawDriveId: string | null;
   /** Upload files directly to a gallery (uses Gallery Media drive, adds to gallery on complete). */
   uploadFilesToGallery: (
     files: File[],
@@ -408,6 +412,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           last_synced_at: data.last_synced_at ?? null,
           created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
           organization_id: data.organization_id ?? null,
+          creator_section: data.creator_section ?? false,
+          is_creator_raw: data.is_creator_raw ?? false,
         });
       }
       setLinkedDrives(drives);
@@ -980,6 +986,66 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     return drive;
   }, [user, isEnterpriseContext, org, fetchDrives]);
 
+  const getOrCreateCreatorRawDrive = useCallback(async (): Promise<LinkedDrive> => {
+    if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
+    const db = getFirebaseFirestore();
+    const orgId = isEnterpriseContext && org?.id ? org.id : null;
+    const existing = await getDocs(
+      query(
+        collection(db, "linked_drives"),
+        where("userId", "==", user.uid),
+        orderBy("createdAt", "desc")
+      )
+    );
+    const rawDrive = existing.docs.find((d) => {
+      const data = d.data();
+      if (!data.is_creator_raw) return false;
+      const oid = data.organization_id ?? null;
+      if (isEnterpriseContext && orgId) return oid === orgId;
+      return !oid;
+    });
+    if (rawDrive) {
+      const d = rawDrive;
+      const data = d.data();
+      return {
+        id: d.id,
+        user_id: data.userId,
+        name: data.name ?? "RAW",
+        mount_path: data.mount_path ?? null,
+        permission_handle_id: data.permission_handle_id ?? null,
+        last_synced_at: data.last_synced_at ?? null,
+        created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        organization_id: data.organization_id ?? null,
+        creator_section: data.creator_section ?? true,
+        is_creator_raw: data.is_creator_raw ?? true,
+      };
+    }
+    const docRef = await addDoc(collection(db, "linked_drives"), {
+      userId: user.uid,
+      name: "RAW",
+      permission_handle_id: `creator-raw-${Date.now()}`,
+      createdAt: new Date(),
+      creator_section: true,
+      is_creator_raw: true,
+      ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+    });
+    const drive: LinkedDrive = {
+      id: docRef.id,
+      user_id: user.uid,
+      name: "RAW",
+      mount_path: null,
+      permission_handle_id: `creator-raw-${Date.now()}`,
+      last_synced_at: null,
+      created_at: new Date().toISOString(),
+      organization_id: orgId ?? null,
+      creator_section: true,
+      is_creator_raw: true,
+    };
+    setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
+    setStorageVersion((v) => v + 1);
+    return drive;
+  }, [user, isEnterpriseContext, org]);
+
   const getOrCreateGalleryDrive = useCallback(async (): Promise<LinkedDrive> => {
     if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
     const db = getFirebaseFirestore();
@@ -1028,16 +1094,18 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const createFolder = useCallback(
-    async (name: string): Promise<LinkedDrive> => {
+    async (name: string, options?: { creatorSection?: boolean }): Promise<LinkedDrive> => {
       if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
       const db = getFirebaseFirestore();
       const orgId = isEnterpriseContext && org?.id ? org.id : null;
+      const creatorSection = options?.creatorSection ?? false;
       const docRef = await addDoc(collection(db, "linked_drives"), {
         userId: user.uid,
         name: name.trim() || "New folder",
         permission_handle_id: `manual-${Date.now()}`,
         createdAt: new Date(),
         ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+        ...(creatorSection ? { creator_section: true } : {}),
       });
       const drive: LinkedDrive = {
         id: docRef.id,
@@ -1048,6 +1116,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: null,
         created_at: new Date().toISOString(),
         organization_id: orgId ?? null,
+        creator_section: creatorSection,
       };
       setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
       setStorageVersion((v) => v + 1);
@@ -1055,6 +1124,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     },
     [user, isEnterpriseContext, org]
   );
+
+  const creatorRawDriveId = useMemo(() => {
+    const raw = linkedDrives.find((d) => d.is_creator_raw);
+    return raw?.id ?? null;
+  }, [linkedDrives]);
 
   const cancelFileUpload = useCallback((fileId: string) => {
     uploadManagerRef.current?.cancel(fileId);
@@ -1089,8 +1163,21 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       setFileUploadError(null);
       setStorageQuotaExceeded(null);
 
-      const bytesTotal = files.reduce((s, f) => s + f.size, 0);
-      const fileItems = files.map((f, i) => ({
+      // RAW folder: video-only
+      let filesToUpload = files;
+      const rawId = linkedDrives.find((d) => d.is_creator_raw)?.id;
+      if (targetDriveId && targetDriveId === rawId) {
+        const videoFiles = files.filter((f) => VIDEO_EXT.test(f.name));
+        const skipped = files.length - videoFiles.length;
+        if (skipped > 0) {
+          setFileUploadError(`${skipped} non-video file(s) skipped. RAW folder accepts videos only.`);
+        }
+        filesToUpload = videoFiles;
+        if (filesToUpload.length === 0) return;
+      }
+
+      const bytesTotal = filesToUpload.reduce((s, f) => s + f.size, 0);
+      const fileItems = filesToUpload.map((f, i) => ({
         id: `upload-${Date.now()}-${i}-${f.name}`,
         name: f.name,
         size: f.size,
@@ -1166,7 +1253,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           });
         };
 
-        const fileById = new Map(files.map((f, i) => [fileItems[i].id, f]));
+        const fileById = new Map(filesToUpload.map((f, i) => [fileItems[i].id, f]));
         const manager = new UploadManager({
           getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
           getUserId: () => user?.uid ?? null,
@@ -1233,8 +1320,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         });
         uploadManagerRef.current = manager;
 
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const file = filesToUpload[i];
           const item = fileItems[i];
           updateFile(item.id, { status: "uploading" });
           const queued: QueuedFile = {
@@ -1679,6 +1766,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       clearFileUploadError,
       fsAccessSupported,
       createFolder,
+      getOrCreateCreatorRawDrive,
+      creatorRawDriveId,
       uploadFilesToGallery,
     }),
     [
@@ -1704,6 +1793,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       fileUploadError,
       fsAccessSupported,
       createFolder,
+      getOrCreateCreatorRawDrive,
+      creatorRawDriveId,
       uploadFilesToGallery,
     ]
   );

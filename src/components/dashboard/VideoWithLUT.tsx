@@ -139,6 +139,8 @@ interface VideoWithLUTProps {
   src: string;
   streamUrl?: string | null;
   className?: string;
+  /** When false, LUT toggle is hidden and video plays without Rec 709. Default: false. */
+  showLUTOption?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -148,7 +150,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUTProps) {
+export default function VideoWithLUT({ src, streamUrl, className, showLUTOption = false }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -492,24 +494,26 @@ export default function VideoWithLUT({ src, streamUrl, className }: VideoWithLUT
             </div>
           </div>
       </div>
-      <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
-        <button
-          type="button"
-          onClick={handleLUTToggle}
-          className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
-            lutEnabled
-              ? "bg-bizzi-blue text-white"
-              : "bg-neutral-700/50 text-neutral-300 hover:bg-neutral-600"
-          }`}
-          title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
-        >
-          <span className="inline-block h-3 w-3 rounded-full border border-current bg-current opacity-80" />
-          Rec 709 LUT
-        </button>
-        <span className="text-xs text-neutral-500">
-          {lutEnabled ? "On" : "Off"} · For S-Log3 / Sony RAW
-        </span>
-      </div>
+      {showLUTOption && (
+        <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
+          <button
+            type="button"
+            onClick={handleLUTToggle}
+            className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
+              lutEnabled
+                ? "bg-bizzi-blue text-white"
+                : "bg-neutral-700/50 text-neutral-300 hover:bg-neutral-600"
+            }`}
+            title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
+          >
+            <span className="inline-block h-3 w-3 rounded-full border border-current bg-current opacity-80" />
+            Rec 709 LUT
+          </button>
+          <span className="text-xs text-neutral-500">
+            {lutEnabled ? "On" : "Off"} · For S-Log3 / Sony RAW
+          </span>
+        </div>
+      )}
     </div>
   );
 }

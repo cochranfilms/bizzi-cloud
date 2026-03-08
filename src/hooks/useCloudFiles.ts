@@ -34,6 +34,8 @@ export interface DriveFolder {
   key: string;
   items: number;
   lastSyncedAt: string | null;
+  /** When true, this is the permanent RAW drive (video-only, cannot delete). */
+  isCreatorRaw?: boolean;
 }
 
 export interface DeletedDrive {
@@ -64,10 +66,16 @@ function useIsEnterpriseContext(): boolean {
   return typeof pathname === "string" && pathname.startsWith("/enterprise");
 }
 
-export function useCloudFiles() {
+export interface UseCloudFilesOptions {
+  /** When true, return only Creator section drives (incl. RAW). When false, exclude Creator drives. */
+  creatorOnly?: boolean;
+}
+
+export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { user } = useAuth();
   const { org } = useEnterprise();
   const isEnterpriseContext = useIsEnterpriseContext();
+  const creatorOnly = options?.creatorOnly ?? false;
   const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
@@ -103,12 +111,17 @@ export function useCloudFiles() {
           if (isEnterpriseContext && orgId) return oid === orgId;
           return !oid;
         })
+        .filter((d) => {
+          const creatorSection = d.data().creator_section === true;
+          return creatorOnly ? creatorSection : !creatorSection;
+        })
         .map((d) => {
           const data = d.data();
           return {
             id: d.id,
             name: data.name ?? "Folder",
             last_synced_at: data.last_synced_at ?? null,
+            is_creator_raw: data.is_creator_raw === true,
           };
         });
       const driveMap = new Map(drives.map((d) => [d.id, d]));
@@ -131,6 +144,7 @@ export function useCloudFiles() {
           key: `drive-${drive.id}`,
           items: filesCount,
           lastSyncedAt: drive.last_synced_at,
+          isCreatorRaw: drive.is_creator_raw,
         });
       }
       setDriveFolders(folders);
@@ -175,7 +189,7 @@ export function useCloudFiles() {
     } finally {
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, org]);
+  }, [user, isEnterpriseContext, org, creatorOnly]);
 
   useEffect(() => {
     fetchCloudFiles();

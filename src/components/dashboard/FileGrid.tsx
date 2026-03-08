@@ -127,7 +127,7 @@ export default function FileGrid() {
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
-  const { linkedDrives, storageVersion } = useBackup();
+  const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -987,6 +987,7 @@ export default function FileGrid() {
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
+        showLUTForVideo={previewFile?.driveId === creatorRawDriveId}
       />
     </div>
   );

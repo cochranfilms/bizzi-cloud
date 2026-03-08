@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Search,
+  Film,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -22,6 +23,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 const navItems = [
   { href: "/enterprise", label: "Home", icon: Home },
   { href: "/enterprise/files", label: "All files", icon: FolderOpen },
+  { href: "/enterprise/creator", label: "Creator", icon: Film },
   { href: "/enterprise/shared", label: "Shared", icon: Share2 },
   { href: "/enterprise/transfers", label: "Transfers", icon: Send },
   { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },

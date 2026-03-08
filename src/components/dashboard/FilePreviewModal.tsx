@@ -32,9 +32,11 @@ function getPreviewType(name: string, contentType?: string | null): "image" | "v
 interface FilePreviewModalProps {
   file: RecentFile | null;
   onClose: () => void;
+  /** When true, show Rec 709 LUT toggle for videos (RAW folder only). Default: false. */
+  showLUTForVideo?: boolean;
 }
 
-export default function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
+export default function FilePreviewModal({ file, onClose, showLUTForVideo = false }: FilePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -233,6 +235,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
                     src={fullUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
+                    showLUTOption={showLUTForVideo}
                   />
                 )}
                 {previewType === "audio" && fullUrl && (

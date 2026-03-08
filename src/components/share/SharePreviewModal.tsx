@@ -236,6 +236,7 @@ export default function SharePreviewModal({
                     src={fullUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
+                    showLUTOption={false}
                   />
                 )}
                 {previewType === "audio" && fullUrl && (

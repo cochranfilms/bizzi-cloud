@@ -13,11 +13,13 @@ import {
   Search,
   Settings,
   Images,
+  Film,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/files", label: "All files", icon: FolderOpen },
+  { href: "/dashboard/creator", label: "Creator", icon: Film },
   { href: "/dashboard/galleries", label: "Galleries", icon: Images },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
