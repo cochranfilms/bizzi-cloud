@@ -20,6 +20,8 @@ Bizzi Cloud now uses a **layered encryption model**:
 
 ### Created
 - `src/lib/encryption.ts` – App-level encryption (`encryptField`, `decryptField`, `maybeEncryptObjectFields`, `maybeDecryptObjectFields`)
+- `src/lib/invite-token.ts` – Hash invite token for storage (`hashInviteToken`)
+- `src/lib/invite-lookup.ts` – Find pending seat by token (`findPendingSeatByToken` with hash + legacy support)
 - `src/lib/safe-log.ts` – Redaction helpers (`redact`, `redactObject`, `safeForLog`)
 - `src/app/api/transfers/[slug]/verify-password/route.ts` – Password verification endpoint
 - `docs/ENCRYPTION_ARCHITECTURE.md` – Architecture documentation
@@ -46,6 +48,10 @@ Bizzi Cloud now uses a **layered encryption model**:
 - `src/components/dashboard/TransferAnalytics.tsx` – Shows “Password protected” via `hasPassword`
 - `src/context/TransferContext.tsx` – Optimistic updates use `hasPassword`
 - `.env.local.example` – App encryption env vars
+- `src/app/api/enterprise/invite/route.ts` – Store `invite_token_hash` instead of `invite_token`
+- `src/app/api/enterprise/accept-invite/route.ts` – Look up by hash (legacy fallback)
+- `src/app/api/enterprise/invite-by-token/route.ts` – Look up by hash (legacy fallback)
+- `firestore.indexes.json` – Index on `invite_token_hash` + `status`
 
 ---
 
@@ -121,7 +127,7 @@ See `docs/ENCRYPTION_TEST_PLAN.md`:
 - **Existing Firestore `transfers`** – Assumed some docs have `password`; legacy path added.
 - **Cloudflare Worker CDN** – Presigned URL expiry set in API; Worker config not inspected.
 - **Firebase Auth cookies** – No cookie config seen; Secure/SameSite not changed.
-- **Organization `invite_token`** – Still stored plain; can be encrypted later if desired.
+- **Organization `invite_token`** – Now stored as `invite_token_hash`; legacy supported.
 - **Folder share tokens** – Doc ID used as token; no change made.
 - **Build** – Fails on existing `GalleryData`/`cover_position` type error; encryption changes are independent.
 
@@ -129,7 +135,8 @@ See `docs/ENCRYPTION_TEST_PLAN.md`:
 
 ## 8. Optional Next Steps
 
-1. **Invite token encryption** – Encrypt `organization_seats.invite_token` with `encryptField()` (would require lookup pattern changes).
-2. **Re-encrypt migration** – Background job to hash remaining plaintext transfer passwords (would need user re-entry).
-3. **Audit logging** – Add structured logs with `redactObject` for access events.
-4. **SSE-C** – Add support for customer-supplied keys for higher security tiers.
+1. **Invite token hashing** – Done. `invite_token_hash` stored; legacy `invite_token` supported.
+2. **Folder share token** – Doc ID is the token; storing hash as doc ID would require broader refactor. Currently an opaque 28-char random value; lower priority.
+3. **Re-encrypt migration** – Background job to hash remaining plaintext transfer passwords (would need user re-entry).
+4. **Audit logging** – Add structured logs with `redactObject` for access events.
+5. **SSE-C** – Add support for customer-supplied keys for higher security tiers.

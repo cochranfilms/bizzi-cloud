@@ -20,6 +20,8 @@ interface GalleryData {
   layout: string;
   cover_asset_id?: string | null;
   cover_position?: CoverPosition | null;
+  cover_focal_x?: number | null;
+  cover_focal_y?: number | null;
   branding: Record<string, unknown>;
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;

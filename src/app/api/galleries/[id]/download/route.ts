@@ -2,10 +2,15 @@
  * POST /api/galleries/[id]/download
  * Body: { object_key, name, password?, pin? }
  * Returns presigned download URL. Verifies gallery download access (including PIN).
+ * Enforces download_settings: allow_single_download, free_download_limit.
  */
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyGalleryDownloadAccess } from "@/lib/gallery-access";
+import {
+  getGalleryDownloadClientId,
+  checkAndIncrementDownloadCount,
+} from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -27,6 +32,7 @@ export async function POST(
   const name = body.name ?? body.fileName ?? "download";
   const password = body.password ?? null;
   const pin = body.pin ?? null;
+  const downloadContext = (body.download_context as "single" | "full" | "selected") ?? "single";
 
   if (!objectKey || typeof objectKey !== "string") {
     return NextResponse.json({ error: "object_key is required" }, { status: 400 });
@@ -58,6 +64,40 @@ export async function POST(
     );
   }
 
+  // Owner bypasses download_settings
+  let isOwner = false;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const decoded = await verifyIdToken(authHeader.slice(7).trim());
+      if (decoded.uid === g.photographer_id) isOwner = true;
+    } catch {
+      // not owner
+    }
+  }
+
+  if (!isOwner) {
+    const downloadSettings = g.download_settings ?? {};
+
+    if (downloadContext === "single" && !downloadSettings.allow_single_download) {
+      return NextResponse.json(
+        { error: "download_disabled", message: "Single image download is not allowed for this gallery." },
+        { status: 403 }
+      );
+    }
+    if (downloadContext === "full" && !downloadSettings.allow_full_gallery_download) {
+      return NextResponse.json(
+        { error: "download_disabled", message: "Full gallery download is not allowed for this gallery." },
+        { status: 403 }
+      );
+    }
+    if (downloadContext === "selected" && !downloadSettings.allow_selected_download) {
+      return NextResponse.json(
+        { error: "download_disabled", message: "Selected favorites download is not allowed for this gallery." },
+        { status: 403 }
+      );
+    }
+  }
+
   const assetSnap = await db
     .collection("gallery_assets")
     .where("gallery_id", "==", galleryId)
@@ -68,6 +108,31 @@ export async function POST(
 
   if (assetSnap.empty) {
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+  }
+
+  // Free download limit (after asset verified - only count successful downloads)
+  if (!isOwner) {
+    const freeLimit = (g.download_settings ?? {}).free_download_limit;
+    if (typeof freeLimit === "number" && freeLimit >= 0) {
+      const clientId = getGalleryDownloadClientId(request);
+      const { allowed, used } = await checkAndIncrementDownloadCount(
+        db,
+        galleryId,
+        clientId,
+        freeLimit
+      );
+      if (!allowed) {
+        return NextResponse.json(
+          {
+            error: "download_limit_reached",
+            message: `You've reached the free download limit (${freeLimit}) for this gallery.`,
+            used,
+            limit: freeLimit,
+          },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   try {

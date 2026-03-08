@@ -99,6 +99,8 @@ export async function GET(
       watermark: g.watermark ?? {},
       cover_asset_id: g.cover_asset_id ?? null,
       cover_position: g.cover_position ?? "center",
+      cover_focal_x: g.cover_focal_x ?? null,
+      cover_focal_y: g.cover_focal_y ?? null,
     },
     collections,
     assets,

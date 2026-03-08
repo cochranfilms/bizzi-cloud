@@ -115,7 +115,7 @@ Generate app key: `openssl rand -hex 32`
 |------------|---------------------------|
 | `transfers` | `password_hash` (was `password` plaintext) |
 | `galleries` | `password_hash`, `pin_hash` |
-| `organization_seats` | `invite_token` (consider encrypting) |
+| `organization_seats` | `invite_token_hash` (hashed; legacy `invite_token` supported) |
 
 **Migration**: Existing transfers with plaintext `password` are supported; verification uses legacy path. On next PATCH, password is hashed and stored as `password_hash`.
 

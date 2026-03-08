@@ -1,6 +1,8 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { findPendingSeatByToken } from "@/lib/invite-lookup";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 /** POST - Accept a pending invite to join an organization. */
 export async function POST(request: Request) {
@@ -53,18 +55,13 @@ export async function POST(request: Request) {
   }
 
   let orgId: string;
-  let pendingSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+  let pendingDocs: QueryDocumentSnapshot[];
 
   if (inviteToken) {
-    const tokenSnap = await db
-      .collection("organization_seats")
-      .where("invite_token", "==", inviteToken)
-      .where("status", "==", "pending")
-      .limit(1)
-      .get();
+    const pendingSeat = await findPendingSeatByToken(db, inviteToken);
 
-    if (!tokenSnap.empty) {
-      const seatData = tokenSnap.docs[0].data();
+    if (pendingSeat) {
+      const seatData = pendingSeat.data();
       const inviteEmail = (seatData.email as string)?.toLowerCase() ?? "";
       if (inviteEmail && email?.toLowerCase() !== inviteEmail) {
         return NextResponse.json(
@@ -73,7 +70,7 @@ export async function POST(request: Request) {
         );
       }
       orgId = seatData.organization_id as string;
-      pendingSnap = tokenSnap;
+      pendingDocs = [pendingSeat];
     } else if (orgIdParam && email) {
       const emailSnap = await db
         .collection("organization_seats")
@@ -83,7 +80,7 @@ export async function POST(request: Request) {
         .get();
       if (!emailSnap.empty) {
         orgId = orgIdParam;
-        pendingSnap = emailSnap;
+        pendingDocs = emailSnap.docs;
       } else {
         return NextResponse.json(
           { error: "Invite not found or already accepted" },
@@ -98,12 +95,13 @@ export async function POST(request: Request) {
     }
   } else if (orgIdParam) {
     orgId = orgIdParam;
-    pendingSnap = await db
+    const orgSnap = await db
       .collection("organization_seats")
       .where("organization_id", "==", orgId)
       .where("email", "==", (email ?? "").toLowerCase())
       .where("status", "==", "pending")
       .get();
+    pendingDocs = orgSnap.docs;
   } else {
     return NextResponse.json(
       { error: "organization_id or invite_token is required" },
@@ -111,7 +109,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (pendingSnap.empty) {
+  if (pendingDocs.length === 0) {
     return NextResponse.json(
       { error: "No pending invite found for this organization" },
       { status: 404 }
@@ -123,11 +121,11 @@ export async function POST(request: Request) {
 
   const batch = db.batch();
 
-  for (const docSnap of pendingSnap.docs) {
+  for (const docSnap of pendingDocs) {
     batch.delete(docSnap.ref);
   }
 
-  const pendingSeatData = pendingSnap.docs[0].data();
+  const pendingSeatData = pendingDocs[0].data();
   const seatRef = db.collection("organization_seats").doc(seatId);
   batch.set(seatRef, {
     organization_id: orgId,

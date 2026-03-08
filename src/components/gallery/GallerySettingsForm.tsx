@@ -5,19 +5,41 @@ import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
-import type { CoverPosition } from "@/types/gallery";
+import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
 
-const COVER_POSITIONS: { id: CoverPosition; label: string }[] = [
-  { id: "top left", label: "Top left" },
-  { id: "top", label: "Top" },
-  { id: "top right", label: "Top right" },
-  { id: "left", label: "Left" },
-  { id: "center", label: "Center" },
-  { id: "right", label: "Right" },
-  { id: "bottom left", label: "Bottom left" },
-  { id: "bottom", label: "Bottom" },
-  { id: "bottom right", label: "Bottom right" },
-];
+function CoverFocalPointEditorSection({
+  galleryId,
+  asset,
+  focalX,
+  focalY,
+  onChange,
+}: {
+  galleryId: string;
+  asset: { id: string; name: string; object_key: string } | null;
+  focalX: number;
+  focalY: number;
+  onChange: (x: number, y: number) => void;
+}) {
+  const imageUrl = useGalleryThumbnail(
+    galleryId,
+    asset?.object_key,
+    asset?.name ?? "",
+    { enabled: !!asset, size: "preview" }
+  );
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+        Edit crop
+      </label>
+      <CoverFocalPointEditor
+        imageUrl={imageUrl}
+        focalX={focalX}
+        focalY={focalY}
+        onChange={onChange}
+      />
+    </div>
+  );
+}
 
 function CoverAssetThumbnail({
   galleryId,
@@ -67,7 +89,9 @@ interface GallerySettingsFormProps {
   initialData: {
     title?: string;
     cover_asset_id?: string | null;
-    cover_position?: CoverPosition | null;
+    cover_position?: string | null;
+    cover_focal_x?: number | null;
+    cover_focal_y?: number | null;
     description?: string | null;
     event_date?: string | null;
     expiration_date?: string | null;
@@ -101,8 +125,15 @@ export default function GallerySettingsForm({
   const [coverAssetId, setCoverAssetId] = useState<string | null>(
     initialData.cover_asset_id ?? null
   );
-  const [coverPosition, setCoverPosition] = useState<CoverPosition>(
-    (initialData.cover_position as CoverPosition) ?? "center"
+  const [coverFocalX, setCoverFocalX] = useState<number>(
+    typeof initialData.cover_focal_x === "number"
+      ? initialData.cover_focal_x
+      : 50
+  );
+  const [coverFocalY, setCoverFocalY] = useState<number>(
+    typeof initialData.cover_focal_y === "number"
+      ? initialData.cover_focal_y
+      : 50
   );
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -118,6 +149,12 @@ export default function GallerySettingsForm({
   );
   const [welcomeMessage, setWelcomeMessage] = useState(
     (initialData.branding?.welcome_message as string) ?? ""
+  );
+  const [prePageMusicUrl, setPrePageMusicUrl] = useState(
+    (initialData.branding?.pre_page_music_url as string) ?? ""
+  );
+  const [prePageInstructions, setPrePageInstructions] = useState(
+    (initialData.branding?.pre_page_instructions as string) ?? ""
   );
   const [contactEmail, setContactEmail] = useState(
     (initialData.branding?.contact_email as string) ?? ""
@@ -187,7 +224,8 @@ export default function GallerySettingsForm({
       const body: Record<string, unknown> = {
         title: title.trim(),
         cover_asset_id: coverAssetId || null,
-        cover_position: coverPosition,
+        cover_focal_x: coverFocalX,
+        cover_focal_y: coverFocalY,
         description: description.trim() || null,
         event_date: eventDate || null,
         expiration_date: expirationDate || null,
@@ -202,6 +240,8 @@ export default function GallerySettingsForm({
           background_theme: backgroundTheme || null,
           accent_color: accentColor || null,
           welcome_message: welcomeMessage.trim() || null,
+          pre_page_music_url: prePageMusicUrl.trim() || null,
+          pre_page_instructions: prePageInstructions.trim() || null,
           contact_email: contactEmail.trim() || null,
           website_url: websiteUrl.trim() || null,
         },
@@ -294,35 +334,16 @@ export default function GallerySettingsForm({
               </div>
             </div>
             {coverAssetId && (
-              <div>
-                <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Crop / position
-                </label>
-                <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                  Which part of the image should be visible in the banner.
-                </p>
-                <div className="grid grid-cols-9 gap-1 max-w-[180px]">
-                  {COVER_POSITIONS.map((pos) => (
-                    <button
-                      key={pos.id}
-                      type="button"
-                      onClick={() => setCoverPosition(pos.id)}
-                      className={`flex h-8 w-8 items-center justify-center rounded border text-xs ${
-                        coverPosition === pos.id
-                          ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
-                          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                      }`}
-                      title={pos.label}
-                    >
-                      <span className="sr-only">{pos.label}</span>
-                      <span aria-hidden>■</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-neutral-400">
-                  {COVER_POSITIONS.find((p) => p.id === coverPosition)?.label ?? "Center"}
-                </p>
-              </div>
+              <CoverFocalPointEditorSection
+                galleryId={galleryId}
+                asset={coverAssets.find((a) => a.id === coverAssetId) ?? null}
+                focalX={coverFocalX}
+                focalY={coverFocalY}
+                onChange={(x, y) => {
+                  setCoverFocalX(x);
+                  setCoverFocalY(y);
+                }}
+              />
             )}
           </div>
         )}
@@ -543,6 +564,39 @@ export default function GallerySettingsForm({
               placeholder="A personal message for your clients..."
               className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
             />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Shown on the gallery cover page before clients enter.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Pre-page music (optional)
+            </label>
+            <input
+              type="url"
+              value={prePageMusicUrl}
+              onChange={(e) => setPrePageMusicUrl(e.target.value)}
+              placeholder="https://... (MP3, WAV, etc.)"
+              className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Background music URL for the cover page. Clients can toggle on/off.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Pre-page instructions (optional)
+            </label>
+            <input
+              type="text"
+              value={prePageInstructions}
+              onChange={(e) => setPrePageInstructions(e.target.value)}
+              placeholder="e.g. Favorite images you love, download with the button, or contact us for prints."
+              className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Short note shown on the cover page about favoriting, downloading, or purchasing.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

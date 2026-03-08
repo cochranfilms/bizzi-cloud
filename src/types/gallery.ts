@@ -45,6 +45,10 @@ export interface GalleryBrandingSettings {
   website_url?: string | null;
   instagram_url?: string | null;
   facebook_url?: string | null;
+  /** Pre-page: optional background music URL */
+  pre_page_music_url?: string | null;
+  /** Pre-page: custom instructions (favorite, download, purchase) */
+  pre_page_instructions?: string | null;
 }
 
 /** Download permission settings */
@@ -85,8 +89,11 @@ export interface Gallery {
   slug: string;                  // URL-safe, unique per photographer
   photographer_id: string;
   cover_asset_id?: string | null;
-  /** CSS object-position for banner crop (which part of image is visible) */
+  /** CSS object-position for banner crop (legacy preset) */
   cover_position?: CoverPosition | null;
+  /** Custom focal point: x,y as 0-100 percentages; overrides cover_position when set */
+  cover_focal_x?: number | null;
+  cover_focal_y?: number | null;
   description?: string | null;
   event_date?: string | null;    // ISO date
   expiration_date?: string | null; // ISO date – when gallery expires
@@ -178,6 +185,8 @@ export interface CreateGalleryInput {
   title: string;
   cover_asset_id?: string | null;
   cover_position?: CoverPosition | null;
+  cover_focal_x?: number | null;
+  cover_focal_y?: number | null;
   description?: string | null;
   event_date?: string | null;
   expiration_date?: string | null;

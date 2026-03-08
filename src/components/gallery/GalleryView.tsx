@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -15,9 +15,11 @@ import {
   ChevronLeft,
   X,
   MessageCircle,
+  Music2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
+import { getCoverObjectPosition } from "@/lib/cover-position";
 
 interface GalleryData {
   id: string;
@@ -33,13 +35,20 @@ interface GalleryData {
     accent_color?: string | null;
     background_theme?: string | null;
     welcome_message?: string | null;
+    pre_page_music_url?: string | null;
+    pre_page_instructions?: string | null;
   };
   download_settings: {
-    allow_single_download: boolean;
+    allow_single_download?: boolean;
+    allow_full_gallery_download?: boolean;
+    allow_selected_download?: boolean;
+    free_download_limit?: number | null;
   };
   watermark: { enabled: boolean };
   cover_asset_id?: string | null;
   cover_position?: string | null;
+  cover_focal_x?: number | null;
+  cover_focal_y?: number | null;
 }
 
 interface GalleryAsset {
@@ -444,6 +453,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [previewAsset, setPreviewAsset] = useState<GalleryAsset | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedFavorites, setSelectedFavorites] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
@@ -460,6 +471,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     { id: string; body: string; client_name?: string | null; created_at: string }[]
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fetchGallery = useCallback(
     async (pwd?: string) => {
@@ -701,41 +715,102 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     [galleryId, password, user, fetchPreviewComments]
   );
 
+  const downloadOne = useCallback(
+    async (asset: GalleryAsset, context: "single" | "full" | "selected") => {
+      setDownloadError(null);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (user) {
+        const t = await user.getIdToken();
+        if (t) headers.Authorization = `Bearer ${t}`;
+      }
+      const body: Record<string, unknown> = {
+        object_key: asset.object_key,
+        name: asset.name,
+        download_context: context,
+      };
+      if (password) body.password = password;
+      if (pinInput) body.pin = pinInput;
+      const res = await fetch(`/api/galleries/${galleryId}/download`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        const msg = json.message ?? json.error ?? "Download failed";
+        throw new Error(msg);
+      }
+      const a = document.createElement("a");
+      a.href = json.url?.startsWith("/") ? `${window.location.origin}${json.url}` : json.url;
+      a.download = asset.name;
+      a.rel = "noopener noreferrer";
+      a.click();
+    },
+    [galleryId, user, password, pinInput]
+  );
+
   const handleDownload = useCallback(
     async (asset: GalleryAsset) => {
       setDownloadingId(asset.id);
+      setDownloadError(null);
       try {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (user) {
-          const t = await user.getIdToken();
-          if (t) headers.Authorization = `Bearer ${t}`;
-        }
-        const body: Record<string, unknown> = {
-          object_key: asset.object_key,
-          name: asset.name,
-        };
-        if (password) body.password = password;
-        if (pinInput) body.pin = pinInput;
-        const res = await fetch(`/api/galleries/${galleryId}/download`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.message ?? json.error ?? "Download failed");
-        const a = document.createElement("a");
-        a.href = json.url?.startsWith("/") ? `${window.location.origin}${json.url}` : json.url;
-        a.download = asset.name;
-        a.rel = "noopener noreferrer";
-        a.click();
+        await downloadOne(asset, "single");
       } catch (err) {
-        console.error("Download error:", err);
+        setDownloadError(err instanceof Error ? err.message : "Download failed");
       } finally {
         setDownloadingId(null);
       }
     },
-    [galleryId, user, password, pinInput]
+    [downloadOne]
   );
+
+  const handleDownloadAll = useCallback(async () => {
+    if (!data) return;
+    setDownloadingAll(true);
+    setDownloadError(null);
+    const downloadable = data.assets.filter(
+      (a) =>
+        a.media_type === "image" ||
+        /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic|mp4|webm|mov|m4v)$/i.test(a.name)
+    );
+    for (let i = 0; i < downloadable.length; i++) {
+      try {
+        await downloadOne(downloadable[i], "full");
+      } catch (err) {
+        setDownloadError(err instanceof Error ? err.message : "Download failed");
+        break;
+      }
+    }
+    setDownloadingAll(false);
+  }, [data, downloadOne]);
+
+  const handleDownloadSelected = useCallback(async () => {
+    if (!data) return;
+    const toDownload = data.assets.filter((a) => selectedFavorites.has(a.id));
+    if (toDownload.length === 0) return;
+    setDownloadingAll(true);
+    setDownloadError(null);
+    for (let i = 0; i < toDownload.length; i++) {
+      try {
+        await downloadOne(toDownload[i], "selected");
+      } catch (err) {
+        setDownloadError(err instanceof Error ? err.message : "Download failed");
+        break;
+      }
+    }
+    setDownloadingAll(false);
+  }, [data, selectedFavorites, downloadOne]);
+
+  useEffect(() => {
+    if (hasEnteredGallery) setMusicPlaying(false);
+  }, [hasEnteredGallery]);
+
+  const prePageMusicUrlFromData = data?.gallery?.branding?.pre_page_music_url ?? null;
+  useEffect(() => {
+    if (!audioRef.current || !prePageMusicUrlFromData) return;
+    if (musicPlaying) audioRef.current.play().catch(() => {});
+    else audioRef.current.pause();
+  }, [musicPlaying, prePageMusicUrlFromData]);
 
   if (loading && !data) {
     return (
@@ -825,10 +900,263 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
   const isDarkBg = bgTheme.textTone === "light";
 
+  const coverObjectPosition = getCoverObjectPosition({
+    cover_focal_x: gallery.cover_focal_x,
+    cover_focal_y: gallery.cover_focal_y,
+    cover_position: gallery.cover_position,
+  });
+
+  const prePageMusicUrl = gallery.branding.pre_page_music_url;
+  const prePageInstructions = gallery.branding.pre_page_instructions;
+
+  // Gallery Pre Page – cover experience before entering the gallery
+  if (!hasEnteredGallery) {
+    return (
+      <div
+        className="min-h-screen transition-colors"
+        style={{ backgroundColor: bgTheme.background }}
+      >
+        <header
+          className={`absolute left-0 right-0 top-0 z-20 border-b border-transparent ${
+            bannerUrl ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
+          }`}
+          style={{ ["--accent" as string]: accent }}
+        >
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+            <Link
+              href="/"
+              className={`flex items-center gap-2 ${bannerUrl ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
+            >
+              <Image
+                src="/logo.png"
+                alt="Bizzi Cloud"
+                width={24}
+                height={24}
+                className="object-contain"
+              />
+              <span className="text-base font-semibold tracking-tight">
+                {gallery.branding.business_name || "Bizzi"}
+                {gallery.branding.business_name ? "" : " Cloud"}
+              </span>
+            </Link>
+            {prePageMusicUrl && (
+              <button
+                type="button"
+                onClick={() => setMusicPlaying((p) => !p)}
+                className={`rounded-full p-2 transition-colors ${
+                  bannerUrl ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
+                }`}
+                title={musicPlaying ? "Pause music" : "Play music"}
+              >
+                <Music2 className="h-5 w-5" />
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6">
+          {bannerUrl ? (
+            <>
+              <div
+                className="pointer-events-none absolute inset-0 z-0"
+                aria-hidden
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bannerUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  style={{ objectPosition: coverObjectPosition }}
+                />
+                <div
+                  className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/80"
+                  style={{ backgroundColor: "transparent" }}
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.85) 100%)",
+                  }}
+                />
+              </div>
+              <div className="relative z-10 flex flex-col items-center gap-6 text-white">
+                {gallery.event_date && (
+                  <p className="text-xs font-medium uppercase tracking-widest text-white/90">
+                    {new Date(gallery.event_date).toLocaleDateString(undefined, {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </p>
+                )}
+                {(gallery.branding.logo_url || gallery.branding.business_name) && (
+                  <div className="flex items-center gap-2">
+                    {gallery.branding.logo_url && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={gallery.branding.logo_url}
+                        alt=""
+                        className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
+                      />
+                    )}
+                    <span className="text-sm font-medium uppercase tracking-wider text-white/95">
+                      {gallery.branding.business_name || ""}
+                    </span>
+                  </div>
+                )}
+                <h1
+                  className="max-w-3xl text-4xl font-semibold sm:text-5xl"
+                  style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
+                >
+                  {gallery.title}
+                </h1>
+                {gallery.branding.welcome_message && (
+                  <p className="max-w-xl text-lg text-white/90">
+                    {gallery.branding.welcome_message}
+                  </p>
+                )}
+                {prePageInstructions && (
+                  <p className="max-w-md text-sm text-white/75">
+                    {prePageInstructions}
+                  </p>
+                )}
+                {(gallery.download_settings?.allow_single_download ||
+                  gallery.download_settings?.allow_full_gallery_download ||
+                  gallery.download_settings?.allow_selected_download) &&
+                  gallery.access_mode === "pin" && (
+                  <div className="rounded-lg border border-amber-400/50 bg-amber-900/30 px-4 py-3">
+                    <p className="text-sm text-amber-100">
+                      Enter your download PIN below when viewing the gallery to unlock downloads.
+                    </p>
+                    <input
+                      type="text"
+                      value={pinInput}
+                      onChange={(e) => setPinInput(e.target.value)}
+                      placeholder="PIN"
+                      className="mt-2 w-28 rounded border border-amber-400/50 bg-amber-900/50 px-3 py-1.5 text-center text-sm text-white placeholder-white/50"
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHasEnteredGallery(true)}
+                  className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
+                  style={{ backgroundColor: accent }}
+                >
+                  View gallery
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="relative z-10 flex flex-col items-center gap-6">
+              <div
+                className={`rounded-2xl border px-8 py-12 ${
+                  isDarkBg
+                    ? "border-white/20 bg-white/5"
+                    : "border-neutral-200 bg-white/80 dark:border-neutral-700 dark:bg-neutral-900/80"
+                }`}
+              >
+                {gallery.event_date && (
+                  <p
+                    className={`mb-2 text-xs font-medium uppercase tracking-widest ${
+                      isDarkBg ? "text-white/80" : "text-neutral-500"
+                    }`}
+                  >
+                    {new Date(gallery.event_date).toLocaleDateString(undefined, {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </p>
+                )}
+                {(gallery.branding.logo_url || gallery.branding.business_name) && (
+                  <div className="mb-4 flex items-center justify-center gap-2">
+                    {gallery.branding.logo_url && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={gallery.branding.logo_url}
+                        alt=""
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
+                    )}
+                    <span
+                      className={`text-sm font-medium uppercase ${
+                        isDarkBg ? "text-white/90" : "text-neutral-600"
+                      }`}
+                    >
+                      {gallery.branding.business_name || ""}
+                    </span>
+                  </div>
+                )}
+                <h1
+                  className={`mb-4 text-4xl font-semibold sm:text-5xl ${
+                    isDarkBg ? "text-white" : "text-neutral-900"
+                  }`}
+                  style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
+                >
+                  {gallery.title}
+                </h1>
+                {gallery.branding.welcome_message && (
+                  <p
+                    className={`mx-auto mb-4 max-w-lg ${
+                      isDarkBg ? "text-white/90" : "text-neutral-600"
+                    }`}
+                  >
+                    {gallery.branding.welcome_message}
+                  </p>
+                )}
+                {prePageInstructions && (
+                  <p
+                    className={`mx-auto mb-6 max-w-md text-sm ${
+                      isDarkBg ? "text-white/75" : "text-neutral-500"
+                    }`}
+                  >
+                    {prePageInstructions}
+                  </p>
+                )}
+                {gallery.access_mode === "pin" && (
+                  <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+                    <input
+                      type="text"
+                      value={pinInput}
+                      onChange={(e) => setPinInput(e.target.value)}
+                      placeholder="Download PIN"
+                      className="w-32 rounded border border-amber-300 px-3 py-2 text-center text-sm dark:border-amber-700 dark:bg-amber-900/30 dark:text-white"
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHasEnteredGallery(true)}
+                  className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: accent }}
+                >
+                  View gallery
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {prePageMusicUrl && (
+          <audio
+            ref={audioRef}
+            src={prePageMusicUrl}
+            loop
+            playsInline
+            className="hidden"
+          />
+        )}
+      </div>
+    );
+  }
+
   const scrollToGallery = () => {
     document.getElementById("gallery-grid")?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Full gallery view (after clicking "View gallery")
   return (
     <div
       className="min-h-screen transition-colors"
@@ -859,15 +1187,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       </header>
 
       {bannerUrl && (
-        <div className="relative w-full overflow-hidden">
+        <div className="relative h-48 w-full overflow-hidden sm:h-56">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={bannerUrl}
             alt=""
-            className="w-full object-cover"
-            style={{
-              maxHeight: "50vh",
-              objectPosition: gallery.cover_position || "center",
-            }}
+            className="h-full w-full object-cover"
+            style={{ objectPosition: coverObjectPosition }}
           />
         </div>
       )}
@@ -922,7 +1248,24 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             >
               View gallery
             </button>
+            {gallery.download_settings?.allow_full_gallery_download && assets.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDownloadAll}
+                disabled={downloadingAll}
+                className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ borderColor: accent, color: accent }}
+              >
+                <Download className="h-4 w-4" />
+                {downloadingAll ? "Downloading…" : "Download all"}
+              </button>
+            )}
           </div>
+          {downloadError && (
+            <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+              {downloadError}
+            </div>
+          )}
           {gallery.description && (
             <p
               className={`mt-4 max-w-2xl mx-auto text-sm ${
@@ -934,7 +1277,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           )}
         </div>
 
-        {gallery.download_settings?.allow_single_download && gallery.access_mode === "pin" && (
+        {(gallery.download_settings?.allow_single_download ||
+          gallery.download_settings?.allow_full_gallery_download ||
+          gallery.download_settings?.allow_selected_download) &&
+          gallery.access_mode === "pin" && (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
             <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
               <Key className="h-5 w-5" />
@@ -1013,6 +1359,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {selectedFavorites.size} selected
           </span>
+          {gallery.download_settings?.allow_selected_download && (
+            <button
+              type="button"
+              onClick={handleDownloadSelected}
+              disabled={downloadingAll}
+              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              {downloadingAll ? "Downloading…" : "Download selected"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowSaveFavorites(true)}

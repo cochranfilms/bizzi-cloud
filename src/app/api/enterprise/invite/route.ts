@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { hashInviteToken } from "@/lib/invite-token";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
   }
 
   const inviteToken = crypto.randomUUID();
+  const inviteTokenHash = hashInviteToken(inviteToken);
   const pendingId = `${orgId}_invite_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const now = FieldValue.serverTimestamp();
 
@@ -122,7 +124,7 @@ export async function POST(request: Request) {
     accepted_at: null,
     status: "pending",
     invited_by: uid,
-    invite_token: inviteToken,
+    invite_token_hash: inviteTokenHash,
     storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
 

@@ -85,3 +85,10 @@ expect(redactObject({ token: "abc" }).token).toBe("[REDACTED]");
 ## 12. HTTPS Enforcement
 
 - In production, request `http://...` → expect 301 redirect to `https://...`.
+
+## 13. Invite Token Hashing
+
+- Create invite → organization_seats doc has `invite_token_hash`, no plain `invite_token`.
+- Accept invite with token → succeeds (lookup by hash).
+- Invite-by-token GET with token → returns org details (lookup by hash).
+- Legacy: Existing docs with `invite_token` still work via fallback query.

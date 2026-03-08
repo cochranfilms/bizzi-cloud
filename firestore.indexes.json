@@ -153,6 +153,14 @@
       ]
     },
     {
+      "collectionGroup": "organization_seats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "invite_token_hash", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "pinned_items",
       "queryScope": "COLLECTION",
       "fields": [

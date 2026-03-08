@@ -1,4 +1,5 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { findPendingSeatByToken } from "@/lib/invite-lookup";
 import { NextResponse } from "next/server";
 
 /**
@@ -17,22 +18,16 @@ export async function GET(request: Request) {
   }
 
   const db = getAdminFirestore();
+  const pendingSeat = await findPendingSeatByToken(db, token);
 
-  const seatsSnap = await db
-    .collection("organization_seats")
-    .where("invite_token", "==", token)
-    .where("status", "==", "pending")
-    .limit(1)
-    .get();
-
-  if (seatsSnap.empty) {
+  if (!pendingSeat) {
     return NextResponse.json(
       { error: "Invite not found or already accepted" },
       { status: 404 }
     );
   }
 
-  const seat = seatsSnap.docs[0].data();
+  const seat = pendingSeat.data();
   const orgId = seat.organization_id as string;
 
   const orgSnap = await db.collection("organizations").doc(orgId).get();
