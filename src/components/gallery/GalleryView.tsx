@@ -44,7 +44,12 @@ interface GalleryData {
     allow_selected_download?: boolean;
     free_download_limit?: number | null;
   };
-  watermark: { enabled: boolean };
+  watermark: {
+    enabled?: boolean;
+    image_url?: string | null;
+    position?: string | null;
+    opacity?: number | null;
+  };
   cover_asset_id?: string | null;
   cover_position?: string | null;
   cover_focal_x?: number | null;
@@ -64,6 +69,43 @@ interface GalleryAsset {
 }
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
+
+function WatermarkOverlay({
+  imageUrl,
+  position = "bottom-right",
+  opacity = 50,
+  className = "",
+}: {
+  imageUrl: string;
+  position?: string;
+  opacity?: number;
+  className?: string;
+}) {
+  const posClass =
+    position === "center"
+      ? "inset-0"
+      : position === "top-left"
+        ? "left-2 top-2"
+        : position === "top-right"
+          ? "right-2 top-2"
+          : position === "bottom-left"
+            ? "bottom-2 left-2"
+            : "bottom-2 right-2";
+  return (
+    <div
+      className={`pointer-events-none absolute ${posClass} flex items-center justify-center ${className}`}
+      aria-hidden
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={imageUrl}
+        alt=""
+        className="max-h-[25%] max-w-[35%] object-contain"
+        style={{ opacity: Math.max(0, Math.min(100, opacity ?? 50)) / 100 }}
+      />
+    </div>
+  );
+}
 
 function SaveFavoritesModal({
   count,
@@ -161,6 +203,7 @@ function PreviewModal({
   password,
   galleryId,
   getAuthToken,
+  watermark,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -171,6 +214,7 @@ function PreviewModal({
   password?: string;
   galleryId: string;
   getAuthToken?: () => Promise<string | null>;
+  watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -207,16 +251,26 @@ function PreviewModal({
         className="relative flex max-h-[90vh] max-w-4xl flex-col gap-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-1 items-center justify-center">
+        <div className="relative flex flex-1 items-center justify-center">
           {isVideo ? (
             <p className="text-white">Video preview – full playback coming soon</p>
           ) : previewImageUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={previewImageUrl}
-              alt=""
-              className="max-h-[70vh] max-w-full object-contain"
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewImageUrl}
+                alt=""
+                className="max-h-[70vh] max-w-full object-contain"
+              />
+              {watermark?.enabled && watermark?.image_url && (
+                <WatermarkOverlay
+                  imageUrl={watermark.image_url}
+                  position={watermark.position ?? undefined}
+                  opacity={watermark.opacity ?? 50}
+                  className="!max-h-[18%] !max-w-[28%]"
+                />
+              )}
+            </>
           ) : (
             <div className="flex h-64 w-64 items-center justify-center">
               <ImageIcon className="h-16 w-16 animate-pulse text-white/50" />
@@ -307,6 +361,7 @@ function GalleryAssetCard({
   canDownload,
   downloading,
   masonryLayout,
+  watermark,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -319,6 +374,7 @@ function GalleryAssetCard({
   canDownload: boolean;
   downloading: boolean;
   masonryLayout?: boolean;
+  watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
@@ -410,6 +466,13 @@ function GalleryAssetCard({
               <Play className="ml-1 h-7 w-7 fill-white text-white" />
             </div>
           </div>
+        )}
+        {!isVid && watermark?.enabled && watermark?.image_url && (
+          <WatermarkOverlay
+            imageUrl={watermark.image_url}
+            position={watermark.position ?? undefined}
+            opacity={watermark.opacity ?? 50}
+          />
         )}
         <button
           type="button"
@@ -617,6 +680,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       });
     };
   }, [bannerAsset, galleryId, password, user, data]);
+
+  // Scroll to top when entering gallery so banner is immediately visible
+  useEffect(() => {
+    if (!hasEnteredGallery) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [hasEnteredGallery]);
 
   const toggleFavorite = useCallback((assetId: string) => {
     setSelectedFavorites((prev) => {
@@ -1169,7 +1238,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   // Full gallery view (after clicking "View gallery")
   return (
     <div
-      className="min-h-screen transition-colors"
+      className="min-h-screen animate-gallery-enter transition-colors"
       style={{ backgroundColor: bgTheme.background }}
     >
       <header
@@ -1372,6 +1441,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 canDownload={!!gallery.download_settings?.allow_single_download}
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
+                watermark={gallery.watermark}
               />
             ))}
           </div>
@@ -1442,6 +1512,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           password={password}
           galleryId={galleryId}
           getAuthToken={user ? getAuthToken : undefined}
+          watermark={gallery.watermark}
         />
       )}
     </div>
