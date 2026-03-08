@@ -127,8 +127,6 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
       const uid = getFirebaseAuth().currentUser?.uid;
-      const bakeLut =
-        previewType === "video" && showLUTForVideo && lutEnabled;
       const res = await fetch("/api/backup/download", {
         method: "POST",
         headers: {
@@ -139,17 +137,16 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
           object_key: file.objectKey,
           name: file.name,
           user_id: uid,
-          bake_lut: bakeLut,
         }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? "Download failed");
       }
-      const { url, downloadName } = await res.json();
+      const { url } = await res.json();
       const a = document.createElement("a");
       a.href = url.startsWith("/") ? `${window.location.origin}${url}` : url;
-      a.download = downloadName ?? file.name;
+      a.download = file.name;
       a.rel = "noopener noreferrer";
       a.click();
     } catch (err) {
@@ -157,7 +154,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     } finally {
       setDownloading(false);
     }
-  }, [file?.objectKey, file?.name, previewType, showLUTForVideo, lutEnabled]);
+  }, [file?.objectKey, file?.name]);
 
   if (!file) return null;
 
@@ -194,8 +191,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               onClick={handleDownload}
               disabled={downloading}
               className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50"
-              aria-label={previewType === "video" && showLUTForVideo && lutEnabled ? "Download with LUT baked in" : "Download full resolution"}
-              title={previewType === "video" && showLUTForVideo && lutEnabled ? "Download with Rec 709 LUT baked in" : undefined}
+              aria-label="Download full resolution"
             >
               <Download className="h-4 w-4" />
             </button>
