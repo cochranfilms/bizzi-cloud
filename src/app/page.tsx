@@ -3,6 +3,7 @@ import Hero from "@/components/Hero";
 import ValueProps from "@/components/ValueProps";
 import BrandContinuity from "@/components/BrandContinuity";
 import FeatureList from "@/components/FeatureList";
+import PricingSection from "@/components/PricingSection";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 
@@ -15,6 +16,7 @@ export default function Home() {
         <ValueProps />
         <BrandContinuity />
         <FeatureList />
+        <PricingSection />
         <CTA />
         <Footer />
       </main>

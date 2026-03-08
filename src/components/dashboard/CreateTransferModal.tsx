@@ -7,7 +7,7 @@ import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
 export type TransferModalFile = {
@@ -35,9 +35,11 @@ export default function CreateTransferModal({
   const { addTransferFromApi } = useTransfers();
   const { org } = useEnterprise();
   const pathname = usePathname();
+  const router = useRouter();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
   const { recentFiles, loading: filesLoading } = useCloudFiles();
   const { uploadFiles, fileUploadProgress } = useBackup();
+  const uploadStartedByModalRef = useRef(false);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -91,7 +93,9 @@ export default function CreateTransferModal({
       setIsDragging(false);
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
-      await uploadFiles(files, undefined, {
+      uploadStartedByModalRef.current = true;
+      try {
+        await uploadFiles(files, undefined, {
         onFileComplete: (f) => {
           const entry = {
             name: f.name,
@@ -106,6 +110,9 @@ export default function CreateTransferModal({
           });
         },
       });
+      } finally {
+        uploadStartedByModalRef.current = false;
+      }
     },
     [uploadFiles]
   );
@@ -115,7 +122,9 @@ export default function CreateTransferModal({
       const files = Array.from(e.target.files ?? []);
       e.target.value = "";
       if (files.length === 0) return;
-      await uploadFiles(files, undefined, {
+      uploadStartedByModalRef.current = true;
+      try {
+        await uploadFiles(files, undefined, {
         onFileComplete: (f) => {
           const entry = {
             name: f.name,
@@ -130,6 +139,9 @@ export default function CreateTransferModal({
           });
         },
       });
+      } finally {
+        uploadStartedByModalRef.current = false;
+      }
     },
     [uploadFiles]
   );
@@ -217,6 +229,8 @@ export default function CreateTransferModal({
     addTransferFromApi(transfer);
     setCreatedSlug(data.slug);
     onCreated?.(data.slug);
+    onClose();
+    router.push(isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
   }, [
     name,
     clientName,
@@ -230,6 +244,8 @@ export default function CreateTransferModal({
     org?.id,
     addTransferFromApi,
     onCreated,
+    onClose,
+    router,
   ]);
 
   const handleClose = useCallback(() => {
@@ -362,7 +378,7 @@ export default function CreateTransferModal({
             <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Files to transfer
             </label>
-            {fileUploadProgress?.status === "in_progress" && (
+            {uploadStartedByModalRef.current && fileUploadProgress?.status === "in_progress" && (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-bizzi-blue/30 bg-bizzi-blue/5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>

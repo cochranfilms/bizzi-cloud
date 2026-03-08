@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useTransfers } from "@/context/TransferContext";
 import { File, Download, Lock, FolderOpen } from "lucide-react";
 import Image from "next/image";
-import type { Transfer } from "@/types/transfer";
+import type { Transfer, TransferFile } from "@/types/transfer";
+import TransferPreviewModal from "./TransferPreviewModal";
 
 interface TransferViewProps {
   slug: string;
@@ -17,6 +18,7 @@ export default function TransferView({ slug }: TransferViewProps) {
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState("");
   const [fetching, setFetching] = useState(false);
+  const [previewFile, setPreviewFile] = useState<TransferFile | null>(null);
 
   const localTransfer = getTransferBySlug(slug);
 
@@ -213,38 +215,70 @@ export default function TransferView({ slug }: TransferViewProps) {
         </div>
 
         <div className="space-y-2">
-          {transfer.files.map((file) => (
-            <div
-              key={file.id}
-              onMouseEnter={() => handleFileView(file.id)}
-              className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
-                  <File className="h-5 w-5" />
+          {transfer.files.map((file) => {
+            const canPreview = !!file.objectKey;
+            return (
+              <div
+                key={file.id}
+                onMouseEnter={() => handleFileView(file.id)}
+                role={canPreview ? "button" : undefined}
+                tabIndex={canPreview ? 0 : undefined}
+                onClick={canPreview ? () => setPreviewFile(file) : undefined}
+                onKeyDown={
+                  canPreview
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setPreviewFile(file);
+                        }
+                      }
+                    : undefined
+                }
+                className={`flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+                  canPreview
+                    ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+                    : ""
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+                    <File className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-neutral-900 dark:text-white">
+                      {file.name}
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {file.path}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-neutral-900 dark:text-white">
-                    {file.name}
-                  </p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {file.path}
-                  </p>
-                </div>
+                {transfer.permission !== "view" && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFileDownload(file.id);
+                    }}
+                    className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download
+                  </button>
+                )}
               </div>
-              {transfer.permission !== "view" && (
-                <button
-                  type="button"
-                  onClick={() => handleFileDownload(file.id)}
-                  className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-                >
-                  <Download className="h-4 w-4" />
-                  Download
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
+
+        <TransferPreviewModal
+          slug={slug}
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+          password={transfer.password && unlocked ? password : undefined}
+          permission={transfer.permission}
+          onDownload={(fileId) => handleFileDownload(fileId)}
+        />
       </main>
     </div>
   );
