@@ -21,11 +21,11 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const newDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
-  const showCreateTransfer = pathname === "/dashboard/transfers";
+  const showCreateTransfer =
+    pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers";
   const { currentDriveId } = useCurrentFolder();
   const {
     uploadFiles,
-    cancelFileUpload,
     fileUploadProgress,
     uploadFolder,
     createFolder,
@@ -87,10 +87,8 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     }
   };
 
-  const showFileUploadProgress =
-    fileUploadProgress?.status === "in_progress" && fileUploadProgress.files.length > 0;
   const showSyncProgress =
-    syncProgress?.status === "in_progress" && syncProgress.bytesTotal > 0 && !showFileUploadProgress;
+    syncProgress?.status === "in_progress" && syncProgress.bytesTotal > 0;
 
   return (
     <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
@@ -184,45 +182,6 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
         )}
       </div>
       </div>
-
-      {showFileUploadProgress && fileUploadProgress && (
-        <div className="border-t border-neutral-100 px-4 pb-2 pt-1 md:px-6 dark:border-neutral-800">
-          <div className="space-y-2">
-            {fileUploadProgress.files.map((file) => (
-              <div key={file.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-neutral-600 dark:text-neutral-400">
-                    {file.name}
-                  </span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                      {formatBytes(file.bytesSynced)} / {formatBytes(file.size)}
-                    </span>
-                    {file.status === "uploading" && (
-                      <button
-                        type="button"
-                        onClick={() => cancelFileUpload(file.id)}
-                        className="rounded p-0.5 text-neutral-500 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                        aria-label={`Cancel upload of ${file.name}`}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
-                  <div
-                    className="h-full rounded-full bg-bizzi-blue transition-all duration-150"
-                    style={{
-                      width: `${file.size > 0 ? Math.min(100, (file.bytesSynced / file.size) * 100) : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {showSyncProgress && syncProgress && (
         <div className="border-t border-neutral-100 px-4 pb-2 pt-1 md:px-6 dark:border-neutral-800">

@@ -28,6 +28,7 @@ export default function EnterpriseShell({
     >
       <EnterpriseNavbar />
       <PendingInvitesBanner />
+      <BackgroundUploadIndicator />
 
       {/* Mobile right panel overlay */}
       {rightPanelOpen && (

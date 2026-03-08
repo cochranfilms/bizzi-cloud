@@ -43,6 +43,11 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.owner_id == request.auth.uid;
       allow read, update, delete: if request.auth != null && resource.data.owner_id == request.auth.uid;
     }
+    match /transfers/{slug} {
+      allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
+      allow read: if true;
+      allow update, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
     match /organizations/{orgId} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/organization_seats/$(orgId + '_' + request.auth.uid));

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
 import RenameModal from "./RenameModal";
@@ -31,6 +31,10 @@ interface FolderCardProps {
   selected?: boolean;
   onSelect?: () => void;
   selectable?: boolean;
+  /** When true, folder can accept drag-and-drop of items to move into it */
+  isDropTarget?: boolean;
+  /** Called when items are dropped on this folder; parent extracts fileIds/folderKeys from event */
+  onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
 }
 
 export default function FolderCard({
@@ -40,6 +44,8 @@ export default function FolderCard({
   selected = false,
   onSelect,
   selectable = false,
+  isDropTarget = false,
+  onItemsDropped,
 }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -60,13 +66,45 @@ export default function FolderCard({
     if (ok) onDelete?.();
   };
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isDropTarget || !onItemsDropped) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      setIsDragOver(true);
+    },
+    [isDropTarget, onItemsDropped]
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      setIsDragOver(false);
+      if (!isDropTarget || !onItemsDropped || !item.driveId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onItemsDropped(item.driveId, e);
+    },
+    [isDropTarget, onItemsDropped, item.driveId]
+  );
+
   return (
     <>
       <div
         className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
           selected
             ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
-            : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+            : isDragOver
+              ? "border-bizzi-blue ring-2 ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+              : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
         } ${
           canNavigate && !selected
             ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
@@ -87,6 +125,9 @@ export default function FolderCard({
               }
             : undefined
         }
+        onDragOver={isDropTarget ? handleDragOver : undefined}
+        onDragLeave={isDropTarget ? handleDragLeave : undefined}
+        onDrop={isDropTarget ? handleDrop : undefined}
       >
         {selectable && onSelect && (
           <button

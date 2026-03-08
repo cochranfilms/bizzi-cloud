@@ -24,7 +24,13 @@ function loadTransfers(): Transfer[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((t: Transfer) => ({
+          ...t,
+          permission: t.permission ?? "downloadable",
+        }))
+      : [];
   } catch {
     return [];
   }
@@ -38,6 +44,8 @@ function saveTransfers(transfers: Transfer[]) {
 interface TransferContextValue {
   transfers: Transfer[];
   createTransfer: (input: CreateTransferInput) => Transfer;
+  /** Add a transfer from API response (e.g. after POST). Syncs to localStorage. */
+  addTransferFromApi: (data: Transfer) => void;
   getTransferBySlug: (slug: string) => Transfer | undefined;
   recordView: (slug: string, fileId: string) => void;
   recordDownload: (slug: string, fileId: string) => void;
@@ -69,6 +77,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         clientName: input.clientName,
         clientEmail: input.clientEmail,
         files,
+        permission: input.permission ?? "downloadable",
         password: input.password ?? null,
         expiresAt: input.expiresAt,
         createdAt: now,
@@ -84,6 +93,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
+
+  const addTransferFromApi = useCallback((data: Transfer) => {
+    setTransfers((prev) => {
+      const next = prev.some((x) => x.slug === data.slug) ? prev : [data, ...prev];
+      saveTransfers(next);
+      return next;
+    });
+  }, []);
 
   const getTransferBySlug = useCallback(
     (slug: string): Transfer | undefined => {
@@ -141,6 +158,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     () => ({
       transfers,
       createTransfer,
+      addTransferFromApi,
       getTransferBySlug,
       recordView,
       recordDownload,
@@ -149,6 +167,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
     [
       transfers,
       createTransfer,
+      addTransferFromApi,
       getTransferBySlug,
       recordView,
       recordDownload,

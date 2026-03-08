@@ -63,7 +63,13 @@ interface BackupContextValue {
   unlinkDrive: (drive: LinkedDrive) => Promise<void>;
   uploadSingleFile: (file: File, targetDriveId?: string) => Promise<void>;
   /** Upload multiple files sequentially with per-file progress. Used by New → File Upload. */
-  uploadFiles: (files: File[], targetDriveId?: string) => Promise<void>;
+  uploadFiles: (
+    files: File[],
+    targetDriveId?: string,
+    options?: {
+      onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+    }
+  ) => Promise<void>;
   /** Cancel a specific file's upload and remove any partial chunks from Backblaze. */
   cancelFileUpload: (fileId: string) => void;
   fileUploadProgress: FileUploadProgress | null;
@@ -998,7 +1004,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const uploadFiles = useCallback(
-    async (files: File[], targetDriveId?: string) => {
+    async (
+      files: File[],
+      targetDriveId?: string,
+      options?: {
+        onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+      }
+    ) => {
       if (!isFirebaseConfigured() || !user) {
         setError("Please sign in to upload.");
         return;
@@ -1009,6 +1021,20 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       setStorageQuotaExceeded(null);
 
       const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+      const fileItems = files.map((f, i) => ({
+        id: `upload-${Date.now()}-${i}-${f.name}`,
+        name: f.name,
+        size: f.size,
+        bytesSynced: 0,
+        status: "pending" as const,
+      }));
+
+      setFileUploadProgress({
+        status: "in_progress",
+        files: fileItems,
+        bytesTotal,
+        bytesSynced: 0,
+      });
 
       // Pre-check storage: only cap is remaining space; show modal if over quota
       try {
@@ -1030,6 +1056,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               storage_quota_bytes !== null &&
               storage_used_bytes + bytesTotal > storage_quota_bytes
             ) {
+              setFileUploadProgress(null);
               setStorageQuotaExceeded({
                 attemptedBytes: bytesTotal,
                 usedBytes: storage_used_bytes,
@@ -1044,151 +1071,150 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         // Non-fatal: proceed with upload; server will reject if over quota
       }
 
-      const drive = targetDriveId
-        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
-        : await getOrCreateUploadsDrive();
-      const db = getFirebaseFirestore();
-      const fileItems = files.map((f, i) => ({
-        id: `upload-${Date.now()}-${i}-${f.name}`,
-        name: f.name,
-        size: f.size,
-        bytesSynced: 0,
-        status: "pending" as const,
-      }));
-      setFileUploadProgress({
-        status: "in_progress",
-        files: fileItems,
-        bytesTotal,
-        bytesSynced: 0,
-      });
+      try {
+        const drive = targetDriveId
+          ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
+          : await getOrCreateUploadsDrive();
+        const db = getFirebaseFirestore();
 
-      let bytesSynced = 0;
-      const completedBytesRef = { current: 0 };
-      const updateFile = (
-        id: string,
-        update: Partial<FileUploadItem>,
-        totalBytes?: number
-      ) => {
+        let bytesSynced = 0;
+        const completedBytesRef = { current: 0 };
+        const updateFile = (
+          id: string,
+          update: Partial<FileUploadItem>,
+          totalBytes?: number
+        ) => {
+          setFileUploadProgress((prev) => {
+            if (!prev) return null;
+            const nextBytes = totalBytes ?? bytesSynced;
+            return {
+              ...prev,
+              files: prev.files.map((f) =>
+                f.id === id ? { ...f, ...update } : f
+              ),
+              bytesSynced: nextBytes,
+            };
+          });
+        };
+
+        const fileById = new Map(files.map((f, i) => [fileItems[i].id, f]));
+        const manager = new UploadManager({
+          getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
+          getUserId: () => user?.uid ?? null,
+          onProgress: (ev) => {
+            bytesSynced = completedBytesRef.current + ev.bytesLoaded;
+            updateFile(ev.fileId, {
+              bytesSynced: ev.bytesLoaded,
+              status: ev.status === "completed" ? "completed" : "uploading",
+            });
+          },
+          onComplete: async (ev) => {
+            const file = fileById.get(ev.fileId);
+            if (!file) return;
+            completedBytesRef.current += file.size;
+            bytesSynced = completedBytesRef.current;
+            const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+            const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
+              linked_drive_id: drive.id,
+              userId: user.uid,
+              status: "completed",
+              files_count: 1,
+              bytes_synced: file.size,
+              completed_at: new Date(),
+            });
+            const fileRef = await addDoc(collection(db, "backup_files"), {
+              backup_snapshot_id: snapshotRef.id,
+              linked_drive_id: drive.id,
+              userId: user.uid,
+              relative_path: file.name,
+              object_key: ev.objectKey,
+              size_bytes: file.size,
+              content_type: file.type || "application/octet-stream",
+              modified_at: file.lastModified
+                ? new Date(file.lastModified).toISOString()
+                : null,
+              deleted_at: null,
+              organization_id: drive.organization_id ?? null,
+            });
+            options?.onFileComplete?.({
+              name: file.name,
+              path: `${drive.name}/${file.name}`.replace(/\/+/g, "/"),
+              backupFileId: fileRef.id,
+              objectKey: ev.objectKey,
+            });
+            if (VIDEO_EXT.test(file.name) && idToken) {
+              fetch("/api/backup/generate-proxy", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ object_key: ev.objectKey, name: file.name }),
+              }).catch(() => {});
+            }
+            await updateDoc(doc(db, "linked_drives", drive.id), {
+              last_synced_at: new Date().toISOString(),
+            });
+            updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
+          },
+          onError: (ev) => {
+            setFileUploadError(ev.error);
+            updateFile(ev.fileId, { status: "error", error: ev.error });
+          },
+        });
+        uploadManagerRef.current = manager;
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const item = fileItems[i];
+          updateFile(item.id, { status: "uploading" });
+          const queued: QueuedFile = {
+            id: item.id,
+            file,
+            driveId: drive.id,
+            relativePath: file.name,
+            workspaceId: isEnterpriseContext && org?.id ? org.id : undefined,
+            organizationId: drive.organization_id ?? null,
+          };
+          try {
+            await manager.upload(queued);
+          } catch {
+            // onError already called for non-abort
+          }
+        }
+
         setFileUploadProgress((prev) => {
           if (!prev) return null;
-          const nextBytes = totalBytes ?? bytesSynced;
+          const completed = prev.files.every(
+            (f) =>
+              f.status === "completed" ||
+              f.status === "cancelled" ||
+              f.status === "error"
+          );
           return {
             ...prev,
-            files: prev.files.map((f) =>
-              f.id === id ? { ...f, ...update } : f
-            ),
-            bytesSynced: nextBytes,
+            status: completed ? "completed" : "failed",
+            bytesSynced,
           };
         });
-      };
-
-      const fileById = new Map(files.map((f, i) => [fileItems[i].id, f]));
-      const manager = new UploadManager({
-        getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
-        getUserId: () => user?.uid ?? null,
-        onProgress: (ev) => {
-          bytesSynced = completedBytesRef.current + ev.bytesLoaded;
-          updateFile(ev.fileId, {
-            bytesSynced: ev.bytesLoaded,
-            status: ev.status === "completed" ? "completed" : "uploading",
-          });
-        },
-        onComplete: async (ev) => {
-          const file = fileById.get(ev.fileId);
-          if (!file) return;
-          completedBytesRef.current += file.size;
-          bytesSynced = completedBytesRef.current;
-          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
-          const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
-            linked_drive_id: drive.id,
-            userId: user.uid,
-            status: "completed",
-            files_count: 1,
-            bytes_synced: file.size,
-            completed_at: new Date(),
-          });
-          await addDoc(collection(db, "backup_files"), {
-            backup_snapshot_id: snapshotRef.id,
-            linked_drive_id: drive.id,
-            userId: user.uid,
-            relative_path: file.name,
-            object_key: ev.objectKey,
-            size_bytes: file.size,
-            content_type: file.type || "application/octet-stream",
-            modified_at: file.lastModified
-              ? new Date(file.lastModified).toISOString()
-              : null,
-            deleted_at: null,
-            organization_id: drive.organization_id ?? null,
-          });
-          if (VIDEO_EXT.test(file.name) && idToken) {
-            fetch("/api/backup/generate-proxy", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${idToken}`,
-              },
-              body: JSON.stringify({ object_key: ev.objectKey, name: file.name }),
-            }).catch(() => {});
-          }
-          await updateDoc(doc(db, "linked_drives", drive.id), {
-            last_synced_at: new Date().toISOString(),
-          });
-          updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
-        },
-        onError: (ev) => {
-          setFileUploadError(ev.error);
-          updateFile(ev.fileId, { status: "error", error: ev.error });
-        },
-      });
-      uploadManagerRef.current = manager;
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const item = fileItems[i];
-        updateFile(item.id, { status: "uploading" });
-        const queued: QueuedFile = {
-          id: item.id,
-          file,
-          driveId: drive.id,
-          relativePath: file.name,
-          workspaceId: isEnterpriseContext && org?.id ? org.id : undefined,
-          organizationId: drive.organization_id ?? null,
-        };
+        setTimeout(() => {
+          setFileUploadProgress(null);
+          setStorageVersion((v) => v + 1);
+        }, 2000);
         try {
-          await manager.upload(queued);
+          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const base = typeof window !== "undefined" ? window.location.origin : "";
+          await fetch(`${base}/api/storage/recalculate`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
         } catch {
-          // onError already called for non-abort
+          // Non-fatal
         }
-      }
-
-      setFileUploadProgress((prev) => {
-        if (!prev) return null;
-        const completed = prev.files.every(
-          (f) =>
-            f.status === "completed" ||
-            f.status === "cancelled" ||
-            f.status === "error"
-        );
-        return {
-          ...prev,
-          status: completed ? "completed" : "failed",
-          bytesSynced,
-        };
-      });
-      setTimeout(() => {
+      } catch (err) {
         setFileUploadProgress(null);
-        setStorageVersion((v) => v + 1);
-      }, 2000);
-      try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-        const base = typeof window !== "undefined" ? window.location.origin : "";
-        await fetch(`${base}/api/storage/recalculate`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch {
-        // Non-fatal
+        setFileUploadError(err instanceof Error ? err.message : "Upload failed");
+        throw err;
       }
     },
     [user, getOrCreateUploadsDrive, linkedDrives, isEnterpriseContext, org?.id]

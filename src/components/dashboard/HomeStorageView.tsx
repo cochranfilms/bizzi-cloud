@@ -3,18 +3,22 @@
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cloud, Trash2 } from "lucide-react";
+import { Cloud, FolderInput, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
+import BulkMoveModal from "./BulkMoveModal";
+import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
+import ShareModal from "./ShareModal";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 
 const DRAG_THRESHOLD_PX = 5;
+const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 
 function rectsIntersect(
   a: { left: number; top: number; right: number; bottom: number },
@@ -26,11 +30,17 @@ function rectsIntersect(
 function BulkActionBar({
   selectedFileCount,
   selectedFolderCount,
+  onMove,
+  onNewTransfer,
+  onShare,
   onDelete,
   onClear,
 }: {
   selectedFileCount: number;
   selectedFolderCount: number;
+  onMove: () => void;
+  onNewTransfer: () => void;
+  onShare: () => void;
   onDelete: () => void;
   onClear: () => void;
 }) {
@@ -39,6 +49,7 @@ function BulkActionBar({
   if (selectedFileCount > 0) parts.push(`${selectedFileCount} file${selectedFileCount === 1 ? "" : "s"}`);
   if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} folder${selectedFolderCount === 1 ? "" : "s"}`);
   const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
+  const canShare = total > 1;
 
   return (
     <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
@@ -46,6 +57,32 @@ function BulkActionBar({
         {label} selected
       </span>
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMove}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+          <FolderInput className="h-4 w-4" />
+          Move
+        </button>
+        <button
+          type="button"
+          onClick={onNewTransfer}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-bizzi-blue hover:bg-bizzi-blue/10 dark:text-bizzi-cyan dark:hover:bg-bizzi-cyan/10"
+        >
+          <Send className="h-4 w-4" />
+          New transfer
+        </button>
+        {canShare && (
+          <button
+            type="button"
+            onClick={onShare}
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </button>
+        )}
         <button
           type="button"
           onClick={onClear}
@@ -72,9 +109,19 @@ interface HomeStorageViewProps {
 }
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
-  const { driveFolders, loading, deleteFile, deleteFiles, deleteFolder, refetch } = useCloudFiles();
+  const {
+    driveFolders,
+    loading,
+    deleteFile,
+    deleteFiles,
+    deleteFolder,
+    refetch,
+    fetchFilesByIds,
+    moveFilesToFolder,
+    moveFolderContentsToFolder,
+  } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
-  const { linkedDrives } = useBackup();
+  const { linkedDrives, createFolder } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
@@ -90,6 +137,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const { confirm } = useConfirm();
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareFolderName, setShareFolderName] = useState("");
+  const [shareDriveId, setShareDriveId] = useState<string | null>(null);
+  const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
 
   const filesHref = `${basePath}/files`;
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
@@ -166,10 +219,28 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
 
+  const hasSelection = selectedFileIds.size + selectedFolderKeys.size > 0;
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      if (!hasSelection) return;
+      e.dataTransfer.setData(
+        DND_MOVE_TYPE,
+        JSON.stringify({
+          fileIds: Array.from(selectedFileIds),
+          folderKeys: Array.from(selectedFolderKeys),
+        })
+      );
+      e.dataTransfer.effectAllowed = "move";
+    },
+    [hasSelection, selectedFileIds, selectedFolderKeys]
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
       if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
+      if ((e.target as HTMLElement).closest("[data-selectable-item]")) return;
       lastSelectionRef.current = null;
       setDragState({
         isActive: true,
@@ -316,6 +387,134 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     confirm,
   ]);
 
+  const handleBulkMove = useCallback(() => {
+    setMoveModalOpen(true);
+  }, []);
+
+  const performMove = useCallback(
+    async (
+      fileIds: string[],
+      folderKeys: string[],
+      targetDriveId: string
+    ) => {
+      if (fileIds.length > 0) {
+        await moveFilesToFolder(fileIds, targetDriveId);
+      }
+      for (const key of folderKeys) {
+        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+        const drive = linkedDrives.find((d) => d.id === driveId);
+        if (drive && driveId !== targetDriveId) {
+          await moveFolderContentsToFolder(driveId, targetDriveId);
+        }
+      }
+      clearSelection();
+      await refetch();
+      await refetchPinned();
+      loadPinnedFiles();
+    },
+    [
+      linkedDrives,
+      moveFilesToFolder,
+      moveFolderContentsToFolder,
+      clearSelection,
+      refetch,
+      refetchPinned,
+      loadPinnedFiles,
+    ]
+  );
+
+  const handleBulkMoveConfirm = useCallback(
+    async (targetDriveId: string) => {
+      await performMove(
+        Array.from(selectedFileIds),
+        Array.from(selectedFolderKeys),
+        targetDriveId
+      );
+      setMoveModalOpen(false);
+    },
+    [selectedFileIds, selectedFolderKeys, performMove]
+  );
+
+  const handleDropOnFolder = useCallback(
+    async (targetDriveId: string, e: React.DragEvent) => {
+      try {
+        const raw = e.dataTransfer.getData(DND_MOVE_TYPE);
+        if (!raw) return;
+        const data = JSON.parse(raw) as { fileIds: string[]; folderKeys: string[] };
+        const { fileIds, folderKeys } = data;
+        if ((fileIds?.length ?? 0) + (folderKeys?.length ?? 0) === 0) return;
+        await performMove(fileIds ?? [], folderKeys ?? [], targetDriveId);
+      } catch {
+        // ignore
+      }
+    },
+    [performMove]
+  );
+
+  const handleBulkNewTransfer = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    if (fileIds.length > 0) {
+      const files = await fetchFilesByIds(fileIds);
+      setTransferInitialFiles(
+        files.map((f) => ({
+          name: f.name,
+          path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
+          type: "file" as const,
+          backupFileId: f.id,
+          objectKey: f.objectKey,
+        }))
+      );
+    } else {
+      setTransferInitialFiles([]);
+    }
+    setTransferModalOpen(true);
+  }, [selectedFileIds, fetchFilesByIds]);
+
+  const handleBulkShare = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    const folderKeys = Array.from(selectedFolderKeys);
+    const folderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
+
+    try {
+      const drive = await createFolder(folderName);
+      const newDriveId = drive.id;
+
+      if (fileIds.length > 0) {
+        await moveFilesToFolder(fileIds, newDriveId);
+      }
+      for (const key of folderKeys) {
+        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+        if (driveId !== newDriveId) {
+          const sourceDrive = linkedDrives.find((d) => d.id === driveId);
+          if (sourceDrive) {
+            await moveFolderContentsToFolder(driveId, newDriveId);
+          }
+        }
+      }
+
+      setShareFolderName(folderName);
+      setShareDriveId(newDriveId);
+      setShareModalOpen(true);
+      clearSelection();
+      await refetch();
+      await refetchPinned();
+      loadPinnedFiles();
+    } catch (err) {
+      console.error("Bulk share failed:", err);
+    }
+  }, [
+    selectedFileIds,
+    selectedFolderKeys,
+    createFolder,
+    moveFilesToFolder,
+    moveFolderContentsToFolder,
+    linkedDrives,
+    clearSelection,
+    refetch,
+    refetchPinned,
+    loadPinnedFiles,
+  ]);
+
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
   const isLoading = loading || pinnedLoading;
 
@@ -359,15 +558,27 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                const driveId = item.driveId ?? "";
+                const isFolderInSelection = selectedFolderKeys.has(item.key);
+                const isDropTarget =
+                  !!driveId &&
+                  hasSelection &&
+                  !isFolderInSelection &&
+                  linkedDrives.some((d) => d.id === driveId);
                 return (
                   <div
                     key={item.key}
                     data-selectable-item
                     data-item-type="folder"
                     data-item-key={item.key}
+                    draggable={isFolderInSelection && hasSelection}
+                    onDragStart={handleDragStart}
+                    className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
                   >
                     <FolderCard
                       item={item}
+                      isDropTarget={isDropTarget}
+                      onItemsDropped={handleDropOnFolder}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                       onDelete={
                         drive
@@ -393,7 +604,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 );
               })}
               {pinnedFiles.map((file) => (
-                <div key={file.id} data-selectable-item data-item-type="file" data-item-id={file.id}>
+                <div
+                  key={file.id}
+                  data-selectable-item
+                  data-item-type="file"
+                  data-item-id={file.id}
+                  draggable={selectedFileIds.has(file.id) && hasSelection}
+                  onDragStart={handleDragStart}
+                  className={selectedFileIds.has(file.id) && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                >
                   <FileCard
                     file={file}
                     onClick={() => setPreviewFile(file)}
@@ -431,15 +650,26 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {folderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+              const driveId = item.driveId ?? "";
+              const isFolderInSelection = selectedFolderKeys.has(item.key);
+              const isDropTarget =
+                !!driveId &&
+                hasSelection &&
+                !isFolderInSelection &&
+                linkedDrives.some((d) => d.id === driveId);
               return (
                 <div
                   key={item.key}
                   data-selectable-item
                   data-item-type="folder"
                   data-item-key={item.key}
+                  draggable={isFolderInSelection && hasSelection}
+                  onDragStart={handleDragStart}
                 >
                   <FolderCard
                     item={item}
+                    isDropTarget={isDropTarget}
+                    onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                     onDelete={
                       drive
@@ -497,8 +727,45 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <BulkActionBar
           selectedFileCount={selectedFileIds.size}
           selectedFolderCount={selectedFolderKeys.size}
+          onMove={handleBulkMove}
+          onNewTransfer={handleBulkNewTransfer}
+          onShare={handleBulkShare}
           onDelete={handleBulkDelete}
           onClear={clearSelection}
+        />
+      )}
+
+      <BulkMoveModal
+        open={moveModalOpen}
+        onClose={() => setMoveModalOpen(false)}
+        selectedFileCount={selectedFileIds.size}
+        selectedFolderCount={selectedFolderKeys.size}
+        excludeDriveIds={Array.from(selectedFolderKeys).map((k) =>
+          k.startsWith("drive-") ? k.slice(6) : k
+        )}
+        folders={linkedDrives}
+        onMove={handleBulkMoveConfirm}
+      />
+
+      <CreateTransferModal
+        open={transferModalOpen}
+        onClose={() => {
+          setTransferModalOpen(false);
+          setTransferInitialFiles([]);
+        }}
+        onCreated={() => setTransferModalOpen(false)}
+        initialFiles={transferInitialFiles}
+      />
+
+      {shareDriveId && (
+        <ShareModal
+          open={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setShareDriveId(null);
+          }}
+          folderName={shareFolderName}
+          linkedDriveId={shareDriveId}
         />
       )}
 

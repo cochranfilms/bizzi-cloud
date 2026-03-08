@@ -6,7 +6,13 @@ export interface TransferFile {
   path: string;
   views: number;
   downloads: number;
+  /** Firestore backup_files doc id - for thumbnail/download lookup */
+  backupFileId?: string;
+  objectKey?: string;
 }
+
+/** "view" = can view/preview but not download; "downloadable" = can download. */
+export type TransferPermission = "view" | "downloadable";
 
 export interface Transfer {
   id: string;
@@ -14,6 +20,8 @@ export interface Transfer {
   clientName: string;
   clientEmail?: string;
   files: TransferFile[];
+  /** Default "downloadable" - allows recipients to download. "view" = preview only, no download. */
+  permission: TransferPermission;
   password?: string | null;
   expiresAt: string | null;
   createdAt: string;
@@ -26,6 +34,8 @@ export interface CreateTransferInput {
   clientName: string;
   clientEmail?: string;
   files: Omit<TransferFile, "views" | "downloads" | "id">[];
+  /** Default "downloadable" - allows download. "view" = preview only. */
+  permission?: TransferPermission;
   password?: string | null;
   expiresAt: string | null;
 }

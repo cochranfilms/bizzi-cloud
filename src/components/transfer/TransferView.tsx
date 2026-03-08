@@ -1,27 +1,82 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useTransfers } from "@/context/TransferContext";
 import { File, Download, Lock, FolderOpen } from "lucide-react";
 import Image from "next/image";
+import type { Transfer } from "@/types/transfer";
 
 interface TransferViewProps {
   slug: string;
 }
 
 export default function TransferView({ slug }: TransferViewProps) {
-  const { getTransferBySlug, recordView, recordDownload } = useTransfers();
+  const { getTransferBySlug, addTransferFromApi, recordView, recordDownload } = useTransfers();
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState("");
+  const [fetching, setFetching] = useState(false);
 
-  const transfer = getTransferBySlug(slug);
+  const localTransfer = getTransferBySlug(slug);
+
+  const fetchTransfer = useCallback(async () => {
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await fetch(`${base}/api/transfers/${slug}`);
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      slug: string;
+      name: string;
+      clientName: string;
+      clientEmail?: string;
+      files: Array<{ id: string; name: string; path: string; backupFileId?: string; objectKey?: string }>;
+      permission: string;
+      password: string | null;
+      expiresAt: string | null;
+      createdAt: string;
+      status: string;
+    };
+    const t: Transfer = {
+      id: data.slug,
+      slug: data.slug,
+      name: data.name,
+      clientName: data.clientName,
+      clientEmail: data.clientEmail,
+      files: data.files.map((f) => ({
+        ...f,
+        type: "file" as const,
+        views: 0,
+        downloads: 0,
+        backupFileId: f.backupFileId,
+        objectKey: f.objectKey,
+      })),
+      permission: (data.permission as "view" | "downloadable") ?? "downloadable",
+      password: data.password,
+      expiresAt: data.expiresAt,
+      createdAt: data.createdAt,
+      status: data.status as "active" | "expired" | "cancelled",
+    };
+    addTransferFromApi(t);
+  }, [slug, addTransferFromApi]);
+
+  useEffect(() => {
+    if (localTransfer) return;
+    setFetching(true);
+    fetchTransfer().finally(() => setFetching(false));
+  }, [localTransfer, fetchTransfer]);
+
+  const transfer = localTransfer;
   const needsPassword = !!transfer?.password && !unlocked;
 
   useEffect(() => {
     if (transfer && !transfer.password) setUnlocked(true);
   }, [transfer]);
+
+  useEffect(() => {
+    if (transfer?.name && typeof document !== "undefined") {
+      document.title = `${transfer.name} | Bizzi Cloud Transfer`;
+    }
+  }, [transfer?.name]);
 
   const handleUnlock = () => {
     if (!transfer?.password) return;
@@ -46,13 +101,22 @@ export default function TransferView({ slug }: TransferViewProps) {
   if (!transfer) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
-        <FolderOpen className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
-        <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
-          Transfer not found
-        </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          This transfer may have expired or been removed.
-        </p>
+        {fetching ? (
+          <>
+            <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading transfer…</p>
+          </>
+        ) : (
+          <>
+            <FolderOpen className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
+            <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
+              Transfer not found
+            </h1>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              This transfer may have expired or been removed.
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -168,14 +232,16 @@ export default function TransferView({ slug }: TransferViewProps) {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => handleFileDownload(file.id)}
-                className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-              >
-                <Download className="h-4 w-4" />
-                Download
-              </button>
+              {transfer.permission !== "view" && (
+                <button
+                  type="button"
+                  onClick={() => handleFileDownload(file.id)}
+                  className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </button>
+              )}
             </div>
           ))}
         </div>
