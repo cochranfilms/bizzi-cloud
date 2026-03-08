@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Download, FileIcon, Loader2 } from "lucide-react";
+import { X, Download, FileIcon, Loader2, Film, ImageIcon, FileAudio } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -157,24 +157,37 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-2xl shadow-bizzi-blue/5 ring-1 ring-white/5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-700 px-4 py-3">
-          <h2 className="truncate text-sm font-medium text-white" title={file.name}>
-            {file.name}
-          </h2>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-neutral-700/80 bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-900 px-5 py-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10">
+              {previewType === "video" ? (
+                <Film className="h-4 w-4 text-bizzi-blue" />
+              ) : previewType === "image" ? (
+                <ImageIcon className="h-4 w-4 text-bizzi-blue" />
+              ) : previewType === "audio" ? (
+                <FileAudio className="h-4 w-4 text-bizzi-blue" />
+              ) : (
+                <FileIcon className="h-4 w-4 text-bizzi-blue" />
+              )}
+            </div>
+            <h2 className="truncate text-sm font-medium text-white" title={file.name}>
+              {file.name}
+            </h2>
+          </div>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handleDownload}
               disabled={downloading}
-              className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+              className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50"
               aria-label="Download full resolution"
             >
               <Download className="h-4 w-4" />
@@ -182,7 +195,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white"
+              className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -191,11 +204,11 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
         </div>
 
         {/* Content */}
-        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-950 p-6">
+        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-gradient-to-b from-neutral-950 to-neutral-900/80 p-6">
           {loading && !(previewType === "image" && lowResPreviewUrl) && (
-            <div className="flex flex-col items-center gap-3 text-neutral-400">
-              <Loader2 className="h-10 w-10 animate-spin" />
-              <p className="text-sm">Loading preview…</p>
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-neutral-700/50 bg-neutral-800/50 px-12 py-10">
+              <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
+              <p className="text-sm text-neutral-400">Loading preview…</p>
             </div>
           )}
           {error && (
@@ -218,13 +231,15 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
             !error && (
               <>
                 {previewType === "image" && lowResPreviewUrl && (
-                  <div className="flex flex-col items-center gap-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */}
-                    <img
-                      src={lowResPreviewUrl}
-                      alt={file.name}
-                      className="max-h-[70vh] max-w-full rounded-lg object-contain"
-                    />
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="overflow-hidden rounded-xl ring-2 ring-neutral-700/50 ring-offset-2 ring-offset-neutral-900 shadow-xl">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */}
+                      <img
+                        src={lowResPreviewUrl}
+                        alt={file.name}
+                        className="max-h-[70vh] max-w-full object-contain"
+                      />
+                    </div>
                     <p className="text-xs text-neutral-500">
                       Low-resolution preview · Use Download for full quality
                     </p>

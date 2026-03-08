@@ -412,10 +412,10 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
   }
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex w-full flex-col items-center gap-4">
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded-lg bg-black"
+        className="relative w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
         style={{ maxHeight: "70vh" }}
       >
         <video
@@ -439,9 +439,9 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
             }}
           />
         )}
-        <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-6 transition-opacity duration-200">
+        <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
             <div
-              className="h-1 cursor-pointer rounded-full bg-neutral-600"
+              className="h-1.5 cursor-pointer rounded-full bg-white/20 backdrop-blur-sm"
               onClick={handleProgressClick}
               role="progressbar"
               aria-valuemin={0}
@@ -449,7 +449,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
               aria-valuenow={currentTime}
             >
               <div
-                className="h-full rounded-full bg-bizzi-blue transition-[width]"
+                className="h-full rounded-full bg-gradient-to-r from-bizzi-blue to-bizzi-cyan shadow-lg shadow-bizzi-blue/30 transition-[width]"
                 style={{
                   width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
                 }}
@@ -459,7 +459,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
               <button
                 type="button"
                 onClick={togglePlayPause}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/20"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-bizzi-blue/30 hover:text-white"
                 aria-label={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? (
@@ -468,13 +468,13 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
                   <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
                 )}
               </button>
-              <span className="min-w-[4.5rem] text-sm text-white/90">
+              <span className="min-w-[4.5rem] text-sm font-medium text-white/95 tabular-nums">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
               <button
                 type="button"
                 onClick={toggleMute}
-                className="flex h-8 w-8 shrink-0 items-center justify-center text-white hover:bg-white/20 rounded-full"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
                 aria-label={isMuted ? "Unmute" : "Mute"}
               >
                 {isMuted ? (
@@ -486,7 +486,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
               <button
                 type="button"
                 onClick={toggleFullscreen}
-                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-white hover:bg-white/20 rounded-full"
+                className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
                 aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               >
                 <Maximize className="h-4 w-4" />
@@ -495,22 +495,31 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           </div>
       </div>
       {showLUTOption && (
-        <div className="flex items-center gap-2 rounded-lg bg-neutral-800/80 px-3 py-1.5">
+        <div className="flex w-full items-center justify-between gap-4 rounded-xl border border-neutral-700/60 bg-neutral-800/60 px-4 py-3 backdrop-blur-sm">
           <button
             type="button"
             onClick={handleLUTToggle}
-            className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
               lutEnabled
-                ? "bg-bizzi-blue text-white"
-                : "bg-neutral-700/50 text-neutral-300 hover:bg-neutral-600"
+                ? "bg-gradient-to-r from-bizzi-blue to-bizzi-cyan text-white shadow-lg shadow-bizzi-blue/20"
+                : "bg-neutral-700/50 text-neutral-300 ring-1 ring-neutral-600/50 transition-colors hover:bg-neutral-600/60 hover:ring-neutral-500"
             }`}
             title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
           >
-            <span className="inline-block h-3 w-3 rounded-full border border-current bg-current opacity-80" />
+            <span
+              className={`inline-block h-3 w-3 rounded-full border-2 transition-colors ${
+                lutEnabled
+                  ? "border-white bg-white"
+                  : "border-neutral-500 bg-transparent"
+              }`}
+            />
             Rec 709 LUT
           </button>
-          <span className="text-xs text-neutral-500">
-            {lutEnabled ? "On" : "Off"} · For S-Log3 / Sony RAW
+          <span className="text-xs text-neutral-400">
+            <span className={lutEnabled ? "font-medium text-bizzi-cyan" : ""}>
+              {lutEnabled ? "On" : "Off"}
+            </span>
+            {" · "}For S-Log3 / Sony RAW
           </span>
         </div>
       )}
