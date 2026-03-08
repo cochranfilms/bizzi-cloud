@@ -141,6 +141,8 @@ interface VideoWithLUTProps {
   className?: string;
   /** When false, LUT toggle is hidden and video plays without Rec 709. Default: false. */
   showLUTOption?: boolean;
+  /** Called when LUT is toggled on/off. Use to bake LUT into download when enabled. */
+  onLutChange?: (enabled: boolean) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -150,11 +152,12 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoWithLUT({ src, streamUrl, className, showLUTOption = false }: VideoWithLUTProps) {
+export default function VideoWithLUT({ src, streamUrl, className, showLUTOption = false, onLutChange }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [lutReady, setLutReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -323,12 +326,23 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     };
   }, [lutEnabled, lutReady]);
 
-  const handleLUTToggle = () => setLutEnabled((v) => !v);
+  const handleLUTToggle = useCallback(() => {
+    setLutEnabled((v) => {
+      const next = !v;
+      onLutChange?.(next);
+      return next;
+    });
+  }, [onLutChange]);
 
-  // Sync video state for custom controls (when LUT is on)
+  // Sync video state and capture intrinsic dimensions for aspect-ratio (9:16 vs 16:9)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    const onLoadedMetadata = () => {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (w > 0 && h > 0) setVideoDimensions({ width: w, height: h });
+    };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
@@ -337,16 +351,21 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       setVolume(video.volume);
       setIsMuted(video.muted);
     };
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("volumechange", onVolumeChange);
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
+    }
     setCurrentTime(video.currentTime);
     setDuration(video.duration);
     setVolume(video.volume);
     setIsMuted(video.muted);
     return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -411,12 +430,19 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     );
   }
 
+  const containerStyle: React.CSSProperties = {
+    maxHeight: "70vh",
+    ...(videoDimensions && {
+      aspectRatio: `${videoDimensions.width} / ${videoDimensions.height}`,
+    }),
+  };
+
   return (
     <div className="flex w-full flex-col items-center gap-4">
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
-        style={{ maxHeight: "70vh" }}
+        className="relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
+        style={containerStyle}
       >
         <video
           ref={videoRef}
@@ -425,7 +451,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           controls={false}
           preload="auto"
           playsInline
-          className={`max-h-[70vh] w-full ${className ?? ""}`}
+          className={`max-h-[70vh] max-w-full w-full h-full object-contain ${className ?? ""}`}
         />
         {lutEnabled && (
           <canvas

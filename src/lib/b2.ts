@@ -341,6 +341,12 @@ export function getProxyObjectKey(objectKey: string): string {
   return `proxies/${hash}.mp4`;
 }
 
+/** Deterministic key for LUT-baked video (Rec 709). Same objectKey = same baked key. */
+export function getLutBakedObjectKey(objectKey: string): string {
+  const hash = createHash("sha256").update(objectKey).digest("hex").slice(0, 32);
+  return `lut-baked/${hash}.mp4`;
+}
+
 /** Read object into a buffer, with optional max bytes limit (for thumbnail generation). */
 export async function getObjectBuffer(
   objectKey: string,

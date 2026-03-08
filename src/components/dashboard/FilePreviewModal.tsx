@@ -42,6 +42,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lutEnabled, setLutEnabled] = useState(false);
 
   const previewType = file ? getPreviewType(file.name, file.contentType) : "other";
   const lowResPreviewUrl = useThumbnail(
@@ -101,8 +102,10 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
   }, [file?.objectKey, previewType]);
 
   useEffect(() => {
-    if (file) fetchFullUrl();
-    else {
+    if (file) {
+      fetchFullUrl();
+      setLutEnabled(false);
+    } else {
       setFullUrl(null);
       setError(null);
     }
@@ -124,7 +127,10 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
       const uid = getFirebaseAuth().currentUser?.uid;
-      const res = await fetch("/api/backup/download", {
+      const bakeLut =
+        previewType === "video" && showLUTForVideo && lutEnabled;
+      const endpoint = bakeLut ? "/api/backup/download-with-lut" : "/api/backup/download";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -140,10 +146,10 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? "Download failed");
       }
-      const { url } = await res.json();
+      const { url, downloadName } = await res.json();
       const a = document.createElement("a");
       a.href = url.startsWith("/") ? `${window.location.origin}${url}` : url;
-      a.download = file.name;
+      a.download = downloadName ?? file.name;
       a.rel = "noopener noreferrer";
       a.click();
     } catch (err) {
@@ -151,7 +157,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     } finally {
       setDownloading(false);
     }
-  }, [file?.objectKey, file?.name]);
+  }, [file?.objectKey, file?.name, previewType, showLUTForVideo, lutEnabled]);
 
   if (!file) return null;
 
@@ -188,7 +194,8 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               onClick={handleDownload}
               disabled={downloading}
               className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50"
-              aria-label="Download full resolution"
+              aria-label={previewType === "video" && showLUTForVideo && lutEnabled ? "Download with LUT baked in" : "Download full resolution"}
+              title={previewType === "video" && showLUTForVideo && lutEnabled ? "Download with Rec 709 LUT baked in" : undefined}
             >
               <Download className="h-4 w-4" />
             </button>
@@ -251,6 +258,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
                     showLUTOption={showLUTForVideo}
+                    onLutChange={setLutEnabled}
                   />
                 )}
                 {previewType === "audio" && fullUrl && (
