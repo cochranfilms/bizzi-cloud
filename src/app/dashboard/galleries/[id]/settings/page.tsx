@@ -22,6 +22,10 @@ interface GalleryData {
   cover_position?: CoverPosition | null;
   cover_focal_x?: number | null;
   cover_focal_y?: number | null;
+  cover_alt_text?: string | null;
+  cover_overlay_opacity?: number | null;
+  cover_title_alignment?: "left" | "center" | "right" | null;
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
   branding: Record<string, unknown>;
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;

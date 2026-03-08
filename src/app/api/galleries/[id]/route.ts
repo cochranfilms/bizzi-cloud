@@ -79,6 +79,10 @@ export async function PATCH(
   if (body.cover_position !== undefined) updates.cover_position = body.cover_position ?? null;
   if (body.cover_focal_x !== undefined) updates.cover_focal_x = body.cover_focal_x ?? null;
   if (body.cover_focal_y !== undefined) updates.cover_focal_y = body.cover_focal_y ?? null;
+  if (body.cover_alt_text !== undefined) updates.cover_alt_text = body.cover_alt_text?.trim() ?? null;
+  if (body.cover_overlay_opacity !== undefined) updates.cover_overlay_opacity = body.cover_overlay_opacity ?? null;
+  if (body.cover_title_alignment !== undefined) updates.cover_title_alignment = body.cover_title_alignment ?? null;
+  if (body.cover_hero_height !== undefined) updates.cover_hero_height = body.cover_hero_height ?? null;
   if (body.description !== undefined) updates.description = body.description?.trim() ?? null;
   if (body.event_date !== undefined) updates.event_date = body.event_date ?? null;
   if (body.expiration_date !== undefined) updates.expiration_date = body.expiration_date ?? null;

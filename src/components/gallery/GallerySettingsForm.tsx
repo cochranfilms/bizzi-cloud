@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
+import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
 
@@ -92,6 +93,10 @@ interface GallerySettingsFormProps {
     cover_position?: string | null;
     cover_focal_x?: number | null;
     cover_focal_y?: number | null;
+    cover_alt_text?: string | null;
+    cover_overlay_opacity?: number | null;
+    cover_title_alignment?: "left" | "center" | "right" | null;
+    cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
     description?: string | null;
     event_date?: string | null;
     expiration_date?: string | null;
@@ -134,6 +139,25 @@ export default function GallerySettingsForm({
     typeof initialData.cover_focal_y === "number"
       ? initialData.cover_focal_y
       : 50
+  );
+  const [coverAltText, setCoverAltText] = useState(
+    initialData.cover_alt_text ?? ""
+  );
+  const [coverOverlayOpacity, setCoverOverlayOpacity] = useState<number>(
+    typeof initialData.cover_overlay_opacity === "number"
+      ? initialData.cover_overlay_opacity
+      : 50
+  );
+  const [coverTitleAlignment, setCoverTitleAlignment] = useState<
+    "left" | "center" | "right"
+  >(
+    (initialData.cover_title_alignment as "left" | "center" | "right") ?? "center"
+  );
+  const [coverHeroHeight, setCoverHeroHeight] = useState<
+    "small" | "medium" | "large" | "cinematic"
+  >(
+    (initialData.cover_hero_height as "small" | "medium" | "large" | "cinematic") ??
+      "medium"
   );
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -226,6 +250,10 @@ export default function GallerySettingsForm({
         cover_asset_id: coverAssetId || null,
         cover_focal_x: coverFocalX,
         cover_focal_y: coverFocalY,
+        cover_alt_text: coverAltText.trim() || null,
+        cover_overlay_opacity: coverOverlayOpacity,
+        cover_title_alignment: coverTitleAlignment,
+        cover_hero_height: coverHeroHeight,
         description: description.trim() || null,
         event_date: eventDate || null,
         expiration_date: expirationDate || null,
@@ -304,7 +332,7 @@ export default function GallerySettingsForm({
           Cover photo
         </h2>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          Choose which photo appears as the banner on your gallery. Adjust the crop to control which part is visible.
+          Choose which photo appears as the banner on your gallery. Recommended: <strong>2500 × 1400 px</strong> for best results. Keep key subjects centered for mobile.
         </p>
         {coverAssetsLoading ? (
           <div className="flex items-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
@@ -345,6 +373,67 @@ export default function GallerySettingsForm({
                 }}
               />
             )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Overlay darkness
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={coverOverlayOpacity}
+                  onChange={(e) => setCoverOverlayOpacity(Number(e.target.value))}
+                  className="w-full"
+                />
+                <p className="mt-1 text-xs text-neutral-500">{coverOverlayOpacity}%</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Hero height
+                </label>
+                <select
+                  value={coverHeroHeight}
+                  onChange={(e) =>
+                    setCoverHeroHeight(e.target.value as keyof typeof HERO_HEIGHT_PRESETS)
+                  }
+                  className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                  <option value="cinematic">Cinematic</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Cover alt text
+              </label>
+              <input
+                type="text"
+                value={coverAltText}
+                onChange={(e) => setCoverAltText(e.target.value)}
+                placeholder="Describe the cover for accessibility"
+                className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Title alignment on cover
+              </label>
+              <select
+                value={coverTitleAlignment}
+                onChange={(e) =>
+                  setCoverTitleAlignment(e.target.value as "left" | "center" | "right")
+                }
+                className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              >
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </div>
           </div>
         )}
       </section>

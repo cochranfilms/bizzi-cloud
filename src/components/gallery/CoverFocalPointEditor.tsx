@@ -66,6 +66,9 @@ export default function CoverFocalPointEditor({
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         Click and drag the image to position it. The visible area in the banner follows where you place it.
       </p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <strong>Safe zone:</strong> Keep faces, logos, and important subjects in the center area. On mobile, the image crops more on the sides.
+      </p>
       <div
         ref={containerRef}
         role="slider"
@@ -99,6 +102,13 @@ export default function CoverFocalPointEditor({
               }}
               draggable={false}
             />
+            {/* Safe zone overlay: center 60% — keep subjects here */}
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              aria-hidden
+            >
+              <div className="aspect-video w-[60%] rounded border-2 border-dashed border-white/80" />
+            </div>
             <div
               className="absolute inset-0"
               onPointerDown={handlePointerDown}

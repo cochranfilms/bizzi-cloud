@@ -49,6 +49,10 @@ interface GalleryData {
   cover_position?: string | null;
   cover_focal_x?: number | null;
   cover_focal_y?: number | null;
+  cover_alt_text?: string | null;
+  cover_overlay_opacity?: number | null;
+  cover_title_alignment?: "left" | "center" | "right" | null;
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
 }
 
 interface GalleryAsset {
@@ -583,7 +587,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         const params = new URLSearchParams({
           object_key: bannerAsset.object_key,
           name: bannerAsset.name,
-          size: "large",
+          size: "cover-lg",
         });
         if (password) params.set("password", password);
         const headers: Record<string, string> = {};
@@ -964,23 +968,29 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={bannerUrl}
-                  alt=""
+                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
                   className="h-full w-full object-cover"
                   style={{ objectPosition: coverObjectPosition }}
                 />
                 <div
-                  className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/80"
-                  style={{ backgroundColor: "transparent" }}
-                />
-                <div
                   className="absolute inset-0"
                   style={{
-                    background:
-                      "linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.85) 100%)",
+                    background: (() => {
+                      const o = Math.max(0, Math.min(100, gallery.cover_overlay_opacity ?? 50)) / 100;
+                      return `linear-gradient(to bottom, rgba(0,0,0,${o * 0.6}) 0%, transparent 30%, transparent 70%, rgba(0,0,0,${o * 0.9}) 100%)`;
+                    })(),
                   }}
                 />
               </div>
-              <div className="relative z-10 flex flex-col items-center gap-6 text-white">
+              <div
+                className={`relative z-10 flex flex-col gap-6 text-white ${
+                  gallery.cover_title_alignment === "left"
+                    ? "items-start text-left"
+                    : gallery.cover_title_alignment === "right"
+                      ? "items-end text-right"
+                      : "items-center text-center"
+                }`}
+              >
                 {gallery.event_date && (
                   <p className="text-xs font-medium uppercase tracking-widest text-white/90">
                     {new Date(gallery.event_date).toLocaleDateString(undefined, {
@@ -1191,7 +1201,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={bannerUrl}
-            alt=""
+            alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
             className="h-full w-full object-cover"
             style={{ objectPosition: coverObjectPosition }}
           />

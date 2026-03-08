@@ -329,6 +329,12 @@ export function getVideoThumbnailCacheKey(objectKey: string): string {
   return `thumbnails/${hash}.jpg`;
 }
 
+/** Cache key for gallery cover derivatives. Same objectKey + size = same cache key. */
+export function getCoverDerivativeCacheKey(objectKey: string, size: string): string {
+  const hash = createHash("sha256").update(`${objectKey}:${size}`).digest("hex").slice(0, 32);
+  return `cover-derivatives/${hash}.jpg`;
+}
+
 /** Deterministic key for proxy video. Same objectKey = same proxy key. */
 export function getProxyObjectKey(objectKey: string): string {
   const hash = createHash("sha256").update(objectKey).digest("hex").slice(0, 32);
