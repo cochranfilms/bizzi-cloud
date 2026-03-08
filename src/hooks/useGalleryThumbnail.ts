@@ -24,7 +24,10 @@ export function useGalleryThumbnail(
   galleryId: string | undefined,
   objectKey: string | undefined,
   fileName: string,
-  options?: { enabled?: boolean; size?: "thumb" | "preview" }
+  options?: {
+    enabled?: boolean;
+    size?: "thumb" | "preview" | "cover-xs" | "cover-sm" | "cover-md" | "cover-lg" | "cover-xl";
+  }
 ): string | null {
   const { enabled = true, size = "thumb" } = options ?? {};
   const isImage = objectKey && fileName && isImageFile(fileName);

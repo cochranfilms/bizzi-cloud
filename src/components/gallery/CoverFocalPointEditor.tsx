@@ -2,6 +2,18 @@
 
 import { useRef, useState, useCallback } from "react";
 
+const FOCAL_PRESETS: { label: string; x: number; y: number }[] = [
+  { label: "Center", x: 50, y: 50 },
+  { label: "Top", x: 50, y: 20 },
+  { label: "Bottom", x: 50, y: 80 },
+  { label: "Left", x: 20, y: 50 },
+  { label: "Right", x: 80, y: 50 },
+  { label: "Top left", x: 25, y: 25 },
+  { label: "Top right", x: 75, y: 25 },
+  { label: "Bottom left", x: 25, y: 75 },
+  { label: "Bottom right", x: 75, y: 75 },
+];
+
 interface CoverFocalPointEditorProps {
   imageUrl: string | null;
   focalX: number;
@@ -110,12 +122,13 @@ export default function CoverFocalPointEditor({
               <div className="aspect-video w-[60%] rounded border-2 border-dashed border-white/80" />
             </div>
             <div
-              className="absolute inset-0"
+              className="absolute inset-0 z-10 cursor-grab"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerLeave={handlePointerLeave}
               style={{ touchAction: "none" }}
+              aria-hidden
             />
           </>
         ) : (
@@ -127,6 +140,18 @@ export default function CoverFocalPointEditor({
       <p className="text-xs text-neutral-400">
         Position: {Math.round(focalX)}%, {Math.round(focalY)}% — drag to adjust
       </p>
+      <div className="flex flex-wrap gap-1">
+        {FOCAL_PRESETS.map(({ label, x, y }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onChange(x, y)}
+            className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

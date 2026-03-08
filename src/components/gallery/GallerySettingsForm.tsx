@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
@@ -25,7 +25,7 @@ function CoverFocalPointEditorSection({
     galleryId,
     asset?.object_key,
     asset?.name ?? "",
-    { enabled: !!asset, size: "preview" }
+    { enabled: !!asset, size: "cover-md" }
   );
   return (
     <div>
@@ -196,6 +196,24 @@ export default function GallerySettingsForm({
   const [watermarkOpacity, setWatermarkOpacity] = useState(
     (initialData.watermark?.opacity as number) ?? 50
   );
+  const [watermarkImageUrl, setWatermarkImageUrl] = useState<string | null>(
+    (initialData.watermark?.image_url as string) ?? null
+  );
+  const [watermarkFile, setWatermarkFile] = useState<File | null>(null);
+  const [watermarkPreviewUrl, setWatermarkPreviewUrl] = useState<string | null>(null);
+  const [uploadingWatermark, setUploadingWatermark] = useState(false);
+  const [watermarkError, setWatermarkError] = useState<string | null>(null);
+  const watermarkInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!watermarkFile) {
+      setWatermarkPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(watermarkFile);
+    setWatermarkPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [watermarkFile]);
 
   const [allowFullGalleryDownload, setAllowFullGalleryDownload] = useState(
     (initialData.download_settings?.allow_full_gallery_download as boolean) ?? true
@@ -284,6 +302,7 @@ export default function GallerySettingsForm({
           enabled: watermarkEnabled,
           position: watermarkPosition,
           opacity: watermarkOpacity,
+          image_url: watermarkImageUrl ?? undefined,
         },
       };
       if (accessMode === "password" && password) body.password = password;
@@ -806,6 +825,91 @@ export default function GallerySettingsForm({
                   <option value="top-left">Top left</option>
                 </select>
               </div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <div className="flex shrink-0 flex-col items-center gap-2">
+                  <div className="flex h-20 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                    {watermarkImageUrl || watermarkPreviewUrl ? (
+                      <img
+                        src={watermarkPreviewUrl ?? watermarkImageUrl ?? ""}
+                        alt="Watermark preview"
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="h-8 w-8 text-neutral-400" />
+                    )}
+                  </div>
+                  <input
+                    ref={watermarkInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (!file.type.startsWith("image/")) {
+                        setWatermarkError("Use PNG, JPG, WebP, or GIF. PNG with transparency recommended.");
+                        return;
+                      }
+                      if (file.size > 2 * 1024 * 1024) {
+                        setWatermarkError("Image must be under 2 MB");
+                        return;
+                      }
+                      setWatermarkError(null);
+                      setWatermarkFile(file);
+                    }}
+                    aria-label="Upload watermark"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => watermarkInputRef.current?.click()}
+                    className="text-sm text-bizzi-blue hover:underline"
+                  >
+                    Choose image
+                  </button>
+                  {watermarkFile && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!user || !watermarkFile) return;
+                        setUploadingWatermark(true);
+                        setWatermarkError(null);
+                        try {
+                          const token = await user.getIdToken();
+                          const formData = new FormData();
+                          formData.append("watermark", watermarkFile);
+                          const res = await fetch(`/api/galleries/${galleryId}/watermark`, {
+                            method: "POST",
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: formData,
+                          });
+                          if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            throw new Error(data.error ?? "Failed to upload watermark");
+                          }
+                          const data = await res.json();
+                          setWatermarkImageUrl(data.image_url);
+                          setWatermarkFile(null);
+                        } catch (err) {
+                          setWatermarkError(err instanceof Error ? err.message : "Failed to upload");
+                        } finally {
+                          setUploadingWatermark(false);
+                        }
+                      }}
+                      disabled={uploadingWatermark}
+                      className="flex items-center gap-1 rounded-lg bg-bizzi-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {uploadingWatermark ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Upload"
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {watermarkError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{watermarkError}</p>
+              )}
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                   Opacity: {watermarkOpacity}%
@@ -820,8 +924,7 @@ export default function GallerySettingsForm({
                 />
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Logo upload coming in a future update. Watermark applies to previews only, not
-                delivered downloads.
+                Watermark applies to previews only, not delivered downloads. Minimum 1600px width recommended.
               </p>
             </>
           )}

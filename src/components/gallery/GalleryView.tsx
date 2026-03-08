@@ -1197,7 +1197,21 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       </header>
 
       {bannerUrl && (
-        <div className="relative h-48 w-full overflow-hidden sm:h-56">
+        <div
+          className="relative w-full overflow-hidden"
+          style={{
+            minHeight: (() => {
+              const preset = gallery.cover_hero_height;
+              const map: Record<string, string> = {
+                small: "clamp(220px, 28vh, 320px)",
+                medium: "clamp(280px, 35vh, 400px)",
+                large: "clamp(320px, 42vh, 480px)",
+                cinematic: "clamp(400px, 50vh, 560px)",
+              };
+              return map[preset ?? ""] ?? map.medium;
+            })(),
+          }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={bannerUrl}
