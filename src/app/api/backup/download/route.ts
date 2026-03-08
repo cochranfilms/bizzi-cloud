@@ -13,14 +13,10 @@ import {
 import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
-import ffmpegPath from "ffmpeg-static";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
-
-export const dynamic = "force-dynamic";
-export const maxDuration = 300;
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
@@ -87,6 +83,8 @@ export async function POST(request: Request) {
   const shouldBakeLut = bakeLut === true && isVideoFile(name);
 
   if (shouldBakeLut) {
+    const ffmpegModule = await import("ffmpeg-static");
+    const ffmpegPath = ffmpegModule.default;
     if (!ffmpegPath) {
       return NextResponse.json(
         { error: "FFmpeg not available for LUT baking" },

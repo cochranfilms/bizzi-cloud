@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/backup/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/backup/generate-proxy": ["./node_modules/ffmpeg-static/ffmpeg"],
-    "/api/backup/download": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/shares/[token]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/transfers/[slug]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
   },
