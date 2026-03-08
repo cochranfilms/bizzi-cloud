@@ -198,14 +198,14 @@ export default function RightPanel({
         </Link>
       </div>
 
-      {/* Drag zone */}
-      <div className="flex-1 p-4">
+      {/* Drag zone - expanded to fill available space for a bigger drop area */}
+      <div className="flex-1 min-h-0 flex flex-col p-4">
         <div
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
+          className={`flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
             isDragging
               ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
               : "border-neutral-200 dark:border-neutral-700"
@@ -234,7 +234,7 @@ export default function RightPanel({
         <SyncDriveButton />
       </div>
 
-      {/* Storage */}
+      {/* Storage - swapped to bottom */}
       <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
         {storageComponent ?? <StorageBadge />}
       </div>

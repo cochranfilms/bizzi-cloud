@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useCallback, useState } from "react";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -149,7 +149,11 @@ export default function FolderCard({
         )}
         <div className="relative mb-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
-            <Folder className="h-8 w-8" />
+            {item.name === "Storage" ? (
+              <Cloud className="h-8 w-8" />
+            ) : (
+              <Folder className="h-8 w-8" />
+            )}
           </div>
           {item.isShared && (
             <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1">
