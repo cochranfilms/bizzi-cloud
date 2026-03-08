@@ -19,6 +19,7 @@ const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;

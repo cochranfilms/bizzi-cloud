@@ -240,35 +240,56 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+    const container = containerRef.current;
     const ctx = glRef.current;
-    if (!canvas || !video || !ctx || !lutReady) return;
+    if (!canvas || !video || !container || !ctx || !lutReady) return;
 
     const { gl, program, lutTexture, videoTexture } = ctx;
 
     const dpr = window.devicePixelRatio || 1;
 
     const resize = () => {
-      const rect = video.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(rect.width * dpr));
-      const h = Math.max(1, Math.floor(rect.height * dpr));
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const videoRect = video.getBoundingClientRect();
+      if (!containerRect) return;
+
+      const w = Math.max(1, Math.floor(videoRect.width * dpr));
+      const h = Math.max(1, Math.floor(videoRect.height * dpr));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
       }
+
+      // Position canvas to exactly overlay the video (handles 9:16 vs 16:9)
+      const left = videoRect.left - containerRect.left;
+      const top = videoRect.top - containerRect.top;
+      Object.assign(canvas.style, {
+        position: "absolute",
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${videoRect.width}px`,
+        height: `${videoRect.height}px`,
+      });
     };
 
+    let rafId = 0;
+    let cancelled = false;
+
     const render = () => {
+      if (cancelled) return;
       if (video.readyState < 2) {
-        requestAnimationFrame(render);
+        rafId = requestAnimationFrame(render);
         return;
       }
       resize();
       const w = canvas.width;
       const h = canvas.height;
       if (w === 0 || h === 0) {
-        requestAnimationFrame(render);
+        rafId = requestAnimationFrame(render);
         return;
       }
+
+      if (cancelled) return;
 
       gl.viewport(0, 0, w, h);
       gl.clearColor(0, 0, 0, 0);
@@ -312,7 +333,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-      requestAnimationFrame(render);
+      if (!cancelled) rafId = requestAnimationFrame(render);
     };
 
     const onResize = () => resize();
@@ -321,6 +342,8 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     if (video.readyState >= 2) render();
 
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
       video.removeEventListener("loadeddata", render);
     };
@@ -456,10 +479,8 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
         {lutEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 transition-opacity duration-200"
+            className="absolute left-0 top-0 transition-opacity duration-200"
             style={{
-              width: "100%",
-              height: "100%",
               pointerEvents: "none",
               opacity: lutReady ? 1 : 0,
             }}
