@@ -1,0 +1,198 @@
+import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+import type { GalleryAccessMode } from "@/types/gallery";
+
+const scryptAsync = promisify(scrypt);
+const SALT_LEN = 16;
+const KEY_LEN = 64;
+
+export type GalleryAccessResult =
+  | { allowed: true; needsPassword?: boolean; needsPin?: boolean }
+  | {
+      allowed: false;
+      code: string;
+      message: string;
+      needsPassword?: boolean;
+      needsPin?: boolean;
+    };
+
+/** Hash a password or PIN for storage. */
+export async function hashSecret(secret: string): Promise<string> {
+  const salt = randomBytes(SALT_LEN).toString("hex");
+  const derived = (await scryptAsync(secret, salt, KEY_LEN)) as Buffer;
+  return `${salt}:${derived.toString("hex")}`;
+}
+
+/** Verify a password or PIN against stored hash. */
+export async function verifySecret(secret: string, stored: string): Promise<boolean> {
+  try {
+    const [salt, keyHex] = stored.split(":");
+    if (!salt || !keyHex) return false;
+    const derived = (await scryptAsync(secret, salt, KEY_LEN)) as Buffer;
+    const key = Buffer.from(keyHex, "hex");
+    return key.length === derived.length && timingSafeEqual(derived, key);
+  } catch {
+    return false;
+  }
+}
+
+export interface GalleryAccessCheck {
+  photographer_id: string;
+  access_mode: GalleryAccessMode;
+  password_hash?: string | null;
+  pin_hash?: string | null;
+  invited_emails?: string[];
+  expiration_date?: string | null;
+}
+
+/**
+ * Verify gallery access for viewing.
+ * - Owner (photographer) always has access when authenticated.
+ * - public: allow
+ * - password: require password in request
+ * - pin: allow view (pin only for download)
+ * - invite_only: require auth + invited email
+ */
+export async function verifyGalleryViewAccess(
+  gallery: GalleryAccessCheck,
+  request: {
+    authHeader: string | null;
+    password?: string | null;
+  }
+): Promise<GalleryAccessResult> {
+  const { access_mode, expiration_date, photographer_id } = gallery;
+
+  if (expiration_date) {
+    const exp = new Date(expiration_date);
+    if (exp < new Date()) {
+      return {
+        allowed: false,
+        code: "gallery_expired",
+        message: "This gallery has expired.",
+      };
+    }
+  }
+
+  // Owner always has access when authenticated
+  if (request.authHeader?.startsWith("Bearer ")) {
+    const token = request.authHeader.slice(7).trim();
+    try {
+      const decoded = await verifyIdToken(token);
+      if (decoded.uid === photographer_id) return { allowed: true };
+    } catch {
+      // Fall through to normal access checks
+    }
+  }
+
+  if (access_mode === "public") {
+    return { allowed: true };
+  }
+
+  if (access_mode === "pin") {
+    // PIN only gates download, not view
+    return { allowed: true, needsPin: true };
+  }
+
+  if (access_mode === "password") {
+    const { password } = request;
+    if (!password || typeof password !== "string") {
+      return {
+        allowed: false,
+        code: "password_required",
+        message: "This gallery is password protected.",
+        needsPassword: true,
+      };
+    }
+    const hash = gallery.password_hash;
+    if (!hash) return { allowed: true }; // Misconfigured, allow
+    const ok = await verifySecret(password, hash);
+    if (!ok) {
+      return {
+        allowed: false,
+        code: "invalid_password",
+        message: "Invalid password.",
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (access_mode === "invite_only") {
+    const authHeader = request.authHeader;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return {
+        allowed: false,
+        code: "invite_required",
+        message: "This gallery is invite only. Sign in with an invited email.",
+      };
+    }
+    const token = authHeader.slice(7).trim();
+    let uid: string;
+    let email: string | undefined;
+    try {
+      const decoded = await verifyIdToken(token);
+      uid = decoded.uid;
+      email = decoded.email;
+    } catch {
+      return {
+        allowed: false,
+        code: "invite_required",
+        message: "Invalid or expired session. Please sign in.",
+      };
+    }
+    if (uid === gallery.photographer_id) return { allowed: true };
+    const invited = gallery.invited_emails ?? [];
+    const emailLower = email?.toLowerCase();
+    if (emailLower && invited.some((e) => e.toLowerCase() === emailLower)) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      code: "access_denied",
+      message: "You don't have access to this gallery.",
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Verify download permission.
+ * For pin mode, requires correct PIN.
+ */
+export async function verifyGalleryDownloadAccess(
+  gallery: GalleryAccessCheck,
+  request: {
+    authHeader: string | null;
+    password?: string | null;
+    pin?: string | null;
+  }
+): Promise<GalleryAccessResult> {
+  const viewResult = await verifyGalleryViewAccess(
+    gallery,
+    { authHeader: request.authHeader, password: request.password }
+  );
+
+  if (!viewResult.allowed) return viewResult;
+
+  if (gallery.access_mode === "pin" && gallery.pin_hash) {
+    const { pin } = request;
+    if (!pin || typeof pin !== "string") {
+      return {
+        allowed: false,
+        code: "pin_required",
+        message: "Enter the download PIN to download.",
+      };
+    }
+    const ok = await verifySecret(pin, gallery.pin_hash);
+    if (!ok) {
+      return {
+        allowed: false,
+        code: "invalid_pin",
+        message: "Invalid download PIN.",
+      };
+    }
+  }
+
+  return { allowed: true };
+}

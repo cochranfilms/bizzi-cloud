@@ -24,7 +24,7 @@ Files uploaded in the **personal dashboard** (`/dashboard/*`) are stored separat
 - BackupContext.fetchDrives: Filters by `organization_id` based on pathname (personal vs enterprise)
 - BackupContext.linkDrive: Sets `organization_id` when creating drives
 - BackupContext backup_files (startSync): Adds `organization_id` from drive
-- BackupContext.getOrCreateUploadsDrive: Filters existing "Uploads" by `organization_id`; sets it when creating
+- BackupContext.getOrCreateStorageDrive: Filters existing "Storage" (or legacy "Uploads") by `organization_id`; creates "Storage" drive for new users
 - BackupContext.createFolder: Sets `organization_id` when creating folders
 - BackupContext.uploadFiles/uploadSingleFile: Adds `organization_id` to backup_files
 - useCloudFiles: Filters drives and recent files by `organization_id` (pathname-based context)

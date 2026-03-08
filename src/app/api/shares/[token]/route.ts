@@ -245,8 +245,9 @@ export async function DELETE(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  // Delete share record only - never delete backup_files. Virtual shares reference
-  // files by ID; standard shares point to linked_drives. Originals stay in place.
+  // Delete share record only—never delete backup_files.
+  // Virtual shares (referenced_file_ids): only this doc is deleted; originals stay.
+  // Standard shares (linked_drive_id): only this doc is deleted; drive and files stay.
   await shareRef.delete();
 
   return NextResponse.json({ ok: true });

@@ -78,6 +78,12 @@ interface BackupContextValue {
   fsAccessSupported: boolean;
   /** Create a new empty folder (linked drive). */
   createFolder: (name: string) => Promise<LinkedDrive>;
+  /** Upload files directly to a gallery (uses Gallery Media drive, adds to gallery on complete). */
+  uploadFilesToGallery: (
+    files: File[],
+    galleryId: string,
+    options?: { onComplete?: () => void }
+  ) => Promise<void>;
 }
 
 /** Video extensions that trigger proxy generation (720p H.264). */
@@ -376,26 +382,28 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       );
       const snapshot = await getDocs(q);
       const orgId = org?.id ?? null;
-      const drives: LinkedDrive[] = snapshot.docs
-        .filter((d) => {
-          if (d.data().deleted_at) return false;
-          const oid = d.data().organization_id;
-          if (isEnterpriseContext && orgId) return oid === orgId;
-          return !oid;
-        })
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            user_id: data.userId,
-            name: data.name,
-            mount_path: data.mount_path ?? null,
-            permission_handle_id: data.permission_handle_id ?? null,
-            last_synced_at: data.last_synced_at ?? null,
-            created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-            organization_id: data.organization_id ?? null,
-          };
+      const drives: LinkedDrive[] = [];
+      for (const d of snapshot.docs) {
+        const data = d.data();
+        if (data.deleted_at) continue;
+        const oid = data.organization_id ?? null;
+        if (isEnterpriseContext && orgId ? oid !== orgId : !!oid) continue;
+        let name = data.name as string;
+        if (name === "Uploads") {
+          await updateDoc(doc(db, "linked_drives", d.id), { name: "Storage" });
+          name = "Storage";
+        }
+        drives.push({
+          id: d.id,
+          user_id: data.userId,
+          name,
+          mount_path: data.mount_path ?? null,
+          permission_handle_id: data.permission_handle_id ?? null,
+          last_synced_at: data.last_synced_at ?? null,
+          created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+          organization_id: data.organization_id ?? null,
         });
+      }
       setLinkedDrives(drives);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -906,7 +914,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     [user, deleteStoredHandle, fetchDrives]
   );
 
-  const getOrCreateUploadsDrive = useCallback(async (): Promise<LinkedDrive> => {
+  const getOrCreateStorageDrive = useCallback(async (): Promise<LinkedDrive> => {
     if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
     const db = getFirebaseFirestore();
     const existing = await getDocs(
@@ -917,14 +925,66 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       )
     );
     const orgId = isEnterpriseContext && org?.id ? org.id : null;
-    const uploadsDrive = existing.docs.find((d) => {
+    const storageDrive = existing.docs.find((d) => {
       const data = d.data();
-      if (data.name !== "Uploads") return false;
+      const name = data.name as string;
+      if (name !== "Storage" && name !== "Uploads") return false;
       const oid = data.organization_id ?? null;
       return orgId ? oid === orgId : !oid;
     });
-    if (uploadsDrive) {
-      const d = uploadsDrive;
+    if (storageDrive) {
+      const d = storageDrive;
+      const data = d.data();
+      const currentName = data.name as string;
+      if (currentName === "Uploads") {
+        await updateDoc(doc(db, "linked_drives", d.id), { name: "Storage" });
+        await fetchDrives();
+      }
+      return {
+        id: d.id,
+        user_id: data.userId,
+        name: "Storage",
+        mount_path: data.mount_path ?? null,
+        permission_handle_id: data.permission_handle_id ?? null,
+        last_synced_at: data.last_synced_at ?? null,
+        created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        organization_id: data.organization_id ?? null,
+      };
+    }
+    const docRef = await addDoc(collection(db, "linked_drives"), {
+      userId: user.uid,
+      name: "Storage",
+      permission_handle_id: `storage-${Date.now()}`,
+      createdAt: new Date(),
+      ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+    });
+    const drive: LinkedDrive = {
+      id: docRef.id,
+      user_id: user.uid,
+      name: "Storage",
+      mount_path: null,
+      permission_handle_id: `storage-${Date.now()}`,
+      last_synced_at: null,
+      created_at: new Date().toISOString(),
+      organization_id: orgId ?? null,
+    };
+    setLinkedDrives((prev) => [drive, ...prev.filter((ld) => ld.id !== drive.id)]);
+    return drive;
+  }, [user, isEnterpriseContext, org, fetchDrives]);
+
+  const getOrCreateGalleryDrive = useCallback(async (): Promise<LinkedDrive> => {
+    if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
+    const db = getFirebaseFirestore();
+    const existing = await getDocs(
+      query(
+        collection(db, "linked_drives"),
+        where("userId", "==", user.uid),
+        orderBy("createdAt", "desc")
+      )
+    );
+    const galleryDrive = existing.docs.find((d) => d.data().name === "Gallery Media");
+    if (galleryDrive) {
+      const d = galleryDrive;
       const data = d.data();
       return {
         id: d.id,
@@ -939,24 +999,25 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
       userId: user.uid,
-      name: "Uploads",
-      permission_handle_id: `uploads-${Date.now()}`,
+      name: "Gallery Media",
+      permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: new Date(),
-      ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+      organization_id: null,
     });
     const drive: LinkedDrive = {
       id: docRef.id,
       user_id: user.uid,
-      name: "Uploads",
+      name: "Gallery Media",
       mount_path: null,
-      permission_handle_id: `uploads-${Date.now()}`,
+      permission_handle_id: `gallery-media-${Date.now()}`,
       last_synced_at: null,
       created_at: new Date().toISOString(),
-      organization_id: orgId ?? null,
+      organization_id: null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
+    setStorageVersion((v) => v + 1);
     return drive;
-  }, [user, isEnterpriseContext, org]);
+  }, [user]);
 
   const createFolder = useCallback(
     async (name: string): Promise<LinkedDrive> => {
@@ -1073,8 +1134,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const drive = targetDriveId
-          ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
-          : await getOrCreateUploadsDrive();
+          ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateStorageDrive())
+          : await getOrCreateStorageDrive();
         const db = getFirebaseFirestore();
 
         let bytesSynced = 0;
@@ -1217,7 +1278,199 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [user, getOrCreateUploadsDrive, linkedDrives, isEnterpriseContext, org?.id]
+    [user, getOrCreateStorageDrive, linkedDrives, isEnterpriseContext, org?.id]
+  );
+
+  const uploadFilesToGallery = useCallback(
+    async (
+      files: File[],
+      galleryId: string,
+      options?: { onComplete?: () => void }
+    ) => {
+      if (!isFirebaseConfigured() || !user) {
+        setError("Please sign in to upload.");
+        return;
+      }
+      if (files.length === 0) return;
+      setError(null);
+      setFileUploadError(null);
+      setStorageQuotaExceeded(null);
+
+      const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+      const fileItems = files.map((f, i) => ({
+        id: `gallery-upload-${Date.now()}-${i}-${f.name}`,
+        name: f.name,
+        size: f.size,
+        bytesSynced: 0,
+        status: "pending" as const,
+      }));
+
+      setFileUploadProgress({
+        status: "in_progress",
+        files: fileItems,
+        bytesTotal,
+        bytesSynced: 0,
+      });
+
+      try {
+        const res = await fetch(
+          typeof window !== "undefined" ? `${window.location.origin}/api/storage/status` : "",
+          {
+            headers: {
+              Authorization: `Bearer ${await getFirebaseAuth().currentUser?.getIdToken(true)}`,
+            },
+          }
+        );
+        if (res.ok) {
+          const data = (await res.json()) as {
+            storage_used_bytes: number;
+            storage_quota_bytes: number | null;
+          };
+          const { storage_used_bytes, storage_quota_bytes } = data;
+          if (storage_quota_bytes !== null && storage_used_bytes + bytesTotal > storage_quota_bytes) {
+            setFileUploadProgress(null);
+            setStorageQuotaExceeded({
+              attemptedBytes: bytesTotal,
+              usedBytes: storage_used_bytes,
+              quotaBytes: storage_quota_bytes,
+              isOrganizationUser: false,
+            });
+            return;
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      const drive = await getOrCreateGalleryDrive();
+      const batchTs = Date.now();
+      const db = getFirebaseFirestore();
+      let bytesSynced = 0;
+      const completedBytesRef = { current: 0 };
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+
+      const updateFile = (
+        id: string,
+        update: Partial<FileUploadItem>,
+        totalBytes?: number
+      ) => {
+        setFileUploadProgress((prev) => {
+          if (!prev) return null;
+          const nextBytes = totalBytes ?? bytesSynced;
+          return {
+            ...prev,
+            files: prev.files.map((f) => (f.id === id ? { ...f, ...update } : f)),
+            bytesSynced: nextBytes,
+          };
+        });
+      };
+
+      const fileById = new Map(files.map((f, i) => [fileItems[i].id, f]));
+      const manager = new UploadManager({
+        getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
+        getUserId: () => user?.uid ?? null,
+        onProgress: (ev) => {
+          bytesSynced = completedBytesRef.current + ev.bytesLoaded;
+          updateFile(ev.fileId, {
+            bytesSynced: ev.bytesLoaded,
+            status: ev.status === "completed" ? "completed" : "uploading",
+          });
+        },
+        onComplete: async (ev) => {
+          const file = fileById.get(ev.fileId);
+          if (!file) return;
+          completedBytesRef.current += file.size;
+          bytesSynced = completedBytesRef.current;
+          const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
+            linked_drive_id: drive.id,
+            userId: user.uid,
+            status: "completed",
+            files_count: 1,
+            bytes_synced: file.size,
+            completed_at: new Date(),
+          });
+          const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
+          const relativePath = `gallery_${galleryId}/${batchTs}_${fileIndex}/${file.name}`;
+          const fileRef = await addDoc(collection(db, "backup_files"), {
+            backup_snapshot_id: snapshotRef.id,
+            linked_drive_id: drive.id,
+            userId: user.uid,
+            relative_path: relativePath,
+            object_key: ev.objectKey,
+            size_bytes: file.size,
+            content_type: file.type || "application/octet-stream",
+            modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+            deleted_at: null,
+            organization_id: null,
+          });
+          updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
+          getFirebaseAuth()
+            .currentUser?.getIdToken(true)
+            .then((token) =>
+              fetch(`${base}/api/galleries/${galleryId}/assets`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ backup_file_ids: [fileRef.id] }),
+              })
+            )
+            .catch((err) => console.error("Add gallery asset failed:", err));
+        },
+        onError: (ev) => {
+          setFileUploadError(ev.error);
+          updateFile(ev.fileId, { status: "error", error: ev.error } as Partial<FileUploadItem>);
+        },
+      });
+      uploadManagerRef.current = manager;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const item = fileItems[i];
+        updateFile(item.id, { status: "uploading" });
+        const queued: QueuedFile = {
+          id: item.id,
+          file,
+          driveId: drive.id,
+          relativePath: `gallery_${galleryId}/${batchTs}_${i}/${file.name}`,
+          workspaceId: undefined,
+          organizationId: null,
+        };
+        try {
+          await manager.upload(queued);
+        } catch {
+          // onError already called
+        }
+      }
+
+      setFileUploadProgress((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          status: "completed",
+          bytesSynced,
+        };
+      });
+
+      setTimeout(() => {
+        setFileUploadProgress(null);
+        setStorageVersion((v) => v + 1);
+        options?.onComplete?.();
+      }, 2000);
+
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        await fetch(`${base}/api/storage/recalculate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Non-fatal
+      }
+    },
+    [user, getOrCreateGalleryDrive]
   );
 
   const uploadSingleFile = useCallback(
@@ -1237,8 +1490,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       setFileUploadError(null);
 
       const drive = targetDriveId
-        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateUploadsDrive())
-        : await getOrCreateUploadsDrive();
+        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateStorageDrive())
+        : await getOrCreateStorageDrive();
       const db = getFirebaseFirestore();
       const relativePath = file.name;
       const contentType = file.type || "application/octet-stream";
@@ -1371,7 +1624,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         setSyncProgress(null);
       }
     },
-    [user, getOrCreateUploadsDrive, linkedDrives]
+    [user, getOrCreateStorageDrive, linkedDrives]
   );
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);
@@ -1416,6 +1669,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       clearFileUploadError,
       fsAccessSupported,
       createFolder,
+      uploadFilesToGallery,
     }),
     [
       linkedDrives,
@@ -1440,6 +1694,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       fileUploadError,
       fsAccessSupported,
       createFolder,
+      uploadFilesToGallery,
     ]
   );
 

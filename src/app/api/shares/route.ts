@@ -286,7 +286,9 @@ export async function POST(request: Request) {
   const db = getAdminFirestore();
 
   if (isVirtualShare) {
-    // Virtual share: reference files by ID, no linked_drive created
+    // Virtual share: reference files by ID only; no linked_drive created.
+    // Files remain in their original locations. Deleting this share only removes
+    // the folder_shares doc—backup_files (originals) are never touched.
     const fileIds = (referencedFileIds as string[]).filter(
       (id): id is string => typeof id === "string" && id.length > 0
     );
