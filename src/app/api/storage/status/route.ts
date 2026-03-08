@@ -31,7 +31,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const status = await getStorageStatus(uid);
+    const { searchParams } = new URL(request.url);
+    const context = searchParams.get("context") as "personal" | "enterprise" | null;
+    const status = await getStorageStatus(uid, context ?? undefined);
     return NextResponse.json(status);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get storage status";

@@ -58,6 +58,7 @@ export async function GET(request: Request) {
   const filesSnap = await db
     .collection("backup_files")
     .where("userId", "==", uid)
+    .where("organization_id", "==", orgId)
     .get();
 
   let storageUsedBytes = 0;

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "migrate:organization-id": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' -r dotenv/config scripts/migrate-organization-id.ts",
     "dev": "node node_modules/next/dist/bin/next dev",
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start",
@@ -24,6 +25,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "dotenv": "^16.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

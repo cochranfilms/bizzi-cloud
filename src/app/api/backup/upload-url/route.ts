@@ -115,7 +115,7 @@ async function handleUploadUrl(request: Request) {
   const size = typeof sizeBytes === "number" && sizeBytes > 0 ? sizeBytes : 0;
   if (size > 0) {
     try {
-      await checkUserCanUpload(uid, size);
+      await checkUserCanUpload(uid, size, typeof driveId === "string" ? driveId : undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Storage limit reached";
       return NextResponse.json({ error: msg }, { status: 403 });

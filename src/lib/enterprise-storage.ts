@@ -19,19 +19,31 @@ export type { SeatStorageTier } from "./enterprise-constants";
 
 /**
  * Check if a user can upload additional bytes.
- * For enterprise users: uses seat's storage_quota_bytes (null = unlimited).
- * For personal users: uses profile's storage_quota_bytes.
+ * When driveId is provided: uses the drive's organization_id to determine quota
+ *   (enterprise drive → org quota; personal drive → personal quota).
+ * When driveId is omitted: falls back to profile's organization_id (legacy behavior).
  * @throws Error with user-facing message if over quota
  */
 export async function checkUserCanUpload(
   uid: string,
-  additionalBytes: number
+  additionalBytes: number,
+  driveId?: string
 ): Promise<void> {
   const db = getAdminFirestore();
 
+  let orgId: string | null;
+  if (driveId) {
+    const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+    const driveData = driveSnap.data();
+    const oid = driveData?.organization_id;
+    orgId = typeof oid === "string" ? oid : null;
+  } else {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    orgId = (profileSnap.data()?.organization_id as string) ?? null;
+  }
+
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
-  const orgId = profileData?.organization_id as string | undefined;
 
   let quotaBytes: number | null;
   let usedBytes: number;
@@ -57,10 +69,17 @@ export async function checkUserCanUpload(
         : 50 * 1024 * 1024 * 1024;
   }
 
-  const filesSnap = await db
-    .collection("backup_files")
-    .where("userId", "==", uid)
-    .get();
+  let filesQuery = db.collection("backup_files").where("userId", "==", uid);
+  if (orgId !== null) {
+    filesQuery = filesQuery.where("organization_id", "==", orgId) as ReturnType<
+      typeof db.collection
+    >;
+  } else {
+    filesQuery = filesQuery.where("organization_id", "==", null) as ReturnType<
+      typeof db.collection
+    >;
+  }
+  const filesSnap = await filesQuery.get();
 
   usedBytes = 0;
   for (const docSnap of filesSnap.docs) {
@@ -87,14 +106,21 @@ export interface StorageStatus {
 
 /**
  * Get current storage status for a user (used for pre-upload checks).
- * Works for both personal and organization users.
+ * @param context - When "enterprise", use org quota and count only enterprise files.
+ *   When "personal" or omitted, use personal quota and count only personal files.
  */
-export async function getStorageStatus(uid: string): Promise<StorageStatus> {
+export async function getStorageStatus(
+  uid: string,
+  context?: "personal" | "enterprise"
+): Promise<StorageStatus> {
   const db = getAdminFirestore();
 
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
-  const orgId = profileData?.organization_id as string | undefined;
+  const profileOrgId = profileData?.organization_id as string | undefined;
+
+  const useEnterprise = context === "enterprise" && profileOrgId;
+  const orgId = useEnterprise ? profileOrgId : null;
 
   let quotaBytes: number | null;
   let usedBytes: number;
@@ -120,10 +146,13 @@ export async function getStorageStatus(uid: string): Promise<StorageStatus> {
         : 50 * 1024 * 1024 * 1024;
   }
 
-  const filesSnap = await db
-    .collection("backup_files")
-    .where("userId", "==", uid)
-    .get();
+  let filesQuery = db.collection("backup_files").where("userId", "==", uid);
+  if (orgId) {
+    filesQuery = filesQuery.where("organization_id", "==", orgId) as typeof filesQuery;
+  } else {
+    filesQuery = filesQuery.where("organization_id", "==", null) as typeof filesQuery;
+  }
+  const filesSnap = await filesQuery.get();
 
   usedBytes = 0;
   for (const docSnap of filesSnap.docs) {

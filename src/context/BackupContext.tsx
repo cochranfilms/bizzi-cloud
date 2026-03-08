@@ -36,6 +36,8 @@ import {
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { usePathname } from "next/navigation";
 import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceededModal";
 
 interface BackupContextValue {
@@ -309,8 +311,16 @@ async function uploadWithMultipart(
 
 const BackupContext = createContext<BackupContextValue | null>(null);
 
+/** True when pathname is under /enterprise (enterprise storage context). */
+function useIsEnterpriseContext(): boolean {
+  const pathname = usePathname();
+  return typeof pathname === "string" && pathname.startsWith("/enterprise");
+}
+
 export function BackupProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const { org } = useEnterprise();
+  const isEnterpriseContext = useIsEnterpriseContext();
   const [linkedDrives, setLinkedDrives] = useState<LinkedDrive[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -357,8 +367,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         orderBy("createdAt", "desc")
       );
       const snapshot = await getDocs(q);
+      const orgId = org?.id ?? null;
       const drives: LinkedDrive[] = snapshot.docs
-        .filter((d) => !d.data().deleted_at)
+        .filter((d) => {
+          if (d.data().deleted_at) return false;
+          const oid = d.data().organization_id;
+          if (isEnterpriseContext && orgId) return oid === orgId;
+          return !oid;
+        })
         .map((d) => {
           const data = d.data();
           return {
@@ -369,6 +385,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             permission_handle_id: data.permission_handle_id ?? null,
             last_synced_at: data.last_synced_at ?? null,
             created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+            organization_id: data.organization_id ?? null,
           };
         });
       setLinkedDrives(drives);
@@ -378,7 +395,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, isEnterpriseContext, org]);
 
   useEffect(() => {
     fetchDrives();
@@ -397,11 +414,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
 
       const db = getFirebaseFirestore();
+      const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const docRef = await addDoc(collection(db, "linked_drives"), {
         userId: user.uid,
         name: name || handle.name,
         permission_handle_id: `${handle.name}-${Date.now()}`,
         createdAt: new Date(),
+        ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       });
 
       const drive: LinkedDrive = {
@@ -412,6 +431,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         permission_handle_id: `${handle.name}-${Date.now()}`,
         last_synced_at: null,
         created_at: new Date().toISOString(),
+        organization_id: orgId ?? null,
       };
 
       await saveHandleToStore(drive.id, drive.id, drive.name, handle);
@@ -419,7 +439,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
       return drive;
     },
-    [user, requestPermission, saveHandleToStore]
+    [user, isEnterpriseContext, org, requestPermission, saveHandleToStore]
   );
 
   const startSync = useCallback(
@@ -705,6 +725,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   ? new Date(modifiedAt).toISOString()
                   : null,
                 deleted_at: null,
+                organization_id: drive.organization_id ?? null,
               });
 
               if (VIDEO_EXT.test(relativePath)) {
@@ -887,7 +908,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         orderBy("createdAt", "desc")
       )
     );
-    const uploadsDrive = existing.docs.find((d) => d.data().name === "Uploads");
+    const orgId = isEnterpriseContext && org?.id ? org.id : null;
+    const uploadsDrive = existing.docs.find((d) => {
+      const data = d.data();
+      if (data.name !== "Uploads") return false;
+      const oid = data.organization_id ?? null;
+      return orgId ? oid === orgId : !oid;
+    });
     if (uploadsDrive) {
       const d = uploadsDrive;
       const data = d.data();
@@ -899,6 +926,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         permission_handle_id: data.permission_handle_id ?? null,
         last_synced_at: data.last_synced_at ?? null,
         created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        organization_id: data.organization_id ?? null,
       };
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
@@ -906,6 +934,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       name: "Uploads",
       permission_handle_id: `uploads-${Date.now()}`,
       createdAt: new Date(),
+      ...(orgId ? { organization_id: orgId } : { organization_id: null }),
     });
     const drive: LinkedDrive = {
       id: docRef.id,
@@ -915,20 +944,23 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       permission_handle_id: `uploads-${Date.now()}`,
       last_synced_at: null,
       created_at: new Date().toISOString(),
+      organization_id: orgId ?? null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     return drive;
-  }, [user]);
+  }, [user, isEnterpriseContext, org]);
 
   const createFolder = useCallback(
     async (name: string): Promise<LinkedDrive> => {
       if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
       const db = getFirebaseFirestore();
+      const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const docRef = await addDoc(collection(db, "linked_drives"), {
         userId: user.uid,
         name: name.trim() || "New folder",
         permission_handle_id: `manual-${Date.now()}`,
         createdAt: new Date(),
+        ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       });
       const drive: LinkedDrive = {
         id: docRef.id,
@@ -938,12 +970,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         permission_handle_id: `manual-${Date.now()}`,
         last_synced_at: null,
         created_at: new Date().toISOString(),
+        organization_id: orgId ?? null,
       };
       setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
       setStorageVersion((v) => v + 1);
       return drive;
     },
-    [user]
+    [user, isEnterpriseContext, org]
   );
 
   const cancelFileUpload = useCallback((fileId: string) => {
@@ -981,7 +1014,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
         if (idToken) {
           const base = typeof window !== "undefined" ? window.location.origin : "";
-          const res = await fetch(`${base}/api/storage/status`, {
+          const contextParam = isEnterpriseContext ? "?context=enterprise" : "?context=personal";
+          const res = await fetch(`${base}/api/storage/status${contextParam}`, {
             headers: { Authorization: `Bearer ${idToken}` },
           });
           if (res.ok) {
@@ -1140,6 +1174,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               ? new Date(file.lastModified).toISOString()
               : null,
             deleted_at: null,
+            organization_id: drive.organization_id ?? null,
           });
           if (VIDEO_EXT.test(relativePath)) {
             fetch("/api/backup/generate-proxy", {
@@ -1317,6 +1352,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             ? new Date(file.lastModified).toISOString()
             : null,
           deleted_at: null,
+          organization_id: drive.organization_id ?? null,
         });
         if (VIDEO_EXT.test(relativePath)) {
           fetch("/api/backup/generate-proxy", {

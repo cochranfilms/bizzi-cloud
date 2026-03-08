@@ -13,17 +13,17 @@ export default function DashboardLayout({
 }) {
   return (
     <ThemeProvider>
-      <BackupProvider>
-        <CurrentFolderProvider>
-          <DashboardAuthGuard>
-            <EnterpriseProvider>
+      <EnterpriseProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <DashboardAuthGuard>
               <ConfirmProvider>
                 <DashboardShell>{children}</DashboardShell>
               </ConfirmProvider>
-            </EnterpriseProvider>
-          </DashboardAuthGuard>
-        </CurrentFolderProvider>
-      </BackupProvider>
+            </DashboardAuthGuard>
+          </CurrentFolderProvider>
+        </BackupProvider>
+      </EnterpriseProvider>
     </ThemeProvider>
   );
 }

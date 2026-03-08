@@ -90,7 +90,7 @@ async function handleMultipartInit(request: Request) {
       : `backups/${uid}/${driveId}/${safePath}`;
 
   try {
-    await checkUserCanUpload(uid, sizeBytes);
+    await checkUserCanUpload(uid, sizeBytes, typeof driveId === "string" ? driveId : undefined);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Storage limit reached";
     return NextResponse.json({ error: msg }, { status: 403 });

@@ -9,6 +9,15 @@
       ]
     },
     {
+      "collectionGroup": "linked_drives",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "backup_snapshots",
       "queryScope": "COLLECTION",
       "fields": [
@@ -23,6 +32,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
         { "fieldPath": "modified_at", "order": "DESCENDING" }
       ]
     },
@@ -74,6 +92,15 @@
         { "fieldPath": "owner_id", "order": "ASCENDING" },
         { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
         { "fieldPath": "backup_file_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "DESCENDING" }
       ]
     },
     {

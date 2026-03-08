@@ -6,6 +6,8 @@ export interface LinkedDrive {
   permission_handle_id: string | null;
   last_synced_at: string | null;
   created_at: string;
+  /** null = personal storage; orgId = enterprise storage (billed at org level) */
+  organization_id?: string | null;
 }
 
 export interface BackupSnapshot {
@@ -29,6 +31,8 @@ export interface BackupFile {
   modified_at: string | null;
   checksum: string | null;
   created_at: string;
+  /** null = personal; orgId = enterprise (matches linked_drive) */
+  organization_id?: string | null;
 }
 
 export interface SyncProgress {

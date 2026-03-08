@@ -24,6 +24,8 @@ import {
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { usePathname } from "next/navigation";
 
 export interface DriveFolder {
   id: string;
@@ -56,12 +58,22 @@ export interface RecentFile {
   deletedAt?: string | null;
 }
 
+/** True when pathname is under /enterprise (enterprise storage context). */
+function useIsEnterpriseContext(): boolean {
+  const pathname = usePathname();
+  return typeof pathname === "string" && pathname.startsWith("/enterprise");
+}
+
 export function useCloudFiles() {
   const { user } = useAuth();
+  const { org } = useEnterprise();
+  const isEnterpriseContext = useIsEnterpriseContext();
   const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const orgId = org?.id ?? null;
 
   const fetchCloudFiles = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) {
@@ -84,7 +96,13 @@ export function useCloudFiles() {
         )
       );
       const drives = drivesSnap.docs
-        .filter((d) => !d.data().deleted_at)
+        .filter((d) => {
+          const data = d.data();
+          if (data.deleted_at) return false;
+          const oid = data.organization_id ?? null;
+          if (isEnterpriseContext && orgId) return oid === orgId;
+          return !oid;
+        })
         .map((d) => {
           const data = d.data();
           return {
@@ -117,6 +135,7 @@ export function useCloudFiles() {
       }
       setDriveFolders(folders);
 
+      const driveIds = new Set(drives.map((d) => d.id));
       const filesSnap = await getDocs(
         query(
           collection(db, "backup_files"),
@@ -126,7 +145,10 @@ export function useCloudFiles() {
         )
       );
       const recent: RecentFile[] = filesSnap.docs
-        .filter((d) => !d.data().deleted_at)
+        .filter((d) => {
+          if (d.data().deleted_at) return false;
+          return driveIds.has(d.data().linked_drive_id);
+        })
         .slice(0, 24)
         .map((d) => {
           const data = d.data();
@@ -153,7 +175,7 @@ export function useCloudFiles() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, isEnterpriseContext, org]);
 
   useEffect(() => {
     fetchCloudFiles();
@@ -248,7 +270,6 @@ export function useCloudFiles() {
     async (): Promise<RecentFile[]> => {
       if (!isFirebaseConfigured() || !user) return [];
       const db = getFirebaseFirestore();
-      // Fetch all drives (including deleted) so drive names show correctly for files in deleted folders
       const drivesSnap = await getDocs(
         query(
           collection(db, "linked_drives"),
@@ -256,12 +277,19 @@ export function useCloudFiles() {
           orderBy("createdAt", "desc")
         )
       );
+      const drivesInContext = drivesSnap.docs.filter((d) => {
+        const data = d.data();
+        const oid = data.organization_id ?? null;
+        if (isEnterpriseContext && orgId) return oid === orgId;
+        return !oid;
+      });
       const driveMap = new Map(
-        drivesSnap.docs.map((d) => {
+        drivesInContext.map((d) => {
           const data = d.data();
           return [d.id, { id: d.id, name: data.name ?? "Folder" }];
         })
       );
+      const driveIds = new Set(driveMap.keys());
       const filesSnap = await getDocs(
         query(
           collection(db, "backup_files"),
@@ -270,7 +298,9 @@ export function useCloudFiles() {
           orderBy("deleted_at", "desc")
         )
       );
-      return filesSnap.docs.map((d) => {
+      return filesSnap.docs
+        .filter((d) => driveIds.has(d.data().linked_drive_id))
+        .map((d) => {
         const data = d.data();
         const path = data.relative_path ?? "";
         const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
@@ -294,7 +324,7 @@ export function useCloudFiles() {
         };
       });
     },
-    [user, linkedDrives]
+    [user, isEnterpriseContext, orgId]
   );
 
   const recalculateStorage = useCallback(async () => {
@@ -524,8 +554,14 @@ export function useCloudFiles() {
         orderBy("deleted_at", "desc")
       )
     );
+    const drivesInContext = drivesSnap.docs.filter((d) => {
+      const data = d.data();
+      const oid = data.organization_id ?? null;
+      if (isEnterpriseContext && orgId) return oid === orgId;
+      return !oid;
+    });
     const result: DeletedDrive[] = [];
-    for (const d of drivesSnap.docs) {
+    for (const d of drivesInContext) {
       const data = d.data();
       const countSnap = await getCountFromServer(
         query(
@@ -548,7 +584,7 @@ export function useCloudFiles() {
       });
     }
     return result;
-  }, [user]);
+  }, [user, isEnterpriseContext, orgId]);
 
   const restoreDrive = useCallback(
     async (driveId: string) => {

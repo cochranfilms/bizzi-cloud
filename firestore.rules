@@ -5,7 +5,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     match /linked_drives/{driveId} {
-      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read, write: if request.auth != null
+        && (request.auth.uid == resource.data.userId
+          || (resource.data.organization_id is string
+            && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
     match /backup_snapshots/{snapshotId} {
@@ -16,7 +20,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
-            && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid));
+            && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid)
+          || (resource.data.organization_id is string
+            && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.userId;
     }

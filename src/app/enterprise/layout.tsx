@@ -14,19 +14,19 @@ export default function EnterpriseLayout({
 }) {
   return (
     <ThemeProvider>
-      <BackupProvider>
-        <CurrentFolderProvider>
-          <DashboardAuthGuard>
-            <EnterpriseProvider>
+      <EnterpriseProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <DashboardAuthGuard>
               <ConfirmProvider>
                 <EnterpriseAuthGuard>
                   <EnterpriseShell>{children}</EnterpriseShell>
                 </EnterpriseAuthGuard>
               </ConfirmProvider>
-            </EnterpriseProvider>
-          </DashboardAuthGuard>
-        </CurrentFolderProvider>
-      </BackupProvider>
+            </DashboardAuthGuard>
+          </CurrentFolderProvider>
+        </BackupProvider>
+      </EnterpriseProvider>
     </ThemeProvider>
   );
 }
