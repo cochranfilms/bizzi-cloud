@@ -198,14 +198,29 @@ export default function RightPanel({
         </Link>
       </div>
 
-      {/* Drag zone - expanded to fill available space for a bigger drop area */}
-      <div className="flex-1 min-h-0 flex flex-col p-4">
+      {/* Storage - in main area above Backup */}
+      <div className="flex-1 min-h-0 overflow-auto border-b border-neutral-200 dark:border-neutral-800">
+        <div className="p-4 h-full">
+          {storageComponent ?? <StorageBadge />}
+        </div>
+      </div>
+
+      {/* Backup drive */}
+      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          Backup
+        </h3>
+        <SyncDriveButton />
+      </div>
+
+      {/* Drag zone - on bottom, expanded to fill its container */}
+      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
         <div
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className={`flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
+          className={`flex min-h-[140px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
             isDragging
               ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
               : "border-neutral-200 dark:border-neutral-700"
@@ -224,19 +239,6 @@ export default function RightPanel({
             </p>
           )}
         </div>
-      </div>
-
-      {/* Backup drive */}
-      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Backup
-        </h3>
-        <SyncDriveButton />
-      </div>
-
-      {/* Storage - swapped to bottom */}
-      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-        {storageComponent ?? <StorageBadge />}
       </div>
     </aside>
   );
