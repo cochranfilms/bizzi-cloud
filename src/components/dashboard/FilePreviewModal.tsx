@@ -129,8 +129,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
       const uid = getFirebaseAuth().currentUser?.uid;
       const bakeLut =
         previewType === "video" && showLUTForVideo && lutEnabled;
-      const endpoint = bakeLut ? "/api/backup/download-with-lut" : "/api/backup/download";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/backup/download", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -140,6 +139,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
           object_key: file.objectKey,
           name: file.name,
           user_id: uid,
+          bake_lut: bakeLut,
         }),
       });
       if (!res.ok) {

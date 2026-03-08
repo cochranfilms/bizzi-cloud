@@ -251,24 +251,30 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     const resize = () => {
       const containerRect = containerRef.current?.getBoundingClientRect();
       const videoRect = video.getBoundingClientRect();
-      if (!containerRect) return;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!containerRect || vw <= 0 || vh <= 0) return;
 
-      const w = Math.max(1, Math.floor(videoRect.width * dpr));
-      const h = Math.max(1, Math.floor(videoRect.height * dpr));
+      // object-fit: contain - compute actual displayed content rect (handles 9:16 vs 16:9)
+      const scale = Math.min(videoRect.width / vw, videoRect.height / vh);
+      const contentW = vw * scale;
+      const contentH = vh * scale;
+      const contentLeft = videoRect.left + (videoRect.width - contentW) / 2;
+      const contentTop = videoRect.top + (videoRect.height - contentH) / 2;
+
+      const w = Math.max(1, Math.floor(contentW * dpr));
+      const h = Math.max(1, Math.floor(contentH * dpr));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
       }
 
-      // Position canvas to exactly overlay the video (handles 9:16 vs 16:9)
-      const left = videoRect.left - containerRect.left;
-      const top = videoRect.top - containerRect.top;
       Object.assign(canvas.style, {
         position: "absolute",
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${videoRect.width}px`,
-        height: `${videoRect.height}px`,
+        left: `${contentLeft - containerRect.left}px`,
+        top: `${contentTop - containerRect.top}px`,
+        width: `${contentW}px`,
+        height: `${contentH}px`,
       });
     };
 
