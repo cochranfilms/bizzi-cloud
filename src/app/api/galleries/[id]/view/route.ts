@@ -98,6 +98,7 @@ export async function GET(
       download_settings: g.download_settings ?? {},
       watermark: g.watermark ?? {},
       cover_asset_id: g.cover_asset_id ?? null,
+      cover_position: g.cover_position ?? "center",
     },
     collections,
     assets,

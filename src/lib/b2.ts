@@ -112,6 +112,12 @@ export async function createPresignedPartUrlsBatch(
   return results;
 }
 
+/**
+ * SSE-B2: Backblaze B2 server-side encryption with Backblaze-managed keys (AES-256).
+ * All objects stored with encryption at rest. Client must send x-amz-server-side-encryption: AES256 when using presigned PUT.
+ */
+const SSE_B2_HEADER = { ServerSideEncryption: "AES256" as const };
+
 export async function createPresignedUploadUrl(
   objectKey: string,
   contentType: string,
@@ -122,11 +128,12 @@ export async function createPresignedUploadUrl(
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
     ContentType: contentType,
+    ...SSE_B2_HEADER,
   });
   return getSignedUrl(client, command, { expiresIn });
 }
 
-/** Initiate multipart upload for large files. Returns uploadId for subsequent part uploads. */
+/** Initiate multipart upload for large files. Returns uploadId for subsequent part uploads. SSE-B2 enabled by default. */
 export async function createMultipartUpload(
   objectKey: string,
   contentType: string
@@ -137,6 +144,7 @@ export async function createMultipartUpload(
       Bucket: B2_BUCKET_NAME,
       Key: objectKey,
       ContentType: contentType,
+      ...SSE_B2_HEADER,
     })
   );
   const uploadId = response.UploadId;
@@ -297,7 +305,7 @@ export async function getObject(
   };
 }
 
-/** Upload a buffer to B2 (e.g. cached video thumbnails). */
+/** Upload a buffer to B2 (e.g. cached video thumbnails). SSE-B2 enabled. */
 export async function putObject(
   objectKey: string,
   body: Buffer | Uint8Array,
@@ -310,6 +318,7 @@ export async function putObject(
       Key: objectKey,
       Body: body,
       ContentType: contentType,
+      ...SSE_B2_HEADER,
     })
   );
 }

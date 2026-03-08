@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { hashSecret } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
 export async function DELETE(
@@ -94,10 +95,11 @@ export async function PATCH(
   }
 
   if (password !== undefined) {
-    updates.password =
-      password !== null && typeof password === "string" && password.trim()
-        ? password.trim()
-        : null;
+    if (password !== null && typeof password === "string" && password.trim()) {
+      updates.password_hash = await hashSecret(password.trim());
+    } else {
+      updates.password_hash = null;
+    }
   }
 
   if (Object.keys(updates).length === 0) {
@@ -169,7 +171,7 @@ export async function GET(
     clientEmail: data.clientEmail ?? undefined,
     files,
     permission: data.permission ?? "downloadable",
-    password: data.password ?? null,
+    hasPassword: !!(data.password_hash ?? data.password),
     expiresAt: expiresAt ?? null,
     createdAt: data.created_at,
     status,

@@ -146,7 +146,7 @@ export default function TransferView({ slug }: TransferViewProps) {
       clientEmail?: string;
       files: Array<{ id: string; name: string; path: string; backupFileId?: string; objectKey?: string }>;
       permission: string;
-      password: string | null;
+      hasPassword?: boolean;
       expiresAt: string | null;
       createdAt: string;
       status: string;
@@ -166,7 +166,7 @@ export default function TransferView({ slug }: TransferViewProps) {
         objectKey: f.objectKey,
       })),
       permission: (data.permission as "view" | "downloadable") ?? "downloadable",
-      password: data.password,
+      hasPassword: data.hasPassword ?? false,
       expiresAt: data.expiresAt,
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",
@@ -181,10 +181,10 @@ export default function TransferView({ slug }: TransferViewProps) {
   }, [localTransfer, fetchTransfer]);
 
   const transfer = localTransfer;
-  const needsPassword = !!transfer?.password && !unlocked;
+  const needsPassword = !!transfer?.hasPassword && !unlocked;
 
   useEffect(() => {
-    if (transfer && !transfer.password) setUnlocked(true);
+    if (transfer && !transfer.hasPassword) setUnlocked(true);
   }, [transfer]);
 
   useEffect(() => {
@@ -193,13 +193,27 @@ export default function TransferView({ slug }: TransferViewProps) {
     }
   }, [transfer?.name]);
 
-  const handleUnlock = () => {
-    if (!transfer?.password) return;
-    if (password === transfer.password) {
-      setUnlocked(true);
-      setError("");
-    } else {
-      setError("Incorrect password");
+  const handleUnlock = async () => {
+    if (!transfer?.hasPassword || !password.trim()) return;
+    setError("");
+    try {
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/transfers/${encodeURIComponent(transfer.slug)}/verify-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: password.trim() }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setUnlocked(true);
+      } else {
+        setError(data?.error ?? "Incorrect password");
+      }
+    } catch {
+      setError("Could not verify password");
     }
   };
 
@@ -268,7 +282,7 @@ export default function TransferView({ slug }: TransferViewProps) {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              handleUnlock();
+              void handleUnlock();
             }}
             className="space-y-4"
           >
@@ -345,7 +359,7 @@ export default function TransferView({ slug }: TransferViewProps) {
           slug={slug}
           file={previewFile}
           onClose={() => setPreviewFile(null)}
-          password={transfer.password && unlocked ? password : undefined}
+          password={transfer.hasPassword && unlocked ? password : undefined}
           permission={transfer.permission}
           onDownload={(fileId) => handleFileDownload(fileId)}
         />

@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { hashSecret } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
 function generateSlug(): string {
@@ -73,6 +74,11 @@ export async function POST(request: Request) {
     object_key: f.objectKey ?? null,
   }));
 
+  let password_hash: string | null = null;
+  if (password && typeof password === "string" && password.trim()) {
+    password_hash = await hashSecret(password.trim());
+  }
+
   const doc = {
     slug,
     name: name.trim(),
@@ -80,7 +86,7 @@ export async function POST(request: Request) {
     clientEmail: typeof clientEmail === "string" ? clientEmail.trim() || null : null,
     files: transferFiles,
     permission: permission === "view" ? "view" : "downloadable",
-    password: password && typeof password === "string" && password.trim() ? password.trim() : null,
+    password_hash,
     expires_at: expiresAt && typeof expiresAt === "string" && expiresAt.trim()
       ? expiresAt.trim()
       : null,
@@ -101,7 +107,7 @@ export async function POST(request: Request) {
     clientEmail: doc.clientEmail,
     files: transferFiles.map((f) => ({ ...f, backupFileId: f.backup_file_id, objectKey: f.object_key })),
     permission: doc.permission,
-    password: doc.password,
+    hasPassword: !!password_hash,
     expiresAt: doc.expires_at,
     createdAt: doc.created_at,
     status: doc.status,

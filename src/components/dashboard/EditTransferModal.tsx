@@ -33,7 +33,7 @@ export default function EditTransferModal({
   useEffect(() => {
     if (open && transfer) {
       setPermission(transfer.permission ?? "downloadable");
-      setPasswordEnabled(!!transfer.password);
+      setPasswordEnabled(!!transfer.hasPassword);
       setPassword("");
       setExpiresAt(toDatetimeLocal(transfer.expiresAt));
       setError("");
@@ -42,14 +42,18 @@ export default function EditTransferModal({
 
   const handleSubmit = useCallback(async () => {
     if (!transfer) return;
-    if (passwordEnabled && !password.trim() && !transfer.password) {
+    if (passwordEnabled && !password.trim() && !transfer.hasPassword) {
       setError("Enter a password when password protection is enabled.");
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const updates: { permission?: TransferPermission; expiresAt?: string | null; password?: string | null } = {
+      const updates: {
+      permission?: TransferPermission;
+      expiresAt?: string | null;
+      password?: string | null;
+    } = {
         permission,
         expiresAt: expiresAt ? expiresAt : null,
       };
@@ -158,7 +162,7 @@ export default function EditTransferModal({
             {passwordEnabled && (
               <input
                 type="password"
-                placeholder={transfer.password ? "Enter new password (leave blank to keep current)" : "Enter password"}
+                placeholder={transfer.hasPassword ? "Enter new password (leave blank to keep current)" : "Enter password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
@@ -196,7 +200,7 @@ export default function EditTransferModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={saving || (passwordEnabled && !password.trim() && !transfer.password)}
+            disabled={saving || (passwordEnabled && !password.trim() && !transfer.hasPassword)}
             className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}

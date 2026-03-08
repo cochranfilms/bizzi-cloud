@@ -132,7 +132,7 @@ export default function TransferGrid() {
                         <span className="font-medium text-neutral-900 dark:text-white">
                           {t.name}
                         </span>
-                        {t.password && (
+                        {t.hasPassword && (
                           <Lock className="h-3.5 w-3.5 text-neutral-400" aria-label="Password protected" />
                         )}
                       </div>

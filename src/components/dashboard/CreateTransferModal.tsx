@@ -197,7 +197,7 @@ export default function CreateTransferModal({
         objectKey?: string;
       }>;
       permission: string;
-      password: string | null;
+      hasPassword?: boolean;
       expiresAt: string | null;
       createdAt: string;
       status: string;
@@ -220,7 +220,7 @@ export default function CreateTransferModal({
         objectKey: f.objectKey,
       })),
       permission: (data.permission as "view" | "downloadable") ?? "downloadable",
-      password: data.password,
+      hasPassword: data.hasPassword ?? false,
       expiresAt: data.expiresAt,
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",

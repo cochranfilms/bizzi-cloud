@@ -39,6 +39,7 @@ interface GalleryData {
   };
   watermark: { enabled: boolean };
   cover_asset_id?: string | null;
+  cover_position?: string | null;
 }
 
 interface GalleryAsset {
@@ -352,9 +353,11 @@ function GalleryAssetCard({
     };
   }, [galleryId, asset.object_key, asset.name, isImg, isVid, password, getAuthToken]);
 
+  const useNaturalAspect = masonryLayout;
+
   return (
     <div
-      className={`group relative cursor-pointer overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800 ${masonryLayout ? "mb-4 break-inside-avoid" : ""}`}
+      className={`group relative cursor-pointer overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800 ${masonryLayout ? "mb-3 break-inside-avoid" : ""}`}
       onClick={onPreview}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -365,16 +368,22 @@ function GalleryAssetCard({
       role="button"
       tabIndex={0}
     >
-      <div className="aspect-[4/3] w-full">
+      <div
+        className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
+      >
         {thumbUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={thumbUrl}
             alt=""
-            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            className={`block w-full transition-transform group-hover:scale-105 ${
+              useNaturalAspect
+                ? "h-auto object-cover"
+                : "h-full object-cover"
+            }`}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center">
+          <div className={`flex w-full items-center justify-center ${useNaturalAspect ? "aspect-[4/3] min-h-[120px]" : "h-full"}`}>
             {isVid ? (
               <Film className="h-12 w-12 text-neutral-400" />
             ) : (
@@ -855,7 +864,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             src={bannerUrl}
             alt=""
             className="w-full object-cover"
-            style={{ maxHeight: "50vh", objectPosition: "center" }}
+            style={{
+              maxHeight: "50vh",
+              objectPosition: gallery.cover_position || "center",
+            }}
           />
         </div>
       )}
@@ -966,7 +978,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 ? "grid grid-cols-1 gap-4 sm:grid-cols-2"
                 : gallery.layout === "justified"
                   ? "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-                  : "columns-2 gap-4 sm:columns-3 md:columns-4"
+                  : "columns-2 gap-3 sm:columns-3 md:columns-4"
             }
           >
             {assets.map((asset) => (

@@ -89,7 +89,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
         </p>
         <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-500">
           Created {formatDate(transfer.createdAt)}
-          {transfer.password && (
+          {transfer.hasPassword && (
             <span className="ml-2 inline-flex items-center gap-1">
               <Lock className="h-3 w-3" /> Password protected
             </span>

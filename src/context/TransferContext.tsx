@@ -88,7 +88,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         clientEmail: input.clientEmail,
         files,
         permission: input.permission ?? "downloadable",
-        password: input.password ?? null,
+        hasPassword: !!(input.password && input.password.trim()),
         expiresAt: input.expiresAt,
         createdAt: now,
         status: "active",
@@ -260,7 +260,9 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             ...t,
             ...(updates.permission !== undefined && { permission: updates.permission }),
             ...(updates.expiresAt !== undefined && { expiresAt: updates.expiresAt }),
-            ...(updates.password !== undefined && { password: updates.password }),
+            ...(updates.password !== undefined && {
+              hasPassword: updates.password !== null,
+            }),
           };
         });
         saveTransfers(next);

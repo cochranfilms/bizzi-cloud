@@ -1,14 +1,73 @@
 "use client";
 
-import { useState } from "react";
-import { Save, Check, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
+import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
+import type { CoverPosition } from "@/types/gallery";
+
+const COVER_POSITIONS: { id: CoverPosition; label: string }[] = [
+  { id: "top left", label: "Top left" },
+  { id: "top", label: "Top" },
+  { id: "top right", label: "Top right" },
+  { id: "left", label: "Left" },
+  { id: "center", label: "Center" },
+  { id: "right", label: "Right" },
+  { id: "bottom left", label: "Bottom left" },
+  { id: "bottom", label: "Bottom" },
+  { id: "bottom right", label: "Bottom right" },
+];
+
+function CoverAssetThumbnail({
+  galleryId,
+  asset,
+  selected,
+  onSelect,
+}: {
+  galleryId: string;
+  asset: { id: string; name: string; object_key: string; media_type: string };
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const thumbUrl = useGalleryThumbnail(galleryId, asset.object_key, asset.name, {
+    enabled: true,
+    size: "thumb",
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`relative flex aspect-square overflow-hidden rounded-lg border-2 transition-colors ${
+        selected
+          ? "border-bizzi-blue ring-2 ring-bizzi-blue/30"
+          : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"
+      }`}
+    >
+      {thumbUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */
+        <img src={thumbUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800">
+          <ImageIcon className="h-6 w-6 text-neutral-400" />
+        </div>
+      )}
+      {selected && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <Check className="h-6 w-6 text-white drop-shadow" strokeWidth={3} />
+        </div>
+      )}
+    </button>
+  );
+}
 
 interface GallerySettingsFormProps {
   galleryId: string;
   initialData: {
     title?: string;
+    cover_asset_id?: string | null;
+    cover_position?: CoverPosition | null;
     description?: string | null;
     event_date?: string | null;
     expiration_date?: string | null;
@@ -39,6 +98,12 @@ export default function GallerySettingsForm({
     (initialData.invited_emails ?? []).join(", ")
   );
   const [layout, setLayout] = useState(initialData.layout ?? "masonry");
+  const [coverAssetId, setCoverAssetId] = useState<string | null>(
+    initialData.cover_asset_id ?? null
+  );
+  const [coverPosition, setCoverPosition] = useState<CoverPosition>(
+    (initialData.cover_position as CoverPosition) ?? "center"
+  );
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
 
@@ -84,6 +149,35 @@ export default function GallerySettingsForm({
     String((initialData.download_settings?.free_download_limit as number) ?? "")
   );
 
+  const [coverAssets, setCoverAssets] = useState<
+    { id: string; name: string; object_key: string; media_type: string }[]
+  >([]);
+  const [coverAssetsLoading, setCoverAssetsLoading] = useState(false);
+
+  const fetchCoverAssets = useCallback(async () => {
+    if (!user || !galleryId) return;
+    setCoverAssetsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${galleryId}/view`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const assets = (data.assets ?? []).filter(
+        (a: { media_type: string; name: string }) =>
+          a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name)
+      );
+      setCoverAssets(assets);
+    } finally {
+      setCoverAssetsLoading(false);
+    }
+  }, [user, galleryId]);
+
+  useEffect(() => {
+    fetchCoverAssets();
+  }, [fetchCoverAssets]);
+
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -92,6 +186,8 @@ export default function GallerySettingsForm({
       const token = await user.getIdToken();
       const body: Record<string, unknown> = {
         title: title.trim(),
+        cover_asset_id: coverAssetId || null,
+        cover_position: coverPosition,
         description: description.trim() || null,
         event_date: eventDate || null,
         expiration_date: expirationDate || null,
@@ -161,6 +257,76 @@ export default function GallerySettingsForm({
           {error}
         </div>
       )}
+
+      {/* Cover photo */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          Cover photo
+        </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          Choose which photo appears as the banner on your gallery. Adjust the crop to control which part is visible.
+        </p>
+        {coverAssetsLoading ? (
+          <div className="flex items-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading photos…
+          </div>
+        ) : coverAssets.length === 0 ? (
+          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Add images to your gallery to choose a cover photo.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Select photo
+              </label>
+              <div className="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+                {coverAssets.map((asset) => (
+                  <CoverAssetThumbnail
+                    key={asset.id}
+                    galleryId={galleryId}
+                    asset={asset}
+                    selected={coverAssetId === asset.id}
+                    onSelect={() => setCoverAssetId(asset.id)}
+                  />
+                ))}
+              </div>
+            </div>
+            {coverAssetId && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Crop / position
+                </label>
+                <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+                  Which part of the image should be visible in the banner.
+                </p>
+                <div className="grid grid-cols-9 gap-1 max-w-[180px]">
+                  {COVER_POSITIONS.map((pos) => (
+                    <button
+                      key={pos.id}
+                      type="button"
+                      onClick={() => setCoverPosition(pos.id)}
+                      className={`flex h-8 w-8 items-center justify-center rounded border text-xs ${
+                        coverPosition === pos.id
+                          ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
+                          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+                      }`}
+                      title={pos.label}
+                    >
+                      <span className="sr-only">{pos.label}</span>
+                      <span aria-hidden>■</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-neutral-400">
+                  {COVER_POSITIONS.find((p) => p.id === coverPosition)?.label ?? "Center"}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Basic */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

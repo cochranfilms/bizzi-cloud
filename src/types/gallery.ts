@@ -66,6 +66,18 @@ export interface GalleryWatermarkSettings {
   scale?: number;               // 0.5–2 relative size
 }
 
+/** Cover photo object-position presets (CSS object-position values) */
+export type CoverPosition =
+  | "center"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "top left"
+  | "top right"
+  | "bottom left"
+  | "bottom right";
+
 /** Main gallery document (Firestore: galleries) */
 export interface Gallery {
   id: string;
@@ -73,6 +85,8 @@ export interface Gallery {
   slug: string;                  // URL-safe, unique per photographer
   photographer_id: string;
   cover_asset_id?: string | null;
+  /** CSS object-position for banner crop (which part of image is visible) */
+  cover_position?: CoverPosition | null;
   description?: string | null;
   event_date?: string | null;    // ISO date
   expiration_date?: string | null; // ISO date – when gallery expires
@@ -162,6 +176,8 @@ export type ProofingStatus =
 /** Create gallery input */
 export interface CreateGalleryInput {
   title: string;
+  cover_asset_id?: string | null;
+  cover_position?: CoverPosition | null;
   description?: string | null;
   event_date?: string | null;
   expiration_date?: string | null;

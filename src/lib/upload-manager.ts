@@ -117,12 +117,18 @@ function putWithProgress(
   blob: Blob,
   url: string,
   contentType: string,
-  opts: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void }
+  opts: {
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+    /** Set true for single-file presigned PUT (required for B2 SSE-B2). False for multipart parts. */
+    sseRequired?: boolean;
+  }
 ): Promise<{ etag: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", contentType);
+    if (opts.sseRequired) xhr.setRequestHeader("x-amz-server-side-encryption", "AES256");
     if (opts.signal) opts.signal.addEventListener("abort", () => xhr.abort());
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable && opts.onProgress) opts.onProgress(e.loaded, e.total);
@@ -372,6 +378,7 @@ export class UploadManager {
         if (!urlData.uploadUrl) throw new Error("No upload URL");
         await putWithProgress(file, urlData.uploadUrl, contentType, {
           signal: controller.signal,
+          sseRequired: true,
           onProgress: (loaded) =>
             this.reportProgress(fileId, file.name, loaded, file.size, loaded >= file.size ? 1 : 0, 1, "uploading"),
         });

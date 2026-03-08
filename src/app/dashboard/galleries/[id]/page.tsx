@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Settings,
   Heart,
+  ImagePlus,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -100,6 +101,7 @@ interface GalleryData {
   layout: string;
   view_count: number;
   download_count: number;
+  cover_asset_id?: string | null;
   branding?: { business_name?: string; accent_color?: string };
 }
 
@@ -125,6 +127,32 @@ export default function GalleryDetailPage() {
   const [adding, setAdding] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  const [settingCover, setSettingCover] = useState<string | null>(null);
+
+  const handleSetCover = async (assetId: string) => {
+    if (!user || !id) return;
+    setSettingCover(assetId);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ cover_asset_id: assetId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed to set cover");
+      }
+      await fetchGallery();
+    } catch (err) {
+      console.error("Set cover failed:", err);
+    } finally {
+      setSettingCover(null);
+    }
+  };
 
   const fetchGallery = useCallback(async () => {
     if (!user || !id) return;
@@ -324,20 +352,49 @@ export default function GalleryDetailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                {assets.map((a) => (
-                  <div
-                    key={a.id}
-                    className="overflow-hidden rounded-lg"
-                  >
-                    <GalleryAssetThumbnail
-                      galleryId={id}
-                      objectKey={a.object_key}
-                      name={a.name}
-                      mediaType={a.media_type}
-                      className="w-full rounded-lg"
-                    />
-                  </div>
-                ))}
+                {assets.map((a) => {
+                  const isImage = a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name);
+                  const isCover = gallery.cover_asset_id === a.id;
+                  const settingThis = settingCover === a.id;
+                  return (
+                    <div
+                      key={a.id}
+                      className="group relative overflow-hidden rounded-lg"
+                    >
+                      <GalleryAssetThumbnail
+                        galleryId={id}
+                        objectKey={a.object_key}
+                        name={a.name}
+                        mediaType={a.media_type}
+                        className="w-full rounded-lg"
+                      />
+                      {isImage && (
+                        <>
+                          {isCover && (
+                            <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">
+                              Cover
+                            </div>
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => handleSetCover(a.id)}
+                              disabled={settingThis || isCover}
+                              className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
+                            >
+                              {settingThis ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ImagePlus className="h-4 w-4" />
+                              )}
+                              {settingThis ? "Setting…" : "Set as cover"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

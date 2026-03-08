@@ -130,12 +130,15 @@ function putWithProgress(
   options: {
     signal?: AbortSignal;
     onProgress?: (loaded: number, total: number) => void;
+    /** Required for single-file presigned PUT (B2 SSE-B2). Omit for multipart parts. */
+    sseRequired?: boolean;
   }
 ): Promise<{ etag: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", contentType);
+    if (options.sseRequired) xhr.setRequestHeader("x-amz-server-side-encryption", "AES256");
 
     if (options.signal) {
       options.signal.addEventListener("abort", () => {
@@ -721,6 +724,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                     contentType,
                     {
                       signal: controller.signal,
+                      sseRequired: true,
                       onProgress: (loaded) => {
                         progressState.inFlight.set(index, loaded);
                         reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
@@ -1558,6 +1562,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           objectKey = ok;
           if (!alreadyExists && uploadUrl) {
             await putWithProgress(file, uploadUrl, contentType, {
+              sseRequired: true,
               onProgress: (loaded) => {
                 setSyncProgress((prev) =>
                   prev ? { ...prev, bytesSynced: loaded } : null

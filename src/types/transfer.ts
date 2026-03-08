@@ -22,6 +22,9 @@ export interface Transfer {
   files: TransferFile[];
   /** Default "downloadable" - allows recipients to download. "view" = preview only, no download. */
   permission: TransferPermission;
+  /** True if transfer has a password. Password is never returned from API. */
+  hasPassword?: boolean;
+  /** @deprecated Use hasPassword. Kept for backward compat with local state. */
   password?: string | null;
   expiresAt: string | null;
   createdAt: string;

@@ -1,6 +1,8 @@
 import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { verifySecret } from "@/lib/gallery-access";
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -53,12 +55,34 @@ export async function POST(
     return NextResponse.json({ error: "Transfer not available" }, { status: 410 });
   }
 
-  const transferPassword = transfer.password ?? null;
-  if (transferPassword && transferPassword !== password) {
-    return NextResponse.json(
-      { error: "Password required or incorrect" },
-      { status: 403 }
-    );
+  const passwordHash = transfer.password_hash ?? null;
+  const legacyPassword = transfer.password ?? null;
+  const requiresPassword = !!passwordHash || !!legacyPassword;
+  if (requiresPassword) {
+    if (!password || typeof password !== "string") {
+      return NextResponse.json(
+        { error: "Password required or incorrect" },
+        { status: 403 }
+      );
+    }
+    if (passwordHash) {
+      const ok = await verifySecret(password, passwordHash);
+      if (!ok) {
+        return NextResponse.json(
+          { error: "Password required or incorrect" },
+          { status: 403 }
+        );
+      }
+    } else {
+      const a = Buffer.from(password, "utf8");
+      const b = Buffer.from(legacyPassword, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        return NextResponse.json(
+          { error: "Password required or incorrect" },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   const files = (transfer.files ?? []) as Array<{
@@ -85,10 +109,12 @@ export async function POST(
     );
   }
 
+  const PREVIEW_URL_EXPIRY = 900; // 15 min
+
   try {
     const proxyKey = getProxyObjectKey(objKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
-    const url = await getDownloadUrl(effectiveKey, 3600);
+    const url = await getDownloadUrl(effectiveKey, PREVIEW_URL_EXPIRY);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Transfer preview URL error:", err);

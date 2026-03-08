@@ -5,7 +5,12 @@ import {
   getProxyObjectKey,
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { verifySecret } from "@/lib/gallery-access";
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
+
+/** Signed URL expiration for transfer downloads (15 min). */
+const DOWNLOAD_URL_EXPIRY = 900;
 
 export async function POST(
   request: Request,
@@ -66,12 +71,34 @@ export async function POST(
     );
   }
 
-  const transferPassword = transfer.password ?? null;
-  if (transferPassword && transferPassword !== password) {
-    return NextResponse.json(
-      { error: "Password required or incorrect" },
-      { status: 403 }
-    );
+  const passwordHash = transfer.password_hash ?? null;
+  const legacyPassword = transfer.password ?? null;
+  const requiresPassword = !!passwordHash || !!legacyPassword;
+  if (requiresPassword) {
+    if (!password || typeof password !== "string") {
+      return NextResponse.json(
+        { error: "Password required or incorrect" },
+        { status: 403 }
+      );
+    }
+    if (passwordHash) {
+      const ok = await verifySecret(password, passwordHash);
+      if (!ok) {
+        return NextResponse.json(
+          { error: "Password required or incorrect" },
+          { status: 403 }
+        );
+      }
+    } else {
+      const a = Buffer.from(password, "utf8");
+      const b = Buffer.from(legacyPassword, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        return NextResponse.json(
+          { error: "Password required or incorrect" },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   const files = (transfer.files ?? []) as Array<{
@@ -102,7 +129,7 @@ export async function POST(
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
     const url = await createPresignedDownloadUrl(
       effectiveKey,
-      3600,
+      DOWNLOAD_URL_EXPIRY,
       name || "download"
     );
     return NextResponse.json({ url });

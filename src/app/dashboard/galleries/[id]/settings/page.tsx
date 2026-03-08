@@ -7,6 +7,7 @@ import { ChevronLeft, Loader2, Save } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import TopBar from "@/components/dashboard/TopBar";
 import GallerySettingsForm from "@/components/gallery/GallerySettingsForm";
+import type { CoverPosition } from "@/types/gallery";
 
 interface GalleryData {
   id: string;
@@ -17,6 +18,8 @@ interface GalleryData {
   access_mode: string;
   invited_emails: string[];
   layout: string;
+  cover_asset_id?: string | null;
+  cover_position?: CoverPosition | null;
   branding: Record<string, unknown>;
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;
