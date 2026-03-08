@@ -94,6 +94,9 @@ const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
 const UPLOAD_CONCURRENCY = 6;
 
+/** Above this size, skip content hash to avoid blocking upload start (8K/BRAW). */
+const CONTENT_HASH_SKIP_THRESHOLD = 20 * 1024 * 1024 * 1024;
+
 /** Chunk size for streaming hash (avoids loading entire file into memory). */
 const HASH_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB
 
@@ -216,7 +219,7 @@ async function uploadWithMultipart(
   driveId: string,
   relativePath: string,
   contentType: string,
-  contentHash: string,
+  contentHash: string | null,
   idToken: string,
   userId: string | null,
   signal?: AbortSignal,
@@ -658,7 +661,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             if (controller.signal.aborted) return;
             try {
-              const contentHash = await sha256Hex(file);
+              const contentHash =
+                file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
               const idToken =
                 await getFirebaseAuth().currentUser?.getIdToken(true);
               if (!idToken) throw new Error("Not authenticated. Sign in again.");
@@ -1507,7 +1511,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       });
 
       try {
-        const contentHash = await sha256Hex(file);
+        const contentHash =
+          file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
         const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
         if (!idToken) throw new Error("Not authenticated. Sign in again.");
 

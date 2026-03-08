@@ -4,6 +4,7 @@ import {
   isB2Configured,
   objectExists,
   computeAdaptivePartPlan,
+  MULTIPART_PRESIGN_EXPIRY,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
@@ -116,7 +117,7 @@ async function handleMultipartInit(request: Request) {
 
     const { partSize, totalParts } = computeAdaptivePartPlan(sizeBytes);
     const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
-    const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partNumbers, 3600);
+    const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partNumbers, MULTIPART_PRESIGN_EXPIRY);
 
     return NextResponse.json({
       objectKey,

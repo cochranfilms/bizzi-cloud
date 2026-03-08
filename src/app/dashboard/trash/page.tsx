@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, FileIcon, Folder, RotateCcw, Trash2 } from "lucide-react";
 import TopBar from "@/components/dashboard/TopBar";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
@@ -8,6 +9,14 @@ import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCl
 import { useConfirm } from "@/hooks/useConfirm";
 
 const TRASH_DND_TYPE = "application/x-bizzi-trash-delete";
+const DRAG_THRESHOLD_PX = 5;
+
+function rectsIntersect(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: DOMRect
+): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -237,6 +246,119 @@ export default function TrashPage() {
     setSelectedFolderIds(new Set());
   }, []);
 
+  const setSelectionFromDrag = useCallback((fileIds: string[], folderIds: string[]) => {
+    setSelectedFileIds(new Set(fileIds));
+    setSelectedFolderIds(new Set(folderIds));
+  }, []);
+
+  const [dragState, setDragState] = useState<{
+    isActive: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const gridSectionRef = useRef<HTMLDivElement | null>(null);
+  const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
+  const selectionUpdateRef = useRef<number | null>(null);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
+      if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
+      if ((e.target as HTMLElement).closest("[data-selectable-item]")) return;
+      lastSelectionRef.current = null;
+      setDragState({
+        isActive: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+
+    const updateDrag = (e: MouseEvent) => {
+      setDragState((prev) =>
+        prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
+      );
+    };
+
+    const endDrag = (e: MouseEvent) => {
+      const moved =
+        Math.abs(e.clientX - dragState.startX) > DRAG_THRESHOLD_PX ||
+        Math.abs(e.clientY - dragState.startY) > DRAG_THRESHOLD_PX;
+      if (moved) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener("mousemove", updateDrag);
+    window.addEventListener("mouseup", endDrag, true);
+    return () => {
+      window.removeEventListener("mousemove", updateDrag);
+      window.removeEventListener("mouseup", endDrag, true);
+    };
+  }, [dragState?.isActive, dragState?.startX, dragState?.startY]);
+
+  useEffect(() => {
+    if (!dragState?.isActive) return;
+    const moved =
+      Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+      Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX;
+    if (!moved) return;
+
+    const runUpdate = () => {
+      const left = Math.min(dragState.startX, dragState.currentX);
+      const right = Math.max(dragState.startX, dragState.currentX);
+      const top = Math.min(dragState.startY, dragState.currentY);
+      const bottom = Math.max(dragState.startY, dragState.currentY);
+      const dragRect = { left, top, right, bottom };
+
+      const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
+      const fileIds: string[] = [];
+      const folderIds: string[] = [];
+
+      items?.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (!rectsIntersect(dragRect, rect)) return;
+        const type = el.getAttribute("data-item-type");
+        const id = el.getAttribute("data-item-id");
+        const key = el.getAttribute("data-item-key");
+        if (type === "file" && id) fileIds.push(id);
+        if (type === "folder" && key) folderIds.push(key);
+      });
+
+      const filesKey = [...fileIds].sort().join(",");
+      const foldersKey = [...folderIds].sort().join(",");
+      if (
+        lastSelectionRef.current?.files === filesKey &&
+        lastSelectionRef.current?.folders === foldersKey
+      ) {
+        return;
+      }
+      lastSelectionRef.current = { files: filesKey, folders: foldersKey };
+      setSelectionFromDrag(fileIds, folderIds);
+    };
+
+    if (selectionUpdateRef.current !== null) {
+      cancelAnimationFrame(selectionUpdateRef.current);
+    }
+    selectionUpdateRef.current = requestAnimationFrame(runUpdate);
+    return () => {
+      if (selectionUpdateRef.current !== null) {
+        cancelAnimationFrame(selectionUpdateRef.current);
+        selectionUpdateRef.current = null;
+      }
+    };
+  }, [dragState, setSelectionFromDrag]);
+
   const hasSelection = selectedFileIds.size + selectedFolderIds.size > 0;
   const selectedCount = selectedFileIds.size + selectedFolderIds.size;
 
@@ -439,6 +561,24 @@ export default function TrashPage() {
 
   const hasItems = deletedFiles.length > 0 || deletedDrives.length > 0;
 
+  const showDragRect =
+    dragState?.isActive &&
+    (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
+      Math.abs(dragState.currentY - dragState.startY) > DRAG_THRESHOLD_PX);
+
+  const dragRectEl =
+    showDragRect && dragState ? (
+      <div
+        className="pointer-events-none fixed z-[9999] border-2 border-bizzi-blue bg-bizzi-blue/20 shadow-lg shadow-bizzi-blue/30"
+        style={{
+          left: Math.min(dragState.startX, dragState.currentX),
+          top: Math.min(dragState.startY, dragState.currentY),
+          width: Math.abs(dragState.currentX - dragState.startX),
+          height: Math.abs(dragState.currentY - dragState.startY),
+        }}
+      />
+    ) : null;
+
   return (
     <>
       <TopBar title="Deleted" />
@@ -497,12 +637,19 @@ export default function TrashPage() {
           </div>
         )}
 
+        {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
+
         {loading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…
           </div>
         ) : hasItems ? (
-          <div className="space-y-8">
+          <div
+            ref={gridSectionRef}
+            className={`space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
+            data-selectable-grid
+            onMouseDown={handleMouseDown}
+          >
             {deletedDrives.length > 0 && (
               <>
                 <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
@@ -510,18 +657,27 @@ export default function TrashPage() {
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {deletedDrives.map((folder) => (
-                    <DeletedFolderCard
+                    <div
                       key={folder.id}
-                      folder={folder}
-                      selected={selectedFolderIds.has(folder.id)}
-                      onSelect={() => toggleFolderSelection(folder.id)}
-                      onRestore={() => handleRestoreDrive(folder.id)}
-                      onPermanentDelete={() =>
-                        handlePermanentDeleteDrive(folder)
-                      }
+                      data-selectable-item
+                      data-item-type="folder"
+                      data-item-key={folder.id}
                       draggable={hasSelection && selectedFolderIds.has(folder.id)}
                       onDragStart={handleDragStart}
-                    />
+                      className={hasSelection && selectedFolderIds.has(folder.id) ? "cursor-grab active:cursor-grabbing" : undefined}
+                    >
+                      <DeletedFolderCard
+                        folder={folder}
+                        selected={selectedFolderIds.has(folder.id)}
+                        onSelect={() => toggleFolderSelection(folder.id)}
+                        onRestore={() => handleRestoreDrive(folder.id)}
+                        onPermanentDelete={() =>
+                          handlePermanentDeleteDrive(folder)
+                        }
+                        draggable={false}
+                        onDragStart={undefined}
+                      />
+                    </div>
                   ))}
                 </div>
               </>
@@ -533,18 +689,27 @@ export default function TrashPage() {
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {deletedFiles.map((file) => (
-                    <DeletedFileCard
+                    <div
                       key={file.id}
-                      file={file}
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                      onRestore={() => handleRestoreFile(file.id)}
-                      onPermanentDelete={() =>
-                        handlePermanentDeleteFile(file)
-                      }
+                      data-selectable-item
+                      data-item-type="file"
+                      data-item-id={file.id}
                       draggable={hasSelection && selectedFileIds.has(file.id)}
                       onDragStart={handleDragStart}
-                    />
+                      className={hasSelection && selectedFileIds.has(file.id) ? "cursor-grab active:cursor-grabbing" : undefined}
+                    >
+                      <DeletedFileCard
+                        file={file}
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                        onRestore={() => handleRestoreFile(file.id)}
+                        onPermanentDelete={() =>
+                          handlePermanentDeleteFile(file)
+                        }
+                        draggable={false}
+                        onDragStart={undefined}
+                      />
+                    </div>
                   ))}
                 </div>
               </>

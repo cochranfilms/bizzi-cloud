@@ -12,12 +12,20 @@ const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
-function getPreviewType(name: string): "image" | "video" | "audio" | "pdf" | "other" {
+function getPreviewType(name: string, contentType?: string | null): "image" | "video" | "audio" | "pdf" | "other" {
   const lower = name.toLowerCase();
   if (IMAGE_EXT.test(lower)) return "image";
   if (VIDEO_EXT.test(lower)) return "video";
   if (AUDIO_EXT.test(lower)) return "audio";
   if (PDF_EXT.test(lower)) return "pdf";
+  // Fallback: use stored MIME type (persists across rename, e.g. renamed video without .mp4)
+  if (contentType) {
+    const ct = contentType.toLowerCase();
+    if (ct.startsWith("image/")) return "image";
+    if (ct.startsWith("video/")) return "video";
+    if (ct.startsWith("audio/")) return "audio";
+    if (ct === "application/pdf") return "pdf";
+  }
   return "other";
 }
 
@@ -33,7 +41,7 @@ export default function FilePreviewModal({ file, onClose }: FilePreviewModalProp
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const previewType = file ? getPreviewType(file.name) : "other";
+  const previewType = file ? getPreviewType(file.name, file.contentType) : "other";
   const lowResPreviewUrl = useThumbnail(
     file?.objectKey,
     file?.name ?? "",

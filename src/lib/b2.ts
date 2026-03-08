@@ -41,6 +41,9 @@ const B2_PART_MIN = 5 * 1024 * 1024;
 const B2_PART_MAX = 5 * 1024 * 1024 * 1024;
 const B2_MAX_PARTS = 10000;
 
+/** Presigned URL expiry for multipart upload parts (7 days). S3/B2 support up to 7 days. */
+export const MULTIPART_PRESIGN_EXPIRY = 7 * 24 * 60 * 60;
+
 /** B2 minimum part size is 5MB. Use 8MB for balance of throughput and memory. */
 export const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 
@@ -55,8 +58,8 @@ export interface AdaptivePartPlan {
 
 /**
  * Adaptive part sizing per Backblaze recommendations.
- * < 250MB: 8–16MB parts; 250MB–5GB: 32–64MB; > 5GB: 64–256MB.
- * Keeps total parts under 10,000.
+ * < 250MB: 8MB; 250MB–5GB: 32MB; 5–50GB: 64MB; 50–200GB: 128MB; > 200GB: 256MB.
+ * Keeps total parts under 10,000. Optimized for 8K/BRAW and very large files.
  */
 export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan {
   let partSize: number;
@@ -67,8 +70,14 @@ export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan
   } else if (fileSizeBytes < 5 * 1024 * 1024 * 1024) {
     partSize = 32 * 1024 * 1024;
     concurrency = 8;
-  } else {
+  } else if (fileSizeBytes < 50 * 1024 * 1024 * 1024) {
     partSize = 64 * 1024 * 1024;
+    concurrency = 10;
+  } else if (fileSizeBytes < 200 * 1024 * 1024 * 1024) {
+    partSize = 128 * 1024 * 1024;
+    concurrency = 10;
+  } else {
+    partSize = 256 * 1024 * 1024;
     concurrency = 10;
   }
   let totalParts = Math.ceil(fileSizeBytes / partSize);
@@ -85,7 +94,7 @@ export async function createPresignedPartUrlsBatch(
   objectKey: string,
   uploadId: string,
   partNumbers: number[],
-  expiresIn = 3600
+  expiresIn = MULTIPART_PRESIGN_EXPIRY
 ): Promise<{ partNumber: number; uploadUrl: string }[]> {
   const client = getB2Client();
   const results = await Promise.all(

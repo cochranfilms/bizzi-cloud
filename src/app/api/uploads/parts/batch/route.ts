@@ -1,6 +1,7 @@
 import {
   createPresignedPartUrlsBatch,
   isB2Configured,
+  MULTIPART_PRESIGN_EXPIRY,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
@@ -88,6 +89,6 @@ async function handleBatchSign(request: Request) {
     }
   }
 
-  const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, validatedPartNumbers, 3600);
+  const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, validatedPartNumbers, MULTIPART_PRESIGN_EXPIRY);
   return NextResponse.json({ parts });
 }

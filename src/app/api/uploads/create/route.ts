@@ -4,6 +4,7 @@ import {
   objectExists,
   isB2Configured,
   computeAdaptivePartPlan,
+  MULTIPART_PRESIGN_EXPIRY,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
@@ -134,7 +135,7 @@ async function handleCreate(request: Request) {
     totalParts <= MAX_PARTS_IN_RESPONSE
       ? partNumbers
       : partNumbers.slice(0, MAX_PARTS_IN_RESPONSE);
-  const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partsToSign, 3600);
+  const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partsToSign, MULTIPART_PRESIGN_EXPIRY);
 
   const db = getAdminFirestore();
   const expiresAt = new Date();

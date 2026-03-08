@@ -183,6 +183,15 @@ async function runWithConcurrency<T, R>(
 
 const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
 
+/** Above this size, skip content hash (use fingerprint only) to avoid blocking upload start. */
+const CONTENT_HASH_SKIP_THRESHOLD = 20 * 1024 * 1024 * 1024;
+
+/** When totalParts exceeds this, fetch part URLs lazily instead of up front. */
+const LAZY_FETCH_THRESHOLD = 400;
+
+/** Batch size for lazy part URL fetches. */
+const LAZY_BATCH_SIZE = 400;
+
 export class UploadManager {
   private opts: UploadManagerOptions;
   private aborts = new Map<string, AbortController>();
@@ -216,6 +225,58 @@ export class UploadManager {
   cancel(fileId: string) {
     const ac = this.aborts.get(fileId);
     if (ac) ac.abort();
+  }
+
+  private createLazyPartUrlFetcher(
+    sessionId: string,
+    objectKey: string,
+    uploadId: string,
+    totalParts: number,
+    initialParts: { partNumber: number; uploadUrl: string }[],
+    signal: AbortSignal
+  ): (partNumber: number) => Promise<string> {
+    const cache = new Map<number, string>();
+    for (const p of initialParts) cache.set(p.partNumber, p.uploadUrl);
+    const fetchInProgress = new Map<number, Promise<void>>();
+
+    return async (partNumber: number): Promise<string> => {
+      const cached = cache.get(partNumber);
+      if (cached) return cached;
+
+      const batchIndex = Math.floor((partNumber - 1) / LAZY_BATCH_SIZE);
+      const batchStart = batchIndex * LAZY_BATCH_SIZE + 1;
+      let batchPromise = fetchInProgress.get(batchStart);
+
+      if (!batchPromise) {
+        batchPromise = (async () => {
+          const partNumbers = Array.from(
+            { length: LAZY_BATCH_SIZE },
+            (_, i) => batchStart + i
+          ).filter((n) => n >= 1 && n <= totalParts);
+          const batchRes = await this.apiFetch("/api/uploads/parts/batch", {
+            method: "POST",
+            body: {
+              session_id: sessionId,
+              object_key: objectKey,
+              upload_id: uploadId,
+              part_numbers: partNumbers,
+              user_id: this.opts.getUserId?.() ?? undefined,
+            },
+          });
+          if (signal?.aborted) return;
+          if (!batchRes.ok) throw new Error("Failed to get part URLs");
+          const batch = (await batchRes.json()) as { parts: { partNumber: number; uploadUrl: string }[] };
+          for (const p of batch.parts) cache.set(p.partNumber, p.uploadUrl);
+          fetchInProgress.delete(batchStart);
+        })();
+        fetchInProgress.set(batchStart, batchPromise);
+      }
+
+      await batchPromise;
+      const url = cache.get(partNumber);
+      if (!url) throw new Error(`Part ${partNumber} URL not found`);
+      return url;
+    };
   }
 
   private reportProgress(
@@ -319,7 +380,8 @@ export class UploadManager {
         return { objectKey: urlData.objectKey };
       }
 
-      const contentHash = await this.sha256Hex(file);
+      const contentHash =
+        file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await this.sha256Hex(file);
       const createRes = await this.apiFetch("/api/uploads/create", {
         method: "POST",
         body: {
@@ -345,14 +407,16 @@ export class UploadManager {
         this.opts.onComplete?.({ fileId, objectKey: create.existingObjectKey });
         return { objectKey: create.existingObjectKey };
       }
-      if (!create.uploadId || !create.parts?.length) {
+      if (!create.uploadId || !create.parts?.length || !create.sessionId) {
         throw new Error("Invalid create response");
       }
 
       let parts = create.parts as { partNumber: number; uploadUrl: string }[];
       const { objectKey, uploadId, recommendedPartSize, recommendedConcurrency, totalParts } = create;
 
-      if (parts.length < totalParts) {
+      const useLazyFetch = totalParts > LAZY_FETCH_THRESHOLD;
+
+      if (!useLazyFetch && parts.length < totalParts) {
         const batchSize = 200;
         for (let start = parts.length; start < totalParts; start += batchSize) {
           const partNumbers = Array.from(
@@ -374,7 +438,8 @@ export class UploadManager {
           parts = parts.concat(batch.parts);
         }
       }
-      const partProgress = new Array(parts.length).fill(0);
+
+      const partProgress = new Array(totalParts).fill(0);
       let lastReport = 0;
       const report = () => {
         const now = Date.now();
@@ -387,17 +452,32 @@ export class UploadManager {
           const expected = Math.min(recommendedPartSize, file.size - start);
           if (partProgress[i] >= expected) partsCompleted++;
         }
-        this.reportProgress(fileId, file.name, loaded, file.size, partsCompleted, parts.length, "uploading");
+        this.reportProgress(fileId, file.name, loaded, file.size, partsCompleted, totalParts, "uploading");
       };
 
+      const getPartUrl = useLazyFetch
+        ? this.createLazyPartUrlFetcher(
+            create.sessionId,
+            objectKey,
+            uploadId,
+            totalParts,
+            parts,
+            controller.signal
+          )
+        : null;
+
+      const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
       const uploadResults = await runWithConcurrency(
-        parts,
+        partNumbers,
         Math.min(recommendedConcurrency, 10),
-        async (p: { partNumber: number; uploadUrl: string }, idx: number) => {
-          const start = (p.partNumber - 1) * recommendedPartSize;
+        async (partNumber: number, idx: number) => {
+          const url = getPartUrl
+            ? await getPartUrl(partNumber)
+            : (parts.find((p) => p.partNumber === partNumber) as { uploadUrl: string }).uploadUrl;
+          const start = (partNumber - 1) * recommendedPartSize;
           const end = Math.min(start + recommendedPartSize, file.size);
           const blob = file.slice(start, end);
-          const { etag } = await putPartWithRetry(blob, p.uploadUrl, contentType, {
+          const { etag } = await putPartWithRetry(blob, url, contentType, {
             signal: controller.signal,
             onProgress: (loaded) => {
               partProgress[idx] = loaded;
@@ -406,7 +486,7 @@ export class UploadManager {
           });
           partProgress[idx] = end - start;
           report();
-          return { partNumber: p.partNumber, etag };
+          return { partNumber, etag };
         }
       );
 
