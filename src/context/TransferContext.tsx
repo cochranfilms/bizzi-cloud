@@ -193,28 +193,39 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!idToken) throw new Error("Not authenticated");
 
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ permission }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? "Failed to update permission");
-      }
-
+      // Optimistic update: apply immediately so card and modal stay in sync
+      let prevSnapshot: Transfer[] | null = null;
       setTransfers((prev) => {
+        prevSnapshot = prev;
         const next = prev.map((t) =>
           t.slug === slug || t.id === slug ? { ...t, permission } : t
         );
         saveTransfers(next);
         return next;
       });
+
+      try {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ permission }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error ?? "Failed to update permission");
+        }
+      } catch (err) {
+        if (prevSnapshot) {
+          setTransfers(prevSnapshot);
+          saveTransfers(prevSnapshot);
+        }
+        throw err;
+      }
     },
     []
   );
@@ -239,22 +250,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       if (Object.keys(body).length === 0) return;
 
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? "Failed to update transfer");
-      }
-
+      // Optimistic update: apply immediately so card and modal stay in sync
+      let prevSnapshot: Transfer[] | null = null;
       setTransfers((prev) => {
+        prevSnapshot = prev;
         const next = prev.map((t) => {
           if (t.slug !== slug && t.id !== slug) return t;
           return {
@@ -267,6 +266,29 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
         saveTransfers(next);
         return next;
       });
+
+      try {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error ?? "Failed to update transfer");
+        }
+      } catch (err) {
+        if (prevSnapshot) {
+          setTransfers(prevSnapshot);
+          saveTransfers(prevSnapshot);
+        }
+        throw err;
+      }
     },
     []
   );
