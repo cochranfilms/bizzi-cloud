@@ -15,11 +15,9 @@ import {
   Settings,
   Menu,
   X,
-  Building2,
   Images,
 } from "lucide-react";
 import UserMenu from "./UserMenu";
-import { useEnterprise } from "@/context/EnterpriseContext";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
@@ -34,7 +32,6 @@ const navItems = [
 
 export default function TopNavbar() {
   const pathname = usePathname();
-  const { org } = useEnterprise();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
 
@@ -70,19 +67,6 @@ export default function TopNavbar() {
 
       {/* Desktop nav - horizontal */}
       <nav className="hidden md:flex items-center gap-0.5">
-        {org && (
-          <Link
-            href="/enterprise"
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-              pathname.startsWith("/enterprise")
-                ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-            }`}
-          >
-            <Building2 className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden lg:inline">Enterprise</span>
-          </Link>
-        )}
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
@@ -138,22 +122,6 @@ export default function TopNavbar() {
         }`}
       >
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
-          {org && (
-            <li>
-              <Link
-                href="/enterprise"
-                onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  pathname.startsWith("/enterprise")
-                    ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                    : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-                }`}
-              >
-                <Building2 className="h-4 w-4 flex-shrink-0" />
-                Enterprise
-              </Link>
-            </li>
-          )}
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;

@@ -9,6 +9,8 @@ export interface GalleryListItem {
   slug: string;
   photographer_id: string;
   cover_asset_id: string | null;
+  cover_object_key: string | null;
+  cover_name: string | null;
   description: string | null;
   event_date: string | null;
   expiration_date: string | null;

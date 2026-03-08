@@ -37,14 +37,50 @@ export async function GET(request: Request) {
     .orderBy("created_at", "desc")
     .get();
 
+  const galleryIds = snap.docs.map((d) => d.id);
+  let coverMap: Record<string, { object_key: string; name: string }> = {};
+  if (galleryIds.length > 0) {
+    const byGallery: Record<string, Array<{ id: string; object_key: string; name: string }>> = {};
+    for (let i = 0; i < galleryIds.length; i += 10) {
+      const batch = galleryIds.slice(i, i + 10);
+      const assetsSnap = await db
+        .collection("gallery_assets")
+        .where("gallery_id", "in", batch)
+        .where("is_visible", "==", true)
+        .orderBy("sort_order", "asc")
+        .get();
+      for (const doc of assetsSnap.docs) {
+        const d = doc.data();
+        const gid = d.gallery_id;
+        if (!byGallery[gid]) byGallery[gid] = [];
+        byGallery[gid].push({
+          id: doc.id,
+          object_key: d.object_key,
+          name: d.name ?? "",
+        });
+      }
+    }
+    for (const d of snap.docs) {
+      const data = d.data();
+      const coverId = data.cover_asset_id ?? null;
+      const assets = byGallery[d.id] ?? [];
+      const first = assets[0];
+      const coverAsset = coverId ? assets.find((a) => a.id === coverId) : first;
+      if (coverAsset?.object_key) coverMap[d.id] = { object_key: coverAsset.object_key, name: coverAsset.name };
+    }
+  }
+
   const galleries = snap.docs.map((d) => {
     const data = d.data();
+    const cover = coverMap[d.id] ?? null;
     return {
       id: d.id,
       title: data.title,
       slug: data.slug,
       photographer_id: data.photographer_id,
       cover_asset_id: data.cover_asset_id ?? null,
+      cover_object_key: cover?.object_key ?? null,
+      cover_name: cover?.name ?? null,
       description: data.description ?? null,
       event_date: data.event_date ?? null,
       expiration_date: data.expiration_date ?? null,

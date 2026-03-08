@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import TopBar from "@/components/dashboard/TopBar";
+import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 
 interface FavoritesList {
   id: string;
@@ -34,6 +35,8 @@ interface Comment {
 interface GalleryAsset {
   id: string;
   name: string;
+  object_key?: string;
+  media_type?: "image" | "video";
   proofing_status?: string;
 }
 
@@ -145,8 +148,8 @@ export default function GalleryProofingPage() {
   return (
     <>
       <TopBar title="Proofing" />
-      <main className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6">
+        <div className="mx-auto max-w-6xl space-y-6">
           <Link
             href={`/dashboard/galleries/${id}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
@@ -288,7 +291,7 @@ export default function GalleryProofingPage() {
               </h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[360px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
@@ -312,9 +315,20 @@ export default function GalleryProofingPage() {
                       className="border-b border-neutral-100 dark:border-neutral-800"
                     >
                       <td className="px-4 py-3">
-                        <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
-                          {a.name}
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
+                            <GalleryAssetThumbnail
+                              galleryId={id}
+                              objectKey={a.object_key ?? ""}
+                              name={a.name}
+                              mediaType={a.media_type ?? "image"}
+                              className="h-10 w-10"
+                            />
+                          </div>
+                          <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
+                            {a.name}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {favoritedAssetIds.has(a.id) ? (

@@ -2,10 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Settings, LogOut, Sun, Moon } from "lucide-react";
+import { ChevronDown, Settings, LogOut, Sun, Moon, Building2 } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { signOut } from "firebase/auth";
 
@@ -19,6 +21,7 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const { org } = useEnterprise();
 
   const displayName = user?.displayName ?? user?.email?.split("@")[0] ?? "User";
   const initials = (user?.displayName ?? user?.email ?? "U").slice(0, 2).toUpperCase();
@@ -106,6 +109,16 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
               {email || "Signed in"}
             </p>
           </div>
+          {org && (
+            <Link
+              href="/enterprise"
+              onClick={() => setOpen(false)}
+              className="mx-2 mb-2 mt-2 flex items-center gap-2 rounded-lg border border-bizzi-blue/40 bg-bizzi-blue/10 px-3 py-2.5 text-sm font-medium text-bizzi-blue transition-colors hover:bg-bizzi-blue/20 hover:border-bizzi-blue/60 dark:border-bizzi-cyan/30 dark:bg-bizzi-blue/20 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/30"
+            >
+              <Building2 className="h-4 w-4 flex-shrink-0" />
+              Enterprise dashboard
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => {

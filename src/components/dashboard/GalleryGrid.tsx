@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { useGalleries } from "@/hooks/useGalleries";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
+import { useInView } from "@/hooks/useInView";
 import CreateGalleryModal from "./CreateGalleryModal";
 
 function formatDate(iso: string) {
@@ -41,6 +43,95 @@ function accessIcon(access: string) {
     default:
       return null;
   }
+}
+
+type GalleryCardProps = {
+  gallery: {
+    id: string;
+    title: string;
+    access_mode: string;
+    view_count: number;
+    download_count: number;
+    expiration_date: string | null;
+    cover_object_key: string | null;
+    cover_name: string | null;
+  };
+  onDelete: (e: React.MouseEvent, g: { id: string; title: string }) => void;
+  deletingId: string | null;
+};
+
+function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
+  const [cardRef, isInView] = useInView<HTMLDivElement>();
+  const thumbUrl = useGalleryThumbnail(
+    g.cover_object_key ? g.id : undefined,
+    g.cover_object_key ?? undefined,
+    g.cover_name ?? "",
+    { enabled: !!g.cover_object_key && isInView }
+  );
+
+  return (
+    <Link
+      href={`/dashboard/galleries/${g.id}`}
+      className="group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:border-bizzi-blue/40 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-cyan/40"
+    >
+      <div
+        ref={cardRef}
+        className="relative flex h-32 shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800"
+      >
+        {thumbUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */}
+            <img
+              src={thumbUrl}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          </>
+        ) : (
+          <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
+        )}
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 className="truncate font-medium text-neutral-900 dark:text-white">
+            {g.title}
+          </h3>
+          {accessIcon(g.access_mode)}
+        </div>
+        <div className="mb-3 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <span className="flex items-center gap-1">
+            <BarChart2 className="h-3.5 w-3.5" />
+            {g.view_count} views
+          </span>
+          <span>{g.download_count} downloads</span>
+        </div>
+        <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+          Expires {formatExpires(g.expiration_date)}
+        </p>
+        <div className="mt-auto flex items-center justify-between gap-2">
+          <a
+            href={`/g/${g.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs font-medium text-bizzi-blue hover:text-bizzi-cyan dark:text-bizzi-cyan"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            View gallery
+          </a>
+          <button
+            type="button"
+            onClick={(e) => onDelete(e, g)}
+            disabled={deletingId === g.id}
+            className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50"
+            aria-label="Delete gallery"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </Link>
+  );
 }
 
 export default function GalleryGrid() {
@@ -127,58 +218,7 @@ export default function GalleryGrid() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {galleries.map((g) => (
-            <Link
-              key={g.id}
-              href={`/dashboard/galleries/${g.id}`}
-              className="group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:border-bizzi-blue/40 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-cyan/40"
-            >
-              <div className="flex h-32 items-center justify-center bg-neutral-100 dark:bg-neutral-800">
-                {g.cover_asset_id ? (
-                  <span className="text-sm text-neutral-500">Cover image</span>
-                ) : (
-                  <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
-                )}
-              </div>
-              <div className="flex flex-1 flex-col p-4">
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <h3 className="truncate font-medium text-neutral-900 dark:text-white">
-                    {g.title}
-                  </h3>
-                  {accessIcon(g.access_mode)}
-                </div>
-                <div className="mb-3 flex flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                  <span className="flex items-center gap-1">
-                    <BarChart2 className="h-3.5 w-3.5" />
-                    {g.view_count} views
-                  </span>
-                  <span>{g.download_count} downloads</span>
-                </div>
-                <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                  Expires {formatExpires(g.expiration_date)}
-                </p>
-                <div className="mt-auto flex items-center justify-between gap-2">
-                  <a
-                    href={`/g/${g.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 text-xs font-medium text-bizzi-blue hover:text-bizzi-cyan dark:text-bizzi-cyan"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View gallery
-                  </a>
-                  <button
-                    type="button"
-                    onClick={(e) => handleDelete(e, g)}
-                    disabled={deletingId === g.id}
-                    className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50"
-                    aria-label="Delete gallery"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </Link>
+            <GalleryCard key={g.id} gallery={g} onDelete={handleDelete} deletingId={deletingId} />
           ))}
         </div>
       )}

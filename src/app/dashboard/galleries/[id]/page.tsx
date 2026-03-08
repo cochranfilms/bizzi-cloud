@@ -9,6 +9,7 @@ import {
   Plus,
   Image as ImageIcon,
   Film,
+  Play,
   Copy,
   Check,
   Loader2,
@@ -16,7 +17,74 @@ import {
   Settings,
   Heart,
 } from "lucide-react";
+import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
+import { useThumbnail } from "@/hooks/useThumbnail";
+import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
+import { useInView } from "@/hooks/useInView";
 import { useAuth } from "@/context/AuthContext";
+import type { RecentFile } from "@/hooks/useCloudFiles";
+
+function AddFileButton({
+  file,
+  selected,
+  onToggle,
+}: {
+  file: RecentFile;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const [btnRef, isInView] = useInView<HTMLButtonElement>();
+  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
+    enabled: isInView,
+  });
+  const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(file.name) || (file.contentType?.startsWith("video/") ?? false);
+  const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
+    enabled: !!file.objectKey && isVideo && isInView,
+    isVideo,
+  });
+
+  return (
+    <button
+      ref={btnRef}
+      type="button"
+      onClick={onToggle}
+      className={`relative flex aspect-square flex-col items-center justify-center overflow-hidden rounded-lg border-2 p-1 transition-colors ${
+        selected
+          ? "border-bizzi-blue bg-bizzi-blue/10"
+          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+      }`}
+    >
+      {(thumbnailUrl || videoThumbnailUrl) ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API or video frame capture */}
+          <img
+            src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+          {isVideo && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 shadow-lg">
+                <Play className="ml-0.5 h-5 w-5 fill-white text-white" />
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          {isVideo ? (
+            <Film className="h-6 w-6 text-neutral-500" />
+          ) : (
+            <ImageIcon className="h-6 w-6 text-neutral-500" />
+          )}
+        </div>
+      )}
+      <span className="mt-1 w-full truncate text-center text-xs">
+        {file.name}
+      </span>
+    </button>
+  );
+}
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
@@ -162,8 +230,8 @@ export default function GalleryDetailPage() {
   return (
     <>
       <TopBar title={gallery.title} />
-      <main className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+      <main className="flex-1 overflow-auto p-4 sm:p-6">
+        <div className="mx-auto max-w-6xl space-y-6">
           <Link
             href="/dashboard/galleries"
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
@@ -255,17 +323,19 @@ export default function GalleryDetailPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 md:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
                 {assets.map((a) => (
                   <div
                     key={a.id}
-                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800"
+                    className="overflow-hidden rounded-lg"
                   >
-                    {a.media_type === "video" ? (
-                      <Film className="h-8 w-8 text-neutral-400" />
-                    ) : (
-                      <ImageIcon className="h-8 w-8 text-neutral-400" />
-                    )}
+                    <GalleryAssetThumbnail
+                      galleryId={id}
+                      objectKey={a.object_key}
+                      name={a.name}
+                      mediaType={a.media_type}
+                      className="w-full rounded-lg"
+                    />
                   </div>
                 ))}
               </div>
@@ -275,8 +345,8 @@ export default function GalleryDetailPage() {
       </main>
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-700">
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
                 Add photos & videos
@@ -292,36 +362,23 @@ export default function GalleryDetailPage() {
                 ×
               </button>
             </div>
-            <div className="max-h-[400px] overflow-y-auto p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
                 Select from your recent files. Supported: JPEG, PNG, GIF, MP4, MOV, etc.
               </p>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
                 {recentFiles
                   .filter((f) =>
                     /\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|m4v)$/i.test(f.name)
                   )
                   .slice(0, 50)
                   .map((f) => (
-                    <button
+                    <AddFileButton
                       key={f.id}
-                      type="button"
-                      onClick={() => toggleSelect(f.id)}
-                      className={`flex aspect-square flex-col items-center justify-center rounded-lg border-2 p-2 transition-colors ${
-                        selectedIds.has(f.id)
-                          ? "border-bizzi-blue bg-bizzi-blue/10"
-                          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                      }`}
-                    >
-                      {/\.(mp4|webm|mov|m4v)$/i.test(f.name) ? (
-                        <Film className="h-6 w-6 text-neutral-500" />
-                      ) : (
-                        <ImageIcon className="h-6 w-6 text-neutral-500" />
-                      )}
-                      <span className="mt-1 truncate w-full text-center text-xs">
-                        {f.name}
-                      </span>
-                    </button>
+                      file={f}
+                      selected={selectedIds.has(f.id)}
+                      onToggle={() => toggleSelect(f.id)}
+                    />
                   ))}
               </div>
               {recentFiles.filter((f) =>
