@@ -99,9 +99,10 @@ export default function RightPanel({
         const items = Array.from(e.dataTransfer.items).filter(
           (item) => item.kind === "file"
         );
+        type ItemWithFS = DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> };
         for (const item of items) {
           try {
-            const handle = await item.getAsFileSystemHandle?.();
+            const handle = await (item as ItemWithFS).getAsFileSystemHandle?.();
             if (!handle) continue;
             if (handle.kind === "directory") {
               dirHandles.push(handle as FileSystemDirectoryHandle);
