@@ -1,9 +1,9 @@
 import {
   createMultipartUpload,
-  createPresignedPartUrl,
+  createPresignedPartUrlsBatch,
   isB2Configured,
   objectExists,
-  MULTIPART_PART_SIZE,
+  computeAdaptivePartPlan,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
@@ -114,18 +114,15 @@ async function handleMultipartInit(request: Request) {
       typeof contentType === "string" ? contentType : "application/octet-stream"
     );
 
-    const partCount = Math.ceil(sizeBytes / MULTIPART_PART_SIZE);
-    const parts: { partNumber: number; uploadUrl: string }[] = [];
-    for (let i = 1; i <= partCount; i++) {
-      const url = await createPresignedPartUrl(objectKey, uploadId, i, 3600);
-      parts.push({ partNumber: i, uploadUrl: url });
-    }
+    const { partSize, totalParts } = computeAdaptivePartPlan(sizeBytes);
+    const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
+    const parts = await createPresignedPartUrlsBatch(objectKey, uploadId, partNumbers, 3600);
 
     return NextResponse.json({
       objectKey,
       uploadId,
       parts,
-      partSize: MULTIPART_PART_SIZE,
+      partSize,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to initiate multipart upload";

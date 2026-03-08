@@ -1,0 +1,470 @@
+/**
+ * Upload manager: direct-to-B2 multipart uploads with resumability, dedupe, and adaptive concurrency.
+ * File bytes never pass through Vercel; client uploads directly to Backblaze B2.
+ */
+
+import type { UploadCreateResponse, FileFingerprint } from "@/types/upload";
+
+const SAMPLE_SIZE = 64 * 1024;
+
+export async function computeFastFingerprint(file: File): Promise<string> {
+  const parts: string[] = [
+    String(file.size),
+    file.name.toLowerCase().replace(/\s+/g, "_"),
+    String(file.lastModified),
+  ];
+  const samples: Uint8Array[] = [];
+  if (file.size > 0) {
+    const first = file.slice(0, Math.min(SAMPLE_SIZE, file.size));
+    samples.push(new Uint8Array(await first.arrayBuffer()));
+    if (file.size > SAMPLE_SIZE * 2) {
+      const mid = Math.floor(file.size / 2) - SAMPLE_SIZE / 2;
+      const middle = file.slice(mid, mid + SAMPLE_SIZE);
+      samples.push(new Uint8Array(await middle.arrayBuffer()));
+    }
+    if (file.size > SAMPLE_SIZE) {
+      const lastStart = Math.max(0, file.size - SAMPLE_SIZE);
+      const last = file.slice(lastStart, file.size);
+      samples.push(new Uint8Array(await last.arrayBuffer()));
+    }
+  }
+  const combined = new Uint8Array(samples.reduce((s, a) => s + a.length, 0));
+  let offset = 0;
+  for (const s of samples) {
+    combined.set(s, offset);
+    offset += s.length;
+  }
+  const hashBuffer = await crypto.subtle.digest("SHA-256", combined);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const sampledHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  parts.push(sampledHash);
+  const payload = parts.join("|");
+  const finalHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(finalHash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export function fingerprintToPayload(fp: FileFingerprint): string {
+  return [String(fp.size), fp.name, String(fp.lastModified), fp.sampledHash].join("|");
+}
+
+export interface UploadManagerOptions {
+  getIdToken: () => Promise<string | null>;
+  getUserId?: () => string | null;
+  getBaseUrl?: () => string;
+  onProgress?: (ev: UploadProgressEvent) => void;
+  onComplete?: (ev: { fileId: string; objectKey: string }) => void;
+  onError?: (ev: { fileId: string; error: string }) => void;
+}
+
+export interface UploadProgressEvent {
+  fileId: string;
+  fileName: string;
+  bytesLoaded: number;
+  bytesTotal: number;
+  partsCompleted: number;
+  partsTotal: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
+  status: "pending" | "uploading" | "completed" | "cancelled" | "error";
+}
+
+export interface QueuedFile {
+  id: string;
+  file: File;
+  driveId: string;
+  relativePath: string;
+  workspaceId?: string;
+  organizationId?: string | null;
+}
+
+const STORAGE_KEY = "bizzi_upload_sessions";
+
+function loadSessions(): Record<string, unknown> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSession(fileId: string, data: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    const all = loadSessions();
+    all[fileId] = data;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
+function removeSession(fileId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const all = loadSessions();
+    delete all[fileId];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
+function putWithProgress(
+  blob: Blob,
+  url: string,
+  contentType: string,
+  opts: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void }
+): Promise<{ etag: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+    if (opts.signal) opts.signal.addEventListener("abort", () => xhr.abort());
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && opts.onProgress) opts.onProgress(e.loaded, e.total);
+    });
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const etag = xhr.getResponseHeader("etag") ?? xhr.getResponseHeader("ETag");
+        if (!etag) return reject(new Error("Missing ETag"));
+        resolve({ etag: etag.replace(/^"|"$/g, "") });
+      } else reject(new Error(`Upload failed: ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onabort = () => reject(new Error("Upload aborted"));
+    xhr.send(blob);
+  });
+}
+
+async function putPartWithRetry(
+  blob: Blob,
+  url: string,
+  contentType: string,
+  opts: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+  maxRetries = 6
+): Promise<{ etag: string }> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await putWithProgress(blob, url, contentType, opts);
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (lastErr.message === "Upload aborted") throw lastErr;
+      if (attempt < maxRetries - 1) {
+        const baseDelay = Math.min(2000 * 2 ** attempt, 20000);
+        const jitter = Math.random() * 2000;
+        await new Promise((r) => setTimeout(r, baseDelay + jitter));
+      }
+    }
+  }
+  throw lastErr ?? new Error("Upload failed");
+}
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, idx: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
+const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+
+export class UploadManager {
+  private opts: UploadManagerOptions;
+  private aborts = new Map<string, AbortController>();
+  private progress = new Map<string, { loaded: number; lastTime: number; lastLoaded: number }>();
+
+  constructor(opts: UploadManagerOptions) {
+    this.opts = opts;
+  }
+
+  private getBaseUrl(): string {
+    return this.opts.getBaseUrl?.() ?? (typeof window !== "undefined" ? window.location.origin : "");
+  }
+
+  private async apiFetch(path: string, init: Omit<RequestInit, "body"> & { body?: Record<string, unknown> }) {
+    const token = await this.opts.getIdToken();
+    if (!token) throw new Error("Not authenticated");
+    const { body: bodyObj, ...rest } = init;
+    const body = bodyObj !== undefined ? JSON.stringify(bodyObj) : undefined;
+    const res = await fetch(`${this.getBaseUrl()}${path}`, {
+      ...rest,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(rest.headers as Record<string, string>),
+      },
+      body,
+    });
+    return res;
+  }
+
+  cancel(fileId: string) {
+    const ac = this.aborts.get(fileId);
+    if (ac) ac.abort();
+  }
+
+  private reportProgress(
+    fileId: string,
+    fileName: string,
+    bytesLoaded: number,
+    bytesTotal: number,
+    partsCompleted: number,
+    partsTotal: number,
+    status: UploadProgressEvent["status"]
+  ) {
+    const now = Date.now();
+    const prev = this.progress.get(fileId);
+    let speedBytesPerSec = 0;
+    let etaSeconds: number | null = null;
+    if (prev && now > prev.lastTime) {
+      const dt = (now - prev.lastTime) / 1000;
+      const dLoaded = bytesLoaded - prev.lastLoaded;
+      if (dt > 0 && dLoaded >= 0) speedBytesPerSec = dLoaded / dt;
+      if (speedBytesPerSec > 0 && bytesLoaded < bytesTotal) {
+        etaSeconds = Math.ceil((bytesTotal - bytesLoaded) / speedBytesPerSec);
+      }
+    }
+    this.progress.set(fileId, { loaded: bytesLoaded, lastTime: now, lastLoaded: bytesLoaded });
+    this.opts.onProgress?.({
+      fileId,
+      fileName,
+      bytesLoaded,
+      bytesTotal,
+      partsCompleted,
+      partsTotal,
+      speedBytesPerSec,
+      etaSeconds,
+      status,
+    });
+  }
+
+  async upload(queued: QueuedFile): Promise<{ objectKey: string }> {
+    const { id: fileId, file, driveId, relativePath, workspaceId, organizationId } = queued;
+    const controller = new AbortController();
+    this.aborts.set(fileId, controller);
+    this.progress.set(fileId, { loaded: 0, lastTime: Date.now(), lastLoaded: 0 });
+
+    const contentType = file.type || "application/octet-stream";
+    const baseUrl = this.getBaseUrl();
+
+    try {
+      const fingerprint = await computeFastFingerprint(file);
+      const dedupeRes = await this.apiFetch("/api/uploads/dedupe/check", {
+        method: "POST",
+        body: {
+          fingerprint,
+          content_hash: null,
+          workspace_id: workspaceId ?? null,
+          user_id: this.opts.getUserId?.() ?? undefined,
+        } as Record<string, unknown>,
+      });
+      if (dedupeRes.ok) {
+        const dedupe = (await dedupeRes.json()) as { exists?: boolean; objectKey?: string };
+        if (dedupe.exists && dedupe.objectKey) {
+          this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
+          this.opts.onComplete?.({ fileId, objectKey: dedupe.objectKey });
+          return { objectKey: dedupe.objectKey };
+        }
+      }
+
+      if (file.size < MULTIPART_THRESHOLD) {
+        const urlRes = await this.apiFetch("/api/backup/upload-url", {
+          method: "POST",
+          body: {
+          drive_id: driveId,
+          relative_path: relativePath,
+          content_type: contentType,
+          content_hash: null,
+          user_id: this.opts.getUserId?.() ?? undefined,
+          size_bytes: file.size,
+        },
+        });
+        if (!urlRes.ok) {
+          const data = await urlRes.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to get upload URL");
+        }
+        const urlData = (await urlRes.json()) as {
+          uploadUrl?: string;
+          objectKey: string;
+          alreadyExists?: boolean;
+        };
+        if (urlData.alreadyExists) {
+          this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
+          this.opts.onComplete?.({ fileId, objectKey: urlData.objectKey });
+          return { objectKey: urlData.objectKey };
+        }
+        if (!urlData.uploadUrl) throw new Error("No upload URL");
+        await putWithProgress(file, urlData.uploadUrl, contentType, {
+          signal: controller.signal,
+          onProgress: (loaded) =>
+            this.reportProgress(fileId, file.name, loaded, file.size, loaded >= file.size ? 1 : 0, 1, "uploading"),
+        });
+        this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
+        this.opts.onComplete?.({ fileId, objectKey: urlData.objectKey });
+        return { objectKey: urlData.objectKey };
+      }
+
+      const contentHash = await this.sha256Hex(file);
+      const createRes = await this.apiFetch("/api/uploads/create", {
+        method: "POST",
+        body: {
+          drive_id: driveId,
+          relative_path: relativePath,
+          content_type: contentType,
+          content_hash: contentHash,
+          file_fingerprint: fingerprint,
+          size_bytes: file.size,
+          file_name: file.name,
+          last_modified: file.lastModified,
+          workspace_id: workspaceId ?? null,
+          user_id: this.opts.getUserId?.() ?? undefined,
+        },
+      });
+      if (!createRes.ok) {
+        const data = await createRes.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Failed to create upload session");
+      }
+      const create = (await createRes.json()) as UploadCreateResponse;
+      if (create.alreadyExists && create.existingObjectKey) {
+        this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
+        this.opts.onComplete?.({ fileId, objectKey: create.existingObjectKey });
+        return { objectKey: create.existingObjectKey };
+      }
+      if (!create.uploadId || !create.parts?.length) {
+        throw new Error("Invalid create response");
+      }
+
+      let parts = create.parts as { partNumber: number; uploadUrl: string }[];
+      const { objectKey, uploadId, recommendedPartSize, recommendedConcurrency, totalParts } = create;
+
+      if (parts.length < totalParts) {
+        const batchSize = 200;
+        for (let start = parts.length; start < totalParts; start += batchSize) {
+          const partNumbers = Array.from(
+            { length: Math.min(batchSize, totalParts - start) },
+            (_, i) => start + i + 1
+          );
+          const batchRes = await this.apiFetch("/api/uploads/parts/batch", {
+            method: "POST",
+            body: {
+              session_id: create.sessionId,
+              object_key: objectKey,
+              upload_id: uploadId,
+              part_numbers: partNumbers,
+              user_id: this.opts.getUserId?.() ?? undefined,
+            },
+          });
+          if (!batchRes.ok) throw new Error("Failed to get part URLs");
+          const batch = (await batchRes.json()) as { parts: { partNumber: number; uploadUrl: string }[] };
+          parts = parts.concat(batch.parts);
+        }
+      }
+      const partProgress = new Array(parts.length).fill(0);
+      let lastReport = 0;
+      const report = () => {
+        const now = Date.now();
+        if (now - lastReport < 80) return;
+        lastReport = now;
+        const loaded = partProgress.reduce((a, b) => a + b, 0);
+        let partsCompleted = 0;
+        for (let i = 0; i < partProgress.length; i++) {
+          const start = i * recommendedPartSize;
+          const expected = Math.min(recommendedPartSize, file.size - start);
+          if (partProgress[i] >= expected) partsCompleted++;
+        }
+        this.reportProgress(fileId, file.name, loaded, file.size, partsCompleted, parts.length, "uploading");
+      };
+
+      const uploadResults = await runWithConcurrency(
+        parts,
+        Math.min(recommendedConcurrency, 10),
+        async (p: { partNumber: number; uploadUrl: string }, idx: number) => {
+          const start = (p.partNumber - 1) * recommendedPartSize;
+          const end = Math.min(start + recommendedPartSize, file.size);
+          const blob = file.slice(start, end);
+          const { etag } = await putPartWithRetry(blob, p.uploadUrl, contentType, {
+            signal: controller.signal,
+            onProgress: (loaded) => {
+              partProgress[idx] = loaded;
+              report();
+            },
+          });
+          partProgress[idx] = end - start;
+          report();
+          return { partNumber: p.partNumber, etag };
+        }
+      );
+
+      const completeRes = await this.apiFetch("/api/uploads/complete", {
+        method: "POST",
+        body: {
+          session_id: create.sessionId,
+          object_key: objectKey,
+          upload_id: uploadId,
+          parts: uploadResults,
+          drive_id: driveId,
+          relative_path: relativePath,
+          content_type: contentType,
+          size_bytes: file.size,
+          modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+          organization_id: organizationId ?? null,
+          user_id: this.opts.getUserId?.() ?? undefined,
+        },
+      });
+      if (!completeRes.ok) {
+        const data = await completeRes.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Failed to complete upload");
+      }
+      const complete = (await completeRes.json()) as { objectKey: string };
+      this.reportProgress(fileId, file.name, file.size, file.size, parts.length, parts.length, "completed");
+      this.opts.onComplete?.({ fileId, objectKey: complete.objectKey });
+      removeSession(fileId);
+      return { objectKey: complete.objectKey };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      if (msg !== "Upload aborted") {
+        this.opts.onError?.({ fileId, error: msg });
+      }
+      throw err;
+    } finally {
+      this.aborts.delete(fileId);
+      this.progress.delete(fileId);
+    }
+  }
+
+  private async sha256Hex(file: File): Promise<string> {
+    const chunkSize = 8 * 1024 * 1024;
+    if (file.size <= chunkSize) {
+      const buf = await file.arrayBuffer();
+      const hash = await crypto.subtle.digest("SHA-256", buf);
+      return Array.from(new Uint8Array(hash))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+    const { createSHA256 } = await import("hash-wasm");
+    const sha = await createSHA256();
+    sha.init();
+    let offset = 0;
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + chunkSize);
+      sha.update(new Uint8Array(await chunk.arrayBuffer()));
+      offset += chunkSize;
+    }
+    return sha.digest("hex");
+  }
+}

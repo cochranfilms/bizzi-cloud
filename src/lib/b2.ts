@@ -36,11 +36,72 @@ function getB2Client(): S3Client {
   });
 }
 
+/** B2 minimum part size 5MB, max 5GB. Max 10,000 parts. */
+const B2_PART_MIN = 5 * 1024 * 1024;
+const B2_PART_MAX = 5 * 1024 * 1024 * 1024;
+const B2_MAX_PARTS = 10000;
+
 /** B2 minimum part size is 5MB. Use 8MB for balance of throughput and memory. */
 export const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 
 /** Use multipart for files larger than this (must be > 5MB for B2). */
 export const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+
+export interface AdaptivePartPlan {
+  partSize: number;
+  totalParts: number;
+  recommendedConcurrency: number;
+}
+
+/**
+ * Adaptive part sizing per Backblaze recommendations.
+ * < 250MB: 8–16MB parts; 250MB–5GB: 32–64MB; > 5GB: 64–256MB.
+ * Keeps total parts under 10,000.
+ */
+export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan {
+  let partSize: number;
+  let concurrency: number;
+  if (fileSizeBytes < 250 * 1024 * 1024) {
+    partSize = 8 * 1024 * 1024;
+    concurrency = 6;
+  } else if (fileSizeBytes < 5 * 1024 * 1024 * 1024) {
+    partSize = 32 * 1024 * 1024;
+    concurrency = 8;
+  } else {
+    partSize = 64 * 1024 * 1024;
+    concurrency = 10;
+  }
+  let totalParts = Math.ceil(fileSizeBytes / partSize);
+  if (totalParts > B2_MAX_PARTS) {
+    partSize = Math.ceil(fileSizeBytes / B2_MAX_PARTS);
+    partSize = Math.max(B2_PART_MIN, Math.min(partSize, B2_PART_MAX));
+    totalParts = Math.ceil(fileSizeBytes / partSize);
+  }
+  return { partSize, totalParts, recommendedConcurrency: concurrency };
+}
+
+/** Batch create presigned URLs for multiple parts (reduces API round-trips). */
+export async function createPresignedPartUrlsBatch(
+  objectKey: string,
+  uploadId: string,
+  partNumbers: number[],
+  expiresIn = 3600
+): Promise<{ partNumber: number; uploadUrl: string }[]> {
+  const client = getB2Client();
+  const results = await Promise.all(
+    partNumbers.map(async (partNumber) => {
+      const command = new UploadPartCommand({
+        Bucket: B2_BUCKET_NAME,
+        Key: objectKey,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+      });
+      const url = await getSignedUrl(client, command, { expiresIn });
+      return { partNumber, uploadUrl: url };
+    })
+  );
+  return results;
+}
 
 export async function createPresignedUploadUrl(
   objectKey: string,
