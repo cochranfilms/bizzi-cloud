@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2 } from "lucide-react";
+import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search } from "lucide-react";
 import type { CreateTransferInput, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import UploadProgressPanel from "./UploadProgressPanel";
 
 export type TransferModalFile = {
   name: string;
@@ -37,8 +39,14 @@ export default function CreateTransferModal({
   const pathname = usePathname();
   const router = useRouter();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
-  const { recentFiles, loading: filesLoading } = useCloudFiles();
-  const { uploadFiles, fileUploadProgress } = useBackup();
+  const { confirm } = useConfirm();
+  const {
+    allFilesForTransfer,
+    loading: filesLoading,
+    loadingAllFiles,
+    fetchAllFilesForTransfer,
+  } = useCloudFiles();
+  const { uploadFiles, fileUploadProgress, cancelFileUpload } = useBackup();
   const uploadStartedByModalRef = useRef(false);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
@@ -52,9 +60,10 @@ export default function CreateTransferModal({
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       setSelectedFiles(initialFiles.length > 0 ? [...initialFiles] : []);
+      fetchAllFilesForTransfer();
     }
     wasOpenRef.current = open;
-  }, [open, initialFiles]);
+  }, [open, initialFiles, fetchAllFilesForTransfer]);
   const [permission, setPermission] = useState<TransferPermission>("downloadable");
   const [passwordEnabled, setPasswordEnabled] = useState(false);
   const [password, setPassword] = useState("");
@@ -64,6 +73,7 @@ export default function CreateTransferModal({
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
+  const [fileSearch, setFileSearch] = useState("");
 
   const toggleFile = useCallback(
     (file: { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }) => {
@@ -77,13 +87,18 @@ export default function CreateTransferModal({
     []
   );
 
-  const latestUploads = recentFiles.slice(0, 10).map((f) => ({
+  const allFilesForSelection = allFilesForTransfer.map((f) => ({
     name: f.name,
     path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
     type: "file" as const,
     backupFileId: f.id,
     objectKey: f.objectKey,
   }));
+  const fileSearchLower = fileSearch.trim().toLowerCase();
+  const filteredFiles =
+    fileSearchLower === ""
+      ? allFilesForSelection
+      : allFilesForSelection.filter((f) => f.name.toLowerCase().includes(fileSearchLower));
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -145,6 +160,33 @@ export default function CreateTransferModal({
     },
     [uploadFiles]
   );
+
+  const performClose = useCallback(() => {
+    setName("");
+    setClientName("");
+    setClientEmail("");
+    setSelectedFiles([]);
+    setPermission("downloadable");
+    setPasswordEnabled(false);
+    setPassword("");
+    setExpiresAt("");
+    setCreatedSlug(null);
+    setCopied(false);
+    setFileSearch("");
+    onClose();
+  }, [onClose]);
+
+  const handleRequestClose = useCallback(async () => {
+    const confirmed = await confirm({
+      title: "Are you sure?",
+      message:
+        "Closing now will discard your work. Any selected files and transfer details will be lost.",
+      confirmLabel: "Yes, discard",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
+    if (confirmed) performClose();
+  }, [confirm, performClose]);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;
@@ -229,7 +271,7 @@ export default function CreateTransferModal({
     addTransferFromApi(transfer);
     setCreatedSlug(data.slug);
     onCreated?.(data.slug);
-    onClose();
+    performClose();
     router.push(isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
   }, [
     name,
@@ -244,23 +286,9 @@ export default function CreateTransferModal({
     org?.id,
     addTransferFromApi,
     onCreated,
-    onClose,
+    performClose,
     router,
   ]);
-
-  const handleClose = useCallback(() => {
-    setName("");
-    setClientName("");
-    setClientEmail("");
-    setSelectedFiles([]);
-    setPermission("downloadable");
-    setPasswordEnabled(false);
-    setPassword("");
-    setExpiresAt("");
-    setCreatedSlug(null);
-    setCopied(false);
-    onClose();
-  }, [onClose]);
 
   const shareUrl =
     typeof window !== "undefined" && createdSlug
@@ -278,19 +306,18 @@ export default function CreateTransferModal({
 
   return (
     <div className="fixed inset-0 z-50 flex min-h-screen items-start justify-center overflow-y-auto p-4 pt-16 pb-8 sm:items-center sm:pt-4">
+      <div className="fixed inset-0 bg-black/50" aria-hidden />
       <div
-        className="fixed inset-0 bg-black/50"
-        onClick={handleClose}
-        aria-hidden
-      />
-      <div className="relative z-10 my-4 flex max-h-[calc(100vh-6rem)] sm:max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 sm:my-0">
+        className="relative z-10 my-4 flex max-h-[calc(100vh-6rem)] sm:max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 sm:my-0"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
             Create transfer
           </h3>
           <button
             type="button"
-            onClick={handleClose}
+            onClick={handleRequestClose}
             className="rounded-lg p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             aria-label="Close"
           >
@@ -378,15 +405,17 @@ export default function CreateTransferModal({
             <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Files to transfer
             </label>
-            {uploadStartedByModalRef.current && fileUploadProgress?.status === "in_progress" && (
-              <div className="mb-2 flex items-center gap-2 rounded-lg border border-bizzi-blue/30 bg-bizzi-blue/5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>
-                  Uploading {fileUploadProgress.files.filter((f) => f.status === "completed").length} of{" "}
-                  {fileUploadProgress.files.length} files…
-                </span>
-              </div>
-            )}
+            {fileUploadProgress &&
+              fileUploadProgress.files.length > 0 &&
+              (fileUploadProgress.status === "in_progress" || fileUploadProgress.status === "completed") && (
+                <div className="mb-3">
+                  <UploadProgressPanel
+                    fileUploadProgress={fileUploadProgress}
+                    onCancelFile={cancelFileUpload}
+                    inline
+                  />
+                </div>
+              )}
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -457,43 +486,69 @@ export default function CreateTransferModal({
               )}
             </div>
 
-            {/* Select from existing uploads */}
-            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
-              <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Select from your uploaded files
-              </p>
-              {filesLoading ? (
-                <p className="py-2 text-xs text-neutral-500 dark:text-neutral-400">
+            {/* Select from all uploaded files - prominent, searchable, scrollable */}
+            <div className="mt-4 rounded-xl border-2 border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-800/80">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h4 className="text-base font-semibold text-neutral-800 dark:text-neutral-200">
+                  Select from your uploaded files
+                </h4>
+                <div className="relative max-w-xs flex-1">
+                  <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    type="text"
+                    placeholder="Search files…"
+                    value={fileSearch}
+                    onChange={(e) => setFileSearch(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 bg-white py-2 pl-8 pr-3 text-sm dark:border-neutral-600 dark:bg-neutral-900 dark:text-white"
+                  />
+                </div>
+              </div>
+              {filesLoading || loadingAllFiles ? (
+                <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                   Loading your files…
                 </p>
-              ) : latestUploads.length === 0 ? (
-                <p className="py-2 text-xs text-neutral-500 dark:text-neutral-400">
-                  No recent uploads. Upload files first or drop them above.
+              ) : allFilesForSelection.length === 0 ? (
+                <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                  No files yet. Upload files first or drop them above.
+                </p>
+              ) : filteredFiles.length === 0 && fileSearch.trim() ? (
+                <p className="rounded-lg border border-neutral-200 bg-white py-8 text-center text-sm text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
+                  No files match &quot;{fileSearch}&quot;
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                {latestUploads.map((file) => {
-                  const selected = selectedFiles.some((f) => f.path === file.path && f.name === file.name);
-                  return (
-                    <button
-                      key={file.path}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFile(file);
-                      }}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                        selected
-                          ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
-                          : "border-neutral-200 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                      }`}
-                    >
-                      <File className="h-3.5 w-3.5" />
-                      {file.name}
-                    </button>
-                  );
-                })}
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-900">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                    {filteredFiles.map((file) => {
+                      const selected = selectedFiles.some((f) => f.path === file.path && f.name === file.name);
+                      return (
+                        <button
+                          key={`${file.path}::${file.name}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFile(file);
+                          }}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                            selected
+                              ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                              : "border-neutral-200 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                          }`}
+                        >
+                          <File className="h-4 w-4 shrink-0" />
+                          <span className="min-w-0 truncate" title={file.name}>
+                            {file.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
+              {allFilesForSelection.length > 0 && (
+                <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  {allFilesForSelection.length} file{allFilesForSelection.length !== 1 ? "s" : ""} available
+                  {fileSearch.trim() && ` • ${filteredFiles.length} match${filteredFiles.length !== 1 ? "es" : ""}`}
+                </p>
               )}
             </div>
 
@@ -611,7 +666,7 @@ export default function CreateTransferModal({
         <div className="flex justify-end gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
           <button
             type="button"
-            onClick={handleClose}
+            onClick={createdSlug ? performClose : handleRequestClose}
             className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
             {createdSlug ? "Done" : "Cancel"}

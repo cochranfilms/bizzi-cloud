@@ -79,7 +79,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [allFilesForTransfer, setAllFilesForTransfer] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAllFiles, setLoadingAllFiles] = useState(false);
 
   const orgId = org?.id ?? null;
 
@@ -194,6 +196,84 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   useEffect(() => {
     fetchCloudFiles();
   }, [fetchCloudFiles, storageVersion]);
+
+  /** Fetches all user files for the transfer modal (up to 500). Call when modal opens. */
+  const fetchAllFilesForTransfer = useCallback(async () => {
+    if (!isFirebaseConfigured() || !user) {
+      setAllFilesForTransfer([]);
+      return;
+    }
+    try {
+      setLoadingAllFiles(true);
+      const db = getFirebaseFirestore();
+      const drivesSnap = await getDocs(
+        query(
+          collection(db, "linked_drives"),
+          where("userId", "==", user.uid),
+          orderBy("createdAt", "desc")
+        )
+      );
+      const drives = drivesSnap.docs
+        .filter((d) => {
+          const data = d.data();
+          if (data.deleted_at) return false;
+          const oid = data.organization_id ?? null;
+          if (isEnterpriseContext && orgId) return oid === orgId;
+          return !oid;
+        })
+        .filter((d) => {
+          const creatorSection = d.data().creator_section === true;
+          return creatorOnly ? creatorSection : !creatorSection;
+        })
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name ?? "Folder",
+            last_synced_at: data.last_synced_at ?? null,
+          };
+        });
+      const driveMap = new Map(drives.map((d) => [d.id, d]));
+      const driveIds = new Set(drives.map((d) => d.id));
+
+      const filesSnap = await getDocs(
+        query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          orderBy("modified_at", "desc"),
+          limit(500)
+        )
+      );
+      const all: RecentFile[] = filesSnap.docs
+        .filter((d) => {
+          if (d.data().deleted_at) return false;
+          return driveIds.has(d.data().linked_drive_id);
+        })
+        .map((d) => {
+          const data = d.data();
+          const path = data.relative_path ?? "";
+          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+          const drive = driveMap.get(data.linked_drive_id);
+          return {
+            id: d.id,
+            name,
+            path,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: data.modified_at ?? null,
+            driveId: data.linked_drive_id,
+            driveName: drive?.name ?? "Unknown drive",
+            contentType: data.content_type ?? null,
+          };
+        });
+      setAllFilesForTransfer(all);
+    } catch (err) {
+      console.error("fetchAllFilesForTransfer:", err);
+      setAllFilesForTransfer([]);
+    } finally {
+      setLoadingAllFiles(false);
+    }
+  }, [user, isEnterpriseContext, orgId, creatorOnly]);
 
   const fetchDriveFiles = useCallback(
     async (driveId: string): Promise<RecentFile[]> => {
@@ -677,8 +757,11 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   return {
     driveFolders,
     recentFiles,
+    allFilesForTransfer,
     loading,
+    loadingAllFiles,
     refetch: fetchCloudFiles,
+    fetchAllFilesForTransfer,
     fetchDriveFiles,
     fetchFilesByIds,
     fetchDeletedFiles,
