@@ -1,3 +1,4 @@
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
 import { slugify, ensureUniqueSlug } from "@/lib/gallery-slug";
@@ -136,7 +137,9 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE /api/galleries/[id] */
+/** DELETE /api/galleries/[id]
+ * Query: ?deleteFiles=true – also soft-delete backup_files linked via gallery_assets
+ */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -148,6 +151,9 @@ export async function DELETE(
 
   if (!id) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
+  const url = new URL(request.url);
+  const deleteFiles = url.searchParams.get("deleteFiles") === "true";
+
   const db = getAdminFirestore();
   const ref = db.collection("galleries").doc(id);
   const snap = await ref.get();
@@ -155,6 +161,30 @@ export async function DELETE(
 
   if (snap.data()!.photographer_id !== uid) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const assetsSnap = await db
+    .collection("gallery_assets")
+    .where("gallery_id", "==", id)
+    .get();
+
+  if (deleteFiles && !assetsSnap.empty) {
+    const backupFileIds = assetsSnap.docs
+      .map((d) => d.data().backup_file_id as string)
+      .filter(Boolean);
+    const uniqueIds = [...new Set(backupFileIds)];
+
+    for (const fileId of uniqueIds) {
+      const fileRef = db.collection("backup_files").doc(fileId);
+      const fileSnap = await fileRef.get();
+      if (fileSnap.exists && fileSnap.data()!.userId === uid) {
+        await fileRef.update({ deleted_at: FieldValue.serverTimestamp() });
+      }
+    }
+  }
+
+  for (const doc of assetsSnap.docs) {
+    await doc.ref.delete();
   }
 
   await ref.delete();

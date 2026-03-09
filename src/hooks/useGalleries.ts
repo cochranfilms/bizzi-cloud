@@ -90,10 +90,12 @@ export function useGalleries() {
   );
 
   const deleteGallery = useCallback(
-    async (id: string) => {
+    async (id: string, options?: { deleteFiles?: boolean }) => {
       if (!user) throw new Error("Not authenticated");
       const token = await user.getIdToken();
-      const res = await fetch(`/api/galleries/${id}`, {
+      const url = new URL(`/api/galleries/${id}`, typeof window !== "undefined" ? window.location.origin : "");
+      if (options?.deleteFiles) url.searchParams.set("deleteFiles", "true");
+      const res = await fetch(url.toString(), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

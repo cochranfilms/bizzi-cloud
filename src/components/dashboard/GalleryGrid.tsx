@@ -12,11 +12,12 @@ import {
   Mail,
   Plus,
 } from "lucide-react";
+import { useBackup } from "@/context/BackupContext";
 import { useGalleries } from "@/hooks/useGalleries";
-import { useConfirm } from "@/hooks/useConfirm";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
 import CreateGalleryModal from "./CreateGalleryModal";
+import DeleteGalleryModal from "./DeleteGalleryModal";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -136,23 +137,27 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
 
 export default function GalleryGrid() {
   const { galleries, loading, error, createGallery, deleteGallery } = useGalleries();
+  const { bumpStorageVersion } = useBackup();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const { confirm } = useConfirm();
 
-  const handleDelete = async (e: React.MouseEvent, g: { id: string; title: string }) => {
+  const handleDeleteClick = (e: React.MouseEvent, g: { id: string; title: string }) => {
     e.preventDefault();
     e.stopPropagation();
-    const ok = await confirm({
-      message: `Delete gallery "${g.title}"? This cannot be undone.`,
-      destructive: true,
-    });
-    if (!ok) return;
-    setDeletingId(g.id);
+    setDeleteTarget(g);
+  };
+
+  const handleDeleteConfirm = async (options: { deleteFiles: boolean }) => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
     try {
-      await deleteGallery(g.id);
+      await deleteGallery(deleteTarget.id, { deleteFiles: options.deleteFiles });
+      if (options.deleteFiles) bumpStorageVersion();
+      setDeleteTarget(null);
     } catch (err) {
       console.error("Delete gallery failed:", err);
+      throw err;
     } finally {
       setDeletingId(null);
     }
@@ -218,7 +223,7 @@ export default function GalleryGrid() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {galleries.map((g) => (
-            <GalleryCard key={g.id} gallery={g} onDelete={handleDelete} deletingId={deletingId} />
+            <GalleryCard key={g.id} gallery={g} onDelete={handleDeleteClick} deletingId={deletingId} />
           ))}
         </div>
       )}
@@ -227,6 +232,15 @@ export default function GalleryGrid() {
         <CreateGalleryModal
           onClose={() => setShowCreate(false)}
           onCreate={handleCreate}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteGalleryModal
+          open={!!deleteTarget}
+          galleryTitle={deleteTarget.title}
+          onClose={() => setDeleteTarget(null)}
+          onDelete={handleDeleteConfirm}
         />
       )}
     </div>
