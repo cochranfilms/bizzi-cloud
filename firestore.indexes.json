@@ -207,6 +207,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "photographer_id", "order": "ASCENDING" },
+        { "fieldPath": "access_mode", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "galleries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "photographer_id", "order": "ASCENDING" },
         { "fieldPath": "slug", "order": "ASCENDING" }
       ]
     },

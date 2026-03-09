@@ -35,6 +35,7 @@ export async function GET(
   const galleriesSnap = await db
     .collection("galleries")
     .where("photographer_id", "==", photographerId)
+    .where("access_mode", "==", "public")
     .orderBy("created_at", "desc")
     .get();
 
