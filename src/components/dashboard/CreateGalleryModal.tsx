@@ -76,22 +76,26 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-700">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-            New gallery
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 sm:p-6">
+      <div className="flex min-h-full items-center justify-center py-4 sm:py-8">
+        <div className="my-auto w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
+            <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              New gallery
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-6">
+          <form
+            onSubmit={handleSubmit}
+            className="flex-1 min-h-0 space-y-4 overflow-y-auto p-4 sm:p-6"
+          >
           {error && (
             <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
               {error}
@@ -125,7 +129,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 Event date
