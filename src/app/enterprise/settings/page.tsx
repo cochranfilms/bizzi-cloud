@@ -5,7 +5,8 @@ import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
-import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
+import Image from "next/image";
+import { Building2, Globe, Image as ImageIcon, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function EnterpriseSettingsPage() {
@@ -195,10 +196,13 @@ export default function EnterpriseSettingsPage() {
               <div className="flex shrink-0 flex-col items-center gap-2">
                 <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
                   {logoPreview ? (
-                    <img
+                    <Image
                       src={logoPreview}
                       alt="Organization logo"
+                      width={96}
+                      height={96}
                       className="h-full w-full object-contain"
+                      unoptimized
                     />
                   ) : (
                     <ImageIcon className="h-10 w-10 text-neutral-400" />
@@ -277,6 +281,21 @@ export default function EnterpriseSettingsPage() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              <Globe className="h-5 w-5 text-[var(--enterprise-primary)]" />
+              Profile handle
+            </h2>
+            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+              Your profile handle is used for branded gallery URLs (e.g. bizzicloud.io/yourhandle/gallery-name).
+              Same handle across personal and enterprise when using the same email. Set it in{" "}
+              <Link href="/dashboard/settings" className="text-[var(--enterprise-primary)] hover:underline">
+                Dashboard Settings
+              </Link>
+              .
+            </p>
           </section>
 
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

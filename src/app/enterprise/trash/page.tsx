@@ -362,7 +362,7 @@ export default function EnterpriseTrashPage() {
   const hasSelection = selectedFileIds.size + selectedFolderIds.size > 0;
   const selectedCount = selectedFileIds.size + selectedFolderIds.size;
 
-  const loadDeleted = async () => {
+  const loadDeleted = useCallback(async () => {
     setLoading(true);
     try {
       const [files, drives] = await Promise.all([
@@ -377,11 +377,11 @@ export default function EnterpriseTrashPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchDeletedFiles, fetchDeletedDrives]);
 
   useEffect(() => {
     loadDeleted();
-  }, [fetchDeletedFiles, fetchDeletedDrives]);
+  }, [loadDeleted]);
 
   const handleRestoreFile = async (fileId: string) => {
     try {
@@ -460,6 +460,7 @@ export default function EnterpriseTrashPage() {
     restoreDrive,
     refetch,
     clearSelection,
+    loadDeleted,
   ]);
 
   const doBulkPermanentDelete = useCallback(
@@ -509,6 +510,7 @@ export default function EnterpriseTrashPage() {
       permanentlyDeleteDrive,
       refetch,
       confirm,
+      loadDeleted,
     ]
   );
 

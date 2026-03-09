@@ -27,9 +27,11 @@ export function useGalleryThumbnail(
   options?: {
     enabled?: boolean;
     size?: "thumb" | "small" | "medium" | "large" | "preview" | "cover-xs" | "cover-sm" | "cover-md" | "cover-lg" | "cover-xl";
+    /** When true, fetch with credentials (cookie) instead of Bearer token. For session-only clients. */
+    useCredentials?: boolean;
   }
 ): string | null {
-  const { enabled = true, size = "thumb" } = options ?? {};
+  const { enabled = true, size = "thumb", useCredentials = false } = options ?? {};
   const isImage = objectKey && fileName && isImageFile(fileName);
   const isVideo = objectKey && fileName && isVideoFile(fileName);
   const canFetch = isImage || isVideo;
@@ -45,15 +47,22 @@ export function useGalleryThumbnail(
       : `/api/galleries/${galleryId}/video-thumbnail`;
     (async () => {
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-        if (!token || cancelled) return;
+        let headers: Record<string, string> = {};
+        if (useCredentials) {
+          headers = {};
+        } else {
+          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          if (!token || cancelled) return;
+          headers = { Authorization: `Bearer ${token}` };
+        }
         const params = new URLSearchParams({
           object_key: objectKey,
           size,
           name: fileName,
         });
         const res = await fetch(`${endpoint}?${params}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
+          credentials: useCredentials ? "include" : "same-origin",
         });
         if (!res.ok || cancelled) return;
         const blob = await res.blob();
@@ -78,7 +87,7 @@ export function useGalleryThumbnail(
       }
       setUrl(null);
     };
-  }, [galleryId, objectKey, fileName, canFetch, enabled, isImage, size]);
+  }, [galleryId, objectKey, fileName, canFetch, enabled, isImage, size, useCredentials]);
 
   return url;
 }

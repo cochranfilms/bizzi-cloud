@@ -60,12 +60,13 @@ export default function EnterpriseNavbar() {
         onClick={() => setMobileOpen(false)}
       >
         {logoUrl ? (
-          <img
+          <Image
             src={logoUrl}
             alt={org?.name ?? "Organization"}
             width={24}
             height={24}
             className="h-6 w-6 object-contain"
+            unoptimized
           />
         ) : (
           <Image

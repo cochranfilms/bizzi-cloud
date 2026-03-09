@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -833,13 +834,16 @@ export default function GallerySettingsForm({
                 <div className="flex shrink-0 flex-col items-center gap-2">
                   <div className="watermark-preview-bg flex h-20 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
                     {watermarkImageUrl || watermarkPreviewUrl ? (
-                      <img
+                      <Image
                         src={watermarkPreviewUrl ?? watermarkImageUrl ?? ""}
                         alt="Watermark preview"
+                        width={96}
+                        height={80}
                         className="h-full w-full object-contain"
                         style={{
                           opacity: watermarkOpacity / 100,
                         }}
+                        unoptimized
                       />
                     ) : (
                       <ImageIcon className="h-8 w-8 text-neutral-400" />

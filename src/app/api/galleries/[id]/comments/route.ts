@@ -4,6 +4,7 @@
  * GET: List comments for gallery, optionally by asset_id
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
@@ -16,7 +17,10 @@ export async function POST(
   if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   const body = await request.json().catch(() => ({}));
-  const { asset_id: assetId, body: commentBody, client_email: clientEmail, client_name: clientName } = body;
+  const { asset_id: assetId, body: commentBody, client_email: bodyClientEmail, client_name: clientName } = body;
+
+  const sessionEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
+  const clientEmail = sessionEmail ?? bodyClientEmail;
 
   if (!assetId || typeof assetId !== "string") {
     return NextResponse.json({ error: "asset_id is required" }, { status: 400 });
@@ -43,7 +47,7 @@ export async function POST(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {
@@ -88,6 +92,7 @@ export async function GET(
   const assetId = url.searchParams.get("asset_id") ?? undefined;
   const authHeader = request.headers.get("Authorization");
   const password = url.searchParams.get("password") ?? undefined;
+  const clientEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
 
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
@@ -103,7 +108,7 @@ export async function GET(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {

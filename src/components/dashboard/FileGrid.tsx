@@ -206,7 +206,7 @@ export default function FileGrid() {
     if (currentDrive && storageVersion > 0) {
       loadDriveFiles(currentDrive.id);
     }
-  }, [storageVersion, currentDrive?.id, loadDriveFiles]);
+  }, [storageVersion, currentDrive, loadDriveFiles]);
 
   // Fetch pinned file details when pinned file IDs change
   const loadPinnedFiles = useCallback(async () => {

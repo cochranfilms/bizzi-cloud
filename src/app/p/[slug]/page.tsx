@@ -27,7 +27,7 @@ function formatDate(iso: string | null) {
   });
 }
 
-function StudioGalleryCard({ gallery }: { gallery: StudioGallery }) {
+function StudioGalleryCard({ gallery, handle }: { gallery: StudioGallery; handle: string }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const thumbRef = useRef<string | null>(null);
 
@@ -74,9 +74,11 @@ function StudioGalleryCard({ gallery }: { gallery: StudioGallery }) {
     };
   }, [gallery.id, gallery.cover_object_key, gallery.cover_name]);
 
+  const href = handle && gallery.slug ? `/${encodeURIComponent(handle)}/${encodeURIComponent(gallery.slug)}` : `/g/${gallery.id}`;
+
   return (
     <Link
-      href={`/g/${gallery.id}`}
+      href={href}
       className="group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:border-bizzi-blue/40 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-cyan/40"
     >
       <div className="relative flex aspect-video shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800">
@@ -222,7 +224,7 @@ export default function StudioHomepagePage() {
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {galleries.map((g) => (
-              <StudioGalleryCard key={g.id} gallery={g} />
+              <StudioGalleryCard key={g.id} gallery={g} handle={slug} />
             ))}
           </div>
         )}

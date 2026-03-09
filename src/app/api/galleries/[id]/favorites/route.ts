@@ -4,6 +4,7 @@
  * GET: List favorites for gallery (photographer sees all; client can filter by email)
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
@@ -16,7 +17,10 @@ export async function POST(
   if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   const body = await request.json().catch(() => ({}));
-  const { client_email: clientEmail, client_name: clientName, asset_ids: assetIds } = body;
+  const { client_email: bodyClientEmail, client_name: clientName, asset_ids: assetIds } = body;
+
+  const sessionEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
+  const clientEmail = sessionEmail ?? bodyClientEmail;
 
   if (!Array.isArray(assetIds) || assetIds.length === 0) {
     return NextResponse.json(
@@ -43,7 +47,7 @@ export async function POST(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {
@@ -88,9 +92,10 @@ export async function GET(
   if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   const url = new URL(request.url);
-  const clientEmail = url.searchParams.get("client_email") ?? undefined;
+  const clientEmailParam = url.searchParams.get("client_email") ?? undefined;
   const authHeader = request.headers.get("Authorization");
   const password = url.searchParams.get("password") ?? undefined;
+  const sessionEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
 
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
@@ -106,13 +111,14 @@ export async function GET(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail: sessionEmail }
   );
 
   if (!access.allowed) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const clientEmail = clientEmailParam ?? sessionEmail;
   let snap;
   if (clientEmail) {
     const email = clientEmail.toLowerCase().trim();

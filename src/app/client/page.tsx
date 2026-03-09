@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Images, Loader2 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { Images, Loader2, Mail } from "lucide-react";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
 
@@ -36,7 +35,7 @@ function GalleryCard({ gallery }: { gallery: ClientGallery }) {
     gallery.cover_object_key ? gallery.id : undefined,
     gallery.cover_object_key ?? undefined,
     gallery.cover_name ?? "",
-    { enabled: !!gallery.cover_object_key && isInView, size: "cover-sm" }
+    { enabled: !!gallery.cover_object_key && isInView, size: "cover-sm", useCredentials: true }
   );
 
   return (
@@ -77,33 +76,38 @@ function GalleryCard({ gallery }: { gallery: ClientGallery }) {
   );
 }
 
-export default function ClientPortalPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+function ClientPortalContent() {
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect");
   const [galleries, setGalleries] = useState<ClientGallery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsEmail, setNeedsEmail] = useState(false);
+  const [email, setEmail] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      router.replace(`/login?redirect=${encodeURIComponent("/client")}`);
-      return;
-    }
     let cancelled = false;
     (async () => {
+      setLoading(true);
+      setError(null);
+      setNeedsEmail(false);
+      setAccessDenied(false);
       try {
-        const token = await user.getIdToken();
         const res = await fetch("/api/client/galleries", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
         });
         if (cancelled) return;
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(data.error ?? `Failed to load (${res.status})`);
+          if (res.status === 401 && data.error === "needs_email") {
+            setNeedsEmail(true);
+            return;
+          }
+          setError(data.message ?? data.error ?? `Failed to load (${res.status})`);
           return;
         }
-        const data = await res.json();
         setGalleries(data.galleries ?? []);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
@@ -111,12 +115,47 @@ export default function ClientPortalPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, authLoading, router]);
+    return () => { cancelled = true; };
+  }, []);
 
-  if (authLoading || (user && loading)) {
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) return;
+    setVerifying(true);
+    setAccessDenied(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/client/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 403) {
+          setAccessDenied(true);
+          return;
+        }
+        setError(data.message ?? data.error ?? "Verification failed");
+        return;
+      }
+      setNeedsEmail(false);
+      setAccessDenied(false);
+      if (redirectTo && redirectTo.startsWith("/")) {
+        window.location.href = redirectTo;
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  if (loading && !needsEmail) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
@@ -127,7 +166,62 @@ export default function ClientPortalPage() {
     );
   }
 
-  if (!user) return null;
+  if (needsEmail) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
+        <div className="w-full max-w-sm space-y-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+              <Mail className="h-7 w-7" />
+            </div>
+            <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              Enter your invited email
+            </h1>
+            <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+              Enter the email address your photographer used to invite you. No sign-up required.
+            </p>
+          </div>
+          <form onSubmit={handleVerifyEmail} className="space-y-4">
+            {accessDenied && (
+              <div className="rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                This email has not been invited to any galleries.
+              </div>
+            )}
+            {error && !accessDenied && (
+              <div className="rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                {error}
+              </div>
+            )}
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setAccessDenied(false);
+              }}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-neutral-200 px-4 py-3 text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              autoFocus
+              required
+            />
+            <button
+              type="submit"
+              disabled={verifying}
+              className="w-full rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              {verifying ? "Verifying…" : "Continue"}
+            </button>
+          </form>
+          <Link
+            href="/dashboard"
+            className="block text-center text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+          >
+            Photographer login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
@@ -186,5 +280,22 @@ export default function ClientPortalPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function ClientPortalPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
+          <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
+          <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Loading…
+          </p>
+        </div>
+      }
+    >
+      <ClientPortalContent />
+    </Suspense>
   );
 }

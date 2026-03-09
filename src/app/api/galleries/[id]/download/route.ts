@@ -7,6 +7,7 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyGalleryDownloadAccess } from "@/lib/gallery-access";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import {
   getGalleryDownloadClientId,
   checkAndIncrementDownloadCount,
@@ -38,6 +39,7 @@ export async function POST(
   }
 
   const authHeader = request.headers.get("Authorization");
+  const clientEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
 
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
@@ -53,7 +55,7 @@ export async function POST(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {

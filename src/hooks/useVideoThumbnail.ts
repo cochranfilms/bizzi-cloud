@@ -171,7 +171,7 @@ export function useVideoThumbnail(
       cancelled = true;
       cleanup();
     };
-  }, [objectKey, fileName, enabled]);
+  }, [objectKey, fileName, enabled, isVideoOverride]);
 
   return url;
 }

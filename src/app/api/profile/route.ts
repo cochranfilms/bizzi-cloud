@@ -1,9 +1,10 @@
 /**
- * GET /api/profile - Return current user's profile (public_slug, etc.)
- * PATCH /api/profile - Update profile fields (e.g. public_slug)
- * Requires auth.
+ * GET /api/profile - Return current user's profile (handle/public_slug, etc.)
+ * PATCH /api/profile - Update profile fields (e.g. public_slug/handle)
+ * Requires auth. Handle is same across personal and enterprise (per user/email).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { isReservedHandle } from "@/lib/public-handle";
 import { NextResponse } from "next/server";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
@@ -26,8 +27,10 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(auth.uid).get();
   const data = profileSnap.data() ?? {};
+  const handle = data.public_slug ?? null;
   return NextResponse.json({
-    public_slug: data.public_slug ?? null,
+    public_slug: handle,
+    handle,
   });
 }
 
@@ -56,7 +59,13 @@ export async function PATCH(request: Request) {
     const slug = slugifyPublicSlug(typeof rawSlug === "string" ? rawSlug : "");
     if (slug && !SLUG_RE.test(slug)) {
       return NextResponse.json(
-        { error: "Public slug must be 3–40 characters, lowercase letters, numbers, and hyphens only" },
+        { error: "Handle must be 3–40 characters, lowercase letters, numbers, and hyphens only" },
+        { status: 400 }
+      );
+    }
+    if (slug && isReservedHandle(slug)) {
+      return NextResponse.json(
+        { error: "This handle is reserved" },
         { status: 400 }
       );
     }

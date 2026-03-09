@@ -191,7 +191,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, org, creatorOnly]);
+  }, [user, isEnterpriseContext, orgId, creatorOnly]);
 
   useEffect(() => {
     fetchCloudFiles();

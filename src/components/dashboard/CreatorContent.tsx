@@ -79,7 +79,7 @@ export default function CreatorContent() {
     if (currentDrive && storageVersion > 0) {
       loadDriveFiles(currentDrive.id);
     }
-  }, [storageVersion, currentDrive?.id, loadDriveFiles]);
+  }, [storageVersion, currentDrive, loadDriveFiles]);
 
   const folderItems: FolderItem[] = driveFolders
     .map((d) => ({

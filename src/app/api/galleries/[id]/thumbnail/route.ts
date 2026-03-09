@@ -4,6 +4,7 @@
  * Sizes: thumb, small, medium, large, preview (square fit)
  *       cover-xs, cover-sm, cover-md, cover-lg, cover-xl (width-based, cached)
  */
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import {
   getObjectBuffer,
   isB2Configured,
@@ -53,6 +54,7 @@ export async function GET(
 
   const g = gallerySnap.data()!;
   const authHeader = request.headers.get("Authorization");
+  const clientEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
   const access = await verifyGalleryViewAccess(
     {
       photographer_id: g.photographer_id,
@@ -62,7 +64,7 @@ export async function GET(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {

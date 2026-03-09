@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { LayoutGrid, List, Folder, File, Trash2 } from "lucide-react";
+import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import { useShares } from "@/hooks/useShares";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -11,6 +11,7 @@ export default function SharedGrid() {
   const { owned, invited, loading, error, deleteShare } = useShares();
   const { confirm } = useConfirm();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [sentReceivedFilter, setSentReceivedFilter] = useState<"all" | "sent" | "received">("all");
   const [filter, setFilter] = useState<"all" | "folders" | "files">("all");
 
   const sharedItems: (SharedItem & { token: string; isOwned?: boolean })[] = useMemo(() => {
@@ -55,10 +56,18 @@ export default function SharedGrid() {
     [deleteShare, confirm]
   );
 
-  const filteredItems =
-    filter === "all"
+  const sentReceivedItems =
+    sentReceivedFilter === "all"
       ? sharedItems
       : sharedItems.filter(
+          (item) =>
+            sentReceivedFilter === "sent" ? item.isOwned : !item.isOwned
+        );
+
+  const filteredItems =
+    filter === "all"
+      ? sentReceivedItems
+      : sentReceivedItems.filter(
           (item) => item.type === (filter === "folders" ? "folder" : "file")
         );
 
@@ -66,42 +75,83 @@ export default function SharedGrid() {
     <div className="mx-auto max-w-6xl space-y-6">
       {/* Filter tabs + view toggle */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
-          <button
-            type="button"
-            onClick={() => setFilter("all")}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              filter === "all"
-                ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
-                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-            }`}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("folders")}
-            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              filter === "folders"
-                ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
-                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-            }`}
-          >
-            <Folder className="h-4 w-4" />
-            Folders
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("files")}
+        <div className="flex flex-wrap gap-3">
+          {/* Sent vs Received */}
+          <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
+            <button
+              type="button"
+              onClick={() => setSentReceivedFilter("all")}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                sentReceivedFilter === "all"
+                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setSentReceivedFilter("sent")}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                sentReceivedFilter === "sent"
+                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              }`}
+            >
+              <Send className="h-4 w-4" />
+              Sent
+            </button>
+            <button
+              type="button"
+              onClick={() => setSentReceivedFilter("received")}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                sentReceivedFilter === "received"
+                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              }`}
+            >
+              <Inbox className="h-4 w-4" />
+              Received
+            </button>
+          </div>
+          {/* Type filter: All / Folders / Files */}
+          <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                filter === "all"
+                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("folders")}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                filter === "folders"
+                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              }`}
+            >
+              <Folder className="h-4 w-4" />
+              Folders
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("files")}
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               filter === "files"
                 ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
                 : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
             }`}
-          >
-            <File className="h-4 w-4" />
-            Files
-          </button>
+            >
+              <File className="h-4 w-4" />
+              Files
+            </button>
+          </div>
         </div>
         <div className="flex gap-1">
           <button
@@ -147,10 +197,20 @@ export default function SharedGrid() {
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
           <Folder className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
           <p className="mb-1 text-lg font-medium text-neutral-700 dark:text-neutral-300">
-            No shared {filter === "all" ? "items" : filter} yet
+            No{" "}
+            {sentReceivedFilter === "sent"
+              ? "sent"
+              : sentReceivedFilter === "received"
+                ? "received"
+                : "shared"}{" "}
+            {filter === "all" ? "items" : filter} yet
           </p>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            When someone shares a file or folder with you, it will appear here.
+            {sentReceivedFilter === "received"
+              ? "When someone shares a file or folder with you, it will appear here."
+              : sentReceivedFilter === "sent"
+                ? "Shares you create will appear here when you share files or folders with others."
+                : "When someone shares a file or folder with you, or when you share with others, it will appear here."}
           </p>
         </div>
       ) : viewMode === "grid" ? (

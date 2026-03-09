@@ -93,7 +93,7 @@ export default function TransferPreviewModal({
     } finally {
       setLoading(false);
     }
-  }, [slug, objectKey, previewType, password]);
+  }, [slug, file, objectKey, previewType, password]);
 
   useEffect(() => {
     if (file) fetchFullUrl();

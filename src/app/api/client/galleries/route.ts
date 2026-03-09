@@ -1,37 +1,38 @@
 /**
  * GET /api/client/galleries
- * List galleries the signed-in client has access to (invited_emails contains their email).
- * Requires Firebase Auth.
+ * List galleries the client has access to (invited_emails contains their email).
+ * Accepts either: Firebase Auth Bearer token OR client session cookie (email gate).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import { NextResponse } from "next/server";
 
-function requireAuth(request: Request): Promise<{ uid: string; email: string } | NextResponse> {
+async function getClientEmail(
+  request: Request
+): Promise<{ email: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
-  if (!token) {
-    return Promise.resolve(
-      NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 })
-    );
-  }
-  return verifyIdToken(token)
-    .then((decoded) => {
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const decoded = await verifyIdToken(authHeader.slice(7).trim());
       const email = decoded.email as string | undefined;
-      if (!email) {
-        return NextResponse.json(
-          { error: "Account has no email" },
-          { status: 400 }
-        ) as unknown as NextResponse;
-      }
-      return { uid: decoded.uid, email: email.toLowerCase().trim() };
-    })
-    .catch(() =>
-      NextResponse.json({ error: "Invalid or expired token" }, { status: 401 })
-    );
+      if (email) return { email: email.toLowerCase().trim() };
+    } catch {
+      // Fall through to cookie check
+    }
+  }
+
+  const cookieHeader = request.headers.get("Cookie");
+  const sessionEmail = getClientEmailFromCookie(cookieHeader);
+  if (sessionEmail) return { email: sessionEmail };
+
+  return NextResponse.json(
+    { error: "needs_email", message: "Enter your invited email to continue." },
+    { status: 401 }
+  );
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAuth(request);
+  const auth = await getClientEmail(request);
   if (auth instanceof NextResponse) return auth;
   const { email } = auth;
 

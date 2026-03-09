@@ -39,9 +39,16 @@ export async function GET(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  let owner_handle: string | null = null;
+  if (data.photographer_id === uid) {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    owner_handle = (profileSnap.data()?.public_slug as string) ?? null;
+  }
+
   return NextResponse.json({
     id: snap.id,
     ...data,
+    owner_handle,
     created_at: data.created_at?.toDate?.()?.toISOString?.(),
     updated_at: data.updated_at?.toDate?.()?.toISOString?.(),
   });

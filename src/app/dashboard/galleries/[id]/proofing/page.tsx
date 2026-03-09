@@ -46,6 +46,8 @@ interface GalleryAsset {
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
 
+const HOVER_HIDE_DELAY_MS = 350;
+
 function ProofingAssetCell({
   galleryId,
   asset,
@@ -56,6 +58,7 @@ function ProofingAssetCell({
   const [isHovered, setIsHovered] = useState(false);
   const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
   const cellRef = useRef<HTMLTableCellElement>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const objectKey = asset.object_key ?? "";
   const isImage = IMAGE_EXT.test(asset.name);
   const isVideo = VIDEO_EXT.test(asset.name);
@@ -63,6 +66,27 @@ function ProofingAssetCell({
     enabled: (isImage || isVideo) && isHovered,
     size: "medium",
   });
+
+  const clearHideTimeout = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleHide = () => {
+    clearHideTimeout();
+    hideTimeoutRef.current = setTimeout(() => setIsHovered(false), HOVER_HIDE_DELAY_MS);
+  };
+
+  const handleMouseEnter = () => {
+    clearHideTimeout();
+    setIsHovered(true);
+  };
+
+  useEffect(() => {
+    return () => clearHideTimeout();
+  }, []);
 
   useEffect(() => {
     if (!isHovered || !cellRef.current) {
@@ -88,15 +112,17 @@ function ProofingAssetCell({
     <div
       className="fixed z-[100] -translate-y-1/2"
       style={{
-        left: coords.x + 16,
+        left: Math.min(coords.x + 12, window.innerWidth - 300),
         top: coords.y,
         width: 280,
         height: 280,
       }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={scheduleHide}
     >
       <div
         className="h-full w-full overflow-hidden rounded-xl border-2 border-white bg-neutral-900 shadow-2xl ring-2 ring-neutral-500/30"
-        style={{ animation: "proofing-popup 0.2s ease-out" }}
+        style={{ animation: "proofing-popup 0.15s ease-out" }}
       >
         {previewUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -123,8 +149,8 @@ function ProofingAssetCell({
     <td ref={cellRef} className="px-4 py-3">
       <div
         className="flex items-center gap-3"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={scheduleHide}
       >
         <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
           <GalleryAssetThumbnail

@@ -13,6 +13,7 @@ import {
   getProxyObjectKey,
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
@@ -55,6 +56,7 @@ export async function GET(
 
   const g = gallerySnap.data()!;
   const authHeader = request.headers.get("Authorization");
+  const clientEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
   const access = await verifyGalleryViewAccess(
     {
       photographer_id: g.photographer_id,
@@ -64,7 +66,7 @@ export async function GET(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {

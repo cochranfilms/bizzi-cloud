@@ -4,6 +4,7 @@
  * Requires gallery access (password in query, or auth for invite-only).
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
@@ -19,6 +20,7 @@ export async function GET(
   const url = new URL(request.url);
   const password = url.searchParams.get("password") ?? undefined;
   const authHeader = request.headers.get("Authorization");
+  const clientEmail = getClientEmailFromCookie(request.headers.get("Cookie"));
 
   const db = getAdminFirestore();
 
@@ -37,7 +39,7 @@ export async function GET(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password }
+    { authHeader, password, clientEmail }
   );
 
   if (!access.allowed) {

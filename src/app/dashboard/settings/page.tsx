@@ -156,7 +156,7 @@ function StudioHomepageSection() {
         if (cancelled) return;
         const data = await res.json();
         if (cancelled) return;
-        if (res.ok) setPublicSlug(data.public_slug ?? "");
+        if (res.ok) setPublicSlug(data.public_slug ?? data.handle ?? "");
       } finally {
         if (!cancelled) setLoadingProfile(false);
       }
@@ -194,26 +194,29 @@ function StudioHomepageSection() {
   };
 
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const homepageUrl = publicSlug.trim() ? `${baseUrl}/p/${publicSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")}` : null;
+  const normalizedHandle = publicSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const homepageUrl = normalizedHandle ? `${baseUrl}/p/${normalizedHandle}` : null;
+  const brandedExample = normalizedHandle ? `${baseUrl}/${normalizedHandle}/my-gallery-name` : null;
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Globe className="h-5 w-5 text-bizzi-blue" />
-        Studio homepage
+        Profile handle
       </h2>
       <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-        Set a custom URL for your branded gallery homepage. Clients can browse your public galleries at{" "}
-        <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">/p/your-username</code>.
+        Set your custom handle for branded URLs. Share galleries at{" "}
+        <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">bizzicloud.io/yourhandle/gallery-name</code>.
+        Same handle across personal and enterprise when using the same email.
       </p>
       <form onSubmit={handleSave} className="space-y-4">
         <div>
           <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            Public username
+            Handle
           </label>
           <div className="flex items-center gap-2">
             <span className="text-sm text-neutral-500 dark:text-neutral-400">
-              {baseUrl}/p/
+              {baseUrl}/
             </span>
             <input
               type="text"
@@ -239,7 +242,7 @@ function StudioHomepageSection() {
             <Check className="h-4 w-4" /> Saved
           </p>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="submit"
             disabled={loading || loadingProfile}
@@ -257,6 +260,11 @@ function StudioHomepageSection() {
               <ExternalLink className="h-4 w-4" />
               View homepage
             </a>
+          )}
+          {brandedExample && (
+            <p className="flex w-full items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Example gallery URL: <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">{brandedExample}</code>
+            </p>
           )}
         </div>
       </form>

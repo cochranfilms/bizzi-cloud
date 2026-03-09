@@ -51,13 +51,15 @@ export interface GalleryAccessCheck {
  * - Owner (photographer) always has access when authenticated.
  * - public: allow
  * - password: require password in request
- * - invite_only: require auth + invited email
+ * - invite_only: require auth + invited email OR client session email
  */
 export async function verifyGalleryViewAccess(
   gallery: GalleryAccessCheck,
   request: {
     authHeader: string | null;
     password?: string | null;
+    /** Email from client session cookie (no Firebase Auth). */
+    clientEmail?: string | null;
   }
 ): Promise<GalleryAccessResult> {
   const { access_mode, expiration_date, photographer_id } = gallery;
@@ -117,38 +119,33 @@ export async function verifyGalleryViewAccess(
   }
 
   if (access_mode === "invite_only") {
-    const authHeader = request.authHeader;
-    if (!authHeader?.startsWith("Bearer ")) {
-      return {
-        allowed: false,
-        code: "invite_required",
-        message: "This gallery is invite only. Sign in with an invited email.",
-      };
-    }
-    const token = authHeader.slice(7).trim();
-    let uid: string;
     let email: string | undefined;
-    try {
-      const decoded = await verifyIdToken(token);
-      uid = decoded.uid;
-      email = decoded.email;
-    } catch {
-      return {
-        allowed: false,
-        code: "invite_required",
-        message: "Invalid or expired session. Please sign in.",
-      };
+
+    if (request.authHeader?.startsWith("Bearer ")) {
+      const token = request.authHeader.slice(7).trim();
+      try {
+        const decoded = await verifyIdToken(token);
+        if (decoded.uid === gallery.photographer_id) return { allowed: true };
+        email = decoded.email;
+      } catch {
+        // Fall through to client session check
+      }
     }
-    if (uid === gallery.photographer_id) return { allowed: true };
+
+    if (!email && request.clientEmail) {
+      email = request.clientEmail;
+    }
+
     const invited = gallery.invited_emails ?? [];
     const emailLower = email?.toLowerCase();
     if (emailLower && invited.some((e) => e.toLowerCase() === emailLower)) {
       return { allowed: true };
     }
+
     return {
       allowed: false,
-      code: "access_denied",
-      message: "You don't have access to this gallery.",
+      code: "invite_required",
+      message: "This gallery is invite only. Enter your invited email at /client to access.",
     };
   }
 
@@ -163,10 +160,12 @@ export async function verifyGalleryDownloadAccess(
   request: {
     authHeader: string | null;
     password?: string | null;
+    clientEmail?: string | null;
   }
 ): Promise<GalleryAccessResult> {
   return verifyGalleryViewAccess(gallery, {
     authHeader: request.authHeader,
     password: request.password,
+    clientEmail: request.clientEmail,
   });
 }

@@ -1139,20 +1139,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               Invite only
             </h1>
             <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-              {error ?? "Sign in with an invited email to access this gallery."}
+              Enter your invited email to access this gallery. No sign-up required.
             </p>
           </div>
           <Link
-            href={`/login?redirect=${encodeURIComponent(`/g/${galleryId}`)}`}
+            href={`/client?redirect=${encodeURIComponent(`/g/${galleryId}`)}`}
             className="flex w-full items-center justify-center rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
           >
-            Sign in to access
-          </Link>
-          <Link
-            href="/client"
-            className="block text-center text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-          >
-            View your invited galleries
+            Enter email to access
           </Link>
         </div>
       </div>
@@ -1491,10 +1485,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             {(gallery.branding.logo_url || gallery.branding.business_name) && (
               <div className="flex items-center gap-2">
                 {gallery.branding.logo_url && (
-                  <img
+                  <Image
                     src={gallery.branding.logo_url}
                     alt=""
+                    width={32}
+                    height={32}
                     className="h-8 w-8 rounded-full object-cover"
+                    unoptimized
                   />
                 )}
                 <span

@@ -102,6 +102,7 @@ interface GalleryData {
   view_count: number;
   download_count: number;
   cover_asset_id?: string | null;
+  owner_handle?: string | null;
   branding?: { business_name?: string; accent_color?: string };
 }
 
@@ -236,7 +237,11 @@ export default function GalleryDetailPage() {
     });
   };
 
-  const galleryUrl = typeof window !== "undefined" ? `${window.location.origin}/g/${id}` : `/g/${id}`;
+  const brandedUrl =
+    gallery?.owner_handle && gallery?.slug
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/${encodeURIComponent(gallery.owner_handle)}/${encodeURIComponent(gallery.slug)}`
+      : null;
+  const galleryUrl = brandedUrl ?? (typeof window !== "undefined" ? `${window.location.origin}/g/${id}` : `/g/${id}`);
 
   const copyLink = () => {
     navigator.clipboard.writeText(galleryUrl);
@@ -268,6 +273,14 @@ export default function GalleryDetailPage() {
             Back to galleries
           </Link>
 
+          {!gallery?.owner_handle && (
+            <Link
+              href="/dashboard/settings"
+              className="block rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+            >
+              Set your profile handle in Settings to get branded share URLs like bizzicloud.io/yourhandle/gallery-name
+            </Link>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">
@@ -310,7 +323,7 @@ export default function GalleryDetailPage() {
                 )}
               </button>
               <a
-                href={`/g/${id}`}
+                href={galleryUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
