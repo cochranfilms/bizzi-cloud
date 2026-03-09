@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
+import { ChevronLeft, Film, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -164,6 +164,9 @@ export default function FileGrid() {
     items: d.items,
     hideShare: false,
     driveId: d.id,
+    customIcon: d.isCreatorRaw ? Film : undefined,
+    preventDelete: d.isCreatorRaw,
+    preventRename: d.isCreatorRaw,
   }));
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 

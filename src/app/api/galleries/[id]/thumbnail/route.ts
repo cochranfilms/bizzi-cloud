@@ -22,6 +22,21 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 const SIZES = { thumb: 256, small: 512, medium: 1024, large: 1920, preview: 1920 } as const;
+
+/** Generate a placeholder image when RAW preview extraction fails (e.g. no Perl on Vercel). */
+async function createRawPlaceholder(width: number, height?: number): Promise<Buffer> {
+  const h = height ?? width;
+  return sharp({
+    create: {
+      width,
+      height: h,
+      channels: 3,
+      background: { r: 64, g: 64, b: 64 },
+    },
+  })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+}
 const COVER_SIZES = COVER_DERIVATIVE_WIDTHS;
 
 function isImageFile(name: string): boolean {
@@ -111,14 +126,22 @@ export async function GET(
       const buffer = await getObjectBuffer(objectKey);
       let resized: Uint8Array;
       if (isRaw) {
-        const thumb = await rawToThumbnail(
-          Buffer.from(buffer),
-          nameForExt || "raw",
-          coverWidth,
-          { isCover: true }
-        );
-        if (!thumb) throw new Error("RAW preview extraction failed");
-        resized = new Uint8Array(thumb);
+        let thumb: Buffer | null = null;
+        try {
+          thumb = await rawToThumbnail(
+            Buffer.from(buffer),
+            nameForExt || "raw",
+            coverWidth,
+            { isCover: true }
+          );
+        } catch (e) {
+          console.warn("[gallery thumbnail] RAW preview error for", fileName, (e as Error)?.message ?? e);
+        }
+        if (!thumb) {
+          resized = new Uint8Array(await createRawPlaceholder(coverWidth, Math.round(coverWidth * 0.75)));
+        } else {
+          resized = new Uint8Array(thumb);
+        }
       } else {
         resized = new Uint8Array(
           await sharp(buffer)
@@ -142,14 +165,22 @@ export async function GET(
     const buffer = await getObjectBuffer(objectKey);
     let resized: Uint8Array;
     if (isRaw) {
-      const thumb = await rawToThumbnail(
-        Buffer.from(buffer),
-        nameForExt || "raw",
-        squareSize,
-        { fit: "inside" }
-      );
-      if (!thumb) throw new Error("RAW preview extraction failed");
-      resized = new Uint8Array(thumb);
+      let thumb: Buffer | null = null;
+      try {
+        thumb = await rawToThumbnail(
+          Buffer.from(buffer),
+          nameForExt || "raw",
+          squareSize,
+          { fit: "inside" }
+        );
+      } catch (e) {
+        console.warn("[gallery thumbnail] RAW preview error for", fileName, (e as Error)?.message ?? e);
+      }
+      if (!thumb) {
+        resized = new Uint8Array(await createRawPlaceholder(squareSize));
+      } else {
+        resized = new Uint8Array(thumb);
+      }
     } else {
       resized = new Uint8Array(
         await sharp(buffer)

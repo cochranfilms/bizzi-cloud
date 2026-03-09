@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderInput, Send, Share2, Trash2 } from "lucide-react";
+import { Film, FolderInput, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
@@ -162,6 +162,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     items: d.items,
     hideShare: false,
     driveId: d.id,
+    customIcon: d.isCreatorRaw ? Film : undefined,
+    preventDelete: d.isCreatorRaw,
+    preventRename: d.isCreatorRaw,
   }));
 
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));

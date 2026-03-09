@@ -115,7 +115,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         })
         .filter((d) => {
           const creatorSection = d.data().creator_section === true;
-          return creatorOnly ? creatorSection : !creatorSection;
+          const isCreatorRaw = d.data().is_creator_raw === true;
+          if (creatorOnly) return creatorSection;
+          // On Home: show non-creator drives OR the RAW folder (always visible in Bizzi Cloud Drive)
+          return !creatorSection || isCreatorRaw;
         })
         .map((d) => {
           const data = d.data();
@@ -223,7 +226,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         })
         .filter((d) => {
           const creatorSection = d.data().creator_section === true;
-          return creatorOnly ? creatorSection : !creatorSection;
+          const isCreatorRaw = d.data().is_creator_raw === true;
+          if (creatorOnly) return creatorSection;
+          return !creatorSection || isCreatorRaw;
         })
         .map((d) => {
           const data = d.data();
