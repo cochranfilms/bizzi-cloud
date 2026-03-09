@@ -29,6 +29,10 @@ export interface FolderItem {
   preventDelete?: boolean;
   /** When true, folder cannot be renamed (e.g. permanent RAW) */
   preventRename?: boolean;
+  /** When true, use accent styling (darker blue bg, lighter icon) - for Storage & RAW */
+  isSystemFolder?: boolean;
+  /** When true, folder cannot be moved (e.g. permanent system folders) */
+  preventMove?: boolean;
 }
 
 interface FolderCardProps {
@@ -103,18 +107,24 @@ export default function FolderCard({
     [isDropTarget, onItemsDropped, item.driveId]
   );
 
+  const isSystemFolder = item.isSystemFolder === true;
+
   return (
     <>
       <div
         className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
-          selected
-            ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
-            : isDragOver
-              ? "border-bizzi-blue ring-2 ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
-              : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+          isSystemFolder
+            ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
+            : selected
+              ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
+              : isDragOver
+                ? "border-bizzi-blue ring-2 ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
         } ${
           canNavigate && !selected
-            ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+            ? isSystemFolder
+              ? "cursor-pointer hover:ring-2 hover:ring-white/30 dark:hover:ring-bizzi-cyan/40"
+              : "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
             : canNavigate && selected
               ? "cursor-pointer"
               : ""
@@ -155,7 +165,13 @@ export default function FolderCard({
           </button>
         )}
         <div className="relative mb-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+          <div
+            className={`flex h-16 w-16 items-center justify-center rounded-xl ${
+              isSystemFolder
+                ? "bg-white/20 text-white dark:bg-white/25 dark:text-bizzi-cyan"
+                : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
+            }`}
+          >
             {item.customIcon ? (
               <item.customIcon className="h-8 w-8" />
             ) : item.name === "Storage" ? (
@@ -170,10 +186,16 @@ export default function FolderCard({
             </div>
           )}
         </div>
-        <h3 className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
+        <h3
+          className={`mb-1 w-full truncate text-center text-sm font-medium ${
+            isSystemFolder ? "text-white dark:text-white" : "text-neutral-900 dark:text-white"
+          }`}
+        >
           {item.name}
         </h3>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p
+          className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-bizzi-cyan/90" : "text-neutral-500 dark:text-neutral-400"}`}
+        >
           {item.items} {item.items === 1 ? "item" : "items"}
         </p>
         <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -184,10 +206,16 @@ export default function FolderCard({
                 e.stopPropagation();
                 setShareOpen(true);
               }}
-              className="rounded-lg p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+              className={`rounded-lg p-2 ${
+                isSystemFolder
+                  ? "hover:bg-white/20"
+                  : "hover:bg-neutral-100 dark:hover:bg-neutral-700"
+              }`}
               aria-label="Share folder"
             >
-              <Share2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+              <Share2
+                className={`h-4 w-4 ${isSystemFolder ? "text-white/90" : "text-neutral-500 dark:text-neutral-400"}`}
+              />
             </button>
           )}
           {(onDelete || (!item.hideShare && item.driveId)) && (
@@ -224,18 +252,22 @@ export default function FolderCard({
                             },
                           ]
                         : []),
-                      {
-                        id: "move",
-                        label: "Move",
-                        icon: <FolderInput className="h-4 w-4" />,
-                        onClick: () => setMoveOpen(true),
-                      },
-                      {
-                        id: "create-folder",
-                        label: "Create New Folder",
-                        icon: <FolderPlus className="h-4 w-4" />,
-                        onClick: () => setCreateFolderOpen(true),
-                      },
+                      ...(!item.preventMove
+                        ? [
+                            {
+                              id: "move",
+                              label: "Move",
+                              icon: <FolderInput className="h-4 w-4" />,
+                              onClick: () => setMoveOpen(true),
+                            },
+                            {
+                              id: "create-folder",
+                              label: "Create New Folder",
+                              icon: <FolderPlus className="h-4 w-4" />,
+                              onClick: () => setCreateFolderOpen(true),
+                            },
+                          ]
+                        : []),
                     ]
                   : []),
                 ...(onDelete && !item.preventDelete

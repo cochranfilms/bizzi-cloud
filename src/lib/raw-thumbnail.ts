@@ -9,31 +9,45 @@ import * as path from "path";
 import sharp from "sharp";
 
 /**
- * Extract embedded JPEG from buffer by scanning for SOI/EOI markers.
- * Most RAW formats (ARW, CR2, NEF, DNG, etc.) embed a JPEG preview.
- * Pure JS - works on Vercel and any serverless without Perl.
+ * Find all embedded JPEGs in buffer (SOI FF D8 FF ... EOI FF D9).
+ * Returns the largest one - RAW files often embed a tiny thumbnail first,
+ * then a larger preview. Using the largest gives sharp thumbnails.
  */
 function extractEmbeddedJpegFromBuffer(buffer: Buffer): Buffer | null {
   const arr = new Uint8Array(buffer);
-  let start = -1;
-  for (let i = 0; i <= arr.length - 3; i++) {
+  const candidates: { start: number; end: number }[] = [];
+
+  let i = 0;
+  while (i <= arr.length - 3) {
     if (arr[i] === 0xff && arr[i + 1] === 0xd8 && arr[i + 2] === 0xff) {
-      start = i;
-      break;
+      const start = i;
+      let end = -1;
+      for (let j = start + 2; j <= arr.length - 2; j++) {
+        if (arr[j] === 0xff && arr[j + 1] === 0xd9) {
+          end = j + 1;
+          break;
+        }
+      }
+      if (end >= 0) {
+        candidates.push({ start, end });
+        i = end + 1;
+      } else {
+        i++;
+      }
+    } else {
+      i++;
     }
   }
-  if (start < 0) return null;
 
-  let end = -1;
-  for (let i = start + 2; i <= arr.length - 2; i++) {
-    if (arr[i] === 0xff && arr[i + 1] === 0xd9) {
-      end = i + 1;
-      break;
-    }
-  }
-  if (end < 0) return null;
+  if (candidates.length === 0) return null;
 
-  const slice = buffer.subarray(start, end + 1);
+  const best = candidates.reduce((a, b) => {
+    const sizeA = a.end - a.start + 1;
+    const sizeB = b.end - b.start + 1;
+    return sizeA >= sizeB ? a : b;
+  });
+
+  const slice = buffer.subarray(best.start, best.end + 1);
   return slice.length >= 100 ? Buffer.from(slice) : null;
 }
 
@@ -92,13 +106,14 @@ export async function rawToThumbnail(
 
   try {
     const { fit = "inside", isCover = false } = options ?? {};
+    const pipeline = sharp(preview).rotate(); // Apply EXIF orientation (fixes rotated thumbnails)
     if (isCover) {
-      return await sharp(preview)
+      return await pipeline
         .resize({ width: maxSize, withoutEnlargement: true })
         .jpeg({ quality: 82 })
         .toBuffer();
     }
-    return await sharp(preview)
+    return await pipeline
       .resize(maxSize, maxSize, { fit, withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toBuffer();

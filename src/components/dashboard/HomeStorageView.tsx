@@ -155,17 +155,29 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const filesHref = `${basePath}/files`;
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
 
-  const folderItems: FolderItem[] = driveFolders.map((d) => ({
-    name: d.name,
-    type: "folder" as const,
-    key: d.key,
-    items: d.items,
-    hideShare: false,
-    driveId: d.id,
-    customIcon: d.isCreatorRaw ? Film : undefined,
-    preventDelete: d.isCreatorRaw,
-    preventRename: d.isCreatorRaw,
-  }));
+  const isStorageDrive = (d: { name: string }) => d.name === "Storage";
+  const isRawDrive = (d: { isCreatorRaw?: boolean }) => d.isCreatorRaw === true;
+  const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
+    isStorageDrive(d) || isRawDrive(d);
+
+  const folderItems: FolderItem[] = driveFolders
+    .map((d) => ({
+      name: d.name,
+      type: "folder" as const,
+      key: d.key,
+      items: d.items,
+      hideShare: false,
+      driveId: d.id,
+      customIcon: d.isCreatorRaw ? Film : undefined,
+      preventDelete: isSystemDrive(d),
+      preventRename: isSystemDrive(d),
+      preventMove: isSystemDrive(d),
+      isSystemFolder: isSystemDrive(d),
+    }))
+    .sort((a, b) => {
+      const order = (name: string) => (name === "Storage" ? 0 : name === "RAW" ? 1 : 2);
+      return order(a.name) - order(b.name);
+    });
 
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
@@ -605,7 +617,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       onItemsDropped={handleDropOnFolder}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                       onDelete={
-                        drive
+                        drive && !item.preventDelete
                           ? async () => {
                               const msg = item.items === 0
                                 ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
@@ -620,7 +632,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                             }
                           : undefined
                       }
-                      selectable={!!drive}
+                      selectable={!!drive && !item.preventDelete}
                       selected={selectedFolderKeys.has(item.key)}
                       onSelect={() => toggleFolderSelection(item.key)}
                     />
@@ -696,7 +708,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                     onDelete={
-                      drive
+                      drive && !item.preventDelete
                         ? async () => {
                             const msg = item.items === 0
                               ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
@@ -709,7 +721,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           }
                         : undefined
                     }
-                    selectable={!!drive}
+                    selectable={!!drive && !item.preventDelete}
                     selected={selectedFolderKeys.has(item.key)}
                     onSelect={() => toggleFolderSelection(item.key)}
                   />

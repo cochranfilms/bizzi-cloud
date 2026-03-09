@@ -92,6 +92,8 @@ export default function CreatorContent() {
       customIcon: d.isCreatorRaw ? Film : undefined,
       preventDelete: d.isCreatorRaw,
       preventRename: d.isCreatorRaw,
+      preventMove: d.isCreatorRaw,
+      isSystemFolder: d.isCreatorRaw,
     }))
     .sort((a, b) => {
       if (a.driveId === creatorRawDriveId) return -1;

@@ -157,17 +157,27 @@ export default function FileGrid() {
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
 
-  const folderItems: FolderItem[] = driveFolders.map((d) => ({
-    name: d.name,
-    type: "folder" as const,
-    key: d.key,
-    items: d.items,
-    hideShare: false,
-    driveId: d.id,
-    customIcon: d.isCreatorRaw ? Film : undefined,
-    preventDelete: d.isCreatorRaw,
-    preventRename: d.isCreatorRaw,
-  }));
+  const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
+    d.name === "Storage" || d.isCreatorRaw === true;
+
+  const folderItems: FolderItem[] = driveFolders
+    .map((d) => ({
+      name: d.name,
+      type: "folder" as const,
+      key: d.key,
+      items: d.items,
+      hideShare: false,
+      driveId: d.id,
+      customIcon: d.isCreatorRaw ? Film : undefined,
+      preventDelete: isSystemDrive(d),
+      preventRename: isSystemDrive(d),
+      preventMove: isSystemDrive(d),
+      isSystemFolder: isSystemDrive(d),
+    }))
+    .sort((a, b) => {
+      const order = (name: string) => (name === "Storage" ? 0 : name === "RAW" ? 1 : 2);
+      return order(a.name) - order(b.name);
+    });
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadDriveFiles = useCallback(
@@ -661,7 +671,7 @@ export default function FileGrid() {
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
                       onDelete={
-                        drive
+                        drive && !item.preventDelete
                           ? async () => {
                               const msg = item.items === 0
                                 ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
@@ -675,7 +685,7 @@ export default function FileGrid() {
                             }
                           : undefined
                       }
-                      selectable={!!drive}
+                      selectable={!!drive && !item.preventDelete}
                       selected={selectedFolderKeys.has(item.key)}
                       onSelect={() => toggleFolderSelection(item.key)}
                     />
@@ -864,7 +874,7 @@ export default function FileGrid() {
                           isDropTarget={isDropTarget}
                           onItemsDropped={handleDropOnFolder}
                           onDelete={
-                            drive
+                            drive && !item.preventDelete
                               ? async () => {
                                   const msg = item.items === 0
                                     ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
@@ -878,7 +888,7 @@ export default function FileGrid() {
                                 }
                               : undefined
                           }
-                          selectable={!!drive}
+                          selectable={!!drive && !item.preventDelete}
                           selected={selectedFolderKeys.has(item.key)}
                           onSelect={() => toggleFolderSelection(item.key)}
                         />
