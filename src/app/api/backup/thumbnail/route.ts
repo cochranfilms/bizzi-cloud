@@ -1,6 +1,8 @@
 import { getObjectBuffer, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccess } from "@/lib/backup-access";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyIdToken } from "@/lib/firebase-admin";
+import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { rawToThumbnail } from "@/lib/raw-thumbnail";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -8,13 +10,25 @@ const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic)$/i;
-
 type ThumbSize = "thumb" | "preview";
 const SIZES: Record<ThumbSize, number> = { thumb: 256, preview: 1024 };
 
+/** Placeholder when RAW extraction fails */
+async function createRawPlaceholder(size: number): Promise<Buffer> {
+  return sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 3,
+      background: { r: 64, g: 64, b: 64 },
+    },
+  })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+}
+
 function isImageFile(name: string): boolean {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 
 export async function GET(request: Request) {
@@ -69,14 +83,36 @@ async function handleThumbnail(request: Request) {
     return new NextResponse("Access denied", { status: 403 });
   }
 
+  const nameForExt = (fileName || objectKey || "").toLowerCase();
+  const isRaw = isRawFile(nameForExt);
+
   try {
     const buffer = await getObjectBuffer(objectKey);
-    const resized = await sharp(buffer)
-      .resize(size, size, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+    let resized: Uint8Array;
 
-    return new NextResponse(new Uint8Array(resized), {
+    if (isRaw) {
+      const thumb = await rawToThumbnail(
+        Buffer.from(buffer),
+        nameForExt || "raw",
+        size,
+        { fit: "inside" }
+      );
+      if (!thumb) {
+        resized = new Uint8Array(await createRawPlaceholder(size));
+      } else {
+        resized = new Uint8Array(thumb);
+      }
+    } else {
+      resized = new Uint8Array(
+        await sharp(buffer)
+          .rotate()
+          .resize(size, size, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer()
+      );
+    }
+
+    return new NextResponse(Buffer.from(resized), {
       status: 200,
       headers: {
         "Content-Type": "image/jpeg",

@@ -179,6 +179,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       return order(a.name) - order(b.name);
     });
 
+  const baseFolderItems = folderItems.filter((f) => {
+    const drive = driveFolders.find((d) => d.id === f.driveId);
+    return drive ? isSystemDrive(drive) : false;
+  });
+  const driveFolderItems = folderItems.filter((f) => {
+    const drive = driveFolders.find((d) => d.id === f.driveId);
+    return drive ? !isSystemDrive(drive) : false;
+  });
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadPinnedFiles = useCallback(async () => {
@@ -580,19 +588,82 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
-      {/* Section 1: Pinned */}
-      {(hasPinned || isLoading) && (
-        <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-            Pinned
-          </h2>
-          {isLoading || pinnedFilesLoading ? (
-            <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Loading…
-            </div>
-          ) : hasPinned ? (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {pinnedFolderItems.map((item) => {
+      {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          Bizzi Cloud Base
+        </h2>
+        {loading ? (
+          <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Loading…
+          </div>
+        ) : baseFolderItems.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {baseFolderItems.map((item) => {
+              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+              const driveId = item.driveId ?? "";
+              const isFolderInSelection = selectedFolderKeys.has(item.key);
+              const isDropTarget =
+                !!driveId &&
+                hasSelection &&
+                !isFolderInSelection &&
+                linkedDrives.some((d) => d.id === driveId);
+              return (
+                <div
+                  key={item.key}
+                  data-selectable-item
+                  data-item-type="folder"
+                  data-item-key={item.key}
+                  draggable={isFolderInSelection && hasSelection}
+                  onDragStart={handleDragStart}
+                  className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                >
+                  <FolderCard
+                    item={item}
+                    isDropTarget={isDropTarget}
+                    onItemsDropped={handleDropOnFolder}
+                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    onDelete={
+                      drive && !item.preventDelete
+                        ? async () => {
+                            const msg = item.items === 0
+                              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                            const ok = await confirm({ message: msg, destructive: true });
+                            if (ok) {
+                              await deleteFolder(drive, item.items);
+                              await refetch();
+                            }
+                          }
+                        : undefined
+                    }
+                    selectable={!!drive && !item.preventDelete}
+                    selected={selectedFolderKeys.has(item.key)}
+                    onSelect={() => toggleFolderSelection(item.key)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Storage and RAW folders will appear here.
+          </p>
+        )}
+      </section>
+
+      {/* Section 2: Pinned */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          Pinned
+        </h2>
+        {isLoading || pinnedFilesLoading ? (
+          <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Loading…
+          </div>
+        ) : hasPinned ? (
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 const driveId = item.driveId ?? "";
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
@@ -670,10 +741,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               Pin files or folders from the All Files tab for quick access.
             </p>
           )}
-        </section>
-      )}
+      </section>
 
-      {/* Section 2: Storage */}
+      {/* Section 3: Bizzi Cloud Drive (newly created folders) */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Bizzi Cloud Drive
@@ -682,9 +752,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…
           </div>
-        ) : folderItems.length > 0 ? (
+        ) : driveFolderItems.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {folderItems.map((item) => {
+            {driveFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
               const isFolderInSelection = selectedFolderKeys.has(item.key);
@@ -731,7 +801,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </div>
         ) : (
           <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            No folders yet. Create a folder or upload files to get started.
+            Newly created folders will appear here.
           </p>
         )}
       </section>

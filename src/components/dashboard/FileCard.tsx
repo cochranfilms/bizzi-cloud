@@ -44,14 +44,13 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 function isVideoFile(name: string) {
-  return VIDEO_EXT.test(name.toLowerCase());
+  return GALLERY_VIDEO_EXT.test(name.toLowerCase());
 }
 function isImageFile(name: string) {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 
 export default function FileCard({

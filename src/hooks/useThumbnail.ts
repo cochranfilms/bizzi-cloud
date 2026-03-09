@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
+import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 
 export type ThumbnailSize = "thumb" | "preview";
 
 function isImageFile(name: string): boolean {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 
 function isVideoFile(name: string): boolean {
