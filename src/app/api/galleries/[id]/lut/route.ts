@@ -10,7 +10,7 @@
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
-const MAX_SIZE_BYTES = 512 * 1024; // 500 KB
+const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 const STORAGE_PATH = (galleryId: string) => `galleries/${galleryId}/lut.cube`;
 
 async function requireGalleryOwner(
@@ -102,7 +102,7 @@ export async function POST(
 
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "LUT file must be under 500 KB" },
+      { error: "LUT file must be under 2 MB" },
       { status: 400 }
     );
   }

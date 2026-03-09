@@ -976,8 +976,8 @@ export default function GallerySettingsForm({
                   setLutError("Only .cube LUT files are supported.");
                   return;
                 }
-                if (file.size > 512 * 1024) {
-                  setLutError("LUT file must be under 500 KB.");
+                if (file.size > 2 * 1024 * 1024) {
+                  setLutError("LUT file must be under 2 MB.");
                   return;
                 }
                 setLutError(null);
