@@ -2,16 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
-
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic)$/i;
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 function isImageFile(name: string): boolean {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 
 function isVideoFile(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
+  return GALLERY_VIDEO_EXT.test(name);
 }
 
 /**

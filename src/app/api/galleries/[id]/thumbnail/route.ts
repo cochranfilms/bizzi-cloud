@@ -1,6 +1,7 @@
 /**
  * GET /api/galleries/[id]/thumbnail?object_key=...&name=...&size=...
  * Serves resized image for gallery display. Verifies gallery view access.
+ * Supports standard images (Sharp) and RAW files (exiftool + Sharp).
  * Sizes: thumb, small, medium, large, preview (square fit)
  *       cover-xs, cover-sm, cover-md, cover-lg, cover-xl (width-based, cached)
  */
@@ -14,16 +15,17 @@ import {
 } from "@/lib/b2";
 import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import { rawToThumbnail } from "@/lib/raw-thumbnail";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic)$/i;
 const SIZES = { thumb: 256, small: 512, medium: 1024, large: 1920, preview: 1920 } as const;
 const COVER_SIZES = COVER_DERIVATIVE_WIDTHS;
 
 function isImageFile(name: string): boolean {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 
 export async function GET(
@@ -83,6 +85,9 @@ export async function GET(
     return new NextResponse("Asset not found", { status: 404 });
   }
 
+  const nameForExt = (fileName || objectKey || "").toLowerCase();
+  const isRaw = isRawFile(nameForExt);
+
   try {
     if (isCoverSize && coverWidth) {
       const cacheKey = getCoverDerivativeCacheKey(objectKey, sizeParam);
@@ -104,14 +109,28 @@ export async function GET(
       }
 
       const buffer = await getObjectBuffer(objectKey);
-      const resized = await sharp(buffer)
-        .resize({ width: coverWidth, withoutEnlargement: true })
-        .jpeg({ quality: 82 })
-        .toBuffer();
+      let resized: Uint8Array;
+      if (isRaw) {
+        const thumb = await rawToThumbnail(
+          Buffer.from(buffer),
+          nameForExt || "raw",
+          coverWidth,
+          { isCover: true }
+        );
+        if (!thumb) throw new Error("RAW preview extraction failed");
+        resized = new Uint8Array(thumb);
+      } else {
+        resized = new Uint8Array(
+          await sharp(buffer)
+            .resize({ width: coverWidth, withoutEnlargement: true })
+            .jpeg({ quality: 82 })
+            .toBuffer()
+        );
+      }
 
       putObject(cacheKey, resized, "image/jpeg").catch(() => {});
 
-      return new NextResponse(new Uint8Array(resized), {
+      return new NextResponse(Buffer.from(resized), {
         status: 200,
         headers: {
           "Content-Type": "image/jpeg",
@@ -121,12 +140,26 @@ export async function GET(
     }
 
     const buffer = await getObjectBuffer(objectKey);
-    const resized = await sharp(buffer)
-      .resize(squareSize, squareSize, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+    let resized: Uint8Array;
+    if (isRaw) {
+      const thumb = await rawToThumbnail(
+        Buffer.from(buffer),
+        nameForExt || "raw",
+        squareSize,
+        { fit: "inside" }
+      );
+      if (!thumb) throw new Error("RAW preview extraction failed");
+      resized = new Uint8Array(thumb);
+    } else {
+      resized = new Uint8Array(
+        await sharp(buffer)
+          .resize(squareSize, squareSize, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer()
+      );
+    }
 
-    return new NextResponse(new Uint8Array(resized), {
+    return new NextResponse(Buffer.from(resized), {
       status: 200,
       headers: {
         "Content-Type": "image/jpeg",

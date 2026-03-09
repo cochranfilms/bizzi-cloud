@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
+import GalleryPickerModal from "./GalleryPickerModal";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 
@@ -25,7 +26,9 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers";
   const { currentDriveId } = useCurrentFolder();
   const {
+    linkedDrives,
     uploadFiles,
+    uploadFilesToGallery,
     fileUploadProgress,
     uploadFolder,
     createFolder,
@@ -35,7 +38,11 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     syncProgress,
     creatorRawDriveId,
   } = useBackup();
+  const [galleryPickerFiles, setGalleryPickerFiles] = useState<File[] | null>(null);
   const isRawFolder = creatorRawDriveId && currentDriveId === creatorRawDriveId;
+  const isGalleryMediaDrive = Boolean(
+    currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
+  );
 
   const formatBytes = (n: number) => {
     if (n < 1024) return `${n} B`;
@@ -66,6 +73,10 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     const files = fileList ? Array.from(fileList) : [];
     e.target.value = "";
     if (files.length === 0) return;
+    if (isGalleryMediaDrive) {
+      setGalleryPickerFiles(files);
+      return;
+    }
     setFileUploading(true);
     const driveId = currentDriveId ?? undefined;
     uploadFiles(files, driveId).finally(() => setFileUploading(false));
@@ -220,6 +231,18 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           const isCreator = pathname === "/dashboard/creator" || pathname === "/enterprise/creator";
           await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
           setCreateFolderOpen(false);
+        }}
+      />
+
+      <GalleryPickerModal
+        open={galleryPickerFiles !== null && galleryPickerFiles.length > 0}
+        onClose={() => setGalleryPickerFiles(null)}
+        files={galleryPickerFiles ?? []}
+        onPick={(galleryId, galleryTitle) => {
+          if (galleryPickerFiles?.length) {
+            uploadFilesToGallery(galleryPickerFiles, galleryId, { galleryTitle });
+            setGalleryPickerFiles(null);
+          }
         }}
       />
     </div>

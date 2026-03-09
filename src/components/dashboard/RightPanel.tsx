@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
 import SyncDriveButton from "./SyncDriveButton";
+import GalleryPickerModal from "./GalleryPickerModal";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 
@@ -45,13 +46,20 @@ export default function RightPanel({
   const dragCounterRef = useRef(0);
   const { currentDriveId } = useCurrentFolder();
   const {
+    linkedDrives,
     uploadFiles,
+    uploadFilesToGallery,
     linkDrive,
     startSync,
     fsAccessSupported,
     fileUploadProgress,
     syncProgress,
   } = useBackup();
+  const [galleryPickerFiles, setGalleryPickerFiles] = useState<File[] | null>(null);
+
+  const isGalleryMediaDrive = Boolean(
+    currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
+  );
 
   const isUploading =
     (fileUploadProgress?.status === "in_progress") ||
@@ -121,7 +129,11 @@ export default function RightPanel({
       }
 
       if (files.length > 0) {
-        await uploadFiles(files, currentDriveId ?? undefined);
+        if (isGalleryMediaDrive) {
+          setGalleryPickerFiles(files);
+        } else {
+          await uploadFiles(files, currentDriveId ?? undefined);
+        }
       }
 
       for (const handle of dirHandles) {
@@ -140,8 +152,22 @@ export default function RightPanel({
       linkDrive,
       startSync,
       currentDriveId,
+      isGalleryMediaDrive,
     ]
   );
+
+  const handleGalleryPick = useCallback(
+    (galleryId: string, galleryTitle: string) => {
+      if (!galleryPickerFiles?.length) return;
+      uploadFilesToGallery(galleryPickerFiles, galleryId, { galleryTitle });
+      setGalleryPickerFiles(null);
+    },
+    [galleryPickerFiles, uploadFilesToGallery]
+  );
+
+  const handleGalleryPickerClose = useCallback(() => {
+    setGalleryPickerFiles(null);
+  }, []);
 
   return (
     <aside className="flex h-full w-56 flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950 xl:shadow-none">
@@ -240,6 +266,13 @@ export default function RightPanel({
           )}
         </div>
       </div>
+
+      <GalleryPickerModal
+        open={galleryPickerFiles !== null && galleryPickerFiles.length > 0}
+        onClose={handleGalleryPickerClose}
+        files={galleryPickerFiles ?? []}
+        onPick={handleGalleryPick}
+      />
     </aside>
   );
 }

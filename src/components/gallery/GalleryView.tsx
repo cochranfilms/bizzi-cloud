@@ -77,7 +77,7 @@ interface GalleryCollection {
   sort_order: number;
 }
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 function WatermarkOverlay({
   imageUrl,
@@ -444,13 +444,11 @@ function PreviewModal({
   );
 }
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
-
 function isImage(name: string) {
-  return IMAGE_EXT.test(name.toLowerCase());
+  return GALLERY_IMAGE_EXT.test(name);
 }
 function isVideo(name: string) {
-  return VIDEO_EXT.test(name.toLowerCase());
+  return GALLERY_VIDEO_EXT.test(name);
 }
 
 function GalleryAssetCard({

@@ -7,7 +7,7 @@
 const STANDARD_IMAGE = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "ico", "heic"] as const;
 
 /** Standard video extensions */
-const STANDARD_VIDEO = ["mp4", "webm", "ogg", "mov", "m4v", "avi", "mxf"] as const;
+const STANDARD_VIDEO = ["mp4", "webm", "ogg", "mov", "m4v", "avi", "mxf", "mts", "mkv", "3gp"] as const;
 
 /** RAW formats: generic and brand-specific (still photo + cinema crossover) */
 const RAW_EXTENSIONS = [
@@ -44,4 +44,13 @@ export const GALLERY_UPLOAD_EXT_SET = new Set(
 /** Test if filename is a supported gallery file (image or video) */
 export function isGalleryFile(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name) || GALLERY_VIDEO_EXT.test(name);
+}
+
+/** Regex to test if a filename is a RAW format (needs exiftool preview extraction) */
+export const RAW_EXT =
+  new RegExp(`\\.(${RAW_EXTENSIONS.join("|")})$`, "i");
+
+/** Test if filename is a RAW format */
+export function isRawFile(name: string): boolean {
+  return RAW_EXT.test(name);
 }

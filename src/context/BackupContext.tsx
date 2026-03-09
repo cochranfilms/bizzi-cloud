@@ -1233,6 +1233,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           : await getOrCreateStorageDrive();
         const db = getFirebaseFirestore();
 
+        // Gallery Media drive: always use a subfolder so files aren't mixed at root.
+        // (Per-gallery subfolders come from uploadFilesToGallery on the gallery page.)
+        const isGalleryDrive = drive.name === "Gallery Media";
+        const pathPrefix = isGalleryDrive ? `uploads_${Date.now()}` : "";
+
         let bytesSynced = 0;
         const completedBytesRef = { current: 0 };
         const updateFile = (
@@ -1278,11 +1283,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               bytes_synced: file.size,
               completed_at: new Date(),
             });
+            const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
             const fileRef = await addDoc(collection(db, "backup_files"), {
               backup_snapshot_id: snapshotRef.id,
               linked_drive_id: drive.id,
               userId: user.uid,
-              relative_path: file.name,
+              relative_path: relPath,
               object_key: ev.objectKey,
               size_bytes: file.size,
               content_type: file.type || "application/octet-stream",
@@ -1294,7 +1300,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             });
             options?.onFileComplete?.({
               name: file.name,
-              path: `${drive.name}/${file.name}`.replace(/\/+/g, "/"),
+              path: `${drive.name}/${relPath}`.replace(/\/+/g, "/"),
               backupFileId: fileRef.id,
               objectKey: ev.objectKey,
             });
@@ -1324,11 +1330,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const file = filesToUpload[i];
           const item = fileItems[i];
           updateFile(item.id, { status: "uploading" });
+          const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
           const queued: QueuedFile = {
             id: item.id,
             file,
             driveId: drive.id,
-            relativePath: file.name,
+            relativePath: relPath,
             workspaceId: isEnterpriseContext && org?.id ? org.id : undefined,
             organizationId: drive.organization_id ?? null,
           };
