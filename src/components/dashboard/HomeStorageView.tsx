@@ -661,7 +661,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 2: Storage */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Storage
+          Bizzi Cloud Drive
         </h2>
         {loading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">

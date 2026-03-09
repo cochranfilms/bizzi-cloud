@@ -87,7 +87,12 @@ export async function PATCH(
   if (body.event_date !== undefined) updates.event_date = body.event_date ?? null;
   if (body.expiration_date !== undefined) updates.expiration_date = body.expiration_date ?? null;
   if (body.access_mode !== undefined) updates.access_mode = body.access_mode;
-  if (Array.isArray(body.invited_emails)) updates.invited_emails = body.invited_emails;
+  if (Array.isArray(body.invited_emails)) {
+    updates.invited_emails = body.invited_emails
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  }
   if (body.layout !== undefined) updates.layout = body.layout;
   if (body.branding !== undefined) {
     updates.branding = { ...data.branding, ...body.branding };
@@ -98,12 +103,15 @@ export async function PATCH(
   if (body.watermark !== undefined) {
     updates.watermark = { ...data.watermark, ...body.watermark };
   }
+  if (body.lut !== undefined) {
+    updates.lut = { ...data.lut, ...body.lut };
+  }
 
   if (body.access_mode === "password" && body.password) {
     updates.password_hash = await hashSecret(body.password);
   }
-  if (body.access_mode === "pin" && body.pin) {
-    updates.pin_hash = await hashSecret(body.pin);
+  if (body.access_mode !== undefined && body.access_mode !== "pin") {
+    updates.pin_hash = null;
   }
 
   if (body.title && body.title !== data.title) {

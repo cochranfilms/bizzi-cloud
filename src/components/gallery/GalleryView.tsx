@@ -5,7 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   Lock,
-  Key,
   Mail,
   Download,
   Heart,
@@ -20,6 +19,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 import { getCoverObjectPosition } from "@/lib/cover-position";
+import ImageWithLUT from "./ImageWithLUT";
 
 interface GalleryData {
   id: string;
@@ -50,6 +50,7 @@ interface GalleryData {
     position?: string | null;
     opacity?: number | null;
   };
+  lut?: { enabled?: boolean; storage_url?: string | null } | null;
   cover_asset_id?: string | null;
   cover_position?: string | null;
   cover_focal_x?: number | null;
@@ -65,6 +66,14 @@ interface GalleryAsset {
   name: string;
   object_key: string;
   media_type: "image" | "video";
+  sort_order: number;
+  collection_id?: string | null;
+}
+
+interface GalleryCollection {
+  id: string;
+  gallery_id: string;
+  title: string;
   sort_order: number;
 }
 
@@ -109,30 +118,114 @@ function WatermarkOverlay({
 
 function SaveFavoritesModal({
   count,
+  galleryId,
+  password,
   onSave,
   onClose,
 }: {
   count: number;
-  onSave: (email: string, name: string) => Promise<void>;
+  galleryId: string;
+  password?: string;
+  onSave: (email: string, name: string) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedListId, setSavedListId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl =
+    savedListId &&
+    (() => {
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const path = `/g/${galleryId}/favorites/${savedListId}`;
+      const params = password ? `?password=${encodeURIComponent(password)}` : "";
+      return `${base}${path}${params}`;
+    })();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      await onSave(email.trim(), name.trim());
+      const listId = await onSave(email.trim(), name.trim());
+      if (listId) setSavedListId(listId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
   };
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback for older browsers
+      setError("Copy failed");
+    }
+  };
+
+  const handleEmailLink = () => {
+    if (!shareUrl) return;
+    const subject = encodeURIComponent("My favorite photos from the gallery");
+    const body = encodeURIComponent(
+      `Here's a link to view and download my favorite photos:\n\n${shareUrl}`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  if (savedListId && shareUrl) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
+            Favorites saved
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+            Share this link to view and download your favorites.
+          </p>
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={shareUrl}
+                className="flex-1 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+              />
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleEmailLink}
+              className="flex items-center justify-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
+            >
+              <Mail className="h-4 w-4" />
+              Email me this link
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-500 hover:text-neutral-700 dark:border-neutral-700 dark:text-neutral-400"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -204,6 +297,7 @@ function PreviewModal({
   galleryId,
   getAuthToken,
   watermark,
+  lut,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -215,6 +309,7 @@ function PreviewModal({
   galleryId: string;
   getAuthToken?: () => Promise<string | null>;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
+  lut?: { enabled?: boolean; storage_url?: string | null } | null;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -256,12 +351,21 @@ function PreviewModal({
             <p className="text-white">Video preview – full playback coming soon</p>
           ) : previewImageUrl ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewImageUrl}
-                alt=""
-                className="max-h-[70vh] max-w-full object-contain"
-              />
+              {lut?.enabled && lut?.storage_url && isImage(asset.name) ? (
+                <ImageWithLUT
+                  imageUrl={previewImageUrl}
+                  lutUrl={lut.storage_url}
+                  lutEnabled={true}
+                  className="max-h-[70vh] max-w-full"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={previewImageUrl}
+                  alt=""
+                  className="max-h-[70vh] max-w-full object-contain"
+                />
+              )}
               {watermark?.enabled && watermark?.image_url && (
                 <WatermarkOverlay
                   imageUrl={watermark.image_url}
@@ -362,6 +466,7 @@ function GalleryAssetCard({
   downloading,
   masonryLayout,
   watermark,
+  lut,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -375,6 +480,7 @@ function GalleryAssetCard({
   downloading: boolean;
   masonryLayout?: boolean;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
+  lut?: { enabled?: boolean; storage_url?: string | null } | null;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
@@ -441,16 +547,28 @@ function GalleryAssetCard({
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
         {thumbUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={thumbUrl}
-            alt=""
-            className={`block w-full transition-transform group-hover:scale-105 ${
-              useNaturalAspect
-                ? "h-auto object-cover"
-                : "h-full object-cover"
-            }`}
-          />
+          lut?.enabled && lut?.storage_url && isImg ? (
+            <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
+              <ImageWithLUT
+                imageUrl={thumbUrl}
+                lutUrl={lut.storage_url}
+                lutEnabled={true}
+                objectFit="cover"
+                className={`w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}
+              />
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={thumbUrl}
+              alt=""
+              className={`block w-full transition-transform group-hover:scale-105 ${
+                useNaturalAspect
+                  ? "h-auto object-cover"
+                  : "h-full object-cover"
+              }`}
+            />
+          )
         ) : (
           <div className={`flex w-full items-center justify-center ${useNaturalAspect ? "aspect-[4/3] min-h-[120px]" : "h-full"}`}>
             {isVid ? (
@@ -510,13 +628,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [data, setData] = useState<{
     gallery: GalleryData;
     assets: GalleryAsset[];
+    collections: GalleryCollection[];
   } | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  const [pinInput, setPinInput] = useState("");
   const [previewAsset, setPreviewAsset] = useState<GalleryAsset | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -534,12 +653,20 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     }
   });
   const [showSaveFavorites, setShowSaveFavorites] = useState(false);
+  const [savedFavoritesLists, setSavedFavoritesLists] = useState<
+    { id: string; client_name?: string | null; asset_ids: string[]; created_at: string | null }[]
+  >([]);
   const [previewComments, setPreviewComments] = useState<
     { id: string; body: string; client_name?: string | null; created_at: string }[]
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<{
+    used: number;
+    limit: number;
+    remaining: number;
+  } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fetchGallery = useCallback(
@@ -564,6 +691,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         setData({
           gallery: body.gallery,
           assets: body.assets ?? [],
+          collections: body.collections ?? [],
         });
         if (pwd) setPassword(pwd);
       } catch (err) {
@@ -578,6 +706,69 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   useEffect(() => {
     fetchGallery();
   }, [fetchGallery]);
+
+  const fetchDownloadStatus = useCallback(async () => {
+    if (!data) return;
+    const hasLimit =
+      typeof data.gallery.download_settings?.free_download_limit === "number" &&
+      data.gallery.download_settings.free_download_limit >= 0;
+    if (!hasLimit) return;
+    try {
+      const statusUrl = new URL(
+        `/api/galleries/${galleryId}/download-status`,
+        window.location.origin
+      );
+      if (password) statusUrl.searchParams.set("password", password);
+      const headers: Record<string, string> = {};
+      if (user) {
+        const t = await user.getIdToken();
+        if (t) headers.Authorization = `Bearer ${t}`;
+      }
+      const res = await fetch(statusUrl.toString(), { headers });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (body.limit != null)
+        setDownloadStatus({
+          used: body.used ?? 0,
+          limit: body.limit,
+          remaining: body.remaining ?? Math.max(0, body.limit - (body.used ?? 0)),
+        });
+    } catch {
+      // ignore
+    }
+  }, [data, galleryId, password, user]);
+
+  useEffect(() => {
+    if (!data || !hasEnteredGallery) return;
+    fetchDownloadStatus();
+  }, [data, hasEnteredGallery, fetchDownloadStatus]);
+
+  useEffect(() => {
+    if (!data || !hasEnteredGallery) return;
+    const clientEmail = user?.email?.toLowerCase().trim();
+    if (!clientEmail) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = new URL(`/api/galleries/${galleryId}/favorites`, window.location.origin);
+        url.searchParams.set("client_email", clientEmail);
+        if (password) url.searchParams.set("password", password);
+        const headers: Record<string, string> = {};
+        const t = await (user ? user.getIdToken() : null);
+        if (t) headers.Authorization = `Bearer ${t}`;
+        const res = await fetch(url.toString(), { headers });
+        if (!res.ok || cancelled) return;
+        const body = await res.json();
+        if (cancelled) return;
+        setSavedFavoritesLists(body.lists ?? []);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [data, hasEnteredGallery, galleryId, password, user]);
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -711,7 +902,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   }, [galleryId]);
 
   const handleSaveFavorites = useCallback(
-    async (clientEmail: string, clientName: string) => {
+    async (clientEmail: string, clientName: string): Promise<string | null> => {
       const assetIds = Array.from(selectedFavorites);
       const url = new URL(`/api/galleries/${galleryId}/favorites`, window.location.origin);
       if (password) url.searchParams.set("password", password);
@@ -733,6 +924,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         const data = await res.json();
         throw new Error(data.error ?? "Failed to save");
       }
+      const data = await res.json();
+      const listId = typeof data.id === "string" ? data.id : null;
       setSelectedFavorites(new Set());
       if (typeof window !== "undefined") {
         try {
@@ -741,7 +934,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           // ignore
         }
       }
-      setShowSaveFavorites(false);
+      return listId;
     },
     [galleryId, password, user, selectedFavorites]
   );
@@ -806,7 +999,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         download_context: context,
       };
       if (password) body.password = password;
-      if (pinInput) body.pin = pinInput;
       const res = await fetch(`/api/galleries/${galleryId}/download`, {
         method: "POST",
         headers,
@@ -822,8 +1014,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       a.download = asset.name;
       a.rel = "noopener noreferrer";
       a.click();
+      fetchDownloadStatus();
     },
-    [galleryId, user, password, pinInput]
+    [galleryId, user, password, fetchDownloadStatus]
   );
 
   const handleDownload = useCallback(
@@ -898,7 +1091,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     );
   }
 
-  if (errorCode === "password_required" || (error && !data)) {
+  if (errorCode === "password_required" || errorCode === "invalid_password") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <div className="w-full max-w-sm space-y-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
@@ -955,6 +1148,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           >
             Sign in to access
           </Link>
+          <Link
+            href="/client"
+            className="block text-center text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+          >
+            View your invited galleries
+          </Link>
         </div>
       </div>
     );
@@ -972,7 +1171,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     );
   }
 
-  const { gallery, assets } = data;
+  const { gallery, assets, collections } = data;
+  const filteredAssets =
+    selectedCollectionId === null
+      ? assets
+      : assets.filter(
+          (a) => (a.collection_id ?? null) === selectedCollectionId
+        );
   const accent = gallery.branding.accent_color ?? "#00BFFF";
   const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
   const isDarkBg = bgTheme.textTone === "light";
@@ -1104,23 +1309,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     {prePageInstructions}
                   </p>
                 )}
-                {(gallery.download_settings?.allow_single_download ||
-                  gallery.download_settings?.allow_full_gallery_download ||
-                  gallery.download_settings?.allow_selected_download) &&
-                  gallery.access_mode === "pin" && (
-                  <div className="rounded-lg border border-amber-400/50 bg-amber-900/30 px-4 py-3">
-                    <p className="text-sm text-amber-100">
-                      Enter your download PIN below when viewing the gallery to unlock downloads.
-                    </p>
-                    <input
-                      type="text"
-                      value={pinInput}
-                      onChange={(e) => setPinInput(e.target.value)}
-                      placeholder="PIN"
-                      className="mt-2 w-28 rounded border border-amber-400/50 bg-amber-900/50 px-3 py-1.5 text-center text-sm text-white placeholder-white/50"
-                    />
-                  </div>
-                )}
                 <button
                   type="button"
                   onClick={() => setHasEnteredGallery(true)}
@@ -1197,17 +1385,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   >
                     {prePageInstructions}
                   </p>
-                )}
-                {gallery.access_mode === "pin" && (
-                  <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
-                    <input
-                      type="text"
-                      value={pinInput}
-                      onChange={(e) => setPinInput(e.target.value)}
-                      placeholder="Download PIN"
-                      className="w-32 rounded border border-amber-300 px-3 py-2 text-center text-sm dark:border-amber-700 dark:bg-amber-900/30 dark:text-white"
-                    />
-                  </div>
                 )}
                 <button
                   type="button"
@@ -1363,6 +1540,72 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {downloadError}
             </div>
           )}
+          {downloadStatus && (
+            <p
+              className={`mx-auto mb-4 text-sm ${
+                downloadStatus.remaining === 0
+                  ? "text-amber-600 dark:text-amber-400"
+                  : isDarkBg
+                    ? "text-white/70"
+                    : "text-neutral-600 dark:text-neutral-400"
+              }`}
+            >
+              {downloadStatus.remaining === 0 ? (
+                <>Download limit reached ({downloadStatus.used} of {downloadStatus.limit} used).</>
+              ) : (
+                <>{downloadStatus.remaining} of {downloadStatus.limit} downloads remaining.</>
+              )}
+            </p>
+          )}
+          {savedFavoritesLists.length > 0 && (
+            <div
+              className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3 ${
+                isDarkBg
+                  ? "border-white/20 bg-white/5"
+                  : "border-neutral-200 bg-white/80 dark:border-neutral-700 dark:bg-neutral-900/80"
+              }`}
+            >
+              <h3
+                className={`mb-2 text-sm font-medium ${
+                  isDarkBg ? "text-white/90" : "text-neutral-700 dark:text-neutral-300"
+                }`}
+              >
+                Your saved favorites lists
+              </h3>
+              <ul className="space-y-2">
+                {savedFavoritesLists.map((list) => (
+                  <li
+                    key={list.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  >
+                    <span
+                      className={`text-sm ${
+                        isDarkBg ? "text-white/80" : "text-neutral-600 dark:text-neutral-400"
+                      }`}
+                    >
+                      {list.asset_ids.length} photo
+                      {list.asset_ids.length !== 1 ? "s" : ""}
+                      {list.created_at && (
+                        <span className="ml-1 opacity-75">
+                          • {new Date(list.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </span>
+                    <Link
+                      href={`/g/${galleryId}/favorites/${list.id}${
+                        password ? `?password=${encodeURIComponent(password)}` : ""
+                      }`}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: accent }}
+                    >
+                      <Download className="h-4 w-4" />
+                      View & download
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {gallery.description && (
             <p
               className={`mt-4 max-w-2xl mx-auto text-sm ${
@@ -1374,29 +1617,68 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           )}
         </div>
 
-        {(gallery.download_settings?.allow_single_download ||
-          gallery.download_settings?.allow_full_gallery_download ||
-          gallery.download_settings?.allow_selected_download) &&
-          gallery.access_mode === "pin" && (
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-            <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-              <Key className="h-5 w-5" />
-              <span className="font-medium">Download PIN</span>
-            </div>
-            <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-              Enter the download PIN below when downloading to unlock full resolution.
-            </p>
-            <input
-              type="text"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="PIN"
-              className="mt-3 w-32 rounded-lg border border-amber-300 px-3 py-2 text-sm dark:border-amber-700 dark:bg-amber-900/30 dark:text-white"
-            />
+        {collections.length > 0 && (
+          <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCollectionId(null)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                selectedCollectionId === null
+                  ? "text-white"
+                  : isDarkBg
+                    ? "text-white/70 hover:bg-white/10"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+              }`}
+              style={
+                selectedCollectionId === null
+                  ? { backgroundColor: accent }
+                  : undefined
+              }
+            >
+              All
+            </button>
+            {collections
+              .slice()
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((col) => (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => setSelectedCollectionId(col.id)}
+                  className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                    selectedCollectionId === col.id
+                      ? "text-white"
+                      : isDarkBg
+                        ? "text-white/70 hover:bg-white/10"
+                        : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  }`}
+                  style={
+                    selectedCollectionId === col.id
+                      ? { backgroundColor: accent }
+                      : undefined
+                  }
+                >
+                  {col.title}
+                </button>
+              ))}
           </div>
         )}
 
-        {assets.length === 0 ? (
+        {gallery.lut?.enabled && gallery.lut?.storage_url && (
+          <div className="mb-4 flex justify-center">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                isDarkBg
+                  ? "bg-white/15 text-white/90"
+                  : "bg-neutral-200/80 text-neutral-700 dark:bg-neutral-700/80 dark:text-neutral-300"
+              }`}
+            >
+              Creative Preview On
+            </span>
+          </div>
+        )}
+
+        {filteredAssets.length === 0 ? (
           <div
             className={`rounded-xl border py-16 text-center ${
               isDarkBg
@@ -1410,7 +1692,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               }`}
             />
             <p className={isDarkBg ? "text-white/70" : "text-neutral-500"}>
-              This gallery has no photos or videos yet.
+              {selectedCollectionId
+                ? "No photos in this collection."
+                : "This gallery has no photos or videos yet."}
             </p>
           </div>
         ) : (
@@ -1424,7 +1708,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   : "columns-2 gap-3 sm:columns-3 md:columns-4"
             }
           >
-            {assets.map((asset) => (
+            {filteredAssets.map((asset) => (
               <GalleryAssetCard
                 key={asset.id}
                 galleryId={galleryId}
@@ -1446,6 +1730,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
                 watermark={gallery.watermark}
+                lut={gallery.lut}
               />
             ))}
           </div>
@@ -1453,48 +1738,52 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       </main>
 
       {selectedFavorites.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="fixed right-6 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
           <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {selectedFavorites.size} selected
           </span>
-          {gallery.download_settings?.allow_selected_download && (
+          <div className="flex flex-col gap-2">
+            {gallery.download_settings?.allow_selected_download && (
+              <button
+                type="button"
+                onClick={handleDownloadSelected}
+                disabled={downloadingAll}
+                className="flex items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {downloadingAll ? "Downloading…" : "Download selected"}
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleDownloadSelected}
-              disabled={downloadingAll}
-              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+              onClick={() => setShowSaveFavorites(true)}
+              className="flex items-center justify-center rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
             >
-              <Download className="h-4 w-4" />
-              {downloadingAll ? "Downloading…" : "Download selected"}
+              Save favorites list
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowSaveFavorites(true)}
-            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-          >
-            Save favorites list
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedFavorites(new Set());
-              try {
-                localStorage.removeItem(`gallery-favorites-${galleryId}`);
-              } catch {
-                // ignore
-              }
-            }}
-            className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-400"
-          >
-            Clear
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFavorites(new Set());
+                try {
+                  localStorage.removeItem(`gallery-favorites-${galleryId}`);
+                } catch {
+                  // ignore
+                }
+              }}
+              className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-400"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       )}
 
       {showSaveFavorites && (
         <SaveFavoritesModal
           count={selectedFavorites.size}
+          galleryId={galleryId}
+          password={password || undefined}
           onSave={handleSaveFavorites}
           onClose={() => setShowSaveFavorites(false)}
         />
@@ -1517,6 +1806,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           galleryId={galleryId}
           getAuthToken={user ? getAuthToken : undefined}
           watermark={gallery.watermark}
+          lut={gallery.lut}
         />
       )}
     </div>

@@ -26,7 +26,7 @@ export function useGalleryThumbnail(
   fileName: string,
   options?: {
     enabled?: boolean;
-    size?: "thumb" | "preview" | "cover-xs" | "cover-sm" | "cover-md" | "cover-lg" | "cover-xl";
+    size?: "thumb" | "small" | "medium" | "large" | "preview" | "cover-xs" | "cover-sm" | "cover-md" | "cover-lg" | "cover-xl";
   }
 ): string | null {
   const { enabled = true, size = "thumb" } = options ?? {};

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -10,10 +11,12 @@ import {
   Copy,
   Check,
   Loader2,
+  Film,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
+import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 
 interface FavoritesList {
   id: string;
@@ -38,6 +41,107 @@ interface GalleryAsset {
   object_key?: string;
   media_type?: "image" | "video";
   proofing_status?: string;
+}
+
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
+
+function ProofingAssetCell({
+  galleryId,
+  asset,
+}: {
+  galleryId: string;
+  asset: GalleryAsset;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
+  const cellRef = useRef<HTMLTableCellElement>(null);
+  const objectKey = asset.object_key ?? "";
+  const isImage = IMAGE_EXT.test(asset.name);
+  const isVideo = VIDEO_EXT.test(asset.name);
+  const previewUrl = useGalleryThumbnail(galleryId, objectKey, asset.name, {
+    enabled: (isImage || isVideo) && isHovered,
+    size: "medium",
+  });
+
+  useEffect(() => {
+    if (!isHovered || !cellRef.current) {
+      setCoords(null);
+      return;
+    }
+    const updatePos = () => {
+      if (cellRef.current) {
+        const rect = cellRef.current.getBoundingClientRect();
+        setCoords({ x: rect.left, y: rect.top + rect.height / 2 });
+      }
+    };
+    updatePos();
+    window.addEventListener("scroll", updatePos, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      window.removeEventListener("scroll", updatePos, true);
+      window.removeEventListener("resize", updatePos);
+    };
+  }, [isHovered]);
+
+  const popup = isHovered && (isImage || isVideo) && coords && typeof document !== "undefined" && createPortal(
+    <div
+      className="fixed z-[100] -translate-y-1/2"
+      style={{
+        left: coords.x + 16,
+        top: coords.y,
+        width: 280,
+        height: 280,
+      }}
+    >
+      <div
+        className="h-full w-full overflow-hidden rounded-xl border-2 border-white bg-neutral-900 shadow-2xl ring-2 ring-neutral-500/30"
+        style={{ animation: "proofing-popup 0.2s ease-out" }}
+      >
+        {previewUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={previewUrl}
+            alt=""
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-800">
+            {isVideo ? (
+              <Film className="h-12 w-12 text-neutral-500" />
+            ) : (
+              <Loader2 className="h-10 w-10 animate-spin text-neutral-500" />
+            )}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return (
+    <td ref={cellRef} className="px-4 py-3">
+      <div
+        className="flex items-center gap-3"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
+          <GalleryAssetThumbnail
+            galleryId={galleryId}
+            objectKey={objectKey}
+            name={asset.name}
+            mediaType={asset.media_type ?? "image"}
+            className="h-10 w-10"
+          />
+        </div>
+        <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
+          {asset.name}
+        </span>
+      </div>
+      {popup}
+    </td>
+  );
 }
 
 export default function GalleryProofingPage() {
@@ -314,22 +418,7 @@ export default function GalleryProofingPage() {
                       key={a.id}
                       className="border-b border-neutral-100 dark:border-neutral-800"
                     >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
-                            <GalleryAssetThumbnail
-                              galleryId={id}
-                              objectKey={a.object_key ?? ""}
-                              name={a.name}
-                              mediaType={a.media_type ?? "image"}
-                              className="h-10 w-10"
-                            />
-                          </div>
-                          <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
-                            {a.name}
-                          </span>
-                        </div>
-                      </td>
+                      <ProofingAssetCell galleryId={id} asset={a} />
                       <td className="px-4 py-3">
                         {favoritedAssetIds.has(a.id) ? (
                           <Heart className="h-4 w-4 fill-red-500 text-red-500" />

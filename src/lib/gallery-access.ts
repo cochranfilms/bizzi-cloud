@@ -51,7 +51,6 @@ export interface GalleryAccessCheck {
  * - Owner (photographer) always has access when authenticated.
  * - public: allow
  * - password: require password in request
- * - pin: allow view (pin only for download)
  * - invite_only: require auth + invited email
  */
 export async function verifyGalleryViewAccess(
@@ -90,8 +89,8 @@ export async function verifyGalleryViewAccess(
   }
 
   if (access_mode === "pin") {
-    // PIN only gates download, not view
-    return { allowed: true, needsPin: true };
+    // Legacy: treat as public (PIN feature removed)
+    return { allowed: true };
   }
 
   if (access_mode === "password") {
@@ -158,41 +157,16 @@ export async function verifyGalleryViewAccess(
 
 /**
  * Verify download permission.
- * For pin mode, requires correct PIN.
  */
 export async function verifyGalleryDownloadAccess(
   gallery: GalleryAccessCheck,
   request: {
     authHeader: string | null;
     password?: string | null;
-    pin?: string | null;
   }
 ): Promise<GalleryAccessResult> {
-  const viewResult = await verifyGalleryViewAccess(
-    gallery,
-    { authHeader: request.authHeader, password: request.password }
-  );
-
-  if (!viewResult.allowed) return viewResult;
-
-  if (gallery.access_mode === "pin" && gallery.pin_hash) {
-    const { pin } = request;
-    if (!pin || typeof pin !== "string") {
-      return {
-        allowed: false,
-        code: "pin_required",
-        message: "Enter the download PIN to download.",
-      };
-    }
-    const ok = await verifySecret(pin, gallery.pin_hash);
-    if (!ok) {
-      return {
-        allowed: false,
-        code: "invalid_pin",
-        message: "Invalid download PIN.",
-      };
-    }
-  }
-
-  return { allowed: true };
+  return verifyGalleryViewAccess(gallery, {
+    authHeader: request.authHeader,
+    password: request.password,
+  });
 }

@@ -86,7 +86,7 @@ interface BackupContextValue {
   uploadFilesToGallery: (
     files: File[],
     galleryId: string,
-    options?: { onComplete?: () => void }
+    options?: { onComplete?: () => void; galleryTitle?: string }
   ) => Promise<void>;
 }
 
@@ -1376,11 +1376,21 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     [user, getOrCreateStorageDrive, linkedDrives, isEnterpriseContext, org?.id]
   );
 
+  const slugifyForPath = (title: string) =>
+    title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "gallery";
+
   const uploadFilesToGallery = useCallback(
     async (
       files: File[],
       galleryId: string,
-      options?: { onComplete?: () => void }
+      options?: { onComplete?: () => void; galleryTitle?: string }
     ) => {
       if (!isFirebaseConfigured() || !user) {
         setError("Please sign in to upload.");
@@ -1485,7 +1495,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             completed_at: new Date(),
           });
           const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
-          const relativePath = `gallery_${galleryId}/${batchTs}_${fileIndex}/${file.name}`;
+          const subfolder = options?.galleryTitle
+            ? slugifyForPath(options.galleryTitle)
+            : `gallery_${galleryId}`;
+          const relativePath = `${subfolder}/${batchTs}_${fileIndex}/${file.name}`;
           const fileRef = await addDoc(collection(db, "backup_files"), {
             backup_snapshot_id: snapshotRef.id,
             linked_drive_id: drive.id,
@@ -1524,11 +1537,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         const file = files[i];
         const item = fileItems[i];
         updateFile(item.id, { status: "uploading" });
+        const subfolder = options?.galleryTitle
+          ? slugifyForPath(options.galleryTitle)
+          : `gallery_${galleryId}`;
         const queued: QueuedFile = {
           id: item.id,
           file,
           driveId: drive.id,
-          relativePath: `gallery_${galleryId}/${batchTs}_${i}/${file.name}`,
+          relativePath: `${subfolder}/${batchTs}_${i}/${file.name}`,
           workspaceId: undefined,
           organizationId: null,
         };

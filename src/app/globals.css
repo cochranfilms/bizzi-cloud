@@ -3,6 +3,23 @@
 @tailwind utilities;
 
 @layer utilities {
+  /* Checkered background for watermark preview – visible for white or dark logos */
+  .watermark-preview-bg {
+    background-color: #f5f5f5;
+    background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+      linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+      linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  }
+  .dark .watermark-preview-bg {
+    background-color: #1e1e1e;
+    background-image: linear-gradient(45deg, #3a3a3a 25%, transparent 25%),
+      linear-gradient(-45deg, #3a3a3a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #3a3a3a 75%),
+      linear-gradient(-45deg, transparent 75%, #3a3a3a 75%);
+  }
   @keyframes gallery-enter {
     from {
       opacity: 0;
@@ -15,5 +32,15 @@
   }
   .animate-gallery-enter {
     animation: gallery-enter 0.4s ease-out forwards;
+  }
+  @keyframes proofing-popup {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 }

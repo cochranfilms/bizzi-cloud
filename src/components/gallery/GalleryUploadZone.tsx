@@ -8,12 +8,14 @@ const ACCEPT = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v,.avi";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
+  galleryTitle?: string;
   onUploadComplete?: () => void;
   disabled?: boolean;
 }
 
 export default function GalleryUploadZone({
   galleryId,
+  galleryTitle,
   onUploadComplete,
   disabled,
 }: GalleryUploadZoneProps) {
@@ -35,7 +37,7 @@ export default function GalleryUploadZone({
       );
     });
     if (accepted.length === 0) return;
-    uploadFilesToGallery(accepted, galleryId, { onComplete: onUploadComplete });
+    uploadFilesToGallery(accepted, galleryId, { onComplete: onUploadComplete, galleryTitle });
   };
 
   const onDrop = (e: React.DragEvent) => {

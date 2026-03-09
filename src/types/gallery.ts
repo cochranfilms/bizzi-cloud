@@ -70,6 +70,13 @@ export interface GalleryWatermarkSettings {
   scale?: number;               // 0.5–2 relative size
 }
 
+/** Creative LUT settings – applied to preview only, not stored files */
+export interface GalleryLUTSettings {
+  enabled: boolean;
+  object_key?: string | null;   // B2 key, e.g. galleries/{id}/lut.cube
+  storage_url?: string | null;   // Signed URL if using Firebase Storage
+}
+
 /** Cover photo object-position presets (CSS object-position values) */
 export type CoverPosition =
   | "center"
@@ -113,6 +120,10 @@ export interface Gallery {
   layout: GalleryLayout;
   download_settings: GalleryDownloadSettings;
   watermark: GalleryWatermarkSettings;
+  /** Source format: raw = LUT preview applies; jpg = images as delivered */
+  source_format?: "raw" | "jpg" | null;
+  /** Creative LUT for visual preview only */
+  lut?: GalleryLUTSettings | null;
   /** Analytics counters */
   view_count: number;
   unique_visitor_count: number;
@@ -207,9 +218,11 @@ export interface CreateGalleryInput {
   pin?: string | null;
   invited_emails?: string[];
   layout?: GalleryLayout;
+  source_format?: "raw" | "jpg" | null;
   branding?: Partial<GalleryBrandingSettings>;
   download_settings?: Partial<GalleryDownloadSettings>;
   watermark?: Partial<GalleryWatermarkSettings>;
+  lut?: Partial<GalleryLUTSettings> | null;
 }
 
 /** Update gallery input – partial */
@@ -227,6 +240,7 @@ export interface GalleryPublicPayload {
     branding: GalleryBrandingSettings;
     download_settings: GalleryDownloadSettings;
     watermark: GalleryWatermarkSettings;
+    lut?: { enabled: boolean; storage_url?: string | null } | null;
     cover_asset_id?: string | null;
   };
   collections: GalleryCollection[];

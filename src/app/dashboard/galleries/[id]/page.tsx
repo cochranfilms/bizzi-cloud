@@ -338,6 +338,7 @@ export default function GalleryDetailPage() {
             <div className="border-b border-neutral-200 p-4 dark:border-neutral-700">
               <GalleryUploadZone
                 galleryId={id}
+                galleryTitle={gallery?.title}
                 onUploadComplete={() => {
                   fetchAssets();
                   fetchGallery();

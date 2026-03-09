@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/dashboard/TopBar";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
@@ -15,6 +15,8 @@ import {
   Loader2,
   Check,
   Building2,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -130,6 +132,134 @@ function ProfileSection() {
           )}
         </div>
       </div>
+    </section>
+  );
+}
+
+function StudioHomepageSection() {
+  const { user } = useAuth();
+  const [publicSlug, setPublicSlug] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/profile", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok) setPublicSlug(data.public_slug ?? "");
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          public_slug: publicSlug.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const homepageUrl = publicSlug.trim() ? `${baseUrl}/p/${publicSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")}` : null;
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+        <Globe className="h-5 w-5 text-bizzi-blue" />
+        Studio homepage
+      </h2>
+      <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+        Set a custom URL for your branded gallery homepage. Clients can browse your public galleries at{" "}
+        <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">/p/your-username</code>.
+      </p>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            Public username
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-500 dark:text-neutral-400">
+              {baseUrl}/p/
+            </span>
+            <input
+              type="text"
+              value={publicSlug}
+              onChange={(e) => {
+                setPublicSlug(e.target.value.replace(/[^a-zA-Z0-9-]/g, "").toLowerCase());
+                setError(null);
+              }}
+              placeholder="janesmith"
+              disabled={loadingProfile}
+              className="flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white dark:placeholder-neutral-500"
+            />
+          </div>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            3–40 characters, letters, numbers, and hyphens only
+          </p>
+        </div>
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+        {success && (
+          <p className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+            <Check className="h-4 w-4" /> Saved
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={loading || loadingProfile}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-70"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+          </button>
+          {homepageUrl && (
+            <a
+              href={homepageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
+            >
+              <ExternalLink className="h-4 w-4" />
+              View homepage
+            </a>
+          )}
+        </div>
+      </form>
     </section>
   );
 }
@@ -369,6 +499,7 @@ export default function SettingsPage() {
       <main className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-2xl space-y-6">
           <ProfileSection />
+          <StudioHomepageSection />
           <AccountSection />
           <CreateOrganizationSection />
           <SubscriptionSection />

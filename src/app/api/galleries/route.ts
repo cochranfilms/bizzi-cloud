@@ -112,9 +112,9 @@ export async function POST(request: Request) {
     expiration_date,
     access_mode = "public",
     password,
-    pin,
     invited_emails,
     layout = "masonry",
+    source_format = "jpg",
     branding,
     download_settings,
     watermark,
@@ -132,13 +132,9 @@ export async function POST(request: Request) {
   const slug = await ensureUniqueSlug(db, uid, baseSlug);
 
   let passwordHash: string | null = null;
-  let pinHash: string | null = null;
 
   if (access_mode === "password" && password && typeof password === "string") {
     passwordHash = await hashSecret(password);
-  }
-  if (access_mode === "pin" && pin && typeof pin === "string") {
-    pinHash = await hashSecret(pin);
   }
 
   const now = new Date();
@@ -151,13 +147,17 @@ export async function POST(request: Request) {
     event_date: event_date ?? null,
     expiration_date: expiration_date ?? null,
     password_hash: passwordHash,
-    pin_hash: pinHash,
+    pin_hash: null,
     access_mode: access_mode as GalleryAccessMode,
     invited_emails: Array.isArray(invited_emails)
-      ? invited_emails.filter((e): e is string => typeof e === "string")
+      ? invited_emails
+          .filter((e): e is string => typeof e === "string")
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean)
       : [],
     branding: { ...DEFAULT_BRANDING, ...branding },
     layout,
+    source_format: source_format === "raw" ? "raw" : "jpg",
     download_settings: { ...DEFAULT_DOWNLOAD_SETTINGS, ...download_settings },
     watermark: { ...DEFAULT_WATERMARK, ...watermark },
     view_count: 0,

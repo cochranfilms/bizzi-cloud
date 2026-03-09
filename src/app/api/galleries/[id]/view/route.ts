@@ -1,7 +1,7 @@
 /**
  * GET /api/galleries/[id]/view
  * Public gallery view – returns gallery metadata + assets for client display.
- * Access: public, password, pin (view allowed), or invite_only.
+ * Access: public, password, or invite_only.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
@@ -39,7 +39,7 @@ export async function GET(
 
   if (!access.allowed) {
     return NextResponse.json(
-      { error: access.code, message: access.message, needsPassword: access.needsPassword, needsPin: access.needsPin },
+      { error: access.code, message: access.message, needsPassword: access.needsPassword },
       { status: 403 }
     );
   }
@@ -86,6 +86,7 @@ export async function GET(
     };
   });
 
+  const lut = g.lut ?? null;
   return NextResponse.json({
     gallery: {
       id: gallerySnap.id,
@@ -97,6 +98,9 @@ export async function GET(
       branding: g.branding ?? {},
       download_settings: g.download_settings ?? {},
       watermark: g.watermark ?? {},
+      lut: lut
+        ? { enabled: lut.enabled ?? false, storage_url: lut.storage_url ?? null }
+        : null,
       cover_asset_id: g.cover_asset_id ?? null,
       cover_position: g.cover_position ?? "center",
       cover_focal_x: g.cover_focal_x ?? null,

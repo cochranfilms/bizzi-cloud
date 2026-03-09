@@ -31,7 +31,6 @@ export async function POST(
   const objectKey = body.object_key ?? body.objectKey;
   const name = body.name ?? body.fileName ?? "download";
   const password = body.password ?? null;
-  const pin = body.pin ?? null;
   const downloadContext = (body.download_context as "single" | "full" | "selected") ?? "single";
 
   if (!objectKey || typeof objectKey !== "string") {
@@ -54,12 +53,12 @@ export async function POST(
       invited_emails: g.invited_emails ?? [],
       expiration_date: g.expiration_date,
     },
-    { authHeader, password, pin }
+    { authHeader, password }
   );
 
   if (!access.allowed) {
     return NextResponse.json(
-      { error: access.code, message: access.message, needsPin: access.needsPin },
+      { error: access.code, message: access.message, needsPassword: access.needsPassword },
       { status: 403 }
     );
   }

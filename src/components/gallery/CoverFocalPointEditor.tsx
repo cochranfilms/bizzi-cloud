@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
+import type { HeroHeightPreset } from "@/lib/cover-constants";
+import { BANNER_ASPECT_RATIOS } from "@/lib/cover-constants";
 
 const FOCAL_PRESETS: { label: string; x: number; y: number }[] = [
   { label: "Center", x: 50, y: 50 },
@@ -19,6 +21,8 @@ interface CoverFocalPointEditorProps {
   focalX: number;
   focalY: number;
   onChange: (x: number, y: number) => void;
+  /** Banner size – adjusts crop preview aspect ratio to match gallery banner */
+  bannerSize?: HeroHeightPreset | null;
 }
 
 export default function CoverFocalPointEditor({
@@ -26,7 +30,12 @@ export default function CoverFocalPointEditor({
   focalX,
   focalY,
   onChange,
+  bannerSize = "medium",
 }: CoverFocalPointEditorProps) {
+  const aspectRatio =
+    bannerSize && bannerSize in BANNER_ASPECT_RATIOS
+      ? BANNER_ASPECT_RATIOS[bannerSize]
+      : BANNER_ASPECT_RATIOS.medium;
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, focalX: 0, focalY: 0 });
@@ -50,8 +59,9 @@ export default function CoverFocalPointEditor({
     (e: React.PointerEvent) => {
       if (!isDragging || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const dx = ((e.clientX - dragStartRef.current.x) / rect.width) * 100;
-      const dy = ((e.clientY - dragStartRef.current.y) / rect.height) * 100;
+      const SENSITIVITY = 1.5;
+      const dx = ((e.clientX - dragStartRef.current.x) / rect.width) * 100 * SENSITIVITY;
+      const dy = ((e.clientY - dragStartRef.current.y) / rect.height) * 100 * SENSITIVITY;
       const newX = Math.max(0, Math.min(100, dragStartRef.current.focalX - dx));
       const newY = Math.max(0, Math.min(100, dragStartRef.current.focalY - dy));
       onChange(newX, newY);
@@ -96,10 +106,13 @@ export default function CoverFocalPointEditor({
           if (e.key === "ArrowUp") onChange(focalX, Math.max(0, focalY - step));
           if (e.key === "ArrowDown") onChange(focalX, Math.min(100, focalY + step));
         }}
-        className={`relative aspect-video w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 ${
+        className={`relative w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
-        style={{ touchAction: "none" }}
+        style={{
+          aspectRatio: `${aspectRatio} / 1`,
+          touchAction: "none",
+        }}
       >
         {imageUrl ? (
           <>
@@ -119,7 +132,10 @@ export default function CoverFocalPointEditor({
               className="pointer-events-none absolute inset-0 flex items-center justify-center"
               aria-hidden
             >
-              <div className="aspect-video w-[60%] rounded border-2 border-dashed border-white/80" />
+              <div
+                className="w-[60%] rounded border-2 border-dashed border-white/80"
+                style={{ aspectRatio: `${aspectRatio} / 1` }}
+              />
             </div>
             <div
               className="absolute inset-0 z-10 cursor-grab"

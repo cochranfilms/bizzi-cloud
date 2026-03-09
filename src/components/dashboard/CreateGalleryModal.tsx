@@ -12,16 +12,15 @@ interface CreateGalleryModalProps {
     expiration_date?: string;
     access_mode?: string;
     password?: string;
-    pin?: string;
     invited_emails?: string[];
     layout?: string;
+    source_format?: "raw" | "jpg";
   }) => Promise<unknown>;
 }
 
 const ACCESS_MODES = [
   { value: "public", label: "Public link", desc: "Anyone with the link can view" },
   { value: "password", label: "Password", desc: "Requires a password to view" },
-  { value: "pin", label: "Download PIN", desc: "View freely, PIN required for download" },
   { value: "invite_only", label: "Invite only", desc: "Only invited emails can access" },
 ] as const;
 
@@ -31,16 +30,21 @@ const LAYOUTS = [
   { value: "cinematic", label: "Cinematic" },
 ] as const;
 
+const SOURCE_FORMATS = [
+  { value: "jpg", label: "JPG", desc: "Images as delivered" },
+  { value: "raw", label: "RAW", desc: "Creative LUT preview applies for your look" },
+] as const;
+
 export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [expirationDate, setExpirationDate] = useState("");
-  const [accessMode, setAccessMode] = useState<"public" | "password" | "pin" | "invite_only">("public");
+  const [accessMode, setAccessMode] = useState<"public" | "password" | "invite_only">("public");
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
   const [invitedEmails, setInvitedEmails] = useState("");
   const [layout, setLayout] = useState<"masonry" | "justified" | "cinematic">("masonry");
+  const [sourceFormat, setSourceFormat] = useState<"raw" | "jpg">("jpg");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,11 +61,11 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
         expiration_date: expirationDate || undefined,
         access_mode: accessMode,
         password: accessMode === "password" ? password : undefined,
-        pin: accessMode === "pin" ? pin : undefined,
         invited_emails: accessMode === "invite_only"
           ? invitedEmails.split(/[\s,]+/).filter(Boolean)
           : undefined,
         layout,
+        source_format: sourceFormat,
       });
       onClose();
     } catch (err) {
@@ -188,21 +192,6 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
             </div>
           )}
 
-          {accessMode === "pin" && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Download PIN
-              </label>
-              <input
-                type="text"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="e.g. 1234"
-                className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              />
-            </div>
-          )}
-
           {accessMode === "invite_only" && (
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -217,6 +206,36 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
               />
             </div>
           )}
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Source format
+            </label>
+            <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+              RAW galleries use creative LUT preview for your look. JPG galleries show images as delivered.
+            </p>
+            <div className="space-y-2">
+              {SOURCE_FORMATS.map((s) => (
+                <label
+                  key={s.value}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+                >
+                  <input
+                    type="radio"
+                    name="source_format"
+                    value={s.value}
+                    checked={sourceFormat === s.value}
+                    onChange={() => setSourceFormat(s.value)}
+                    className="mt-1"
+                  />
+                  <div>
+                    <span className="font-medium text-neutral-900 dark:text-white">{s.label}</span>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{s.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">

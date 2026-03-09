@@ -29,6 +29,7 @@ interface GalleryData {
   branding: Record<string, unknown>;
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;
+  lut?: { enabled?: boolean; storage_url?: string | null } | null;
 }
 
 export default function GallerySettingsPage() {

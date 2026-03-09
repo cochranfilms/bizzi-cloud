@@ -69,6 +69,7 @@ export function useGalleries() {
       pin?: string | null;
       invited_emails?: string[];
       layout?: string;
+      source_format?: "raw" | "jpg";
     }) => {
       if (!user) throw new Error("Not authenticated");
       const token = await user.getIdToken();

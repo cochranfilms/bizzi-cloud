@@ -26,3 +26,14 @@ export const HERO_HEIGHT_PRESETS = {
 } as const;
 
 export type HeroHeightPreset = keyof typeof HERO_HEIGHT_PRESETS;
+
+/**
+ * Aspect ratio (width/height) for crop preview per banner size.
+ * Matches gallery banner: smaller = wider crop, larger = taller crop.
+ */
+export const BANNER_ASPECT_RATIOS: Record<HeroHeightPreset, number> = {
+  small: 5.7,
+  medium: 4.6,
+  large: 3.8,
+  cinematic: 3.2,
+};

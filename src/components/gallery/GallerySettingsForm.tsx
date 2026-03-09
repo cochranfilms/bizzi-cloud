@@ -14,12 +14,14 @@ function CoverFocalPointEditorSection({
   focalX,
   focalY,
   onChange,
+  bannerSize,
 }: {
   galleryId: string;
   asset: { id: string; name: string; object_key: string } | null;
   focalX: number;
   focalY: number;
   onChange: (x: number, y: number) => void;
+  bannerSize?: "small" | "medium" | "large" | "cinematic";
 }) {
   const imageUrl = useGalleryThumbnail(
     galleryId,
@@ -37,6 +39,7 @@ function CoverFocalPointEditorSection({
         focalX={focalX}
         focalY={focalY}
         onChange={onChange}
+        bannerSize={bannerSize ?? "medium"}
       />
     </div>
   );
@@ -106,6 +109,7 @@ interface GallerySettingsFormProps {
     branding?: Record<string, unknown>;
     download_settings?: Record<string, unknown>;
     watermark?: Record<string, unknown>;
+    lut?: { enabled?: boolean; storage_url?: string | null } | null;
   };
 }
 
@@ -122,7 +126,9 @@ export default function GallerySettingsForm({
   const [description, setDescription] = useState(initialData.description ?? "");
   const [eventDate, setEventDate] = useState(initialData.event_date ?? "");
   const [expirationDate, setExpirationDate] = useState(initialData.expiration_date ?? "");
-  const [accessMode, setAccessMode] = useState(initialData.access_mode ?? "public");
+  const [accessMode, setAccessMode] = useState(
+    initialData.access_mode === "pin" ? "public" : (initialData.access_mode ?? "public")
+  );
   const [invitedEmails, setInvitedEmails] = useState(
     (initialData.invited_emails ?? []).join(", ")
   );
@@ -160,7 +166,6 @@ export default function GallerySettingsForm({
       "medium"
   );
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
 
   const [businessName, setBusinessName] = useState(
     (initialData.branding?.business_name as string) ?? ""
@@ -204,6 +209,17 @@ export default function GallerySettingsForm({
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
   const [watermarkError, setWatermarkError] = useState<string | null>(null);
   const watermarkInputRef = useRef<HTMLInputElement>(null);
+
+  const [lutEnabled, setLutEnabled] = useState(
+    (initialData.lut?.enabled as boolean) ?? false
+  );
+  const [lutStorageUrl, setLutStorageUrl] = useState<string | null>(
+    (initialData.lut?.storage_url as string) ?? null
+  );
+  const [lutFile, setLutFile] = useState<File | null>(null);
+  const [uploadingLut, setUploadingLut] = useState(false);
+  const [lutError, setLutError] = useState<string | null>(null);
+  const lutInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!watermarkFile) {
@@ -304,9 +320,12 @@ export default function GallerySettingsForm({
           opacity: watermarkOpacity,
           image_url: watermarkImageUrl ?? undefined,
         },
+        lut: {
+          enabled: lutEnabled,
+          storage_url: lutStorageUrl ?? undefined,
+        },
       };
       if (accessMode === "password" && password) body.password = password;
-      if (accessMode === "pin" && pin) body.pin = pin;
 
       const res = await fetch(`/api/galleries/${galleryId}`, {
         method: "PATCH",
@@ -322,7 +341,6 @@ export default function GallerySettingsForm({
       }
       setSaved(true);
       setPassword("");
-      setPin("");
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -380,18 +398,6 @@ export default function GallerySettingsForm({
                 ))}
               </div>
             </div>
-            {coverAssetId && (
-              <CoverFocalPointEditorSection
-                galleryId={galleryId}
-                asset={coverAssets.find((a) => a.id === coverAssetId) ?? null}
-                focalX={coverFocalX}
-                focalY={coverFocalY}
-                onChange={(x, y) => {
-                  setCoverFocalX(x);
-                  setCoverFocalY(y);
-                }}
-              />
-            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
@@ -409,7 +415,7 @@ export default function GallerySettingsForm({
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Hero height
+                  Banner Size
                 </label>
                 <select
                   value={coverHeroHeight}
@@ -425,6 +431,19 @@ export default function GallerySettingsForm({
                 </select>
               </div>
             </div>
+            {coverAssetId && (
+              <CoverFocalPointEditorSection
+                galleryId={galleryId}
+                asset={coverAssets.find((a) => a.id === coverAssetId) ?? null}
+                focalX={coverFocalX}
+                focalY={coverFocalY}
+                onChange={(x, y) => {
+                  setCoverFocalX(x);
+                  setCoverFocalY(y);
+                }}
+                bannerSize={coverHeroHeight}
+              />
+            )}
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 Cover alt text
@@ -544,7 +563,6 @@ export default function GallerySettingsForm({
             >
               <option value="public">Public (anyone with link)</option>
               <option value="password">Password required</option>
-              <option value="pin">Download PIN (view freely, PIN for download)</option>
               <option value="invite_only">Invite only</option>
             </select>
           </div>
@@ -558,20 +576,6 @@ export default function GallerySettingsForm({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              />
-            </div>
-          )}
-          {accessMode === "pin" && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                New download PIN (leave blank to keep current)
-              </label>
-              <input
-                type="text"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="e.g. 1234"
                 className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
               />
             </div>
@@ -827,12 +831,15 @@ export default function GallerySettingsForm({
               </div>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <div className="flex shrink-0 flex-col items-center gap-2">
-                  <div className="flex h-20 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                  <div className="watermark-preview-bg flex h-20 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
                     {watermarkImageUrl || watermarkPreviewUrl ? (
                       <img
                         src={watermarkPreviewUrl ?? watermarkImageUrl ?? ""}
                         alt="Watermark preview"
                         className="h-full w-full object-contain"
+                        style={{
+                          opacity: watermarkOpacity / 100,
+                        }}
                       />
                     ) : (
                       <ImageIcon className="h-8 w-8 text-neutral-400" />
@@ -927,6 +934,145 @@ export default function GallerySettingsForm({
                 Watermark applies to previews only, not delivered downloads. Minimum 1600px width recommended.
               </p>
             </>
+          )}
+        </div>
+      </section>
+
+      {/* Creative LUT */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          Creative LUT
+        </h2>
+        <div className="space-y-4">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={lutEnabled}
+              onChange={(e) => setLutEnabled(e.target.checked)}
+              className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+            />
+            <span className="text-sm text-neutral-700 dark:text-neutral-300">
+              Enable LUT preview
+            </span>
+          </label>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            This applies a visual preview style only. Your original files remain unchanged.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={lutInputRef}
+              type="file"
+              accept=".cube"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const ext = file.name.split(".").pop()?.toLowerCase();
+                if (ext !== "cube") {
+                  setLutError("Only .cube LUT files are supported.");
+                  return;
+                }
+                if (file.size > 512 * 1024) {
+                  setLutError("LUT file must be under 500 KB.");
+                  return;
+                }
+                setLutError(null);
+                setLutFile(file);
+              }}
+              aria-label="Upload LUT"
+            />
+            <button
+              type="button"
+              onClick={() => lutInputRef.current?.click()}
+              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              {lutStorageUrl ? "Replace LUT" : "Upload LUT"}
+            </button>
+            {lutStorageUrl && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!user) return;
+                  setUploadingLut(true);
+                  setLutError(null);
+                  try {
+                    const token = await user.getIdToken();
+                    const res = await fetch(`/api/galleries/${galleryId}/lut`, {
+                      method: "DELETE",
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.error ?? "Failed to remove LUT");
+                    }
+                    setLutStorageUrl(null);
+                    setLutFile(null);
+                  } catch (err) {
+                    setLutError(err instanceof Error ? err.message : "Failed to remove LUT");
+                  } finally {
+                    setUploadingLut(false);
+                  }
+                }}
+                disabled={uploadingLut}
+                className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                {uploadingLut ? (
+                  <Loader2 className="inline h-4 w-4 animate-spin" />
+                ) : (
+                  "Remove LUT"
+                )}
+              </button>
+            )}
+            {lutFile && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!user || !lutFile) return;
+                  setUploadingLut(true);
+                  setLutError(null);
+                  try {
+                    const token = await user.getIdToken();
+                    const formData = new FormData();
+                    formData.append("lut", lutFile);
+                    const res = await fetch(`/api/galleries/${galleryId}/lut`, {
+                      method: "POST",
+                      headers: { Authorization: `Bearer ${token}` },
+                      body: formData,
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.error ?? "Failed to upload LUT");
+                    }
+                    const data = await res.json();
+                    setLutStorageUrl(data.storage_url ?? null);
+                    setLutFile(null);
+                  } catch (err) {
+                    setLutError(err instanceof Error ? err.message : "Failed to upload LUT");
+                  } finally {
+                    setUploadingLut(false);
+                  }
+                }}
+                disabled={uploadingLut}
+                className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {uploadingLut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Uploading…
+                  </>
+                ) : (
+                  "Upload"
+                )}
+              </button>
+            )}
+          </div>
+          {lutError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{lutError}</p>
+          )}
+          {lutStorageUrl && !lutFile && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              LUT file is attached. Use Replace to change it, or Remove to clear.
+            </p>
           )}
         </div>
       </section>
