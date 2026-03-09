@@ -104,6 +104,7 @@ export async function GET(
         ? { enabled: lut.enabled ?? false, storage_url: lut.storage_url ?? null }
         : null,
       cover_asset_id: g.cover_asset_id ?? null,
+      share_image_asset_id: g.share_image_asset_id ?? null,
       cover_position: g.cover_position ?? "center",
       cover_focal_x: g.cover_focal_x ?? null,
       cover_focal_y: g.cover_focal_y ?? null,

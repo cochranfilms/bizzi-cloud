@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, Film, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
+import { CheckSquare, ChevronLeft, Film, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -242,7 +242,7 @@ export default function FileGrid() {
     const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([name, count]) => ({
       name,
       type: "folder" as const,
-      key: `gallery-subfolder-${currentDrive.id}-${name}`,
+      key: `gallery-subfolder-${currentDrive.id}|${name}`,
       items: count,
       driveId: undefined,
       virtualFolder: true,
@@ -460,8 +460,21 @@ export default function FileGrid() {
 
     try {
       let didUnlinkCurrentDrive = false;
-      if (fileIds.length > 0) await deleteFiles(fileIds);
+      const allFileIdsToDelete = [...fileIds];
+
       for (const key of folderKeys) {
+        if (key.startsWith("gallery-subfolder-")) {
+          const rest = key.replace("gallery-subfolder-", "");
+          const sep = rest.indexOf("|");
+          if (sep >= 0) {
+            const subfolderPath = rest.slice(sep + 1);
+            const idsInSubfolder = driveFiles
+              .filter((f) => f.path === subfolderPath || f.path.startsWith(`${subfolderPath}/`))
+              .map((f) => f.id);
+            allFileIdsToDelete.push(...idsInSubfolder);
+          }
+          continue;
+        }
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
         const drive = linkedDrives.find((d) => d.id === driveId);
         const itemCount = folderItems.find((f) => f.key === key)?.items ?? 0;
@@ -473,9 +486,11 @@ export default function FileGrid() {
           }
         }
       }
+
+      if (allFileIdsToDelete.length > 0) await deleteFiles(allFileIdsToDelete);
       clearSelection();
       await refetch();
-      if (currentDrive && fileIds.length > 0 && !didUnlinkCurrentDrive) {
+      if (currentDrive && allFileIdsToDelete.length > 0 && !didUnlinkCurrentDrive) {
         loadDriveFiles(currentDrive.id);
       }
     } catch (err) {
@@ -485,6 +500,7 @@ export default function FileGrid() {
     selectedFileIds,
     selectedFolderKeys,
     folderItems,
+    driveFiles,
     deleteFiles,
     deleteFolder,
     linkedDrives,
@@ -820,7 +836,27 @@ export default function FileGrid() {
               Starred
             </button>
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-2">
+            {(currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentDrive) {
+                    setSelectedFileIds(new Set(displayedFiles.map((f) => f.id)));
+                    setSelectedFolderKeys(new Set(subfolderItems.map((s) => s.key)));
+                  } else {
+                    setSelectedFileIds(new Set(recentFiles.map((f) => f.id)));
+                    setSelectedFolderKeys(new Set(folderItems.map((f) => f.key)));
+                  }
+                }}
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                aria-label="Select all"
+              >
+                <CheckSquare className="h-4 w-4" />
+                Select
+              </button>
+            )}
+            <div className="flex gap-1">
             <button
               type="button"
               onClick={() => setViewMode("grid")}
@@ -845,6 +881,7 @@ export default function FileGrid() {
             >
               <List className="h-4 w-4" />
             </button>
+            </div>
           </div>
         </div>
 
@@ -859,23 +896,32 @@ export default function FileGrid() {
               data-selectable-grid
               className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
             >
-              {subfolderItems.map((item) => (
-                <div
-                  key={item.key}
-                  data-selectable-item
-                  data-item-type="folder"
-                  data-item-key={item.key}
-                >
-                  <FolderCard
-                    item={item}
-                    onClick={() => {
-                      setCurrentDrivePath(item.name);
-                      setSelectedFileIds(new Set());
-                      setSelectedFolderKeys(new Set());
-                    }}
-                  />
-                </div>
-              ))}
+              {subfolderItems.map((item) => {
+                const isFolderInSelection = selectedFolderKeys.has(item.key);
+                return (
+                  <div
+                    key={item.key}
+                    data-selectable-item
+                    data-item-type="folder"
+                    data-item-key={item.key}
+                    draggable={isFolderInSelection && hasSelection}
+                    onDragStart={handleDragStart}
+                    className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                  >
+                    <FolderCard
+                      item={item}
+                      onClick={() => {
+                        setCurrentDrivePath(item.name);
+                        setSelectedFileIds(new Set());
+                        setSelectedFolderKeys(new Set());
+                      }}
+                      selectable
+                      selected={isFolderInSelection}
+                      onSelect={() => toggleFolderSelection(item.key)}
+                    />
+                  </div>
+                );
+              })}
               {displayedFiles.map((file) => (
                 <div
                   key={file.id}

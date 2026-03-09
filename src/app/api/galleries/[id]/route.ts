@@ -84,6 +84,8 @@ export async function PATCH(
 
   if (body.title !== undefined) updates.title = String(body.title).trim();
   if (body.cover_asset_id !== undefined) updates.cover_asset_id = body.cover_asset_id ?? null;
+  if (body.share_image_asset_id !== undefined)
+    updates.share_image_asset_id = body.share_image_asset_id ?? null;
   if (body.cover_position !== undefined) updates.cover_position = body.cover_position ?? null;
   if (body.cover_focal_x !== undefined) updates.cover_focal_x = body.cover_focal_x ?? null;
   if (body.cover_focal_y !== undefined) updates.cover_focal_y = body.cover_focal_y ?? null;

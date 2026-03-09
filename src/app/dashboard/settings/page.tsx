@@ -17,6 +17,7 @@ import {
   Building2,
   Globe,
   ExternalLink,
+  Image as ImageIcon,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -136,6 +137,88 @@ function ProfileSection() {
   );
 }
 
+function ShareImageThumbnail({
+  galleryId,
+  asset,
+  selected,
+  onSelect,
+}: {
+  galleryId: string;
+  asset: { id: string; name: string; object_key: string };
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const thumbRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!galleryId || !asset.object_key || !asset.name) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const auth = (await import("@/lib/firebase/client")).getFirebaseAuth();
+        const token = await auth.currentUser?.getIdToken(true);
+        if (!token || cancelled) return;
+        const params = new URLSearchParams({
+          object_key: asset.object_key,
+          name: asset.name,
+          size: "thumb",
+        });
+        const res = await fetch(`/api/galleries/${galleryId}/thumbnail?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        if (thumbRef.current) URL.revokeObjectURL(thumbRef.current);
+        thumbRef.current = url;
+        setThumbUrl(url);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (thumbRef.current) {
+        URL.revokeObjectURL(thumbRef.current);
+        thumbRef.current = null;
+      }
+      setThumbUrl(null);
+    };
+  }, [galleryId, asset.object_key, asset.name]);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`relative flex aspect-square overflow-hidden rounded-lg border-2 transition-colors ${
+        selected
+          ? "border-bizzi-blue ring-2 ring-bizzi-blue/30"
+          : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"
+      }`}
+    >
+      {thumbUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={thumbUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800">
+          <ImageIcon className="h-6 w-6 text-neutral-400" />
+        </div>
+      )}
+      {selected && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <Check className="h-6 w-6 text-white drop-shadow" strokeWidth={3} />
+        </div>
+      )}
+    </button>
+  );
+}
+
 function StudioHomepageSection() {
   const { user } = useAuth();
   const [publicSlug, setPublicSlug] = useState("");
@@ -143,6 +226,15 @@ function StudioHomepageSection() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [shareImage, setShareImage] = useState<{
+    object_key: string;
+    name: string;
+    gallery_id: string;
+  } | null>(null);
+  const [shareImageCandidates, setShareImageCandidates] = useState<
+    Array<{ id: string; gallery_id: string; gallery_title: string; name: string; object_key: string }>
+  >([]);
+  const [shareImageLoading, setShareImageLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -156,9 +248,41 @@ function StudioHomepageSection() {
         if (cancelled) return;
         const data = await res.json();
         if (cancelled) return;
-        if (res.ok) setPublicSlug(data.public_slug ?? data.handle ?? "");
+        if (res.ok) {
+          setPublicSlug(data.public_slug ?? data.handle ?? "");
+          if (data.share_image_object_key && data.share_image_name && data.share_image_gallery_id) {
+            setShareImage({
+              object_key: data.share_image_object_key,
+              name: data.share_image_name,
+              gallery_id: data.share_image_gallery_id,
+            });
+          } else {
+            setShareImage(null);
+          }
+        }
       } finally {
         if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setShareImageLoading(true);
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/profile/share-image-candidates", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok) setShareImageCandidates(data.assets ?? []);
+      } finally {
+        if (!cancelled) setShareImageLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -172,15 +296,25 @@ function StudioHomepageSection() {
     setSuccess(false);
     try {
       const token = await user.getIdToken();
+      const body: Record<string, unknown> = {
+        public_slug: publicSlug.trim() || null,
+      };
+      if (shareImage) {
+        body.share_image_object_key = shareImage.object_key;
+        body.share_image_name = shareImage.name;
+        body.share_image_gallery_id = shareImage.gallery_id;
+      } else {
+        body.share_image_object_key = null;
+        body.share_image_name = null;
+        body.share_image_gallery_id = null;
+      }
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          public_slug: publicSlug.trim() || null,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save");
@@ -265,6 +399,57 @@ function StudioHomepageSection() {
             <p className="flex w-full items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
               Example gallery URL: <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">{brandedExample}</code>
             </p>
+          )}
+        </div>
+
+        {/* Link preview - when sharing bizzicloud.io/p/handle */}
+        <div className="border-t border-neutral-200 pt-6 dark:border-neutral-700">
+          <h3 className="mb-2 flex items-center gap-2 text-base font-semibold text-neutral-900 dark:text-white">
+            <ImageIcon className="h-4 w-4 text-bizzi-blue" />
+            Link preview image
+          </h3>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Choose the image that appears when you share your public gallery link (
+            <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">
+              {baseUrl}/p/{normalizedHandle || "yourhandle"}
+            </code>
+            ) on social media, messaging apps, or anywhere else. This is the preview people see before they click.
+          </p>
+          {shareImageLoading ? (
+            <div className="flex gap-2 py-4 text-neutral-500 dark:text-neutral-400">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Loading your photos…
+            </div>
+          ) : shareImageCandidates.length === 0 ? (
+            <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+              Create galleries and add photos to choose a link preview image.
+            </p>
+          ) : (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Select photo
+              </label>
+              <div className="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+                {shareImageCandidates.map((asset) => (
+                  <ShareImageThumbnail
+                    key={`${asset.gallery_id}-${asset.id}`}
+                    galleryId={asset.gallery_id}
+                    asset={asset}
+                    selected={
+                      shareImage?.object_key === asset.object_key &&
+                      shareImage?.gallery_id === asset.gallery_id
+                    }
+                    onSelect={() =>
+                      setShareImage({
+                        object_key: asset.object_key,
+                        name: asset.name,
+                        gallery_id: asset.gallery_id,
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </form>

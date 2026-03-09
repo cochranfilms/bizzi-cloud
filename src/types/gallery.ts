@@ -96,6 +96,8 @@ export interface Gallery {
   slug: string;                  // URL-safe, unique per photographer
   photographer_id: string;
   cover_asset_id?: string | null;
+  /** Asset ID for link preview when sharing gallery (bizzicloud.io/handle/gallery-slug) */
+  share_image_asset_id?: string | null;
   /** CSS object-position for banner crop (legacy preset) */
   cover_position?: CoverPosition | null;
   /** Custom focal point: x,y as 0-100 percentages; overrides cover_position when set */
@@ -203,6 +205,7 @@ export type ProofingStatus =
 export interface CreateGalleryInput {
   title: string;
   cover_asset_id?: string | null;
+  share_image_asset_id?: string | null;
   cover_position?: CoverPosition | null;
   cover_focal_x?: number | null;
   cover_focal_y?: number | null;

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
@@ -94,6 +95,7 @@ interface GallerySettingsFormProps {
   initialData: {
     title?: string;
     cover_asset_id?: string | null;
+    share_image_asset_id?: string | null;
     cover_position?: string | null;
     cover_focal_x?: number | null;
     cover_focal_y?: number | null;
@@ -136,6 +138,9 @@ export default function GallerySettingsForm({
   const [layout, setLayout] = useState(initialData.layout ?? "masonry");
   const [coverAssetId, setCoverAssetId] = useState<string | null>(
     initialData.cover_asset_id ?? null
+  );
+  const [shareImageAssetId, setShareImageAssetId] = useState<string | null>(
+    initialData.share_image_asset_id ?? null
   );
   const [coverFocalX, setCoverFocalX] = useState<number>(
     typeof initialData.cover_focal_x === "number"
@@ -262,7 +267,7 @@ export default function GallerySettingsForm({
       const data = await res.json();
       const assets = (data.assets ?? []).filter(
         (a: { media_type: string; name: string }) =>
-          a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name)
+          a.media_type === "image" || GALLERY_IMAGE_EXT.test(a.name ?? "")
       );
       setCoverAssets(assets);
     } finally {
@@ -283,6 +288,7 @@ export default function GallerySettingsForm({
       const body: Record<string, unknown> = {
         title: title.trim(),
         cover_asset_id: coverAssetId || null,
+        share_image_asset_id: shareImageAssetId || null,
         cover_focal_x: coverFocalX,
         cover_focal_y: coverFocalY,
         cover_alt_text: coverAltText.trim() || null,
@@ -472,6 +478,43 @@ export default function GallerySettingsForm({
                 <option value="center">Center</option>
                 <option value="right">Right</option>
               </select>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Link preview image */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          Link preview image
+        </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          Choose the image that appears when you share this gallery&apos;s link on social media, messaging apps, or anywhere else. This is the preview people see before they click.
+        </p>
+        {coverAssetsLoading ? (
+          <div className="flex gap-2 py-4 text-neutral-500 dark:text-neutral-400">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading photos…
+          </div>
+        ) : coverAssets.length === 0 ? (
+          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Add images to your gallery to choose a link preview image.
+          </p>
+        ) : (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Select photo
+            </label>
+            <div className="grid max-h-48 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+              {coverAssets.map((asset) => (
+                <CoverAssetThumbnail
+                  key={asset.id}
+                  galleryId={galleryId}
+                  asset={asset}
+                  selected={shareImageAssetId === asset.id}
+                  onSelect={() => setShareImageAssetId(asset.id)}
+                />
+              ))}
             </div>
           </div>
         )}

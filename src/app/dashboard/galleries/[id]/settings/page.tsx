@@ -19,6 +19,7 @@ interface GalleryData {
   invited_emails: string[];
   layout: string;
   cover_asset_id?: string | null;
+  share_image_asset_id?: string | null;
   cover_position?: CoverPosition | null;
   cover_focal_x?: number | null;
   cover_focal_y?: number | null;

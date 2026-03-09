@@ -31,6 +31,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     public_slug: handle,
     handle,
+    share_image_object_key: data.share_image_object_key ?? null,
+    share_image_name: data.share_image_name ?? null,
+    share_image_gallery_id: data.share_image_gallery_id ?? null,
   });
 }
 
@@ -50,10 +53,17 @@ export async function PATCH(request: Request) {
   const { uid } = auth;
 
   const body = await request.json().catch(() => ({}));
-  const { public_slug: rawSlug } = body;
+  const {
+    public_slug: rawSlug,
+    share_image_object_key,
+    share_image_name,
+    share_image_gallery_id,
+  } = body;
 
   const db = getAdminFirestore();
   const profileRef = db.collection("profiles").doc(uid);
+
+  const mergeUpdates: Record<string, unknown> = {};
 
   if (rawSlug !== undefined) {
     const slug = slugifyPublicSlug(typeof rawSlug === "string" ? rawSlug : "");
@@ -83,7 +93,27 @@ export async function PATCH(request: Request) {
         );
       }
     }
-    await profileRef.set({ public_slug: slug || null }, { merge: true });
+    mergeUpdates.public_slug = slug || null;
+  }
+
+  if (share_image_object_key !== undefined) {
+    const val =
+      typeof share_image_object_key === "string" && share_image_object_key.trim()
+        ? share_image_object_key.trim()
+        : null;
+    mergeUpdates.share_image_object_key = val;
+    mergeUpdates.share_image_name =
+      val && typeof share_image_name === "string"
+        ? share_image_name.trim() || null
+        : null;
+    mergeUpdates.share_image_gallery_id =
+      val && typeof share_image_gallery_id === "string"
+        ? share_image_gallery_id.trim() || null
+        : null;
+  }
+
+  if (Object.keys(mergeUpdates).length > 0) {
+    await profileRef.set(mergeUpdates, { merge: true });
   }
 
   return NextResponse.json({ ok: true });
