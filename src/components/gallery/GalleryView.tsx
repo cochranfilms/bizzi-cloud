@@ -19,6 +19,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 import { getCoverObjectPosition } from "@/lib/cover-position";
+import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
+import type { HeroHeightPreset } from "@/lib/cover-constants";
 import ImageWithLUT from "./ImageWithLUT";
 
 interface GalleryData {
@@ -298,6 +300,8 @@ function PreviewModal({
   getAuthToken,
   watermark,
   lut,
+  lutPreviewEnabled = true,
+  onLutPreviewToggle,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -310,6 +314,8 @@ function PreviewModal({
   getAuthToken?: () => Promise<string | null>;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  lutPreviewEnabled?: boolean;
+  onLutPreviewToggle?: () => void;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -335,13 +341,35 @@ function PreviewModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
       onClick={onClose}
     >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-      >
-        <X className="h-6 w-6" />
-      </button>
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        {lut?.enabled && lut?.storage_url && isImage(asset.name) && onLutPreviewToggle && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={lutPreviewEnabled}
+            aria-label={`Creative preview ${lutPreviewEnabled ? "on" : "off"}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onLutPreviewToggle();
+            }}
+            className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
+          >
+            <span
+              className={`inline-block h-3 w-5 shrink-0 rounded-full border-2 border-white/80 transition-colors ${
+                lutPreviewEnabled ? "bg-white/90" : "bg-transparent"
+              }`}
+            />
+            Creative {lutPreviewEnabled ? "On" : "Off"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
       <div
         className="relative flex max-h-[90vh] max-w-4xl flex-col gap-4"
         onClick={(e) => e.stopPropagation()}
@@ -351,7 +379,7 @@ function PreviewModal({
             <p className="text-white">Video preview – full playback coming soon</p>
           ) : previewImageUrl ? (
             <>
-              {lut?.enabled && lut?.storage_url && isImage(asset.name) ? (
+              {lut?.enabled && lut?.storage_url && isImage(asset.name) && lutPreviewEnabled ? (
                 <ImageWithLUT
                   imageUrl={previewImageUrl}
                   lutUrl={lut.storage_url}
@@ -465,6 +493,7 @@ function GalleryAssetCard({
   masonryLayout,
   watermark,
   lut,
+  lutPreviewEnabled = true,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -479,6 +508,7 @@ function GalleryAssetCard({
   masonryLayout?: boolean;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  lutPreviewEnabled?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
@@ -545,7 +575,7 @@ function GalleryAssetCard({
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
         {thumbUrl ? (
-          lut?.enabled && lut?.storage_url && isImg ? (
+          lut?.enabled && lut?.storage_url && isImg && lutPreviewEnabled ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
                 imageUrl={thumbUrl}
@@ -660,6 +690,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
+  const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
   const [downloadStatus, setDownloadStatus] = useState<{
     used: number;
     limit: number;
@@ -1443,14 +1474,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           className="relative w-full overflow-hidden"
           style={{
             minHeight: (() => {
-              const preset = gallery.cover_hero_height;
-              const map: Record<string, string> = {
-                small: "clamp(220px, 28vh, 320px)",
-                medium: "clamp(280px, 35vh, 400px)",
-                large: "clamp(320px, 42vh, 480px)",
-                cinematic: "clamp(400px, 50vh, 560px)",
-              };
-              return map[preset ?? ""] ?? map.medium;
+              const key: HeroHeightPreset =
+                gallery.cover_hero_height && gallery.cover_hero_height in HERO_HEIGHT_PRESETS
+                  ? (gallery.cover_hero_height as HeroHeightPreset)
+                  : "medium";
+              const preset = HERO_HEIGHT_PRESETS[key];
+              return `clamp(${preset.desktop}, 50vh, ${preset.mobile})`;
             })(),
           }}
         >
@@ -1661,15 +1690,27 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
         {gallery.lut?.enabled && gallery.lut?.storage_url && (
           <div className="mb-4 flex justify-center">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lutPreviewEnabled}
+              aria-label={`Creative preview ${lutPreviewEnabled ? "on" : "off"}`}
+              onClick={() => setLutPreviewEnabled((p) => !p)}
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
                 isDarkBg
-                  ? "bg-white/15 text-white/90"
-                  : "bg-neutral-200/80 text-neutral-700 dark:bg-neutral-700/80 dark:text-neutral-300"
+                  ? "bg-white/15 text-white/90 hover:bg-white/20"
+                  : "bg-neutral-200/80 text-neutral-700 hover:bg-neutral-300/80 dark:bg-neutral-700/80 dark:text-neutral-300 dark:hover:bg-neutral-600/80"
               }`}
             >
-              Creative Preview On
-            </span>
+              <span
+                className={`inline-block h-3.5 w-6 shrink-0 rounded-full border-2 transition-colors ${
+                  lutPreviewEnabled
+                    ? "border-current bg-current"
+                    : "border-current bg-transparent"
+                }`}
+              />
+              Creative Preview {lutPreviewEnabled ? "On" : "Off"}
+            </button>
           </div>
         )}
 
@@ -1726,6 +1767,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 masonryLayout={gallery.layout === "masonry"}
                 watermark={gallery.watermark}
                 lut={gallery.lut}
+                lutPreviewEnabled={lutPreviewEnabled}
               />
             ))}
           </div>
@@ -1802,6 +1844,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           getAuthToken={user ? getAuthToken : undefined}
           watermark={gallery.watermark}
           lut={gallery.lut}
+          lutPreviewEnabled={lutPreviewEnabled}
+          onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
         />
       )}
     </div>
