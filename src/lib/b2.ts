@@ -366,3 +366,22 @@ export async function getObjectBuffer(
   }
   return Buffer.concat(chunks);
 }
+
+/** Read first N bytes of object (for metadata extraction from large files). */
+export async function getObjectHeadBuffer(
+  objectKey: string,
+  maxBytes: number
+): Promise<Buffer> {
+  const { body } = await getObjectRange(objectKey, {
+    start: 0,
+    end: maxBytes - 1,
+  });
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of body as AsyncIterable<Uint8Array>) {
+    chunks.push(Buffer.from(chunk));
+    total += chunk.length;
+    if (total >= maxBytes) break;
+  }
+  return Buffer.concat(chunks);
+}

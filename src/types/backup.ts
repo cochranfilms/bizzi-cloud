@@ -25,7 +25,9 @@ export interface BackupSnapshot {
   completed_at: string | null;
 }
 
-export interface BackupFile {
+import type { FileMetadataFields } from "./file-metadata";
+
+export interface BackupFile extends Partial<FileMetadataFields> {
   id: string;
   backup_snapshot_id: string;
   linked_drive_id: string;

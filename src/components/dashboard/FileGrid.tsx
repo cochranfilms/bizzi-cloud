@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckSquare, ChevronLeft, Film, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
+import { CheckSquare, ChevronLeft, Film, Filter, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -29,6 +29,9 @@ import ItemActionsMenu from "./ItemActionsMenu";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
+import FilterSidebar from "@/components/filters/FilterSidebar";
+import FilterChips from "@/components/filters/FilterChips";
+import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 
 function BulkActionBar({
   selectedFileCount,
@@ -159,6 +162,19 @@ export default function FileGrid() {
     invitedEmails: string[];
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const {
+    files: filteredFiles,
+    loading: filtersLoading,
+    hasFilters,
+    filterState,
+    setFilter,
+    removeFilterById,
+    clearFilters,
+    activeFilters,
+  } = useFilteredFiles({ driveId: currentDrive?.id ?? null });
+  const drivesForFilter = linkedDrives.map((d) => ({ id: d.id, name: d.name }));
+  const galleriesForFilter = galleries.map((g) => ({ id: g.id, title: g.title }));
 
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
     d.name === "Storage" || d.isCreatorRaw === true;
@@ -266,6 +282,14 @@ export default function FileGrid() {
     const rootFiles = driveFiles.filter((f) => !f.path.includes("/"));
     return { subfolderItems, displayedFiles: rootFiles };
   })();
+
+  const filesToShow = hasFilters
+    ? filteredFiles
+    : currentDrive
+      ? displayedFiles
+      : recentFiles;
+
+  const showFolders = !hasFilters;
 
   // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time
   useEffect(() => {
@@ -679,10 +703,66 @@ export default function FileGrid() {
   return (
     <div
       ref={gridSectionRef}
-      className={`mx-auto max-w-6xl space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
+      className={`mx-auto max-w-6xl ${dragState?.isActive ? "select-none" : ""}`}
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
+      <div className="flex gap-6">
+        {/* Filter sidebar */}
+        <aside
+          className={`${
+            filterPanelOpen ? "block" : "hidden"
+          } w-60 flex-shrink-0 md:block`}
+        >
+          <div className="sticky top-24 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                Filters
+              </h3>
+              <button
+                type="button"
+                onClick={() => setFilterPanelOpen(false)}
+                className="md:hidden"
+                aria-label="Close filters"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
+            <FilterSidebar
+              filterState={filterState}
+              setFilter={setFilter}
+              drives={drivesForFilter}
+              galleries={galleriesForFilter}
+            />
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1 space-y-8">
+      {/* Filter chips + toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFilterPanelOpen((o) => !o)}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              filterPanelOpen || hasFilters
+                ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan/10 dark:text-bizzi-cyan"
+                : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+            }`}
+          >
+            <Filter className="h-4 w-4" />
+            Filters
+          </button>
+          {hasFilters && (
+            <FilterChips
+              activeFilters={activeFilters}
+              onRemove={removeFilterById}
+              onClearAll={clearFilters}
+            />
+          )}
+        </div>
+      </div>
+
       {/* Breadcrumb when inside a drive */}
       {currentDrive && (
         <div className="flex items-center gap-2 text-sm">
@@ -850,11 +930,14 @@ export default function FileGrid() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            {(currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
+            {(hasFilters ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
-                  if (currentDrive) {
+                  if (hasFilters) {
+                    setSelectedFileIds(new Set(filesToShow.map((f) => f.id)));
+                    setSelectedFolderKeys(new Set());
+                  } else if (currentDrive) {
                     setSelectedFileIds(new Set(displayedFiles.map((f) => f.id)));
                     setSelectedFolderKeys(new Set(subfolderItems.map((s) => s.key)));
                   } else {
@@ -899,17 +982,25 @@ export default function FileGrid() {
         </div>
 
         {/* File grid */}
-        {currentDrive ? (
+        {hasFilters && filtersLoading ? (
+          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Loading filtered results…
+          </div>
+        ) : currentDrive ? (
           driveFilesLoading ? (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Loading files…
             </div>
-          ) : subfolderItems.length > 0 || displayedFiles.length > 0 ? (
+          ) : hasFilters && filesToShow.length === 0 && !filtersLoading ? (
+          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            No files match your filters. Try adjusting or clearing filters.
+          </div>
+        ) : hasFilters || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
             <div
               data-selectable-grid
               className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
             >
-              {subfolderItems.map((item) => {
+              {showFolders && subfolderItems.map((item) => {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 return (
                   <div
@@ -935,7 +1026,7 @@ export default function FileGrid() {
                   </div>
                 );
               })}
-              {displayedFiles.map((file) => (
+              {filesToShow.map((file) => (
                 <div
                   key={file.id}
                   data-selectable-item
@@ -973,7 +1064,7 @@ export default function FileGrid() {
           </div>
         ) : activeTab === "recents" ? (
           <>
-            {folderItems.length > 0 && (
+            {showFolders && folderItems.length > 0 && (
               <>
                 <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Your synced drives
@@ -1031,7 +1122,7 @@ export default function FileGrid() {
                 </div>
               </>
             )}
-            {recentFiles.length > 0 && (
+            {filesToShow.length > 0 && (
               <>
                 <h3 className="mb-4 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Recently synced files
@@ -1040,7 +1131,7 @@ export default function FileGrid() {
                   data-selectable-grid
                   className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 >
-                  {recentFiles.map((file) => (
+                  {filesToShow.map((file) => (
                     <div
                       key={file.id}
                       data-selectable-item
@@ -1065,7 +1156,7 @@ export default function FileGrid() {
                 </div>
               </>
             )}
-            {!loading && folderItems.length === 0 && recentFiles.length === 0 && (
+            {!loading && !hasFilters && folderItems.length === 0 && filesToShow.length === 0 && (
               <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No files yet. Click Sync in the Backup section to sync a drive.
               </div>
@@ -1077,6 +1168,8 @@ export default function FileGrid() {
           </div>
         )}
       </section>
+        </div>
+      </div>
 
       {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar

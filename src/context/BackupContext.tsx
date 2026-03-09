@@ -743,7 +743,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               progressState.inFlight.delete(index);
               progressState.completedBytes += file.size;
 
-              await addDoc(collection(db, "backup_files"), {
+              const fileRef = await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
                 linked_drive_id: drive.id,
                 userId: uid,
@@ -757,6 +757,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 deleted_at: null,
                 organization_id: drive.organization_id ?? null,
               });
+              if (idToken) {
+                fetch("/api/files/extract-metadata", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                  body: JSON.stringify({
+                    backup_file_id: fileRef.id,
+                    object_key: objectKey,
+                  }),
+                }).catch(() => {});
+              }
 
               if (VIDEO_EXT.test(relativePath)) {
                 fetch("/api/backup/generate-proxy", {
@@ -1304,6 +1317,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               backupFileId: fileRef.id,
               objectKey: ev.objectKey,
             });
+            if (idToken) {
+              fetch("/api/files/extract-metadata", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  backup_file_id: fileRef.id,
+                  object_key: ev.objectKey,
+                }),
+              }).catch(() => {});
+            }
             if (VIDEO_EXT.test(file.name) && idToken) {
               fetch("/api/backup/generate-proxy", {
                 method: "POST",
@@ -1506,6 +1532,23 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             organization_id: null,
             gallery_id: galleryId,
           });
+          getFirebaseAuth()
+            .currentUser?.getIdToken(true)
+            .then((token) =>
+              token
+                ? fetch("/api/files/extract-metadata", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                      backup_file_id: fileRef.id,
+                      object_key: ev.objectKey,
+                    }),
+                  }).catch(() => {})
+                : Promise.resolve()
+            );
           updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
           getFirebaseAuth()
             .currentUser?.getIdToken(true)
@@ -1674,7 +1717,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           bytes_synced: file.size,
           completed_at: new Date(),
         });
-        await addDoc(collection(db, "backup_files"), {
+        const fileRef = await addDoc(collection(db, "backup_files"), {
           backup_snapshot_id: snapshotRef.id,
           linked_drive_id: drive.id,
           userId: user.uid,
@@ -1688,6 +1731,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           deleted_at: null,
           organization_id: drive.organization_id ?? null,
         });
+        if (idToken) {
+          fetch("/api/files/extract-metadata", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              backup_file_id: fileRef.id,
+              object_key: objectKey,
+            }),
+          }).catch(() => {});
+        }
         if (VIDEO_EXT.test(relativePath)) {
           fetch("/api/backup/generate-proxy", {
             method: "POST",
