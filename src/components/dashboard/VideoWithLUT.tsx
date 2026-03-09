@@ -343,7 +343,9 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     };
 
     const onResize = () => resize();
+    const onFullscreenChange = () => requestAnimationFrame(resize);
     window.addEventListener("resize", onResize);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
     video.addEventListener("loadeddata", render);
     if (video.readyState >= 2) render();
 
@@ -351,6 +353,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       cancelled = true;
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
       video.removeEventListener("loadeddata", render);
     };
   }, [lutEnabled, lutReady]);
@@ -459,12 +462,14 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     );
   }
 
-  const containerStyle: React.CSSProperties = {
-    maxHeight: "70vh",
-    ...(videoDimensions && {
-      aspectRatio: `${videoDimensions.width} / ${videoDimensions.height}`,
-    }),
-  };
+  const containerStyle: React.CSSProperties = isFullscreen
+    ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
+    : {
+        maxHeight: "70vh",
+        ...(videoDimensions && {
+          aspectRatio: `${videoDimensions.width} / ${videoDimensions.height}`,
+        }),
+      };
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
@@ -480,7 +485,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           controls={false}
           preload="auto"
           playsInline
-          className={`max-h-[70vh] max-w-full w-full h-full object-contain ${className ?? ""}`}
+          className={`max-w-full w-full h-full object-contain ${isFullscreen ? "" : "max-h-[70vh]"} ${className ?? ""}`}
         />
         {lutEnabled && (
           <canvas
