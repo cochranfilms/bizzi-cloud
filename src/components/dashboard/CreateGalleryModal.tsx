@@ -283,5 +283,6 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
         </form>
       </div>
     </div>
+  </div>
   );
 }
