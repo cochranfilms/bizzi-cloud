@@ -110,6 +110,7 @@ export default function FileGrid() {
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
+  const [currentDrivePath, setCurrentDrivePath] = useState<string>("");
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const {
@@ -199,6 +200,7 @@ export default function FileGrid() {
     (id: string, name: string) => {
       setCurrentFolderDriveId(id);
       setCurrentDrive({ id, name });
+      setCurrentDrivePath("");
       loadDriveFiles(id);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
@@ -209,10 +211,48 @@ export default function FileGrid() {
   const closeDrive = useCallback(() => {
     setCurrentFolderDriveId(null);
     setCurrentDrive(null);
+    setCurrentDrivePath("");
     setDriveFiles([]);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId]);
+
+  const isGalleryMediaDrive =
+    !!currentDrive && linkedDrives.some((d) => d.id === currentDrive.id && d.name === "Gallery Media");
+
+  const { subfolderItems, displayedFiles } = (() => {
+    if (!currentDrive || !isGalleryMediaDrive) {
+      return { subfolderItems: [] as FolderItem[], displayedFiles: driveFiles };
+    }
+    const prefix = currentDrivePath ? `${currentDrivePath}/` : "";
+    const filesInView = currentDrivePath
+      ? driveFiles.filter((f) => f.path.startsWith(prefix))
+      : driveFiles;
+    if (currentDrivePath) {
+      return { subfolderItems: [], displayedFiles: filesInView };
+    }
+    const seen = new Map<string, number>();
+    for (const f of driveFiles) {
+      const parts = f.path.split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        const first = parts[0];
+        seen.set(first, (seen.get(first) ?? 0) + 1);
+      }
+    }
+    const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([name, count]) => ({
+      name,
+      type: "folder" as const,
+      key: `gallery-subfolder-${currentDrive.id}-${name}`,
+      items: count,
+      driveId: undefined,
+      virtualFolder: true,
+      hideShare: true,
+      preventDelete: true,
+      preventRename: true,
+    }));
+    const rootFiles = driveFiles.filter((f) => !f.path.includes("/"));
+    return { subfolderItems, displayedFiles: rootFiles };
+  })();
 
   // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time
   useEffect(() => {
@@ -619,7 +659,14 @@ export default function FileGrid() {
         <div className="flex items-center gap-2 text-sm">
           <button
             type="button"
-            onClick={closeDrive}
+            onClick={
+              currentDrivePath
+                ? () => {
+                    setCurrentDrivePath("");
+                    setSelectedFileIds(new Set());
+                  }
+                : closeDrive
+            }
             className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -629,6 +676,14 @@ export default function FileGrid() {
           <span className="font-medium text-neutral-900 dark:text-white">
             {currentDrive.name}
           </span>
+          {currentDrivePath && (
+            <>
+              <span className="text-neutral-400 dark:text-neutral-500">/</span>
+              <span className="font-medium text-neutral-900 dark:text-white">
+                {currentDrivePath}
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -799,12 +854,29 @@ export default function FileGrid() {
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Loading files…
             </div>
-          ) : driveFiles.length > 0 ? (
+          ) : subfolderItems.length > 0 || displayedFiles.length > 0 ? (
             <div
               data-selectable-grid
               className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
             >
-              {driveFiles.map((file) => (
+              {subfolderItems.map((item) => (
+                <div
+                  key={item.key}
+                  data-selectable-item
+                  data-item-type="folder"
+                  data-item-key={item.key}
+                >
+                  <FolderCard
+                    item={item}
+                    onClick={() => {
+                      setCurrentDrivePath(item.name);
+                      setSelectedFileIds(new Set());
+                      setSelectedFolderKeys(new Set());
+                    }}
+                  />
+                </div>
+              ))}
+              {displayedFiles.map((file) => (
                 <div
                   key={file.id}
                   data-selectable-item
@@ -831,7 +903,9 @@ export default function FileGrid() {
             </div>
           ) : (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No files in this drive yet. Sync to add files.
+              {isGalleryMediaDrive
+                ? "No gallery media yet. Upload photos in a gallery to see them organized by gallery here."
+                : "No files in this drive yet. Sync to add files."}
             </div>
           )
         ) : loading ? (

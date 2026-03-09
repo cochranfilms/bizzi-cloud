@@ -188,6 +188,11 @@ export default function CreateTransferModal({
     if (confirmed) performClose();
   }, [confirm, performClose]);
 
+  const handleDone = useCallback(() => {
+    performClose();
+    router.push(isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
+  }, [performClose, router, isEnterprise]);
+
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;
     const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
@@ -271,8 +276,6 @@ export default function CreateTransferModal({
     addTransferFromApi(transfer);
     setCreatedSlug(data.slug);
     onCreated?.(data.slug);
-    performClose();
-    router.push(isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
   }, [
     name,
     clientName,
@@ -286,8 +289,6 @@ export default function CreateTransferModal({
     org?.id,
     addTransferFromApi,
     onCreated,
-    performClose,
-    router,
   ]);
 
   const shareUrl =
@@ -666,7 +667,7 @@ export default function CreateTransferModal({
         <div className="flex justify-end gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
           <button
             type="button"
-            onClick={createdSlug ? performClose : handleRequestClose}
+            onClick={createdSlug ? handleDone : handleRequestClose}
             className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
             {createdSlug ? "Done" : "Cancel"}

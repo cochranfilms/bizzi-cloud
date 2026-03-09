@@ -33,6 +33,8 @@ export interface FolderItem {
   isSystemFolder?: boolean;
   /** When true, folder cannot be moved (e.g. permanent system folders) */
   preventMove?: boolean;
+  /** When true, folder is a virtual subfolder (e.g. gallery name in Gallery Media) - clickable via onClick without driveId */
+  virtualFolder?: boolean;
 }
 
 interface FolderCardProps {
@@ -62,7 +64,7 @@ export default function FolderCard({
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
-  const canNavigate = !!item.driveId && !!onClick;
+  const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
   const { isPinned, pinItem, unpinItem } = usePinned();
