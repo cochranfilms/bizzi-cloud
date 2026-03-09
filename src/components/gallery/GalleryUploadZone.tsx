@@ -3,8 +3,7 @@
 import { useRef, useState } from "react";
 import { Upload, Loader2 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
-
-const ACCEPT = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v,.avi";
+import { GALLERY_ACCEPT, GALLERY_UPLOAD_EXT_SET } from "@/lib/gallery-file-types";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
@@ -32,9 +31,7 @@ export default function GalleryUploadZone({
     if (!files?.length) return;
     const accepted = Array.from(files).filter((f) => {
       const ext = f.name.toLowerCase().split(".").pop();
-      return ["jpg", "jpeg", "png", "gif", "webp", "mp4", "webm", "mov", "m4v", "avi"].includes(
-        ext ?? ""
-      );
+      return ext ? GALLERY_UPLOAD_EXT_SET.has(ext) : false;
     });
     if (accepted.length === 0) return;
     uploadFilesToGallery(accepted, galleryId, { onComplete: onUploadComplete, galleryTitle });
@@ -69,7 +66,7 @@ export default function GalleryUploadZone({
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPT}
+          accept={GALLERY_ACCEPT}
           multiple
           className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
           disabled={disabled || isUploading}
@@ -84,7 +81,7 @@ export default function GalleryUploadZone({
             Drop photos and videos here, or click to browse
           </p>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            JPEG, PNG, GIF, WebP, MP4, MOV, WebM
+            JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.), MP4, MOV, WebM
           </p>
         </div>
       </div>

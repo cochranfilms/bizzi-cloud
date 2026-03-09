@@ -3,13 +3,11 @@
  * Body: { backup_file_ids: string[] } or { asset_ids: string[] } for existing backup_files
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { NextResponse } from "next/server";
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|ico|tiff?|heic|raw|arw|cr2|nef|orf)$/i;
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
-
 function getMediaType(name: string): "image" | "video" {
-  return VIDEO_EXT.test(name) ? "video" : "image";
+  return GALLERY_VIDEO_EXT.test(name) ? "video" : GALLERY_IMAGE_EXT.test(name) ? "image" : "image";
 }
 
 export async function POST(

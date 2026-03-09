@@ -87,6 +87,7 @@ function AddFileButton({
   );
 }
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { isGalleryFile } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
 
@@ -435,13 +436,11 @@ export default function GalleryDetailPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-                Select from your recent files. Supported: JPEG, PNG, GIF, MP4, MOV, etc.
+                Select from your recent files. Supported: JPEG, PNG, GIF, RAW (ARW, CR2, NEF, DNG, etc.), MP4, MOV, WebM.
               </p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
                 {recentFiles
-                  .filter((f) =>
-                    /\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|m4v)$/i.test(f.name)
-                  )
+                  .filter((f) => isGalleryFile(f.name))
                   .slice(0, 50)
                   .map((f) => (
                     <AddFileButton
@@ -452,9 +451,7 @@ export default function GalleryDetailPage() {
                     />
                   ))}
               </div>
-              {recentFiles.filter((f) =>
-                /\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|m4v)$/i.test(f.name)
-              ).length === 0 && (
+              {recentFiles.filter((f) => isGalleryFile(f.name)).length === 0 && (
                 <p className="py-8 text-center text-sm text-neutral-500">
                   No supported files in recent uploads. Upload some photos or videos first.
                 </p>
