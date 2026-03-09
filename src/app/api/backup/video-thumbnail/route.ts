@@ -8,7 +8,7 @@ import {
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     return new NextResponse("Not a video file", { status: 400 });
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
   if (!hasAccess) {
     return new NextResponse("Access denied", { status: 403 });
   }

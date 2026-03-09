@@ -1,5 +1,5 @@
 import { getObjectBuffer, isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
 import { rawToThumbnail } from "@/lib/raw-thumbnail";
@@ -78,7 +78,7 @@ async function handleThumbnail(request: Request) {
     return new NextResponse("Not an image file", { status: 400 });
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
   if (!hasAccess) {
     return new NextResponse("Access denied", { status: 403 });
   }

@@ -58,6 +58,8 @@ export interface RecentFile {
   contentType?: string | null;
   /** When set, file is in trash */
   deletedAt?: string | null;
+  /** When set, file is in Gallery Media and belongs to this gallery (enables stable folder grouping) */
+  galleryId?: string | null;
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
@@ -184,6 +186,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
           contentType: data.content_type ?? null,
+          galleryId: data.gallery_id ?? null,
         };
       });
       setRecentFiles(recent);
@@ -269,6 +272,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            galleryId: data.gallery_id ?? null,
           };
         });
       setAllFilesForTransfer(all);
@@ -310,6 +314,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            galleryId: data.gallery_id ?? null,
           };
         });
     },
@@ -357,6 +362,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: driveMap.get(data.linked_drive_id) ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            galleryId: data.gallery_id ?? null,
           });
         });
       }
@@ -420,6 +426,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           driveName: drive?.name ?? "Unknown drive",
           contentType: data.content_type ?? null,
           deletedAt: deletedAt ?? undefined,
+          galleryId: data.gallery_id ?? null,
         };
       });
     },

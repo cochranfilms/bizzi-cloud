@@ -37,6 +37,8 @@ export interface BackupFile {
   created_at: string;
   /** null = personal; orgId = enterprise (matches linked_drive) */
   organization_id?: string | null;
+  /** When set, file is in Gallery Media and belongs to this gallery (stable across renames) */
+  gallery_id?: string | null;
 }
 
 export interface SyncProgress {

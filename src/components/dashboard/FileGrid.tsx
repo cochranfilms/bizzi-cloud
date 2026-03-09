@@ -18,6 +18,7 @@ import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { useGalleries } from "@/hooks/useGalleries";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -127,6 +128,7 @@ export default function FileGrid() {
     moveFilesToFolder,
     moveFolderContentsToFolder,
   } = useCloudFiles();
+  const { galleries } = useGalleries();
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
@@ -231,24 +233,35 @@ export default function FileGrid() {
     if (currentDrivePath) {
       return { subfolderItems: [], displayedFiles: filesInView };
     }
-    const seen = new Map<string, number>();
+    const galleryTitleMap = new Map(galleries.map((g) => [g.id, g.title]));
+    const seen = new Map<string, { count: number; displayName: string }>();
     for (const f of driveFiles) {
       const parts = f.path.split("/").filter(Boolean);
       if (parts.length >= 2) {
-        const first = parts[0];
-        seen.set(first, (seen.get(first) ?? 0) + 1);
+        const folderKey = f.galleryId ?? parts[0];
+        const existing = seen.get(folderKey);
+        const displayName =
+          f.galleryId && galleryTitleMap.has(f.galleryId)
+            ? galleryTitleMap.get(f.galleryId)!
+            : folderKey;
+        if (existing) {
+          seen.set(folderKey, { count: existing.count + 1, displayName: existing.displayName });
+        } else {
+          seen.set(folderKey, { count: 1, displayName });
+        }
       }
     }
-    const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([name, count]) => ({
-      name,
+    const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([folderKey, { count, displayName }]) => ({
+      name: displayName,
       type: "folder" as const,
-      key: `gallery-subfolder-${currentDrive.id}|${name}`,
+      key: `gallery-subfolder-${currentDrive.id}|${folderKey}`,
       items: count,
       driveId: undefined,
       virtualFolder: true,
       hideShare: true,
       preventDelete: true,
       preventRename: true,
+      pathPrefix: folderKey,
     }));
     const rootFiles = driveFiles.filter((f) => !f.path.includes("/"));
     return { subfolderItems, displayedFiles: rootFiles };
@@ -696,7 +709,7 @@ export default function FileGrid() {
             <>
               <span className="text-neutral-400 dark:text-neutral-500">/</span>
               <span className="font-medium text-neutral-900 dark:text-white">
-                {currentDrivePath}
+                {(isGalleryMediaDrive ? galleries.find((g) => g.id === currentDrivePath)?.title : null) ?? currentDrivePath}
               </span>
             </>
           )}
@@ -911,7 +924,7 @@ export default function FileGrid() {
                     <FolderCard
                       item={item}
                       onClick={() => {
-                        setCurrentDrivePath(item.name);
+                        setCurrentDrivePath(item.pathPrefix ?? item.name);
                         setSelectedFileIds(new Set());
                         setSelectedFolderKeys(new Set());
                       }}

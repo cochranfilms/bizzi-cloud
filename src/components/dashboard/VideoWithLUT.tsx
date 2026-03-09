@@ -475,7 +475,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     <div className="flex w-full flex-col items-center gap-4">
       <div
         ref={containerRef}
-        className="relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
+        className="video-fullscreen-container relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
         style={containerStyle}
       >
         <video
@@ -485,7 +485,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           controls={false}
           preload="auto"
           playsInline
-          className={`max-w-full w-full h-full object-contain ${isFullscreen ? "" : "max-h-[70vh]"} ${className ?? ""}`}
+          className={`max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : "max-h-[70vh]"}`}
         />
         {lutEnabled && (
           <canvas

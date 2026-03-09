@@ -65,6 +65,7 @@ export async function fetchPinnedFiles(ids: string[]): Promise<RecentFile[]> {
         driveId: data.linked_drive_id,
         driveName: driveMap.get(data.linked_drive_id) ?? "Unknown",
         contentType: data.content_type ?? null,
+        galleryId: data.gallery_id ?? null,
       });
     });
   }

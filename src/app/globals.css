@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Video fullscreen: styles apply immediately when entering fullscreen (no React delay) */
+.video-fullscreen-container:fullscreen,
+.video-fullscreen-container:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+}
+.video-fullscreen-container:fullscreen video,
+.video-fullscreen-container:-webkit-full-screen video {
+  max-height: none !important;
+  min-height: 100% !important;
+}
+
 @layer utilities {
   /* Checkered background for watermark preview – visible for white or dark logos */
   .watermark-preview-bg {

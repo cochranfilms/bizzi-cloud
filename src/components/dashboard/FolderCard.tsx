@@ -35,6 +35,8 @@ export interface FolderItem {
   preventMove?: boolean;
   /** When true, folder is a virtual subfolder (e.g. gallery name in Gallery Media) - clickable via onClick without driveId */
   virtualFolder?: boolean;
+  /** When set, path prefix for navigation (e.g. gallery ID); use instead of name for path filtering */
+  pathPrefix?: string;
 }
 
 interface FolderCardProps {
