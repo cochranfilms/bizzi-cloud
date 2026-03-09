@@ -145,8 +145,9 @@ export async function GET(
       } else {
         resized = new Uint8Array(
           await sharp(buffer)
+            .rotate()
             .resize({ width: coverWidth, withoutEnlargement: true })
-            .jpeg({ quality: 82 })
+            .jpeg({ quality: 85 })
             .toBuffer()
         );
       }
@@ -184,8 +185,9 @@ export async function GET(
     } else {
       resized = new Uint8Array(
         await sharp(buffer)
+          .rotate()
           .resize(squareSize, squareSize, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 80 })
+          .jpeg({ quality: 85 })
           .toBuffer()
       );
     }

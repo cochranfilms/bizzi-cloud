@@ -66,7 +66,7 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
     g.cover_object_key ? g.id : undefined,
     g.cover_object_key ?? undefined,
     g.cover_name ?? "",
-    { enabled: !!g.cover_object_key && isInView }
+    { enabled: !!g.cover_object_key && isInView, size: "cover-sm" }
   );
 
   return (

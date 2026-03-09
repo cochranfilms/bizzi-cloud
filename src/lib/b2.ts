@@ -329,9 +329,10 @@ export function getVideoThumbnailCacheKey(objectKey: string): string {
   return `thumbnails/${hash}.jpg`;
 }
 
-/** Cache key for gallery cover derivatives. Same objectKey + size = same cache key. */
+/** Cache key for gallery cover derivatives. Version bumps invalidate old caches (e.g. after orientation/quality fixes). */
+const COVER_DERIVATIVE_VERSION = "v2";
 export function getCoverDerivativeCacheKey(objectKey: string, size: string): string {
-  const hash = createHash("sha256").update(`${objectKey}:${size}`).digest("hex").slice(0, 32);
+  const hash = createHash("sha256").update(`${objectKey}:${size}:${COVER_DERIVATIVE_VERSION}`).digest("hex").slice(0, 32);
   return `cover-derivatives/${hash}.jpg`;
 }
 

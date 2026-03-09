@@ -110,12 +110,12 @@ export async function rawToThumbnail(
     if (isCover) {
       return await pipeline
         .resize({ width: maxSize, withoutEnlargement: true })
-        .jpeg({ quality: 82 })
+        .jpeg({ quality: 85 })
         .toBuffer();
     }
     return await pipeline
       .resize(maxSize, maxSize, { fit, withoutEnlargement: true })
-      .jpeg({ quality: 80 })
+      .jpeg({ quality: 85 })
       .toBuffer();
   } catch {
     return null;

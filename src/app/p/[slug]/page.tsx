@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Images, Loader2 } from "lucide-react";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 interface StudioGallery {
   id: string;
@@ -33,8 +34,8 @@ function StudioGalleryCard({ gallery, handle }: { gallery: StudioGallery; handle
 
   useEffect(() => {
     if (!gallery.cover_object_key || !gallery.cover_name) return;
-    const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(gallery.cover_name);
-    const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(gallery.cover_name);
+    const isImage = GALLERY_IMAGE_EXT.test(gallery.cover_name);
+    const isVideo = GALLERY_VIDEO_EXT.test(gallery.cover_name);
     if (!isImage && !isVideo) return;
     let cancelled = false;
     (async () => {

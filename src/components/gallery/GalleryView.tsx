@@ -492,7 +492,7 @@ function GalleryAssetCard({
         const params = new URLSearchParams({
           object_key: asset.object_key,
           name: asset.name,
-          size: "medium",
+          size: "large",
         });
         if (password) params.set("password", password);
         const headers: Record<string, string> = {};
