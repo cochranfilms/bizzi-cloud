@@ -90,6 +90,17 @@ export default function CreateTransferModal({
     []
   );
 
+  const allFilesForSelection = allFilesForTransfer.map((f) => ({
+    name: f.name,
+    path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
+    fullPath: f.path,
+    driveId: f.driveId,
+    driveName: f.driveName,
+    type: "file" as const,
+    backupFileId: f.id,
+    objectKey: f.objectKey,
+  }));
+
   const pendingFolderClickRef = useRef<{ driveId: string; pathPrefix?: string } | null>(null);
   const pendingFolderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -144,16 +155,6 @@ export default function CreateTransferModal({
     []
   );
 
-  const allFilesForSelection = allFilesForTransfer.map((f) => ({
-    name: f.name,
-    path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
-    fullPath: f.path,
-    driveId: f.driveId,
-    driveName: f.driveName,
-    type: "file" as const,
-    backupFileId: f.id,
-    objectKey: f.objectKey,
-  }));
   const fileSearchLower = fileSearch.trim().toLowerCase();
   const hasSearch = fileSearchLower !== "";
 
