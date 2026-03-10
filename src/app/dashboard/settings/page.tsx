@@ -825,11 +825,17 @@ function SubscriptionSection() {
             )}
             {hasPortalAccess ? (
               <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/dashboard/change-plan"
+                  className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                >
+                  Change plan
+                </Link>
                 <button
                   type="button"
                   onClick={openPortal}
                   disabled={portalLoading}
-                  className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
                 >
                   {portalLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -838,8 +844,8 @@ function SubscriptionSection() {
                   )}
                   Manage billing
                 </button>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Update payment method, change plan, or cancel
+                <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">
+                  Upgrade, downgrade, or change Power Ups. Manage payment method or cancel in billing.
                 </p>
               </div>
             ) : (
