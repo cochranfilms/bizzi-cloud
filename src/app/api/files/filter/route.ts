@@ -138,7 +138,9 @@ function passesPostFilters(
     if (!isNaN(w) && !isNaN(h)) {
       const rw = (item.resolution_w ?? item.width) as number | undefined;
       const rh = (item.resolution_h ?? item.height) as number | undefined;
-      if (rw !== w || rh !== h) return false;
+      const matchLandscape = rw === w && rh === h;
+      const matchPortrait = rw === h && rh === w;
+      if (!matchLandscape && !matchPortrait) return false;
     }
   }
   if (filters.aspectRatio) {
@@ -351,14 +353,13 @@ export async function GET(request: Request) {
   if (filters.starred) {
     q = q.where("is_starred", "==", true);
   }
-  if (filters.resolution) {
+  const resolutionPair = (() => {
+    if (!filters.resolution) return null;
     const parts = filters.resolution.split(/[x×]/i);
-    const rw = parseInt(parts[0], 10);
-    const rh = parts[1] ? parseInt(parts[1], 10) : NaN;
-    if (!isNaN(rw) && !isNaN(rh)) {
-      q = q.where("resolution_w", "==", rw).where("resolution_h", "==", rh);
-    }
-  }
+    const w = parseInt(parts[0], 10);
+    const h = parts[1] ? parseInt(parts[1], 10) : NaN;
+    return !isNaN(w) && !isNaN(h) ? ([w, h] as const) : null;
+  })();
   const orderField =
     filters.sort === "newest" || filters.sort === "oldest"
       ? "modified_at"
@@ -375,8 +376,8 @@ export async function GET(request: Request) {
     if (filters.sizeMax != null && filters.sizeMax > 0) q = q.where("size_bytes", "<=", filters.sizeMax);
   }
   q = q.orderBy(orderField, orderDir);
-
   const needsPostFilter =
+    !!filters.resolution ||
     !!filters.codec ||
     !!filters.search ||
     !!filters.tags ||
