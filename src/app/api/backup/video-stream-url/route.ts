@@ -1,6 +1,6 @@
 import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -51,8 +51,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key is required" }, { status: 400 });
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
   if (!hasAccess) {
+    console.warn("[video-stream-url] 403 Access denied", {
+      uid,
+      objectKeyPrefix: objectKey.slice(0, 50),
+    });
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

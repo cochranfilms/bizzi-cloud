@@ -87,6 +87,10 @@ export async function GET(request: Request) {
 
   const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
   if (!hasAccess) {
+    console.warn("[video-thumbnail] 403 Access denied", {
+      uid,
+      objectKeyPrefix: objectKey.slice(0, 50),
+    });
     return new NextResponse("Access denied", { status: 403 });
   }
 

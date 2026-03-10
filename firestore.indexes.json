@@ -70,6 +70,15 @@
       ]
     },
     {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "folder_shares",
       "queryScope": "COLLECTION",
       "fields": [
