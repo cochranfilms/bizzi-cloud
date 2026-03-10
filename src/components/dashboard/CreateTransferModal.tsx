@@ -77,6 +77,7 @@ export default function CreateTransferModal({
   const [fileSearch, setFileSearch] = useState("");
   const [browseDriveId, setBrowseDriveId] = useState<string | null>(null);
   const [browsePath, setBrowsePath] = useState<string>("");
+  const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
 
   const toggleFile = useCallback(
     (file: { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }) => {
@@ -106,6 +107,8 @@ export default function CreateTransferModal({
 
   const attachFolder = useCallback(
     (driveId: string, pathPrefix?: string) => {
+      const folderKey = pathPrefix !== undefined ? `drive:${driveId}:${pathPrefix}` : `drive:${driveId}`;
+      setSelectedFolderKeys((prev) => new Set(prev).add(folderKey));
       const prefix = pathPrefix !== undefined ? (pathPrefix ? `${pathPrefix}/` : "") : null;
       const filesInFolder = allFilesForSelection.filter((f) => {
         if (f.driveId !== driveId) return false;
@@ -265,6 +268,7 @@ export default function CreateTransferModal({
     setFileSearch("");
     setBrowseDriveId(null);
     setBrowsePath("");
+    setSelectedFolderKeys(new Set());
     onClose();
   }, [onClose]);
 
@@ -680,13 +684,20 @@ export default function CreateTransferModal({
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {!hasSearch && !browseDriveId && driveFolders.map((folder) => (
+                    {!hasSearch && !browseDriveId && driveFolders.map((folder) => {
+                      const folderKey = `drive:${folder.id}`;
+                      const isSelected = selectedFolderKeys.has(folderKey);
+                      return (
                       <button
                         key={folder.key}
                         type="button"
                         onClick={() => handleFolderSingleClick(folder.id)}
                         onDoubleClick={() => handleFolderDoubleClick(folder.id)}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 ${
+                          isSelected
+                            ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                            : "border-neutral-200 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
                       >
                         <Folder className="h-4 w-4 shrink-0 text-amber-500" />
                         <span className="min-w-0 truncate" title={folder.name}>
@@ -694,21 +705,28 @@ export default function CreateTransferModal({
                         </span>
                         <span className="ml-auto shrink-0 text-xs text-neutral-400">{folder.items}</span>
                       </button>
-                    ))}
-                    {!hasSearch && browseDriveId && filteredBrowseSubfolders.map((folder) => (
+                    );})}
+                    {!hasSearch && browseDriveId && filteredBrowseSubfolders.map((folder) => {
+                      const folderKey = `drive:${browseDriveId}:${folder.pathPrefix}`;
+                      const isSelected = selectedFolderKeys.has(folderKey);
+                      return (
                       <button
                         key={folder.pathPrefix}
                         type="button"
                         onClick={() => handleFolderSingleClick(browseDriveId, folder.pathPrefix)}
                         onDoubleClick={() => handleFolderDoubleClick(browseDriveId, folder.pathPrefix)}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 ${
+                          isSelected
+                            ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                            : "border-neutral-200 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
                       >
                         <Folder className="h-4 w-4 shrink-0 text-amber-500" />
                         <span className="min-w-0 truncate" title={folder.name}>
                           {folder.name}
                         </span>
                       </button>
-                    ))}
+                    );})}
                     {displayFiles.map((file) => {
                       const selected = selectedFiles.some((f) => f.path === file.path && f.name === file.name);
                       return (

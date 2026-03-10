@@ -1,8 +1,19 @@
+// Bizzi Byte accent colors for pricing tiers
+const BIZZI_BYTE_COLORS = {
+  matcha: "#84cc16",
+  habanero: "#dc2626",
+  onyx: "#171717",
+  bubble: "#ec4899",
+  frost: "#38bdf8",
+  citrus: "#f97316",
+} as const;
+
 const freeTier = {
   name: "Starter Free",
   tagline: "Free Forever",
   storage: "2 GB",
   price: 0,
+  accentColor: BIZZI_BYTE_COLORS.matcha,
   subtext: "Free forever, always",
   description: "Your first step into the cloud — no credit card, no expiry.",
   features: [
@@ -42,6 +53,7 @@ const plans = [
     ],
     limitations: ["No NLE drive mounting", "No Gallery or Invoicing tools"],
     cta: "Choose Solo Creator",
+    accentColor: BIZZI_BYTE_COLORS.matcha,
   },
   {
     name: "Indie Filmmaker",
@@ -64,6 +76,7 @@ const plans = [
     ],
     limitations: ["No NLE drive mounting", "No Gallery or Invoicing tools"],
     cta: "Choose Indie Filmmaker",
+    accentColor: BIZZI_BYTE_COLORS.habanero,
   },
   {
     name: "Video Pro",
@@ -89,6 +102,7 @@ const plans = [
       "Gallery & Invoicing add-on available (+$8/mo)",
     ],
     cta: "Choose Video Pro",
+    accentColor: BIZZI_BYTE_COLORS.frost,
   },
   {
     name: "Gallery & Studio",
@@ -110,6 +124,7 @@ const plans = [
       "Priority support with dedicated onboarding",
     ],
     cta: "Choose Gallery & Studio",
+    accentColor: BIZZI_BYTE_COLORS.bubble,
   },
   {
     name: "Production House",
@@ -132,6 +147,7 @@ const plans = [
     ],
     addOns: ["Gallery & Invoicing suite (+$8/mo)", "NLE Cloud Drive add-on"],
     cta: "Choose Production House",
+    accentColor: BIZZI_BYTE_COLORS.onyx,
   },
   {
     name: "Edit Suite",
@@ -151,6 +167,7 @@ const plans = [
       "Dedicated NLE support (4-hour response SLA)",
     ],
     cta: "Choose Edit Suite",
+    accentColor: BIZZI_BYTE_COLORS.citrus,
   },
 ];
 
@@ -174,10 +191,23 @@ export default function PricingSection() {
 
         {/* Free Tier */}
         <div className="mb-16">
-          <div className="rounded-2xl border-2 border-bizzi-blue/40 bg-gradient-to-br from-bizzi-blue/5 to-white p-6 md:p-8 shadow-lg shadow-bizzi-blue/5">
+          <div
+            className="rounded-2xl border-2 p-6 md:p-8 shadow-lg bg-white"
+            style={{
+              borderColor: freeTier.accentColor + "40",
+              background: `linear-gradient(to bottom right, ${freeTier.accentColor}08, white)`,
+              boxShadow: `0 10px 15px -3px ${freeTier.accentColor}15`,
+            }}
+          >
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
               <div className="flex-1">
-                <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-bizzi-blue/20 text-bizzi-blue mb-3">
+                <span
+                  className="inline-block px-3 py-1 rounded-full text-xs font-semibold mb-3"
+                  style={{
+                    backgroundColor: freeTier.accentColor + "20",
+                    color: freeTier.accentColor,
+                  }}
+                >
                   {freeTier.tagline}
                 </span>
                 <h3 className="text-2xl font-semibold text-neutral-900">
@@ -201,7 +231,12 @@ export default function PricingSection() {
                 <ul className="mt-4 space-y-1.5 text-sm text-neutral-700">
                   {freeTier.features.map((f) => (
                     <li key={f} className="flex items-start gap-2">
-                      <span className="text-bizzi-blue shrink-0">✓</span>
+                      <span
+                        className="shrink-0"
+                        style={{ color: freeTier.accentColor }}
+                      >
+                        ✓
+                      </span>
                       {f}
                     </li>
                   ))}
@@ -213,7 +248,8 @@ export default function PricingSection() {
                 </ul>
                 <button
                   type="button"
-                  className="mt-6 w-full md:w-auto px-8 py-3 rounded-xl font-medium bg-bizzi-blue text-white hover:bg-bizzi-cyan transition-colors"
+                  className="mt-6 w-full md:w-auto px-8 py-3 rounded-xl font-medium text-white transition-colors hover:opacity-90"
+                  style={{ backgroundColor: freeTier.accentColor }}
                 >
                   {freeTier.cta}
                 </button>
@@ -224,28 +260,32 @@ export default function PricingSection() {
 
         {/* Paid Plans */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
-          {plans.map((plan) => (
+          {plans.map((plan) => {
+            const accent = plan.accentColor;
+            return (
             <div
               key={plan.name}
-              className={`
-                relative rounded-2xl border-2 bg-white p-6 flex flex-col
-                transition-all duration-200 hover:shadow-lg hover:shadow-neutral-200/50
-                ${
-                  plan.popular
-                    ? "border-bizzi-blue shadow-lg shadow-bizzi-blue/10 ring-2 ring-bizzi-blue/20"
-                    : "border-neutral-200 hover:border-neutral-300"
-                }
-              `}
+              className="relative rounded-2xl border-2 bg-white p-6 flex flex-col transition-all duration-200 hover:shadow-lg"
+              style={{
+                borderColor: plan.popular ? accent : accent + "50",
+                boxShadow: plan.popular ? `0 10px 15px -3px ${accent}25, 0 0 0 2px ${accent}30` : undefined,
+              }}
             >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-bizzi-blue text-white">
+                  <span
+                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-white"
+                    style={{ backgroundColor: accent }}
+                  >
                     {plan.tagline}
                   </span>
                 </div>
               )}
               {!plan.popular && (
-                <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600 mb-2 w-fit">
+                <span
+                  className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-2 w-fit"
+                  style={{ backgroundColor: accent + "15", color: accent }}
+                >
                   {plan.tagline}
                 </span>
               )}
@@ -275,7 +315,7 @@ export default function PricingSection() {
               <ul className="mt-4 space-y-1.5 text-sm text-neutral-700 flex-grow">
                 {plan.features.slice(0, 5).map((f) => (
                   <li key={f} className="flex items-start gap-2">
-                    <span className="text-bizzi-blue shrink-0">✓</span>
+                    <span className="shrink-0" style={{ color: accent }}>✓</span>
                     {f}
                   </li>
                 ))}
@@ -299,19 +339,14 @@ export default function PricingSection() {
               )}
               <button
                 type="button"
-                className={`
-                  mt-6 w-full py-3 px-4 rounded-xl font-medium transition-colors
-                  ${
-                    plan.popular
-                      ? "bg-bizzi-blue text-white hover:bg-bizzi-cyan"
-                      : "bg-neutral-100 text-neutral-900 hover:bg-neutral-200"
-                  }
-                `}
+                className="mt-6 w-full py-3 px-4 rounded-xl font-medium text-white transition-colors hover:opacity-90"
+                style={{ backgroundColor: accent }}
               >
                 {plan.cta}
               </button>
             </div>
-          ))}
+          );
+          })}
         </div>
 
         {/* Enterprise Plan */}
