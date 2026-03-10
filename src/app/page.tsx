@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import ValueProps from "@/components/ValueProps";
@@ -16,7 +17,9 @@ export default function Home() {
         <ValueProps />
         <BrandContinuity />
         <FeatureList />
-        <PricingSection />
+        <Suspense fallback={null}>
+          <PricingSection />
+        </Suspense>
         <CTA />
         <Footer />
       </main>

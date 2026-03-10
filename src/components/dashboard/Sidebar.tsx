@@ -15,12 +15,19 @@ import {
   Images,
   Film,
 } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
 
-const navItems = [
+const navItems: Array<{
+  href: string;
+  label: string;
+  icon: typeof Home;
+  requiresGallerySuite?: boolean;
+  requiresEditor?: boolean;
+}> = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/files", label: "All files", icon: FolderOpen },
-  { href: "/dashboard/creator", label: "Creator", icon: Film },
-  { href: "/dashboard/galleries", label: "Galleries", icon: Images },
+  { href: "/dashboard/creator", label: "Creator", icon: Film, requiresEditor: true },
+  { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
   { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
@@ -30,6 +37,13 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { hasGallerySuite, hasEditor } = useSubscription();
+
+  const filteredItems = navItems.filter((item) => {
+    if (item.requiresGallerySuite && !hasGallerySuite) return false;
+    if (item.requiresEditor && !hasEditor) return false;
+    return true;
+  });
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
@@ -60,7 +74,7 @@ export default function Sidebar() {
       {/* Main nav */}
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-0.5">
-          {navItems.map((item) => {
+          {filteredItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (

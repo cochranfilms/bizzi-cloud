@@ -8,6 +8,7 @@ import {
   ENTERPRISE_OWNER_STORAGE_BYTES,
   DEFAULT_SEAT_STORAGE_BYTES,
 } from "./enterprise-constants";
+import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -66,7 +67,7 @@ export async function checkUserCanUpload(
     quotaBytes =
       typeof profileQuota === "number"
         ? profileQuota
-        : 50 * 1024 * 1024 * 1024;
+        : FREE_TIER_STORAGE_BYTES;
   }
 
   let filesQuery = db.collection("backup_files").where("userId", "==", uid);
@@ -143,7 +144,7 @@ export async function getStorageStatus(
     quotaBytes =
       typeof profileQuota === "number"
         ? profileQuota
-        : 50 * 1024 * 1024 * 1024;
+        : FREE_TIER_STORAGE_BYTES;
   }
 
   let filesQuery = db.collection("backup_files").where("userId", "==", uid);

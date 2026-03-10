@@ -19,12 +19,19 @@ import {
   Film,
 } from "lucide-react";
 import UserMenu from "./UserMenu";
+import { useSubscription } from "@/hooks/useSubscription";
 
-const navItems = [
+const navItems: Array<{
+  href: string;
+  label: string;
+  icon: typeof Home;
+  requiresGallerySuite?: boolean;
+  requiresEditor?: boolean;
+}> = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/files", label: "All files", icon: FolderOpen },
-  { href: "/dashboard/creator", label: "Creator", icon: Film },
-  { href: "/dashboard/galleries", label: "Galleries", icon: Images },
+  { href: "/dashboard/creator", label: "Creator", icon: Film, requiresEditor: true },
+  { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
   { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
@@ -36,6 +43,13 @@ export default function TopNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const { hasGallerySuite, hasEditor } = useSubscription();
+
+  const filteredItems = navItems.filter((item) => {
+    if (item.requiresGallerySuite && !hasGallerySuite) return false;
+    if (item.requiresEditor && !hasEditor) return false;
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-[60] flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-6 md:px-6">
@@ -69,7 +83,7 @@ export default function TopNavbar() {
 
       {/* Desktop nav - horizontal */}
       <nav className="hidden md:flex items-center gap-0.5">
-        {navItems.map((item) => {
+        {filteredItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
           return (
@@ -124,7 +138,7 @@ export default function TopNavbar() {
         }`}
       >
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
-          {navItems.map((item) => {
+          {filteredItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (

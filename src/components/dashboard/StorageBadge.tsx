@@ -5,6 +5,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { useBackup } from "@/context/BackupContext";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth, getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
+import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -16,7 +17,7 @@ function formatBytes(n: number): string {
 
 export default function StorageBadge() {
   const [storageUsed, setStorageUsed] = useState(0);
-  const [storageQuota, setStorageQuota] = useState(50 * 1024 * 1024 * 1024);
+  const [storageQuota, setStorageQuota] = useState(FREE_TIER_STORAGE_BYTES);
   const [recalculating, setRecalculating] = useState(false);
   const { storageVersion } = useBackup();
   const { user } = useAuth();
@@ -28,7 +29,7 @@ export default function StorageBadge() {
       if (snap.exists()) {
         const d = snap.data();
         setStorageUsed(d.storage_used_bytes ?? 0);
-        setStorageQuota(d.storage_quota_bytes ?? 50 * 1024 * 1024 * 1024);
+        setStorageQuota(d.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
       }
     });
   }, [user, storageVersion]);

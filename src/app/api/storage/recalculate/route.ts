@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   const storageQuota =
     profileSnap.exists && typeof profileSnap.data()?.storage_quota_bytes === "number"
       ? profileSnap.data()!.storage_quota_bytes
-      : 50 * 1024 * 1024 * 1024;
+      : FREE_TIER_STORAGE_BYTES;
 
   await profileRef.set(
     {

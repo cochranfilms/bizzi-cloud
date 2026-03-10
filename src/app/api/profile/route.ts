@@ -28,12 +28,20 @@ export async function GET(request: Request) {
   const profileSnap = await db.collection("profiles").doc(auth.uid).get();
   const data = profileSnap.data() ?? {};
   const handle = data.public_slug ?? null;
+  const planId = (data.plan_id as string) ?? "free";
+  const hasPortalAccess = !!data.stripe_customer_id;
+  const addonIds = Array.isArray(data.addon_ids)
+    ? (data.addon_ids as string[])
+    : [];
   return NextResponse.json({
     public_slug: handle,
     handle,
     share_image_object_key: data.share_image_object_key ?? null,
     share_image_name: data.share_image_name ?? null,
     share_image_gallery_id: data.share_image_gallery_id ?? null,
+    plan_id: planId,
+    has_portal_access: hasPortalAccess,
+    addon_ids: addonIds,
   });
 }
 

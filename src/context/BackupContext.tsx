@@ -40,6 +40,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePathname } from "next/navigation";
 import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceededModal";
+import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 
 interface BackupContextValue {
   linkedDrives: LinkedDrive[];
@@ -857,7 +858,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               userId: uid,
               email: currentUser.email ?? null,
               storage_used_bytes: current,
-              storage_quota_bytes: 53687091200,
+              storage_quota_bytes: FREE_TIER_STORAGE_BYTES,
             },
             { merge: true }
           );

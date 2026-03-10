@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -683,17 +684,135 @@ function StorageSection() {
 }
 
 function SubscriptionSection() {
+  const { user } = useAuth();
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [hasPortalAccess, setHasPortalAccess] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelled && res.ok) {
+          const data = (await res.json()) as {
+            plan_id?: string;
+            has_portal_access?: boolean;
+          };
+          setPlanId(data.plan_id ?? "free");
+          setHasPortalAccess(data.has_portal_access ?? false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const openPortal = async () => {
+    if (!user) return;
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const token = await user.getIdToken();
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/stripe/portal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        setPortalError(data.error ?? "Failed to open billing portal");
+      }
+    } catch {
+      setPortalError("Failed to open billing portal");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const planLabel =
+    planId === "free"
+      ? "Starter Free"
+      : planId === "solo"
+        ? "Solo Creator"
+        : planId === "indie"
+          ? "Indie Filmmaker"
+          : planId === "video"
+            ? "Video Pro"
+            : planId === "production"
+              ? "Production House"
+              : planId ?? "Starter Free";
+
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <CreditCard className="h-5 w-5 text-bizzi-blue" />
         Subscription
       </h2>
-      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center dark:border-neutral-600 dark:bg-neutral-800/50">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Subscription management is coming soon. You&apos;ll be able to upgrade, downgrade, and
-          manage billing through Stripe.
-        </p>
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6 dark:border-neutral-700 dark:bg-neutral-800/50">
+        {loading ? (
+          <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading…</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Current plan: <strong className="text-neutral-900 dark:text-white">{planLabel}</strong>
+            </p>
+            {hasPortalAccess ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={openPortal}
+                  disabled={portalLoading}
+                  className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                >
+                  {portalLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" />
+                  )}
+                  Manage billing
+                </button>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Update payment method, change plan, or cancel
+                </p>
+              </div>
+            ) : (
+              <div>
+                <Link
+                  href="/#pricing"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-bizzi-blue hover:underline"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Upgrade your plan
+                </Link>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Upgrade from the pricing page to manage your subscription
+                </p>
+              </div>
+            )}
+            {portalError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{portalError}</p>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

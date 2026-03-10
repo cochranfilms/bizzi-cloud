@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 
 // Bizzi Byte accent colors for pricing tiers
 const BIZZI_BYTE_COLORS = {
@@ -180,9 +184,11 @@ const powerUpAddons = [
 function PlanCard({
   plan,
   minBadgeHeight,
+  onSelect,
 }: {
   plan: (typeof plans)[0];
   minBadgeHeight: string;
+  onSelect?: (planId: string) => void;
 }) {
   const accent = plan.accentColor;
   return (
@@ -254,6 +260,7 @@ function PlanCard({
         type="button"
         className="mt-6 w-full py-3 px-4 rounded-xl font-medium text-white transition-colors hover:opacity-90"
         style={{ backgroundColor: accent }}
+        onClick={() => onSelect?.(plan.id)}
       >
         {plan.cta}
       </button>
@@ -338,15 +345,196 @@ function AddonCard({
 }
 
 export default function PricingSection() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
+  const [selectedBilling, setSelectedBilling] = useState<"monthly" | "annual">("monthly");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const purchaseProcessedRef = useRef(false);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
   const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
   const total =
     selectedPlan && selectedAddon
       ? selectedPlan.price + selectedAddon.price
-      : 0;
+      : selectedPlan
+        ? selectedBilling === "annual"
+          ? selectedPlan.annualPrice / 12
+          : selectedPlan.price
+        : 0;
+
+  const handleCheckout = useCallback(
+    async (planId: string, addonId: string | null, billing: "monthly" | "annual") => {
+      if (!user) {
+        router.push(
+          `/login?redirect=${encodeURIComponent(`/?purchase=${planId}${addonId ? `&addon=${addonId}` : ""}&billing=${billing}`)}`
+        );
+        return;
+      }
+      setCheckoutLoading(true);
+      setCheckoutError(null);
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (!token) {
+          setCheckoutError("Session expired. Please sign in again.");
+          return;
+        }
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/stripe/checkout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            planId,
+            addonId: addonId || undefined,
+            billing,
+          }),
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok) {
+          setCheckoutError(data.error ?? "Checkout failed");
+          return;
+        }
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          setCheckoutError("Checkout failed");
+        }
+      } catch {
+        setCheckoutError("Checkout failed. Please try again.");
+      } finally {
+        setCheckoutLoading(false);
+      }
+    },
+    [user, router]
+  );
+
+  useEffect(() => {
+    const purchase = searchParams.get("purchase");
+    const addon = searchParams.get("addon");
+    const billing = searchParams.get("billing");
+    if (purchase && user && !purchaseProcessedRef.current) {
+      const validPlans = ["solo", "indie", "video", "production"];
+      if (validPlans.includes(purchase)) {
+        purchaseProcessedRef.current = true;
+        handleCheckout(
+          purchase,
+          addon && ["gallery", "editor", "fullframe"].includes(addon) ? addon : null,
+          billing === "annual" ? "annual" : "monthly"
+        );
+      }
+    }
+  }, [searchParams, user, handleCheckout]);
+
+  const [enterpriseModalOpen, setEnterpriseModalOpen] = useState(false);
+  const [enterpriseSubmitting, setEnterpriseSubmitting] = useState(false);
+  const [enterpriseSuccess, setEnterpriseSuccess] = useState(false);
+  const [enterpriseError, setEnterpriseError] = useState<string | null>(null);
+  const [enterpriseForm, setEnterpriseForm] = useState({
+    current_storage_service: "",
+    monthly_storage_tb: "",
+    favorite_features: [] as string[],
+    company_name: "",
+    contact_email: "",
+    message: "",
+  });
+
+  const ENTERPRISE_STORAGE_SERVICES = [
+    "Dropbox",
+    "Google Drive",
+    "AWS S3",
+    "Backblaze B2",
+    "Frame.io",
+    "Adobe Creative Cloud",
+    "Box",
+    "OneDrive",
+    "Other",
+  ];
+  const ENTERPRISE_FAVORITE_FEATURES = [
+    "Galleries & proofing",
+    "NLE cloud editing",
+    "Transfers & delivery",
+    "SSO & permissions",
+    "Version history",
+    "Storage & backup",
+    "Client invoicing",
+    "Other",
+  ];
+
+  const handleEnterpriseSubmit = useCallback(async () => {
+    const { company_name, contact_email, current_storage_service } = enterpriseForm;
+    const storageServices = [
+      "Dropbox", "Google Drive", "AWS S3", "Backblaze B2", "Frame.io",
+      "Adobe Creative Cloud", "Box", "OneDrive", "Other",
+    ];
+    if (!company_name.trim() || company_name.trim().length < 2) {
+      setEnterpriseError("Company name must be at least 2 characters");
+      return;
+    }
+    if (!contact_email.trim() || !contact_email.includes("@")) {
+      setEnterpriseError("Valid contact email required");
+      return;
+    }
+    if (!storageServices.includes(current_storage_service)) {
+      setEnterpriseError("Please select your current storage service");
+      return;
+    }
+    setEnterpriseSubmitting(true);
+    setEnterpriseError(null);
+    try {
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/enterprise/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_storage_service: enterpriseForm.current_storage_service,
+          monthly_storage_tb: enterpriseForm.monthly_storage_tb
+            ? parseFloat(enterpriseForm.monthly_storage_tb)
+            : 0,
+          favorite_features: enterpriseForm.favorite_features,
+          company_name: enterpriseForm.company_name.trim(),
+          contact_email: enterpriseForm.contact_email.trim(),
+          message: enterpriseForm.message.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.ok && data.ok) {
+        setEnterpriseSuccess(true);
+        setTimeout(() => {
+          setEnterpriseModalOpen(false);
+          setEnterpriseSuccess(false);
+          setEnterpriseForm({
+            current_storage_service: "",
+            monthly_storage_tb: "",
+            favorite_features: [],
+            company_name: "",
+            contact_email: "",
+            message: "",
+          });
+        }, 2000);
+      } else {
+        setEnterpriseError(data.error ?? "Failed to submit");
+      }
+    } catch {
+      setEnterpriseError("Failed to submit. Please try again.");
+    } finally {
+      setEnterpriseSubmitting(false);
+    }
+  }, [enterpriseForm]);
+
+  const toggleEnterpriseFeature = (feature: string) => {
+    setEnterpriseForm((prev) => ({
+      ...prev,
+      favorite_features: prev.favorite_features.includes(feature)
+        ? prev.favorite_features.filter((f) => f !== feature)
+        : [...prev.favorite_features, feature],
+    }));
+  };
 
   const BADGE_MIN_H = "28px";
 
@@ -431,17 +619,23 @@ export default function PricingSection() {
                 <p className="mt-3 text-xs text-neutral-500">
                   {freeTier.addOnsNote}
                 </p>
-                <button
-                  type="button"
-                  className="mt-6 w-full rounded-xl px-8 py-3 font-medium text-white transition-colors hover:opacity-90 md:w-auto"
+                <Link
+                  href="/login?mode=signup&redirect=/dashboard"
+                  className="mt-6 inline-block w-full rounded-xl px-8 py-3 font-medium text-center text-white transition-colors hover:opacity-90 md:w-auto"
                   style={{ backgroundColor: freeTier.accentColor }}
                 >
                   {freeTier.cta}
-                </button>
+                </Link>
               </div>
             </div>
           </div>
         </div>
+
+        {checkoutError && (
+          <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+            {checkoutError}
+          </div>
+        )}
 
         {/* 4 Base Plans */}
         <div className="mb-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -450,6 +644,7 @@ export default function PricingSection() {
               key={plan.id}
               plan={plan}
               minBadgeHeight={BADGE_MIN_H}
+              onSelect={() => handleCheckout(plan.id, null, "monthly")}
             />
           ))}
         </div>
@@ -485,7 +680,7 @@ export default function PricingSection() {
             Build your plan
           </h3>
           <p className="mt-1 text-sm text-neutral-500">
-            Select a base plan and Power Up to see your total.
+            Select a base plan and optional Power Up to see your total.
           </p>
           <div className="mt-6 flex flex-wrap items-end gap-4">
             <div>
@@ -526,14 +721,50 @@ export default function PricingSection() {
                 ))}
               </select>
             </div>
-            {selectedPlan && selectedAddon && (
-              <div className="ml-auto flex items-baseline gap-2 rounded-lg bg-neutral-50 px-4 py-3">
-                <span className="text-sm text-neutral-500">
-                  ${selectedPlan.price} + ${selectedAddon.price}
-                </span>
-                <span className="text-xl font-bold text-neutral-900">
-                  = ${total}/mo
-                </span>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
+                Billing
+              </label>
+              <select
+                value={selectedBilling}
+                onChange={(e) =>
+                  setSelectedBilling(e.target.value as "monthly" | "annual")
+                }
+                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
+              >
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annual (save 25%)</option>
+              </select>
+            </div>
+            {selectedPlan && (
+              <div className="flex items-end gap-4">
+                <div className="flex items-baseline gap-2 rounded-lg bg-neutral-50 px-4 py-3">
+                  <span className="text-sm text-neutral-500">
+                    {selectedPlan.id === "solo" || selectedPlan.id === "indie" || selectedPlan.id === "video" || selectedPlan.id === "production"
+                      ? selectedBilling === "annual"
+                        ? `$${selectedPlan.annualPrice}/yr`
+                        : `$${selectedPlan.price}/mo`
+                      : `$${selectedPlan.price}/mo`}
+                    {selectedAddon && ` + $${selectedAddon.price}/mo`}
+                  </span>
+                  <span className="text-xl font-bold text-neutral-900">
+                    = ${Math.round(total)}/mo
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={checkoutLoading}
+                  onClick={() =>
+                    handleCheckout(
+                      selectedPlan.id,
+                      selectedAddonId,
+                      selectedBilling
+                    )
+                  }
+                  className="rounded-xl bg-bizzi-blue px-6 py-3 font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                >
+                  {checkoutLoading ? "Redirecting…" : "Subscribe"}
+                </button>
               </div>
             )}
           </div>
@@ -585,6 +816,7 @@ export default function PricingSection() {
               </div>
               <button
                 type="button"
+                onClick={() => setEnterpriseModalOpen(true)}
                 className="shrink-0 rounded-xl bg-neutral-200 px-6 py-3 font-medium text-neutral-900 transition-colors hover:bg-neutral-300 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
               >
                 Contact Sales
@@ -592,6 +824,162 @@ export default function PricingSection() {
             </div>
           </div>
         </div>
+
+        {/* Enterprise Contact Modal */}
+        {enterpriseModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => !enterpriseSubmitting && setEnterpriseModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="mb-4 text-xl font-bold text-neutral-900 dark:text-white">
+                Enterprise — Contact Sales
+              </h3>
+              {enterpriseSuccess ? (
+                <p className="text-green-600 dark:text-green-400">
+                  Thanks! We&apos;ll be in touch soon.
+                </p>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleEnterpriseSubmit();
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Company name *
+                    </label>
+                    <input
+                      type="text"
+                      value={enterpriseForm.company_name}
+                      onChange={(e) =>
+                        setEnterpriseForm((p) => ({ ...p, company_name: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      placeholder="Acme Productions"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Contact email *
+                    </label>
+                    <input
+                      type="email"
+                      value={enterpriseForm.contact_email}
+                      onChange={(e) =>
+                        setEnterpriseForm((p) => ({ ...p, contact_email: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      placeholder="you@company.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Current storage service *
+                    </label>
+                    <select
+                      value={enterpriseForm.current_storage_service}
+                      onChange={(e) =>
+                        setEnterpriseForm((p) => ({
+                          ...p,
+                          current_storage_service: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      required
+                    >
+                      <option value="">Choose…</option>
+                      {ENTERPRISE_STORAGE_SERVICES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Monthly storage usage (TB)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={enterpriseForm.monthly_storage_tb}
+                      onChange={(e) =>
+                        setEnterpriseForm((p) => ({ ...p, monthly_storage_tb: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      placeholder="e.g. 20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Favorite features
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {ENTERPRISE_FAVORITE_FEATURES.map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => toggleEnterpriseFeature(f)}
+                          className={`rounded-full px-3 py-1 text-sm transition-colors ${
+                            enterpriseForm.favorite_features.includes(f)
+                              ? "bg-bizzi-blue text-white"
+                              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-300"
+                          }`}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Message (optional)
+                    </label>
+                    <textarea
+                      value={enterpriseForm.message}
+                      onChange={(e) =>
+                        setEnterpriseForm((p) => ({ ...p, message: e.target.value }))
+                      }
+                      rows={3}
+                      className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      placeholder="Tell us about your needs…"
+                    />
+                  </div>
+                  {enterpriseError && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {enterpriseError}
+                    </p>
+                  )}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEnterpriseModalOpen(false)}
+                      disabled={enterpriseSubmitting}
+                      className="rounded-xl border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 dark:border-neutral-600 dark:text-neutral-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={enterpriseSubmitting}
+                      className="rounded-xl bg-bizzi-blue px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {enterpriseSubmitting ? "Sending…" : "Submit"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Footer note */}
         <p className="mt-8 text-center text-sm text-neutral-500">
