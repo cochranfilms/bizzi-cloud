@@ -132,6 +132,7 @@ export default function TransferView({ slug }: TransferViewProps) {
   const [error, setError] = useState("");
   const [fetching, setFetching] = useState(false);
   const [previewFile, setPreviewFile] = useState<TransferFile | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const localTransfer = getTransferBySlug(slug);
 
@@ -226,6 +227,51 @@ export default function TransferView({ slug }: TransferViewProps) {
     if (!transfer) return;
     recordDownload(transfer.slug, fileId);
   };
+
+  const downloadOne = useCallback(
+    async (file: TransferFile) => {
+      const key = file.objectKey ?? file.backupFileId;
+      if (!key) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          object_key: key,
+          name: file.name,
+          password: transfer?.hasPassword && unlocked ? password : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? data?.message ?? "Download failed");
+      }
+      const { url } = await res.json();
+      const a = document.createElement("a");
+      a.href = url.startsWith("/") ? `${window.location.origin}${url}` : url;
+      a.download = file.name;
+      a.rel = "noopener noreferrer";
+      a.click();
+      recordDownload(slug, file.id);
+    },
+    [slug, transfer?.hasPassword, unlocked, password, recordDownload]
+  );
+
+  const handleDownloadAll = useCallback(async () => {
+    if (!transfer || transfer.permission === "view") return;
+    const downloadable = transfer.files.filter((f) => f.objectKey ?? f.backupFileId);
+    if (downloadingAll || downloadable.length === 0) return;
+    setDownloadingAll(true);
+    for (let i = 0; i < downloadable.length; i++) {
+      try {
+        await downloadOne(downloadable[i]);
+      } catch (err) {
+        console.error("Download error:", err);
+        break;
+      }
+    }
+    setDownloadingAll(false);
+  }, [transfer, downloadingAll, downloadOne]);
 
   if (!transfer) {
     return (
@@ -354,6 +400,21 @@ export default function TransferView({ slug }: TransferViewProps) {
             />
           ))}
         </div>
+
+        {transfer.permission !== "view" &&
+          transfer.files.some((f) => f.objectKey ?? f.backupFileId) && (
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={handleDownloadAll}
+              disabled={downloadingAll}
+              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-6 py-3 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+            >
+              <Download className="h-4 w-4" />
+              {downloadingAll ? "Downloading…" : "Download ALL"}
+            </button>
+          </div>
+        )}
 
         <TransferPreviewModal
           slug={slug}

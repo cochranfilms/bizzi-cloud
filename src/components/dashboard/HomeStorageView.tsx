@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Film, FolderInput, Send, Share2, Trash2 } from "lucide-react";
+import { Film, FolderInput, Images, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
@@ -157,8 +157,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const isStorageDrive = (d: { name: string }) => d.name === "Storage";
   const isRawDrive = (d: { isCreatorRaw?: boolean }) => d.isCreatorRaw === true;
+  const isGalleryMediaDrive = (d: { name: string }) => d.name === "Gallery Media";
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
-    isStorageDrive(d) || isRawDrive(d);
+    isStorageDrive(d) || isRawDrive(d) || isGalleryMediaDrive(d);
 
   const folderItems: FolderItem[] = driveFolders
     .map((d) => ({
@@ -168,14 +169,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       items: d.items,
       hideShare: false,
       driveId: d.id,
-      customIcon: d.isCreatorRaw ? Film : undefined,
+      customIcon: d.isCreatorRaw ? Film : isGalleryMediaDrive(d) ? Images : undefined,
       preventDelete: isSystemDrive(d),
       preventRename: isSystemDrive(d),
       preventMove: isSystemDrive(d),
       isSystemFolder: isSystemDrive(d),
     }))
     .sort((a, b) => {
-      const order = (name: string) => (name === "Storage" ? 0 : name === "RAW" ? 1 : 2);
+      const order = (name: string) =>
+        name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
       return order(a.name) - order(b.name);
     });
 
@@ -647,7 +649,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </div>
         ) : (
           <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Storage and RAW folders will appear here.
+            Storage, RAW, and Gallery Media folders will appear here.
           </p>
         )}
       </section>
