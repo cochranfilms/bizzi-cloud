@@ -8,6 +8,7 @@ interface FilterSearchProps {
   onChange: (value: string) => void;
   placeholder?: string;
   debounceMs?: number;
+  label?: string;
 }
 
 export default function FilterSearch({
@@ -15,6 +16,7 @@ export default function FilterSearch({
   onChange,
   placeholder = "Search…",
   debounceMs = 300,
+  label,
 }: FilterSearchProps) {
   const [local, setLocal] = useState(value ?? "");
   useEffect(() => {
@@ -26,8 +28,14 @@ export default function FilterSearch({
     return () => clearTimeout(t);
   }, [local, debounceMs, onChange, value]);
   return (
-    <div className="relative">
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+    <div className="space-y-2">
+      {label && (
+        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          {label}
+        </span>
+      )}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
       <input
         type="search"
         value={local}
@@ -35,6 +43,7 @@ export default function FilterSearch({
         placeholder={placeholder}
         className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/20 dark:border-neutral-700 dark:bg-neutral-900 dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20"
       />
+      </div>
     </div>
   );
 }

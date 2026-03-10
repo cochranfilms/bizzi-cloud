@@ -22,6 +22,8 @@ interface FilterSidebarProps {
   drives?: { id: string; name: string }[];
   galleries?: { id: string; title: string }[];
   mediaType?: "video" | "photo";
+  /** When true, hide the drive/folder filter (user is already inside a folder) */
+  insideFolder?: boolean;
 }
 
 export default function FilterSidebar({
@@ -30,6 +32,7 @@ export default function FilterSidebar({
   drives = [],
   galleries = [],
   mediaType,
+  insideFolder = false,
 }: FilterSidebarProps) {
   const { universal, video, photo } = getFiltersForMediaType(mediaType);
 
@@ -43,6 +46,7 @@ export default function FilterSidebar({
   );
 
   const renderFilter = (def: FilterDef) => {
+    if (insideFolder && def.id === "drive") return null;
     const value = filterState[def.id];
     if (def.type === "date_range") {
       return (
@@ -81,6 +85,7 @@ export default function FilterSidebar({
             value={typeof value === "string" ? value : undefined}
             onChange={(v) => setFilter(def.id, v || undefined)}
             placeholder={def.id === "tags" ? "Tags / keywords…" : "Filename, tag, project…"}
+            label={def.label}
           />
         );
       }
@@ -91,6 +96,7 @@ export default function FilterSidebar({
             value={typeof value === "string" ? value : undefined}
             onChange={(v) => setFilter(def.id, v || undefined)}
             placeholder={def.label}
+            label={def.label}
           />
         );
       }
@@ -121,6 +127,7 @@ export default function FilterSidebar({
           options={options}
           value={value as string | string[] | undefined}
           onChange={(v) => setFilter(def.id, v)}
+          label={def.label}
         />
       );
     }

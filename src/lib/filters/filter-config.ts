@@ -76,7 +76,7 @@ export const UNIVERSAL_FILTERS: FilterDef[] = [
   },
   {
     id: "drive",
-    label: "Drive / project",
+    label: "Folder",
     type: "multi_select",
     field: "linked_drive_id",
     options: [], // Populated from user's linked drives

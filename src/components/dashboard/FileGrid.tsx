@@ -733,6 +733,7 @@ export default function FileGrid() {
               setFilter={setFilter}
               drives={drivesForFilter}
               galleries={galleriesForFilter}
+              insideFolder={!!currentDrive}
             />
           </div>
         </aside>
