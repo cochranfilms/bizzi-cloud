@@ -1,3 +1,4 @@
+import type { Firestore } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 
 /**
@@ -21,9 +22,25 @@ export async function verifyBackupFileAccess(
 }
 
 /**
+ * Returns the user's linked drive IDs (non-deleted).
+ */
+async function getUserLinkedDriveIds(db: Firestore, uid: string): Promise<Set<string>> {
+  const snap = await db
+    .collection("linked_drives")
+    .where("userId", "==", uid)
+    .get();
+  const ids = new Set<string>();
+  snap.docs.forEach((d) => {
+    if (!d.data().deleted_at) ids.add(d.id);
+  });
+  return ids;
+}
+
+/**
  * Verifies access with gallery fallback: if backup_files lookup fails, checks
- * whether the object_key is used in a gallery_asset for a gallery owned by the user.
- * Helps recover from edge cases (e.g. after gallery renames, soft-deleted backup_file).
+ * 1) gallery_assets for galleries owned by the user
+ * 2) backup_files by object_key only, if the file is in the user's linked drive
+ * Handles edge cases (gallery renames, soft-deleted backup_file, userId/org mismatches).
  */
 export async function verifyBackupFileAccessWithGalleryFallback(
   uid: string,
@@ -32,6 +49,8 @@ export async function verifyBackupFileAccessWithGalleryFallback(
   if (await verifyBackupFileAccess(uid, objectKey)) return true;
 
   const db = getAdminFirestore();
+
+  // Gallery fallback: object_key in gallery_asset for user-owned gallery
   const assetSnap = await db
     .collection("gallery_assets")
     .where("object_key", "==", objectKey)
@@ -45,5 +64,22 @@ export async function verifyBackupFileAccessWithGalleryFallback(
     if (!gallerySnap.exists) continue;
     if (gallerySnap.data()?.photographer_id === uid) return true;
   }
+
+  // Linked drive fallback: file in backup_files (any userId) but in user's linked drive
+  const byKeySnap = await db
+    .collection("backup_files")
+    .where("object_key", "==", objectKey)
+    .limit(5)
+    .get();
+
+  if (!byKeySnap.empty) {
+    const driveIds = await getUserLinkedDriveIds(db, uid);
+    for (const doc of byKeySnap.docs) {
+      const d = doc.data();
+      if (d.deleted_at) continue;
+      if (driveIds.has((d.linked_drive_id as string) ?? "")) return true;
+    }
+  }
+
   return false;
 }
