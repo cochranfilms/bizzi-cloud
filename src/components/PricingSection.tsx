@@ -315,50 +315,56 @@ export default function PricingSection() {
         </div>
 
         {/* Enterprise Plan */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 mb-6">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 mb-6 dark:border-neutral-700 dark:bg-neutral-900">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div>
-              <h3 className="text-lg font-semibold text-neutral-900 mb-1">
+            <div className="flex-1">
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+                <span className="h-1.5 w-1.5 rounded-sm bg-neutral-400 dark:bg-neutral-500" />
+                For large teams
+              </p>
+              <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-3">
                 Enterprise
               </h3>
-              <p className="text-neutral-600 text-sm">
+              <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
                 Custom storage, unlimited seats, shared team workspaces,
                 dedicated infrastructure, and SLA-backed uptime. Built for
                 agencies, post-houses, broadcast studios, and streaming
                 platforms.
               </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                  <span className="text-xl font-bold text-neutral-900 dark:text-white">
+                    16 TB+
+                  </span>
+                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Custom Storage
+                  </span>
+                </div>
+                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                  <span className="text-xl font-bold text-neutral-900 dark:text-white">
+                    Unlimited
+                  </span>
+                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Team Seats
+                  </span>
+                </div>
+                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                  <span className="text-xl font-bold text-neutral-900 dark:text-white">
+                    99.99%
+                  </span>
+                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Uptime SLA
+                  </span>
+                </div>
+              </div>
               <button
                 type="button"
-                className="mt-4 inline-flex px-4 py-2 rounded-xl font-medium bg-neutral-100 text-neutral-900 hover:bg-neutral-200 transition-colors text-sm"
+                className="shrink-0 py-3 px-6 rounded-xl font-medium bg-neutral-200 text-neutral-900 hover:bg-neutral-300 transition-colors dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
               >
                 Contact Sales
               </button>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100">
-                <span className="text-sm font-medium text-neutral-500">
-                  Storage
-                </span>
-                <span className="text-lg font-semibold text-neutral-900 mt-0.5">
-                  16 TB+
-                </span>
-              </div>
-              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100">
-                <span className="text-sm font-medium text-neutral-500">
-                  Team Seats
-                </span>
-                <span className="text-lg font-semibold text-neutral-900 mt-0.5">
-                  Unlimited
-                </span>
-              </div>
-              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
-                <span className="text-sm font-medium text-neutral-500">
-                  Uptime SLA
-                </span>
-                <span className="text-lg font-semibold text-neutral-900 mt-0.5">
-                  99.99%
-                </span>
-              </div>
             </div>
           </div>
         </div>

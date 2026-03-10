@@ -1,10 +1,43 @@
 import Link from "next/link";
 import Image from "next/image";
 
+const bizziByteColors = [
+  {
+    name: "Matcha Byte",
+    bg: "bg-[#84cc16]",
+    tagline: "Balanced energy meets blazing speed.",
+  },
+  {
+    name: "Habanero Byte",
+    bg: "bg-[#dc2626]",
+    tagline: "Spicy red with blazing performance.",
+  },
+  {
+    name: "Onyx Byte",
+    bg: "bg-[#171717]",
+    tagline: "Jet black and engineered for precision—1100MB/s.",
+  },
+  {
+    name: "Bubble Byte",
+    bg: "bg-gradient-to-b from-[#ec4899] to-[#f472b6]",
+    tagline: "Bold pink, built for creators.",
+  },
+  {
+    name: "Frost Byte",
+    bg: "bg-[#38bdf8]",
+    tagline: "Cool blue. Crisp performance.",
+  },
+  {
+    name: "Citrus Byte",
+    bg: "bg-[#f97316]",
+    tagline: "Bright, bold, and built for performance.",
+  },
+];
+
 export default function BrandContinuity() {
   return (
     <section className="py-20 md:py-28 px-6">
-      <div className="max-w-3xl mx-auto text-center">
+      <div className="max-w-4xl mx-auto text-center mb-12">
         <div className="flex justify-center mb-6">
           <Image
             src="/logo.png"
@@ -22,6 +55,26 @@ export default function BrandContinuity() {
           drives. Bizzi Cloud is the same philosophy: fast, reliable, built for
           how creators work.
         </p>
+      </div>
+
+      {/* Bizzi Byte color variant cards */}
+      <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-4 mb-12">
+        {bizziByteColors.map((variant) => (
+          <div
+            key={variant.name}
+            className={`${variant.bg} rounded-2xl p-6 min-h-[140px] flex flex-col justify-between text-white transition-transform hover:scale-[1.02]`}
+          >
+            <h3 className="text-sm font-bold uppercase tracking-wider">
+              {variant.name}
+            </h3>
+            <p className="text-sm text-white/90 mt-2 leading-snug">
+              {variant.tagline}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="max-w-3xl mx-auto text-center">
         <Link
           href="https://www.bizzibytestorage.com/"
           target="_blank"
