@@ -369,8 +369,9 @@ export default function PricingSection() {
   const handleCheckout = useCallback(
     async (planId: string, addonId: string | null, billing: "monthly" | "annual") => {
       if (!user) {
+        const redirect = `/?purchase=${planId}${addonId ? `&addon=${addonId}` : ""}&billing=${billing}`;
         router.push(
-          `/login?redirect=${encodeURIComponent(`/?purchase=${planId}${addonId ? `&addon=${addonId}` : ""}&billing=${billing}`)}`
+          `/login?mode=signup&redirect=${encodeURIComponent(redirect)}`
         );
         return;
       }

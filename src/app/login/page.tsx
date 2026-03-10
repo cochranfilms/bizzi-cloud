@@ -48,7 +48,13 @@ function LoginForm() {
         router.refresh();
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "An error occurred";
+      const code = err && typeof err === "object" && "code" in err ? (err as { code?: string }).code : null;
+      const msg =
+        code === "auth/user-not-found" || code === "auth/invalid-credential"
+          ? "No account found with this email. Create an account to continue."
+          : err instanceof Error
+            ? err.message
+            : "An error occurred";
       setError(msg);
     } finally {
       setLoading(false);
