@@ -141,7 +141,7 @@ export default function FilterSidebar({
   return (
     <div className="space-y-1">
       {hasUniversal && (
-        <FilterSection title="Filters" defaultCollapsed={false}>
+        <FilterSection title="General" defaultCollapsed={false}>
           <div className="space-y-4">
             {universal.map(renderFilter)}
           </div>
