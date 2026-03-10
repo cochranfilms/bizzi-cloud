@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search } from "lucide-react";
+import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap } from "lucide-react";
 import type { CreateTransferInput, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
@@ -42,6 +42,7 @@ export default function CreateTransferModal({
   const { confirm } = useConfirm();
   const {
     allFilesForTransfer,
+    driveFolders,
     loading: filesLoading,
     loadingAllFiles,
     fetchAllFilesForTransfer,
@@ -74,6 +75,8 @@ export default function CreateTransferModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const [fileSearch, setFileSearch] = useState("");
+  const [browseDriveId, setBrowseDriveId] = useState<string | null>(null);
+  const [browsePath, setBrowsePath] = useState<string>("");
 
   const toggleFile = useCallback(
     (file: { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }) => {
@@ -90,15 +93,47 @@ export default function CreateTransferModal({
   const allFilesForSelection = allFilesForTransfer.map((f) => ({
     name: f.name,
     path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
+    fullPath: f.path,
+    driveId: f.driveId,
+    driveName: f.driveName,
     type: "file" as const,
     backupFileId: f.id,
     objectKey: f.objectKey,
   }));
   const fileSearchLower = fileSearch.trim().toLowerCase();
-  const filteredFiles =
-    fileSearchLower === ""
-      ? allFilesForSelection
-      : allFilesForSelection.filter((f) => f.name.toLowerCase().includes(fileSearchLower));
+  const hasSearch = fileSearchLower !== "";
+
+  // Folder navigation: subfolders and files at current browse location
+  const { browseSubfolders, browseFiles } = (() => {
+    const prefix = browsePath ? `${browsePath}/` : "";
+    if (browseDriveId) {
+      const inDrive = allFilesForSelection.filter((f) => f.driveId === browseDriveId);
+      const subfolderSet = new Map<string, string>();
+      const files: typeof allFilesForSelection = [];
+      for (const f of inDrive) {
+        const rel = f.fullPath;
+        if (!rel.startsWith(prefix)) continue;
+        const suffix = rel.slice(prefix.length);
+        if (suffix.includes("/")) {
+          const nextSeg = suffix.split("/")[0];
+          if (!subfolderSet.has(nextSeg)) subfolderSet.set(nextSeg, `${prefix}${nextSeg}`);
+        } else {
+          files.push(f);
+        }
+      }
+      const subfolders = Array.from(subfolderSet.entries()).map(([name, pathPrefix]) => ({ name, pathPrefix }));
+      return { browseSubfolders: subfolders, browseFiles: files };
+    }
+    return { browseSubfolders: [] as { name: string; pathPrefix: string }[], browseFiles: [] as typeof allFilesForSelection };
+  })();
+
+  // When searching: flat list of all matching files. When browsing: folders + files in current location (filtered by search if active)
+  const filteredBrowseFiles = browseFiles.filter((f) => !hasSearch || f.name.toLowerCase().includes(fileSearchLower));
+  const filteredBrowseSubfolders = hasSearch
+    ? [] // When searching, hide folder navigation - show flat results
+    : browseSubfolders.filter((f) => f.name.toLowerCase().includes(fileSearchLower));
+  const flatFilteredFiles = allFilesForSelection.filter((f) => f.name.toLowerCase().includes(fileSearchLower));
+  const displayFiles = hasSearch ? flatFilteredFiles : filteredBrowseFiles;
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -173,6 +208,8 @@ export default function CreateTransferModal({
     setCreatedSlug(null);
     setCopied(false);
     setFileSearch("");
+    setBrowseDriveId(null);
+    setBrowsePath("");
     onClose();
   }, [onClose]);
 
@@ -487,22 +524,28 @@ export default function CreateTransferModal({
               )}
             </div>
 
-            {/* Select from all uploaded files - prominent, searchable, scrollable */}
+            {/* Select from existing uploaded files for faster transfer */}
             <div className="mt-4 rounded-xl border-2 border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-800/80">
-              <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h4 className="text-base font-semibold text-neutral-800 dark:text-neutral-200">
-                  Select from your uploaded files
+                  Select from existing uploaded files for faster transfer
                 </h4>
-                <div className="relative max-w-xs flex-1">
-                  <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <div className="relative w-full sm:w-36 shrink-0">
+                  <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
                   <input
                     type="text"
                     placeholder="Search files…"
                     value={fileSearch}
                     onChange={(e) => setFileSearch(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-200 bg-white py-2 pl-8 pr-3 text-sm dark:border-neutral-600 dark:bg-neutral-900 dark:text-white"
+                    className="w-full rounded-md border border-neutral-200 bg-white py-1.5 pl-7 pr-2 text-xs dark:border-neutral-600 dark:bg-neutral-900 dark:text-white"
                   />
                 </div>
+              </div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-bizzi-blue/40 bg-bizzi-blue/5 px-3 py-1.5 dark:border-bizzi-blue/50 dark:bg-bizzi-blue/10">
+                <Zap className="h-4 w-4 text-bizzi-blue" />
+                <span className="text-xs font-medium text-bizzi-blue dark:text-bizzi-cyan">
+                  Selecting existing files = INSTANT transfer (no upload needed)
+                </span>
               </div>
               {filesLoading || loadingAllFiles ? (
                 <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
@@ -512,14 +555,70 @@ export default function CreateTransferModal({
                 <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                   No files yet. Upload files first or drop them above.
                 </p>
-              ) : filteredFiles.length === 0 && fileSearch.trim() ? (
+              ) : (hasSearch ? displayFiles : [...filteredBrowseSubfolders, ...displayFiles]).length === 0 ? (
                 <p className="rounded-lg border border-neutral-200 bg-white py-8 text-center text-sm text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
-                  No files match &quot;{fileSearch}&quot;
+                  {hasSearch ? `No files match "${fileSearch}"` : "No files in this folder"}
                 </p>
               ) : (
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-900">
+                  {!hasSearch && browseDriveId && (
+                    <div className="mb-2 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (browsePath) {
+                            const parts = browsePath.split("/").filter(Boolean);
+                            parts.pop();
+                            setBrowsePath(parts.join("/"));
+                          } else {
+                            setBrowseDriveId(null);
+                            setBrowsePath("");
+                          }
+                        }}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        {browsePath ? "Up" : "Drives"}
+                      </button>
+                      {browsePath && (
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                          / {browsePath.split("/").pop()}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {filteredFiles.map((file) => {
+                    {!hasSearch && !browseDriveId && driveFolders.map((folder) => (
+                      <button
+                        key={folder.key}
+                        type="button"
+                        onDoubleClick={() => {
+                          setBrowseDriveId(folder.id);
+                          setBrowsePath("");
+                        }}
+                        className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                      >
+                        <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="min-w-0 truncate" title={folder.name}>
+                          {folder.name}
+                        </span>
+                        <span className="ml-auto shrink-0 text-xs text-neutral-400">{folder.items}</span>
+                      </button>
+                    ))}
+                    {!hasSearch && browseDriveId && filteredBrowseSubfolders.map((folder) => (
+                      <button
+                        key={folder.pathPrefix}
+                        type="button"
+                        onDoubleClick={() => setBrowsePath(folder.pathPrefix)}
+                        className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                      >
+                        <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="min-w-0 truncate" title={folder.name}>
+                          {folder.name}
+                        </span>
+                      </button>
+                    ))}
+                    {displayFiles.map((file) => {
                       const selected = selectedFiles.some((f) => f.path === file.path && f.name === file.name);
                       return (
                         <button
@@ -548,7 +647,8 @@ export default function CreateTransferModal({
               {allFilesForSelection.length > 0 && (
                 <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                   {allFilesForSelection.length} file{allFilesForSelection.length !== 1 ? "s" : ""} available
-                  {fileSearch.trim() && ` • ${filteredFiles.length} match${filteredFiles.length !== 1 ? "es" : ""}`}
+                  {fileSearch.trim() && ` • ${displayFiles.length} match${displayFiles.length !== 1 ? "es" : ""}`}
+                  {!hasSearch && " • Double-click folders to open"}
                 </p>
               )}
             </div>
