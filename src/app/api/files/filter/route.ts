@@ -437,8 +437,14 @@ export async function GET(request: Request) {
     cursor: hasMore && lastDoc ? lastDoc.id : null,
   });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Filter failed";
+    const msg = err instanceof Error ? err.message : String(err);
     console.error("[api/files/filter] Error:", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const isIndexError =
+      typeof msg === "string" &&
+      (msg.includes("index") || msg.includes("FAILED_PRECONDITION"));
+    return NextResponse.json(
+      { error: isIndexError ? `Filter requires Firestore index. Run: firebase deploy --only firestore:indexes` : msg },
+      { status: 500 }
+    );
   }
 }

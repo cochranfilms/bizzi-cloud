@@ -138,6 +138,36 @@
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "usage_status", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "gallery_id", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "is_starred", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
         { "fieldPath": "size_bytes", "order": "ASCENDING" }
       ]
     },
