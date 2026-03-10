@@ -555,7 +555,16 @@ export default function CreateTransferModal({
                 <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                   No files yet. Upload files first or drop them above.
                 </p>
-              ) : (hasSearch ? displayFiles : [...filteredBrowseSubfolders, ...displayFiles]).length === 0 ? (
+              ) : (() => {
+                // At root (!browseDriveId), we show driveFolders (Storage, RAW, Gallery Media). Don't show "No files in this folder" when we have folders.
+                const isEmpty =
+                  hasSearch
+                    ? displayFiles.length === 0
+                    : !browseDriveId
+                      ? driveFolders.length === 0
+                      : filteredBrowseSubfolders.length === 0 && displayFiles.length === 0;
+                return isEmpty;
+              })() ? (
                 <p className="rounded-lg border border-neutral-200 bg-white py-8 text-center text-sm text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
                   {hasSearch ? `No files match "${fileSearch}"` : "No files in this folder"}
                 </p>
