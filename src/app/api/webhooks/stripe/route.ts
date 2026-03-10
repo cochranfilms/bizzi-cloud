@@ -44,6 +44,7 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
+  const stripe = getStripeInstance();
 
   switch (event.type) {
     case "checkout.session.completed": {
@@ -51,6 +52,9 @@ export async function POST(request: Request) {
       const userId = session.metadata?.userId;
       const planId = session.metadata?.planId as PlanId | undefined;
       const addonIdsRaw = session.metadata?.addonIds;
+      const replaceSubscriptionId = session.metadata?.replace_subscription as
+        | string
+        | undefined;
 
       if (!userId || !planId) {
         console.error("[Stripe webhook] checkout.session.completed missing userId or planId in metadata");
@@ -62,6 +66,14 @@ export async function POST(request: Request) {
         : [];
 
       const storageQuotaBytes = getStorageBytesForPlan(planId as PlanId);
+
+      if (replaceSubscriptionId) {
+        try {
+          await stripe.subscriptions.cancel(replaceSubscriptionId);
+        } catch (err) {
+          console.error("[Stripe webhook] Failed to cancel replaced subscription:", err);
+        }
+      }
 
       await db.collection("profiles").doc(userId).set(
         {

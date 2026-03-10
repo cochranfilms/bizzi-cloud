@@ -35,7 +35,10 @@ export default function CheckoutSuccessSync() {
           body: JSON.stringify({ session_id: sessionId }),
         });
         if (res.ok) {
-          router.replace("/dashboard", { scroll: false });
+          const updated = searchParams.get("updated");
+          router.replace(updated === "subscription" ? "/dashboard/settings" : "/dashboard", {
+            scroll: false,
+          });
         }
       } catch {
         // Ignore - user can retry from Settings

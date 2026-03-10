@@ -65,7 +65,7 @@ export default function ChangePlanPage() {
         return;
       }
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/stripe/update-subscription`, {
+      const res = await fetch(`${base}/api/stripe/checkout-change-plan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,18 +77,18 @@ export default function ChangePlanPage() {
           billing,
         }),
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (res.ok && data.ok) {
-        router.push("/dashboard/settings?updated=subscription");
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (res.ok && data.url) {
+        window.location.href = data.url;
       } else {
-        setApplyError(data.error ?? "Update failed");
+        setApplyError(data.error ?? "Checkout failed");
       }
     } catch {
       setApplyError("Update failed. Please try again.");
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, billing, user, router]);
+  }, [selectedPlanId, selectedAddonIds, billing, user]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
