@@ -9,6 +9,7 @@ import CriticalAlertsPanel from "../components/overview/CriticalAlertsPanel";
 import RevenueSnapshotCard from "../components/overview/RevenueSnapshotCard";
 import StorageSnapshotCard from "../components/overview/StorageSnapshotCard";
 import UserActivitySnapshotCard from "../components/overview/UserActivitySnapshotCard";
+import CostIntelligenceCard from "../components/overview/CostIntelligenceCard";
 import TopAccountsTable from "../components/overview/TopAccountsTable";
 import OverviewChartsGrid from "../components/overview/OverviewChartsGrid";
 import { useAdminOverview } from "../hooks/useAdminOverview";
@@ -98,11 +99,16 @@ export default function OverviewPage() {
         <CriticalAlertsPanel alerts={alerts} />
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <RevenueSnapshotCard
           mrr={metrics?.mrr ?? 0}
           grossMarginPercent={metrics?.grossMarginPercent ?? 0}
           infraCost={metrics?.estimatedInfraCost ?? 0}
+        />
+        <CostIntelligenceCard
+          mrr={metrics?.mrr ?? 0}
+          infraCost={metrics?.estimatedInfraCost ?? 0}
+          grossMarginPercent={metrics?.grossMarginPercent ?? 0}
         />
         <StorageSnapshotCard
           totalUsedBytes={metrics?.totalStorageBytes ?? 0}

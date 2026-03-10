@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 // Bizzi Byte accent colors for pricing tiers
 const BIZZI_BYTE_COLORS = {
   matcha: "#84cc16",
@@ -5,6 +9,16 @@ const BIZZI_BYTE_COLORS = {
   frost: "#38bdf8",
   onyx: "#171717",
 } as const;
+
+// Bundle discount: basePrice + addonPrice - discount = finalTotal
+// e.g. Indie ($20) + Editor ($15) = $35 → $30 (save $5)
+// e.g. Video Pro ($35) + Full Frame ($22) = $57 → $50 (save $7)
+const BUNDLE_DISCOUNTS: Record<string, Record<string, number>> = {
+  "Solo Creator": { gallery: 1, editor: 2, fullFrame: 3 },
+  "Indie Filmmaker": { gallery: 2, editor: 5, fullFrame: 5 },
+  "Video Pro": { gallery: 3, editor: 5, fullFrame: 7 },
+  "Production House": { gallery: 4, editor: 6, fullFrame: 8 },
+};
 
 const freeTier = {
   name: "Starter Free",
@@ -25,12 +39,14 @@ const freeTier = {
     "500 MB max file size",
     "No extra storage add-on",
   ],
-  addOnsNote: "Gallery Suite, Editor & Full Frame add-ons available when you upgrade",
+  addOnsNote:
+    "Gallery Suite, Editor & Full Frame add-ons available when you upgrade",
   cta: "Get Started Free",
 };
 
 const plans = [
   {
+    id: "solo",
     name: "Solo Creator",
     tagline: "Essential",
     storage: "1 TB",
@@ -50,6 +66,7 @@ const plans = [
     accentColor: BIZZI_BYTE_COLORS.matcha,
   },
   {
+    id: "indie",
     name: "Indie Filmmaker",
     tagline: "Most Popular",
     storage: "2 TB",
@@ -65,11 +82,13 @@ const plans = [
       "Up to 2 collaborators",
       "Review & approval workflow",
     ],
-    addOnsNote: "Gallery Suite, Editor, Full Frame + Extra storage up to +5 TB",
+    addOnsNote:
+      "Gallery Suite, Editor, Full Frame + Extra storage up to +5 TB",
     cta: "Choose Indie Filmmaker",
     accentColor: BIZZI_BYTE_COLORS.habanero,
   },
   {
+    id: "video",
     name: "Video Pro",
     tagline: "Professional",
     storage: "5 TB",
@@ -84,11 +103,13 @@ const plans = [
       "Up to 5 collaborators",
       "Branded client delivery pages",
     ],
-    addOnsNote: "Gallery Suite, Editor, Full Frame + Extra storage up to +10 TB",
+    addOnsNote:
+      "Gallery Suite, Editor, Full Frame + Extra storage up to +10 TB",
     cta: "Choose Video Pro",
     accentColor: BIZZI_BYTE_COLORS.frost,
   },
   {
+    id: "production",
     name: "Production House",
     tagline: "Agency & Production",
     storage: "10 TB",
@@ -103,7 +124,8 @@ const plans = [
       "Up to 10 team seats",
       "SSO & advanced permissions",
     ],
-    addOnsNote: "Gallery Suite, Editor, Full Frame + Extra storage up to +20 TB",
+    addOnsNote:
+      "Gallery Suite, Editor, Full Frame + Extra storage up to +20 TB",
     cta: "Choose Production House",
     accentColor: BIZZI_BYTE_COLORS.onyx,
   },
@@ -111,11 +133,12 @@ const plans = [
 
 const powerUpAddons = [
   {
+    id: "gallery",
     name: "Bizzi Gallery Suite",
     tagline: "Gallery + Invoicing",
     price: 12,
     description:
-      "The complete business toolkit for photographers — from client delivery to getting paid.",
+      "Photo galleries with invoicing, proofing & client delivery. 3 Lightroom presets included — toggle on/off like Rec.709.",
     features: [
       "Unlimited branded client galleries",
       "Client proofing — favorites, approvals & downloads",
@@ -123,57 +146,237 @@ const powerUpAddons = [
       "Invoice & contract templates",
       "Stripe deposit & payment collection",
       "Revenue dashboard & payment reminders",
-      "3 custom Lightroom presets included",
+      "3 custom Lightroom presets (toggle on/off)",
     ],
     accentColor: "#ECA000",
   },
   {
+    id: "editor",
     name: "Bizzi Editor",
-    tagline: "NLE Cloud Drive + LUTs",
+    tagline: "NLE Cloud Drive + Rec.709",
     price: 15,
     description:
-      "Mount your cloud as a local NLE drive. Edit RAW natively with Rec.709 LUTs — no full transfer needed.",
+      "Mount your cloud as a virtual SSD. NLE editing with Rec.709 LUTs — edit RAW natively in Premiere, Resolve & Final Cut.",
     features: [
-      "Mount in Premiere Pro, DaVinci Resolve & Final Cut Pro",
+      "Mount as virtual drive in Premiere, Resolve & Final Cut",
+      "Rec.709 LUTs — toggle on/off per clip",
       "Stream R3D, BRAW, ProRes RAW & ARRIRAW natively",
       "Smart local cache for frequently accessed clips",
       "3 Rec.709 LUT packs, camera-matched",
       "S-Log3 & LogC3 input transforms",
-      "Upload & host your own custom LUT library",
     ],
     accentColor: "#A47BFF",
   },
   {
+    id: "fullframe",
     name: "Bizzi Full Frame",
     tagline: "Gallery Suite + Editor bundled",
     price: 22,
     description:
-      "The complete creative stack for photographers and filmmakers who do it all.",
+      "The complete creative stack — galleries, invoicing, proofing, and NLE editing with Rec.709. Both Power Ups in one.",
     bundleNote: "Save $5/mo vs buying separately",
     features: [
       "Everything in Bizzi Gallery Suite",
       "Unlimited galleries, proofing & invoicing",
-      "3 custom Lightroom presets",
+      "3 custom Lightroom presets (toggle on/off)",
       "Everything in Bizzi Editor",
-      "NLE cloud drive — Premiere, Resolve, Final Cut",
-      "3 Rec.709 LUT packs + S-Log3 & LogC3 transforms",
+      "NLE cloud drive — virtual SSD in your NLE",
+      "3 Rec.709 LUT packs (toggle on/off)",
     ],
     accentColor: "#1EC8A8",
   },
 ];
 
+function PlanCard({
+  plan,
+  minBadgeHeight,
+}: {
+  plan: (typeof plans)[0];
+  minBadgeHeight: string;
+}) {
+  const accent = plan.accentColor;
+  return (
+    <div
+      className="relative flex h-full flex-col rounded-2xl border-2 bg-white p-6 transition-all duration-200 hover:shadow-lg"
+      style={{
+        borderColor: plan.popular ? accent : accent + "50",
+        boxShadow: plan.popular
+          ? `0 10px 15px -3px ${accent}25, 0 0 0 2px ${accent}30`
+          : undefined,
+      }}
+    >
+      {/* Badge row - fixed height for alignment */}
+      <div
+        className="mb-3 flex items-center"
+        style={{ minHeight: minBadgeHeight }}
+      >
+        {plan.popular ? (
+          <span
+            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-white"
+            style={{ backgroundColor: accent }}
+          >
+            {plan.tagline}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+            style={{ backgroundColor: accent + "15", color: accent }}
+          >
+            {plan.tagline}
+          </span>
+        )}
+      </div>
+      <h3 className="text-xl font-semibold text-neutral-900">{plan.name}</h3>
+      <div className="mt-4 flex items-baseline gap-1">
+        <span className="text-3xl font-bold text-neutral-900">
+          ${plan.price}
+        </span>
+        <span className="text-base font-normal text-neutral-500">/mo</span>
+      </div>
+      <p className="mt-0.5 text-sm text-neutral-500">
+        or ${plan.annualPrice}/yr — save 25%
+      </p>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span className="text-sm font-medium text-neutral-500">Storage</span>
+        <span className="text-lg font-semibold text-neutral-900">
+          {plan.storage}
+        </span>
+      </div>
+      <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700">
+        {plan.features.map((f) => (
+          <li key={f} className="flex items-start gap-2">
+            <span className="shrink-0" style={{ color: accent }}>
+              ✓
+            </span>
+            {f}
+          </li>
+        ))}
+      </ul>
+      {plan.limitations && plan.limitations.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-xs text-neutral-500">
+          {plan.limitations.map((l) => (
+            <li key={l}>— {l}</li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-xs text-neutral-500">{plan.addOnsNote}</p>
+      <button
+        type="button"
+        className="mt-6 w-full py-3 px-4 rounded-xl font-medium text-white transition-colors hover:opacity-90"
+        style={{ backgroundColor: accent }}
+      >
+        {plan.cta}
+      </button>
+    </div>
+  );
+}
+
+function AddonCard({
+  addon,
+  minBadgeHeight,
+}: {
+  addon: (typeof powerUpAddons)[0];
+  minBadgeHeight: string;
+}) {
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-shadow hover:shadow-md">
+      <div
+        className="h-1 w-full shrink-0"
+        style={{ backgroundColor: addon.accentColor }}
+      />
+      <div className="flex flex-grow flex-col p-6">
+        <div
+          className="flex items-center"
+          style={{ minHeight: minBadgeHeight }}
+        >
+          <span
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: addon.accentColor }}
+          >
+            {addon.tagline}
+          </span>
+        </div>
+        <h4
+          className="text-lg font-bold text-neutral-900"
+          style={{ color: addon.accentColor }}
+        >
+          {addon.name}
+        </h4>
+        <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+          {addon.description}
+        </p>
+        {addon.bundleNote && (
+          <span
+            className="mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+            style={{
+              backgroundColor: addon.accentColor + "15",
+              color: addon.accentColor,
+            }}
+          >
+            ✦ {addon.bundleNote}
+          </span>
+        )}
+        <div className="mt-4 flex items-baseline gap-1">
+          <span className="text-sm text-neutral-500">+</span>
+          <span
+            className="text-2xl font-bold"
+            style={{ color: addon.accentColor }}
+          >
+            ${addon.price}
+          </span>
+          <span className="text-sm text-neutral-500">/mo</span>
+        </div>
+        <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700">
+          {addon.features.map((f) => (
+            <li key={f} className="flex items-start gap-2">
+              <span
+                className="shrink-0"
+                style={{ color: addon.accentColor }}
+              >
+                ✓
+              </span>
+              {f}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+          Available on <strong>all paid plans</strong>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function PricingSection() {
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
+
+  const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
+
+  const discount =
+    selectedPlan && selectedAddon
+      ? BUNDLE_DISCOUNTS[selectedPlan.name]?.[selectedAddon.id] ?? 0
+      : 0;
+  const subtotal =
+    selectedPlan && selectedAddon
+      ? selectedPlan.price + selectedAddon.price
+      : 0;
+  const total = Math.max(0, subtotal - discount);
+
+  const BADGE_MIN_H = "28px";
+
   return (
     <section
       id="pricing"
-      className="py-20 md:py-28 px-6 bg-neutral-50/50"
+      className="bg-neutral-50/50 px-6 py-20 md:py-28"
     >
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900 mb-4">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-16 text-center">
+          <h2 className="mb-4 text-3xl font-semibold tracking-tight text-neutral-900 md:text-4xl">
             Storage that scales with your craft
           </h2>
-          <p className="text-lg text-neutral-600 max-w-2xl mx-auto">
+          <p className="mx-auto max-w-2xl text-lg text-neutral-600">
             Pick your storage. Add what you need. AES-256 encryption on every
             plan, always.
           </p>
@@ -182,38 +385,40 @@ export default function PricingSection() {
         {/* Free Tier */}
         <div className="mb-12">
           <div
-            className="rounded-2xl border-2 p-6 md:p-8 shadow-lg bg-white"
+            className="rounded-2xl border-2 bg-white p-6 shadow-lg md:p-8"
             style={{
               borderColor: freeTier.accentColor + "40",
               background: `linear-gradient(to bottom right, ${freeTier.accentColor}08, white)`,
               boxShadow: `0 10px 15px -3px ${freeTier.accentColor}15`,
             }}
           >
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+            <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
               <div className="flex-1">
-                <span
-                  className="inline-block px-3 py-1 rounded-full text-xs font-semibold mb-3"
-                  style={{
-                    backgroundColor: freeTier.accentColor + "20",
-                    color: freeTier.accentColor,
-                  }}
-                >
-                  {freeTier.tagline}
-                </span>
+                <div className="mb-3" style={{ minHeight: BADGE_MIN_H }}>
+                  <span
+                    className="inline-block rounded-full px-3 py-1 text-xs font-semibold"
+                    style={{
+                      backgroundColor: freeTier.accentColor + "20",
+                      color: freeTier.accentColor,
+                    }}
+                  >
+                    {freeTier.tagline}
+                  </span>
+                </div>
                 <h3 className="text-2xl font-semibold text-neutral-900">
                   {freeTier.name}
                 </h3>
-                <p className="text-neutral-600 mt-1">{freeTier.description}</p>
-                <p className="text-3xl font-bold text-neutral-900 mt-4">
-                  $0
+                <p className="mt-1 text-neutral-600">{freeTier.description}</p>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold text-neutral-900">$0</span>
                   <span className="text-base font-normal text-neutral-500">
                     /mo
                   </span>
-                </p>
-                <p className="text-sm text-neutral-500 mt-0.5">
+                </div>
+                <p className="mt-0.5 text-sm text-neutral-500">
                   {freeTier.subtext}
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex items-baseline gap-2">
                   <span className="text-sm font-medium text-neutral-500">
                     Cloud Storage
                   </span>
@@ -244,7 +449,7 @@ export default function PricingSection() {
                 </p>
                 <button
                   type="button"
-                  className="mt-6 w-full md:w-auto px-8 py-3 rounded-xl font-medium text-white transition-colors hover:opacity-90"
+                  className="mt-6 w-full rounded-xl px-8 py-3 font-medium text-white transition-colors hover:opacity-90 md:w-auto"
                   style={{ backgroundColor: freeTier.accentColor }}
                 >
                   {freeTier.cta}
@@ -255,90 +460,22 @@ export default function PricingSection() {
         </div>
 
         {/* 4 Base Plans */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          {plans.map((plan) => {
-            const accent = plan.accentColor;
-            return (
-              <div
-                key={plan.name}
-                className="relative rounded-2xl border-2 bg-white p-6 flex flex-col transition-all duration-200 hover:shadow-lg"
-                style={{
-                  borderColor: plan.popular ? accent : accent + "50",
-                  boxShadow: plan.popular
-                    ? `0 10px 15px -3px ${accent}25, 0 0 0 2px ${accent}30`
-                    : undefined,
-                }}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span
-                      className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-white"
-                      style={{ backgroundColor: accent }}
-                    >
-                      {plan.tagline}
-                    </span>
-                  </div>
-                )}
-                {!plan.popular && (
-                  <span
-                    className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-2 w-fit"
-                    style={{ backgroundColor: accent + "15", color: accent }}
-                  >
-                    {plan.tagline}
-                  </span>
-                )}
-                <h3 className="text-xl font-semibold text-neutral-900">
-                  {plan.name}
-                </h3>
-                <div className="mt-4">
-                  <p className="text-3xl font-bold text-neutral-900">
-                    ${plan.price}
-                    <span className="text-base font-normal text-neutral-500">
-                      /mo
-                    </span>
-                  </p>
-                  <p className="text-sm text-neutral-500 mt-0.5">
-                    or ${plan.annualPrice}/yr — save 25%
-                  </p>
-                </div>
-                <div className="mt-3 flex gap-2 items-baseline">
-                  <span className="text-sm font-medium text-neutral-500">
-                    Storage
-                  </span>
-                  <span className="text-lg font-semibold text-neutral-900">
-                    {plan.storage}
-                  </span>
-                </div>
-                <ul className="mt-4 space-y-1.5 text-sm text-neutral-700 flex-grow">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span className="shrink-0" style={{ color: accent }}>
-                        ✓
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                {plan.limitations && plan.limitations.length > 0 && (
-                  <ul className="mt-2 space-y-0.5 text-xs text-neutral-500">
-                    {plan.limitations.map((l) => (
-                      <li key={l}>— {l}</li>
-                    ))}
-                  </ul>
-                )}
-                <p className="mt-2 text-xs text-neutral-500">
-                  {plan.addOnsNote}
-                </p>
-                <button
-                  type="button"
-                  className="mt-6 w-full py-3 px-4 rounded-xl font-medium text-white transition-colors hover:opacity-90"
-                  style={{ backgroundColor: accent }}
-                >
-                  {plan.cta}
-                </button>
-              </div>
-            );
-          })}
+        <div className="mb-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {plans.map((plan) => (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              minBadgeHeight={BADGE_MIN_H}
+            />
+          ))}
+        </div>
+
+        {/* Add-ons give discounts banner */}
+        <div className="mb-8 rounded-xl border border-bizzi-blue/30 bg-bizzi-blue/5 px-4 py-3 text-center">
+          <p className="text-sm font-medium text-neutral-800">
+            ✦ Add Power Ups to any paid plan — <strong>get a discount</strong> on
+            your total. Bundle and save.
+          </p>
         </div>
 
         {/* Power Up Add-ons */}
@@ -347,129 +484,152 @@ export default function PricingSection() {
             <h3 className="text-xl font-bold text-neutral-900">
               Power up any plan
             </h3>
-            <p className="text-sm text-neutral-500 mt-0.5">
-              Add only what your workflow needs. Available on every paid plan.
+            <p className="mt-0.5 text-sm text-neutral-500">
+              Add only what your workflow needs. Available on every paid plan
+              (except free).
             </p>
-            <p className="text-xs text-neutral-500 mt-1">
+            <p className="mt-1 text-xs text-neutral-500">
               Stack freely. Cancel anytime. Add-ons billed monthly.
             </p>
           </div>
-          <div className="grid sm:grid-cols-3 gap-6">
+          <div className="grid gap-6 sm:grid-cols-3">
             {powerUpAddons.map((addon) => (
-              <div
-                key={addon.name}
-                className="rounded-2xl border border-neutral-200 bg-white overflow-hidden flex flex-col hover:shadow-md transition-shadow"
-              >
-                <div
-                  className="h-1 w-full"
-                  style={{ backgroundColor: addon.accentColor }}
-                />
-                <div className="p-6 flex flex-col flex-grow">
-                <span
-                  className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: addon.accentColor }}
-                >
-                  {addon.tagline}
-                </span>
-                <h4
-                  className="text-lg font-bold text-neutral-900 mt-1"
-                  style={{ color: addon.accentColor }}
-                >
-                  {addon.name}
-                </h4>
-                <p className="text-sm text-neutral-600 mt-2 leading-relaxed">
-                  {addon.description}
-                </p>
-                {addon.bundleNote && (
-                  <span
-                    className="inline-flex items-center gap-1 text-xs font-semibold mt-2 px-2.5 py-1 rounded-full w-fit"
-                    style={{
-                      backgroundColor: addon.accentColor + "15",
-                      color: addon.accentColor,
-                    }}
-                  >
-                    ✦ {addon.bundleNote}
-                  </span>
-                )}
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-sm text-neutral-500">+</span>
-                  <span
-                    className="text-2xl font-bold"
-                    style={{ color: addon.accentColor }}
-                  >
-                    ${addon.price}
-                  </span>
-                  <span className="text-sm text-neutral-500">/mo</span>
-                </div>
-                <ul className="mt-4 space-y-1.5 text-sm text-neutral-700 flex-grow">
-                  {addon.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span
-                        className="shrink-0"
-                        style={{ color: addon.accentColor }}
-                      >
-                        ✓
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-4 text-xs text-neutral-500 border-t border-neutral-100 pt-3">
-                  Available on <strong>all paid plans</strong>
-                </p>
-                </div>
-              </div>
+              <AddonCard
+                key={addon.id}
+                addon={addon}
+                minBadgeHeight={BADGE_MIN_H}
+              />
             ))}
           </div>
         </div>
 
+        {/* Bundle calculator */}
+        <div className="mb-16 rounded-2xl border border-neutral-200 bg-white p-6 md:p-8">
+          <h3 className="text-lg font-bold text-neutral-900">
+            Build your plan
+          </h3>
+          <p className="mt-1 text-sm text-neutral-500">
+            Select a base plan and Power Up to see your total with bundle
+            discount.
+          </p>
+          <div className="mt-6 flex flex-wrap items-end gap-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
+                Base plan
+              </label>
+              <select
+                value={selectedPlanId ?? ""}
+                onChange={(e) =>
+                  setSelectedPlanId(e.target.value || null)
+                }
+                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
+              >
+                <option value="">Choose plan…</option>
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — ${p.price}/mo ({p.storage})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
+                Power Up add-on
+              </label>
+              <select
+                value={selectedAddonId ?? ""}
+                onChange={(e) =>
+                  setSelectedAddonId(e.target.value || null)
+                }
+                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
+              >
+                <option value="">No add-on</option>
+                {powerUpAddons.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} — +${a.price}/mo
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(selectedPlan || selectedAddon) && (
+              <div className="ml-auto flex items-baseline gap-2 rounded-lg bg-neutral-50 px-4 py-3">
+                {selectedPlan && selectedAddon ? (
+                  <>
+                    <span className="text-sm text-neutral-500">
+                      ${selectedPlan.price} + ${selectedAddon.price}
+                      {discount > 0 && (
+                        <span className="ml-1 text-green-600">
+                          − ${discount} discount
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xl font-bold text-neutral-900">
+                      = ${total}/mo
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-sm text-neutral-500">
+                    Select both to see total
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          {selectedPlan && selectedAddon && discount > 0 && (
+            <p className="mt-4 text-sm text-green-700">
+              You save ${discount}/mo when you bundle {selectedPlan.name} with{" "}
+              {selectedAddon.name}.
+            </p>
+          )}
+        </div>
+
         {/* Enterprise Plan */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 mb-6 dark:border-neutral-700 dark:bg-neutral-900">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+        <div className="mb-6 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900 md:p-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div className="flex-1">
-              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 <span className="h-1.5 w-1.5 rounded-sm bg-neutral-400 dark:bg-neutral-500" />
                 For large teams
               </p>
-              <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-3">
+              <h3 className="mb-3 text-2xl font-bold text-neutral-900 dark:text-white">
                 Enterprise
               </h3>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
+              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
                 Custom storage, unlimited seats, dedicated infrastructure and
                 SLA-backed uptime. All add-ons included. Built for agencies,
                 post-houses and broadcast studios.
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <div className="grid grid-cols-3 gap-4">
-                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">
                   <span className="text-xl font-bold text-neutral-900 dark:text-white">
                     16 TB+
                   </span>
-                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
                     Custom Storage
                   </span>
                 </div>
-                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">
                   <span className="text-xl font-bold text-neutral-900 dark:text-white">
                     Unlimited
                   </span>
-                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
                     Team Seats
                   </span>
                 </div>
-                <div className="flex flex-col justify-center p-4 rounded-xl bg-neutral-50 border border-neutral-100 dark:bg-neutral-800 dark:border-neutral-700">
+                <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">
                   <span className="text-xl font-bold text-neutral-900 dark:text-white">
                     99.99%
                   </span>
-                  <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
                     Uptime SLA
                   </span>
                 </div>
               </div>
               <button
                 type="button"
-                className="shrink-0 py-3 px-6 rounded-xl font-medium bg-neutral-200 text-neutral-900 hover:bg-neutral-300 transition-colors dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
+                className="shrink-0 rounded-xl bg-neutral-200 px-6 py-3 font-medium text-neutral-900 transition-colors hover:bg-neutral-300 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600"
               >
                 Contact Sales
               </button>
@@ -478,12 +638,13 @@ export default function PricingSection() {
         </div>
 
         {/* Footer note */}
-        <p className="text-center text-sm text-neutral-500 mt-8">
-          AES-256 encryption at rest and in transit on every plan, always · 30-day
-          money-back guarantee · Cancel anytime
+        <p className="mt-8 text-center text-sm text-neutral-500">
+          AES-256 encryption at rest and in transit on every plan, always ·
+          30-day money-back guarantee · Cancel anytime
         </p>
-        <p className="text-center text-xs text-neutral-400 mt-2">
-          Annual discount applies to base plan price only. Add-ons billed monthly.
+        <p className="mt-2 text-center text-xs text-neutral-400">
+          Annual discount applies to base plan price only. Add-ons billed
+          monthly.
         </p>
       </div>
     </section>
