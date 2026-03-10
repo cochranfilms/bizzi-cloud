@@ -22,18 +22,18 @@ export default function FilterDateRange({
           {label}
         </span>
       )}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-2 min-w-0">
         <input
           type="date"
           value={from ?? ""}
           onChange={(e) => onFromChange(e.target.value)}
-          className="flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          className="min-w-0 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         />
         <input
           type="date"
           value={to ?? ""}
           onChange={(e) => onToChange(e.target.value)}
-          className="flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          className="min-w-0 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         />
       </div>
     </div>

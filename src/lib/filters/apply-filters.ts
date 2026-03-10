@@ -90,8 +90,28 @@ export function getActiveFilters(state: FilterState): ActiveFilter[] {
     const label = from && to ? `${from} – ${to}` : from ?? to ?? "Date";
     result.push({ id: "date", value: label, label });
   }
+  const seenSize = !!state.size_min || !!state.size_max;
+  if (seenSize) {
+    const min = state.size_min as string | undefined;
+    const max = state.size_max as string | undefined;
+    const formatMb = (b: string) => {
+      const n = parseInt(b, 10);
+      if (isNaN(n)) return b;
+      const mb = Math.round(n / (1024 * 1024));
+      return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+    };
+    const label =
+      min && max
+        ? `${formatMb(min)} – ${formatMb(max)}`
+        : min
+          ? `≥ ${formatMb(min)}`
+          : max
+            ? `≤ ${formatMb(max)}`
+            : "File size";
+    result.push({ id: "file_size", value: label, label });
+  }
   for (const [id, value] of Object.entries(state)) {
-    if (id === "date_from" || id === "date_to") continue;
+    if (id === "date_from" || id === "date_to" || id === "size_min" || id === "size_max") continue;
     if (value === undefined || value === "" || value === false) continue;
     const def = getFilterDef(id);
     if (Array.isArray(value)) {
@@ -118,6 +138,11 @@ export function removeFilter(
   value?: string
 ): FilterState {
   const next = { ...state };
+  if (id === "file_size") {
+    delete next.size_min;
+    delete next.size_max;
+    return next;
+  }
   const current = next[id];
   if (current === undefined) return next;
   if (Array.isArray(current)) {

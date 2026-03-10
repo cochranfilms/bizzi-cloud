@@ -6,6 +6,7 @@ import FilterMultiSelect from "./FilterMultiSelect";
 import FilterSearch from "./FilterSearch";
 import FilterCheckbox from "./FilterCheckbox";
 import FilterDateRange from "./FilterDateRange";
+import FilterSizeRange from "./FilterSizeRange";
 import {
   getFiltersForMediaType,
   UNIVERSAL_FILTERS,
@@ -47,11 +48,28 @@ export default function FilterSidebar({
       return (
         <FilterDateRange
           key={def.id}
-          from={filterState.date_from as string | undefined}
-          to={filterState.date_to as string | undefined}
+          from={(filterState.date_from as string) || undefined}
+          to={(filterState.date_to as string) || undefined}
           onFromChange={(v) => setFilter("date_from", v || undefined)}
           onToChange={(v) => setFilter("date_to", v || undefined)}
           label={def.label}
+        />
+      );
+    }
+    if (def.type === "range" && def.id === "file_size") {
+      const min = filterState.size_min;
+      const max = filterState.size_max;
+      const minNum = typeof min === "string" ? parseInt(min, 10) : undefined;
+      const maxNum = typeof max === "string" ? parseInt(max, 10) : undefined;
+      return (
+        <FilterSizeRange
+          key={def.id}
+          minBytes={!isNaN(minNum ?? NaN) ? minNum : undefined}
+          maxBytes={!isNaN(maxNum ?? NaN) ? maxNum : undefined}
+          onMinChange={(bytes) => setFilter("size_min", bytes != null ? String(bytes) : undefined)}
+          onMaxChange={(bytes) => setFilter("size_max", bytes != null ? String(bytes) : undefined)}
+          label={def.label}
+          configMax={def.max}
         />
       );
     }
@@ -109,7 +127,7 @@ export default function FilterSidebar({
     return null;
   };
 
-  const hasUniversal = universal.filter((f) => f.type !== "range").length > 0;
+  const hasUniversal = universal.length > 0;
   const hasVideo = video.length > 0;
   const hasPhoto = photo.length > 0;
 
@@ -118,7 +136,7 @@ export default function FilterSidebar({
       {hasUniversal && (
         <FilterSection title="Filters" defaultCollapsed={false}>
           <div className="space-y-4">
-            {universal.filter((f) => f.type !== "range").map(renderFilter)}
+            {universal.map(renderFilter)}
           </div>
         </FilterSection>
       )}

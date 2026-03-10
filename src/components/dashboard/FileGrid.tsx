@@ -712,9 +712,9 @@ export default function FileGrid() {
         <aside
           className={`${
             filterPanelOpen ? "block" : "hidden"
-          } w-60 flex-shrink-0 md:block`}
+          } w-60 min-w-0 flex-shrink-0 md:block`}
         >
-          <div className="sticky top-24 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <div className="sticky top-24 min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                 Filters
