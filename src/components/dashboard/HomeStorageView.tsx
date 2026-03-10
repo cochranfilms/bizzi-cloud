@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Film, FolderInput, Images, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
@@ -123,7 +124,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
-  const { linkedDrives } = useBackup();
+  const { planId, loading: subscriptionLoading } = useSubscription();
+  const {
+    linkedDrives,
+    getOrCreateStorageDrive,
+    getOrCreateCreatorRawDrive,
+    getOrCreateGalleryDrive,
+  } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
@@ -211,6 +218,48 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   useEffect(() => {
     loadPinnedFiles();
   }, [loadPinnedFiles]);
+
+  // Ensure Storage, RAW, and Gallery Media folders exist for all subscribed (paid) users on personal dashboard
+  useEffect(() => {
+    if (
+      basePath !== "/dashboard" ||
+      loading ||
+      subscriptionLoading ||
+      planId === "free" ||
+      !getOrCreateStorageDrive ||
+      !getOrCreateCreatorRawDrive ||
+      !getOrCreateGalleryDrive
+    )
+      return;
+    const hasStorage = driveFolders.some((d) => d.name === "Storage");
+    const hasRaw = driveFolders.some((d) => d.isCreatorRaw);
+    const hasGalleryMedia = driveFolders.some((d) => d.name === "Gallery Media");
+    if (hasStorage && hasRaw && hasGalleryMedia) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!hasStorage) await getOrCreateStorageDrive();
+        if (!cancelled && !hasRaw) await getOrCreateCreatorRawDrive();
+        if (!cancelled && !hasGalleryMedia) await getOrCreateGalleryDrive();
+        if (!cancelled) refetch();
+      } catch (e) {
+        console.error("Ensure default folders:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    basePath,
+    loading,
+    subscriptionLoading,
+    planId,
+    driveFolders,
+    getOrCreateStorageDrive,
+    getOrCreateCreatorRawDrive,
+    getOrCreateGalleryDrive,
+    refetch,
+  ]);
 
   const openDrive = useCallback(
     (driveId: string, name: string) => {

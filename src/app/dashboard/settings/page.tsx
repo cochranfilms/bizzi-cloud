@@ -683,9 +683,16 @@ function StorageSection() {
   );
 }
 
+const ADDON_LABELS: Record<string, string> = {
+  gallery: "Bizzi Gallery Suite",
+  editor: "Bizzi Editor",
+  fullframe: "Bizzi Full Frame",
+};
+
 function SubscriptionSection() {
   const { user } = useAuth();
   const [planId, setPlanId] = useState<string | null>(null);
+  const [addonIds, setAddonIds] = useState<string[]>([]);
   const [hasPortalAccess, setHasPortalAccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -702,9 +709,11 @@ function SubscriptionSection() {
     if (res.ok) {
       const data = (await res.json()) as {
         plan_id?: string;
+        addon_ids?: string[];
         has_portal_access?: boolean;
       };
       setPlanId(data.plan_id ?? "free");
+      setAddonIds(Array.isArray(data.addon_ids) ? data.addon_ids : []);
       setHasPortalAccess(data.has_portal_access ?? false);
     }
   }, [user]);
@@ -804,6 +813,16 @@ function SubscriptionSection() {
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               Current plan: <strong className="text-neutral-900 dark:text-white">{planLabel}</strong>
             </p>
+            {addonIds.length > 0 && (
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                Add-ons:{" "}
+                <span className="font-medium text-neutral-900 dark:text-white">
+                  {addonIds
+                    .map((id) => ADDON_LABELS[id] ?? id)
+                    .join(", ")}
+                </span>
+              </p>
+            )}
             {hasPortalAccess ? (
               <div className="flex flex-wrap items-center gap-3">
                 <button

@@ -1,6 +1,7 @@
 import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
+import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -107,6 +108,7 @@ export async function POST(request: Request) {
     },
     { merge: true }
   );
+  await ensureDefaultDrivesForUser(uid);
 
   return NextResponse.json({
     ok: true,

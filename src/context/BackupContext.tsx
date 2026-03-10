@@ -79,8 +79,12 @@ interface BackupContextValue {
   fsAccessSupported: boolean;
   /** Create a new empty folder (linked drive). */
   createFolder: (name: string, options?: { creatorSection?: boolean }) => Promise<LinkedDrive>;
+  /** Get or create the main Storage drive. */
+  getOrCreateStorageDrive: () => Promise<LinkedDrive>;
   /** Get or create the permanent RAW drive for Creator tab (video-only). */
   getOrCreateCreatorRawDrive: () => Promise<LinkedDrive>;
+  /** Get or create the Gallery Media drive for gallery uploads. */
+  getOrCreateGalleryDrive: () => Promise<LinkedDrive>;
   /** ID of the Creator RAW drive, if any (for LUT preview gating). */
   creatorRawDriveId: string | null;
   /** Upload files directly to a gallery (uses Gallery Media drive, adds to gallery on complete). */
@@ -997,6 +1001,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       organization_id: orgId ?? null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((ld) => ld.id !== drive.id)]);
+    setStorageVersion((v) => v + 1);
     return drive;
   }, [user, isEnterpriseContext, org, fetchDrives]);
 
@@ -1831,7 +1836,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       clearFileUploadError,
       fsAccessSupported,
       createFolder,
+      getOrCreateStorageDrive,
       getOrCreateCreatorRawDrive,
+      getOrCreateGalleryDrive,
       creatorRawDriveId,
       uploadFilesToGallery,
     }),
@@ -1858,7 +1865,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       fileUploadError,
       fsAccessSupported,
       createFolder,
+      getOrCreateStorageDrive,
       getOrCreateCreatorRawDrive,
+      getOrCreateGalleryDrive,
       creatorRawDriveId,
       uploadFilesToGallery,
     ]

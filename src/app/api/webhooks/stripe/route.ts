@@ -1,6 +1,7 @@
 import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
+import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
         },
         { merge: true }
       );
-
+      await ensureDefaultDrivesForUser(userId);
       break;
     }
 
@@ -120,7 +121,9 @@ export async function POST(request: Request) {
         },
         { merge: true }
       );
-
+      if (planId && planId !== "free") {
+        await ensureDefaultDrivesForUser(userId);
+      }
       break;
     }
 
