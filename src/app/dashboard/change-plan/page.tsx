@@ -65,30 +65,44 @@ export default function ChangePlanPage() {
         return;
       }
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/stripe/checkout-change-plan`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          planId: selectedPlanId,
-          addonIds: selectedAddonIds,
-          billing,
-        }),
+      const body = JSON.stringify({
+        planId: selectedPlanId,
+        addonIds: selectedAddonIds,
+        billing,
       });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-      } else {
-        setApplyError(data.error ?? "Checkout failed");
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+      let res = await fetch(`${base}/api/stripe/update-subscription`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      let data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      if (res.ok && data.ok) {
+        router.push("/dashboard/settings?updated=subscription");
+        return;
       }
+      if (res.status === 500 && data.error) {
+        const fallbackRes = await fetch(`${base}/api/stripe/checkout-change-plan`, {
+          method: "POST",
+          headers,
+          body,
+        });
+        const fallbackData = (await fallbackRes.json()) as { url?: string; error?: string };
+        if (fallbackRes.ok && fallbackData.url) {
+          window.location.href = fallbackData.url;
+          return;
+        }
+      }
+      setApplyError(data.error ?? "Update failed");
     } catch {
       setApplyError("Update failed. Please try again.");
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, billing, user]);
+  }, [selectedPlanId, selectedAddonIds, billing, user, router]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
@@ -233,7 +247,7 @@ export default function ChangePlanPage() {
               Choose a plan
             </h3>
             <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-              Select a plan to upgrade or downgrade. Changes take effect immediately with prorated billing.
+              Select a plan to upgrade or downgrade. You get credit for unused time on your current plan and pay only the difference.
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {plans.map((plan) => {

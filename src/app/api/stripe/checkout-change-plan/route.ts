@@ -7,8 +7,7 @@ const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
 
 /**
  * Create a Stripe Checkout session for existing subscribers to change plan.
- * Redirects user to Stripe to complete payment (enter/confirm card).
- * On success, webhook cancels the old subscription and profile is updated.
+ * Fallback when update-subscription fails (no proration in Checkout flow).
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");

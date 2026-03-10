@@ -1,13 +1,13 @@
 import { verifyIdToken } from "@/lib/firebase-admin";
 import type { AddonId, BillingCycle } from "@/lib/plan-constants";
-import { createChangePlanCheckoutSession } from "@/lib/stripe-checkout-change-plan";
+import { updateSubscriptionWithProration } from "@/lib/stripe-update-subscription";
 import { NextResponse } from "next/server";
 
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
 
 /**
- * @deprecated Use /api/stripe/checkout-change-plan instead.
- * Kept for backward compatibility with cached clients - forwards to Checkout flow.
+ * Update subscription with proration.
+ * Applies credit for unused time on current plan/addons; customer pays only the difference.
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -40,13 +40,11 @@ export async function POST(request: Request) {
     (id): id is AddonId => typeof id === "string" && VALID_ADDON_IDS.includes(id)
   );
   const billing = (body.billing === "annual" ? "annual" : "monthly") as BillingCycle;
-  const origin = request.headers.get("origin") ?? "";
 
-  return createChangePlanCheckoutSession({
+  return updateSubscriptionWithProration({
     uid,
     planId,
     addonIds,
     billing,
-    origin,
   });
 }
