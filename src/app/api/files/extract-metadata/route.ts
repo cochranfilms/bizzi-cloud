@@ -163,6 +163,8 @@ export async function POST(request: Request) {
       const meta = await sharp(buffer).metadata();
       if (meta.width) updates.width = meta.width;
       if (meta.height) updates.height = meta.height;
+      if (meta.width) updates.resolution_w = meta.width;
+      if (meta.height) updates.resolution_h = meta.height;
       const w = meta.width ?? 0;
       const h = meta.height ?? 0;
       if (w && h) {

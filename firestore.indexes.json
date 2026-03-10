@@ -142,6 +142,29 @@
       ]
     },
     {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "resolution_w", "order": "ASCENDING" },
+        { "fieldPath": "resolution_h", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "resolution_w", "order": "ASCENDING" },
+        { "fieldPath": "resolution_h", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "linked_drives",
       "queryScope": "COLLECTION",
       "fields": [

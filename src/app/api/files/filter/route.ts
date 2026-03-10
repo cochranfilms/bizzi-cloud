@@ -132,10 +132,14 @@ function passesPostFilters(
   filters: ReturnType<typeof parseFilters>
 ): boolean {
   if (filters.resolution) {
-    const [w, h] = filters.resolution.split("x").map(Number);
-    const rw = (item.resolution_w ?? item.width) as number | undefined;
-    const rh = (item.resolution_h ?? item.height) as number | undefined;
-    if (rw !== w || rh !== h) return false;
+    const parts = filters.resolution.split(/[x×]/i);
+    const w = parseInt(parts[0], 10);
+    const h = parts[1] ? parseInt(parts[1], 10) : NaN;
+    if (!isNaN(w) && !isNaN(h)) {
+      const rw = (item.resolution_w ?? item.width) as number | undefined;
+      const rh = (item.resolution_h ?? item.height) as number | undefined;
+      if (rw !== w || rh !== h) return false;
+    }
   }
   if (filters.aspectRatio) {
     const rw = (item.resolution_w ?? item.width) as number | undefined;
@@ -347,6 +351,14 @@ export async function GET(request: Request) {
   if (filters.starred) {
     q = q.where("is_starred", "==", true);
   }
+  if (filters.resolution) {
+    const parts = filters.resolution.split(/[x×]/i);
+    const rw = parseInt(parts[0], 10);
+    const rh = parts[1] ? parseInt(parts[1], 10) : NaN;
+    if (!isNaN(rw) && !isNaN(rh)) {
+      q = q.where("resolution_w", "==", rw).where("resolution_h", "==", rh);
+    }
+  }
   const orderField =
     filters.sort === "newest" || filters.sort === "oldest"
       ? "modified_at"
@@ -365,7 +377,6 @@ export async function GET(request: Request) {
   q = q.orderBy(orderField, orderDir);
 
   const needsPostFilter =
-    !!filters.resolution ||
     !!filters.codec ||
     !!filters.search ||
     !!filters.tags ||
