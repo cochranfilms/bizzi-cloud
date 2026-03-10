@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
@@ -691,6 +691,8 @@ const ADDON_LABELS: Record<string, string> = {
 
 function SubscriptionSection() {
   const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [planId, setPlanId] = useState<string | null>(null);
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [hasPortalAccess, setHasPortalAccess] = useState(false);
@@ -728,6 +730,16 @@ function SubscriptionSection() {
       cancelled = true;
     };
   }, [user, fetchProfile]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (searchParams.get("updated") === "subscription" || searchParams.get("cancelled") === "subscription") {
+      fetchProfile();
+      const retry = setTimeout(() => fetchProfile(), 2000);
+      router.replace("/dashboard/settings", { scroll: false });
+      return () => clearTimeout(retry);
+    }
+  }, [user, searchParams, fetchProfile, router]);
 
   const syncFromStripe = async () => {
     if (!user) return;
