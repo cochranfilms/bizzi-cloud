@@ -18,7 +18,9 @@ import {
   Globe,
   ExternalLink,
   Image as ImageIcon,
+  HardDrive,
 } from "lucide-react";
+import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import Image from "next/image";
 
 function ProfileSection() {
@@ -668,6 +670,18 @@ function CreateOrganizationSection() {
   );
 }
 
+function StorageSection() {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+        <HardDrive className="h-5 w-5 text-bizzi-blue" />
+        Storage
+      </h2>
+      <StorageAnalyticsPage basePath="/dashboard" />
+    </section>
+  );
+}
+
 function SubscriptionSection() {
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
@@ -694,6 +708,7 @@ export default function SettingsPage() {
           <ProfileSection />
           <StudioHomepageSection />
           <AccountSection />
+          <StorageSection />
           <CreateOrganizationSection />
           <SubscriptionSection />
         </div>

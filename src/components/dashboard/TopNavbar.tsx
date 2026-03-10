@@ -17,7 +17,6 @@ import {
   X,
   Images,
   Film,
-  BarChart3,
 } from "lucide-react";
 import UserMenu from "./UserMenu";
 
@@ -30,7 +29,6 @@ const navItems = [
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
   { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
   { href: "/dashboard/trash", label: "Deleted files", icon: Trash2 },
-  { href: "/dashboard/storage", label: "Storage", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronDown, Settings, LogOut, Sun, Moon, Building2 } from "lucide-react";
+import { ChevronDown, Settings, LogOut, Sun, Moon, Building2, Shield } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -121,6 +121,14 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
               Enterprise dashboard
             </Link>
           )}
+          <Link
+            href="/admin"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <Shield className="h-4 w-4" />
+            Admin dashboard
+          </Link>
           <button
             type="button"
             onClick={() => {

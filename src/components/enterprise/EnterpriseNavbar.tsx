@@ -16,7 +16,6 @@ import {
   X,
   Search,
   Film,
-  BarChart3,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -28,7 +27,6 @@ const navItems = [
   { href: "/enterprise/shared", label: "Shared", icon: Share2 },
   { href: "/enterprise/transfers", label: "Transfers", icon: Send },
   { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },
-  { href: "/enterprise/storage", label: "Storage", icon: BarChart3 },
   { href: "/enterprise/seats", label: "Seats", icon: Users },
   { href: "/enterprise/settings", label: "Settings", icon: Settings },
 ];

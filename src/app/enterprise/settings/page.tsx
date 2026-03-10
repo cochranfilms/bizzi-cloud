@@ -6,8 +6,9 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import Image from "next/image";
-import { Building2, Globe, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive } from "lucide-react";
 import Link from "next/link";
+import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
@@ -281,6 +282,14 @@ export default function EnterpriseSettingsPage() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              <HardDrive className="h-5 w-5 text-[var(--enterprise-primary)]" />
+              Storage
+            </h2>
+            <StorageAnalyticsPage basePath="/enterprise" />
           </section>
 
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
