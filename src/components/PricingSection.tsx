@@ -10,16 +10,6 @@ const BIZZI_BYTE_COLORS = {
   onyx: "#171717",
 } as const;
 
-// Bundle discount: basePrice + addonPrice - discount = finalTotal
-// e.g. Indie ($20) + Editor ($15) = $35 → $30 (save $5)
-// e.g. Video Pro ($35) + Full Frame ($22) = $57 → $50 (save $7)
-const BUNDLE_DISCOUNTS: Record<string, Record<string, number>> = {
-  "Solo Creator": { gallery: 1, editor: 2, fullFrame: 3 },
-  "Indie Filmmaker": { gallery: 2, editor: 5, fullFrame: 5 },
-  "Video Pro": { gallery: 3, editor: 5, fullFrame: 7 },
-  "Production House": { gallery: 4, editor: 6, fullFrame: 8 },
-};
-
 const freeTier = {
   name: "Starter Free",
   tagline: "Free Forever",
@@ -136,7 +126,7 @@ const powerUpAddons = [
     id: "gallery",
     name: "Bizzi Gallery Suite",
     tagline: "Gallery + Invoicing",
-    price: 12,
+    price: 5,
     description:
       "Photo galleries with invoicing, proofing & client delivery. 3 Lightroom presets included — toggle on/off like Rec.709.",
     features: [
@@ -154,7 +144,7 @@ const powerUpAddons = [
     id: "editor",
     name: "Bizzi Editor",
     tagline: "NLE Cloud Drive + Rec.709",
-    price: 15,
+    price: 8,
     description:
       "Mount your cloud as a virtual SSD. NLE editing with Rec.709 LUTs — edit RAW natively in Premiere, Resolve & Final Cut.",
     features: [
@@ -171,10 +161,10 @@ const powerUpAddons = [
     id: "fullframe",
     name: "Bizzi Full Frame",
     tagline: "Gallery Suite + Editor bundled",
-    price: 22,
+    price: 10,
     description:
       "The complete creative stack — galleries, invoicing, proofing, and NLE editing with Rec.709. Both Power Ups in one.",
-    bundleNote: "Save $5/mo vs buying separately",
+    bundleNote: "Save $3/mo vs buying separately",
     features: [
       "Everything in Bizzi Gallery Suite",
       "Unlimited galleries, proofing & invoicing",
@@ -353,16 +343,10 @@ export default function PricingSection() {
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
   const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
-
-  const discount =
-    selectedPlan && selectedAddon
-      ? BUNDLE_DISCOUNTS[selectedPlan.name]?.[selectedAddon.id] ?? 0
-      : 0;
-  const subtotal =
+  const total =
     selectedPlan && selectedAddon
       ? selectedPlan.price + selectedAddon.price
       : 0;
-  const total = Math.max(0, subtotal - discount);
 
   const BADGE_MIN_H = "28px";
 
@@ -470,14 +454,6 @@ export default function PricingSection() {
           ))}
         </div>
 
-        {/* Add-ons give discounts banner */}
-        <div className="mb-8 rounded-xl border border-bizzi-blue/30 bg-bizzi-blue/5 px-4 py-3 text-center">
-          <p className="text-sm font-medium text-neutral-800">
-            ✦ Add Power Ups to any paid plan — <strong>get a discount</strong> on
-            your total. Bundle and save.
-          </p>
-        </div>
-
         {/* Power Up Add-ons */}
         <div className="mb-16">
           <div className="mb-6">
@@ -503,14 +479,13 @@ export default function PricingSection() {
           </div>
         </div>
 
-        {/* Bundle calculator */}
+        {/* Build your plan calculator */}
         <div className="mb-16 rounded-2xl border border-neutral-200 bg-white p-6 md:p-8">
           <h3 className="text-lg font-bold text-neutral-900">
             Build your plan
           </h3>
           <p className="mt-1 text-sm text-neutral-500">
-            Select a base plan and Power Up to see your total with bundle
-            discount.
+            Select a base plan and Power Up to see your total.
           </p>
           <div className="mt-6 flex flex-wrap items-end gap-4">
             <div>
@@ -551,36 +526,17 @@ export default function PricingSection() {
                 ))}
               </select>
             </div>
-            {(selectedPlan || selectedAddon) && (
+            {selectedPlan && selectedAddon && (
               <div className="ml-auto flex items-baseline gap-2 rounded-lg bg-neutral-50 px-4 py-3">
-                {selectedPlan && selectedAddon ? (
-                  <>
-                    <span className="text-sm text-neutral-500">
-                      ${selectedPlan.price} + ${selectedAddon.price}
-                      {discount > 0 && (
-                        <span className="ml-1 text-green-600">
-                          − ${discount} discount
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-xl font-bold text-neutral-900">
-                      = ${total}/mo
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-sm text-neutral-500">
-                    Select both to see total
-                  </span>
-                )}
+                <span className="text-sm text-neutral-500">
+                  ${selectedPlan.price} + ${selectedAddon.price}
+                </span>
+                <span className="text-xl font-bold text-neutral-900">
+                  = ${total}/mo
+                </span>
               </div>
             )}
           </div>
-          {selectedPlan && selectedAddon && discount > 0 && (
-            <p className="mt-4 text-sm text-green-700">
-              You save ${discount}/mo when you bundle {selectedPlan.name} with{" "}
-              {selectedAddon.name}.
-            </p>
-          )}
         </div>
 
         {/* Enterprise Plan */}
