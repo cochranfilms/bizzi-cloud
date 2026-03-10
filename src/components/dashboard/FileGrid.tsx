@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckSquare, ChevronLeft, Film, Filter, FolderInput, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
+import { CheckSquare, ChevronLeft, Film, Filter, FolderInput, Images, LayoutGrid, List, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -163,6 +163,9 @@ export default function FileGrid() {
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const isBizziCloudBaseDrive = (name: string) =>
+    name === "Storage" || name === "RAW" || name === "Gallery Media";
   const {
     files: filteredFiles,
     loading: filtersLoading,
@@ -171,13 +174,32 @@ export default function FileGrid() {
     setFilter,
     removeFilterById,
     clearFilters,
+    clearFiltersAndKeepDrive,
     activeFilters,
-  } = useFilteredFiles({ driveId: currentDrive?.id ?? null });
+  } = useFilteredFiles({
+    driveId: currentDrive?.id ?? null,
+    driveIdAsNavigation: isBizziCloudBaseDrive(currentDrive?.name ?? "")
+      ? currentDrive?.id ?? null
+      : null,
+  });
   const drivesForFilter = linkedDrives.map((d) => ({ id: d.id, name: d.name }));
   const galleriesForFilter = galleries.map((g) => ({ id: g.id, title: g.title }));
+  const galleryTitleById = useMemo(
+    () => new Map(galleries.map((g) => [g.id, g.title])),
+    [galleries]
+  );
+  const activeFiltersWithLabels = useMemo(
+    () =>
+      activeFilters.map((af) =>
+        af.id === "gallery" && typeof af.value === "string"
+          ? { ...af, label: galleryTitleById.get(af.value) ?? af.label }
+          : af
+      ),
+    [activeFilters, galleryTitleById]
+  );
 
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
-    d.name === "Storage" || d.isCreatorRaw === true;
+    d.name === "Storage" || d.isCreatorRaw === true || d.name === "Gallery Media";
 
   const folderItems: FolderItem[] = driveFolders
     .map((d) => ({
@@ -187,14 +209,15 @@ export default function FileGrid() {
       items: d.items,
       hideShare: false,
       driveId: d.id,
-      customIcon: d.isCreatorRaw ? Film : undefined,
+      customIcon: d.isCreatorRaw ? Film : d.name === "Gallery Media" ? Images : undefined,
       preventDelete: isSystemDrive(d),
       preventRename: isSystemDrive(d),
       preventMove: isSystemDrive(d),
       isSystemFolder: isSystemDrive(d),
     }))
     .sort((a, b) => {
-      const order = (name: string) => (name === "Storage" ? 0 : name === "RAW" ? 1 : 2);
+      const order = (name: string) =>
+        name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
       return order(a.name) - order(b.name);
     });
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
@@ -222,8 +245,11 @@ export default function FileGrid() {
       loadDriveFiles(id);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
+      if (isBizziCloudBaseDrive(name)) {
+        clearFiltersAndKeepDrive(id);
+      }
     },
-    [loadDriveFiles, setCurrentFolderDriveId]
+    [loadDriveFiles, setCurrentFolderDriveId, clearFiltersAndKeepDrive]
   );
 
   const closeDrive = useCallback(() => {
@@ -321,14 +347,18 @@ export default function FileGrid() {
   }, [loadPinnedFiles]);
 
   // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
-  const searchParams = useSearchParams();
   useEffect(() => {
     const driveId = searchParams.get("drive");
     if (driveId && !currentDrive) {
       const folder = driveFolders.find((d) => d.id === driveId);
-      if (folder) openDrive(driveId, folder.name);
+      if (folder) {
+        openDrive(driveId, folder.name);
+        if (isBizziCloudBaseDrive(folder.name)) {
+          clearFiltersAndKeepDrive(driveId);
+        }
+      }
     }
-  }, [searchParams, currentDrive, driveFolders, openDrive]);
+  }, [searchParams, currentDrive, driveFolders, openDrive, clearFiltersAndKeepDrive]);
 
   const toggleFileSelection = useCallback((id: string) => {
     setSelectedFileIds((prev) => {
@@ -756,7 +786,7 @@ export default function FileGrid() {
           </button>
           {hasFilters && (
             <FilterChips
-              activeFilters={activeFilters}
+              activeFilters={activeFiltersWithLabels}
               onRemove={removeFilterById}
               onClearAll={clearFilters}
             />

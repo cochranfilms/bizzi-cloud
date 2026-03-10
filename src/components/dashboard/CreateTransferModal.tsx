@@ -90,6 +90,60 @@ export default function CreateTransferModal({
     []
   );
 
+  const pendingFolderClickRef = useRef<{ driveId: string; pathPrefix?: string } | null>(null);
+  const pendingFolderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const attachFolder = useCallback(
+    (driveId: string, pathPrefix?: string) => {
+      const prefix = pathPrefix !== undefined ? (pathPrefix ? `${pathPrefix}/` : "") : null;
+      const filesInFolder = allFilesForSelection.filter((f) => {
+        if (f.driveId !== driveId) return false;
+        if (prefix === null) return true;
+        return f.fullPath === pathPrefix || f.fullPath.startsWith(prefix);
+      });
+      const toAdd = filesInFolder.map((f) => ({
+        name: f.name,
+        path: f.path,
+        type: "file" as const,
+        backupFileId: f.backupFileId,
+        objectKey: f.objectKey,
+      }));
+      setSelectedFiles((prev) => {
+        const existingKeys = new Set(prev.map((f) => `${f.path}::${f.name}`));
+        const newFiles = toAdd.filter((f) => !existingKeys.has(`${f.path}::${f.name}`));
+        return newFiles.length > 0 ? [...prev, ...newFiles] : prev;
+      });
+    },
+    [allFilesForSelection]
+  );
+
+  const handleFolderSingleClick = useCallback(
+    (driveId: string, pathPrefix?: string) => {
+      if (pendingFolderTimerRef.current) clearTimeout(pendingFolderTimerRef.current);
+      pendingFolderClickRef.current = { driveId, pathPrefix };
+      pendingFolderTimerRef.current = setTimeout(() => {
+        pendingFolderTimerRef.current = null;
+        const pending = pendingFolderClickRef.current;
+        pendingFolderClickRef.current = null;
+        if (pending) attachFolder(pending.driveId, pending.pathPrefix);
+      }, 250);
+    },
+    [attachFolder]
+  );
+
+  const handleFolderDoubleClick = useCallback(
+    (driveId: string, pathPrefix?: string) => {
+      if (pendingFolderTimerRef.current) {
+        clearTimeout(pendingFolderTimerRef.current);
+        pendingFolderTimerRef.current = null;
+      }
+      pendingFolderClickRef.current = null;
+      setBrowseDriveId(driveId);
+      setBrowsePath(pathPrefix ?? "");
+    },
+    []
+  );
+
   const allFilesForSelection = allFilesForTransfer.map((f) => ({
     name: f.name,
     path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
@@ -565,9 +619,37 @@ export default function CreateTransferModal({
                       : filteredBrowseSubfolders.length === 0 && displayFiles.length === 0;
                 return isEmpty;
               })() ? (
-                <p className="rounded-lg border border-neutral-200 bg-white py-8 text-center text-sm text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
-                  {hasSearch ? `No files match "${fileSearch}"` : "No files in this folder"}
-                </p>
+                <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-600 dark:bg-neutral-900">
+                  {!hasSearch && browseDriveId && (
+                    <div className="flex items-center gap-1 border-b border-neutral-200 px-3 py-2 dark:border-neutral-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (browsePath) {
+                            const parts = browsePath.split("/").filter(Boolean);
+                            parts.pop();
+                            setBrowsePath(parts.join("/"));
+                          } else {
+                            setBrowseDriveId(null);
+                            setBrowsePath("");
+                          }
+                        }}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        {browsePath ? "Up" : "Drives"}
+                      </button>
+                      {browsePath && (
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                          / {browsePath.split("/").pop()}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    {hasSearch ? `No files match "${fileSearch}"` : "No files in this folder"}
+                  </p>
+                </div>
               ) : (
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-900">
                   {!hasSearch && browseDriveId && (
@@ -601,10 +683,8 @@ export default function CreateTransferModal({
                       <button
                         key={folder.key}
                         type="button"
-                        onDoubleClick={() => {
-                          setBrowseDriveId(folder.id);
-                          setBrowsePath("");
-                        }}
+                        onClick={() => handleFolderSingleClick(folder.id)}
+                        onDoubleClick={() => handleFolderDoubleClick(folder.id)}
                         className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
                       >
                         <Folder className="h-4 w-4 shrink-0 text-amber-500" />
@@ -618,7 +698,8 @@ export default function CreateTransferModal({
                       <button
                         key={folder.pathPrefix}
                         type="button"
-                        onDoubleClick={() => setBrowsePath(folder.pathPrefix)}
+                        onClick={() => handleFolderSingleClick(browseDriveId, folder.pathPrefix)}
+                        onDoubleClick={() => handleFolderDoubleClick(browseDriveId, folder.pathPrefix)}
                         className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
                       >
                         <Folder className="h-4 w-4 shrink-0 text-amber-500" />
@@ -657,7 +738,7 @@ export default function CreateTransferModal({
                 <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                   {allFilesForSelection.length} file{allFilesForSelection.length !== 1 ? "s" : ""} available
                   {fileSearch.trim() && ` • ${displayFiles.length} match${displayFiles.length !== 1 ? "es" : ""}`}
-                  {!hasSearch && " • Double-click folders to open"}
+                  {!hasSearch && " • Single-click folder to add all • Double-click to open"}
                 </p>
               )}
             </div>

@@ -19,6 +19,8 @@ const FILTER_DEBOUNCE_MS = 300;
 export interface UseFilteredFilesOptions {
   /** Scope to a specific drive when viewing inside a drive */
   driveId?: string | null;
+  /** When set, treat "drive" param as navigation (not a filter) when it matches this ID - e.g. Storage, RAW, Gallery Media */
+  driveIdAsNavigation?: string | null;
   /** Use standard useCloudFiles when no filters (default true) */
   fallbackToCloudFiles?: boolean;
 }
@@ -33,6 +35,8 @@ export interface UseFilteredFilesResult {
   removeFilterById: (id: string, value?: string) => void;
   /** Clear all filters */
   clearFilters: () => void;
+  /** Clear filters but keep drive in URL (for Storage/RAW/Gallery Media navigation) */
+  clearFiltersAndKeepDrive: (driveId: string) => void;
   /** Current filter state */
   filterState: FilterState;
   /** Active filters for chip display */
@@ -64,7 +68,7 @@ export function useFilteredFiles(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { driveId, fallbackToCloudFiles = true } = options ?? {};
+  const { driveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
 
   const [filterState, setFilterState] = useState<FilterState>(() =>
     filtersFromSearchParams(searchParams)
@@ -73,7 +77,15 @@ export function useFilteredFiles(
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
 
-  const hasFilters = hasActiveFilters(filterState);
+  /** When drive is navigation (Storage/RAW/Gallery Media), exclude it from "active filters" */
+  const effectiveFilterState =
+    driveIdAsNavigation && filterState.drive === driveIdAsNavigation
+      ? (() => {
+          const { drive: _d, ...rest } = filterState;
+          return rest;
+        })()
+      : filterState;
+  const hasFilters = hasActiveFilters(effectiveFilterState);
 
   const updateUrl = useCallback(
     (state: FilterState) => {
@@ -132,7 +144,7 @@ export function useFilteredFiles(
     setLoading(true);
     try {
       const token = await user.getIdToken(true);
-      const params = searchParamsFromFilters(filterState);
+      const params = searchParamsFromFilters(effectiveFilterState);
       if (driveId) params.set("drive_id", driveId);
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
@@ -156,7 +168,7 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, filterState, driveId]);
+  }, [user, effectiveFilterState, driveId]);
 
   useEffect(() => {
     setFilterState(filtersFromSearchParams(searchParams));
@@ -169,7 +181,17 @@ export function useFilteredFiles(
     }
   }, [hasFilters, fetchFiltered]);
 
-  const activeFilters = getActiveFilters(filterState);
+  /** Replace URL with only drive= when opening Storage/RAW/Gallery Media (clears stale filters) */
+  const clearFiltersAndKeepDrive = useCallback(
+    (driveIdToKeep: string) => {
+      const next = `${pathname ?? ""}?drive=${driveIdToKeep}`;
+      router.replace(next, { scroll: false });
+      setFilterState({ drive: driveIdToKeep });
+    },
+    [pathname, router]
+  );
+
+  const activeFilters = getActiveFilters(effectiveFilterState);
 
   return {
     files: hasFilters ? files : [],
@@ -178,6 +200,7 @@ export function useFilteredFiles(
     setFilter,
     removeFilterById,
     clearFilters,
+    clearFiltersAndKeepDrive,
     filterState,
     activeFilters,
     hasFilters,
