@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       payment_method_types: ["card"],
       line_items: lineItems,
       customer_email: email ?? undefined,
-      success_url: `${baseUrl}/dashboard?checkout=success`,
+      success_url: `${baseUrl}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/?checkout=cancelled`,
       metadata: {
         userId: uid,

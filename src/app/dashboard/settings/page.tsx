@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
@@ -689,34 +689,63 @@ function SubscriptionSection() {
   const [hasPortalAccess, setHasPortalAccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+
+  const fetchProfile = useCallback(async () => {
+    if (!user) return;
+    const token = await user.getIdToken();
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await fetch(`${base}/api/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        plan_id?: string;
+        has_portal_access?: boolean;
+      };
+      setPlanId(data.plan_id ?? "free");
+      setHasPortalAccess(data.has_portal_access ?? false);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const token = await user.getIdToken();
-        const base = typeof window !== "undefined" ? window.location.origin : "";
-        const res = await fetch(`${base}/api/profile`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!cancelled && res.ok) {
-          const data = (await res.json()) as {
-            plan_id?: string;
-            has_portal_access?: boolean;
-          };
-          setPlanId(data.plan_id ?? "free");
-          setHasPortalAccess(data.has_portal_access ?? false);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    fetchProfile().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, fetchProfile]);
+
+  const syncFromStripe = async () => {
+    if (!user) return;
+    setSyncLoading(true);
+    setPortalError(null);
+    try {
+      const token = await user.getIdToken(true);
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/stripe/sync-by-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.ok && data.ok) {
+        await fetchProfile();
+      } else {
+        setPortalError(data.error ?? "No subscription found");
+      }
+    } catch {
+      setPortalError("Failed to sync");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   const openPortal = async () => {
     if (!user) return;
@@ -795,7 +824,21 @@ function SubscriptionSection() {
                 </p>
               </div>
             ) : (
-              <div>
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={syncFromStripe}
+                  disabled={syncLoading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  {syncLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Sync subscription from Stripe
+                </button>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  If you just subscribed but still see Starter Free, click to sync.
+                </p>
                 <Link
                   href="/#pricing"
                   className="inline-flex items-center gap-2 text-sm font-medium text-bizzi-blue hover:underline"
@@ -803,9 +846,6 @@ function SubscriptionSection() {
                   <ExternalLink className="h-4 w-4" />
                   Upgrade your plan
                 </Link>
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  Upgrade from the pricing page to manage your subscription
-                </p>
               </div>
             )}
             {portalError && (
