@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Film, FolderInput, Images, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import {
+  filterDriveFoldersByPowerUp,
+  filterLinkedDrivesByPowerUp,
+} from "@/lib/drive-powerup-filter";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useBackup } from "@/context/BackupContext";
@@ -124,7 +128,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
-  const { planId, loading: subscriptionLoading } = useSubscription();
+  const { planId, hasEditor, hasGallerySuite, loading: subscriptionLoading } = useSubscription();
   const {
     linkedDrives,
     getOrCreateStorageDrive,
@@ -188,8 +192,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       return order(a.name) - order(b.name);
     });
 
+  // Filter system drives (Storage, RAW, Gallery Media) by power-up - only show what user has purchased
+  const visibleSystemDrives = filterDriveFoldersByPowerUp(driveFolders, {
+    hasEditor,
+    hasGallerySuite,
+  });
   const baseFolderItems = folderItems.filter((f) => {
-    const drive = driveFolders.find((d) => d.id === f.driveId);
+    const drive = visibleSystemDrives.find((d) => d.id === f.driveId);
     return drive ? isSystemDrive(drive) : false;
   });
   const driveFolderItems = folderItems.filter((f) => {
@@ -219,7 +228,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     loadPinnedFiles();
   }, [loadPinnedFiles]);
 
-  // Ensure Storage, RAW, and Gallery Media folders exist for all subscribed (paid) users on personal dashboard
+  // Ensure Storage, RAW, and Gallery Media folders exist for subscribed (paid) users on personal dashboard.
+  // Only create RAW if user has Editor/Full Frame power-up; only create Gallery Media if user has Gallery Suite/Full Frame.
   useEffect(() => {
     if (
       basePath !== "/dashboard" ||
@@ -234,13 +244,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     const hasStorage = driveFolders.some((d) => d.name === "Storage");
     const hasRaw = driveFolders.some((d) => d.isCreatorRaw);
     const hasGalleryMedia = driveFolders.some((d) => d.name === "Gallery Media");
-    if (hasStorage && hasRaw && hasGalleryMedia) return;
+    const needsRaw = !hasRaw && hasEditor;
+    const needsGalleryMedia = !hasGalleryMedia && hasGallerySuite;
+    if (hasStorage && !needsRaw && !needsGalleryMedia) return;
     let cancelled = false;
     (async () => {
       try {
         if (!hasStorage) await getOrCreateStorageDrive();
-        if (!cancelled && !hasRaw) await getOrCreateCreatorRawDrive();
-        if (!cancelled && !hasGalleryMedia) await getOrCreateGalleryDrive();
+        if (!cancelled && needsRaw) await getOrCreateCreatorRawDrive();
+        if (!cancelled && needsGalleryMedia) await getOrCreateGalleryDrive();
         if (!cancelled) refetch();
       } catch (e) {
         console.error("Ensure default folders:", e);
@@ -254,6 +266,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     loading,
     subscriptionLoading,
     planId,
+    hasEditor,
+    hasGallerySuite,
     driveFolders,
     getOrCreateStorageDrive,
     getOrCreateCreatorRawDrive,
@@ -698,7 +712,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </div>
         ) : (
           <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Storage, RAW, and Gallery Media folders will appear here.
+            Your Bizzi Cloud Base folders will appear here based on your plan and power-ups.
           </p>
         )}
       </section>
@@ -877,7 +891,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         excludeDriveIds={Array.from(selectedFolderKeys).map((k) =>
           k.startsWith("drive-") ? k.slice(6) : k
         )}
-        folders={linkedDrives}
+        folders={filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite })}
         onMove={handleBulkMoveConfirm}
       />
 

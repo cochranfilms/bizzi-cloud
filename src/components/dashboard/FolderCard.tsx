@@ -9,6 +9,8 @@ import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useSubscription } from "@/hooks/useSubscription";
+import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -69,6 +71,11 @@ export default function FolderCard({
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+  const { hasEditor, hasGallerySuite } = useSubscription();
+  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
+    hasEditor,
+    hasGallerySuite,
+  });
   const { isPinned, pinItem, unpinItem } = usePinned();
   const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
   const { confirm } = useConfirm();
@@ -313,7 +320,7 @@ export default function FolderCard({
             itemName={item.name}
             itemType="folder"
             excludeDriveId={item.driveId}
-            folders={linkedDrives}
+            folders={visibleLinkedDrives}
             onMove={(targetDriveId) => moveFolderContentsToFolder(item.driveId!, targetDriveId)}
           />
           <CreateFolderModal

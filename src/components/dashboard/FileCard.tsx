@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useSubscription } from "@/hooks/useSubscription";
+import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -69,6 +71,11 @@ export default function FileCard({
   const [cardRef, isInView] = useInView<HTMLDivElement>();
   const { renameFile, moveFile } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+  const { hasEditor, hasGallerySuite } = useSubscription();
+  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
+    hasEditor,
+    hasGallerySuite,
+  });
   const { isPinned, pinItem, unpinItem } = usePinned();
   const filePinned = isPinned("file", file.id);
   const canPreview = !!file.objectKey;
@@ -262,7 +269,7 @@ export default function FileCard({
         itemName={file.name}
         itemType="file"
         excludeDriveId={file.driveId}
-        folders={linkedDrives}
+        folders={visibleLinkedDrives}
         onMove={(targetDriveId) => moveFile(file.id, targetDriveId)}
       />
       <CreateFolderModal

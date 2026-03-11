@@ -17,6 +17,11 @@ import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useSubscription } from "@/hooks/useSubscription";
+import {
+  filterDriveFoldersByPowerUp,
+  filterLinkedDrivesByPowerUp,
+} from "@/lib/drive-powerup-filter";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useGalleries } from "@/hooks/useGalleries";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
@@ -134,6 +139,7 @@ export default function FileGrid() {
   const { galleries } = useGalleries();
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
+  const { hasEditor, hasGallerySuite } = useSubscription();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -182,7 +188,11 @@ export default function FileGrid() {
       ? currentDrive?.id ?? null
       : null,
   });
-  const drivesForFilter = linkedDrives.map((d) => ({ id: d.id, name: d.name }));
+  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
+    hasEditor,
+    hasGallerySuite,
+  });
+  const drivesForFilter = visibleLinkedDrives.map((d) => ({ id: d.id, name: d.name }));
   const galleriesForFilter = galleries.map((g) => ({ id: g.id, title: g.title }));
   const galleryTitleById = useMemo(
     () => new Map(galleries.map((g) => [g.id, g.title])),
@@ -201,7 +211,13 @@ export default function FileGrid() {
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
     d.name === "Storage" || d.isCreatorRaw === true || d.name === "Gallery Media";
 
-  const folderItems: FolderItem[] = driveFolders
+  // Filter drives by power-up so users only see folders they've purchased
+  const visibleDriveFolders = filterDriveFoldersByPowerUp(driveFolders, {
+    hasEditor,
+    hasGallerySuite,
+  });
+
+  const folderItems: FolderItem[] = visibleDriveFolders
     .map((d) => ({
       name: d.name,
       type: "folder" as const,
@@ -347,10 +363,11 @@ export default function FileGrid() {
   }, [loadPinnedFiles]);
 
   // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
+  // Only open if drive is in visible set (respects power-up gating)
   useEffect(() => {
     const driveId = searchParams.get("drive");
     if (driveId && !currentDrive) {
-      const folder = driveFolders.find((d) => d.id === driveId);
+      const folder = visibleDriveFolders.find((d) => d.id === driveId);
       if (folder) {
         openDrive(driveId, folder.name);
         if (isBizziCloudBaseDrive(folder.name)) {
@@ -358,7 +375,7 @@ export default function FileGrid() {
         }
       }
     }
-  }, [searchParams, currentDrive, driveFolders, openDrive, clearFiltersAndKeepDrive]);
+  }, [searchParams, currentDrive, visibleDriveFolders, openDrive, clearFiltersAndKeepDrive]);
 
   const toggleFileSelection = useCallback((id: string) => {
     setSelectedFileIds((prev) => {
@@ -1223,7 +1240,7 @@ export default function FileGrid() {
           ...(currentDriveId ? [currentDriveId] : []),
           ...Array.from(selectedFolderKeys).map((k) => (k.startsWith("drive-") ? k.slice(6) : k)),
         ]}
-        folders={linkedDrives}
+        folders={visibleLinkedDrives}
         onMove={handleBulkMoveConfirm}
       />
 

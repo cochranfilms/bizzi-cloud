@@ -7,6 +7,8 @@ import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useSubscription } from "@/hooks/useSubscription";
+import { filterDriveFoldersByPowerUp } from "@/lib/drive-powerup-filter";
 import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -47,6 +49,11 @@ export default function CreateTransferModal({
     loadingAllFiles,
     fetchAllFilesForTransfer,
   } = useCloudFiles();
+  const { hasEditor, hasGallerySuite } = useSubscription();
+  const visibleDriveFolders = filterDriveFoldersByPowerUp(driveFolders, {
+    hasEditor,
+    hasGallerySuite,
+  });
   const { uploadFiles, fileUploadProgress, cancelFileUpload } = useBackup();
   const uploadStartedByModalRef = useRef(false);
   const [name, setName] = useState("");
@@ -620,7 +627,7 @@ export default function CreateTransferModal({
                   hasSearch
                     ? displayFiles.length === 0
                     : !browseDriveId
-                      ? driveFolders.length === 0
+                      ? visibleDriveFolders.length === 0
                       : filteredBrowseSubfolders.length === 0 && displayFiles.length === 0;
                 return isEmpty;
               })() ? (
@@ -684,7 +691,7 @@ export default function CreateTransferModal({
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {!hasSearch && !browseDriveId && driveFolders.map((folder) => {
+                    {!hasSearch && !browseDriveId && visibleDriveFolders.map((folder) => {
                       const folderKey = `drive:${folder.id}`;
                       const isSelected = selectedFolderKeys.has(folderKey);
                       return (

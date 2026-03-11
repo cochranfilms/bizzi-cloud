@@ -9,6 +9,8 @@ import {
   Plus,
 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
+import { useSubscription } from "@/hooks/useSubscription";
+import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 
 export default function SyncDriveButton() {
   const {
@@ -22,6 +24,11 @@ export default function SyncDriveButton() {
     fsAccessSupported,
     pickDirectory,
   } = useBackup();
+  const { hasEditor, hasGallerySuite } = useSubscription();
+  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
+    hasEditor,
+    hasGallerySuite,
+  });
 
   const [showDriveList, setShowDriveList] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -40,7 +47,7 @@ export default function SyncDriveButton() {
   }, [showDriveList]);
 
   const handleSelectDrive = async (
-    drive: (typeof linkedDrives)[number]
+    drive: (typeof visibleLinkedDrives)[number]
   ) => {
     setShowDriveList(false);
     await startSync(drive);
@@ -62,7 +69,7 @@ export default function SyncDriveButton() {
   };
 
   const handleSyncClick = () => {
-    if (linkedDrives.length === 0) {
+    if (visibleLinkedDrives.length === 0) {
       handleAddNewDrive();
     } else {
       setShowDriveList((prev) => !prev);
@@ -105,7 +112,7 @@ export default function SyncDriveButton() {
             <>
               <HardDrive className="h-4 w-4" />
               Sync
-              {linkedDrives.length > 0 && (
+              {visibleLinkedDrives.length > 0 && (
                 <ChevronDown
                   className={`h-4 w-4 transition-transform ${showDriveList ? "rotate-180" : ""}`}
                 />
@@ -114,12 +121,12 @@ export default function SyncDriveButton() {
           )}
         </button>
 
-        {showDriveList && linkedDrives.length > 0 && (
+        {showDriveList && visibleLinkedDrives.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
             <p className="border-b border-neutral-100 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
               Select drive to sync
             </p>
-            {linkedDrives.map((drive) => (
+            {visibleLinkedDrives.map((drive) => (
               <button
                 key={drive.id}
                 type="button"
@@ -210,9 +217,9 @@ export default function SyncDriveButton() {
         </p>
       )}
 
-      {linkedDrives.length > 0 && !isSyncing && !showDriveList && (
+      {visibleLinkedDrives.length > 0 && !isSyncing && !showDriveList && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {linkedDrives.length} drive{linkedDrives.length > 1 ? "s" : ""} linked
+          {visibleLinkedDrives.length} drive{visibleLinkedDrives.length > 1 ? "s" : ""} linked
         </p>
       )}
     </div>
