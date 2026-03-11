@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 const navLinks = [
   { href: "#features", label: "Features" },
@@ -14,6 +15,8 @@ const navLinks = [
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, loading } = useAuth();
+  const isSignedIn = !!user && !loading;
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-neutral-100">
@@ -47,18 +50,29 @@ export default function Header() {
         </ul>
 
         <div className="hidden md:flex items-center gap-4">
-          <Link
-            href="/login"
-            className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="#pricing"
-            className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
-          >
-            Get Started
-          </Link>
+          {isSignedIn ? (
+            <Link
+              href="/dashboard"
+              className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="#pricing"
+                className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -108,24 +122,38 @@ export default function Header() {
                 </Link>
               </li>
             ))}
-            <li>
-              <Link
-                href="/login"
-                className="text-neutral-600 hover:text-neutral-900"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Sign In
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="#pricing"
-                className="inline-block px-4 py-2 bg-bizzi-blue text-white font-medium rounded-full"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Get Started
-              </Link>
-            </li>
+            {isSignedIn ? (
+              <li>
+                <Link
+                  href="/dashboard"
+                  className="inline-block px-4 py-2 bg-bizzi-blue text-white font-medium rounded-full"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Go to Dashboard
+                </Link>
+              </li>
+            ) : (
+              <>
+                <li>
+                  <Link
+                    href="/login"
+                    className="text-neutral-600 hover:text-neutral-900"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Sign In
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="#pricing"
+                    className="inline-block px-4 py-2 bg-bizzi-blue text-white font-medium rounded-full"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Get Started
+                  </Link>
+                </li>
+              </>
+            )}
           </ul>
         </div>
       )}

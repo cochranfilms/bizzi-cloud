@@ -107,21 +107,31 @@ export default function RightPanel({
         const items = Array.from(e.dataTransfer.items).filter(
           (item) => item.kind === "file"
         );
+        // CRITICAL: Start all getAsFileSystemHandle() calls synchronously - the data
+        // transfer context expires after the first await, so sequential awaits only
+        // retrieve the first file. We must create all promises in the same tick.
         type ItemWithFS = DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> };
-        for (const item of items) {
+        const promises = items.map(async (item) => {
           try {
             const handle = await (item as ItemWithFS).getAsFileSystemHandle?.();
-            if (!handle) continue;
-            if (handle.kind === "directory") {
-              dirHandles.push(handle as FileSystemDirectoryHandle);
-            } else {
-              const file = await (handle as FileSystemFileHandle).getFile();
-              files.push(file);
+            if (!handle) {
+              const file = item.getAsFile();
+              return { file: file ?? null, dirHandle: null };
             }
+            if (handle.kind === "directory") {
+              return { file: null, dirHandle: handle as FileSystemDirectoryHandle };
+            }
+            const file = await (handle as FileSystemFileHandle).getFile();
+            return { file, dirHandle: null };
           } catch {
             const file = item.getAsFile();
-            if (file) files.push(file);
+            return { file: file ?? null, dirHandle: null };
           }
+        });
+        const results = await Promise.all(promises);
+        for (const r of results) {
+          if (r.file) files.push(r.file);
+          if (r.dirHandle) dirHandles.push(r.dirHandle);
         }
       } else {
         const droppedFiles = Array.from(e.dataTransfer.files);

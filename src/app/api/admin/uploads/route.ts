@@ -74,7 +74,7 @@ export async function GET(request: Request) {
   }
   const failures = Object.entries(failureReasons).map(([reason, count]) => ({ reason, count }));
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     metrics: {
       countToday,
       successRate,
@@ -85,4 +85,7 @@ export async function GET(request: Request) {
     volume,
     failures,
   });
+
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  return response;
 }

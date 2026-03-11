@@ -23,7 +23,10 @@ async function apiAdmin<T>(
     const token = await getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(url.toString(), { headers });
+  const res = await fetch(url.toString(), {
+    headers,
+    cache: "no-store",
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
@@ -33,6 +36,25 @@ async function apiAdmin<T>(
 
 export interface FetchUploadsOptions {
   getToken?: () => Promise<string | null>;
+}
+
+export interface UploadAnalyticsData {
+  metrics: UploadMetrics;
+  volume: UploadVolumePoint[];
+  failures: UploadFailureReason[];
+}
+
+/** Single fetch for all upload analytics - ensures consistent real-time snapshot */
+export async function fetchUploadAnalytics(
+  days = 14,
+  options?: FetchUploadsOptions
+): Promise<UploadAnalyticsData> {
+  const data = await apiAdmin<UploadAnalyticsData>(
+    "/api/admin/uploads",
+    { days: String(days) },
+    options?.getToken
+  );
+  return data;
 }
 
 export async function fetchUploadMetrics(

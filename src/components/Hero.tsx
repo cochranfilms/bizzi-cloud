@@ -1,6 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Hero() {
+  const { user, loading } = useAuth();
+  const isSignedIn = !!user && !loading;
+
   return (
     <section className="relative py-24 md:py-32 px-6 overflow-hidden">
       <div
@@ -18,10 +24,10 @@ export default function Hero() {
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
           <Link
-            href="#pricing"
+            href={isSignedIn ? "/dashboard" : "#pricing"}
             className="px-6 py-3 bg-bizzi-blue text-white font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
           >
-            Get Started
+            {isSignedIn ? "Go to Dashboard" : "Get Started"}
           </Link>
           <a
             href="https://github.com/cochranfilms/bizzi-cloud/releases"

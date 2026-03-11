@@ -1,19 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  fetchUploadMetrics,
-  fetchUploadVolume,
-  fetchUploadFailures,
-} from "@/admin/services/adminUploadsService";
+import { fetchUploadAnalytics } from "@/admin/services/adminUploadsService";
 import { useAuth } from "@/context/AuthContext";
 
 export function useAdminUploads() {
   const { user } = useAuth();
-  const [metrics, setMetrics] = useState<Awaited<ReturnType<typeof fetchUploadMetrics>> | null>(null);
-  const [volume, setVolume] = useState<Awaited<ReturnType<typeof fetchUploadVolume>>>([]);
-  const [failures, setFailures] = useState<Awaited<ReturnType<typeof fetchUploadFailures>>>([]);
+  const [metrics, setMetrics] = useState<Awaited<ReturnType<typeof fetchUploadAnalytics>>["metrics"] | null>(null);
+  const [volume, setVolume] = useState<Awaited<ReturnType<typeof fetchUploadAnalytics>>["volume"]>([]);
+  const [failures, setFailures] = useState<Awaited<ReturnType<typeof fetchUploadAnalytics>>["failures"]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const getToken = useCallback(
@@ -22,21 +19,19 @@ export function useAdminUploads() {
   );
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
+    if (!metrics) setLoading(true);
     setError(null);
     try {
-      const [m, v, f] = await Promise.all([
-        fetchUploadMetrics({ getToken }),
-        fetchUploadVolume(14, { getToken }),
-        fetchUploadFailures({ getToken }),
-      ]);
-      setMetrics(m);
-      setVolume(v);
-      setFailures(f);
+      const data = await fetchUploadAnalytics(14, { getToken });
+      setMetrics(data.metrics);
+      setVolume(data.volume);
+      setFailures(data.failures);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load upload data");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [getToken]);
 
@@ -44,5 +39,5 @@ export function useAdminUploads() {
     void refresh();
   }, [refresh]);
 
-  return { metrics, volume, failures, loading, error, refresh };
+  return { metrics, volume, failures, loading, error, refresh, refreshing };
 }

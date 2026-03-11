@@ -7,7 +7,7 @@ import UploadFailuresPanel from "../components/uploads/UploadFailuresPanel";
 import { useAdminUploads } from "../hooks/useAdminUploads";
 
 export default function UploadAnalyticsPage() {
-  const { metrics, volume, failures, loading, error, refresh } = useAdminUploads();
+  const { metrics, volume, failures, loading, error, refresh, refreshing } = useAdminUploads();
 
   if (loading && !metrics) {
     return (
@@ -45,9 +45,10 @@ export default function UploadAnalyticsPage() {
           <button
             type="button"
             onClick={() => void refresh()}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium dark:border-neutral-700 dark:bg-neutral-800"
+            disabled={refreshing}
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium transition-opacity dark:border-neutral-700 dark:bg-neutral-800 disabled:opacity-70 disabled:cursor-wait"
           >
-            Refresh
+            {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         }
       />
