@@ -36,9 +36,9 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(uid).get();
-  const stripeSubscriptionId = profileSnap.data()?.stripe_subscription_id as
-    | string
-    | undefined;
+  const rawSub = profileSnap.data()?.stripe_subscription_id;
+  const stripeSubscriptionId =
+    typeof rawSub === "string" ? rawSub : (rawSub as { id?: string } | null)?.id ?? undefined;
 
   if (!stripeSubscriptionId) {
     return NextResponse.json(

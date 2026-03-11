@@ -35,7 +35,7 @@ export default function FileTypeDistributionChart({
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
         Storage by type
       </h4>
-      <ResponsiveContainer width="100%" height="80%">
+      <ResponsiveContainer width="100%" height="80%" minHeight={120} minWidth={200}>
         <PieChart>
           <Pie
             data={data}

@@ -42,7 +42,7 @@ export default function StorageGrowthChart({
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
         Monthly upload volume
       </h4>
-      <ResponsiveContainer width="100%" height="80%">
+      <ResponsiveContainer width="100%" height="80%" minHeight={120} minWidth={200}>
         <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
           <defs>
             <linearGradient id="uploadGradient" x1="0" y1="0" x2="0" y2="1">

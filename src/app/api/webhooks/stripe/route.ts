@@ -127,6 +127,11 @@ export async function POST(request: Request) {
         }
       }
 
+      const subId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : (session.subscription as Stripe.Subscription | null)?.id ?? null;
+
       await db.collection("profiles").doc(userId).set(
         {
           userId,
@@ -135,7 +140,7 @@ export async function POST(request: Request) {
           storage_quota_bytes: storageQuotaBytes,
           storage_addon_id: storageAddonId,
           stripe_customer_id: session.customer ?? null,
-          stripe_subscription_id: session.subscription ?? null,
+          stripe_subscription_id: subId,
           stripe_updated_at: new Date().toISOString(),
         },
         { merge: true }

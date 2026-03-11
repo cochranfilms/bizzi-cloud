@@ -76,7 +76,9 @@ export async function updateSubscriptionWithProration(
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profile = profileSnap.data();
-  const stripeSubscriptionId = profile?.stripe_subscription_id as string | undefined;
+  const rawSub = profile?.stripe_subscription_id;
+  const stripeSubscriptionId =
+    typeof rawSub === "string" ? rawSub : (rawSub as { id?: string } | null)?.id ?? undefined;
 
   if (!stripeSubscriptionId) {
     return NextResponse.json(
@@ -95,7 +97,7 @@ export async function updateSubscriptionWithProration(
   } catch (err) {
     console.error("[Stripe update-subscription] Failed to retrieve:", err);
     return NextResponse.json(
-      { error: "Failed to load subscription" },
+      { error: "Failed to load subscription", code: "SUBSCRIPTION_LOAD_FAILED" },
       { status: 500 }
     );
   }
@@ -118,7 +120,7 @@ export async function updateSubscriptionWithProration(
 
   if (!planItem) {
     return NextResponse.json(
-      { error: "Could not identify plan in subscription" },
+      { error: "Could not identify plan in subscription", code: "PLAN_NOT_FOUND" },
       { status: 500 }
     );
   }
@@ -136,7 +138,7 @@ export async function updateSubscriptionWithProration(
   } catch (err) {
     console.error("[Stripe update-subscription] Failed to get plan price:", err);
     return NextResponse.json(
-      { error: "Failed to update. Please try again." },
+      { error: "Failed to update. Please try again.", code: "PLAN_PRICE_FAILED" },
       { status: 500 }
     );
   }
@@ -168,7 +170,7 @@ export async function updateSubscriptionWithProration(
       } catch (err) {
         console.error("[Stripe update-subscription] Failed to get addon price:", err);
         return NextResponse.json(
-          { error: "Failed to update. Please try again." },
+          { error: "Failed to update. Please try again.", code: "ADDON_PRICE_FAILED" },
           { status: 500 }
         );
       }
@@ -193,7 +195,7 @@ export async function updateSubscriptionWithProration(
       } catch (err) {
         console.error("[Stripe update-subscription] Failed to get storage addon price:", err);
         return NextResponse.json(
-          { error: "Failed to update. Please try again." },
+          { error: "Failed to update. Please try again.", code: "STORAGE_ADDON_PRICE_FAILED" },
           { status: 500 }
         );
       }

@@ -48,7 +48,9 @@ export async function createChangePlanCheckoutSession(
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profile = profileSnap.data();
   const stripeCustomerId = profile?.stripe_customer_id as string | undefined;
-  const stripeSubscriptionId = profile?.stripe_subscription_id as string | undefined;
+  const rawSub = profile?.stripe_subscription_id;
+  const stripeSubscriptionId =
+    typeof rawSub === "string" ? rawSub : (rawSub as { id?: string } | null)?.id ?? undefined;
 
   if (!stripeCustomerId || !stripeSubscriptionId) {
     return NextResponse.json(
@@ -66,7 +68,7 @@ export async function createChangePlanCheckoutSession(
   } catch (err) {
     console.error("[Stripe checkout-change-plan] Failed to get plan price:", err);
     return NextResponse.json(
-      { error: "Checkout failed. Please try again." },
+      { error: "Checkout failed. Please try again.", code: "PLAN_PRICE_FAILED" },
       { status: 500 }
     );
   }
@@ -82,7 +84,7 @@ export async function createChangePlanCheckoutSession(
     } catch (err) {
       console.error("[Stripe checkout-change-plan] Failed to get addon price:", err);
       return NextResponse.json(
-        { error: "Checkout failed. Please try again." },
+        { error: "Checkout failed. Please try again.", code: "ADDON_PRICE_FAILED" },
         { status: 500 }
       );
     }
@@ -97,7 +99,7 @@ export async function createChangePlanCheckoutSession(
       } catch (err) {
         console.error("[Stripe checkout-change-plan] Failed to get storage addon price:", err);
         return NextResponse.json(
-          { error: "Checkout failed. Please try again." },
+          { error: "Checkout failed. Please try again.", code: "STORAGE_ADDON_PRICE_FAILED" },
           { status: 500 }
         );
       }
@@ -144,7 +146,7 @@ export async function createChangePlanCheckoutSession(
 
     if (!session.url) {
       return NextResponse.json(
-        { error: "Failed to create checkout session" },
+        { error: "Failed to create checkout session", code: "NO_CHECKOUT_URL" },
         { status: 500 }
       );
     }
@@ -153,7 +155,7 @@ export async function createChangePlanCheckoutSession(
   } catch (err) {
     console.error("[Stripe checkout-change-plan]", err);
     return NextResponse.json(
-      { error: "Checkout failed. Please try again." },
+      { error: "Checkout failed. Please try again.", code: "STRIPE_CHECKOUT_FAILED" },
       { status: 500 }
     );
   }

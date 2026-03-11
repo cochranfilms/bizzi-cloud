@@ -96,7 +96,7 @@ export default function ChangePlanPage() {
         headers,
         body,
       });
-      let data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      let data = (await res.json()) as { ok?: boolean; url?: string; error?: string; code?: string };
       if (res.ok && data.ok) {
         refetch();
         window.dispatchEvent(new CustomEvent("subscription-updated"));
@@ -115,7 +115,8 @@ export default function ChangePlanPage() {
           return;
         }
       }
-      setApplyError(data.error ?? "Update failed");
+      const errMsg = data.error ?? "Update failed";
+      setApplyError(data.code ? `${errMsg} (${data.code})` : errMsg);
     } catch {
       setApplyError("Update failed. Please try again.");
     } finally {

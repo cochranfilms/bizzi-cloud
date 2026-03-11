@@ -116,6 +116,11 @@ export async function POST(request: Request) {
 
   const storageQuotaBytes = getStorageBytesForPlan(planId);
 
+  const subId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : (session.subscription as Stripe.Subscription | null)?.id ?? null;
+
   await db.collection("profiles").doc(uid).set(
     {
       userId: uid,
@@ -124,7 +129,7 @@ export async function POST(request: Request) {
       storage_quota_bytes: storageQuotaBytes,
       storage_used_bytes: 0,
       stripe_customer_id: session.customer ?? null,
-      stripe_subscription_id: session.subscription ?? null,
+      stripe_subscription_id: subId,
       stripe_updated_at: new Date().toISOString(),
     },
     { merge: true }

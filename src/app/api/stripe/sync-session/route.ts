@@ -121,10 +121,10 @@ export async function POST(request: Request) {
   const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
   let storageQuotaBytes = getStorageBytesForPlan(planId);
   let storageAddonId: string | null = null;
-  const subId =
+  const subId: string | null =
     typeof session.subscription === "string"
       ? session.subscription
-      : session.subscription?.id;
+      : (session.subscription as Stripe.Subscription | null)?.id ?? null;
   if (subId) {
     try {
       const sub = await stripe.subscriptions.retrieve(subId, {
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
       storage_quota_bytes: storageQuotaBytes,
       storage_addon_id: storageAddonId,
       stripe_customer_id: session.customer ?? null,
-      stripe_subscription_id: session.subscription ?? null,
+      stripe_subscription_id: subId,
       stripe_updated_at: new Date().toISOString(),
     },
     { merge: true }
