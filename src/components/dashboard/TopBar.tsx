@@ -6,8 +6,10 @@ import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
 import GalleryPickerModal from "./GalleryPickerModal";
+import UppyUploadModal from "@/components/upload/UppyUploadModal";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 
 interface TopBarProps {
   title?: string;
@@ -37,8 +39,13 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     fsAccessSupported,
     syncProgress,
     creatorRawDriveId,
+    getOrCreateStorageDrive,
+    bumpStorageVersion,
   } = useBackup();
+  const { org } = useEnterprise();
   const [galleryPickerFiles, setGalleryPickerFiles] = useState<File[] | null>(null);
+  const [uppyModalOpen, setUppyModalOpen] = useState(false);
+  const [uppyDriveId, setUppyDriveId] = useState<string | null>(null);
   const isRawFolder = creatorRawDriveId && currentDriveId === creatorRawDriveId;
   const isGalleryMediaDrive = Boolean(
     currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
@@ -63,9 +70,18 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     }
   }, [newDropdownOpen]);
 
-  const handleFileUploadClick = () => {
+  const handleFileUploadClick = async () => {
     setNewDropdownOpen(false);
-    fileInputRef.current?.click();
+    if (isGalleryMediaDrive) {
+      fileInputRef.current?.click();
+      return;
+    }
+    const driveId =
+      currentDriveId && linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
+        ? currentDriveId
+        : (await getOrCreateStorageDrive()).id;
+    setUppyDriveId(driveId);
+    setUppyModalOpen(true);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -245,6 +261,23 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           }
         }}
       />
+
+      {uppyDriveId && (
+        <UppyUploadModal
+          open={uppyModalOpen}
+          onClose={() => {
+            setUppyModalOpen(false);
+            setUppyDriveId(null);
+          }}
+          driveId={uppyDriveId}
+          workspaceId={pathname.startsWith("/enterprise") && org?.id ? org.id : null}
+          onUploadComplete={() => {
+            bumpStorageVersion();
+            setUppyModalOpen(false);
+            setUppyDriveId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

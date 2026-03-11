@@ -1345,6 +1345,18 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 },
                 body: JSON.stringify({ object_key: ev.objectKey, name: file.name }),
               }).catch(() => {});
+              fetch("/api/mux/create-asset", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  object_key: ev.objectKey,
+                  name: file.name,
+                  backup_file_id: fileRef.id,
+                }),
+              }).catch(() => {});
             }
             await updateDoc(doc(db, "linked_drives", drive.id), {
               last_synced_at: new Date().toISOString(),

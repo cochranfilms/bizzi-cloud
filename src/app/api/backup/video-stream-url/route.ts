@@ -1,7 +1,7 @@
 import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
-import { verifyIdToken } from "@/lib/firebase-admin";
+import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -61,9 +61,22 @@ export async function POST(request: Request) {
   }
 
   try {
+    const db = getAdminFirestore();
+    const muxSnap = await db
+      .collection("backup_files")
+      .where("object_key", "==", objectKey)
+      .limit(5)
+      .get();
+
+    const muxDoc = muxSnap.docs.find((d) => d.data().mux_playback_id);
+    const muxPlaybackId = muxDoc?.data()?.mux_playback_id as string | undefined;
+    if (muxPlaybackId) {
+      const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8`;
+      return NextResponse.json({ streamUrl, isHls: true });
+    }
+
     const proxyKey = getProxyObjectKey(objectKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
-    // Return direct B2/CDN URL - no file bytes through Vercel (4.5 MB limit).
     const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({ streamUrl });
   } catch (err) {

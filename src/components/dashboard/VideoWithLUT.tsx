@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
+import Hls from "hls.js";
 
 const LUT_SIZE = 33;
 const LUT_URL = "/CINECOLOR_S-LOG3.cube";
@@ -156,6 +157,8 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const videoSrc = streamUrl ?? src;
   const [lutEnabled, setLutEnabled] = useState(false);
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [lutReady, setLutReady] = useState(false);
@@ -446,13 +449,39 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+
+    const isHls = videoSrc.includes(".m3u8");
+    if (isHls && Hls.isSupported()) {
+      hlsRef.current?.destroy();
+      const hls = new Hls();
+      hlsRef.current = hls;
+      hls.loadSource(videoSrc);
+      hls.attachMedia(video);
+      return () => {
+        hls.destroy();
+        hlsRef.current = null;
+      };
+    }
+    if (isHls && video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = videoSrc;
+      return () => { video.src = ""; };
+    }
+    if (!isHls) {
+      video.src = videoSrc;
+      return () => { video.src = ""; };
+    }
+  }, [videoSrc]);
+
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg bg-red-900/20 p-4 text-red-400">
         <p className="text-sm">{error}</p>
         <video
           ref={videoRef}
-          src={src}
+          src={!videoSrc?.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls
           preload="metadata"
@@ -480,7 +509,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       >
         <video
           ref={videoRef}
-          src={src}
+          src={!videoSrc.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls={false}
           preload="auto"

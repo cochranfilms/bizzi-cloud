@@ -1,0 +1,122 @@
+/**
+ * Mux Video API — create assets from B2 URLs for instant playback.
+ * Mux pulls the file from our B2, transcodes, and delivers via HLS.
+ */
+
+const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
+const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
+
+export function isMuxConfigured(): boolean {
+  return !!MUX_TOKEN_ID && !!MUX_TOKEN_SECRET;
+}
+
+/** Create a Mux asset from an existing file in B2. Requires a presigned download URL. */
+export async function createMuxAssetFromUrl(
+  sourceUrl: string,
+  options?: { passthrough?: string; playbackPolicy?: "public" | "signed" }
+): Promise<{
+  assetId: string;
+  playbackId: string;
+  status: string;
+}> {
+  if (!isMuxConfigured()) {
+    throw new Error("Mux is not configured (MUX_TOKEN_ID, MUX_TOKEN_SECRET)");
+  }
+
+  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
+
+  const body: Record<string, unknown> = {
+    input: [{ url: sourceUrl }],
+    playback_policy: options?.playbackPolicy ?? "public",
+  };
+  if (options?.passthrough) {
+    body.passthrough = options.passthrough;
+  }
+
+  const res = await fetch("https://api.mux.com/video/v1/assets", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${basicAuth}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(
+      (errData as { error?: { message?: string } })?.error?.message ??
+        `Mux API error: ${res.status}`
+    );
+  }
+
+  const data = (await res.json()) as {
+    data: {
+      id: string;
+      status: string;
+      playback_ids?: Array<{ id: string }>;
+    };
+  };
+
+  const playbackId =
+    data.data.playback_ids?.[0]?.id ??
+    (await waitForPlaybackId(data.data.id, basicAuth));
+
+  return {
+    assetId: data.data.id,
+    playbackId,
+    status: data.data.status,
+  };
+}
+
+async function waitForPlaybackId(
+  assetId: string,
+  basicAuth: string,
+  maxAttempts = 30
+): Promise<string> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const res = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      headers: { Authorization: `Basic ${basicAuth}` },
+    });
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      data: { playback_ids?: Array<{ id: string }> };
+    };
+    const id = data.data.playback_ids?.[0]?.id;
+    if (id) return id;
+  }
+  throw new Error("Mux playback ID not ready in time");
+}
+
+/**
+ * Create Mux asset from a backup file. Generates presigned B2 URL and submits to Mux.
+ * Call this after upload complete for video files.
+ */
+export async function createMuxAssetFromBackup(
+  objectKey: string,
+  fileName: string,
+  backupFileId: string
+): Promise<{ assetId: string; playbackId: string } | null> {
+  if (!isMuxConfigured()) return null;
+
+  const { createPresignedDownloadUrl } = await import("@/lib/b2");
+  const { getAdminFirestore } = await import("@/lib/firebase-admin");
+
+  const presignedUrl = await createPresignedDownloadUrl(objectKey, 7200);
+
+  const result = await createMuxAssetFromUrl(presignedUrl, {
+    passthrough: JSON.stringify({ backupFileId, objectKey, fileName }),
+    playbackPolicy: "public",
+  });
+
+  const db = getAdminFirestore();
+  await db.collection("backup_files").doc(backupFileId).update({
+    mux_asset_id: result.assetId,
+    mux_playback_id: result.playbackId,
+    mux_status: result.status,
+    updated_at: new Date().toISOString(),
+  });
+
+  return { assetId: result.assetId, playbackId: result.playbackId };
+}
