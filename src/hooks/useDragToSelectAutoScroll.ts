@@ -66,5 +66,5 @@ export function useDragToSelectAutoScroll(
         intervalRef.current = null;
       }
     };
-  }, [dragState?.isActive, dragState?.currentX, dragState?.currentY, dragState?.startX, dragState?.startY, gridSectionRef]);
+  }, [dragState?.isActive, dragState?.currentX, dragState?.currentY, dragState?.startX, dragState?.startY, gridSectionRef, mousePosRef]);
 }

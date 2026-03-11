@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getFirebaseAuth } from "@/lib/firebase/client";
-
+import { getAuthToken } from "@/lib/auth-token";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 
@@ -40,7 +39,7 @@ export function useThumbnail(
     let cancelled = false;
     (async () => {
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const token = await getAuthToken(false);
         if (!token || cancelled) return;
         const params = new URLSearchParams({
           object_key: objectKey,

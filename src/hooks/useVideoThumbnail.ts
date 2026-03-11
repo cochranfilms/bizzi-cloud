@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { getAuthToken } from "@/lib/auth-token";
 import { withThumbnailSlot } from "@/lib/thumbnailQueue";
 
 const VIDEO_EXT =
@@ -122,8 +122,10 @@ export function useVideoThumbnail(
       });
     };
 
-    const tryServerSide = async (token: string): Promise<boolean> => {
-      return withThumbnailSlot(async () => {
+    const tryServerSide = async (
+      token: string
+    ): Promise<{ ok: boolean; unauthorized?: boolean }> => {
+      const result = await withThumbnailSlot(async () => {
         const params = new URLSearchParams({
           object_key: objectKey,
           name: fileName,
@@ -136,30 +138,39 @@ export function useVideoThumbnail(
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
-          if (!res.ok || cancelled) return false;
+          if (res.status === 401)
+            return { ok: false, unauthorized: true };
+          if (!res.ok || cancelled) return { ok: false, unauthorized: false };
           const blob = await res.blob();
-          if (cancelled || blob.size === 0) return false;
+          if (cancelled || blob.size === 0)
+            return { ok: false, unauthorized: false };
           setBlobUrl(URL.createObjectURL(blob));
-          return true;
+          return { ok: true, unauthorized: false };
         } catch {
           clearTimeout(timeoutId);
-          return false;
+          return { ok: false, unauthorized: false };
         }
       });
+      return result ?? { ok: false, unauthorized: false };
     };
 
     (async () => {
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        // Use cached token (getIdToken(false)) to avoid refresh storm when many thumbnails load
+        let token = await getAuthToken(false);
         if (!token || cancelled) return;
 
         // Always try server first: hits cache on repeat views, optimized FFmpeg on first
-        const first = tryServerSide;
-        const second = tryClientSide;
-
-        const ok = await first(token);
-        if (ok || cancelled) return;
-        await second(token);
+        let result = await tryServerSide(token);
+        if (result.unauthorized && !cancelled) {
+          const fresh = await getAuthToken(true);
+          if (fresh) {
+            token = fresh;
+            result = await tryServerSide(fresh);
+          }
+        }
+        if (result.ok || cancelled) return;
+        await tryClientSide(token);
       } catch {
         // Both paths failed - placeholder will show
       } finally {

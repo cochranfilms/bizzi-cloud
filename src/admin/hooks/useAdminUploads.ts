@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchUploadAnalytics } from "@/admin/services/adminUploadsService";
 import { useAuth } from "@/context/AuthContext";
 
@@ -12,6 +12,8 @@ export function useAdminUploads() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const metricsRef = useRef(metrics);
+  metricsRef.current = metrics;
 
   const getToken = useCallback(
     () => (user ? user.getIdToken() : Promise.resolve(null)),
@@ -20,7 +22,7 @@ export function useAdminUploads() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    if (!metrics) setLoading(true);
+    if (!metricsRef.current) setLoading(true);
     setError(null);
     try {
       const data = await fetchUploadAnalytics(14, { getToken });

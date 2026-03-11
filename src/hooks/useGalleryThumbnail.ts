@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { getAuthToken } from "@/lib/auth-token";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 function isImageFile(name: string): boolean {
@@ -49,7 +49,7 @@ export function useGalleryThumbnail(
         if (useCredentials) {
           headers = {};
         } else {
-          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const token = await getAuthToken(false);
           if (!token || cancelled) return;
           headers = { Authorization: `Bearer ${token}` };
         }
