@@ -270,7 +270,7 @@ export default function PricingSection() {
         setCheckoutLoading(false);
       }
     },
-    [user, router]
+    [user]
   );
 
   const handleGuestCheckout = useCallback(

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { signInWithCustomToken } from "firebase/auth";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import Image from "next/image";
 
-export default function AccountSetupPage() {
+function AccountSetupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<"loading" | "error">("loading");
@@ -70,7 +71,7 @@ export default function AccountSetupPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4">
-      <a
+      <Link
         href="/"
         className="flex items-center justify-center gap-2 mb-8"
       >
@@ -78,7 +79,7 @@ export default function AccountSetupPage() {
         <span className="font-semibold text-xl tracking-tight">
           Bizzi <span className="text-bizzi-blue">Cloud</span>
         </span>
-      </a>
+      </Link>
 
       {status === "loading" && (
         <div className="text-center">
@@ -87,7 +88,7 @@ export default function AccountSetupPage() {
             Setting up your account...
           </h1>
           <p className="mt-2 text-neutral-500 dark:text-neutral-400">
-            You'll be redirected to your dashboard shortly.
+            You&apos;ll be redirected to your dashboard shortly.
           </p>
         </div>
       )}
@@ -101,21 +102,49 @@ export default function AccountSetupPage() {
             {error}
           </p>
           <div className="mt-6 flex flex-col gap-3">
-            <a
+            <Link
               href="/login"
               className="rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan"
             >
               Sign in
-            </a>
-            <a
+            </Link>
+            <Link
               href="/#pricing"
               className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
             >
               Back to pricing
-            </a>
+            </Link>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function SetupFallback() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4">
+      <Link
+        href="/"
+        className="flex items-center justify-center gap-2 mb-8"
+      >
+        <Image src="/logo.png" alt="Bizzi Byte" width={36} height={36} />
+        <span className="font-semibold text-xl tracking-tight">
+          Bizzi <span className="text-bizzi-blue">Cloud</span>
+        </span>
+      </Link>
+      <div className="text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent mx-auto mb-4" />
+        <p className="text-neutral-500 dark:text-neutral-400">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function AccountSetupPage() {
+  return (
+    <Suspense fallback={<SetupFallback />}>
+      <AccountSetupContent />
+    </Suspense>
   );
 }
