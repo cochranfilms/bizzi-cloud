@@ -46,6 +46,48 @@
   .animate-gallery-enter {
     animation: gallery-enter 0.4s ease-out forwards;
   }
+  /* Moving clouds background */
+  @keyframes clouds-drift {
+    0% {
+      transform: translateX(-5%) translateY(0);
+      opacity: 0.6;
+    }
+    50% {
+      transform: translateX(2%) translateY(-1%);
+      opacity: 0.8;
+    }
+    100% {
+      transform: translateX(-5%) translateY(0);
+      opacity: 0.6;
+    }
+  }
+  @keyframes clouds-drift-slow {
+    0% {
+      transform: translateX(0) translateY(0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: translateX(3%) translateY(1%);
+      opacity: 0.7;
+    }
+  }
+  @keyframes logo-scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+  .animate-clouds-drift {
+    animation: clouds-drift 25s ease-in-out infinite;
+  }
+  .animate-clouds-drift-slow {
+    animation: clouds-drift-slow 35s ease-in-out infinite;
+  }
+  .animate-logo-scroll {
+    animation: logo-scroll 30s linear infinite;
+  }
   @keyframes proofing-popup {
     from {
       opacity: 0;

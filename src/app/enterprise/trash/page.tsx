@@ -7,6 +7,7 @@ import TopBar from "@/components/dashboard/TopBar";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCloudFiles";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 
 const TRASH_DND_TYPE = "application/x-bizzi-trash-delete";
 const DRAG_THRESHOLD_PX = 5;
@@ -261,6 +262,7 @@ export default function EnterpriseTrashPage() {
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -283,6 +285,7 @@ export default function EnterpriseTrashPage() {
     if (!dragState?.isActive) return;
 
     const updateDrag = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
       setDragState((prev) =>
         prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
       );
@@ -358,6 +361,8 @@ export default function EnterpriseTrashPage() {
       }
     };
   }, [dragState, setSelectionFromDrag]);
+
+  useDragToSelectAutoScroll(gridSectionRef, dragState, mousePosRef);
 
   const hasSelection = selectedFileIds.size + selectedFolderIds.size > 0;
   const selectedCount = selectedFileIds.size + selectedFolderIds.size;

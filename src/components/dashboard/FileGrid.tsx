@@ -37,6 +37,7 @@ import ShareModal from "./ShareModal";
 import FilterSidebar from "@/components/filters/FilterSidebar";
 import FilterChips from "@/components/filters/FilterChips";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
+import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 
 function BulkActionBar({
   selectedFileCount,
@@ -155,6 +156,7 @@ export default function FileGrid() {
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -445,6 +447,7 @@ export default function FileGrid() {
     if (!dragState?.isActive) return;
 
     const updateDrag = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
       setDragState((prev) =>
         prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
       );
@@ -520,6 +523,8 @@ export default function FileGrid() {
       }
     };
   }, [dragState, setSelectionFromDrag]);
+
+  useDragToSelectAutoScroll(gridSectionRef, dragState, mousePosRef);
 
   const handleBulkDelete = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);

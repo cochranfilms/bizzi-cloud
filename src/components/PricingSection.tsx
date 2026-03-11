@@ -441,12 +441,11 @@ export default function PricingSection() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-16 text-center">
-          <h2 className="mb-4 text-3xl font-semibold tracking-tight text-neutral-900 md:text-4xl">
-            Storage that scales with your craft
+          <h2 className="mb-4 text-3xl font-bold tracking-tight text-bizzi-navy md:text-4xl">
+            Transparent Pricing
           </h2>
           <p className="mx-auto max-w-2xl text-lg text-neutral-600">
-            Pick your storage. Add what you need. AES-256 encryption on every
-            plan, always.
+            Start free, scale as your brand grows. No hidden fees, no surprises.
           </p>
         </div>
 

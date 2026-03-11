@@ -12,6 +12,8 @@ const config: Config = {
       colors: {
         "bizzi-blue": "#00BFFF",
         "bizzi-cyan": "#00D4FF",
+        "bizzi-navy": "#1e3a5f",
+        "bizzi-sky": "#e8f4fc",
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],

@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
-const navLinks = [
+const navLinks: { href: string; label: string; external?: boolean }[] = [
+  { href: "/", label: "Home" },
+  { href: "#how-it-works", label: "About" },
   { href: "#features", label: "Features" },
   { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
-  { href: "https://github.com/cochranfilms/bizzi-cloud/releases", label: "Download", external: true },
-  { href: "https://www.bizzibytestorage.com/", label: "Shop SSDs", external: true },
+  { href: "#faq", label: "Contact" },
 ];
 
 export default function Header() {
@@ -20,6 +20,13 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-neutral-100">
+      <div
+        className="absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-20 -z-10"
+        style={{
+          background: "radial-gradient(circle, #bae6fd 0%, transparent 70%)",
+        }}
+        aria-hidden
+      />
       <nav className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Image
@@ -67,7 +74,7 @@ export default function Header() {
               </Link>
               <Link
                 href="#pricing"
-                className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
+                className="px-4 py-2 border-2 border-bizzi-navy text-bizzi-navy bg-white text-sm font-medium rounded-full hover:bg-bizzi-navy/5 transition-colors"
               >
                 Get Started
               </Link>
@@ -144,13 +151,13 @@ export default function Header() {
                   </Link>
                 </li>
                 <li>
-                  <Link
-                    href="#pricing"
-                    className="inline-block px-4 py-2 bg-bizzi-blue text-white font-medium rounded-full"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Get Started
-                  </Link>
+                <Link
+                  href="#pricing"
+                  className="inline-block px-4 py-2 border-2 border-bizzi-navy text-bizzi-navy bg-white font-medium rounded-full"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Get Started
+                </Link>
                 </li>
               </>
             )}

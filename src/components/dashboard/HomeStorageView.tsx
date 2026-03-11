@@ -21,6 +21,7 @@ import ShareModal from "./ShareModal";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -149,6 +150,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     currentY: number;
   } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -351,6 +353,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     if (!dragState?.isActive) return;
 
     const updateDrag = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
       setDragState((prev) =>
         prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null
       );
@@ -428,6 +431,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       }
     };
   }, [dragState, setSelectionFromDrag]);
+
+  useDragToSelectAutoScroll(gridSectionRef, dragState, mousePosRef);
 
   const handleBulkDelete = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
