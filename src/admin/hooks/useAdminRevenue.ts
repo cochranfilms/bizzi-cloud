@@ -6,22 +6,29 @@ import {
   fetchRevenueByPlan,
   fetchRevenueTrend,
 } from "@/admin/services/adminRevenueService";
+import { useAuth } from "@/context/AuthContext";
 
 export function useAdminRevenue() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof fetchRevenueSummary>> | null>(null);
   const [byPlan, setByPlan] = useState<Awaited<ReturnType<typeof fetchRevenueByPlan>>>([]);
   const [trend, setTrend] = useState<Awaited<ReturnType<typeof fetchRevenueTrend>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getToken = useCallback(
+    () => (user ? user.getIdToken() : Promise.resolve(null)),
+    [user]
+  );
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [s, p, t] = await Promise.all([
-        fetchRevenueSummary(),
-        fetchRevenueByPlan(),
-        fetchRevenueTrend(30),
+        fetchRevenueSummary({ getToken }),
+        fetchRevenueByPlan({ getToken }),
+        fetchRevenueTrend(30, { getToken }),
       ]);
       setSummary(s);
       setByPlan(p);
@@ -31,7 +38,7 @@ export function useAdminRevenue() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     void refresh();

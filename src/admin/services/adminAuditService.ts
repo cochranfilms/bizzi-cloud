@@ -1,38 +1,53 @@
 /**
  * Admin audit service.
- * TODO: Replace with real API: fetch('/api/admin/audit', { ... })
+ * Fetches real audit entries from /api/admin/audit (Firestore admin_audit_log).
  */
 
 import type { AuditLogEntry } from "@/admin/types/adminAudit.types";
 
+async function apiAdmin<T>(
+  path: string,
+  params: Record<string, string> = {},
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = new URL(path, typeof window !== "undefined" ? window.location.origin : "");
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") url.searchParams.set(k, String(v));
+  });
+  const headers: Record<string, string> = {};
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export interface FetchAuditOptions {
+  getToken?: () => Promise<string | null>;
+}
+
 export async function fetchAuditLog(
   filters?: { action?: string; actorId?: string },
   page = 1,
-  limit = 50
+  limit = 50,
+  options?: FetchAuditOptions
 ): Promise<{ entries: AuditLogEntry[]; total: number }> {
-  await new Promise((r) => setTimeout(r, 400));
-
-  const actions = [
-    "admin.login",
-    "account.suspend",
-    "account.restore",
-    "billing.status_change",
-    "file.override",
-  ];
-  const mockEntries: AuditLogEntry[] = Array.from({ length: 80 }, (_, i) => ({
-    id: `a${i + 1}`,
-    actorId: "admin1",
-    actorEmail: "admin@bizzicloud.com",
-    action: actions[i % actions.length],
-    targetType: i % 3 === 0 ? "user" : i % 3 === 1 ? "file" : "system",
-    targetId: i % 3 === 0 ? `u${(i % 5) + 1}` : i % 3 === 1 ? `f${i}` : undefined,
-    timestamp: new Date(Date.now() - 3600000 * (i + 1)).toISOString(),
-    metadata: {},
-  }));
-
-  const start = (page - 1) * limit;
-  return {
-    entries: mockEntries.slice(start, start + limit),
-    total: mockEntries.length,
+  const params: Record<string, string> = {
+    page: String(page),
+    limit: String(limit),
   };
+  if (filters?.action) params.action = filters.action;
+  if (filters?.actorId) params.actorId = filters.actorId;
+
+  const data = await apiAdmin<{ entries: AuditLogEntry[]; total: number }>(
+    "/api/admin/audit",
+    params,
+    options?.getToken
+  );
+  return { entries: data.entries, total: data.total };
 }

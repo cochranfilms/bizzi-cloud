@@ -6,8 +6,10 @@ import {
   fetchLargeFiles,
   type FilesFilters,
 } from "@/admin/services/adminFilesService";
+import { useAuth } from "@/context/AuthContext";
 
 export function useAdminFiles() {
+  const { user } = useAuth();
   const [files, setFiles] = useState<Awaited<ReturnType<typeof fetchAdminFiles>>["files"]>([]);
   const [total, setTotal] = useState(0);
   const [largeFiles, setLargeFiles] = useState<Awaited<ReturnType<typeof fetchLargeFiles>>>([]);
@@ -15,13 +17,18 @@ export function useAdminFiles() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
+  const getToken = useCallback(
+    () => (user ? user.getIdToken() : Promise.resolve(null)),
+    [user]
+  );
+
   const refresh = useCallback(async (filters: FilesFilters = {}) => {
     setLoading(true);
     setError(null);
     try {
       const [fRes, lf] = await Promise.all([
-        fetchAdminFiles(filters, page, 25),
-        fetchLargeFiles(),
+        fetchAdminFiles(filters, page, 25, { getToken }),
+        fetchLargeFiles(10, { getToken }),
       ]);
       setFiles(fRes.files);
       setTotal(fRes.total);
@@ -31,7 +38,7 @@ export function useAdminFiles() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, getToken]);
 
   useEffect(() => {
     void refresh();

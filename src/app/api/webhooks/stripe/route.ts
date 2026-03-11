@@ -98,10 +98,10 @@ export async function POST(request: Request) {
 
       let storageQuotaBytes = getStorageBytesForPlan(planId as PlanId);
       let storageAddonId: string | null = null;
-      const subId =
+      const subId: string | null =
         typeof session.subscription === "string"
           ? session.subscription
-          : session.subscription?.id;
+          : (session.subscription as Stripe.Subscription | null)?.id ?? null;
       if (subId) {
         try {
           const sub = await stripe.subscriptions.retrieve(subId, {
@@ -126,11 +126,6 @@ export async function POST(request: Request) {
           console.error("[Stripe webhook] Failed to cancel replaced subscription:", err);
         }
       }
-
-      const subId =
-        typeof session.subscription === "string"
-          ? session.subscription
-          : (session.subscription as Stripe.Subscription | null)?.id ?? null;
 
       await db.collection("profiles").doc(userId).set(
         {

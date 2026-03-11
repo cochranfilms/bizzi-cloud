@@ -26,31 +26,17 @@ export default function UsersPage() {
     refresh,
   } = useAdminUsers();
 
-  const [search, setSearch] = useState("");
-  const [planFilter, setPlanFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const filteredUsers = useMemo(() => {
     let list = users;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (u) =>
-          u.email.toLowerCase().includes(q) ||
-          (u.displayName?.toLowerCase().includes(q) ?? false)
-      );
-    }
-    if (planFilter) list = list.filter((u) => u.plan === planFilter);
-    if (statusFilter) list = list.filter((u) => u.status === statusFilter);
+    if (filters.status) list = list.filter((u) => u.status === filters.status);
     return list;
-  }, [users, search, planFilter, statusFilter]);
+  }, [users, filters.status]);
 
   const handleClearFilters = () => {
-    setSearch("");
-    setPlanFilter("");
-    setStatusFilter("");
+    setFilters({ search: "", plan: "", status: "" });
   };
 
   const handleRowClick = (user: AdminUser) => {
@@ -133,12 +119,12 @@ export default function UsersPage() {
       <UsersSummaryRow total={total} active={users.filter((u) => u.status === "active").length} newThisMonth={0} />
 
       <UsersFilters
-        search={search}
-        onSearchChange={setSearch}
-        planFilter={planFilter}
-        onPlanFilterChange={setPlanFilter}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
+        search={filters.search ?? ""}
+        onSearchChange={(v) => setFilters((prev) => ({ ...prev, search: v }))}
+        planFilter={filters.plan ?? ""}
+        onPlanFilterChange={(v) => setFilters((prev) => ({ ...prev, plan: v }))}
+        statusFilter={filters.status ?? ""}
+        onStatusFilterChange={(v) => setFilters((prev) => ({ ...prev, status: v }))}
         onClear={handleClearFilters}
       />
 

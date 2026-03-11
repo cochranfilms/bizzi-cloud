@@ -690,6 +690,14 @@ const ADDON_LABELS: Record<string, string> = {
   fullframe: "Bizzi Full Frame",
 };
 
+const PLAN_LABELS: Record<string, string> = {
+  free: "Starter Free",
+  solo: "Solo Creator",
+  indie: "Indie Filmmaker",
+  video: "Video Pro",
+  production: "Production House",
+};
+
 const STORAGE_ADDON_LABELS: Record<string, string> = {
   indie_1: "+1 TB",
   indie_2: "+2 TB",
@@ -717,11 +725,19 @@ function SubscriptionSection() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 
+  const [showConfirmationBanner, setShowConfirmationBanner] = useState(false);
+  const [confirmationType, setConfirmationType] = useState<"updated" | "cancelled" | "purchase" | null>(null);
+
   useEffect(() => {
     if (!user) return;
-    if (searchParams.get("updated") === "subscription" || searchParams.get("cancelled") === "subscription") {
+    const updated = searchParams.get("updated") === "subscription";
+    const cancelled = searchParams.get("cancelled") === "subscription";
+    const purchaseConfirmed = searchParams.get("purchase_confirmed") === "1" || searchParams.get("checkout") === "success";
+    if (updated || cancelled || purchaseConfirmed) {
       refetch();
       const retry = setTimeout(() => refetch(), 2000);
+      setConfirmationType(cancelled ? "cancelled" : purchaseConfirmed ? "purchase" : "updated");
+      setShowConfirmationBanner(true);
       router.replace("/dashboard/settings", { scroll: false });
       return () => clearTimeout(retry);
     }
@@ -800,6 +816,54 @@ function SubscriptionSection() {
         <CreditCard className="h-5 w-5 text-bizzi-blue" />
         Subscription
       </h2>
+      {showConfirmationBanner && (
+        <div
+          className={`mb-4 flex items-start gap-3 rounded-lg border p-4 ${
+            confirmationType === "cancelled"
+              ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
+              : "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+          }`}
+        >
+          <Check className="mt-0.5 h-5 w-5 shrink-0 text-green-600 dark:text-green-400" />
+          <div className="min-w-0 flex-1">
+            {confirmationType === "cancelled" ? (
+              <>
+                <p className="font-medium text-amber-900 dark:text-amber-100">
+                  Subscription cancelled
+                </p>
+                <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                  Your plan will end at the close of your current billing period. You&apos;ll keep access until then.
+                </p>
+              </>
+            ) : confirmationType === "purchase" ? (
+              <>
+                <p className="font-medium text-green-900 dark:text-green-100">
+                  Welcome! Your purchase is complete
+                </p>
+                <p className="mt-1 text-sm text-green-800 dark:text-green-200">
+                  Your plan is now active. You can manage your subscription and billing below.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-green-900 dark:text-green-100">
+                  Plan updated successfully
+                </p>
+                <p className="mt-1 text-sm text-green-800 dark:text-green-200">
+                  Your subscription changes have been applied. A prorated charge or credit has been applied to your account.
+                </p>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowConfirmationBanner(false)}
+              className="mt-2 text-sm font-medium text-green-700 underline hover:no-underline dark:text-green-300"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6 dark:border-neutral-700 dark:bg-neutral-800/50">
         {loading ? (
           <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">

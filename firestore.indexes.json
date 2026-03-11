@@ -313,6 +313,14 @@
       ]
     },
     {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "galleries",
       "queryScope": "COLLECTION",
       "fields": [

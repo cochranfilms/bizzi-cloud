@@ -12,7 +12,7 @@ interface UsersFiltersProps {
   onClear: () => void;
 }
 
-const PLANS = ["", "free", "starter", "pro", "business", "enterprise"];
+const PLANS = ["", "free", "solo", "indie", "video", "production"];
 const STATUSES = ["", "active", "suspended", "trial", "churned"];
 
 export default function UsersFilters({

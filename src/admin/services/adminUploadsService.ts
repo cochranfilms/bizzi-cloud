@@ -1,6 +1,6 @@
 /**
  * Admin upload analytics service.
- * TODO: Replace with real API calls.
+ * Fetches real upload data from /api/admin/uploads (Firestore upload_sessions).
  */
 
 import type {
@@ -9,40 +9,62 @@ import type {
   UploadFailureReason,
 } from "@/admin/types/adminUploads.types";
 
-export async function fetchUploadMetrics(): Promise<UploadMetrics> {
-  await new Promise((r) => setTimeout(r, 300));
-  return {
-    countToday: 4521,
-    successRate: 97.2,
-    avgSpeedMbps: 42,
-    failedCount: 126,
-    retryRate: 4.1,
-  };
-}
-
-export async function fetchUploadVolume(days = 14): Promise<UploadVolumePoint[]> {
-  await new Promise((r) => setTimeout(r, 250));
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (days - 1 - i));
-    const base = 3000 + Math.random() * 2000;
-    const fail = Math.floor(base * 0.03);
-    return {
-      date: d.toISOString().slice(0, 10),
-      count: Math.floor(base),
-      successCount: Math.floor(base - fail),
-      failedCount: fail,
-    };
+async function apiAdmin<T>(
+  path: string,
+  params: Record<string, string> = {},
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = new URL(path, typeof window !== "undefined" ? window.location.origin : "");
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") url.searchParams.set(k, String(v));
   });
+  const headers: Record<string, string> = {};
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
-export async function fetchUploadFailures(): Promise<UploadFailureReason[]> {
-  await new Promise((r) => setTimeout(r, 200));
-  return [
-    { reason: "Network timeout", count: 48 },
-    { reason: "Invalid file type", count: 32 },
-    { reason: "Size limit exceeded", count: 24 },
-    { reason: "Storage quota full", count: 12 },
-    { reason: "Other", count: 10 },
-  ];
+export interface FetchUploadsOptions {
+  getToken?: () => Promise<string | null>;
+}
+
+export async function fetchUploadMetrics(
+  options?: FetchUploadsOptions
+): Promise<UploadMetrics> {
+  const data = await apiAdmin<{ metrics: UploadMetrics }>(
+    "/api/admin/uploads",
+    { days: "14" },
+    options?.getToken
+  );
+  return data.metrics;
+}
+
+export async function fetchUploadVolume(
+  days = 14,
+  options?: FetchUploadsOptions
+): Promise<UploadVolumePoint[]> {
+  const data = await apiAdmin<{ volume: UploadVolumePoint[] }>(
+    "/api/admin/uploads",
+    { days: String(days) },
+    options?.getToken
+  );
+  return data.volume;
+}
+
+export async function fetchUploadFailures(
+  options?: FetchUploadsOptions
+): Promise<UploadFailureReason[]> {
+  const data = await apiAdmin<{ failures: UploadFailureReason[] }>(
+    "/api/admin/uploads",
+    { days: "14" },
+    options?.getToken
+  );
+  return data.failures;
 }

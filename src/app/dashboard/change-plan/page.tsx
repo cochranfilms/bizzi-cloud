@@ -18,6 +18,13 @@ import {
 } from "@/lib/pricing-data";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
+
 const PLAN_ORDER = ["solo", "indie", "video", "production"];
 
 function getPlanOrder(planId: string): number {
@@ -37,6 +44,16 @@ export default function ChangePlanPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [previewAmount, setPreviewAmount] = useState<{ cents: number; isCredit: boolean } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successDetails, setSuccessDetails] = useState<{
+    planLabel: string;
+    addons: string[];
+    storageLabel: string | null;
+    amountCents: number | null;
+    isCredit: boolean | null;
+  } | null>(null);
 
   useEffect(() => {
     if (subLoading) return;
@@ -57,6 +74,82 @@ export default function ChangePlanPage() {
       }
     }
   }, [selectedPlanId, selectedStorageAddonId]);
+
+  const hasChanges =
+    selectedPlanId !== currentPlanId ||
+    selectedAddonIds.length !== (currentAddonIds?.length ?? 0) ||
+    selectedAddonIds.some((id) => !(currentAddonIds ?? []).includes(id)) ||
+    (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id)) ||
+    selectedStorageAddonId !== (currentStorageAddonId ?? null);
+
+  function getEstimatedChange(): { cents: number; isCredit: boolean } | null {
+    if (!hasChanges || !selectedPlanId || !currentPlanId || currentPlanId === "free") return null;
+    const newPlan = plans.find((p) => p.id === selectedPlanId);
+    const currentPlan = plans.find((p) => p.id === currentPlanId);
+    if (!newPlan || !currentPlan) return null;
+
+    const planPrice = (p: typeof newPlan, b: "monthly" | "annual") =>
+      b === "annual" ? (p.annualPrice ?? p.price * 12) / 12 : p.price;
+    const addonPrice = (ids: string[]) => {
+      if (ids.includes("fullframe")) return 10;
+      return ids.reduce((sum, id) => {
+        const a = powerUpAddons.find((x) => x.id === id);
+        return sum + (a?.price ?? 0);
+      }, 0);
+    };
+    const storagePrice = (planId: string, storageId: string | null) => {
+      if (!storageId || (planId !== "indie" && planId !== "video")) return 0;
+      const opts = STORAGE_ADDONS[planId as "indie" | "video"];
+      const opt = opts?.find((x) => x.id === storageId);
+      return opt?.price ?? 0;
+    };
+
+    const newMonthly = planPrice(newPlan, billing) + addonPrice(selectedAddonIds) + storagePrice(selectedPlanId, selectedStorageAddonId);
+    const currentMonthly = planPrice(currentPlan, billing) + addonPrice(currentAddonIds ?? []) + storagePrice(currentPlanId, currentStorageAddonId ?? null);
+    const diff = newMonthly - currentMonthly;
+    if (Math.abs(diff) < 0.01) return null;
+    return { cents: Math.round(Math.abs(diff) * 100), isCredit: diff < 0 };
+  }
+
+  useEffect(() => {
+    if (!hasChanges || !selectedPlanId || !user || currentPlanId === "free") {
+      setPreviewAmount(null);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewAmount(null);
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (!token || ac.signal.aborted) return;
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/stripe/subscription-preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            planId: selectedPlanId,
+            addonIds: selectedAddonIds,
+            billing,
+            storageAddonId: selectedStorageAddonId,
+          }),
+          signal: ac.signal,
+        });
+        if (!res.ok || ac.signal.aborted) return;
+        const data = (await res.json()) as { amountDueCents?: number; isCredit?: boolean };
+        if (typeof data.amountDueCents === "number" && !ac.signal.aborted) {
+          setPreviewAmount({ cents: data.amountDueCents, isCredit: data.isCredit === true });
+        }
+      } catch {
+        // Fall back to estimate
+      } finally {
+        if (!ac.signal.aborted) setPreviewLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [hasChanges, selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, currentPlanId]);
+
+  const displayAmount = previewAmount ?? getEstimatedChange();
 
   const toggleAddon = useCallback((addonId: string) => {
     setSelectedAddonIds((prev) => {
@@ -100,7 +193,19 @@ export default function ChangePlanPage() {
       if (res.ok && data.ok) {
         refetch();
         window.dispatchEvent(new CustomEvent("subscription-updated"));
-        router.push("/dashboard/settings?updated=subscription");
+        const planLabel = PLAN_LABELS[selectedPlanId] ?? selectedPlanId;
+        const addons = selectedAddonIds.map((id) => ADDON_LABELS[id] ?? id);
+        const storageLabel = selectedStorageAddonId
+          ? (STORAGE_ADDON_LABELS[selectedStorageAddonId as StorageAddonId] ?? selectedStorageAddonId)
+          : null;
+        setSuccessDetails({
+          planLabel,
+          addons,
+          storageLabel,
+          amountCents: displayAmount?.cents ?? null,
+          isCredit: displayAmount?.isCredit ?? null,
+        });
+        setSuccessModalOpen(true);
         return;
       }
       if (res.status === 500 && data.error) {
@@ -122,7 +227,7 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router, refetch]);
+  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router, refetch, displayAmount]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
@@ -231,12 +336,6 @@ export default function ChangePlanPage() {
   }
 
   const currentPlanLabel = PLAN_LABELS[currentPlanId ?? "free"] ?? "Starter Free";
-  const hasChanges =
-    selectedPlanId !== currentPlanId ||
-    selectedAddonIds.length !== (currentAddonIds?.length ?? 0) ||
-    selectedAddonIds.some((id) => !(currentAddonIds ?? []).includes(id)) ||
-    (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id)) ||
-    selectedStorageAddonId !== (currentStorageAddonId ?? null);
 
   return (
     <>
@@ -458,6 +557,32 @@ export default function ChangePlanPage() {
             <p className="mb-4 text-sm text-red-600 dark:text-red-400">{applyError}</p>
           )}
 
+          {hasChanges && selectedPlanId && (
+            <div className="mb-6 rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
+              <p className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Change amount
+              </p>
+              {previewLoading ? (
+                <p className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Calculating…
+                </p>
+              ) : displayAmount ? (
+                <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                  {displayAmount.isCredit ? (
+                    <>{formatCents(displayAmount.cents)} credit on next bill</>
+                  ) : (
+                    <>{formatCents(displayAmount.cents)} due now (prorated)</>
+                  )}
+                </p>
+              ) : (
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Prorated amount will be charged or credited to your next bill.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
@@ -480,6 +605,50 @@ export default function ChangePlanPage() {
           </div>
         </div>
       </main>
+
+      {successModalOpen && successDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+              <Check className="h-6 w-6 text-green-600 dark:text-green-400" strokeWidth={2.5} />
+            </div>
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              Plan updated successfully
+            </h3>
+            <div className="mt-4 space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <p>
+                <strong className="text-neutral-900 dark:text-white">{successDetails.planLabel}</strong>
+                {successDetails.addons.length > 0 && (
+                  <> · {successDetails.addons.join(", ")}</>
+                )}
+                {successDetails.storageLabel && (
+                  <> · {successDetails.storageLabel}</>
+                )}
+              </p>
+              {successDetails.amountCents !== null && (
+                <p className="font-medium text-green-600 dark:text-green-400">
+                  {successDetails.isCredit ? (
+                    <>{formatCents(successDetails.amountCents)} credit applied to your account</>
+                  ) : (
+                    <>{formatCents(successDetails.amountCents)} charged (prorated to your next bill)</>
+                  )}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSuccessModalOpen(false);
+                setSuccessDetails(null);
+                router.push("/dashboard/settings?updated=subscription");
+              }}
+              className="mt-6 w-full rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan"
+            >
+              Continue to Settings
+            </button>
+          </div>
+        </div>
+      )}
 
       {cancelModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

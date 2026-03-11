@@ -1,6 +1,6 @@
 /**
  * Admin settings service.
- * TODO: Replace with real API: fetch('/api/admin/settings', { ... })
+ * Fetches real settings from /api/admin/settings (plan-constants + Firestore admin_settings).
  */
 
 import type {
@@ -12,67 +12,67 @@ import type {
   BannerSettings,
 } from "@/admin/types/adminSettings.types";
 
-const STORAGE_1TB = 1024 ** 4;
-const STORAGE_100GB = 100 * 1024 ** 3;
-const STORAGE_10GB = 10 * 1024 ** 3;
-const STORAGE_5GB = 5 * 1024 ** 3;
-const UPLOAD_5GB = 5 * 1024 ** 3;
-
-export async function fetchQuotaSettings(): Promise<QuotaSettings> {
-  await new Promise((r) => setTimeout(r, 300));
-  return {
-    freeStorageBytes: STORAGE_5GB,
-    starterStorageBytes: 50 * 1024 ** 3,
-    proStorageBytes: STORAGE_100GB,
-    businessStorageBytes: 500 * 1024 ** 3,
-    enterpriseStorageBytes: null,
-    maxUploadBytes: UPLOAD_5GB,
-  };
+async function apiAdmin<T>(
+  path: string,
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = `${typeof window !== "undefined" ? window.location.origin : ""}${path}`;
+  const headers: Record<string, string> = {};
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
-export async function fetchRetentionSettings(): Promise<RetentionSettings> {
-  await new Promise((r) => setTimeout(r, 200));
-  return {
-    trashRetentionDays: 30,
-    archiveAfterInactiveDays: 365,
-    permanentDeleteAfterDays: null,
-  };
+export interface FetchSettingsOptions {
+  getToken?: () => Promise<string | null>;
 }
 
-export async function fetchAlertThresholdSettings(): Promise<AlertThresholdSettings> {
-  await new Promise((r) => setTimeout(r, 200));
-  return {
-    errorRateWarningPercent: 5,
-    errorRateCriticalPercent: 10,
-    uploadFailureWarningCount: 100,
-    queueBacklogWarning: 500,
-  };
+export type SettingsResponse = {
+  quotas: QuotaSettings;
+  retention: RetentionSettings;
+  alerts: AlertThresholdSettings;
+  features: FeatureFlags;
+  maintenance: MaintenanceSettings;
+  banner: BannerSettings;
+};
+
+export async function fetchAllSettings(options?: FetchSettingsOptions): Promise<SettingsResponse> {
+  return apiAdmin<SettingsResponse>("/api/admin/settings", options?.getToken);
 }
 
-export async function fetchFeatureFlags(): Promise<FeatureFlags> {
-  await new Promise((r) => setTimeout(r, 200));
-  return {
-    newGalleryUI: true,
-    videoPreviews: true,
-    bulkDownload: true,
-    transferPasswordOptional: false,
-    maintenanceMode: false,
-  };
+export async function fetchQuotaSettings(options?: FetchSettingsOptions): Promise<QuotaSettings> {
+  const data = await fetchAllSettings(options);
+  return data.quotas;
 }
 
-export async function fetchMaintenanceSettings(): Promise<MaintenanceSettings> {
-  await new Promise((r) => setTimeout(r, 150));
-  return {
-    enabled: false,
-    message: "We're performing scheduled maintenance. Expected completion: 2 hours.",
-  };
+export async function fetchRetentionSettings(options?: FetchSettingsOptions): Promise<RetentionSettings> {
+  const data = await fetchAllSettings(options);
+  return data.retention;
 }
 
-export async function fetchBannerSettings(): Promise<BannerSettings> {
-  await new Promise((r) => setTimeout(r, 150));
-  return {
-    enabled: false,
-    message: "",
-    severity: "info",
-  };
+export async function fetchAlertThresholdSettings(options?: FetchSettingsOptions): Promise<AlertThresholdSettings> {
+  const data = await fetchAllSettings(options);
+  return data.alerts;
+}
+
+export async function fetchFeatureFlags(options?: FetchSettingsOptions): Promise<FeatureFlags> {
+  const data = await fetchAllSettings(options);
+  return data.features;
+}
+
+export async function fetchMaintenanceSettings(options?: FetchSettingsOptions): Promise<MaintenanceSettings> {
+  const data = await fetchAllSettings(options);
+  return data.maintenance;
+}
+
+export async function fetchBannerSettings(options?: FetchSettingsOptions): Promise<BannerSettings> {
+  const data = await fetchAllSettings(options);
+  return data.banner;
 }

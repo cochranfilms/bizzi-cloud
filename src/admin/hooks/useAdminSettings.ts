@@ -1,14 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  fetchQuotaSettings,
-  fetchRetentionSettings,
-  fetchAlertThresholdSettings,
-  fetchFeatureFlags,
-  fetchMaintenanceSettings,
-  fetchBannerSettings,
-} from "@/admin/services/adminSettingsService";
+import { fetchAllSettings } from "@/admin/services/adminSettingsService";
+import { useAuth } from "@/context/AuthContext";
 import type {
   QuotaSettings,
   RetentionSettings,
@@ -27,6 +21,7 @@ export type SettingsSection =
   | "banner";
 
 export function useAdminSettings() {
+  const { user } = useAuth();
   const [quotas, setQuotas] = useState<QuotaSettings | null>(null);
   const [retention, setRetention] = useState<RetentionSettings | null>(null);
   const [alerts, setAlerts] = useState<AlertThresholdSettings | null>(null);
@@ -36,30 +31,28 @@ export function useAdminSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getToken = useCallback(
+    () => (user ? user.getIdToken() : Promise.resolve(null)),
+    [user]
+  );
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [q, r, a, f, m, b] = await Promise.all([
-        fetchQuotaSettings(),
-        fetchRetentionSettings(),
-        fetchAlertThresholdSettings(),
-        fetchFeatureFlags(),
-        fetchMaintenanceSettings(),
-        fetchBannerSettings(),
-      ]);
-      setQuotas(q);
-      setRetention(r);
-      setAlerts(a);
-      setFeatures(f);
-      setMaintenance(m);
-      setBanner(b);
+      const data = await fetchAllSettings({ getToken });
+      setQuotas(data.quotas);
+      setRetention(data.retention);
+      setAlerts(data.alerts);
+      setFeatures(data.features);
+      setMaintenance(data.maintenance);
+      setBanner(data.banner);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load settings");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     void refresh();

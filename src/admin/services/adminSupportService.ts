@@ -1,76 +1,64 @@
 /**
  * Admin support service.
- * TODO: Replace with real API: fetch('/api/admin/support/tickets', { ... })
+ * Fetches real support tickets from /api/admin/support (Firestore support_tickets).
  */
 
 import type { SupportTicket } from "@/admin/types/adminSupport.types";
 
+async function apiAdmin<T>(
+  path: string,
+  params: Record<string, string> = {},
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = new URL(path, typeof window !== "undefined" ? window.location.origin : "");
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") url.searchParams.set(k, String(v));
+  });
+  const headers: Record<string, string> = {};
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export interface FetchSupportOptions {
+  getToken?: () => Promise<string | null>;
+}
+
 export async function fetchSupportTickets(
   filters?: { status?: string; priority?: string },
   page = 1,
-  limit = 25
+  limit = 25,
+  options?: FetchSupportOptions
 ): Promise<{ tickets: SupportTicket[]; total: number }> {
-  await new Promise((r) => setTimeout(r, 400));
+  const params: Record<string, string> = {
+    page: String(page),
+    limit: String(limit),
+  };
+  if (filters?.status) params.status = filters.status;
+  if (filters?.priority) params.priority = filters.priority;
 
-  const mockTickets: SupportTicket[] = [
-    {
-      id: "t1",
-      priority: "high",
-      subject: "Upload failing for large video files",
-      issueType: "upload",
-      affectedUserId: "u2",
-      affectedUserEmail: "billing@creativeco.io",
-      status: "open",
-      createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "t2",
-      priority: "medium",
-      subject: "Billing discrepancy on last invoice",
-      issueType: "billing",
-      affectedUserId: "u4",
-      affectedUserEmail: "ops@filmhouse.pro",
-      status: "in_progress",
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
-      updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: "t3",
-      priority: "low",
-      subject: "Storage usage seems incorrect",
-      issueType: "storage",
-      affectedUserId: "u3",
-      affectedUserEmail: "jane@example.com",
-      status: "open",
-      createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    },
-    {
-      id: "t4",
-      priority: "urgent",
-      subject: "Cannot access account - 403 errors",
-      issueType: "account",
-      affectedUserId: "u1",
-      affectedUserEmail: "admin@acmestudios.com",
-      status: "in_progress",
-      createdAt: new Date(Date.now() - 3600000 * 30).toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-
-  return { tickets: mockTickets, total: mockTickets.length };
+  const data = await apiAdmin<{ tickets: SupportTicket[]; total: number }>(
+    "/api/admin/support",
+    params,
+    options?.getToken
+  );
+  return { tickets: data.tickets, total: data.total };
 }
 
-export async function fetchSupportIssueBreakdown(): Promise<
-  Record<string, number>
-> {
-  await new Promise((r) => setTimeout(r, 150));
-  return {
-    billing: 3,
-    upload: 5,
-    storage: 2,
-    account: 1,
-    preview: 1,
-  };
+export async function fetchSupportIssueBreakdown(
+  options?: FetchSupportOptions
+): Promise<Record<string, number>> {
+  const data = await apiAdmin<{ breakdown: Record<string, number> }>(
+    "/api/admin/support",
+    { page: "1", limit: "1" },
+    options?.getToken
+  );
+  return data.breakdown ?? {};
 }

@@ -1,9 +1,31 @@
 /**
  * Admin files service.
- * TODO: Replace with real API: fetch('/api/admin/files', { ... })
+ * Fetches real files from /api/admin/files (Firestore backup_files).
  */
 
 import type { AdminFile } from "@/admin/types/adminFiles.types";
+
+async function apiAdmin<T>(
+  path: string,
+  params: Record<string, string> = {},
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = new URL(path, typeof window !== "undefined" ? window.location.origin : "");
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== "") url.searchParams.set(k, String(v));
+  });
+  const headers: Record<string, string> = {};
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
 
 export interface FilesFilters {
   search?: string;
@@ -12,37 +34,35 @@ export interface FilesFilters {
   extension?: string;
 }
 
+export interface FetchFilesOptions {
+  getToken?: () => Promise<string | null>;
+}
+
 export async function fetchAdminFiles(
   filters: FilesFilters = {},
   page = 1,
-  limit = 25
+  limit = 25,
+  options?: FetchFilesOptions
 ): Promise<{ files: AdminFile[]; total: number }> {
-  await new Promise((r) => setTimeout(r, 400));
+  const params: Record<string, string> = {
+    page: String(page),
+    limit: String(limit),
+  };
+  if (filters.ownerId) params.ownerId = filters.ownerId;
 
-  const extensions = ["mp4", "mov", "jpg", "png", "psd", "pdf", "arw"];
-  const mockFiles: AdminFile[] = Array.from({ length: 60 }, (_, i) => ({
-    id: `f${i + 1}`,
-    name: `file_${i + 1}.${extensions[i % extensions.length]}`,
-    ownerId: `u${(i % 10) + 1}`,
-    ownerEmail: `user${(i % 10) + 1}@example.com`,
-    sizeBytes: (1 + Math.random() * 500) * 1024 * 1024,
-    mimeType: `application/${extensions[i % extensions.length]}`,
-    extension: extensions[i % extensions.length],
-    folderPath: `/projects/${i % 3}`,
-    status: i % 20 === 0 ? "archived" : i % 30 === 0 ? "trash" : "active",
-    shared: i % 5 === 0,
-    createdAt: new Date(Date.now() - 86400000 * (30 + i)).toISOString(),
-    modifiedAt: new Date(Date.now() - 86400000 * (i % 30)).toISOString(),
-    flags: i % 15 === 0 ? ["investigate"] : undefined,
-  }));
-
-  const start = (page - 1) * limit;
-  return { files: mockFiles.slice(start, start + limit), total: mockFiles.length };
+  const data = await apiAdmin<{ files: AdminFile[]; total: number }>(
+    "/api/admin/files",
+    params,
+    options?.getToken
+  );
+  return { files: data.files, total: data.total };
 }
 
-export async function fetchLargeFiles(limit = 10): Promise<AdminFile[]> {
-  await new Promise((r) => setTimeout(r, 200));
-  const { files } = await fetchAdminFiles({}, 1, 100);
+export async function fetchLargeFiles(
+  limit = 10,
+  options?: FetchFilesOptions
+): Promise<AdminFile[]> {
+  const { files } = await fetchAdminFiles({}, 1, 200, options);
   return files
     .filter((f) => f.sizeBytes > 500 * 1024 * 1024)
     .sort((a, b) => b.sizeBytes - a.sizeBytes)

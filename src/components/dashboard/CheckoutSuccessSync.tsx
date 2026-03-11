@@ -41,7 +41,11 @@ export default function CheckoutSuccessSync() {
           await refetch();
           window.dispatchEvent(new CustomEvent("subscription-updated"));
           const updated = searchParams.get("updated");
-          router.replace(updated === "subscription" ? "/dashboard/settings" : "/dashboard", {
+          const isPlanChange = updated === "subscription";
+          const path = isPlanChange
+            ? "/dashboard/settings"
+            : "/dashboard/settings?purchase_confirmed=1";
+          router.replace(path, {
             scroll: false,
           });
         }
