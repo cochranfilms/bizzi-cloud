@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatBytes } from "@/lib/analytics/format-bytes";
-import { STORAGE_CATEGORY_COLORS } from "@/lib/analytics/storage-colors";
+import { STORAGE_CATEGORY_HEX } from "@/lib/analytics/storage-colors";
 import type { CategoryAggregate } from "@/lib/analytics/aggregate";
 
 interface SegmentedStorageBarProps {
@@ -43,8 +43,11 @@ export default function SegmentedStorageBar({
         {segments.map((seg) => (
           <div
             key={seg.id}
-            className={`cursor-pointer transition-all duration-300 ease-out ${STORAGE_CATEGORY_COLORS[seg.id] ?? "bg-gray-400"} shrink-0 min-w-[2px]`}
-            style={{ width: `${Math.max(seg.widthPercent, 0.5)}%` }}
+            className="shrink-0 min-w-[2px] cursor-pointer transition-all duration-300 ease-out"
+            style={{
+              width: `${Math.max(seg.widthPercent, 0.5)}%`,
+              backgroundColor: STORAGE_CATEGORY_HEX[seg.id] ?? "#9ca3af",
+            }}
             onMouseEnter={() => setHoveredId(seg.id)}
             onMouseLeave={() => setHoveredId(null)}
             title={`${seg.label}: ${formatBytes(seg.bytes)} (${seg.percent.toFixed(1)}%)`}
@@ -83,7 +86,8 @@ export default function SegmentedStorageBar({
             className="flex items-center gap-2 text-sm"
           >
             <span
-              className={`inline-block h-3 w-3 rounded-full ${STORAGE_CATEGORY_COLORS[seg.id] ?? "bg-gray-400"}`}
+              className="inline-block h-3 w-3 shrink-0 rounded-full"
+              style={{ backgroundColor: STORAGE_CATEGORY_HEX[seg.id] ?? "#9ca3af" }}
               aria-hidden
             />
             <span className="text-neutral-700 dark:text-neutral-300">

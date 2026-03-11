@@ -70,15 +70,15 @@ export default function FileTypeDistributionChart({
 
   return (
     <div
-      className="w-full rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900"
+      className="min-w-0 w-full rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900"
       role="img"
       aria-label={`Storage by type: ${data.map((d) => `${d.name} ${formatBytes(d.value)}`).join(", ")}`}
     >
       <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
         Storage by type
       </h4>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <div className="h-44 shrink-0 sm:h-52 sm:w-44">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="mx-auto h-44 w-44 shrink-0 sm:h-48 sm:w-48">
           <ResponsiveContainer width="100%" height="100%" minHeight={176} minWidth={176}>
             <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <Pie
@@ -104,19 +104,19 @@ export default function FileTypeDistributionChart({
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <div className="flex flex-1 flex-wrap gap-x-4 gap-y-2 sm:flex-col sm:gap-y-3">
+        <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-1">
           {data.map((entry) => (
             <div
               key={entry.id}
-              className="flex items-center justify-between gap-3 text-sm sm:justify-start"
+              className="flex min-w-0 items-center justify-between gap-2 text-sm"
             >
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 shrink items-center gap-2">
                 <span
                   className="h-3.5 w-3.5 shrink-0 rounded-sm"
                   style={{ backgroundColor: STORAGE_CATEGORY_HEX[entry.id] ?? "#9ca3af" }}
                   aria-hidden
                 />
-                <span className="truncate font-medium text-neutral-800 dark:text-neutral-200">
+                <span className="min-w-0 break-words font-medium text-neutral-800 dark:text-neutral-200">
                   {entry.name}
                 </span>
               </div>
