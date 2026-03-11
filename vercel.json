@@ -5,6 +5,10 @@
     {
       "path": "/api/uploads/cleanup",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/mux-cleanup",
+      "schedule": "0 3 * * *"
     }
   ]
 }

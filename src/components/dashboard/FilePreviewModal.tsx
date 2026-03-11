@@ -39,6 +39,7 @@ interface FilePreviewModalProps {
 export default function FilePreviewModal({ file, onClose, showLUTForVideo = false }: FilePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
+  const [videoProcessing, setVideoProcessing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     setLoading(true);
     setError(null);
     setVideoStreamUrl(null);
+    setVideoProcessing(false);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
@@ -66,21 +68,24 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
       };
 
       if (previewType === "video") {
-        const previewRes = await fetch("/api/backup/preview-url", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
+        const [previewRes, streamRes] = await Promise.all([
+          fetch("/api/backup/preview-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          }),
+          fetch("/api/backup/video-stream-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          }),
+        ]);
         const previewData = await previewRes.json();
         if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
         setFullUrl(previewData.url);
-        fetch("/api/backup/video-stream-url", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) })
-          .then((r) => r.json())
-          .then((d) => d?.streamUrl && setVideoStreamUrl(d.streamUrl))
-          .catch(() => {});
+        const streamData = await streamRes.json().catch(() => ({}));
+        if (streamData?.processing) setVideoProcessing(true);
+        else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
       } else {
         const res = await fetch("/api/backup/preview-url", {
           method: "POST",
@@ -107,6 +112,8 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
       setLutEnabled(false);
     } else {
       setFullUrl(null);
+      setVideoStreamUrl(null);
+      setVideoProcessing(false);
       setError(null);
     }
   }, [file, fetchFullUrl]);
@@ -214,6 +221,20 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               <p className="text-sm text-neutral-400">Loading preview…</p>
             </div>
           )}
+          {previewType === "video" && videoProcessing && !error && (
+            <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-700/50 bg-neutral-800/50 px-12 py-14">
+              <div className="relative">
+                <Film className="h-16 w-16 text-bizzi-blue/60" />
+                <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
+              </div>
+              <div className="space-y-2 text-center">
+                <p className="text-base font-medium text-white">Video is processing</p>
+                <p className="max-w-xs text-sm text-neutral-400">
+                  Your video is being prepared for streaming. Check back in a moment to preview.
+                </p>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="flex flex-col items-center gap-3 text-red-400">
               <FileIcon className="h-12 w-12" />
@@ -229,7 +250,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType === "video" && fullUrl) ||
+            (previewType === "video" && fullUrl && !videoProcessing) ||
             (previewType !== "image" && previewType !== "video" && fullUrl)) &&
             !error && (
               <>

@@ -10,6 +10,37 @@ export function isMuxConfigured(): boolean {
   return !!MUX_TOKEN_ID && !!MUX_TOKEN_SECRET;
 }
 
+/** Delete a Mux asset. Stops storage/delivery billing. Originals remain in B2. */
+export async function deleteMuxAsset(assetId: string): Promise<boolean> {
+  if (!isMuxConfigured()) return false;
+  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
+  try {
+    const res = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Basic ${basicAuth}` },
+    });
+    return res.status === 204 || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if a Mux asset is ready for playback. Returns "ready" | "preparing" | "errored" | null (on error). */
+export async function getMuxAssetStatus(assetId: string): Promise<string | null> {
+  if (!isMuxConfigured()) return null;
+  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
+  try {
+    const res = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      headers: { Authorization: `Basic ${basicAuth}` },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { data: { status: string } };
+    return data.data?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Create a Mux asset from an existing file in B2. Requires a presigned download URL. */
 export async function createMuxAssetFromUrl(
   sourceUrl: string,
@@ -111,11 +142,13 @@ export async function createMuxAssetFromBackup(
   });
 
   const db = getAdminFirestore();
+  const now = new Date().toISOString();
   await db.collection("backup_files").doc(backupFileId).update({
     mux_asset_id: result.assetId,
     mux_playback_id: result.playbackId,
     mux_status: result.status,
-    updated_at: new Date().toISOString(),
+    mux_created_at: now,
+    updated_at: now,
   });
 
   return { assetId: result.assetId, playbackId: result.playbackId };

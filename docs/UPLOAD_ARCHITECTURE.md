@@ -56,8 +56,20 @@ B2_BUCKET_NAME=
 B2_ENDPOINT=
 B2_REGION=us-west-004
 FIREBASE_SERVICE_ACCOUNT_JSON=
-CRON_SECRET=  # Optional: for /api/uploads/cleanup cron
+CRON_SECRET=  # Optional: for /api/uploads/cleanup and /api/cron/mux-cleanup crons
+
+# Mux (video proxy — transcodes for preview, deleted after retention)
+MUX_TOKEN_ID=
+MUX_TOKEN_SECRET=
+MUX_RETENTION_DAYS=7  # Delete Mux assets after N days; previews fall back to B2
 ```
+
+## Mux: Temporary Proxy Mode
+
+Mux is used only as a **temporary proxy** to avoid storage costs:
+- Videos uploaded → Mux transcodes for fast HLS preview (~5 sec)
+- After `MUX_RETENTION_DAYS` (default 7), cron deletes Mux assets
+- Previews fall back to B2/ffmpeg proxy; originals stay in B2
 
 ## Why This Is Faster and Cheaper
 

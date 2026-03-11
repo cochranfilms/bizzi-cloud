@@ -1,5 +1,6 @@
 import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
+import { getMuxAssetStatus } from "@/lib/mux";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -70,9 +71,22 @@ export async function POST(request: Request) {
 
     const muxDoc = muxSnap.docs.find((d) => d.data().mux_playback_id);
     const muxPlaybackId = muxDoc?.data()?.mux_playback_id as string | undefined;
-    if (muxPlaybackId) {
-      const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8`;
-      return NextResponse.json({ streamUrl, isHls: true });
+    const muxAssetId = muxDoc?.data()?.mux_asset_id as string | undefined;
+    const storedStatus = muxDoc?.data()?.mux_status as string | undefined;
+
+    if (muxPlaybackId && muxAssetId) {
+      const status = storedStatus === "ready" ? "ready" : await getMuxAssetStatus(muxAssetId);
+      if (status === "ready") {
+        if (storedStatus !== "ready" && muxDoc) {
+          muxDoc.ref.update({ mux_status: "ready" }).catch(() => {});
+        }
+        const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8`;
+        return NextResponse.json({ streamUrl, isHls: true });
+      }
+      return NextResponse.json({
+        processing: true,
+        message: "Video is still processing. Check back soon to preview.",
+      });
     }
 
     const proxyKey = getProxyObjectKey(objectKey);
