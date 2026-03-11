@@ -160,7 +160,6 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
   const hlsRef = useRef<Hls | null>(null);
   const videoSrc = streamUrl ?? src;
   const [lutEnabled, setLutEnabled] = useState(false);
-  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [lutReady, setLutReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -369,15 +368,10 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     });
   }, [onLutChange]);
 
-  // Sync video state and capture intrinsic dimensions for aspect-ratio (9:16 vs 16:9)
+  // Sync video state (play, pause, time, duration, volume)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onLoadedMetadata = () => {
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (w > 0 && h > 0) setVideoDimensions({ width: w, height: h });
-    };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
@@ -386,21 +380,16 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       setVolume(video.volume);
       setIsMuted(video.muted);
     };
-    video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("volumechange", onVolumeChange);
-    if (video.videoWidth > 0 && video.videoHeight > 0) {
-      setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
-    }
     setCurrentTime(video.currentTime);
     setDuration(video.duration);
     setVolume(video.volume);
     setIsMuted(video.muted);
     return () => {
-      video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -477,7 +466,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
 
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-lg bg-red-900/20 p-4 text-red-400">
+      <div className="flex flex-col items-center gap-2 rounded-lg bg-red-100 p-4 text-red-700 dark:bg-red-900/20 dark:text-red-400">
         <p className="text-sm">{error}</p>
         <video
           ref={videoRef}
@@ -495,16 +484,14 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
     : {
         maxHeight: "70vh",
-        ...(videoDimensions && {
-          aspectRatio: `${videoDimensions.width} / ${videoDimensions.height}`,
-        }),
+        aspectRatio: "16 / 9",
       };
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
       <div
         ref={containerRef}
-        className="video-fullscreen-container relative w-full max-w-full overflow-hidden rounded-xl bg-black shadow-xl ring-1 ring-neutral-700/50"
+        className="video-fullscreen-container relative w-full max-w-full overflow-hidden rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50"
         style={containerStyle}
       >
         <video
@@ -582,14 +569,14 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           </div>
       </div>
       {showLUTOption && (
-        <div className="flex w-full items-center justify-between gap-4 rounded-xl border border-neutral-700/60 bg-neutral-800/60 px-4 py-3 backdrop-blur-sm">
+        <div className="flex w-full items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60">
           <button
             type="button"
             onClick={handleLUTToggle}
             className={`flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
               lutEnabled
                 ? "bg-gradient-to-r from-bizzi-blue to-bizzi-cyan text-white shadow-lg shadow-bizzi-blue/20"
-                : "bg-neutral-700/50 text-neutral-300 ring-1 ring-neutral-600/50 transition-colors hover:bg-neutral-600/60 hover:ring-neutral-500"
+                : "bg-neutral-200 text-neutral-600 ring-1 ring-neutral-300 transition-colors hover:bg-neutral-300 hover:ring-neutral-400 dark:bg-neutral-700/50 dark:text-neutral-300 dark:ring-neutral-600/50 dark:hover:bg-neutral-600/60 dark:hover:ring-neutral-500"
             }`}
             title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
           >
@@ -597,13 +584,13 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
               className={`inline-block h-3 w-3 rounded-full border-2 transition-colors ${
                 lutEnabled
                   ? "border-white bg-white"
-                  : "border-neutral-500 bg-transparent"
+                  : "border-neutral-400 bg-transparent dark:border-neutral-500"
               }`}
             />
             Rec 709 LUT
           </button>
-          <span className="text-xs text-neutral-400">
-            <span className={lutEnabled ? "font-medium text-bizzi-cyan" : ""}>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            <span className={lutEnabled ? "font-medium text-bizzi-blue dark:text-bizzi-cyan" : ""}>
               {lutEnabled ? "On" : "Off"}
             </span>
             {" · "}For S-Log3 / Sony RAW

@@ -150,15 +150,15 @@ export default function TransferPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-sm dark:bg-black/70"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-neutral-700 px-4 py-3">
-          <h2 className="truncate text-sm font-medium text-white" title={file.name}>
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={file.name}>
             {file.name}
           </h2>
           <div className="flex items-center gap-2">
@@ -167,7 +167,7 @@ export default function TransferPreviewModal({
                 type="button"
                 onClick={handleDownload}
                 disabled={downloading}
-                className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
                 aria-label="Download"
               >
                 <Download className="h-4 w-4" />
@@ -176,7 +176,7 @@ export default function TransferPreviewModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-white"
+              className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -184,15 +184,20 @@ export default function TransferPreviewModal({
           </div>
         </div>
 
-        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-950 p-6">
+        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-50 p-6 dark:bg-neutral-950">
           {loading && (
-            <div className="flex flex-col items-center gap-3 text-neutral-400">
-              <Loader2 className="h-10 w-10 animate-spin" />
-              <p className="text-sm">Loading preview…</p>
+            <div
+              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50"
+              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+            >
+              <div className="flex flex-col items-center gap-3 text-neutral-500 dark:text-neutral-400">
+                <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
+                <p className="text-sm">Loading preview…</p>
+              </div>
             </div>
           )}
           {error && (
-            <div className="flex flex-col items-center gap-3 text-red-400">
+            <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
               {canDownload && (
@@ -210,12 +215,17 @@ export default function TransferPreviewModal({
           {fullUrl && !error && !loading && (
             <>
               {previewType === "image" && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={fullUrl}
-                  alt={file.name}
-                  className="max-h-[70vh] max-w-full rounded-lg object-contain"
-                />
+                <div
+                  className="relative flex w-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-neutral-200 dark:bg-black"
+                  style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={fullUrl}
+                    alt={file.name}
+                    className="max-h-full max-w-full rounded-lg object-contain"
+                  />
+                </div>
               )}
               {previewType === "video" && (
                 <VideoWithLUT
@@ -238,7 +248,7 @@ export default function TransferPreviewModal({
                 />
               )}
               {previewType === "other" && (
-                <div className="flex flex-col items-center gap-4 text-neutral-400">
+                <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">
                   <FileIcon className="h-16 w-16" />
                   <p className="text-sm">Preview not available for this file type</p>
                   {canDownload && (

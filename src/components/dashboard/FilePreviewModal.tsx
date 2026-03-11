@@ -167,15 +167,15 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-md dark:bg-black/75"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-2xl shadow-bizzi-blue/5 ring-1 ring-white/5"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-neutral-900/10 dark:border-neutral-700/80 dark:bg-neutral-900 dark:shadow-bizzi-blue/5 dark:ring-1 dark:ring-white/5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-700/80 bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-900 px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-5 py-3.5 dark:border-neutral-700/80 dark:bg-gradient-to-r dark:from-neutral-900 dark:via-neutral-900/95 dark:to-neutral-900">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10">
               {previewType === "video" ? (
@@ -188,7 +188,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                 <FileIcon className="h-4 w-4 text-bizzi-blue" />
               )}
             </div>
-            <h2 className="truncate text-sm font-medium text-white" title={file.name}>
+            <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={file.name}>
               {file.name}
             </h2>
           </div>
@@ -197,7 +197,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               type="button"
               onClick={handleDownload}
               disabled={downloading}
-              className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50"
+              className="rounded-lg p-2.5 text-neutral-500 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-bizzi-blue/10 dark:hover:text-bizzi-blue"
               aria-label="Download full resolution"
             >
               <Download className="h-4 w-4" />
@@ -205,7 +205,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-2.5 text-neutral-400 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue"
+              className="rounded-lg p-2.5 text-neutral-500 transition-all hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:text-neutral-400 dark:hover:bg-bizzi-blue/10 dark:hover:text-bizzi-blue"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -214,29 +214,39 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
         </div>
 
         {/* Content */}
-        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-gradient-to-b from-neutral-950 to-neutral-900/80 p-6">
+        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-50 p-6 dark:bg-gradient-to-b dark:from-neutral-950 dark:to-neutral-900/80">
           {loading && !(previewType === "image" && lowResPreviewUrl) && (
-            <div className="flex flex-col items-center gap-4 rounded-2xl border border-neutral-700/50 bg-neutral-800/50 px-12 py-10">
-              <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
-              <p className="text-sm text-neutral-400">Loading preview…</p>
+            <div
+              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50 dark:ring-offset-2 dark:ring-offset-neutral-900"
+              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+            >
+              <div className="flex flex-col items-center gap-4 rounded-2xl border border-neutral-200 bg-neutral-100 px-12 py-10 dark:border-neutral-700/50 dark:bg-neutral-800/50">
+                <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading preview…</p>
+              </div>
             </div>
           )}
           {previewType === "video" && videoProcessing && !error && (
-            <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-700/50 bg-neutral-800/50 px-12 py-14">
-              <div className="relative">
-                <Film className="h-16 w-16 text-bizzi-blue/60" />
-                <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
-              </div>
-              <div className="space-y-2 text-center">
-                <p className="text-base font-medium text-white">Video is processing</p>
-                <p className="max-w-xs text-sm text-neutral-400">
-                  Your video is being prepared for streaming. Check back in a moment to preview.
-                </p>
+            <div
+              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50 dark:ring-offset-2 dark:ring-offset-neutral-900"
+              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+            >
+              <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-200 bg-neutral-100 px-12 py-14 dark:border-neutral-700/50 dark:bg-neutral-800/50">
+                <div className="relative">
+                  <Film className="h-16 w-16 text-bizzi-blue/60" />
+                  <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
+                </div>
+                <div className="space-y-2 text-center">
+                  <p className="text-base font-medium text-neutral-900 dark:text-white">Video is processing</p>
+                  <p className="max-w-xs text-sm text-neutral-500 dark:text-neutral-400">
+                    Your video is being prepared for streaming. Check back in a moment to preview.
+                  </p>
+                </div>
               </div>
             </div>
           )}
           {error && (
-            <div className="flex flex-col items-center gap-3 text-red-400">
+            <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
               <button
@@ -256,15 +266,18 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               <>
                 {previewType === "image" && lowResPreviewUrl && (
                   <div className="flex flex-col items-center gap-3">
-                    <div className="overflow-hidden rounded-xl ring-2 ring-neutral-700/50 ring-offset-2 ring-offset-neutral-900 shadow-xl">
+                    <div
+                      className="relative flex w-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-neutral-200 ring-2 ring-neutral-200 shadow-xl dark:bg-black dark:ring-neutral-700/50 dark:ring-offset-2 dark:ring-offset-neutral-900"
+                      style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */}
                       <img
                         src={lowResPreviewUrl}
                         alt={file.name}
-                        className="max-h-[70vh] max-w-full object-contain"
+                        className="max-h-full max-w-full object-contain"
                       />
                     </div>
-                    <p className="text-xs text-neutral-500">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       Low-resolution preview · Use Download for full quality
                     </p>
                   </div>
@@ -291,7 +304,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                   />
                 )}
                 {previewType === "other" && fullUrl && (
-                  <div className="flex flex-col items-center gap-4 text-neutral-400">
+                  <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">
                     <FileIcon className="h-16 w-16" />
                     <p className="text-sm">Preview not available for this file type</p>
                     <button
