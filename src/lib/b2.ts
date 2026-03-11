@@ -4,6 +4,9 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
@@ -204,6 +207,38 @@ export async function completeMultipartUpload(
   );
 }
 
+/** Delete an object from B2. Idempotent: no-op if object does not exist. */
+export async function deleteObject(objectKey: string): Promise<void> {
+  const client = getB2Client();
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+    })
+  );
+}
+
+/** Delete up to 1000 objects in one request. */
+export async function deleteObjects(objectKeys: string[]): Promise<void> {
+  if (objectKeys.length === 0) return;
+  const client = getB2Client();
+  const batches = [];
+  for (let i = 0; i < objectKeys.length; i += 1000) {
+    batches.push(objectKeys.slice(i, i + 1000));
+  }
+  for (const batch of batches) {
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: B2_BUCKET_NAME,
+        Delete: {
+          Objects: batch.map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      })
+    );
+  }
+}
+
 /** Check if an object exists in B2 (used for content-hash deduplication). */
 export async function objectExists(objectKey: string): Promise<boolean> {
   const client = getB2Client();
@@ -365,6 +400,77 @@ export async function getObjectBuffer(
     }
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * List bucket objects and compute total size. Used for admin bucket stats.
+ * @param prefix - Optional prefix (e.g. "content/")
+ * @param maxObjects - Stop after this many objects (default 100k) to avoid timeout
+ */
+export async function listBucketStats(
+  prefix?: string,
+  maxObjects = 100_000
+): Promise<{ objectCount: number; totalBytes: number; truncated: boolean }> {
+  const client = getB2Client();
+  let objectCount = 0;
+  let totalBytes = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const res = await client.send(
+      new ListObjectsV2Command({
+        Bucket: B2_BUCKET_NAME,
+        Prefix: prefix ?? undefined,
+        MaxKeys: Math.min(1000, maxObjects - objectCount),
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    for (const obj of res.Contents ?? []) {
+      objectCount++;
+      totalBytes += obj.Size ?? 0;
+      if (objectCount >= maxObjects) {
+        return { objectCount, totalBytes, truncated: true };
+      }
+    }
+
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return { objectCount, totalBytes, truncated: false };
+}
+
+/**
+ * List object keys under a prefix. Used for orphan cleanup.
+ */
+export async function* listObjectKeys(
+  prefix: string,
+  maxKeys = 100_000
+): AsyncGenerator<string> {
+  const client = getB2Client();
+  let continuationToken: string | undefined;
+  let yielded = 0;
+
+  do {
+    const res = await client.send(
+      new ListObjectsV2Command({
+        Bucket: B2_BUCKET_NAME,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) {
+        yield obj.Key;
+        yielded++;
+        if (yielded >= maxKeys) return;
+      }
+    }
+
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (continuationToken);
 }
 
 /** Read first N bytes of object (for metadata extraction from large files). */

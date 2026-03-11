@@ -6,7 +6,6 @@ import {
   doc,
   documentId,
   getDoc,
-  deleteDoc,
   getDocs,
   getCountFromServer,
   query,
@@ -498,9 +497,21 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const permanentlyDeleteFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const db = getFirebaseFirestore();
-      const fileRef = doc(db, "backup_files", fileId);
-      await deleteDoc(fileRef);
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/backup/permanent-delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ file_ids: [fileId] }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to permanently delete");
+      }
       await recalculateStorage();
       await fetchCloudFiles();
     },
@@ -746,18 +757,21 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const permanentlyDeleteDrive = useCallback(
     async (driveId: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const db = getFirebaseFirestore();
-      const filesSnap = await getDocs(
-        query(
-          collection(db, "backup_files"),
-          where("userId", "==", user.uid),
-          where("linked_drive_id", "==", driveId)
-        )
-      );
-      for (const d of filesSnap.docs) {
-        await deleteDoc(doc(db, "backup_files", d.id));
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/backup/permanent-delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ drive_id: driveId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to permanently delete");
       }
-      await deleteDoc(doc(db, "linked_drives", driveId));
       await recalculateStorage();
       await fetchDrives();
       bumpStorageVersion();
