@@ -5,6 +5,32 @@ import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
+type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
+
+function computeStorageFromSubscription(
+  planId: PlanId,
+  items: SubscriptionItemWithPrice[]
+): { storageQuotaBytes: number; storageAddonId: string | null } {
+  let storageAddonTb = 0;
+  let storageAddonId: string | null = null;
+  for (const item of items) {
+    if (item.deleted) continue;
+    const meta = item.price?.metadata;
+    const addonId = meta?.storage_addon_id as string | undefined;
+    const tb = meta?.storage_addon_tb ? parseInt(String(meta.storage_addon_tb), 10) : 0;
+    if (addonId && !isNaN(tb) && tb > 0) {
+      storageAddonTb += tb;
+      storageAddonId = addonId;
+    }
+  }
+  const baseBytes = getStorageBytesForPlan(planId);
+  const addonBytes = storageAddonTb * 1024 ** 4;
+  return {
+    storageQuotaBytes: baseBytes + addonBytes,
+    storageAddonId,
+  };
+}
+
 export const runtime = "nodejs";
 
 /**
@@ -56,8 +82,13 @@ export async function POST(request: Request) {
         | string
         | undefined;
 
+      // Mark pending_checkouts as completed (for both guest and auth flows)
+      await db.collection("pending_checkouts").doc(session.id).update({
+        status: "completed",
+      }).catch(() => {});
+
       if (!userId || !planId) {
-        console.error("[Stripe webhook] checkout.session.completed missing userId or planId in metadata");
+        // Guest checkout: account creation handled by /account/setup page
         return NextResponse.json({ received: true });
       }
 
@@ -65,7 +96,28 @@ export async function POST(request: Request) {
         ? addonIdsRaw.split(",").filter(Boolean)
         : [];
 
-      const storageQuotaBytes = getStorageBytesForPlan(planId as PlanId);
+      let storageQuotaBytes = getStorageBytesForPlan(planId as PlanId);
+      let storageAddonId: string | null = null;
+      const subId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id;
+      if (subId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(subId, {
+            expand: ["items.data.price"],
+          });
+          const items = sub.items.data as SubscriptionItemWithPrice[];
+          const computed = computeStorageFromSubscription(
+            planId as PlanId,
+            items
+          );
+          storageQuotaBytes = computed.storageQuotaBytes;
+          storageAddonId = computed.storageAddonId;
+        } catch (err) {
+          console.error("[Stripe webhook] Failed to expand subscription:", err);
+        }
+      }
 
       if (replaceSubscriptionId) {
         try {
@@ -81,6 +133,7 @@ export async function POST(request: Request) {
           plan_id: planId,
           addon_ids: addonIds,
           storage_quota_bytes: storageQuotaBytes,
+          storage_addon_id: storageAddonId,
           stripe_customer_id: session.customer ?? null,
           stripe_subscription_id: session.subscription ?? null,
           stripe_updated_at: new Date().toISOString(),
@@ -88,6 +141,14 @@ export async function POST(request: Request) {
         { merge: true }
       );
       await ensureDefaultDrivesForUser(userId);
+      break;
+    }
+
+    case "checkout.session.expired": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      await db.collection("pending_checkouts").doc(session.id).update({
+        status: "abandoned",
+      }).catch(() => {});
       break;
     }
 
@@ -107,6 +168,7 @@ export async function POST(request: Request) {
           {
             plan_id: "free",
             addon_ids: [],
+            storage_addon_id: null,
             storage_quota_bytes: getStorageBytesForPlan("free"),
             stripe_subscription_id: null,
             stripe_updated_at: new Date().toISOString(),
@@ -119,15 +181,31 @@ export async function POST(request: Request) {
       const addonIdsRaw = subMeta?.addonIds ?? "";
       const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
 
-      const storageQuotaBytes = planId
+      let storageQuotaBytes = planId
         ? getStorageBytesForPlan(planId)
         : getStorageBytesForPlan("free");
+      let storageAddonId: string | null = null;
+      try {
+        const sub = await stripe.subscriptions.retrieve(subscription.id, {
+          expand: ["items.data.price"],
+        });
+        const items = sub.items.data as SubscriptionItemWithPrice[];
+        const computed = computeStorageFromSubscription(
+          (planId as PlanId) ?? "free",
+          items
+        );
+        storageQuotaBytes = computed.storageQuotaBytes;
+        storageAddonId = computed.storageAddonId;
+      } catch (err) {
+        console.error("[Stripe webhook] Failed to expand subscription:", err);
+      }
 
       await db.collection("profiles").doc(userId).set(
         {
           plan_id: planId ?? "free",
           addon_ids: addonIds,
           storage_quota_bytes: storageQuotaBytes,
+          storage_addon_id: storageAddonId,
           stripe_subscription_id: subscription.id,
           stripe_updated_at: new Date().toISOString(),
         },

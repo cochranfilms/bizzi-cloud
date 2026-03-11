@@ -54,7 +54,7 @@ export default function Header() {
             Sign In
           </Link>
           <Link
-            href="/login?mode=signup"
+            href="#pricing"
             className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
           >
             Get Started
@@ -119,7 +119,7 @@ export default function Header() {
             </li>
             <li>
               <Link
-                href="/login?mode=signup"
+                href="#pricing"
                 className="inline-block px-4 py-2 bg-bizzi-blue text-white font-medium rounded-full"
                 onClick={() => setMobileMenuOpen(false)}
               >

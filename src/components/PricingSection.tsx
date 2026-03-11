@@ -10,7 +10,10 @@ import {
   freeTier,
   plans,
   powerUpAddons,
+  PLAN_LABELS,
+  ADDON_LABELS,
 } from "@/lib/pricing-data";
+import CheckoutModal from "@/components/CheckoutModal";
 
 function PlanCard({
   plan,
@@ -185,6 +188,14 @@ export default function PricingSection() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const purchaseProcessedRef = useRef(false);
+  const [checkoutModal, setCheckoutModal] = useState<{
+    planId: string;
+    planName: string;
+    addonId: string | null;
+    addonName?: string;
+    billing: "monthly" | "annual";
+    priceLabel: string;
+  } | null>(null);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
   const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
@@ -200,10 +211,26 @@ export default function PricingSection() {
   const handleCheckout = useCallback(
     async (planId: string, addonId: string | null, billing: "monthly" | "annual") => {
       if (!user) {
-        const redirect = `/?purchase=${planId}${addonId ? `&addon=${addonId}` : ""}&billing=${billing}`;
-        router.push(
-          `/login?mode=signup&redirect=${encodeURIComponent(redirect)}`
-        );
+        const plan = plans.find((p) => p.id === planId);
+        const addon = addonId
+          ? powerUpAddons.find((a) => a.id === addonId)
+          : null;
+        const priceLabel =
+          plan && billing === "annual"
+            ? `$${plan.annualPrice}/yr`
+            : plan
+              ? `$${plan.price}/mo`
+              : "";
+        setCheckoutModal({
+          planId,
+          planName: plan?.name ?? PLAN_LABELS[planId] ?? planId,
+          addonId,
+          addonName: addon?.name ?? (addonId ? ADDON_LABELS[addonId] : undefined),
+          billing,
+          priceLabel: addon
+            ? `${priceLabel} + $${addon.price}/mo add-on`
+            : priceLabel,
+        });
         return;
       }
       setCheckoutLoading(true);
@@ -244,6 +271,43 @@ export default function PricingSection() {
       }
     },
     [user, router]
+  );
+
+  const handleGuestCheckout = useCallback(
+    async (data: { name: string; email: string }) => {
+      if (!checkoutModal) return;
+      setCheckoutLoading(true);
+      setCheckoutError(null);
+      try {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/stripe/checkout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planId: checkoutModal.planId,
+            addonId: checkoutModal.addonId ?? undefined,
+            billing: checkoutModal.billing,
+            email: data.email,
+            name: data.name,
+          }),
+        });
+        const result = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok) {
+          setCheckoutError(result.error ?? "Checkout failed");
+          return;
+        }
+        if (result.url) {
+          window.location.href = result.url;
+        } else {
+          setCheckoutError("Checkout failed");
+        }
+      } catch {
+        setCheckoutError("Checkout failed. Please try again.");
+      } finally {
+        setCheckoutLoading(false);
+      }
+    },
+    [checkoutModal]
   );
 
   useEffect(() => {
@@ -373,7 +437,7 @@ export default function PricingSection() {
   return (
     <section
       id="pricing"
-      className="bg-neutral-50/50 px-6 py-20 md:py-28"
+      className="scroll-mt-16 bg-neutral-50/50 px-6 py-20 md:py-28"
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-16 text-center">
@@ -451,13 +515,13 @@ export default function PricingSection() {
                 <p className="mt-3 text-xs text-neutral-500">
                   {freeTier.addOnsNote}
                 </p>
-                <Link
-                  href="/login?mode=signup&redirect=/dashboard"
+                <a
+                  href="#paid-plans"
                   className="mt-6 inline-block w-full rounded-xl px-8 py-3 font-medium text-center text-white transition-colors hover:opacity-90 md:w-auto"
                   style={{ backgroundColor: freeTier.accentColor }}
                 >
-                  {freeTier.cta}
-                </Link>
+                  Choose a paid plan below
+                </a>
               </div>
             </div>
           </div>
@@ -470,7 +534,7 @@ export default function PricingSection() {
         )}
 
         {/* 4 Base Plans */}
-        <div className="mb-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div id="paid-plans" className="scroll-mt-24 mb-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {plans.map((plan) => (
             <PlanCard
               key={plan.id}
@@ -812,6 +876,23 @@ export default function PricingSection() {
             </div>
           </div>
         )}
+
+        <CheckoutModal
+          isOpen={!!checkoutModal}
+          onClose={() => {
+            setCheckoutModal(null);
+            setCheckoutError(null);
+          }}
+          planId={checkoutModal?.planId ?? ""}
+          planName={checkoutModal?.planName ?? ""}
+          addonId={checkoutModal?.addonId ?? null}
+          addonName={checkoutModal?.addonName}
+          billing={checkoutModal?.billing ?? "monthly"}
+          priceLabel={checkoutModal?.priceLabel ?? ""}
+          onSubmit={handleGuestCheckout}
+          loading={checkoutLoading}
+          error={checkoutError}
+        />
 
         {/* Footer note */}
         <p className="mt-8 text-center text-sm text-neutral-500">

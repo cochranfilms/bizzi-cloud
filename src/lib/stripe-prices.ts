@@ -7,6 +7,7 @@
 import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
+import type { StorageAddonId } from "@/lib/pricing-data";
 import {
   getStripePriceId as getEnvPriceId,
   getStripeAddonPriceId as getEnvAddonPriceId,
@@ -27,6 +28,18 @@ const ADDON_PRICING: Record<AddonId, { name: string; monthly: number }> = {
   gallery: { name: "Bizzi Gallery Suite", monthly: 500 },
   editor: { name: "Bizzi Editor", monthly: 800 },
   fullframe: { name: "Bizzi Full Frame", monthly: 1000 },
+};
+
+/** Storage add-on pricing: monthly cents. Indie +1/+2/+3 TB, Video +1..+5 TB */
+const STORAGE_ADDON_PRICING: Record<StorageAddonId, { name: string; monthly: number; plan: "indie" | "video"; tb: number }> = {
+  indie_1: { name: "Additional Storage +1 TB (Indie)", monthly: 800, plan: "indie", tb: 1 },
+  indie_2: { name: "Additional Storage +2 TB (Indie)", monthly: 1500, plan: "indie", tb: 2 },
+  indie_3: { name: "Additional Storage +3 TB (Indie)", monthly: 2200, plan: "indie", tb: 3 },
+  video_1: { name: "Additional Storage +1 TB (Video Pro)", monthly: 1000, plan: "video", tb: 1 },
+  video_2: { name: "Additional Storage +2 TB (Video Pro)", monthly: 1900, plan: "video", tb: 2 },
+  video_3: { name: "Additional Storage +3 TB (Video Pro)", monthly: 2700, plan: "video", tb: 3 },
+  video_4: { name: "Additional Storage +4 TB (Video Pro)", monthly: 3400, plan: "video", tb: 4 },
+  video_5: { name: "Additional Storage +5 TB (Video Pro)", monthly: 4000, plan: "video", tb: 5 },
 };
 
 /** Get price ID from env if set (backward compat) */
@@ -144,4 +157,32 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
     console.error("[Stripe getOrCreateAddonPrice] Failed to create:", err);
     throw err;
   }
+}
+
+/** Get or create Stripe price for storage add-on. Caches in Firestore. */
+export async function getOrCreateStripeStorageAddonPrice(storageAddonId: StorageAddonId): Promise<string> {
+  const docId = `storage_${storageAddonId}`;
+  const db = getAdminFirestore();
+  const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
+  const snap = await docRef.get();
+  if (snap.exists) {
+    const priceId = snap.data()?.price_id as string | undefined;
+    if (priceId) return priceId;
+  }
+  const pricing = STORAGE_ADDON_PRICING[storageAddonId];
+  if (!pricing) throw new Error(`Unknown storage addon: ${storageAddonId}`);
+  const stripe = getStripeInstance();
+  const product = await stripe.products.create({
+    name: pricing.name,
+    metadata: { storage_addon_id: storageAddonId, storage_addon_plan: pricing.plan, storage_addon_tb: String(pricing.tb) },
+  });
+  const price = await stripe.prices.create({
+    product: product.id,
+    unit_amount: pricing.monthly,
+    currency: "usd",
+    recurring: { interval: "month" },
+    metadata: { storage_addon_id: storageAddonId, storage_addon_plan: pricing.plan, storage_addon_tb: String(pricing.tb) },
+  });
+  await docRef.set({ price_id: price.id, product_id: product.id, storage_addon_id: storageAddonId, updated_at: new Date().toISOString() });
+  return price.id;
 }

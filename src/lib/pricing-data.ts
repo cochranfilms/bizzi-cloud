@@ -51,8 +51,8 @@ export const plans = [
       "30-day version history",
     ],
     limitations: ["No extra storage add-on"],
-    addOnsNote: "Gallery Suite, Editor & Full Frame available",
-    cta: "Choose Solo Creator",
+    addOnsNote: "Gallery Suite, Editor & Full Frame. Additional storage add-ons when plan is chosen.",
+    cta: "Start Membership",
     accentColor: BIZZI_BYTE_COLORS.matcha,
   },
   {
@@ -73,8 +73,8 @@ export const plans = [
       "Review & approval workflow",
     ],
     addOnsNote:
-      "Gallery Suite, Editor, Full Frame + Extra storage up to +5 TB",
-    cta: "Choose Indie Filmmaker",
+      "Gallery Suite, Editor, Full Frame. Additional storage add-ons when plan is chosen.",
+    cta: "Join Now",
     accentColor: BIZZI_BYTE_COLORS.habanero,
   },
   {
@@ -94,8 +94,8 @@ export const plans = [
       "Branded client delivery pages",
     ],
     addOnsNote:
-      "Gallery Suite, Editor, Full Frame + Extra storage up to +10 TB",
-    cta: "Choose Video Pro",
+      "Gallery Suite, Editor, Full Frame. Additional storage add-ons when plan is chosen.",
+    cta: "Start Membership",
     accentColor: BIZZI_BYTE_COLORS.frost,
   },
   {
@@ -115,8 +115,8 @@ export const plans = [
       "SSO & advanced permissions",
     ],
     addOnsNote:
-      "Gallery Suite, Editor, Full Frame + Extra storage up to +20 TB",
-    cta: "Choose Production House",
+      "Gallery Suite, Editor, Full Frame. Contact sales for enterprise storage.",
+    cta: "Start Membership",
     accentColor: BIZZI_BYTE_COLORS.onyx,
   },
 ];
@@ -190,3 +190,74 @@ export const ADDON_LABELS: Record<string, string> = {
   editor: "Bizzi Editor",
   fullframe: "Bizzi Full Frame",
 };
+
+/**
+ * Storage add-ons (internal only — shown in Change Plan after signup).
+ * Indie Filmmaker: +1, +2, +3 TB. Video Pro: +1, +2, +3, +4, +5 TB.
+ * Solo Creator and Production House do not support storage add-ons.
+ */
+export type StorageAddonId =
+  | "indie_1"
+  | "indie_2"
+  | "indie_3"
+  | "video_1"
+  | "video_2"
+  | "video_3"
+  | "video_4"
+  | "video_5";
+
+export const STORAGE_ADDONS: Record<
+  "indie" | "video",
+  Array<{ id: StorageAddonId; tb: number; price: number; upgradePrompt?: string }>
+> = {
+  indie: [
+    { id: "indie_1", tb: 1, price: 8 },
+    { id: "indie_2", tb: 2, price: 15, upgradePrompt: "You're almost at Video Pro pricing. Upgrade for more features at the same cost." },
+    { id: "indie_3", tb: 3, price: 22, upgradePrompt: "You're almost at Video Pro pricing. Upgrade for more features at the same cost." },
+  ],
+  video: [
+    { id: "video_1", tb: 1, price: 10 },
+    { id: "video_2", tb: 2, price: 19 },
+    { id: "video_3", tb: 3, price: 27 },
+    { id: "video_4", tb: 4, price: 34, upgradePrompt: "You're almost at Production House pricing. Upgrade for more features." },
+    { id: "video_5", tb: 5, price: 40, upgradePrompt: "You're almost at Production House pricing. Upgrade for more features." },
+  ],
+};
+
+export const STORAGE_ADDON_LABELS: Record<StorageAddonId, string> = {
+  indie_1: "+1 TB",
+  indie_2: "+2 TB",
+  indie_3: "+3 TB",
+  video_1: "+1 TB",
+  video_2: "+2 TB",
+  video_3: "+3 TB",
+  video_4: "+4 TB",
+  video_5: "+5 TB",
+};
+
+export const STORAGE_ADDON_TB: Record<StorageAddonId, number> = {
+  indie_1: 1,
+  indie_2: 2,
+  indie_3: 3,
+  video_1: 1,
+  video_2: 2,
+  video_3: 3,
+  video_4: 4,
+  video_5: 5,
+};
+
+export const VALID_STORAGE_ADDON_IDS: StorageAddonId[] = [
+  "indie_1",
+  "indie_2",
+  "indie_3",
+  "video_1",
+  "video_2",
+  "video_3",
+  "video_4",
+  "video_5",
+];
+
+/** Get TB from storage addon ID; returns 0 if unknown. */
+export function getStorageAddonTb(storageAddonId: StorageAddonId | string): number {
+  return STORAGE_ADDON_TB[storageAddonId as StorageAddonId] ?? 0;
+}

@@ -33,6 +33,8 @@ export async function GET(request: Request) {
   const addonIds = Array.isArray(data.addon_ids)
     ? (data.addon_ids as string[])
     : [];
+  const storageAddonId =
+    typeof data.storage_addon_id === "string" ? data.storage_addon_id : null;
   return NextResponse.json({
     public_slug: handle,
     handle,
@@ -42,6 +44,7 @@ export async function GET(request: Request) {
     plan_id: planId,
     has_portal_access: hasPortalAccess,
     addon_ids: addonIds,
+    storage_addon_id: storageAddonId,
   });
 }
 

@@ -3,12 +3,25 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
+  getOrCreateStripeStorageAddonPrice,
 } from "@/lib/stripe-prices";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
+import type { StorageAddonId } from "@/lib/pricing-data";
+import { VALID_STORAGE_ADDON_IDS } from "@/lib/pricing-data";
 import { NextResponse } from "next/server";
 
 const VALID_PLAN_IDS = ["solo", "indie", "video", "production"];
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
+const STORAGE_ADDON_PLAN_MAP: Record<string, "indie" | "video"> = {
+  indie_1: "indie",
+  indie_2: "indie",
+  indie_3: "indie",
+  video_1: "video",
+  video_2: "video",
+  video_3: "video",
+  video_4: "video",
+  video_5: "video",
+};
 
 export type CreateChangePlanCheckoutInput = {
   uid: string;
@@ -16,12 +29,13 @@ export type CreateChangePlanCheckoutInput = {
   addonIds: AddonId[];
   billing: BillingCycle;
   origin: string;
+  storageAddonId?: string | null;
 };
 
 export async function createChangePlanCheckoutSession(
   input: CreateChangePlanCheckoutInput
 ): Promise<NextResponse> {
-  const { uid, planId, addonIds, billing, origin } = input;
+  const { uid, planId, addonIds, billing, origin, storageAddonId } = input;
 
   if (!planId || !VALID_PLAN_IDS.includes(planId)) {
     return NextResponse.json(
@@ -74,6 +88,22 @@ export async function createChangePlanCheckoutSession(
     }
   }
 
+  if (storageAddonId && VALID_STORAGE_ADDON_IDS.includes(storageAddonId as StorageAddonId)) {
+    const expectedPlan = STORAGE_ADDON_PLAN_MAP[storageAddonId];
+    if (expectedPlan && planId === expectedPlan) {
+      try {
+        const storageAddonPriceId = await getOrCreateStripeStorageAddonPrice(storageAddonId as StorageAddonId);
+        lineItems.push({ price: storageAddonPriceId, quantity: 1 });
+      } catch (err) {
+        console.error("[Stripe checkout-change-plan] Failed to get storage addon price:", err);
+        return NextResponse.json(
+          { error: "Checkout failed. Please try again." },
+          { status: 500 }
+        );
+      }
+    }
+  }
+
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
     (typeof process.env.VERCEL_URL === "string"
@@ -98,6 +128,7 @@ export async function createChangePlanCheckoutSession(
         addonIds: addonIds.join(","),
         billing,
         replace_subscription: stripeSubscriptionId,
+        ...(storageAddonId ? { storageAddonId } : {}),
       },
       subscription_data: {
         metadata: {
@@ -106,6 +137,7 @@ export async function createChangePlanCheckoutSession(
           addonIds: addonIds.join(","),
           billing,
           replace_subscription: stripeSubscriptionId,
+          ...(storageAddonId ? { storageAddonId } : {}),
         },
       },
     });

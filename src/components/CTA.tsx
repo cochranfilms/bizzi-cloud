@@ -14,7 +14,7 @@ export default function CTA() {
           Join Bizzi Cloud and keep creating.
         </p>
         <Link
-          href="/dashboard"
+          href="#pricing"
           className="inline-block px-8 py-3 bg-bizzi-blue text-white font-medium rounded-full hover:bg-bizzi-cyan transition-colors"
         >
           Get Started

@@ -12,6 +12,9 @@ import {
   powerUpAddons,
   PLAN_LABELS,
   ADDON_LABELS,
+  STORAGE_ADDONS,
+  STORAGE_ADDON_LABELS,
+  type StorageAddonId,
 } from "@/lib/pricing-data";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 
@@ -25,9 +28,10 @@ function getPlanOrder(planId: string): number {
 export default function ChangePlanPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { planId: currentPlanId, addonIds: currentAddonIds, hasPortalAccess, loading: subLoading } = useSubscription();
+  const { planId: currentPlanId, addonIds: currentAddonIds, storageAddonId: currentStorageAddonId, hasPortalAccess, loading: subLoading } = useSubscription();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [selectedStorageAddonId, setSelectedStorageAddonId] = useState<string | null>(null);
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [applyLoading, setApplyLoading] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -39,8 +43,20 @@ export default function ChangePlanPage() {
     if (currentPlanId && currentPlanId !== "free") {
       setSelectedPlanId(currentPlanId);
       setSelectedAddonIds(currentAddonIds ?? []);
+      setSelectedStorageAddonId(currentStorageAddonId ?? null);
     }
-  }, [subLoading, currentPlanId, currentAddonIds]);
+  }, [subLoading, currentPlanId, currentAddonIds, currentStorageAddonId]);
+
+  useEffect(() => {
+    if (selectedPlanId === "solo" || selectedPlanId === "production") {
+      setSelectedStorageAddonId(null);
+    } else if ((selectedPlanId === "indie" || selectedPlanId === "video") && selectedStorageAddonId) {
+      const validIds = (STORAGE_ADDONS[selectedPlanId as "indie" | "video"] ?? []).map((x) => x.id);
+      if (!validIds.includes(selectedStorageAddonId as StorageAddonId)) {
+        setSelectedStorageAddonId(null);
+      }
+    }
+  }, [selectedPlanId, selectedStorageAddonId]);
 
   const toggleAddon = useCallback((addonId: string) => {
     setSelectedAddonIds((prev) => {
@@ -69,6 +85,7 @@ export default function ChangePlanPage() {
         planId: selectedPlanId,
         addonIds: selectedAddonIds,
         billing,
+        storageAddonId: selectedStorageAddonId,
       });
       const headers = {
         "Content-Type": "application/json",
@@ -102,7 +119,7 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, billing, user, router]);
+  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
@@ -215,7 +232,8 @@ export default function ChangePlanPage() {
     selectedPlanId !== currentPlanId ||
     selectedAddonIds.length !== (currentAddonIds?.length ?? 0) ||
     selectedAddonIds.some((id) => !(currentAddonIds ?? []).includes(id)) ||
-    (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id));
+    (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id)) ||
+    selectedStorageAddonId !== (currentStorageAddonId ?? null);
 
   return (
     <>
@@ -236,6 +254,9 @@ export default function ChangePlanPage() {
             </h2>
             <p className="mt-1 text-neutral-600 dark:text-neutral-400">
               <strong className="text-neutral-900 dark:text-white">{currentPlanLabel}</strong>
+              {currentStorageAddonId && (
+                <> · {STORAGE_ADDON_LABELS[currentStorageAddonId as StorageAddonId] ?? currentStorageAddonId}</>
+              )}
               {currentAddonIds && currentAddonIds.length > 0 && (
                 <> · {currentAddonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")}</>
               )}
@@ -344,6 +365,59 @@ export default function ChangePlanPage() {
               })}
             </div>
           </div>
+
+          {(selectedPlanId === "indie" || selectedPlanId === "video") && (
+            <div className="mb-8">
+              <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+                Additional Storage
+              </h3>
+              <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
+                Add extra storage to your plan.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  { id: null as string | null, label: "None", price: 0 },
+                  ...(STORAGE_ADDONS[selectedPlanId as "indie" | "video"] ?? []),
+                ].map((opt) => {
+                  const isSelected = opt.id === null ? !selectedStorageAddonId : selectedStorageAddonId === opt.id;
+                  return (
+                    <button
+                      key={opt.id ?? "none"}
+                      type="button"
+                      onClick={() => setSelectedStorageAddonId(opt.id)}
+                      className={`flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
+                        isSelected
+                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        {isSelected && opt.id && (
+                          <Check className="h-5 w-5 text-bizzi-blue" />
+                        )}
+                        {isSelected && !opt.id && (
+                          <Check className="h-5 w-5 text-bizzi-blue" />
+                        )}
+                      </div>
+                      <h4 className="font-semibold text-neutral-900 dark:text-white">
+                        {opt.id ? (STORAGE_ADDON_LABELS[opt.id as StorageAddonId] ?? opt.id) : "None"}
+                      </h4>
+                      {opt.price > 0 ? (
+                        <p className="mt-1 text-lg font-bold text-neutral-900 dark:text-white">
+                          +${opt.price}/mo
+                        </p>
+                      ) : null}
+                      {"upgradePrompt" in opt && opt.upgradePrompt && (
+                        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                          {opt.upgradePrompt}
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="mb-8 flex flex-wrap items-center gap-4">
             <div>

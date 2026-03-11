@@ -3,15 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
+import { formatBytes } from "@/lib/analytics/format-bytes";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024)
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 export default function EnterpriseStorageBadge() {
   const { refetch } = useEnterprise();

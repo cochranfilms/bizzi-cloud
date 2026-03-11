@@ -5,15 +5,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { useBackup } from "@/context/BackupContext";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth, getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
+import { formatBytes } from "@/lib/analytics/format-bytes";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024)
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 export default function StorageBadge() {
   const [storageUsed, setStorageUsed] = useState(0);
@@ -25,11 +18,23 @@ export default function StorageBadge() {
   useEffect(() => {
     if (!isFirebaseConfigured() || !user) return;
     const db = getFirebaseFirestore();
-    getDoc(doc(db, "profiles", user.uid)).then((snap) => {
+    getDoc(doc(db, "profiles", user.uid)).then(async (snap) => {
       if (snap.exists()) {
         const d = snap.data();
         setStorageUsed(d.storage_used_bytes ?? 0);
         setStorageQuota(d.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
+      } else {
+        // New free user: ensure profile exists with 2GB quota
+        try {
+          const token = await getFirebaseAuth().currentUser?.getIdToken();
+          const base = typeof window !== "undefined" ? window.location.origin : "";
+          await fetch(`${base}/api/profile/ensure-free`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {
+          // Ignore - display will still show 2GB default
+        }
       }
     });
   }, [user, storageVersion]);

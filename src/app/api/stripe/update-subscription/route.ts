@@ -27,7 +27,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
-  let body: { planId?: string; addonIds?: string[]; billing?: string };
+  const VALID_STORAGE_ADDON_IDS = [
+    "indie_1", "indie_2", "indie_3",
+    "video_1", "video_2", "video_3", "video_4", "video_5",
+  ];
+
+  let body: { planId?: string; addonIds?: string[]; billing?: string; storageAddonId?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -40,11 +45,16 @@ export async function POST(request: Request) {
     (id): id is AddonId => typeof id === "string" && VALID_ADDON_IDS.includes(id)
   );
   const billing = (body.billing === "annual" ? "annual" : "monthly") as BillingCycle;
+  const storageAddonId =
+    body.storageAddonId && VALID_STORAGE_ADDON_IDS.includes(body.storageAddonId)
+      ? body.storageAddonId
+      : null;
 
   return updateSubscriptionWithProration({
     uid,
     planId,
     addonIds,
     billing,
+    storageAddonId,
   });
 }

@@ -19,8 +19,9 @@ function LoginForm() {
   const redirectTo = searchParams.get("redirect") || "/dashboard";
   const mode = searchParams.get("mode");
   const emailParam = searchParams.get("email") ?? "";
-
-  const [isSignUp, setIsSignUp] = useState(mode === "signup");
+  // Allow signup only for invite flow (redirect contains /invite/join)
+  const allowSignup = redirectTo.includes("/invite/join");
+  const [isSignUp, setIsSignUp] = useState(allowSignup && mode === "signup");
   const [email, setEmail] = useState(emailParam);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -135,18 +136,32 @@ function LoginForm() {
           </form>
 
           <p className="mt-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            {isSignUp ? "Already have an account? " : "Don't have an account? "}
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setError(null);
-                setMessage(null);
-              }}
-              className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-            >
-              {isSignUp ? "Sign in" : "Sign up"}
-            </button>
+            {isSignUp ? (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(false);
+                    setError(null);
+                    setMessage(null);
+                  }}
+                  className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+                >
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                Don&apos;t have an account?{" "}
+                <Link
+                  href="/#pricing"
+                  className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+                >
+                  Choose a plan to get started
+                </Link>
+              </>
+            )}
           </p>
         </div>
 

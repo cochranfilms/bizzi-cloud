@@ -52,6 +52,10 @@ export function getAdminFirestore() {
   return getFirestore(getAdminApp());
 }
 
+export function getAdminAuth() {
+  return getAuth(getAdminApp());
+}
+
 export function getAdminStorage() {
   return getStorage(getAdminApp());
 }

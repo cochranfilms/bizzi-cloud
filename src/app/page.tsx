@@ -7,11 +7,15 @@ import FeatureList from "@/components/FeatureList";
 import PricingSection from "@/components/PricingSection";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
+import CheckoutCancelledBanner from "@/components/CheckoutCancelledBanner";
 
 export default function Home() {
   return (
     <>
       <Header />
+      <Suspense fallback={null}>
+        <CheckoutCancelledBanner />
+      </Suspense>
       <main>
         <Hero />
         <ValueProps />

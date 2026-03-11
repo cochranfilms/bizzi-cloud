@@ -5,6 +5,32 @@ import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
+type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
+
+function computeStorageFromSubscription(
+  planId: PlanId,
+  items: SubscriptionItemWithPrice[]
+): { storageQuotaBytes: number; storageAddonId: string | null } {
+  let storageAddonTb = 0;
+  let storageAddonId: string | null = null;
+  for (const item of items) {
+    if (item.deleted) continue;
+    const meta = item.price?.metadata;
+    const addonId = meta?.storage_addon_id as string | undefined;
+    const tb = meta?.storage_addon_tb ? parseInt(String(meta.storage_addon_tb), 10) : 0;
+    if (addonId && !isNaN(tb) && tb > 0) {
+      storageAddonTb += tb;
+      storageAddonId = addonId;
+    }
+  }
+  const baseBytes = getStorageBytesForPlan(planId);
+  const addonBytes = storageAddonTb * 1024 ** 4;
+  return {
+    storageQuotaBytes: baseBytes + addonBytes,
+    storageAddonId,
+  };
+}
+
 /**
  * Sync profile from a completed Stripe Checkout session.
  * Use when webhook fails (e.g. 307 redirect) - call after redirect to success URL.
@@ -93,7 +119,25 @@ export async function POST(request: Request) {
 
   const addonIdsRaw = session.metadata?.addonIds ?? "";
   const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
-  const storageQuotaBytes = getStorageBytesForPlan(planId);
+  let storageQuotaBytes = getStorageBytesForPlan(planId);
+  let storageAddonId: string | null = null;
+  const subId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : session.subscription?.id;
+  if (subId) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(subId, {
+        expand: ["items.data.price"],
+      });
+      const items = sub.items.data as SubscriptionItemWithPrice[];
+      const computed = computeStorageFromSubscription(planId, items);
+      storageQuotaBytes = computed.storageQuotaBytes;
+      storageAddonId = computed.storageAddonId;
+    } catch (err) {
+      console.error("[Stripe sync-session] Failed to expand subscription:", err);
+    }
+  }
 
   const db = getAdminFirestore();
   await db.collection("profiles").doc(uid).set(
@@ -102,6 +146,7 @@ export async function POST(request: Request) {
       plan_id: planId,
       addon_ids: addonIds,
       storage_quota_bytes: storageQuotaBytes,
+      storage_addon_id: storageAddonId,
       stripe_customer_id: session.customer ?? null,
       stripe_subscription_id: session.subscription ?? null,
       stripe_updated_at: new Date().toISOString(),
