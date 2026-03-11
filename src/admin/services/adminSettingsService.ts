@@ -76,3 +76,42 @@ export async function fetchBannerSettings(options?: FetchSettingsOptions): Promi
   const data = await fetchAllSettings(options);
   return data.banner;
 }
+
+/** Partial update payload for PATCH - any subset of settings sections */
+export type SettingsUpdatePayload = {
+  quotas?: Partial<QuotaSettings>;
+  retention?: Partial<RetentionSettings>;
+  alerts?: Partial<AlertThresholdSettings>;
+  features?: Partial<FeatureFlags>;
+  maintenance?: Partial<MaintenanceSettings>;
+  banner?: Partial<BannerSettings>;
+};
+
+async function apiAdminMutation<T>(
+  path: string,
+  method: "PATCH",
+  body: unknown,
+  getToken?: () => Promise<string | null>
+): Promise<T> {
+  const url = `${typeof window !== "undefined" ? window.location.origin : ""}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (getToken) {
+    const token = await getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateAdminSettings(
+  payload: SettingsUpdatePayload,
+  options?: FetchSettingsOptions
+): Promise<{ ok: boolean }> {
+  return apiAdminMutation<{ ok: boolean }>("/api/admin/settings", "PATCH", payload, options?.getToken);
+}

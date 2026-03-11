@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { AlertThresholdSettings } from "@/admin/types/adminSettings.types";
 
 interface AlertThresholdSettingsPanelProps {
@@ -13,13 +13,31 @@ export default function AlertThresholdSettingsPanel({
   onSave,
 }: AlertThresholdSettingsPanelProps) {
   const [saving, setSaving] = useState(false);
+  const [errorRateWarningPercent, setErrorRateWarningPercent] = useState(5);
+  const [errorRateCriticalPercent, setErrorRateCriticalPercent] = useState(10);
+  const [uploadFailureWarningCount, setUploadFailureWarningCount] = useState(100);
+  const [queueBacklogWarning, setQueueBacklogWarning] = useState(500);
+
+  useEffect(() => {
+    if (settings) {
+      setErrorRateWarningPercent(settings.errorRateWarningPercent);
+      setErrorRateCriticalPercent(settings.errorRateCriticalPercent);
+      setUploadFailureWarningCount(settings.uploadFailureWarningCount);
+      setQueueBacklogWarning(settings.queueBacklogWarning);
+    }
+  }, [settings]);
 
   if (!settings) return null;
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave?.(settings);
+      await onSave?.({
+        errorRateWarningPercent,
+        errorRateCriticalPercent,
+        uploadFailureWarningCount,
+        queueBacklogWarning,
+      });
     } finally {
       setSaving(false);
     }
@@ -39,9 +57,16 @@ export default function AlertThresholdSettingsPanel({
           <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             Error rate warning (%)
           </label>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Warning alert when API error rate exceeds{" "}
-            <strong>{settings.errorRateWarningPercent}%</strong>.
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={errorRateWarningPercent}
+            onChange={(e) => setErrorRateWarningPercent(Number(e.target.value) || 0)}
+            className="w-24 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+          />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Warning alert when API error rate exceeds this percentage.
           </p>
         </div>
 
@@ -49,9 +74,16 @@ export default function AlertThresholdSettingsPanel({
           <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             Error rate critical (%)
           </label>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Critical alert when error rate exceeds{" "}
-            <strong>{settings.errorRateCriticalPercent}%</strong>.
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={errorRateCriticalPercent}
+            onChange={(e) => setErrorRateCriticalPercent(Number(e.target.value) || 0)}
+            className="w-24 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+          />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Critical alert when error rate exceeds this percentage.
           </p>
         </div>
 
@@ -59,9 +91,15 @@ export default function AlertThresholdSettingsPanel({
           <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             Upload failure warning (count)
           </label>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Warning when failed uploads in last hour exceed{" "}
-            <strong>{settings.uploadFailureWarningCount}</strong>.
+          <input
+            type="number"
+            min={0}
+            value={uploadFailureWarningCount}
+            onChange={(e) => setUploadFailureWarningCount(Number(e.target.value) || 0)}
+            className="w-24 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+          />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Warning when failed uploads in last hour exceed this count.
           </p>
         </div>
 
@@ -69,9 +107,15 @@ export default function AlertThresholdSettingsPanel({
           <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             Queue backlog warning
           </label>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Warning when background job queue exceeds{" "}
-            <strong>{settings.queueBacklogWarning}</strong> jobs.
+          <input
+            type="number"
+            min={0}
+            value={queueBacklogWarning}
+            onChange={(e) => setQueueBacklogWarning(Number(e.target.value) || 0)}
+            className="w-24 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+          />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Warning when background job queue exceeds this many jobs.
           </p>
         </div>
 

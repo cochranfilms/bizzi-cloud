@@ -10,9 +10,12 @@ import FeatureFlagsPanel from "../components/settings/FeatureFlagsPanel";
 import MaintenanceModePanel from "../components/settings/MaintenanceModePanel";
 import BannerSettingsPanel from "../components/settings/BannerSettingsPanel";
 import { useAdminSettings, type SettingsSection } from "../hooks/useAdminSettings";
+import { updateAdminSettings, type SettingsUpdatePayload } from "../services/adminSettingsService";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const {
     quotas,
     retention,
@@ -26,9 +29,18 @@ export default function SettingsPage() {
   } = useAdminSettings();
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("quotas");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSave = () => {
-    void refresh();
+  const getToken = () => (user ? user.getIdToken() : Promise.resolve(null));
+
+  const handleSave = async (payload: SettingsUpdatePayload) => {
+    setSaveError(null);
+    try {
+      await updateAdminSettings(payload, { getToken });
+      await refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save settings");
+    }
   };
 
   if (loading && !quotas) {
@@ -62,6 +74,12 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {saveError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+          {saveError}
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[200px_1fr]">
         <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
           <SettingsNavigation
@@ -72,22 +90,40 @@ export default function SettingsPage() {
 
         <div>
           {activeSection === "quotas" && (
-            <QuotaSettingsPanel settings={quotas} onSave={handleSave} />
+            <QuotaSettingsPanel
+              settings={quotas}
+              onSave={(s) => handleSave({ quotas: s })}
+            />
           )}
           {activeSection === "retention" && (
-            <RetentionSettingsPanel settings={retention} onSave={handleSave} />
+            <RetentionSettingsPanel
+              settings={retention}
+              onSave={(s) => handleSave({ retention: s })}
+            />
           )}
           {activeSection === "alerts" && (
-            <AlertThresholdSettingsPanel settings={alerts} onSave={handleSave} />
+            <AlertThresholdSettingsPanel
+              settings={alerts}
+              onSave={(s) => handleSave({ alerts: s })}
+            />
           )}
           {activeSection === "features" && (
-            <FeatureFlagsPanel flags={features} onSave={handleSave} />
+            <FeatureFlagsPanel
+              flags={features}
+              onSave={(f) => handleSave({ features: f })}
+            />
           )}
           {activeSection === "maintenance" && (
-            <MaintenanceModePanel settings={maintenance} onSave={handleSave} />
+            <MaintenanceModePanel
+              settings={maintenance}
+              onSave={(s) => handleSave({ maintenance: s })}
+            />
           )}
           {activeSection === "banner" && (
-            <BannerSettingsPanel settings={banner} onSave={handleSave} />
+            <BannerSettingsPanel
+              settings={banner}
+              onSave={(s) => handleSave({ banner: s })}
+            />
           )}
         </div>
       </div>
