@@ -227,7 +227,7 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router, refetch, displayAmount]);
+  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, refetch, displayAmount]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;

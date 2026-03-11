@@ -65,9 +65,8 @@ export async function GET(request: Request) {
     const batch = uids.slice(i, i + BATCH_SIZE);
     try {
       const result = await authService.getUsers(batch.map((uid) => ({ uid })));
-      for (const [uid, userRecord] of Object.entries(result.users)) {
-        const r = userRecord;
-        authRecords.set(uid, {
+      for (const r of result.users) {
+        authRecords.set(r.uid, {
           email: r.email,
           displayName: r.displayName ?? undefined,
           createdAt: r.metadata?.creationTime,

@@ -56,8 +56,8 @@ export async function GET(request: Request) {
     try {
       const result = await authService.getUsers(storageAlertUids.map((uid) => ({ uid })));
       const emailMap = new Map<string, string>();
-      for (const [uid, r] of Object.entries(result.users)) {
-        if (r.email) emailMap.set(uid, r.email);
+      for (const r of result.users) {
+        if (r.email) emailMap.set(r.uid, r.email);
       }
       for (const a of alerts) {
         if (a.targetUserId && a.source === "Storage") {
@@ -75,8 +75,8 @@ export async function GET(request: Request) {
       try {
         const result = await authService.getUsers(pastDueUids.map((uid) => ({ uid })));
         const emailMap = new Map<string, string>();
-        for (const [uid, r] of Object.entries(result.users)) {
-          if (r.email) emailMap.set(uid, r.email);
+        for (const r of result.users) {
+          if (r.email) emailMap.set(r.uid, r.email);
         }
         for (const sub of subs.data) {
           const uid = sub.metadata?.userId as string | undefined;

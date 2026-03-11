@@ -34,8 +34,8 @@ export async function GET(request: Request) {
   for (let i = 0; i < uids.length; i += 100) {
     try {
       const result = await authService.getUsers(uids.slice(i, i + 100).map((uid) => ({ uid })));
-      for (const [uid, r] of Object.entries(result.users)) {
-        authRecords.set(uid, { email: r.email });
+      for (const r of result.users) {
+        authRecords.set(r.uid, { email: r.email });
       }
     } catch (_) {}
   }
