@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -689,57 +690,42 @@ const ADDON_LABELS: Record<string, string> = {
   fullframe: "Bizzi Full Frame",
 };
 
+const STORAGE_ADDON_LABELS: Record<string, string> = {
+  indie_1: "+1 TB",
+  indie_2: "+2 TB",
+  indie_3: "+3 TB",
+  video_1: "+1 TB",
+  video_2: "+2 TB",
+  video_3: "+3 TB",
+  video_4: "+4 TB",
+  video_5: "+5 TB",
+};
+
 function SubscriptionSection() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [planId, setPlanId] = useState<string | null>(null);
-  const [addonIds, setAddonIds] = useState<string[]>([]);
-  const [hasPortalAccess, setHasPortalAccess] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const {
+    planId,
+    addonIds,
+    storageAddonId,
+    hasPortalAccess,
+    loading,
+    refetch,
+  } = useSubscription();
   const [portalLoading, setPortalLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 
-  const fetchProfile = useCallback(async () => {
-    if (!user) return;
-    const token = await user.getIdToken();
-    const base = typeof window !== "undefined" ? window.location.origin : "";
-    const res = await fetch(`${base}/api/profile`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = (await res.json()) as {
-        plan_id?: string;
-        addon_ids?: string[];
-        has_portal_access?: boolean;
-      };
-      setPlanId(data.plan_id ?? "free");
-      setAddonIds(Array.isArray(data.addon_ids) ? data.addon_ids : []);
-      setHasPortalAccess(data.has_portal_access ?? false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    fetchProfile().finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user, fetchProfile]);
-
   useEffect(() => {
     if (!user) return;
     if (searchParams.get("updated") === "subscription" || searchParams.get("cancelled") === "subscription") {
-      fetchProfile();
-      const retry = setTimeout(() => fetchProfile(), 2000);
+      refetch();
+      const retry = setTimeout(() => refetch(), 2000);
       router.replace("/dashboard/settings", { scroll: false });
       return () => clearTimeout(retry);
     }
-  }, [user, searchParams, fetchProfile, router]);
+  }, [user, searchParams, refetch, router]);
 
   const syncFromStripe = async () => {
     if (!user) return;
@@ -757,7 +743,7 @@ function SubscriptionSection() {
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (res.ok && data.ok) {
-        await fetchProfile();
+        await refetch();
       } else {
         setPortalError(data.error ?? "No subscription found");
       }
@@ -827,12 +813,18 @@ function SubscriptionSection() {
             </p>
             {addonIds.length > 0 && (
               <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                Add-ons:{" "}
+                Power Ups:{" "}
                 <span className="font-medium text-neutral-900 dark:text-white">
-                  {addonIds
-                    .map((id) => ADDON_LABELS[id] ?? id)
-                    .join(", ")}
+                  {addonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")}
                 </span>
+              </p>
+            )}
+            {storageAddonId && (
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                Additional storage:{" "}
+                <strong className="text-neutral-900 dark:text-white">
+                  {STORAGE_ADDON_LABELS[storageAddonId] ?? storageAddonId}
+                </strong>
               </p>
             )}
             {hasPortalAccess ? (

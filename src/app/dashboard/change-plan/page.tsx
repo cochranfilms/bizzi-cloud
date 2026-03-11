@@ -28,7 +28,7 @@ function getPlanOrder(planId: string): number {
 export default function ChangePlanPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { planId: currentPlanId, addonIds: currentAddonIds, storageAddonId: currentStorageAddonId, hasPortalAccess, loading: subLoading } = useSubscription();
+  const { planId: currentPlanId, addonIds: currentAddonIds, storageAddonId: currentStorageAddonId, hasPortalAccess, loading: subLoading, refetch } = useSubscription();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedStorageAddonId, setSelectedStorageAddonId] = useState<string | null>(null);
@@ -98,6 +98,8 @@ export default function ChangePlanPage() {
       });
       let data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
       if (res.ok && data.ok) {
+        refetch();
+        window.dispatchEvent(new CustomEvent("subscription-updated"));
         router.push("/dashboard/settings?updated=subscription");
         return;
       }
@@ -119,7 +121,7 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router]);
+  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, router, refetch]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;

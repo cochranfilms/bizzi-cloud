@@ -15,7 +15,7 @@ export default function StorageBadge() {
   const { storageVersion } = useBackup();
   const { user } = useAuth();
 
-  useEffect(() => {
+  const fetchProfile = useCallback(() => {
     if (!isFirebaseConfigured() || !user) return;
     const db = getFirebaseFirestore();
     getDoc(doc(db, "profiles", user.uid)).then(async (snap) => {
@@ -37,7 +37,17 @@ export default function StorageBadge() {
         }
       }
     });
-  }, [user, storageVersion]);
+  }, [user]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile, storageVersion]);
+
+  useEffect(() => {
+    const handler = () => fetchProfile();
+    window.addEventListener("subscription-updated", handler);
+    return () => window.removeEventListener("subscription-updated", handler);
+  }, [fetchProfile]);
 
   const recalculateStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;

@@ -3,16 +3,19 @@
 import { useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/hooks/useSubscription";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
 /**
  * When user lands on dashboard after Stripe checkout with session_id,
  * sync their profile from the checkout session. Handles webhook failures (e.g. 307).
+ * Triggers subscription refetch so UI updates instantly.
  */
 export default function CheckoutSuccessSync() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { refetch } = useSubscription();
   const syncedRef = useRef(false);
 
   useEffect(() => {
@@ -35,6 +38,8 @@ export default function CheckoutSuccessSync() {
           body: JSON.stringify({ session_id: sessionId }),
         });
         if (res.ok) {
+          await refetch();
+          window.dispatchEvent(new CustomEvent("subscription-updated"));
           const updated = searchParams.get("updated");
           router.replace(updated === "subscription" ? "/dashboard/settings" : "/dashboard", {
             scroll: false,
@@ -44,7 +49,7 @@ export default function CheckoutSuccessSync() {
         // Ignore - user can retry from Settings
       }
     })();
-  }, [searchParams, user, router]);
+  }, [searchParams, user, router, refetch]);
 
   return null;
 }
