@@ -41,6 +41,7 @@ export default function CreateTransferModal({
   const pathname = usePathname();
   const router = useRouter();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
+  const isDesktop = pathname?.startsWith("/desktop") ?? false;
   const { confirm } = useConfirm();
   const {
     allFilesForTransfer,
@@ -293,8 +294,8 @@ export default function CreateTransferModal({
 
   const handleDone = useCallback(() => {
     performClose();
-    router.push(isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
-  }, [performClose, router, isEnterprise]);
+    router.push(isDesktop ? "/desktop/transfers" : isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
+  }, [performClose, router, isEnterprise, isDesktop]);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;

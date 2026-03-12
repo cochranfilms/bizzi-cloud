@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useTransfers } from "@/context/TransferContext";
 import { File, Eye, Download, Lock, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -22,10 +22,14 @@ function formatDate(iso: string) {
 export default function TransferAnalytics({ transferId }: TransferAnalyticsProps) {
   const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const router = useRouter();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const transfer = transfers.find((t) => t.id === transferId);
   const { confirm } = useConfirm();
+
+  const transfersBase =
+    pathname?.startsWith("/desktop") ? "/desktop" : pathname?.startsWith("/enterprise") ? "/enterprise" : "/dashboard";
 
   const handleDelete = useCallback(async () => {
     if (!transfer) return;
@@ -37,13 +41,13 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
     setDeleting(true);
     try {
       await deleteTransfer(transfer.slug);
-      router.push("/dashboard/transfers");
+      router.push(`${transfersBase}/transfers`);
     } catch (err) {
       console.error("Delete transfer failed:", err);
     } finally {
       setDeleting(false);
     }
-  }, [transfer, deleteTransfer, confirm, router]);
+  }, [transfer, deleteTransfer, confirm, router, transfersBase]);
 
   useEffect(() => {
     setMounted(true);
@@ -65,7 +69,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
           Transfer not found.
         </p>
         <Link
-          href="/dashboard/transfers"
+          href={`${transfersBase}/transfers`}
           className="mt-4 inline-block text-bizzi-blue hover:text-bizzi-cyan"
         >
           Back to transfers

@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import Image from "next/image";
+import { useDesktopMode } from "@/hooks/useDesktopMode";
+
+const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
 function ProfileSection() {
   const { user } = useProfileUpdate();
@@ -713,6 +716,7 @@ function SubscriptionSection() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isDesktop = useDesktopMode();
   const {
     planId,
     addonIds,
@@ -738,10 +742,10 @@ function SubscriptionSection() {
       const retry = setTimeout(() => refetch(), 2000);
       setConfirmationType(cancelled ? "cancelled" : purchaseConfirmed ? "purchase" : "updated");
       setShowConfirmationBanner(true);
-      router.replace("/dashboard/settings", { scroll: false });
+      router.replace(isDesktop ? "/desktop/settings" : "/dashboard/settings", { scroll: false });
       return () => clearTimeout(retry);
     }
-  }, [user, searchParams, refetch, router]);
+  }, [user, searchParams, refetch, router, isDesktop]);
 
   const syncFromStripe = async () => {
     if (!user) return;
@@ -786,7 +790,11 @@ function SubscriptionSection() {
       });
       const data = (await res.json()) as { url?: string; error?: string };
       if (res.ok && data.url) {
-        window.location.href = data.url;
+        if (isDesktop) {
+          window.open(data.url, "_blank");
+        } else {
+          window.location.href = data.url;
+        }
       } else {
         setPortalError(data.error ?? "Failed to open billing portal");
       }
@@ -893,28 +901,59 @@ function SubscriptionSection() {
             )}
             {hasPortalAccess ? (
               <div className="flex flex-wrap items-center gap-3">
-                <Link
-                  href="/dashboard/change-plan"
-                  className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-                >
-                  Change plan
-                </Link>
-                <button
-                  type="button"
-                  onClick={openPortal}
-                  disabled={portalLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                >
-                  {portalLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ExternalLink className="h-4 w-4" />
-                  )}
-                  Manage billing
-                </button>
-                <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">
-                  Upgrade, downgrade, or change Power Ups. Manage payment method or cancel in billing.
-                </p>
+                {isDesktop ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => window.open(`${WEB_APP_URL}/dashboard/change-plan`, "_blank")}
+                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Manage subscription on web
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openPortal}
+                      disabled={portalLoading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4" />
+                      )}
+                      Manage billing (opens in browser)
+                    </button>
+                    <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">
+                      Subscription management is available on the web app.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/dashboard/change-plan"
+                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                    >
+                      Change plan
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={openPortal}
+                      disabled={portalLoading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4" />
+                      )}
+                      Manage billing
+                    </button>
+                    <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">
+                      Upgrade, downgrade, or change Power Ups. Manage payment method or cancel in billing.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -932,13 +971,24 @@ function SubscriptionSection() {
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   If you just subscribed but still see Starter Free, click to sync.
                 </p>
-                <Link
-                  href="/#pricing"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-bizzi-blue hover:underline"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Upgrade your plan
-                </Link>
+                {isDesktop ? (
+                  <button
+                    type="button"
+                    onClick={() => window.open(`${WEB_APP_URL}/#pricing`, "_blank")}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-bizzi-blue hover:underline"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Upgrade your plan (opens in browser)
+                  </button>
+                ) : (
+                  <Link
+                    href="/#pricing"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-bizzi-blue hover:underline"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Upgrade your plan
+                  </Link>
+                )}
               </div>
             )}
             {portalError && (

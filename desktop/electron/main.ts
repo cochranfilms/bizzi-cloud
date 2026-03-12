@@ -5,6 +5,8 @@ import { MountService } from "./mount/mount-service";
 
 const mountService = new MountService();
 
+const PRODUCTION_URL = "https://www.bizzicloud.io";
+
 const store = new Store<{
   apiBaseUrl: string;
   cacheBaseDir: string;
@@ -12,7 +14,7 @@ const store = new Store<{
   deviceId: string | null;
 }>({
   defaults: {
-    apiBaseUrl: "https://www.bizzicloud.io",
+    apiBaseUrl: PRODUCTION_URL,
     cacheBaseDir: path.join(app.getPath("userData"), "BizziCloud"),
     streamCacheMaxBytes: 50 * 1024 * 1024 * 1024, // 50 GB
     deviceId: null,
@@ -23,8 +25,9 @@ let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 1200,
+    height: 800,
+    minWidth: 900,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -32,11 +35,17 @@ function createWindow() {
     },
   });
 
+  const baseUrl = String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
+  const desktopUrl = `${baseUrl.replace(/\/$/, "")}/desktop`;
+
   if (process.env.NODE_ENV === "development") {
-    mainWindow.loadURL("http://localhost:5173");
+    // Load Next.js dev server (run `npm run dev` from project root)
+    mainWindow.loadURL("http://localhost:3000/desktop").catch(() => {
+      mainWindow?.loadURL(desktopUrl);
+    });
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    mainWindow.loadURL(desktopUrl);
   }
 
   mainWindow.on("closed", () => {
@@ -70,7 +79,6 @@ ipcMain.handle("mount-status", () => ({
   isMounted: mountService.isMounted(),
   mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
 }));
-const PRODUCTION_URL = "https://www.bizzicloud.io";
 
 ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
   const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));

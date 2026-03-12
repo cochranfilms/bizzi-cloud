@@ -25,7 +25,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const showCreateTransfer =
-    pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers";
+    pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers" || pathname === "/desktop/transfers";
   const { currentDriveId } = useCurrentFolder();
   const {
     linkedDrives,
@@ -244,7 +244,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
         open={createFolderOpen}
         onClose={() => setCreateFolderOpen(false)}
         onCreateEmpty={async (folderName) => {
-          const isCreator = pathname === "/dashboard/creator" || pathname === "/enterprise/creator";
+          const isCreator = pathname === "/dashboard/creator" || pathname === "/enterprise/creator" || pathname === "/desktop/creator";
           await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
           setCreateFolderOpen(false);
         }}
@@ -270,7 +270,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
             setUppyDriveId(null);
           }}
           driveId={uppyDriveId}
-          workspaceId={pathname.startsWith("/enterprise") && org?.id ? org.id : null}
+          workspaceId={(pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id ? org.id : null}
           onUploadComplete={() => {
             bumpStorageVersion();
             setUppyModalOpen(false);

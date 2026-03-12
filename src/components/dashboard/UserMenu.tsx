@@ -13,9 +13,11 @@ import { signOut } from "firebase/auth";
 
 interface UserMenuProps {
   compact?: boolean;
+  /** When set (e.g. /desktop), settings link uses this base path */
+  basePath?: string;
 }
 
-export default function UserMenu({ compact = false }: UserMenuProps) {
+export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -133,7 +135,12 @@ export default function UserMenu({ compact = false }: UserMenuProps) {
             type="button"
             onClick={() => {
               setOpen(false);
-              router.push(isEnterprise ? "/enterprise/settings" : "/dashboard/settings");
+              const settingsPath = basePath
+                ? `${basePath}/settings`
+                : isEnterprise
+                  ? "/enterprise/settings"
+                  : "/dashboard/settings";
+              router.push(settingsPath);
             }}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >

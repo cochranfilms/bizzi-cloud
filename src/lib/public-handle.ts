@@ -7,6 +7,7 @@
 export const RESERVED_HANDLES = new Set([
   "api",
   "dashboard",
+  "desktop",
   "enterprise",
   "client",
   "login",
