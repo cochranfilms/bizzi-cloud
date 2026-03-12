@@ -69,7 +69,12 @@ function buildPropfindResponse(
     const isDir = e.type === "folder";
     let href: string;
     if (!driveId) {
-      href = `/${toRFC3986(e.linked_drive_id)}/`;
+      // Use human-readable path so Finder/rclone show "Storage", "RAW", "Gallery Media"
+      const pathSegment =
+        e.name === "Storage" || e.name === "RAW" || e.name === "Gallery Media"
+          ? e.name
+          : e.linked_drive_id;
+      href = `/${toRFC3986(pathSegment)}/`;
     } else {
       const relPath = e.path || e.name;
       href = `/${toRFC3986(driveId)}/${relPath.split("/").map(toRFC3986).join("/")}${isDir ? "/" : ""}`;

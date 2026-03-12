@@ -44,9 +44,29 @@ export async function POST(request: Request) {
   }
 
   const pathsArray = Array.isArray(paths) ? paths : [];
-  const driveIdStr = typeof driveId === "string" ? driveId : null;
+  let driveIdStr = typeof driveId === "string" ? driveId : null;
 
   const db = getAdminFirestore();
+
+  // Resolve slug (Storage, RAW, Gallery Media) to actual drive ID
+  if (driveIdStr && ["Storage", "RAW", "Gallery Media"].includes(driveIdStr)) {
+    const [byUserId, byUserIdSnake] = await Promise.all([
+      db.collection("linked_drives").where("userId", "==", uid).get(),
+      db.collection("linked_drives").where("user_id", "==", uid).get(),
+    ]);
+    const slugToId = new Map<string, string>();
+    for (const snap of [byUserId, byUserIdSnake]) {
+      for (const d of snap.docs) {
+        if (d.data().deleted_at) continue;
+        const name = d.data().name ?? "Drive";
+        const isCreatorRaw = d.data().is_creator_raw === true;
+        if (name === "Storage" || name === "Uploads") slugToId.set("Storage", d.id);
+        else if (isCreatorRaw) slugToId.set("RAW", d.id);
+        else if (name === "Gallery Media") slugToId.set("Gallery Media", d.id);
+      }
+    }
+    driveIdStr = slugToId.get(driveIdStr) ?? driveIdStr;
+  }
 
   if (driveIdStr) {
     const filesSnap = await db
