@@ -1,3 +1,7 @@
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -69,14 +73,31 @@ export async function POST(request: Request) {
   }
 
   if (driveIdStr) {
-    const filesSnap = await db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("linked_drive_id", "==", driveIdStr)
-      .get();
+    // Query by userId (primary); also by user_id for legacy docs
+    const [filesByUserId, filesByUserIdSnake] = await Promise.all([
+      db
+        .collection("backup_files")
+        .where("userId", "==", uid)
+        .where("linked_drive_id", "==", driveIdStr)
+        .where("deleted_at", "==", null)
+        .get(),
+      db
+        .collection("backup_files")
+        .where("user_id", "==", uid)
+        .where("linked_drive_id", "==", driveIdStr)
+        .where("deleted_at", "==", null)
+        .get(),
+    ]);
+    const fileDocsById = new Map<string, QueryDocumentSnapshot>();
+    for (const snap of [filesByUserId, filesByUserIdSnake]) {
+      for (const doc of snap.docs) {
+        fileDocsById.set(doc.id, doc);
+      }
+    }
+    const filesSnap = { docs: Array.from(fileDocsById.values()) };
 
     const entries: MountMetadataEntry[] = [];
-    const pathSet = new Set(pathsArray as string[]);
+    const requestedPath = pathsArray[0] ?? "";
 
     for (const doc of filesSnap.docs) {
       const data = doc.data();
@@ -86,46 +107,45 @@ export async function POST(request: Request) {
         ? relativePath.slice(0, relativePath.lastIndexOf("/"))
         : "";
 
-      if (pathSet.size === 0 || pathSet.has(pathDir) || pathSet.has(relativePath)) {
-        const name = (relativePath.split("/").filter(Boolean).pop() ?? relativePath) || "?";
-        entries.push({
-          id: doc.id,
-          name,
-          path: relativePath,
-          object_key: data.object_key ?? "",
-          size_bytes: data.size_bytes ?? 0,
-          modified_at: data.modified_at ?? null,
-          type: "file",
-          linked_drive_id: data.linked_drive_id ?? driveIdStr,
-        });
-      }
+      if (pathDir !== requestedPath) continue;
+
+      const name = (relativePath.split("/").filter(Boolean).pop() ?? relativePath) || "?";
+      entries.push({
+        id: doc.id,
+        name,
+        path: relativePath,
+        object_key: data.object_key ?? "",
+        size_bytes: data.size_bytes ?? 0,
+        modified_at: data.modified_at ?? null,
+        type: "file",
+        linked_drive_id: data.linked_drive_id ?? driveIdStr,
+      });
     }
 
-    const folderNames = new Set<string>();
-    for (const e of entries) {
-      const dir = e.path.includes("/") ? e.path.slice(0, e.path.lastIndexOf("/")) : "";
-      if (dir) {
-        const parts = dir.split("/").filter(Boolean);
-        for (let i = 1; i <= parts.length; i++) {
-          folderNames.add(parts.slice(0, i).join("/"));
-        }
-      }
+    const immediateSubfolders = new Set<string>();
+    const prefix = requestedPath ? `${requestedPath}/` : "";
+    for (const doc of filesSnap.docs) {
+      const data = doc.data();
+      if (data.deleted_at) continue;
+      const relativePath = data.relative_path ?? "";
+      if (!relativePath.startsWith(prefix) || relativePath === prefix) continue;
+      const after = relativePath.slice(prefix.length);
+      const firstSegment = after.split("/")[0];
+      if (firstSegment) immediateSubfolders.add(requestedPath ? `${requestedPath}/${firstSegment}` : firstSegment);
     }
 
-    for (const folderPath of folderNames) {
+    for (const folderPath of immediateSubfolders) {
       const name = folderPath.split("/").filter(Boolean).pop() ?? folderPath;
-      if (!entries.some((e) => e.path === folderPath && e.type === "folder")) {
-        entries.push({
-          id: `folder:${folderPath}`,
-          name,
-          path: folderPath,
-          object_key: "",
-          size_bytes: 0,
-          modified_at: null,
-          type: "folder",
-          linked_drive_id: driveIdStr,
-        });
-      }
+      entries.push({
+        id: `folder:${folderPath}`,
+        name,
+        path: folderPath,
+        object_key: "",
+        size_bytes: 0,
+        modified_at: null,
+        type: "folder",
+        linked_drive_id: driveIdStr,
+      });
     }
 
     return NextResponse.json({ entries });
@@ -173,7 +193,19 @@ export async function POST(request: Request) {
     name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
   rawDrives.sort((a, b) => order(a.name) - order(b.name));
 
-  const driveEntries: MountMetadataEntry[] = rawDrives.map((d) => ({
+  // Mount shows only system drives (Storage, RAW, Gallery Media) - no custom drives
+  // Dedupe: only one of each system drive (user may have multiple linked drives with same name)
+  const systemDrives = rawDrives.filter((d) =>
+    ["Storage", "RAW", "Gallery Media"].includes(d.name)
+  );
+  const seenNames = new Set<string>();
+  const visibleDrives = systemDrives.filter((d) => {
+    if (seenNames.has(d.name)) return false;
+    seenNames.add(d.name);
+    return true;
+  });
+
+  const driveEntries: MountMetadataEntry[] = visibleDrives.map((d) => ({
     id: d.id,
     name: d.name,
     path: "",
