@@ -123,7 +123,12 @@ export async function POST(request: Request) {
         ? relativePath.slice(0, relativePath.lastIndexOf("/"))
         : "";
 
-      if (pathDir !== requestedPath) continue;
+      // Include files in the directory (pathDir === requestedPath) OR the exact file
+      // (relativePath === requestedPath). PROPFIND on /Storage/DONZO.mp4 sends
+      // paths ["DONZO.mp4"]; we must return that file or rclone/app retries the PUT.
+      const inDir = pathDir === requestedPath;
+      const exactFile = relativePath === requestedPath;
+      if (!inDir && !exactFile) continue;
 
       const name = (relativePath.split("/").filter(Boolean).pop() ?? relativePath) || "?";
       entries.push({

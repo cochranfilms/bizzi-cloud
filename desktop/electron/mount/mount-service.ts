@@ -306,6 +306,7 @@ export class MountService {
       "--webdav-url", webdavUrl,
       "--webdav-bearer-token", token,
       "--webdav-vendor", "other",
+      "--timeout", "2h", // Video exports can take 30+ min; rclone default 5m aborts long PUTs
       "--dir-cache-time", "72h",
       "--vfs-cache-mode", "full",
       "--vfs-read-chunk-size", "32M",

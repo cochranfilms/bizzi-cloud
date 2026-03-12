@@ -161,6 +161,11 @@ export class WebDAVServer {
         }
       });
 
+      // Long uploads (video exports) can exceed Node's default 5min requestTimeout.
+      // Disable requestTimeout so PUT requests aren't aborted mid-stream.
+      this.server.requestTimeout = 0;
+      this.server.headersTimeout = 120000; // 2 min for slow clients
+
       this.server.listen(0, "127.0.0.1", () => {
         const addr = this.server?.address();
         this.port = addr && typeof addr === "object" ? addr.port : 0;
@@ -483,16 +488,16 @@ export class WebDAVServer {
         return;
       }
 
-      // 2. Stream request body to B2 (abort on client disconnect to avoid ERR_INVALID_STATE)
+      // 2. Stream request body to B2
+      // Note: We intentionally do NOT pass AbortController to fetch. When the client (rclone)
+      // closes the connection, req emits "close"/"aborted" - passing that to fetch would abort
+      // the B2 upload with AbortError. That can fire prematurely (e.g. rclone timeouts,
+      // Node requestTimeout). Letting the body stream error naturally avoids false aborts.
       const putHeaders: Record<string, string> = {
         "Content-Type": contentType,
         "x-amz-server-side-encryption": "AES256",
       };
       if (sizeBytes > 0) putHeaders["Content-Length"] = String(sizeBytes);
-
-      const ac = new AbortController();
-      req.on("close", () => ac.abort());
-      req.on("aborted", () => ac.abort());
 
       // duplex: "half" required for streaming body in Node.js fetch (not in RequestInit types)
       const putInit = {
@@ -500,7 +505,6 @@ export class WebDAVServer {
         headers: putHeaders,
         body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
         duplex: "half" as const,
-        signal: ac.signal,
       };
       const uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
 
