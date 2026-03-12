@@ -111,29 +111,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ entries });
   }
 
+  // Fetch profile for power-up gating (hasEditor, hasGallerySuite)
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const addonIds: string[] = profileSnap.exists
+    ? (profileSnap.data()?.addon_ids ?? [])
+    : [];
+  const hasEditor = addonIds.includes("editor") || addonIds.includes("fullframe");
+  const hasGallerySuite = addonIds.includes("gallery") || addonIds.includes("fullframe");
+
   const [byUserId, byUserIdSnake] = await Promise.all([
     db.collection("linked_drives").where("userId", "==", uid).get(),
     db.collection("linked_drives").where("user_id", "==", uid).get(),
   ]);
   const seen = new Set<string>();
-  const driveEntries: MountMetadataEntry[] = [];
+  const rawDrives: Array<{ id: string; name: string; isCreatorRaw: boolean }> = [];
   for (const snap of [byUserId, byUserIdSnake]) {
     for (const d of snap.docs) {
       if (seen.has(d.id)) continue;
       seen.add(d.id);
       const data = d.data();
-      driveEntries.push({
-        id: d.id,
-        name: data.name ?? "Drive",
-        path: "",
-        object_key: "",
-        size_bytes: 0,
-        modified_at: null,
-        type: "folder",
-        linked_drive_id: d.id,
-      });
+      if (data.deleted_at) continue;
+
+      const isCreatorRaw = data.is_creator_raw === true;
+      const rawName = data.name ?? "Drive";
+
+      // Per-user power-up filter: only show drives user has access to
+      if (rawName === "Storage" || rawName === "Uploads") {
+        rawDrives.push({ id: d.id, name: "Storage", isCreatorRaw });
+      } else if (isCreatorRaw) {
+        if (hasEditor) rawDrives.push({ id: d.id, name: "RAW", isCreatorRaw });
+      } else if (rawName === "Gallery Media") {
+        if (hasGallerySuite) rawDrives.push({ id: d.id, name: "Gallery Media", isCreatorRaw });
+      } else {
+        rawDrives.push({ id: d.id, name: rawName, isCreatorRaw });
+      }
     }
   }
+
+  // Sort: Storage, RAW, Gallery Media, then custom (match web app)
+  const order = (name: string) =>
+    name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
+  rawDrives.sort((a, b) => order(a.name) - order(b.name));
+
+  const driveEntries: MountMetadataEntry[] = rawDrives.map((d) => ({
+    id: d.id,
+    name: d.name,
+    path: "",
+    object_key: "",
+    size_bytes: 0,
+    modified_at: null,
+    type: "folder" as const,
+    linked_drive_id: d.id,
+  }));
 
   return NextResponse.json({ entries: driveEntries });
 }
