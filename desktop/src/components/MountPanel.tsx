@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { HardDrive } from "lucide-react";
 
+const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (Firebase tokens ~1 hr)
+
 interface MountPanelProps {
   settings: Record<string, unknown>;
   onUpdate: (key: string, value: unknown) => void;
@@ -30,6 +32,21 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
       });
     refresh();
   }, [fuseAvailable]);
+
+  // Refresh auth token every 50 min when mounted so mount keeps working after Firebase token expires
+  useEffect(() => {
+    if (!window.bizzi?.mount?.refreshToken || !isMounted || !isSignedIn) return;
+    const refresh = async () => {
+      try {
+        const token = await getToken();
+        if (token) await window.bizzi?.mount?.refreshToken(token);
+      } catch {
+        // ignore; user may have signed out
+      }
+    };
+    const id = setInterval(refresh, TOKEN_REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isMounted, isSignedIn, getToken]);
 
   const handleMountToggle = async () => {
     if (!window.bizzi?.mount) return;

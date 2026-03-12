@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BuildMachineOSBuild</key>
+	<string>23G80</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>EleFileProvider</string>
+	<key>CFBundleExecutable</key>
+	<string>EleFileProvider</string>
+	<key>CFBundleIdentifier</key>
+	<string>cloud.lazycat.client.hclientFileProvider</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>EleFileProvider</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>DTCompiler</key>
+	<string>com.apple.compilers.llvm.clang.1_0</string>
+	<key>DTPlatformBuild</key>
+	<string></string>
+	<key>DTPlatformName</key>
+	<string>macosx</string>
+	<key>DTPlatformVersion</key>
+	<string>14.5</string>
+	<key>DTSDKBuild</key>
+	<string>23F73</string>
+	<key>DTSDKName</key>
+	<string>macosx14.5</string>
+	<key>DTXcode</key>
+	<string>1540</string>
+	<key>DTXcodeBuild</key>
+	<string>15F31d</string>
+	<key>LSApplicationCategoryType</key>
+	<string></string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionFileProviderDocumentGroup</key>
+		<string>group.cloud.lazycat.clients</string>
+		<key>NSExtensionFileProviderSupportsEnumeration</key>
+		<true/>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.fileprovider-nonui</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>EleFileProvider.FileProviderExtension</string>
+	</dict>
+	<key>NSFileProviderDomains</key>
+	<array>
+		<dict>
+			<key>FPDDomainDisplayName</key>
+			<string>Lazycat Client Files</string>
+			<key>FPDDomainIdentifier</key>
+			<string>A6954X9WMS.cloud.lazycat.client.hclientFileProvider</string>
+			<key>FPDDomainSyncEnabled</key>
+			<true/>
+		</dict>
+	</array>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+</dict>
+</plist>

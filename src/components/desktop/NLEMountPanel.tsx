@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HardDrive, Cpu, FolderDown } from "lucide-react";
+import { HardDrive, Cpu, FolderDown, Cloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 declare global {
@@ -10,15 +10,26 @@ declare global {
       getSettings: () => Promise<Record<string, unknown>>;
       setSettings: (key: string, value: unknown) => Promise<Record<string, unknown>>;
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
+      openInFinder?: (pathToOpen: string) => Promise<string>;
       mount?: {
         isFuseAvailable: () => Promise<boolean>;
         getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
         mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
         unmount: () => Promise<void>;
+        refreshToken: (token: string) => Promise<void>;
+      };
+      nativeSync?: {
+        isAvailable: () => Promise<boolean>;
+        getStatus: () => Promise<{ isEnabled: boolean }>;
+        enable: (apiBaseUrl: string, token: string) => Promise<{ syncPath: string }>;
+        disable: () => Promise<void>;
+        refreshToken: (token: string) => Promise<void>;
       };
     };
   }
 }
+
+const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (Firebase tokens ~1 hr)
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -35,6 +46,11 @@ export function NLEMountPanel() {
   const [mountPoint, setMountPoint] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nativeSyncAvailable, setNativeSyncAvailable] = useState(false);
+  const [nativeSyncEnabled, setNativeSyncEnabled] = useState(false);
+  const [nativeSyncPath, setNativeSyncPath] = useState<string | null>(null);
+  const [nativeSyncLoading, setNativeSyncLoading] = useState(false);
+  const [nativeSyncError, setNativeSyncError] = useState<string | null>(null);
 
   const isDesktop = typeof window !== "undefined" && !!window.bizzi?.mount;
 
@@ -42,7 +58,15 @@ export function NLEMountPanel() {
     if (!isDesktop) return;
     window.bizzi?.getSettings().then(setSettings);
     window.bizzi?.mount?.isFuseAvailable().then(setFuseAvailable).catch(() => setFuseAvailable(false));
+    window.bizzi?.nativeSync?.isAvailable().then(setNativeSyncAvailable).catch(() => setNativeSyncAvailable(false));
   }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop || !window.bizzi?.nativeSync) return;
+    window.bizzi.nativeSync.getStatus().then((s) => {
+      setNativeSyncEnabled(s.isEnabled);
+    });
+  }, [isDesktop, nativeSyncAvailable]);
 
   useEffect(() => {
     if (!isDesktop || !window.bizzi?.mount) return;
@@ -53,6 +77,21 @@ export function NLEMountPanel() {
       });
     refresh();
   }, [isDesktop, fuseAvailable]);
+
+  // Refresh auth token every 50 min when mounted so mount keeps working after Firebase token expires
+  useEffect(() => {
+    if (!isDesktop || !window.bizzi?.mount?.refreshToken || !isMounted || !user) return;
+    const refresh = async () => {
+      try {
+        const token = await user.getIdToken(true);
+        if (token) await window.bizzi?.mount?.refreshToken(token);
+      } catch {
+        // ignore; user may have signed out
+      }
+    };
+    const id = setInterval(refresh, TOKEN_REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isDesktop, isMounted, user]);
 
   const handleMountToggle = async () => {
     if (!window.bizzi?.mount || !user) return;
@@ -78,6 +117,33 @@ export function NLEMountPanel() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleNativeSyncToggle = async () => {
+    if (!window.bizzi?.nativeSync || !user) return;
+    setNativeSyncLoading(true);
+    setNativeSyncError(null);
+    try {
+      if (nativeSyncEnabled) {
+        await window.bizzi.nativeSync!.disable();
+        setNativeSyncEnabled(false);
+        setNativeSyncPath(null);
+      } else {
+        const token = await user.getIdToken(true);
+        if (!token) {
+          setNativeSyncError("Not signed in. Sign in first.");
+          return;
+        }
+        const apiBaseUrl = String(settings.apiBaseUrl ?? window.location.origin);
+        const { syncPath } = await window.bizzi.nativeSync!.enable(apiBaseUrl, token);
+        setNativeSyncEnabled(true);
+        setNativeSyncPath(syncPath);
+      }
+    } catch (err) {
+      setNativeSyncError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNativeSyncLoading(false);
     }
   };
 
@@ -118,10 +184,10 @@ export function NLEMountPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-1">
       {/* Mount section - primary NLE feature */}
-      <section className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
-        <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-200">
+      <section className="p-4">
+        <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-800 dark:text-neutral-200">
           <HardDrive className="w-5 h-5 text-bizzi-blue" />
           Mount Drive
         </h2>
@@ -168,22 +234,69 @@ export function NLEMountPanel() {
             </p>
           )}
           {isMounted && mountPoint && (
-            <p className="text-xs text-emerald-500">
-              Mounted at <code className="bg-neutral-800 px-1 rounded">{mountPoint}</code>
-              {mountPoint.startsWith("/Volumes/") && (
-                <span className="block mt-1 text-neutral-400">
-                  Finder should open. Drag the volume to the sidebar to keep it visible.
-                </span>
-              )}
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                {mountPoint.startsWith("/Volumes/")
+                  ? "Mounted to your Mac"
+                  : "Mounted"}
+              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {mountPoint.startsWith("/Volumes/")
+                  ? "Find Bizzi Cloud in Finder under Locations, next to your other drives."
+                  : "Open Finder to access your drive."}
+              </p>
+              <button
+                type="button"
+                onClick={() => window.bizzi?.openInFinder?.(mountPoint)}
+                className="text-xs text-bizzi-blue dark:text-bizzi-cyan hover:underline font-medium"
+              >
+                Open in Finder →
+              </button>
+            </div>
           )}
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       </section>
 
+      {/* Native Sync (File Provider) - macOS only */}
+      {nativeSyncAvailable && (
+        <section className="p-4">
+          <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-200">
+            <Cloud className="w-5 h-5 text-bizzi-blue" />
+            Native Sync (Beta)
+          </h2>
+          <p className="text-sm text-neutral-400 mb-4">
+            Apple File Provider—no rclone or macFUSE. On-demand files in Finder. Appears in Locations.
+          </p>
+          <div className="space-y-3">
+            <button
+              disabled={!user || nativeSyncLoading}
+              onClick={handleNativeSyncToggle}
+              className={`w-full py-2 rounded text-sm font-medium transition-colors ${
+                user && !nativeSyncLoading
+                  ? "bg-bizzi-blue hover:bg-bizzi-cyan text-white"
+                  : "bg-neutral-700 text-neutral-400 cursor-not-allowed"
+              }`}
+            >
+              {nativeSyncLoading
+                ? "Please wait…"
+                : nativeSyncEnabled
+                  ? "Disable Native Sync"
+                  : "Enable Native Sync"}
+            </button>
+            {nativeSyncEnabled && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                Available in Finder under Locations.
+              </p>
+            )}
+            {nativeSyncError && <p className="text-xs text-red-500">{nativeSyncError}</p>}
+          </div>
+        </section>
+      )}
+
       {/* Stream cache */}
-      <section className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
-        <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-200">
+      <section className="p-4">
+        <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-800 dark:text-neutral-200">
           <Cpu className="w-5 h-5 text-neutral-400" />
           Stream Cache
         </h2>
@@ -211,8 +324,8 @@ export function NLEMountPanel() {
       </section>
 
       {/* Local store info */}
-      <section className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
-        <h2 className="flex items-center gap-2 font-medium mb-2 text-neutral-200">
+      <section className="p-4">
+        <h2 className="flex items-center gap-2 font-medium mb-2 text-neutral-800 dark:text-neutral-200">
           <FolderDown className="w-5 h-5 text-neutral-400" />
           Stored Locally
         </h2>

@@ -4,9 +4,10 @@ Desktop app for mounting Bizzi Cloud as a local drive for NLE editing (Premiere 
 
 ## Features
 
+- **Mount Drive**: Virtual filesystem via rclone + WebDAV (requires rclone, macFUSE)
+- **Native Sync (Beta)**: Apple File Provider—no rclone/FUSE. On-demand files in Finder under Locations.
 - **Stream Cache**: Temporary chunk-based cache with LRU eviction (configurable 50–500 GB)
 - **Local Store**: Right-click "Store Locally for Editing" to keep full copies for offline work
-- **Mount Drive**: Virtual filesystem via rclone + WebDAV (requires rclone)
 
 ## Prerequisites
 
@@ -54,6 +55,18 @@ Defaults to **https://www.bizzicloud.io** (production). Change in Settings if us
 
 - `electron/main.ts` — Main process, settings, IPC
 - `electron/mount/` — WebDAV server (proxies to API) + rclone mount
+- `electron/file-provider/` — Native Sync via Apple File Provider (macOS)
 - `src/lib/firebase.ts` — Firebase auth for desktop sign-in
 - `src/services/stream-cache-manager.ts` — LRU stream cache
 - `src/services/local-store-manager.ts` — Full local copies for offline
+
+## Native Sync (File Provider)
+
+Native Sync uses Apple File Provider to show Bizzi Cloud in Finder under **Locations** without rclone or macFUSE. The electron-macos-file-provider package provides the extension. When you run `npm run dist`, the prepare script copies the extension from the package into `PlugIns/` for embedding. If the extension is not found in the package, build it manually:
+
+```bash
+cd node_modules/electron-macos-file-provider
+npm run dev:plugin
+```
+
+Then copy the resulting `.appex` from the archive into `desktop/PlugIns/`.

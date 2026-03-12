@@ -130,8 +130,27 @@ export class WebDAVServer {
 
   private async getToken(req: http.IncomingMessage): Promise<string | null> {
     const auth = req.headers.authorization;
-    if (auth?.startsWith("Bearer ")) return auth.slice(7).trim();
-    return this.options.getAuthToken();
+    if (!auth) return null;
+
+    // Bearer token (rclone, token refresh flow)
+    if (auth.startsWith("Bearer ")) {
+      return this.options.getAuthToken();
+    }
+
+    // Basic auth (File Provider / WebDAV clients: user="bizzi", password=token)
+    if (auth.startsWith("Basic ")) {
+      try {
+        const base64 = auth.slice(6).trim();
+        const decoded = Buffer.from(base64, "base64").toString("utf-8");
+        const colon = decoded.indexOf(":");
+        const user = colon >= 0 ? decoded.slice(0, colon) : decoded;
+        const password = colon >= 0 ? decoded.slice(colon + 1) : "";
+        if (user === "bizzi" && password) return password;
+      } catch {
+        // ignore malformed Basic
+      }
+    }
+    return null;
   }
 
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

@@ -48,10 +48,10 @@ export default function DesktopShell({
           {/* NLE Mount panel - critical desktop feature */}
           {mountPanelOpen && (
             <aside
-              className="flex w-72 flex-shrink-0 flex-col border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+              className="flex w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 dark:border-neutral-800/60 bg-transparent dark:bg-transparent"
               aria-label="NLE Mount"
             >
-              <div className="overflow-y-auto p-4">
+              <div className="overflow-y-auto p-5">
                 <NLEMountPanel />
               </div>
             </aside>

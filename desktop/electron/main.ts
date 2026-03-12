@@ -1,9 +1,11 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import * as path from "path";
 import Store from "electron-store";
+import { FileProviderService } from "./file-provider/file-provider-service";
 import { MountService } from "./mount/mount-service";
 
 const mountService = new MountService();
+const fileProviderService = new FileProviderService();
 
 const PRODUCTION_URL = "https://www.bizzicloud.io";
 
@@ -72,6 +74,7 @@ ipcMain.handle("get-path", (_e, name: "userData" | "cacheBase") => {
   if (name === "cacheBase") return store.get("cacheBaseDir");
   return app.getPath("userData");
 });
+ipcMain.handle("open-in-finder", (_e, pathToOpen: string) => shell.openPath(pathToOpen));
 
 // Mount IPC
 ipcMain.handle("mount-fuse-available", () => mountService.isFuseAvailable());
@@ -99,3 +102,25 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
   return { mountPoint: mountService.getMountPoint() };
 });
 ipcMain.handle("mount-unmount", () => mountService.unmount());
+ipcMain.handle("mount-refresh-token", (_e, token: string) => {
+  mountService.refreshToken(token);
+});
+
+// Native Sync (File Provider) IPC
+ipcMain.handle("native-sync-available", () => fileProviderService.isAvailable());
+ipcMain.handle("native-sync-status", () => ({
+  isEnabled: fileProviderService.isEnabled(),
+}));
+ipcMain.handle("native-sync-enable", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
+  const baseUrl = apiBaseUrl || String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
+  if (!token) throw new Error("Not signed in. Sign in to Bizzi Cloud to enable Native Sync.");
+  const result = await fileProviderService.enable({
+    apiBaseUrl: baseUrl,
+    getAuthToken: async () => token,
+  });
+  return result;
+});
+ipcMain.handle("native-sync-disable", () => fileProviderService.disable());
+ipcMain.handle("native-sync-refresh-token", (_e, token: string) => {
+  fileProviderService.refreshToken(token);
+});
