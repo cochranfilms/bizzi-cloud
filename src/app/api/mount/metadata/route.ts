@@ -1,10 +1,13 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { objectExists, getProxyObjectKey, isB2Configured } from "@/lib/b2";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
+
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
 export interface MountMetadataEntry {
   id: string;
@@ -134,6 +137,37 @@ export async function POST(request: Request) {
         linked_drive_id: data.linked_drive_id ?? driveIdStr,
         content_type: (data.content_type as string) ?? null,
       });
+    }
+
+    // Expose Bizzi proxies as ClipName_proxy.mp4 for NLE "Attach proxy" workflow
+    if (isB2Configured() && requestedPath !== undefined) {
+      const videoEntries = entries.filter((e) => e.type === "file" && VIDEO_EXT.test(e.name));
+      const proxyChecks = await Promise.all(
+        videoEntries.map(async (e) => {
+          const objKey = e.object_key;
+          if (!objKey) return null;
+          const proxyKey = getProxyObjectKey(objKey);
+          const exists = await objectExists(proxyKey).catch(() => false);
+          if (!exists) return null;
+          const baseName = e.name.replace(/\.[^/.]+$/, "");
+          const proxyName = `${baseName}_proxy.mp4`;
+          const proxyPath = requestedPath ? `${requestedPath}/${proxyName}` : proxyName;
+          return {
+            id: `proxy:${e.id}`,
+            name: proxyName,
+            path: proxyPath,
+            object_key: proxyKey,
+            size_bytes: 0,
+            modified_at: e.modified_at,
+            type: "file" as const,
+            linked_drive_id: e.linked_drive_id,
+            content_type: "video/mp4",
+          };
+        })
+      );
+      for (const p of proxyChecks) {
+        if (p) entries.push(p);
+      }
     }
 
     const immediateSubfolders = new Set<string>();

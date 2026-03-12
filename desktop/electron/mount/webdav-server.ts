@@ -3,7 +3,11 @@
  * Used by rclone mount to expose cloud storage as a local filesystem.
  */
 import * as http from "http";
+import { pipeline } from "stream";
+import { promisify } from "util";
 import { Readable } from "stream";
+
+const pipelineP = promisify(pipeline);
 
 export interface MountMetadataEntry {
   id: string;
@@ -244,16 +248,26 @@ export class WebDAVServer {
       return;
     }
 
+    if (req.method === "MOVE") {
+      await this.handleMove(req, res, parts, token);
+      return;
+    }
+
+    if (req.method === "MKCOL") {
+      await this.handleMkcol(res, parts, token);
+      return;
+    }
+
     if (req.method === "OPTIONS") {
       res.writeHead(200, {
-        Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT",
+        Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL",
         "DAV": "1, 2",
       });
       res.end();
       return;
     }
 
-    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT" });
+    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL" });
     res.end();
   }
 
@@ -365,7 +379,17 @@ export class WebDAVServer {
     res.writeHead(fetchRes.status as 200 | 206, resHeaders);
     if (req.method === "GET" && fetchRes.body) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      Readable.fromWeb(fetchRes.body as any).pipe(res);
+      const readable = Readable.fromWeb(fetchRes.body as any);
+      req.on("close", () => readable.destroy());
+      pipelineP(readable, res).catch((err) => {
+        if (!res.writableEnded) {
+          try {
+            res.destroy(err instanceof Error ? err : undefined);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
     } else {
       res.end();
     }
@@ -459,12 +483,16 @@ export class WebDAVServer {
         return;
       }
 
-      // 2. Stream request body to B2
+      // 2. Stream request body to B2 (abort on client disconnect to avoid ERR_INVALID_STATE)
       const putHeaders: Record<string, string> = {
         "Content-Type": contentType,
         "x-amz-server-side-encryption": "AES256",
       };
       if (sizeBytes > 0) putHeaders["Content-Length"] = String(sizeBytes);
+
+      const ac = new AbortController();
+      req.on("close", () => ac.abort());
+      req.on("aborted", () => ac.abort());
 
       // duplex: "half" required for streaming body in Node.js fetch (not in RequestInit types)
       const putInit = {
@@ -472,6 +500,7 @@ export class WebDAVServer {
         headers: putHeaders,
         body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
         duplex: "half" as const,
+        signal: ac.signal,
       };
       const uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
 
@@ -514,6 +543,85 @@ export class WebDAVServer {
       res.writeHead(500);
       res.end("Internal Server Error");
     }
+  }
+
+  /** MOVE = rename file/folder. Updates backup_files.relative_path via mount rename API. */
+  private async handleMove(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parts: string[],
+    token: string
+  ): Promise<void> {
+    const destHeader = req.headers.destination;
+    const destStr = typeof destHeader === "string" ? destHeader : Array.isArray(destHeader) ? destHeader[0] : undefined;
+    if (!destStr || parts.length < 2) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    try {
+      const destUrl = new URL(destStr);
+      const destPath = decodeURIComponent(destUrl.pathname)
+        .replace(/\/+/g, "/")
+        .replace(/^\//, "")
+        .replace(/\/$/, "")
+        .replace(/^webdav\/?/, "");
+      const destParts = destPath ? destPath.split("/") : [];
+      if (destParts.length < 2) {
+        res.writeHead(400);
+        res.end();
+        return;
+      }
+      const srcDriveId = parts[0];
+      const srcPath = parts.slice(1).join("/");
+      const destDriveId = destParts[0];
+      const destPathRel = destParts.slice(1).join("/");
+      if (srcDriveId !== destDriveId) {
+        res.writeHead(502);
+        res.end("Cross-drive move not yet supported");
+        return;
+      }
+      const renameRes = await fetch(`${this.options.apiBaseUrl}/api/mount/rename`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          drive_id: srcDriveId,
+          old_path: srcPath,
+          new_path: destPathRel,
+        }),
+      });
+      if (!renameRes.ok) {
+        const err = await renameRes.json().catch(() => ({}));
+        console.error("[WebDAV] rename error:", renameRes.status, err);
+        res.writeHead(renameRes.status === 404 ? 404 : 502);
+        res.end(err?.error ?? "Rename failed");
+        return;
+      }
+      res.writeHead(201);
+      res.end();
+    } catch (err) {
+      console.error("[WebDAV] MOVE error:", err);
+      res.writeHead(500);
+      res.end("Internal Server Error");
+    }
+  }
+
+  /** MKCOL = create directory. We accept and return 201; folder exists when files are added. */
+  private async handleMkcol(
+    res: http.ServerResponse,
+    parts: string[],
+    token: string
+  ): Promise<void> {
+    if (parts.length < 1) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    res.writeHead(201);
+    res.end();
   }
 
   private async fetchMetadata(

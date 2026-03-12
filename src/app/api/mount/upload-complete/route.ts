@@ -134,39 +134,35 @@ export async function POST(request: Request) {
     organization_id: organizationId,
   });
 
-  // Trigger metadata extraction (fire and forget)
+  // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)
+  const base = new URL(request.url).origin;
+  const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) fetchHeaders.Authorization = `Bearer ${token}`;
   const extractUrl = new URL("/api/files/extract-metadata", request.url);
-  fetch(extractUrl.toString(), {
+  await fetch(extractUrl.toString(), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: token ? `Bearer ${token}` : "",
-    },
-    body: JSON.stringify({
-      backup_file_id: fileRef.id,
-      object_key: objectKey,
-    }),
-  }).catch(() => {});
+    headers: fetchHeaders,
+    body: JSON.stringify({ backup_file_id: fileRef.id, object_key: objectKey }),
+  }).catch((e) => console.error("[upload-complete] extract-metadata:", e));
 
-  // Trigger MUX asset creation and proxy for video files (extension-based)
-  // Extension-less videos are handled by extract-metadata after probe
+  // MUX asset and proxy for video files
   if (VIDEO_EXT.test(safePath) && token) {
-    const base = new URL(request.url).origin;
-    const authHeader = { Authorization: `Bearer ${token}` };
-    fetch(`${base}/api/backup/generate-proxy`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ object_key: objectKey, name: safePath }),
-    }).catch(() => {});
-    fetch(`${base}/api/mux/create-asset`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({
-        object_key: objectKey,
-        name: safePath,
-        backup_file_id: fileRef.id,
-      }),
-    }).catch(() => {});
+    await Promise.all([
+      fetch(`${base}/api/backup/generate-proxy`, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify({ object_key: objectKey, name: safePath }),
+      }).catch((e) => console.error("[upload-complete] generate-proxy:", e)),
+      fetch(`${base}/api/mux/create-asset`, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify({
+          object_key: objectKey,
+          name: safePath,
+          backup_file_id: fileRef.id,
+        }),
+      }).catch((e) => console.error("[upload-complete] mux/create-asset:", e)),
+    ]);
   }
 
   return NextResponse.json({

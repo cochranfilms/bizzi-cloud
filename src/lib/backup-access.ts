@@ -1,24 +1,51 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getProxyObjectKey } from "@/lib/b2";
 
 /**
  * Verifies that a user has access to a backup file by checking backup_files.
  * Works for both content/ keys and backups/{uid}/ keys, including transferred
  * files (where userId was changed to owner but object_key still has old path).
+ * Also handles proxy keys (proxies/*.mp4): allows access if user owns the original.
  */
 export async function verifyBackupFileAccess(
   uid: string,
   objectKey: string
 ): Promise<boolean> {
   const db = getAdminFirestore();
+
+  // Direct lookup for original files
   const snap = await db
     .collection("backup_files")
     .where("userId", "==", uid)
     .where("object_key", "==", objectKey)
     .limit(1)
     .get();
-  if (snap.empty) return false;
-  return !snap.docs[0].data().deleted_at;
+  if (!snap.empty && !snap.docs[0].data().deleted_at) return true;
+
+  // Proxy key: user has access if they own an original whose proxy matches
+  if (objectKey.startsWith("proxies/") && objectKey.endsWith(".mp4")) {
+    let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    for (let i = 0; i < 20; i++) {
+      // Paginate up to ~10k files (20 * 500)
+      let q = db
+        .collection("backup_files")
+        .where("userId", "==", uid)
+        .where("deleted_at", "==", null)
+        .limit(2000)
+        .orderBy(documentId());
+      if (lastDoc) q = q.startAfter(lastDoc);
+      const snap = await q.get();
+      for (const doc of snap.docs) {
+        const orig = doc.data().object_key as string | undefined;
+        if (orig && getProxyObjectKey(orig) === objectKey) return true;
+      }
+      if (snap.docs.length < 500) break;
+      lastDoc = snap.docs[snap.docs.length - 1];
+    }
+  }
+
+  return false;
 }
 
 /**
