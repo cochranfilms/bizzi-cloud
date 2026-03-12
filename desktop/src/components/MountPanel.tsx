@@ -23,23 +23,27 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
     window.bizzi?.mount?.isFuseAvailable().then(setFuseAvailable).catch(() => setFuseAvailable(false));
   }, []);
 
+  const refreshStatus = () =>
+    window.bizzi?.mount?.getStatus().then((s) => {
+      setIsMounted(s.isMounted);
+      setMountPoint(s.mountPoint);
+    });
+
   useEffect(() => {
     if (!window.bizzi?.mount) return;
-    const refresh = () =>
-      window.bizzi?.mount?.getStatus().then((s) => {
-        setIsMounted(s.isMounted);
-        setMountPoint(s.mountPoint);
-      });
-    refresh();
+    refreshStatus();
   }, [fuseAvailable]);
 
   // Refresh auth token every 50 min when mounted so mount keeps working after Firebase token expires
   useEffect(() => {
-    if (!window.bizzi?.mount?.refreshToken || !isMounted || !isSignedIn) return;
+    const mount = window.bizzi?.mount;
+    if (!mount || !("refreshToken" in mount) || !isMounted || !isSignedIn) return;
     const refresh = async () => {
       try {
         const token = await getToken();
-        if (token) await window.bizzi?.mount?.refreshToken(token);
+        if (token && typeof mount.refreshToken === "function") {
+          await mount.refreshToken(token);
+        }
       } catch {
         // ignore; user may have signed out
       }
@@ -69,6 +73,11 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      // Sync UI with main process (e.g. if "Already mounted" from stale state, show Unmount)
+      window.bizzi?.mount?.getStatus().then((s) => {
+        setIsMounted(s.isMounted);
+        setMountPoint(s.mountPoint);
+      });
     } finally {
       setLoading(false);
     }
@@ -126,9 +135,13 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
         {isMounted && mountPoint && (
           <p className="text-xs text-emerald-500">
             Mounted at <code className="bg-zinc-800 px-1 rounded">{mountPoint}</code>
-            {mountPoint.startsWith("/Volumes/") && (
+            {mountPoint.startsWith("/Volumes/") ? (
               <span className="block mt-1 text-zinc-400">
-                A Finder window should open. Drag the Bizzi Cloud volume to the Finder sidebar under Locations to keep it visible.
+                Visible in NLEs under Local Drives. Drag the Bizzi Cloud volume to the Finder sidebar under Locations to keep it visible.
+              </span>
+            ) : (
+              <span className="block mt-1 text-amber-600 dark:text-amber-500">
+                Add Bizzi Cloud to Full Disk Access (System Settings → Privacy & Security → Full Disk Access) for NLE visibility. Then restart and remount.
               </span>
             )}
           </p>

@@ -12,9 +12,11 @@ declare global {
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
       mount?: {
         isFuseAvailable: () => Promise<boolean>;
+        getDependencies: () => Promise<unknown>;
         getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
         mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
         unmount: () => Promise<void>;
+        refreshToken: (token: string) => Promise<void>;
       };
     };
   }

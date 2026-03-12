@@ -263,16 +263,21 @@ export class WebDAVServer {
       return;
     }
 
+    if (req.method === "DELETE") {
+      await this.handleDelete(res, parts, token);
+      return;
+    }
+
     if (req.method === "OPTIONS") {
       res.writeHead(200, {
-        Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL",
+        Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL, DELETE",
         "DAV": "1, 2",
       });
       res.end();
       return;
     }
 
-    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL" });
+    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT, MOVE, MKCOL, DELETE" });
     res.end();
   }
 
@@ -626,6 +631,44 @@ export class WebDAVServer {
     }
     res.writeHead(201);
     res.end();
+  }
+
+  /** DELETE = soft-delete file or folder. Moves to trash via mount delete API. */
+  private async handleDelete(
+    res: http.ServerResponse,
+    parts: string[],
+    token: string
+  ): Promise<void> {
+    if (parts.length < 2) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    const driveId = parts[0];
+    const relativePath = parts.slice(1).join("/");
+    try {
+      const deleteRes = await fetch(`${this.options.apiBaseUrl}/api/mount/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ drive_id: driveId, path: relativePath }),
+      });
+      if (!deleteRes.ok) {
+        const err = await deleteRes.json().catch(() => ({}));
+        console.error("[WebDAV] delete error:", deleteRes.status, err);
+        res.writeHead(deleteRes.status === 404 ? 404 : 502);
+        res.end(err?.error ?? "Delete failed");
+        return;
+      }
+      res.writeHead(204);
+      res.end();
+    } catch (err) {
+      console.error("[WebDAV] DELETE error:", err);
+      res.writeHead(500);
+      res.end("Internal Server Error");
+    }
   }
 
   private async fetchMetadata(

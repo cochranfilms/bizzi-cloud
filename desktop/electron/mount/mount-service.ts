@@ -36,6 +36,16 @@ function parseRcloneError(logFile: string, stderr: string, exitCode: number): st
 
   const combined = log || stderr;
 
+  // Specific errors first (before generic FUSE match)
+  if (combined.includes("mount_macfuse: the file system is not available")) {
+    return "macFUSE kernel extension isn't loaded. Open System Settings → Privacy & Security and allow the macFUSE extension, or restart your Mac.";
+  }
+  if (combined.includes("is not empty") && combined.includes("--allow-non-empty")) {
+    return "Mount point has leftover files. The app will retry with --allow-non-empty.";
+  }
+  if (combined.includes("cgofuse: cannot find FUSE")) {
+    return "rclone can't load macFUSE libraries. Reinstall macFUSE from https://osxfuse.github.io/ and restart your Mac.";
+  }
   if (combined.includes("Homebrew") || combined.includes("not supported") || combined.includes("macFUSE")) {
     return "rclone from Homebrew does not support mount on macOS. Uninstall it (brew uninstall rclone) and install from https://rclone.org/downloads/ instead.";
   }
@@ -71,6 +81,7 @@ function getDarwinArch(): "darwin-arm64" | "darwin-amd64" {
 /** Check if macFUSE is installed (filesystem bundle or FUSE libs). */
 function getMacFuseStatus(): { installed: boolean; version?: string } {
   if (process.platform !== "darwin") return { installed: false };
+  const isPackaged = !process.defaultApp;
   const fsBundle = "/Library/Filesystems/macfuse.fs";
   const fsBundleAlt = "/Library/Filesystems/macFUSE.fs";
   const bundlePath = fs.existsSync(fsBundle) ? fsBundle : fs.existsSync(fsBundleAlt) ? fsBundleAlt : null;
@@ -94,6 +105,9 @@ function getMacFuseStatus(): { installed: boolean; version?: string } {
       return { installed: true };
     }
   }
+  // Packaged apps (DMG/Applications) may not have access to /Library or /usr/local.
+  // Assume macFUSE might be installed so we don't block the user; mount will fail with a clear error if not.
+  if (isPackaged) return { installed: true };
   return { installed: false };
 }
 
@@ -104,9 +118,26 @@ export interface MountDependencies {
 
 const DEFAULT_STREAM_CACHE_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
 
+const FULL_DISK_ACCESS_MSG =
+  "Can't access /Volumes. Add Bizzi Cloud to Full Disk Access for NLE visibility: System Settings → Privacy & Security → Full Disk Access. Then restart the app and mount again.";
+
+/** Returns true if the error indicates a permission/access denial (e.g. needs Full Disk Access). */
+function isPermissionError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    code === "EACCES" ||
+    code === "EPERM" ||
+    msg.includes("permission denied") ||
+    msg.includes("operation not permitted") ||
+    msg.includes("not allowed")
+  );
+}
+
 export class MountService {
   private webdav: WebDAVServer | null = null;
   private mountPoint: string = "";
+  private symlinkForFallback: string | null = null;
   private currentToken: string | null = null;
   private _isMounted = false;
   private prefetch: PrefetchService | null = null;
@@ -190,7 +221,7 @@ export class MountService {
   }
 
   getMountPoint(): string {
-    return this.mountPoint;
+    return this.symlinkForFallback ?? this.mountPoint;
   }
 
   /** Update the auth token used for API calls. Call periodically from the renderer (e.g. every 50 min) when mounted. */
@@ -198,9 +229,23 @@ export class MountService {
     if (this._isMounted && token) this.currentToken = token;
   }
 
+  /** Returns true if the mount point is still in the system mount table (rclone is running). */
+  private async isMountActuallyActive(): Promise<boolean> {
+    if (!this.mountPoint) return false;
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync("mount", { encoding: "utf-8", maxBuffer: 1024 * 1024 });
+      return out.includes(this.mountPoint);
+    } catch {
+      return false;
+    }
+  }
+
   async mount(options: MountOptions): Promise<void> {
+    // If we think we're mounted, always unmount first. Fixes stuck "Already mounted" when
+    // rclone died, user ejected, or state is stale. Mount button effectively becomes "remount".
     if (this.isMounted()) {
-      throw new Error("Already mounted. Unmount first.");
+      await this.unmount();
     }
 
     const token = await options.getAuthToken();
@@ -269,15 +314,39 @@ export class MountService {
         this.mountPoint = volumesPath;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // Only fall back on permission errors; for "not empty", throw so user can unmount first
+        // "Not empty" means user should unmount first (don't fall back)
         if (msg.includes("not empty") || msg.includes("Mount point not empty")) {
           throw new Error(
             "Unmount Bizzi Cloud first: click the eject icon next to it in Finder, or run in Terminal: diskutil unmount /Volumes/BizziCloud"
           );
         }
+        // Fall back to Application Support
         this.mountPoint = path.join(options.cacheBaseDir, "Mount");
         await fs.promises.mkdir(this.mountPoint, { recursive: true });
         console.warn("Using fallback mount path (not in /Volumes):", this.mountPoint, err);
+
+        // Create symlink at /Volumes/BizziCloud so NLEs can see it (may fail without Full Disk Access)
+        try {
+          const existing = await fs.promises.lstat(volumesPath).catch(() => null);
+          if (existing) {
+            if (existing.isSymbolicLink()) {
+              await fs.promises.unlink(volumesPath);
+            } else if (existing.isDirectory()) {
+              const entries = await fs.promises.readdir(volumesPath).catch(() => []);
+              if (entries.length === 0) {
+                await fs.promises.rmdir(volumesPath);
+              } else {
+                throw new Error("Path exists and is not empty");
+              }
+            } else {
+              await fs.promises.unlink(volumesPath);
+            }
+          }
+          await fs.promises.symlink(this.mountPoint, volumesPath);
+          this.symlinkForFallback = volumesPath;
+        } catch {
+          // Symlink failed (likely same permission issue); mount still works at fallback path
+        }
       }
     } else {
       this.mountPoint = path.join(options.cacheBaseDir, "Mount");
@@ -315,6 +384,7 @@ export class MountService {
       "--cache-dir", cacheDir,
       "--daemon",
       "--log-file", logFile,
+      "--allow-non-empty", // Fallback mount path can have leftover files from previous sessions
     ];
     if (process.platform === "darwin") {
       args.push("--volname", "Bizzi Cloud");
@@ -336,32 +406,36 @@ export class MountService {
       );
     }
 
-    // On macOS, GUI apps get a minimal env; rclone needs lib paths for macFUSE
+    // On macOS, packaged apps often strip DYLD_* for child processes. Always use a shell
+    // wrapper so rclone gets DYLD_FALLBACK_LIBRARY_PATH and can load libfuse from macFUSE.
+    // (Don't rely on fs.existsSync for libs—it can fail in packaged app context.)
     const spawnEnv = { ...process.env };
+    let spawnCmd: string;
+    let spawnArgs: string[];
     if (process.platform === "darwin") {
-      const libPaths = ["/usr/local/lib", "/opt/homebrew/lib"].filter((p) => {
-        try {
-          return fs.existsSync(path.join(p, "libfuse.2.dylib")) || fs.existsSync(path.join(p, "libfuse.dylib"));
-        } catch {
-          return false;
-        }
-      });
-      if (libPaths.length > 0) {
-        const extra = libPaths.join(":");
-        spawnEnv.DYLD_FALLBACK_LIBRARY_PATH = process.env.DYLD_FALLBACK_LIBRARY_PATH
-          ? `${process.env.DYLD_FALLBACK_LIBRARY_PATH}:${extra}`
-          : extra;
-      }
+      const libPathStr = ["/usr/local/lib", "/opt/homebrew/lib"].join(":");
+      spawnEnv.DYLD_FALLBACK_LIBRARY_PATH = process.env.DYLD_FALLBACK_LIBRARY_PATH
+        ? `${process.env.DYLD_FALLBACK_LIBRARY_PATH}:${libPathStr}`
+        : libPathStr;
+      const wrapperScript = path.join(options.cacheBaseDir, "rclone-macfuse-wrapper.sh");
+      const scriptBody = `#!/bin/bash\nexport DYLD_FALLBACK_LIBRARY_PATH="${libPathStr}"\nexec "${rclonePath}" "$@"\n`;
+      await fs.promises.writeFile(wrapperScript, scriptBody, { mode: 0o755 });
+      spawnCmd = "/bin/bash";
+      spawnArgs = [wrapperScript, ...args];
+    } else {
+      spawnCmd = rclonePath;
+      spawnArgs = args;
     }
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(rclonePath, args, {
+      const proc = spawn(spawnCmd, spawnArgs, {
         stdio: ["ignore", "pipe", "pipe"],
         env: spawnEnv,
       });
 
       let stderr = "";
       proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+      let rcloneExitedWithError = false;
 
       proc.on("error", (err) => {
         reject(new Error(`rclone failed to start: ${err.message}`));
@@ -369,6 +443,7 @@ export class MountService {
 
       proc.on("exit", (code, signal) => {
         if (code !== 0 && code !== null && !signal) {
+          rcloneExitedWithError = true;
           const errMsg = parseRcloneError(logFile, stderr, code);
           reject(new Error(errMsg));
         }
@@ -376,8 +451,9 @@ export class MountService {
 
       const mountReady = (): void => {
         this._isMounted = true;
-        if (process.platform === "darwin" && this.mountPoint.startsWith("/Volumes/")) {
-          spawn("open", [this.mountPoint], { stdio: "ignore" });
+        const openPath = this.symlinkForFallback ?? this.mountPoint;
+        if (process.platform === "darwin" && openPath.startsWith("/Volumes/")) {
+          spawn("open", [openPath], { stdio: "ignore" });
         }
         resolve();
       };
@@ -389,8 +465,11 @@ export class MountService {
           // Start predictive prefetch (folder open, clip click, grading, idle)
           this.prefetch?.start(this.mountPoint);
         } catch {
-          mountReady();
-          this.prefetch?.start(this.mountPoint);
+          // Don't set _isMounted when rclone failed—prevents "Already mounted" on retry.
+          if (!rcloneExitedWithError) {
+            mountReady();
+            this.prefetch?.start(this.mountPoint);
+          }
         }
       };
 
@@ -416,6 +495,16 @@ export class MountService {
         // ignore
       }
       this.mountPoint = "";
+    }
+
+    // Remove symlink created for fallback mount (so /Volumes/BizziCloud doesn't point to empty dir)
+    if (this.symlinkForFallback) {
+      try {
+        await fs.promises.unlink(this.symlinkForFallback);
+      } catch {
+        // ignore
+      }
+      this.symlinkForFallback = null;
     }
 
     if (this.webdav) {
