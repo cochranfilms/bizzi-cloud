@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HardDrive, Cpu, FolderDown, Cloud } from "lucide-react";
+import { HardDrive, Cpu, FolderDown, Cloud, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 declare global {
@@ -11,8 +11,13 @@ declare global {
       setSettings: (key: string, value: unknown) => Promise<Record<string, unknown>>;
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
       openInFinder?: (pathToOpen: string) => Promise<string>;
+      openExternal?: (url: string) => Promise<string>;
       mount?: {
         isFuseAvailable: () => Promise<boolean>;
+        getDependencies: () => Promise<{
+          rclone: { available: boolean; source: "bundled" | "system" | null };
+          macFuse: { installed: boolean; version?: string };
+        }>;
         getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
         mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
         unmount: () => Promise<void>;
@@ -51,6 +56,10 @@ export function NLEMountPanel() {
   const [nativeSyncPath, setNativeSyncPath] = useState<string | null>(null);
   const [nativeSyncLoading, setNativeSyncLoading] = useState(false);
   const [nativeSyncError, setNativeSyncError] = useState<string | null>(null);
+  const [dependencies, setDependencies] = useState<{
+    rclone: { available: boolean; source: "bundled" | "system" | null };
+    macFuse: { installed: boolean; version?: string };
+  } | null>(null);
 
   const isDesktop = typeof window !== "undefined" && !!window.bizzi?.mount;
 
@@ -59,6 +68,7 @@ export function NLEMountPanel() {
     window.bizzi?.getSettings().then(setSettings);
     window.bizzi?.mount?.isFuseAvailable().then(setFuseAvailable).catch(() => setFuseAvailable(false));
     window.bizzi?.nativeSync?.isAvailable().then(setNativeSyncAvailable).catch(() => setNativeSyncAvailable(false));
+    window.bizzi?.mount?.getDependencies?.().then(setDependencies).catch(() => setDependencies(null));
   }, [isDesktop]);
 
   useEffect(() => {
@@ -154,7 +164,8 @@ export function NLEMountPanel() {
   const apiBaseUrl = String(settings.apiBaseUrl ?? "https://www.bizzicloud.io");
   const maxBytes = Number(settings.streamCacheMaxBytes ?? 50 * 1024 ** 3);
   const cacheBaseDir = String(settings.cacheBaseDir ?? "");
-  const canMount = fuseAvailable === true && !!user && !loading;
+  const mountReady = (dependencies?.rclone.available && dependencies?.macFuse.installed) ?? fuseAvailable === true;
+  const canMount = mountReady && !!user && !loading;
   const streamCachePresets = [
     { label: "50 GB", value: 50 * 1024 ** 3 },
     { label: "100 GB", value: 100 * 1024 ** 3 },
@@ -185,11 +196,63 @@ export function NLEMountPanel() {
 
   return (
     <div className="space-y-1">
+      {/* Mount dependencies status */}
+      {dependencies && (
+        <section className="px-4 py-2">
+          <div className="rounded-lg border border-neutral-700/60 bg-neutral-900/30 p-3 space-y-3">
+            <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Requirements</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-neutral-300">rclone</span>
+                {dependencies.rclone.available ? (
+                  <span className="flex items-center gap-1.5 text-emerald-500">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    {dependencies.rclone.source === "bundled" ? "Bundled" : "Installed"}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-amber-500">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    Not found
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-neutral-300">macFUSE</span>
+                {dependencies.macFuse.installed ? (
+                  <span className="flex items-center gap-1.5 text-emerald-500">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Installed{dependencies.macFuse.version ? ` (${dependencies.macFuse.version})` : ""}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-amber-500">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    Required for Mount Drive
+                  </span>
+                )}
+              </div>
+            </div>
+            {!dependencies.macFuse.installed && (
+              <button
+                type="button"
+                onClick={() => window.bizzi?.openExternal?.("https://macfuse.github.io/")}
+                className="flex items-center gap-2 w-full py-2.5 px-3 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 hover:bg-amber-500/30 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4 shrink-0" />
+                Install macFUSE
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Mount section - primary NLE feature */}
       <section className="p-4">
         <h2 className="flex items-center gap-2 font-medium mb-3 text-neutral-800 dark:text-neutral-200">
           <HardDrive className="w-5 h-5 text-bizzi-blue" />
           Mount Drive
+          <span className="text-[10px] font-medium uppercase tracking-wide text-bizzi-blue/80 bg-bizzi-blue/10 px-2 py-0.5 rounded">
+            Best for editing
+          </span>
         </h2>
         <p className="text-sm text-neutral-400 mb-4">
           Mount Bizzi Cloud as a local volume. Edit in your NLE—changes sync when you save.
@@ -219,18 +282,13 @@ export function NLEMountPanel() {
           {!user && (
             <p className="text-xs text-amber-500">Sign in above to mount your drive.</p>
           )}
-          {fuseAvailable === false && user && (
-            <p className="text-xs text-amber-500">
-              Install rclone from{" "}
-              <a
-                href="https://rclone.org/downloads/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                rclone.org
-              </a>{" "}
-              to mount.
+          {!mountReady && user && dependencies && (
+            <p className="text-xs text-neutral-400">
+              {!dependencies.macFuse.installed ? (
+                <>Install macFUSE above, then restart your Mac.</>
+              ) : !dependencies.rclone.available ? (
+                <>rclone is bundled with the app. If missing, reinstall Bizzi Cloud.</>
+              ) : null}
             </p>
           )}
           {isMounted && mountPoint && (

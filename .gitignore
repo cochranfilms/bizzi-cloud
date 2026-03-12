@@ -33,12 +33,16 @@ firebase-service-account.json
 ._*
 .DS_Store
 
-# rclone downloads
+# rclone downloads & bundled binaries
 rclone-*.zip
 rclone-*/
+desktop/bin/
 
 # icon build artifacts
 desktop/resources/icon.iconset/
 
 # electron-builder output
 desktop/release/
+
+# bundled rclone binaries (downloaded by scripts/download-rclone.js)
+desktop/bin/

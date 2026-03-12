@@ -21,6 +21,9 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extraFiles": [
         {"from": "PlugIns", "to": "PlugIns", "filter": ["**/*"]}
+      ],
+      "extraResources": [
+        {"from": "bin", "to": "bin", "filter": ["**/*"]}
       ]
     },
     "directories": {
@@ -33,7 +36,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:dev": "tsc -p tsconfig.electron.json && concurrently \"vite\" \"electron .\"",
     "electron": "vite build && tsc -p tsconfig.electron.json && electron .",
-    "dist": "npm run build && node scripts/prepare-file-provider.js && electron-builder",
+    "dist": "npm run build && node scripts/download-rclone.js && node scripts/prepare-file-provider.js && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -42,9 +42,28 @@ function toRFC3986(pathSegment: string): string {
 
 function buildPropfindResponse(
   entries: MountMetadataEntry[],
-  driveId: string | null
+  driveId: string | null,
+  options: { includeRoot?: boolean; rootHref?: string; rootDisplayName?: string }
 ): string {
   const responses: string[] = [];
+
+  // Apple File Provider expects the requested resource as the first response (RFC 4918 Depth: 1).
+  // Without this, Finder stays stuck on "Loading...".
+  if (options.includeRoot) {
+    const href = options.rootHref ?? "/";
+    const displayName = options.rootDisplayName ?? "Bizzi Cloud";
+    responses.push(`
+    <d:response>
+      <d:href>${escapeXml(href)}</d:href>
+      <d:propstat>
+        <d:prop>
+          <d:resourcetype><d:collection/></d:resourcetype>
+          <d:displayname>${escapeXml(displayName)}</d:displayname>
+        </d:prop>
+        <d:status>HTTP/1.1 200 OK</d:status>
+      </d:propstat>
+    </d:response>`);
+  }
 
   for (const e of entries) {
     const isDir = e.type === "folder";
@@ -155,15 +174,21 @@ export class WebDAVServer {
 
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const token = await this.getToken(req);
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    let pathname = decodeURIComponent(url.pathname).replace(/\/+/g, "/").replace(/^\//, "").replace(/\/$/, "") || "";
+    // Some File Provider clients use /webdav/ prefix (see electron-macos-file-provider README)
+    if (pathname.startsWith("webdav/")) pathname = pathname.slice(7);
+    else if (pathname === "webdav") pathname = "";
+    const parts = pathname ? pathname.split("/") : [];
+
+    // Debug: log all requests (run app from terminal to see)
+    console.log(`[WebDAV] ${req.method} ${url.pathname} -> pathname="${pathname}" parts=[${parts.join(", ")}] auth=${token ? "OK" : "MISSING"}`);
+
     if (!token) {
       res.writeHead(401, { "WWW-Authenticate": 'Bearer realm="Bizzi Cloud"' });
       res.end();
       return;
     }
-
-    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
-    const pathname = decodeURIComponent(url.pathname).replace(/\/+/g, "/").replace(/^\//, "").replace(/\/$/, "") || "";
-    const parts = pathname ? pathname.split("/") : [];
 
     if (req.method === "PROPFIND") {
       await this.handlePropfind(res, parts, token);
@@ -194,7 +219,7 @@ export class WebDAVServer {
     token: string
   ): Promise<void> {
     let entries: MountMetadataEntry[];
-
+    try {
     if (parts.length === 0) {
       const meta = await this.fetchMetadata(token, null, []);
       entries = meta.entries;
@@ -205,12 +230,26 @@ export class WebDAVServer {
       entries = meta.entries;
     }
 
-    const xml = buildPropfindResponse(entries, parts[0] ?? null);
+    const driveId = parts[0] ?? null;
+    const isRoot = parts.length === 0;
+    const options = isRoot
+      ? { includeRoot: true, rootHref: "/", rootDisplayName: "Bizzi Cloud" }
+      : {
+          includeRoot: true,
+          rootHref: `/${driveId}${parts.length > 1 ? `/${parts.slice(1).map(toRFC3986).join("/")}` : ""}/`,
+          rootDisplayName: parts.length > 1 ? (entries[0]?.name ?? "Folder") : (entries.find((e) => e.linked_drive_id === driveId)?.name ?? "Drive"),
+        };
+    const xml = buildPropfindResponse(entries, driveId, options);
     res.writeHead(207, {
       "Content-Type": "application/xml; charset=utf-8",
       "DAV": "1, 2",
     });
     res.end(xml);
+    } catch (err) {
+      console.error("[WebDAV] PROPFIND error:", err);
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Internal Server Error");
+    }
   }
 
   private async handleGet(

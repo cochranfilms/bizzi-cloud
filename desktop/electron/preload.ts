@@ -8,8 +8,10 @@ contextBridge.exposeInMainWorld("bizzi", {
     ipcRenderer.invoke("get-path", name),
   openInFinder: (pathToOpen: string) =>
     ipcRenderer.invoke("open-in-finder", pathToOpen),
+  openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   mount: {
     isFuseAvailable: () => ipcRenderer.invoke("mount-fuse-available"),
+    getDependencies: () => ipcRenderer.invoke("mount-dependencies"),
     getStatus: () => ipcRenderer.invoke("mount-status"),
     mount: (apiBaseUrl: string, token: string) =>
       ipcRenderer.invoke("mount-mount", { apiBaseUrl, token }),

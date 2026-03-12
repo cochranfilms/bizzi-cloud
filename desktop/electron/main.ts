@@ -75,9 +75,18 @@ ipcMain.handle("get-path", (_e, name: "userData" | "cacheBase") => {
   return app.getPath("userData");
 });
 ipcMain.handle("open-in-finder", (_e, pathToOpen: string) => shell.openPath(pathToOpen));
+ipcMain.handle("open-external", (_e, url: string) => shell.openExternal(url));
 
 // Mount IPC
 ipcMain.handle("mount-fuse-available", () => mountService.isFuseAvailable());
+ipcMain.handle("mount-dependencies", async () => {
+  // Prod: Contents/Resources (contains bin/). Dev: desktop folder (contains bin/).
+  const resourcesDir =
+    process.resourcesPath && !process.defaultApp
+      ? process.resourcesPath
+      : app.getAppPath();
+  return mountService.getMountDependencies(resourcesDir);
+});
 ipcMain.handle("mount-status", () => ({
   isMounted: mountService.isMounted(),
   mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
@@ -89,10 +98,11 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
   if (!token) {
     throw new Error("Not signed in. Sign in to Bizzi Cloud to mount.");
   }
+  // Same as mount-dependencies: prod=Contents/Resources, dev=desktop (contains bin/)
   const resourcesDir =
     process.resourcesPath && !process.defaultApp
       ? process.resourcesPath
-      : path.join(app.getAppPath(), "resources");
+      : app.getAppPath();
   await mountService.mount({
     apiBaseUrl: baseUrl,
     cacheBaseDir,

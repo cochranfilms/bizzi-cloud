@@ -59,6 +59,45 @@ function parseRcloneError(logFile: string, stderr: string, exitCode: number): st
   return lastLine && lastLine.length < 200 ? lastLine : `Mount failed. ${excerpt ? excerpt.slice(-200) : `rclone exited with code ${exitCode}`}`;
 }
 
+/** macOS arch for bundled rclone */
+function getDarwinArch(): "darwin-arm64" | "darwin-amd64" {
+  return process.arch === "arm64" ? "darwin-arm64" : "darwin-amd64";
+}
+
+/** Check if macFUSE is installed (filesystem bundle or FUSE libs). */
+function getMacFuseStatus(): { installed: boolean; version?: string } {
+  if (process.platform !== "darwin") return { installed: false };
+  const fsBundle = "/Library/Filesystems/macfuse.fs";
+  const fsBundleAlt = "/Library/Filesystems/macFUSE.fs";
+  const bundlePath = fs.existsSync(fsBundle) ? fsBundle : fs.existsSync(fsBundleAlt) ? fsBundleAlt : null;
+  if (bundlePath) {
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync(`defaults read "${bundlePath}/Contents/Info" CFBundleVersion 2>/dev/null || true`, {
+        encoding: "utf-8",
+      }).trim();
+      return { installed: true, version: out || undefined };
+    } catch {
+      return { installed: true };
+    }
+  }
+  const libPaths = ["/usr/local/lib", "/opt/homebrew/lib"];
+  for (const libDir of libPaths) {
+    if (
+      fs.existsSync(path.join(libDir, "libfuse.2.dylib")) ||
+      fs.existsSync(path.join(libDir, "libfuse.dylib"))
+    ) {
+      return { installed: true };
+    }
+  }
+  return { installed: false };
+}
+
+export interface MountDependencies {
+  rclone: { available: boolean; source: "bundled" | "system" | null };
+  macFuse: { installed: boolean; version?: string };
+}
+
 export class MountService {
   private webdav: WebDAVServer | null = null;
   private mountPoint: string = "";
@@ -66,18 +105,55 @@ export class MountService {
   private _isMounted = false;
 
   /**
-   * rclone is used for mounting; we consider it "available" if the rclone binary exists.
+   * Returns mount dependencies: rclone (bundled or system) and macFUSE status.
+   * Use this for the dependency/installer UI.
+   */
+  async getMountDependencies(resourcesDir: string): Promise<MountDependencies> {
+    if (process.platform !== "darwin") {
+      return {
+        rclone: { available: false, source: null },
+        macFuse: { installed: false },
+      };
+    }
+    const arch = getDarwinArch();
+    const bundled = path.join(resourcesDir, "bin", arch, "rclone");
+    const rcloneAvailable = fs.existsSync(bundled);
+    let source: "bundled" | "system" | null = rcloneAvailable ? "bundled" : null;
+    if (!rcloneAvailable) {
+      const system = await this.findSystemRclone();
+      if (system && !system.includes("Cellar") && !system.includes("/opt/homebrew/")) {
+        source = "system";
+      }
+    }
+    return {
+      rclone: { available: !!source || rcloneAvailable, source: source ?? (rcloneAvailable ? "bundled" : null) },
+      macFuse: getMacFuseStatus(),
+    };
+  }
+
+  /**
+   * rclone is used for mounting; we consider it "available" if the rclone binary exists (bundled or system).
    */
   async isFuseAvailable(): Promise<boolean> {
     try {
-      const rclonePath = await this.findRclone();
+      const rclonePath = await this.findRclone(undefined);
       return !!rclonePath;
     } catch {
       return false;
     }
   }
 
-  private async findRclone(): Promise<string | null> {
+  /** Prefer bundled rclone, fall back to system (excluding Homebrew). */
+  private async findRclone(resourcesDir?: string): Promise<string | null> {
+    if (process.platform === "darwin" && resourcesDir) {
+      const arch = getDarwinArch();
+      const bundled = path.join(resourcesDir, "bin", arch, "rclone");
+      if (fs.existsSync(bundled)) return bundled;
+    }
+    return this.findSystemRclone();
+  }
+
+  private async findSystemRclone(): Promise<string | null> {
     const fromPath = await new Promise<string | null>((resolve) => {
       const proc = spawn("which", ["rclone"], { stdio: ["ignore", "pipe", "pipe"] });
       let out = "";
@@ -89,13 +165,8 @@ export class MountService {
     });
     if (fromPath) return fromPath;
 
-    // On macOS, GUI apps get a minimal PATH (no /usr/local/bin or /opt/homebrew/bin).
-    // Check common install locations directly when `which` fails.
     if (process.platform === "darwin") {
-      const candidates = [
-        "/usr/local/bin/rclone",
-        "/opt/homebrew/bin/rclone",
-      ];
+      const candidates = ["/usr/local/bin/rclone", "/opt/homebrew/bin/rclone"];
       for (const p of candidates) {
         try {
           if (fs.existsSync(p)) return p;
@@ -190,7 +261,10 @@ export class MountService {
       await fs.promises.mkdir(this.mountPoint, { recursive: true });
     }
 
-    const rclonePath = await this.findRclone();
+    const resourcesDir =
+      options.resourcesDir ??
+      (process.resourcesPath && !process.defaultApp ? process.resourcesPath : path.join(require("electron").app.getPath("appPath"), "resources"));
+    const rclonePath = await this.findRclone(resourcesDir);
     if (!rclonePath) {
       await this.webdav.stop();
       this.webdav = null;
