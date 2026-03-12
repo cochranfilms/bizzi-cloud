@@ -49,49 +49,63 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
 
-  // Resolve slug (Storage, RAW, Gallery Media) to actual drive ID
+  // Resolve slug (Storage, RAW, Gallery Media) to drive IDs. Merge files from ALL drives with same slug.
+  const driveIdsToQuery: string[] = [];
   if (driveIdStr && ["Storage", "RAW", "Gallery Media"].includes(driveIdStr)) {
     const [byUserId, byUserIdSnake] = await Promise.all([
       db.collection("linked_drives").where("userId", "==", uid).get(),
       db.collection("linked_drives").where("user_id", "==", uid).get(),
     ]);
-    const slugToId = new Map<string, string>();
+    const seen = new Set<string>();
+    const slugToIds = new Map<string, string[]>();
+    const addToSlug = (slug: string, id: string) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const arr = slugToIds.get(slug) ?? [];
+      if (!arr.includes(id)) arr.push(id);
+      slugToIds.set(slug, arr);
+    };
     for (const snap of [byUserId, byUserIdSnake]) {
       for (const d of snap.docs) {
         if (d.data().deleted_at) continue;
         const name = d.data().name ?? "Drive";
         const isCreatorRaw = d.data().is_creator_raw === true;
-        if (name === "Storage" || name === "Uploads") slugToId.set("Storage", d.id);
-        else if (isCreatorRaw) slugToId.set("RAW", d.id);
-        else if (name === "Gallery Media") slugToId.set("Gallery Media", d.id);
+        if (name === "Storage" || name === "Uploads") addToSlug("Storage", d.id);
+        else if (isCreatorRaw) addToSlug("RAW", d.id);
+        else if (name === "Gallery Media") addToSlug("Gallery Media", d.id);
       }
     }
-    driveIdStr = slugToId.get(driveIdStr) ?? driveIdStr;
+    driveIdsToQuery.push(...(slugToIds.get(driveIdStr) ?? []));
+  } else if (driveIdStr) {
+    driveIdsToQuery.push(driveIdStr);
   }
 
-  if (driveIdStr) {
-    // Query by userId (primary); also by user_id for legacy docs
-    const [filesByUserId, filesByUserIdSnake] = await Promise.all([
-      db
-        .collection("backup_files")
-        .where("userId", "==", uid)
-        .where("linked_drive_id", "==", driveIdStr)
-        .where("deleted_at", "==", null)
-        .get(),
-      db
-        .collection("backup_files")
-        .where("user_id", "==", uid)
-        .where("linked_drive_id", "==", driveIdStr)
-        .where("deleted_at", "==", null)
-        .get(),
-    ]);
+  if (driveIdsToQuery.length > 0) {
+    // Query backup_files for each drive and merge (so Storage shows all files from all Storage drives)
     const fileDocsById = new Map<string, QueryDocumentSnapshot>();
-    for (const snap of [filesByUserId, filesByUserIdSnake]) {
-      for (const doc of snap.docs) {
-        fileDocsById.set(doc.id, doc);
+    for (const did of driveIdsToQuery) {
+      const [filesByUserId, filesByUserIdSnake] = await Promise.all([
+        db
+          .collection("backup_files")
+          .where("userId", "==", uid)
+          .where("linked_drive_id", "==", did)
+          .where("deleted_at", "==", null)
+          .get(),
+        db
+          .collection("backup_files")
+          .where("user_id", "==", uid)
+          .where("linked_drive_id", "==", did)
+          .where("deleted_at", "==", null)
+          .get(),
+      ]);
+      for (const snap of [filesByUserId, filesByUserIdSnake]) {
+        for (const doc of snap.docs) {
+          fileDocsById.set(doc.id, doc);
+        }
       }
     }
     const filesSnap = { docs: Array.from(fileDocsById.values()) };
+    const primaryDriveId = driveIdsToQuery[0];
 
     const entries: MountMetadataEntry[] = [];
     const requestedPath = pathsArray[0] ?? "";
@@ -141,7 +155,7 @@ export async function POST(request: Request) {
         size_bytes: 0,
         modified_at: null,
         type: "folder",
-        linked_drive_id: driveIdStr,
+        linked_drive_id: primaryDriveId,
       });
     }
 

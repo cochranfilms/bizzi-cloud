@@ -205,16 +205,21 @@ export class WebDAVServer {
       return;
     }
 
+    if (req.method === "PUT") {
+      await this.handlePut(req, res, parts, token);
+      return;
+    }
+
     if (req.method === "OPTIONS") {
       res.writeHead(200, {
-        Allow: "OPTIONS, PROPFIND, GET, HEAD",
+        Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT",
         "DAV": "1, 2",
       });
       res.end();
       return;
     }
 
-    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD" });
+    res.writeHead(405, { Allow: "OPTIONS, PROPFIND, GET, HEAD, PUT" });
     res.end();
   }
 
@@ -312,6 +317,147 @@ export class WebDAVServer {
       Readable.fromWeb(fetchRes.body as any).pipe(res);
     } else {
       res.end();
+    }
+  }
+
+  private async handlePut(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parts: string[],
+    token: string
+  ): Promise<void> {
+    if (parts.length < 2) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+
+    const driveId = parts[0];
+    const fileName = parts[parts.length - 1];
+    const parentPath = parts.length > 2 ? parts.slice(1, -1).join("/") : "";
+    const relativePath = parentPath ? `${parentPath}/${fileName}` : fileName;
+    const contentLength = req.headers["content-length"];
+    const sizeBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    const contentType = (req.headers["content-type"] as string) ?? "application/octet-stream";
+
+    if (isNaN(sizeBytes) || sizeBytes < 0) {
+      res.writeHead(400);
+      res.end("Content-Length required");
+      return;
+    }
+
+    try {
+      // 1. Get presigned upload URL
+      const urlRes = await fetch(`${this.options.apiBaseUrl}/api/backup/upload-url`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          drive_id: driveId,
+          relative_path: relativePath,
+          content_type: contentType,
+          size_bytes: sizeBytes,
+        }),
+      });
+      if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({}));
+        console.error("[WebDAV] upload-url error:", urlRes.status, err);
+        res.writeHead(urlRes.status === 503 ? 503 : 400);
+        res.end(err?.error ?? "Failed to get upload URL");
+        return;
+      }
+
+      const urlData = (await urlRes.json()) as {
+        uploadUrl?: string;
+        objectKey?: string;
+        alreadyExists?: boolean;
+      };
+      if (urlData.alreadyExists && urlData.objectKey) {
+        // File already exists (content-hash dedup) - still create backup_files record
+        const completeRes = await fetch(`${this.options.apiBaseUrl}/api/mount/upload-complete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            drive_id: driveId,
+            relative_path: relativePath,
+            object_key: urlData.objectKey,
+            size_bytes: sizeBytes,
+            content_type: contentType,
+          }),
+        });
+        if (!completeRes.ok) {
+          const err = await completeRes.json().catch(() => ({}));
+          res.writeHead(completeRes.status);
+          res.end(err?.error ?? "Failed to create file record");
+          return;
+        }
+        res.writeHead(201);
+        res.end();
+        return;
+      }
+
+      if (!urlData.uploadUrl || !urlData.objectKey) {
+        res.writeHead(500);
+        res.end("Invalid upload URL response");
+        return;
+      }
+
+      // 2. Stream request body to B2
+      const putHeaders: Record<string, string> = {
+        "Content-Type": contentType,
+        "x-amz-server-side-encryption": "AES256",
+      };
+      if (sizeBytes > 0) putHeaders["Content-Length"] = String(sizeBytes);
+
+      const uploadRes = await fetch(urlData.uploadUrl, {
+        method: "PUT",
+        headers: putHeaders,
+        body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
+        duplex: "half",
+      });
+
+      if (!uploadRes.ok) {
+        console.error("[WebDAV] B2 upload error:", uploadRes.status, await uploadRes.text());
+        res.writeHead(502);
+        res.end("Upload to storage failed");
+        return;
+      }
+
+      // 3. Create backup_files record
+      const completeRes = await fetch(`${this.options.apiBaseUrl}/api/mount/upload-complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          drive_id: driveId,
+          relative_path: relativePath,
+          object_key: urlData.objectKey,
+          size_bytes: sizeBytes,
+          content_type: contentType,
+        }),
+      });
+
+      if (!completeRes.ok) {
+        const err = await completeRes.json().catch(() => ({}));
+        console.error("[WebDAV] upload-complete error:", completeRes.status, err);
+        res.writeHead(completeRes.status);
+        res.end(err?.error ?? "Upload completed but failed to create file record");
+        return;
+      }
+
+      res.writeHead(201);
+      res.end();
+    } catch (err) {
+      console.error("[WebDAV] PUT error:", err);
+      res.writeHead(500);
+      res.end("Internal Server Error");
     }
   }
 
