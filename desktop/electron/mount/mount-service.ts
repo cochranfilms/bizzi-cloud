@@ -10,6 +10,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
+import { Notification } from "electron";
 import { WebDAVServer } from "./webdav-server";
 
 export interface MountOptions {
@@ -208,6 +209,16 @@ export class MountService {
     this.webdav = new WebDAVServer({
       apiBaseUrl: options.apiBaseUrl || PRODUCTION_URL,
       getAuthToken,
+      onUploadComplete: (fileName) => {
+        try {
+          new Notification({
+            title: "Bizzi Cloud",
+            body: `"${fileName}" synced to cloud`,
+          }).show();
+        } catch {
+          // Notification may fail if app not focused or on some systems
+        }
+      },
     });
 
     const port = await this.webdav.start();

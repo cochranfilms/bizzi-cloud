@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   getCountFromServer,
+  onSnapshot,
   query,
   where,
   orderBy,
@@ -316,6 +317,45 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             galleryId: data.gallery_id ?? null,
           };
         });
+    },
+    [user, linkedDrives]
+  );
+
+  /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
+  const subscribeToDriveFiles = useCallback(
+    (driveId: string, onFiles: (files: RecentFile[]) => void): (() => void) => {
+      if (!isFirebaseConfigured() || !user) return () => {};
+      const db = getFirebaseFirestore();
+      const drive = linkedDrives.find((d) => d.id === driveId);
+      const q = query(
+        collection(db, "backup_files"),
+        where("userId", "==", user.uid),
+        where("linked_drive_id", "==", driveId),
+        where("deleted_at", "==", null),
+        orderBy("modified_at", "desc")
+      );
+      return onSnapshot(q, (snap) => {
+        const files: RecentFile[] = snap.docs
+          .filter((d) => !d.data().deleted_at)
+          .map((d) => {
+            const data = d.data();
+            const path = data.relative_path ?? "";
+            const name = (path.split("/").filter(Boolean).pop() ?? path) ?? "?";
+            return {
+              id: d.id,
+              name,
+              path,
+              objectKey: data.object_key ?? "",
+              size: data.size_bytes ?? 0,
+              modifiedAt: data.modified_at ?? null,
+              driveId: data.linked_drive_id,
+              driveName: drive?.name ?? "Unknown drive",
+              contentType: data.content_type ?? null,
+              galleryId: data.gallery_id ?? null,
+            };
+          });
+        onFiles(files);
+      });
     },
     [user, linkedDrives]
   );
@@ -789,6 +829,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     refetch: fetchCloudFiles,
     fetchAllFilesForTransfer,
     fetchDriveFiles,
+    subscribeToDriveFiles,
     fetchFilesByIds,
     fetchDeletedFiles,
     fetchDeletedDrives,

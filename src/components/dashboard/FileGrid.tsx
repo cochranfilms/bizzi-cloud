@@ -128,6 +128,7 @@ export default function FileGrid() {
     recentFiles,
     loading,
     fetchDriveFiles,
+    subscribeToDriveFiles,
     fetchFilesByIds,
     deleteFile,
     deleteFiles,
@@ -341,6 +342,15 @@ export default function FileGrid() {
       loadDriveFiles(currentDrive.id);
     }
   }, [storageVersion, currentDrive, loadDriveFiles]);
+
+  // Real-time subscription: mount uploads appear in web app without refresh
+  useEffect(() => {
+    if (!currentDrive) {
+      setDriveFiles([]);
+      return;
+    }
+    return subscribeToDriveFiles(currentDrive.id, setDriveFiles);
+  }, [currentDrive, subscribeToDriveFiles]);
 
   // Fetch pinned file details when pinned file IDs change
   const loadPinnedFiles = useCallback(async () => {

@@ -14,11 +14,14 @@ export interface MountMetadataEntry {
   modified_at: string | null;
   type: "file" | "folder";
   linked_drive_id: string;
+  content_type?: string | null;
 }
 
 export interface WebDAVServerOptions {
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
+  /** Called when a file is successfully uploaded via PUT. Used for notification. */
+  onUploadComplete?: (fileName: string) => void;
 }
 
 const XML_HEADER = '<?xml version="1.0" encoding="utf-8"?>';
@@ -38,6 +41,32 @@ function toRFC3986(pathSegment: string): string {
     .split("/")
     .map((p) => encodeURIComponent(p).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`))
     .join("/");
+}
+
+/** MIME type from content_type or filename extension. Finder uses this for correct file icons. */
+function getContentType(entry: { name: string; content_type?: string | null }): string {
+  if (entry.content_type && /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9.-]+$/.test(entry.content_type)) {
+    return entry.content_type;
+  }
+  const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+  const mime: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    heic: "image/heic",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+    psd: "image/vnd.adobe.photoshop",
+    mov: "video/quicktime",
+    mp4: "video/mp4",
+    m4v: "video/x-m4v",
+    arw: "image/x-sony-arw",
+    cr2: "image/x-canon-cr2",
+    pdf: "application/pdf",
+  };
+  return mime[ext] ?? "application/octet-stream";
 }
 
 function buildPropfindResponse(
@@ -82,7 +111,8 @@ function buildPropfindResponse(
 
     const lastmod = e.modified_at ? `<d:getlastmodified>${escapeXml(new Date(e.modified_at).toUTCString())}</d:getlastmodified>` : "";
     const size = !isDir ? `<d:getcontentlength>${e.size_bytes}</d:getcontentlength>` : "";
-    const contentType = !isDir ? `<d:getcontenttype>application/octet-stream</d:getcontenttype>` : "";
+    const mime = !isDir ? escapeXml(getContentType(e)) : "";
+    const contentType = !isDir ? `<d:getcontenttype>${mime}</d:getcontenttype>` : "";
 
     responses.push(`
     <d:response>
@@ -396,6 +426,7 @@ export class WebDAVServer {
           res.end(err?.error ?? "Failed to create file record");
           return;
         }
+        this.options.onUploadComplete?.(fileName);
         res.writeHead(201);
         res.end();
         return;
@@ -414,12 +445,14 @@ export class WebDAVServer {
       };
       if (sizeBytes > 0) putHeaders["Content-Length"] = String(sizeBytes);
 
-      const uploadRes = await fetch(urlData.uploadUrl, {
-        method: "PUT",
+      // duplex: "half" required for streaming body in Node.js fetch (not in RequestInit types)
+      const putInit = {
+        method: "PUT" as const,
         headers: putHeaders,
         body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
-        duplex: "half",
-      });
+        duplex: "half" as const,
+      };
+      const uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
 
       if (!uploadRes.ok) {
         console.error("[WebDAV] B2 upload error:", uploadRes.status, await uploadRes.text());
@@ -452,6 +485,7 @@ export class WebDAVServer {
         return;
       }
 
+      this.options.onUploadComplete?.(fileName);
       res.writeHead(201);
       res.end();
     } catch (err) {

@@ -15,6 +15,8 @@ export interface MountMetadataEntry {
   modified_at: string | null;
   type: "file" | "folder";
   linked_drive_id: string;
+  /** MIME type for correct file icons in Finder (from backup_files.content_type or extension) */
+  content_type?: string | null;
 }
 
 export async function POST(request: Request) {
@@ -130,6 +132,7 @@ export async function POST(request: Request) {
         modified_at: data.modified_at ?? null,
         type: "file",
         linked_drive_id: data.linked_drive_id ?? driveIdStr,
+        content_type: (data.content_type as string) ?? null,
       });
     }
 
