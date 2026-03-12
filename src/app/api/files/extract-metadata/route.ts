@@ -117,6 +117,11 @@ export async function POST(request: Request) {
   const fileName = relativePath.split("/").filter(Boolean).pop() ?? objectKey;
   const contentType = (fileData.content_type ?? "") as string;
 
+  const isGenericType =
+    !contentType || contentType === "application/octet-stream" || contentType === "binary/octet-stream";
+  const shouldProbeForVideo =
+    (isVideo(fileName) || (isGenericType && !isImage(fileName))) && !!ffmpegPath;
+
   const updates: Record<string, unknown> = {
     media_type: isVideo(fileName) ? "video" : isImage(fileName) ? "photo" : "other",
     uploader_id: uid,
@@ -126,7 +131,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (isVideo(fileName) && ffmpegPath) {
+    if (shouldProbeForVideo) {
       const tmpDir = os.tmpdir();
       const ext = path.extname(fileName) || ".mp4";
       const tmpPath = path.join(tmpDir, `meta-${Date.now()}${ext}`);
@@ -147,6 +152,13 @@ export async function POST(request: Request) {
           proc.on("error", reject);
         });
         const meta = parseFfmpegOutput(probeResult, fileName);
+        const hasVideoStream = /Stream.*Video:/i.test(probeResult);
+        if (hasVideoStream) {
+          updates.media_type = "video";
+          const container = (meta.container_format as string) || ext || "mp4";
+          updates.content_type =
+            ["mov", "m4v"].includes(container) ? "video/quicktime" : "video/mp4";
+        }
         if (meta.resolution_w) updates.resolution_w = meta.resolution_w;
         if (meta.resolution_h) updates.resolution_h = meta.resolution_h;
         if (meta.frame_rate != null) updates.frame_rate = meta.frame_rate;
@@ -206,6 +218,31 @@ export async function POST(request: Request) {
 
   if (Object.keys(updates).length > 2) {
     await fileRef.update(updates);
+  }
+
+  // Trigger MUX asset creation and proxy for videos (including extension-less files discovered via probe)
+  const isVideoNow = (updates.media_type ?? fileData.media_type) === "video";
+  if (isVideoNow && token) {
+    const base = new URL(request.url).origin;
+    const authHeader = { Authorization: `Bearer ${token}` };
+    fetch(`${base}/api/backup/generate-proxy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        object_key: objectKey,
+        name: fileName,
+        backup_file_id: backupFileId,
+      }),
+    }).catch(() => {});
+    fetch(`${base}/api/mux/create-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        object_key: objectKey,
+        name: fileName,
+        backup_file_id: backupFileId,
+      }),
+    }).catch(() => {});
   }
 
   return NextResponse.json({ ok: true });

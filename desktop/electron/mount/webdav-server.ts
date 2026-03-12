@@ -22,6 +22,10 @@ export interface WebDAVServerOptions {
   getAuthToken: () => Promise<string | null>;
   /** Called when a file is successfully uploaded via PUT. Used for notification. */
   onUploadComplete?: (fileName: string) => void;
+  /** Predictive prefetch: called after folder is listed (driveId, folderPath, entries). */
+  onFolderListed?: (driveId: string | null, folderPath: string, entries: MountMetadataEntry[]) => void;
+  /** Predictive prefetch: called when file is read (driveId, relativePath, rangeStart, rangeEnd). */
+  onFileRead?: (driveId: string, relativePath: string, rangeStart: number, rangeEnd: number | null) => void;
 }
 
 const XML_HEADER = '<?xml version="1.0" encoding="utf-8"?>';
@@ -285,6 +289,11 @@ export class WebDAVServer {
       "DAV": "1, 2",
     });
     res.end(xml);
+    // Predictive prefetch: folder opened → pre-cache first 30s of every clip
+    if (parts.length >= 1) {
+      const folderPath = parts.slice(1).join("/");
+      this.options.onFolderListed?.(driveId, folderPath, entries);
+    }
     } catch (err) {
       console.error("[WebDAV] PROPFIND error:", err);
       res.writeHead(500, { "Content-Type": "text/plain" });
@@ -318,6 +327,18 @@ export class WebDAVServer {
     }
 
     const rangeHeader = req.headers.range;
+    let rangeStart = 0;
+    let rangeEnd: number | null = null;
+    if (rangeHeader) {
+      const m = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (m) {
+        rangeStart = parseInt(m[1], 10);
+        rangeEnd = m[2] ? parseInt(m[2], 10) : null;
+      }
+    }
+    const relativePath = parentPath ? `${parentPath}/${fileName}` : fileName;
+    this.options.onFileRead?.(driveId, relativePath, rangeStart, rangeEnd);
+
     const rangeUrl = `${this.options.apiBaseUrl}/api/mount/range?object_key=${encodeURIComponent(entry.object_key)}`;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,

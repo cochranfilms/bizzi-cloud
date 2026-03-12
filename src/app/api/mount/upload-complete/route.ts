@@ -7,6 +7,8 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { NextResponse } from "next/server";
 
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
@@ -138,13 +140,34 @@ export async function POST(request: Request) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: token ? `Bearer ${token}` : "",
     },
     body: JSON.stringify({
       backup_file_id: fileRef.id,
       object_key: objectKey,
     }),
   }).catch(() => {});
+
+  // Trigger MUX asset creation and proxy for video files (extension-based)
+  // Extension-less videos are handled by extract-metadata after probe
+  if (VIDEO_EXT.test(safePath) && token) {
+    const base = new URL(request.url).origin;
+    const authHeader = { Authorization: `Bearer ${token}` };
+    fetch(`${base}/api/backup/generate-proxy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ object_key: objectKey, name: safePath }),
+    }).catch(() => {});
+    fetch(`${base}/api/mux/create-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({
+        object_key: objectKey,
+        name: safePath,
+        backup_file_id: fileRef.id,
+      }),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({
     ok: true,

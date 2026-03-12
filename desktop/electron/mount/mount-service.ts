@@ -11,6 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 import { Notification } from "electron";
+import { PrefetchService } from "./prefetch-service";
 import { WebDAVServer } from "./webdav-server";
 
 export interface MountOptions {
@@ -18,6 +19,8 @@ export interface MountOptions {
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
   resourcesDir?: string;
+  /** Max bytes for rclone VFS cache (default 50 GB). Shared with stream cache budget. */
+  streamCacheMaxBytes?: number;
 }
 
 const PRODUCTION_URL = "https://www.bizzicloud.io";
@@ -99,11 +102,14 @@ export interface MountDependencies {
   macFuse: { installed: boolean; version?: string };
 }
 
+const DEFAULT_STREAM_CACHE_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
+
 export class MountService {
   private webdav: WebDAVServer | null = null;
   private mountPoint: string = "";
   private currentToken: string | null = null;
   private _isMounted = false;
+  private prefetch: PrefetchService | null = null;
 
   /**
    * Returns mount dependencies: rclone (bundled or system) and macFUSE status.
@@ -206,6 +212,9 @@ export class MountService {
     // WebDAV uses getAuthToken() per request so token refresh works without remounting
     const getAuthToken = async () => this.currentToken ?? (await options.getAuthToken());
 
+    const prefetch = new PrefetchService({ mountPoint: "" });
+    this.prefetch = prefetch;
+
     this.webdav = new WebDAVServer({
       apiBaseUrl: options.apiBaseUrl || PRODUCTION_URL,
       getAuthToken,
@@ -219,6 +228,9 @@ export class MountService {
           // Notification may fail if app not focused or on some systems
         }
       },
+      onFolderListed: (driveId, folderPath, entries) => prefetch.onFolderListed(driveId, folderPath, entries),
+      onFileRead: (driveId, relativePath, rangeStart, rangeEnd) =>
+        prefetch.onFileRead(driveId, relativePath, rangeStart, rangeEnd),
     });
 
     const port = await this.webdav.start();
@@ -283,6 +295,10 @@ export class MountService {
     }
 
     const logFile = path.join(options.cacheBaseDir, "rclone-mount.log");
+    const cacheDir = path.join(options.cacheBaseDir, "rclone-vfs");
+    await fs.promises.mkdir(cacheDir, { recursive: true });
+    const vfsCacheMaxBytes = options.streamCacheMaxBytes ?? DEFAULT_STREAM_CACHE_MAX_BYTES;
+
     const args = [
       "mount",
       ":webdav:",
@@ -293,6 +309,9 @@ export class MountService {
       "--dir-cache-time", "72h",
       "--vfs-cache-mode", "full",
       "--vfs-read-chunk-size", "32M",
+      "--vfs-read-ahead", "64M", // Predictive: prefetch ahead during sequential reads (video scrubbing, etc.)
+      "--vfs-cache-max-size", String(vfsCacheMaxBytes),
+      "--cache-dir", cacheDir,
       "--daemon",
       "--log-file", logFile,
     ];
@@ -366,8 +385,11 @@ export class MountService {
         try {
           await fs.promises.access(this.mountPoint, fs.constants.R_OK);
           mountReady();
+          // Start predictive prefetch (folder open, clip click, grading, idle)
+          this.prefetch?.start(this.mountPoint);
         } catch {
           mountReady();
+          this.prefetch?.start(this.mountPoint);
         }
       };
 
@@ -378,6 +400,8 @@ export class MountService {
   async unmount(): Promise<void> {
     this.currentToken = null;
     this._isMounted = false;
+    this.prefetch?.stop();
+    this.prefetch = null;
 
     if (this.mountPoint) {
       try {

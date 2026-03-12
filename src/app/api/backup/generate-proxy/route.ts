@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { object_key: objectKey, name: fileName, user_id: userIdFromBody } = body;
+  const { object_key: objectKey, name: fileName, user_id: userIdFromBody, backup_file_id: backupFileId } = body;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -71,9 +71,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key required" }, { status: 400 });
   }
 
-  // Content-hash keys (content/xxx) have no extension; use fileName when provided
-  const nameToCheck = (typeof fileName === "string" ? fileName : null) || objectKey;
-  if (!isVideoFile(nameToCheck)) {
+  // Allow extension-less videos when backup_file_id has media_type=video (from extract-metadata probe)
+  let allowVideo = isVideoFile((typeof fileName === "string" ? fileName : null) || objectKey);
+  if (!allowVideo && backupFileId && typeof backupFileId === "string") {
+    const { getAdminFirestore } = await import("@/lib/firebase-admin");
+    const db = getAdminFirestore();
+    const doc = await db.collection("backup_files").doc(backupFileId).get();
+    allowVideo = doc.exists && doc.data()?.media_type === "video";
+  }
+  if (!allowVideo) {
     return NextResponse.json({ error: "Not a video file" }, { status: 400 });
   }
 

@@ -108,6 +108,7 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
     cacheBaseDir,
     getAuthToken: async () => token,
     resourcesDir,
+    streamCacheMaxBytes: Number(store.get("streamCacheMaxBytes")) || undefined,
   });
   return { mountPoint: mountService.getMountPoint() };
 });
