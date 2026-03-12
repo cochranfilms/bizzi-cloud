@@ -1,7 +1,4 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
