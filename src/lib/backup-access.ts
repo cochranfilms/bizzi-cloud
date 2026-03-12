@@ -1,4 +1,5 @@
-import type { Firestore } from "firebase-admin/firestore";
+import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { FieldPath } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey } from "@/lib/b2";
 
@@ -25,7 +26,7 @@ export async function verifyBackupFileAccess(
 
   // Proxy key: user has access if they own an original whose proxy matches
   if (objectKey.startsWith("proxies/") && objectKey.endsWith(".mp4")) {
-    let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    let lastDoc: QueryDocumentSnapshot | null = null;
     for (let i = 0; i < 20; i++) {
       // Paginate up to ~10k files (20 * 500)
       let q = db
@@ -33,7 +34,7 @@ export async function verifyBackupFileAccess(
         .where("userId", "==", uid)
         .where("deleted_at", "==", null)
         .limit(2000)
-        .orderBy(documentId());
+        .orderBy(FieldPath.documentId());
       if (lastDoc) q = q.startAfter(lastDoc);
       const snap = await q.get();
       for (const doc of snap.docs) {
