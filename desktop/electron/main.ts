@@ -38,11 +38,11 @@ function createWindow() {
   });
 
   const baseUrl = String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
-  const desktopUrl = `${baseUrl.replace(/\/$/, "")}/desktop`;
+  const desktopUrl = `${baseUrl.replace(/\/$/, "")}/desktop/app`;
 
   if (process.env.NODE_ENV === "development") {
     // Load Next.js dev server (run `npm run dev` from project root)
-    mainWindow.loadURL("http://localhost:3000/desktop").catch(() => {
+    mainWindow.loadURL("http://localhost:3000/desktop/app").catch(() => {
       mainWindow?.loadURL(desktopUrl);
     });
     mainWindow.webContents.openDevTools();

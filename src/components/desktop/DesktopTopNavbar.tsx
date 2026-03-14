@@ -34,15 +34,15 @@ const navItems: Array<{
   requiresGallerySuite?: boolean;
   requiresEditor?: boolean;
 }> = [
-  { href: "/desktop", label: "Home", icon: Home },
-  { href: "/desktop/files", label: "All files", icon: FolderOpen },
-  { href: "/desktop/creator", label: "Creator", icon: Film, requiresEditor: true },
-  { href: "/desktop/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
-  { href: "/desktop/shared", label: "Shared", icon: Share2 },
-  { href: "/desktop/transfers", label: "Transfers", icon: Send },
-  { href: "/desktop/requests", label: "File requests", icon: FileQuestion },
-  { href: "/desktop/trash", label: "Deleted files", icon: Trash2 },
-  { href: "/desktop/settings", label: "Settings", icon: Settings },
+  { href: "/desktop/app", label: "Home", icon: Home },
+  { href: "/desktop/app/files", label: "All files", icon: FolderOpen },
+  { href: "/desktop/app/creator", label: "Creator", icon: Film, requiresEditor: true },
+  { href: "/desktop/app/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
+  { href: "/desktop/app/shared", label: "Shared", icon: Share2 },
+  { href: "/desktop/app/transfers", label: "Transfers", icon: Send },
+  { href: "/desktop/app/requests", label: "File requests", icon: FileQuestion },
+  { href: "/desktop/app/trash", label: "Deleted files", icon: Trash2 },
+  { href: "/desktop/app/settings", label: "Settings", icon: Settings },
 ];
 
 export default function DesktopTopNavbar({
@@ -88,7 +88,7 @@ export default function DesktopTopNavbar({
         </button>
       )}
       <Link
-        href="/desktop"
+        href="/desktop/app"
         className="flex items-center gap-2"
         onClick={() => setMobileOpen(false)}
       >
@@ -108,7 +108,7 @@ export default function DesktopTopNavbar({
       <nav className="hidden md:flex items-center gap-0.5">
         {filteredItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (item.href === "/desktop" && pathname === "/desktop");
+          const isActive = pathname === item.href || (item.href === "/desktop/app" && pathname === "/desktop/app");
           return (
             <Link
               key={item.href}
@@ -142,7 +142,7 @@ export default function DesktopTopNavbar({
       </div>
 
       <div className="flex flex-shrink-0 items-center">
-        <UserMenu compact basePath="/desktop" />
+        <UserMenu compact basePath="/desktop/app" />
       </div>
 
       {mobileOpen && (
@@ -160,7 +160,7 @@ export default function DesktopTopNavbar({
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
           {filteredItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (item.href === "/desktop" && pathname === "/desktop");
+            const isActive = pathname === item.href || (item.href === "/desktop/app" && pathname === "/desktop/app");
             return (
               <li key={item.href}>
                 <Link

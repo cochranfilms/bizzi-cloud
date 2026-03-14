@@ -12,7 +12,7 @@ export default async function DesktopTransferDetailPage({
     <>
       <div className="flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white pl-14 pr-4 dark:border-neutral-800 dark:bg-neutral-950 lg:pl-6 lg:pr-6">
         <Link
-          href="/desktop/transfers"
+          href="/desktop/app/transfers"
           className="flex items-center gap-1 text-sm text-neutral-600 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
         >
           <ChevronLeft className="h-4 w-4" />

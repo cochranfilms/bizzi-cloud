@@ -742,7 +742,7 @@ function SubscriptionSection() {
       const retry = setTimeout(() => refetch(), 2000);
       setConfirmationType(cancelled ? "cancelled" : purchaseConfirmed ? "purchase" : "updated");
       setShowConfirmationBanner(true);
-      router.replace(isDesktop ? "/desktop/settings" : "/dashboard/settings", { scroll: false });
+      router.replace(isDesktop ? "/desktop/app/settings" : "/dashboard/settings", { scroll: false });
       return () => clearTimeout(retry);
     }
   }, [user, searchParams, refetch, router, isDesktop]);

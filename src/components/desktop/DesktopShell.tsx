@@ -77,7 +77,7 @@ export default function DesktopShell({
             }`}
           >
             <RightPanel
-              basePath="/desktop"
+              basePath="/desktop/app"
               onMobileClose={() => setRightPanelOpen(false)}
             />
           </div>

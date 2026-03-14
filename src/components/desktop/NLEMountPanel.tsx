@@ -183,7 +183,7 @@ export function NLEMountPanel() {
           Download the Bizzi Cloud Mac app to mount your drive in Finder and edit with Premiere Pro, DaVinci Resolve, or Final Cut Pro. Changes sync when you save.
         </p>
         <a
-          href="https://www.bizzicloud.io"
+          href="https://www.bizzicloud.io/desktop"
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-bizzi-blue hover:underline"

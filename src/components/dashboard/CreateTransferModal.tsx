@@ -294,7 +294,7 @@ export default function CreateTransferModal({
 
   const handleDone = useCallback(() => {
     performClose();
-    router.push(isDesktop ? "/desktop/transfers" : isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
+    router.push(isDesktop ? "/desktop/app/transfers" : isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
   }, [performClose, router, isEnterprise, isDesktop]);
 
   const handleSubmit = useCallback(async () => {

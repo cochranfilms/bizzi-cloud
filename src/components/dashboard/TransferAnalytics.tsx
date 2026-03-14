@@ -29,7 +29,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
   const { confirm } = useConfirm();
 
   const transfersBase =
-    pathname?.startsWith("/desktop") ? "/desktop" : pathname?.startsWith("/enterprise") ? "/enterprise" : "/dashboard";
+    pathname?.startsWith("/desktop") ? "/desktop/app" : pathname?.startsWith("/enterprise") ? "/enterprise" : "/dashboard";
 
   const handleDelete = useCallback(async () => {
     if (!transfer) return;

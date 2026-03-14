@@ -170,7 +170,7 @@ export default function TransferGrid() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`${pathname?.startsWith("/desktop") ? "/desktop" : pathname?.startsWith("/enterprise") ? "/enterprise" : "/dashboard"}/transfers/${t.id}`}
+                          href={`${pathname?.startsWith("/desktop") ? "/desktop/app" : pathname?.startsWith("/enterprise") ? "/enterprise" : "/dashboard"}/transfers/${t.id}`}
                           className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-bizzi-blue dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-bizzi-cyan"
                         >
                           <BarChart2 className="h-4 w-4" />

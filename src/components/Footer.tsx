@@ -13,7 +13,7 @@ const companyLinks: { href: string; label: string; external?: boolean }[] = [
 const pagesLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
-  { href: "https://github.com/cochranfilms/bizzi-cloud/releases", label: "Download", external: true },
+  { href: "/desktop", label: "Download for Desktop" },
   { href: "https://www.bizzibytestorage.com/", label: "Shop SSDs", external: true },
 ];
 

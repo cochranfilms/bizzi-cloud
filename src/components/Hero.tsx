@@ -22,12 +22,20 @@ export default function Hero() {
               assets in one secure, searchable hub. From your Bizzi Byte SSD to
               the cloud—access your projects anywhere, anytime.
             </p>
-            <Link
-              href={isSignedIn ? "/dashboard" : "#pricing"}
-              className="inline-block px-8 py-3.5 bg-bizzi-blue text-white font-semibold rounded-full hover:bg-bizzi-cyan transition-colors shadow-lg shadow-bizzi-blue/25"
-            >
-              {isSignedIn ? "Go to Dashboard" : "Try it free for 14 days"}
-            </Link>
+            <div className="flex flex-wrap gap-4">
+              <Link
+                href={isSignedIn ? "/dashboard" : "#pricing"}
+                className="inline-block px-8 py-3.5 bg-bizzi-blue text-white font-semibold rounded-full hover:bg-bizzi-cyan transition-colors shadow-lg shadow-bizzi-blue/25"
+              >
+                {isSignedIn ? "Go to Dashboard" : "Try it free for 14 days"}
+              </Link>
+              <Link
+                href="/desktop"
+                className="inline-block px-8 py-3.5 border-2 border-bizzi-navy text-bizzi-navy font-semibold rounded-full hover:bg-bizzi-navy/5 transition-colors"
+              >
+                Download for Desktop
+              </Link>
+            </div>
           </div>
           <div className="relative hidden lg:block">
             <div

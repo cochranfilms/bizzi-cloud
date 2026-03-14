@@ -22,7 +22,7 @@ export default function DesktopAuthGuard({
     if (!isFirebaseConfigured()) return;
     if (loading) return;
     if (!user) {
-      router.replace(`/login?redirect=${encodeURIComponent(pathname || "/desktop")}`);
+      router.replace(`/login?redirect=${encodeURIComponent(pathname || "/desktop/app")}`);
     }
   }, [user, loading, pathname, router]);
 
