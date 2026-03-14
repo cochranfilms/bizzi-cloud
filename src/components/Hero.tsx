@@ -9,20 +9,20 @@ export default function Hero() {
   const isSignedIn = !!user && !loading;
 
   return (
-    <section className="relative py-20 md:py-28 px-6 overflow-hidden min-h-[500px] flex items-center">
+    <section className="relative py-14 sm:py-20 md:py-28 px-4 sm:px-6 overflow-hidden min-h-[400px] sm:min-h-[500px] flex items-center">
       <CloudBackground />
       <div className="relative z-10 max-w-6xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <div>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-bizzi-navy mb-6">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-bizzi-navy mb-4 sm:mb-6">
               Keep everything organized.
             </h1>
-            <p className="text-lg md:text-xl text-neutral-600 mb-8 max-w-xl leading-relaxed">
+            <p className="text-base sm:text-lg md:text-xl text-neutral-600 mb-6 sm:mb-8 max-w-xl leading-relaxed">
               Store all your logos, brand guidelines, templates, and campaign
               assets in one secure, searchable hub. From your Bizzi Byte SSD to
               the cloud—access your projects anywhere, anytime.
             </p>
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
               <Link
                 href={isSignedIn ? "/dashboard" : "#pricing"}
                 className="inline-block px-8 py-3.5 bg-bizzi-blue text-white font-semibold rounded-full hover:bg-bizzi-cyan transition-colors shadow-lg shadow-bizzi-blue/25"

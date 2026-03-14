@@ -2,6 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Mobile-first: touch-friendly tap targets, safe area insets */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply overflow-x-hidden;
+  }
+}
+
+/* Mobile optimization: ensure tap targets and prevent zoom on double-tap for inputs */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Improve touch scrolling on iOS */
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Touch-friendly tap targets: min 44x44px for interactive elements */
+@layer utilities {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .touch-target-sm {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  /* Safe area for notched devices */
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+  /* Prevent layout shift from scrollbar on mobile */
+  .scrollbar-gutter-stable {
+    scrollbar-gutter: stable;
+  }
+}
+
 /* Video fullscreen: styles apply immediately when entering fullscreen (no React delay) */
 .video-fullscreen-container:fullscreen,
 .video-fullscreen-container:-webkit-full-screen {
@@ -87,6 +132,11 @@
   }
   .animate-logo-scroll {
     animation: logo-scroll 30s linear infinite;
+  }
+  /* Mobile modal scroll: prevent body scroll when modal open */
+  .modal-open {
+    overflow: hidden;
+    touch-action: none;
   }
   @keyframes proofing-popup {
     from {

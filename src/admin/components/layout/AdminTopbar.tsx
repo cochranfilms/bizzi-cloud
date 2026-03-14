@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Bell, RefreshCw, ChevronDown } from "lucide-react";
+import { Search, Bell, RefreshCw, ChevronDown, Menu } from "lucide-react";
 import Link from "next/link";
 import { formatRelativeTime } from "@/admin/utils/formatDateTime";
 
@@ -9,20 +9,32 @@ interface AdminTopbarProps {
   lastSync?: Date | string | null;
   onRefresh?: () => void;
   unreadAlerts?: number;
+  onMenuClick?: () => void;
 }
 
 export default function AdminTopbar({
   lastSync,
   onRefresh,
   unreadAlerts = 0,
+  onMenuClick,
 }: AdminTopbarProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950 md:px-6">
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950 md:gap-4 md:px-6">
+      {onMenuClick && (
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 lg:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
       <div
-        className={`relative flex-1 min-w-0 max-w-md transition-all ${
+        className={`relative min-w-0 flex-1 max-w-md transition-all ${
           searchFocused ? "max-w-lg" : ""
         }`}
       >

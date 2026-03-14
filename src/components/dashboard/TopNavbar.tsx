@@ -103,9 +103,9 @@ export default function TopNavbar() {
         })}
       </nav>
 
-      {/* Search - grows to fill space */}
+      {/* Search - grows to fill space, hide on xs for more nav space */}
       <div
-        className={`relative flex-1 min-w-0 max-w-xl transition-all ${
+        className={`relative hidden sm:block flex-1 min-w-0 max-w-xl transition-all ${
           searchFocused ? "flex-[1.5]" : ""
         }`}
       >

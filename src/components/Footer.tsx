@@ -33,10 +33,10 @@ export default function Footer() {
   };
 
   return (
-    <footer className="py-16 px-6 bg-white border-t border-neutral-200">
+    <footer className="py-12 sm:py-16 px-4 sm:px-6 bg-white border-t border-neutral-200">
       <div className="max-w-6xl mx-auto">
-        <div className="grid md:grid-cols-4 gap-12">
-          <div className="md:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12">
+          <div className="sm:col-span-2">
             <Link href="/" className="flex items-center gap-2 mb-4">
               <Image
                 src="/logo.png"
@@ -50,17 +50,17 @@ export default function Footer() {
               </span>
             </Link>
             <p className="text-sm text-neutral-600 mb-4">Join our newsletter</p>
-            <form onSubmit={handleNewsletterSubmit} className="flex gap-2">
+            <form onSubmit={handleNewsletterSubmit} className="flex flex-col sm:flex-row gap-2">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-bizzi-blue/50 focus:border-bizzi-blue"
+                className="rounded-lg border border-neutral-200 px-4 py-3 sm:py-2 text-sm w-full sm:w-48 min-h-[44px] sm:min-h-0 focus:outline-none focus:ring-2 focus:ring-bizzi-blue/50 focus:border-bizzi-blue"
               />
               <button
                 type="submit"
-                className="px-4 py-2 bg-bizzi-blue text-white text-sm font-medium rounded-lg hover:bg-bizzi-cyan transition-colors"
+                className="px-4 py-3 sm:py-2 min-h-[44px] sm:min-h-0 bg-bizzi-blue text-white text-sm font-medium rounded-lg hover:bg-bizzi-cyan transition-colors"
               >
                 Subscribe
               </button>

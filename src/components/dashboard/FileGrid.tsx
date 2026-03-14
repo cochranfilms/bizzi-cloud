@@ -64,11 +64,11 @@ function BulkActionBar({
   const canShare = total >= 1;
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="fixed bottom-4 left-3 right-3 z-50 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg sm:bottom-6 sm:left-1/2 sm:right-auto sm:w-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-4 sm:px-5 sm:py-3 dark:border-neutral-700 dark:bg-neutral-900">
       <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
         {label} selected
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onMove}

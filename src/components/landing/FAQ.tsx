@@ -1,29 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { FAQ_ITEMS } from "@/lib/seo";
 
-const faqs = [
-  {
-    question: "What is Bizzi Cloud?",
-    answer:
-      "Bizzi Cloud is cloud storage built for creators. Store and organize your projects—video, photo, design—in one place. From your Bizzi Byte SSD to the cloud, access your work anywhere, anytime. Fast, reliable, built for how creators work.",
-  },
-  {
-    question: "Who can use this platform?",
-    answer:
-      "Bizzi Cloud is for creators of all kinds: videographers, photographers, designers, and creative teams. Solo creators, indie filmmakers, production houses, and agencies all use Bizzi Cloud to store, share, and deliver their work.",
-  },
-  {
-    question: "Can I share files with external clients or partners?",
-    answer:
-      "Yes. Bizzi Cloud supports smart share links, password-protected delivery, and branded client pages. Share folders or individual files with anyone—clients, collaborators, or partners—without giving them full account access.",
-  },
-  {
-    question: "How does Bizzi Cloud work with Bizzi Byte SSDs?",
-    answer:
-      "Bizzi Cloud extends your Bizzi Byte SSD workflow into the cloud. Upload from your SSD, sync across devices, and deliver to clients—all from one platform. Same philosophy: fast, reliable, built for creators.",
-  },
-];
+/** FAQ section with semantic markup for SEO and AI GEO discoverability. */
 
 export default function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
@@ -39,18 +19,21 @@ export default function FAQ() {
             Common questions about our platform.
           </p>
         </div>
-        <div className="space-y-3">
-          {faqs.map((faq, i) => (
+        <div className="space-y-3" itemScope itemType="https://schema.org/FAQPage">
+          {FAQ_ITEMS.map((faq, i) => (
             <div
               key={faq.question}
               className="rounded-xl bg-white border border-neutral-200 overflow-hidden shadow-sm"
+              itemScope
+              itemProp="mainEntity"
+              itemType="https://schema.org/Question"
             >
               <button
                 type="button"
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-neutral-50 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-neutral-50 transition-colors sm:px-6 active:bg-neutral-50"
               >
-                <span className="font-medium text-bizzi-navy">{faq.question}</span>
+                <span className="font-medium text-bizzi-navy" itemProp="name">{faq.question}</span>
                 <span
                   className={`flex-shrink-0 ml-4 text-2xl font-light text-neutral-500 transition-transform ${
                     openIndex === i ? "rotate-45" : ""
@@ -60,8 +43,8 @@ export default function FAQ() {
                 </span>
               </button>
               {openIndex === i && (
-                <div className="px-6 pb-4 pt-0">
-                  <p className="text-neutral-600 leading-relaxed">{faq.answer}</p>
+                <div className="px-6 pb-4 pt-0" itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                  <p className="text-neutral-600 leading-relaxed" itemProp="text">{faq.answer}</p>
                 </div>
               )}
             </div>

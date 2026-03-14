@@ -121,21 +121,22 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
 
   return (
     <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
-      <div className="flex h-12 items-center justify-between gap-4 px-4 md:px-6">
-        <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
+      <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 px-4 py-3 md:px-6">
+        <h1 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate min-w-0">
           {title}
         </h1>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {showCreateTransfer ? (
-          <button
-            type="button"
-            onClick={() => setTransferModalOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-          >
-            <Send className="h-4 w-4" />
-            Create transfer
-          </button>
+            <button
+              type="button"
+              onClick={() => setTransferModalOpen(true)}
+              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 sm:px-4 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan touch-manipulation"
+            >
+              <Send className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden xs:inline">Create transfer</span>
+              <span className="xs:hidden">New</span>
+            </button>
         ) : (
           <div className="relative flex flex-col items-end gap-1" ref={newDropdownRef}>
             {fileUploadError && (
@@ -157,7 +158,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
               type="button"
               onClick={() => setNewDropdownOpen((o) => !o)}
               disabled={fileUploading || folderUploading || (fileUploadProgress?.status === "in_progress")}
-              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 sm:px-4 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70 touch-manipulation"
             >
               {(fileUploading || folderUploading) ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -168,7 +169,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
               <ChevronDown className={`h-4 w-4 transition-transform ${newDropdownOpen ? "rotate-180" : ""}`} />
             </button>
             {newDropdownOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
+              <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] w-full min-w-[calc(100vw-2rem)] sm:min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
                 <button
                   type="button"
                   onClick={handleCreateFolderClick}

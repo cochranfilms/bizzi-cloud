@@ -436,12 +436,12 @@ export default function CreateTransferModal({
               <p className="mb-2 text-sm font-medium text-neutral-900 dark:text-white">
                 Transfer created! Share this link with your client:
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                  className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                 />
                 <button
                   type="button"

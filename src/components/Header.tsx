@@ -27,7 +27,7 @@ export default function Header() {
         }}
         aria-hidden
       />
-      <nav className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <nav className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Image
             src="/logo.png"
@@ -114,7 +114,7 @@ export default function Header() {
       </nav>
 
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-neutral-100 bg-white px-6 py-4">
+        <div className="md:hidden border-t border-neutral-100 bg-white px-4 sm:px-6 py-4 max-h-[75vh] overflow-y-auto overscroll-contain">
           <ul className="flex flex-col gap-4">
             {navLinks.map((link) => (
               <li key={link.label}>

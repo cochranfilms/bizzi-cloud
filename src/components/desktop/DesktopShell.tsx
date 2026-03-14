@@ -45,10 +45,10 @@ export default function DesktopShell({
         )}
 
         <div className="flex min-h-0 min-w-0 flex-1">
-          {/* NLE Mount panel - critical desktop feature */}
+          {/* NLE Mount panel - hidden on mobile, shown from md up */}
           {mountPanelOpen && (
             <aside
-              className="flex w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 dark:border-neutral-800/60 bg-transparent dark:bg-transparent"
+              className="hidden w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 md:flex dark:border-neutral-800/60 dark:bg-transparent"
               aria-label="NLE Mount"
             >
               <div className="overflow-y-auto p-5">

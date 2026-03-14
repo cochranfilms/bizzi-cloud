@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import AdminSidebar from "./AdminSidebar";
 import AdminTopbar from "./AdminTopbar";
 import AdminContentArea from "./AdminContentArea";
@@ -23,14 +24,21 @@ export default function AdminAppLayout({
   onRefresh,
   unreadAlerts = 0,
 }: AdminAppLayoutProps) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-100 dark:bg-neutral-950">
-      <AdminSidebar systemStatus={systemStatus} />
+      <AdminSidebar
+        systemStatus={systemStatus}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar
           lastSync={lastSync}
           onRefresh={onRefresh}
           unreadAlerts={unreadAlerts}
+          onMenuClick={() => setMobileSidebarOpen(true)}
         />
         <AdminContentArea>{children}</AdminContentArea>
       </div>

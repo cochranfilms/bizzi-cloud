@@ -180,7 +180,7 @@ export default function RightPanel({
   }, []);
 
   return (
-    <aside className="flex h-full w-56 flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-950 xl:shadow-none">
+    <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
       {/* Quick access */}
       <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">

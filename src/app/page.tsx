@@ -11,10 +11,12 @@ import FAQ from "@/components/landing/FAQ";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 import CheckoutCancelledBanner from "@/components/CheckoutCancelledBanner";
+import { HomePageStructuredData } from "@/components/seo/HomePageStructuredData";
 
 export default function Home() {
   return (
     <>
+      <HomePageStructuredData />
       <Header />
       <Suspense fallback={null}>
         <CheckoutCancelledBanner />
