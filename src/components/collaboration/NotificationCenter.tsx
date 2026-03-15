@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { MessageSquare, Heart, Share2, FileText } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
@@ -35,16 +36,18 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
 function NotificationLink({
   n,
   onClick,
+  shareBasePath,
 }: {
   n: Notification;
   onClick: () => void;
+  shareBasePath: string;
 }) {
   const href = n.fileId
     ? n.commentId
       ? `/dashboard?file=${n.fileId}#comment-${n.commentId}`
       : `/dashboard?file=${n.fileId}`
     : n.shareId
-      ? `/s/${n.shareId}`
+      ? `${shareBasePath}/shared/${n.shareId}`
       : "/dashboard";
 
   return (
@@ -94,6 +97,13 @@ export default function NotificationCenter({
   onRefreshBadge,
 }: NotificationCenterProps) {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const shareBasePath =
+    pathname?.startsWith("/enterprise")
+      ? "/enterprise"
+      : pathname?.startsWith("/desktop")
+        ? "/desktop/app"
+        : "/dashboard";
   const {
     notifications,
     loading,
@@ -156,6 +166,7 @@ export default function NotificationCenter({
               <li key={n.id}>
                 <NotificationLink
                   n={n}
+                  shareBasePath={shareBasePath}
                   onClick={() => {
                     if (!n.isRead) handleMarkRead(n.id);
                     onClose();

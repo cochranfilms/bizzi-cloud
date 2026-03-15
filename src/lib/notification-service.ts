@@ -74,6 +74,8 @@ export async function createNotification(input: CreateNotificationInput): Promis
 export async function createShareNotifications(params: {
   sharedByUserId: string;
   actorDisplayName: string;
+  /** When set, used in message: "email has sent you..." instead of "Someone shared..." */
+  actorEmail?: string;
   fileIds: string[];
   folderShareId: string;
   permission: string;
@@ -82,7 +84,7 @@ export async function createShareNotifications(params: {
   folderName?: string;
 }): Promise<void> {
   const db = getAdminFirestore();
-  const { sharedByUserId, actorDisplayName, fileIds, folderShareId, permission, invitedEmails, folderName } =
+  const { sharedByUserId, actorDisplayName, actorEmail, fileIds, folderShareId, permission, invitedEmails, folderName } =
     params;
 
   if (invitedEmails.length === 0) return;
@@ -104,17 +106,19 @@ export async function createShareNotifications(params: {
   }
   if (recipientUids.length === 0) return;
 
+  const actor = actorEmail ?? actorDisplayName;
+  const verb = actorEmail ? "has sent you" : "shared";
   const fileCount = fileIds.length;
   const fileName =
     fileCount === 1 && fileIds[0] ? await getFileDisplayName(fileIds[0]) : undefined;
   const message =
     fileCount > 1
-      ? `${actorDisplayName} shared ${fileCount} files with you`
+      ? `${actor} ${verb} ${fileCount} files`
       : fileCount === 1 && fileName
-        ? `${actorDisplayName} shared ${fileName} with you`
+        ? `${actor} ${verb} ${fileName}`
         : folderName
-          ? `${actorDisplayName} shared ${folderName} with you`
-          : `${actorDisplayName} shared files with you`;
+          ? `${actor} ${verb} ${folderName}`
+          : `${actor} ${verb} files`;
 
   const now = new Date();
   const batch = db.batch();

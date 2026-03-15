@@ -74,6 +74,7 @@ export async function GET(request: Request) {
       linked_drive_id: data.linked_drive_id,
       backup_file_id: data.backup_file_id ?? null,
       version,
+      folder_name: data.folder_name ?? null,
     });
   }
 
@@ -298,6 +299,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // folder_name is required for all shares (custom name for standard, required for virtual)
+  const folderNameTrimmed = typeof folderName === "string" ? folderName.trim() : "";
+  if (!folderNameTrimmed) {
+    return NextResponse.json(
+      { error: "folder_name is required and cannot be blank" },
+      { status: 400 }
+    );
+  }
+
   if (permission !== "view" && permission !== "edit") {
     return NextResponse.json(
       { error: "permission must be 'view' or 'edit'" },
@@ -370,6 +380,7 @@ export async function POST(request: Request) {
       await createShareNotifications({
         sharedByUserId: uid,
         actorDisplayName,
+        actorEmail: email ?? undefined,
         fileIds: uniqueIds,
         folderShareId: shareToken,
         permission,
@@ -465,6 +476,7 @@ export async function POST(request: Request) {
     owner_id: uid,
     linked_drive_id: linkedDriveId,
     backup_file_id: backupFileIdToStore,
+    folder_name: folderNameTrimmed,
     permission: permission as "view" | "edit",
     access_level: access_level as "private" | "public",
     expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
@@ -478,18 +490,17 @@ export async function POST(request: Request) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     const actorDisplayName =
       (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
+    const actorEmail = email ?? undefined;
     const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
-    const folderName = !backupFileIdToStore
-      ? (driveData?.name as string) ?? "Folder"
-      : undefined;
     await createShareNotifications({
       sharedByUserId: uid,
       actorDisplayName,
+      actorEmail,
       fileIds,
       folderShareId: shareToken,
       permission,
       invitedEmails: shareData.invited_emails,
-      folderName,
+      folderName: shareData.folder_name,
     });
   }
 

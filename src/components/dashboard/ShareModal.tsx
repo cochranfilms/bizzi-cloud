@@ -32,6 +32,7 @@ export default function ShareModal({
   initialInvitedEmails = [],
 }: ShareModalProps) {
   const { user } = useAuth();
+  const [shareName, setShareName] = useState<string>(folderName.trim() || "");
   const [shareToken, setShareToken] = useState<string | null>(initialShareToken ?? null);
   const [shareVersion, setShareVersion] = useState<number>(1);
   const [accessLevel, setAccessLevel] = useState<"private" | "public">(initialAccessLevel);
@@ -40,7 +41,10 @@ export default function ShareModal({
   const [emailInput, setEmailInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const hasValidShareName = shareName.trim().length > 0;
 
   const shareUrl =
     shareToken && typeof window !== "undefined"
@@ -61,6 +65,7 @@ export default function ShareModal({
         const data = await res.json();
         setShareToken(data.token);
         setShareVersion(typeof data.version === "number" ? data.version : 1);
+        setShareName((data.folder_name as string) ?? folderName);
         setAccessLevel((data.access_level as "private" | "public") ?? "private");
         setPermission((data.permission as "view" | "edit") ?? "view");
         setInvitedEmails(data.invited_emails ?? []);
@@ -68,7 +73,7 @@ export default function ShareModal({
     } catch {
       // No existing share, will create on first action
     }
-  }, [linkedDriveId, backupFileId, user]);
+  }, [linkedDriveId, backupFileId, user, folderName]);
 
   const fetchShareVersion = useCallback(
     async (token: string) => {
@@ -101,19 +106,22 @@ export default function ShareModal({
         if (res.ok) {
           const data = await res.json();
           setShareVersion(typeof data.version === "number" ? data.version : 1);
+          setShareName((data.folder_name as string) ?? folderName);
           setAccessLevel((data.access_level as "private" | "public") ?? "private");
           setPermission((data.permission as "view" | "edit") ?? "view");
           setInvitedEmails(Array.isArray(data.invited_emails) ? data.invited_emails : []);
-        }
-      } catch {
-        // ignore
       }
-    },
-    [user]
-  );
+    } catch {
+      // ignore
+    }
+  },
+  [user, folderName]
+);
 
   useEffect(() => {
     if (open) {
+      setShareName(folderName);
+      setNameError(null);
       if (initialShareToken) {
         setShareToken(initialShareToken);
         setAccessLevel(initialAccessLevel);
@@ -130,7 +138,9 @@ export default function ShareModal({
     } else {
       setShareToken(initialShareToken ?? null);
       setShareVersion(1);
+      setShareName(folderName);
       setError(null);
+      setNameError(null);
       setCopied(false);
       setEmailInput("");
     }
@@ -141,6 +151,7 @@ export default function ShareModal({
     initialAccessLevel,
     initialPermission,
     initialInvitedEmails,
+    folderName,
     fetchExistingShare,
     fetchShareVersion,
     fetchShareDetails,
@@ -150,6 +161,12 @@ export default function ShareModal({
     if (!user) return null;
     if (initialShareToken || shareToken) return initialShareToken ?? shareToken;
     if (!linkedDriveId) return null;
+    const name = shareName.trim();
+    if (!name) {
+      setNameError("Please name your share before copying the link or adding people.");
+      return null;
+    }
+    setNameError(null);
 
     setLoading(true);
     setError(null);
@@ -164,6 +181,7 @@ export default function ShareModal({
         body: JSON.stringify({
           linked_drive_id: linkedDriveId,
           backup_file_id: backupFileId ?? undefined,
+          folder_name: name,
           permission,
           access_level: accessLevel,
           invited_emails: invitedEmails,
@@ -183,21 +201,31 @@ export default function ShareModal({
     } finally {
       setLoading(false);
     }
-  }, [linkedDriveId, backupFileId, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails]);
+  }, [linkedDriveId, backupFileId, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails, shareName]);
 
   const copyLink = useCallback(async () => {
+    if (!hasValidShareName && !shareToken && !initialShareToken) {
+      setNameError("Please name your share before copying the link.");
+      return;
+    }
+    setNameError(null);
     const token = await ensureShare();
     if (!token) return;
     const url = `${window.location.origin}/s/${token}`;
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [ensureShare]);
+  }, [ensureShare, hasValidShareName, shareToken, initialShareToken]);
 
   const addEmail = useCallback(async () => {
     const trimmed = emailInput.trim().toLowerCase();
     if (!trimmed) return;
     if (invitedEmails.includes(trimmed)) return;
+    if (!hasValidShareName && !shareToken && !initialShareToken) {
+      setNameError("Please name your share before adding people.");
+      return;
+    }
+    setNameError(null);
     const next = [...invitedEmails, trimmed];
     setInvitedEmails(next);
     setEmailInput("");
@@ -231,7 +259,7 @@ export default function ShareModal({
         setLoading(false);
       }
     }
-  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion]);
+  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken]);
 
   const removeEmail = useCallback(
     async (email: string) => {
@@ -340,7 +368,7 @@ export default function ShareModal({
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 id="share-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
-            Share &quot;{folderName}&quot;
+            Share &quot;{shareName || folderName}&quot;
           </h3>
           <button
             type="button"
@@ -356,6 +384,31 @@ export default function ShareModal({
           {error && (
             <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
           )}
+          {nameError && (
+            <p className="text-sm text-red-500 dark:text-red-400">{nameError}</p>
+          )}
+
+          {/* Share name - required */}
+          <div>
+            <label htmlFor="share-name" className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Share name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="share-name"
+              type="text"
+              value={shareName}
+              onChange={(e) => {
+                setShareName(e.target.value);
+                setNameError(null);
+              }}
+              placeholder="e.g. Client Deliverables March 2026"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Give your share a unique name so you can find it easily.
+            </p>
+          </div>
 
           {/* Copy link - primary action */}
           <div className="flex gap-2">

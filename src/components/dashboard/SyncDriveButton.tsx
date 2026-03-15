@@ -16,6 +16,15 @@ import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 
 const MAX_SYNC_DRIVES = 5;
 
+/** Platform drives (Storage, RAW, Gallery Media) — excluded from sync dropdown; this UI is for local drives/folders only. */
+function isPlatformDrive(drive: { name: string; is_creator_raw?: boolean }): boolean {
+  return (
+    drive.name === "Storage" ||
+    drive.name === "Gallery Media" ||
+    drive.is_creator_raw === true
+  );
+}
+
 export default function SyncDriveButton() {
   const {
     linkedDrives,
@@ -35,6 +44,8 @@ export default function SyncDriveButton() {
     hasEditor,
     hasGallerySuite,
   });
+  /** Only local drives/folders from user's computer — platform drives excluded. */
+  const localSyncDrives = visibleLinkedDrives.filter((d) => !isPlatformDrive(d));
 
   const [showDriveList, setShowDriveList] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -53,7 +64,7 @@ export default function SyncDriveButton() {
   }, [showDriveList]);
 
   const handleSelectDrive = async (
-    drive: (typeof visibleLinkedDrives)[number]
+    drive: (typeof localSyncDrives)[number]
   ) => {
     setShowDriveList(false);
     await startSync(drive);
@@ -61,7 +72,7 @@ export default function SyncDriveButton() {
 
   const handleAddNewDrive = async () => {
     if (!fsAccessSupported) return;
-    if (visibleLinkedDrives.length >= MAX_SYNC_DRIVES) return;
+    if (localSyncDrives.length >= MAX_SYNC_DRIVES) return;
     setLinking(true);
     try {
       const handle = await pickDirectory();
@@ -77,7 +88,7 @@ export default function SyncDriveButton() {
 
   const handleRemoveDrive = async (
     e: React.MouseEvent,
-    drive: (typeof visibleLinkedDrives)[number]
+    drive: (typeof localSyncDrives)[number]
   ) => {
     e.stopPropagation();
     const ok = await confirm({
@@ -90,7 +101,7 @@ export default function SyncDriveButton() {
   };
 
   const handleSyncClick = () => {
-    if (visibleLinkedDrives.length === 0) {
+    if (localSyncDrives.length === 0) {
       handleAddNewDrive();
     } else {
       setShowDriveList((prev) => !prev);
@@ -133,7 +144,7 @@ export default function SyncDriveButton() {
             <>
               <HardDrive className="h-4 w-4" />
               Sync
-              {visibleLinkedDrives.length > 0 && (
+              {localSyncDrives.length > 0 && (
                 <ChevronDown
                   className={`h-4 w-4 transition-transform ${showDriveList ? "rotate-180" : ""}`}
                 />
@@ -142,12 +153,12 @@ export default function SyncDriveButton() {
           )}
         </button>
 
-        {showDriveList && visibleLinkedDrives.length > 0 && (
+        {showDriveList && localSyncDrives.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
             <p className="border-b border-neutral-100 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-              Select drive to sync
+              Select drive or folder to sync
             </p>
-            {visibleLinkedDrives.map((drive) => (
+            {localSyncDrives.map((drive) => (
               <div
                 key={drive.id}
                 className="group flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
@@ -169,7 +180,7 @@ export default function SyncDriveButton() {
                   type="button"
                   onClick={(e) => handleRemoveDrive(e, drive)}
                   className="flex-shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                  aria-label={`Remove ${drive.name}`}
+                  aria-label={`Remove ${drive.name} from recent`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -178,11 +189,11 @@ export default function SyncDriveButton() {
             <button
               type="button"
               onClick={handleAddNewDrive}
-              disabled={visibleLinkedDrives.length >= MAX_SYNC_DRIVES}
+              disabled={localSyncDrives.length >= MAX_SYNC_DRIVES}
               className="flex w-full items-center gap-2 border-t border-neutral-100 px-3 py-2.5 text-sm text-bizzi-blue transition-colors hover:bg-bizzi-blue/5 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-bizzi-blue/10"
             >
               <Plus className="h-4 w-4 flex-shrink-0" />
-              {visibleLinkedDrives.length >= MAX_SYNC_DRIVES
+              {localSyncDrives.length >= MAX_SYNC_DRIVES
                 ? `Maximum ${MAX_SYNC_DRIVES} drives. Remove one to add another.`
                 : "Add new drive..."}
             </button>
@@ -253,9 +264,9 @@ export default function SyncDriveButton() {
         </p>
       )}
 
-      {visibleLinkedDrives.length > 0 && !isSyncing && !showDriveList && (
+      {localSyncDrives.length > 0 && !isSyncing && !showDriveList && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {visibleLinkedDrives.length} drive{visibleLinkedDrives.length > 1 ? "s" : ""} linked
+          {localSyncDrives.length} drive{localSyncDrives.length > 1 ? "s" : ""} linked
         </p>
       )}
     </div>

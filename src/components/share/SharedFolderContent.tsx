@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { File, Download, FolderOpen, Film, Lock, Play } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useShareThumbnail } from "@/hooks/useShareThumbnail";
@@ -11,24 +9,16 @@ import { useShareVideoThumbnail } from "@/hooks/useShareVideoThumbnail";
 import { useInView } from "@/hooks/useInView";
 import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
 
-interface ShareViewProps {
-  token: string;
-}
-
-interface ShareData {
-  folder_name: string;
-  permission: string;
-  files: ShareFile[];
-}
-
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 
 function isVideoFile(name: string) {
   return VIDEO_EXT.test(name.toLowerCase());
 }
-function isImageFile(name: string) {
-  return IMAGE_EXT.test(name.toLowerCase());
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ShareFileRow({
@@ -61,7 +51,6 @@ function ShareFileRow({
     { enabled: isInView, getAuthToken }
   );
   const isVideo = isVideoFile(file.name);
-  const isImage = isImageFile(file.name);
   const canPreview = !!file.object_key;
 
   return (
@@ -146,64 +135,53 @@ function ShareFileRow({
   );
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+export interface SharedFolderContentProps {
+  token: string;
+  /** When true, renders without outer padding (for dashboard) */
+  embedded?: boolean;
+  /** When provided, called with folder_name when data loads (for TopBar in dashboard) */
+  onFolderNameLoaded?: (name: string) => void;
 }
 
-export default function ShareView({ token }: ShareViewProps) {
+export default function SharedFolderContent({ token, embedded, onFolderNameLoaded }: SharedFolderContentProps) {
   const { user } = useAuth();
-  const router = useRouter();
-  const [data, setData] = useState<ShareData | null>(null);
+  const [data, setData] = useState<{ folder_name: string; permission: string; files: ShareFile[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<ShareFile | null>(null);
 
-  // Authenticated users see the dashboard-style view
-  useEffect(() => {
-    if (user) {
-      router.replace(`/dashboard/shared/${encodeURIComponent(token)}`);
-      return;
+  const fetchShare = useCallback(async () => {
+    setError(null);
+    setErrorCode(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (user) {
+        const idToken = await user.getIdToken();
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+      const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, { headers });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.message ?? body.error ?? `Failed to load (${res.status})`);
+        setErrorCode(body.error ?? null);
+        return;
+      }
+      setData(body);
+      if (body?.folder_name && onFolderNameLoaded) {
+        onFolderNameLoaded(body.folder_name);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
     }
-  }, [user, token, router]);
+  }, [token, user, onFolderNameLoaded]);
 
   useEffect(() => {
-    if (user) return; // Redirect handles authenticated users
-    let cancelled = false;
-    async function fetchShare() {
-      setError(null);
-      setErrorCode(null);
-      try {
-        const headers: Record<string, string> = {};
-        // No auth headers for unauthenticated share view
-        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
-          headers,
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          if (!cancelled) {
-            setError(body.message ?? body.error ?? `Failed to load (${res.status})`);
-            setErrorCode(body.error ?? null);
-          }
-          return;
-        }
-        if (!cancelled) setData(body);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
     fetchShare();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, user]);
+  }, [fetchShare]);
 
   const handleDownload = useCallback(
     async (file: ShareFile) => {
@@ -244,7 +222,7 @@ export default function ShareView({ token }: ShareViewProps) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
+      <div className={`flex flex-col items-center justify-center ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
         <FolderOpen className="mb-4 h-16 w-16 animate-pulse text-neutral-300 dark:text-neutral-600" />
         <p className="text-neutral-500 dark:text-neutral-400">Loading…</p>
       </div>
@@ -255,7 +233,7 @@ export default function ShareView({ token }: ShareViewProps) {
     const isExpired = error?.toLowerCase().includes("expired");
     const isPrivateAuth = errorCode === "private_share_requires_auth";
 
-    if (isPrivateAuth) {
+    if (isPrivateAuth && !embedded) {
       return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
           <div className="w-full max-w-sm space-y-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
@@ -276,20 +254,17 @@ export default function ShareView({ token }: ShareViewProps) {
             >
               Sign in to access
             </Link>
-            <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
-              Don&apos;t have access? Ask the owner to add you by email.
-            </p>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
+      <div className={`flex flex-col items-center justify-center ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
         <FolderOpen className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
-        <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
+        <h2 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
           {isExpired ? "Share expired" : "Share not found"}
-        </h1>
+        </h2>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           {error ?? "This share may have been removed."}
         </p>
@@ -297,69 +272,63 @@ export default function ShareView({ token }: ShareViewProps) {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
-              width={28}
-              height={28}
-              className="object-contain"
-            />
-            <span className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
-              Bizzi <span className="text-bizzi-blue">Cloud</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+  const canDownload = data.permission !== "view";
+  const permissionLabel = canDownload ? "Download" : "View only";
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        <div className="mb-8">
+  return (
+    <div className={embedded ? "" : "space-y-6"}>
+      {!embedded && (
+        <div className="mb-6">
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">
             {data.folder_name}
           </h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Shared with you · {data.files.length}{" "}
-            {data.files.length === 1 ? "file" : "files"}
+          <p className="mt-1 flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+            <span>Shared with you · {data.files.length} {data.files.length === 1 ? "file" : "files"}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                canDownload
+                  ? "bg-bizzi-blue/20 text-bizzi-blue dark:bg-bizzi-blue/30 dark:text-bizzi-cyan"
+                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+              }`}
+            >
+              {permissionLabel}
+            </span>
           </p>
         </div>
+      )}
 
-        {data.files.length === 0 ? (
-          <div className="rounded-xl border border-neutral-200 bg-white py-12 text-center dark:border-neutral-700 dark:bg-neutral-900">
-            <FolderOpen className="mx-auto mb-4 h-12 w-12 text-neutral-300 dark:text-neutral-600" />
-            <p className="text-neutral-500 dark:text-neutral-400">
-              This folder is empty.
-            </p>
+      {data.files.length === 0 ? (
+        <div className="rounded-xl border border-neutral-200 bg-white py-12 text-center dark:border-neutral-700 dark:bg-neutral-900">
+          <FolderOpen className="mx-auto mb-4 h-12 w-12 text-neutral-300 dark:text-neutral-600" />
+          <p className="text-neutral-500 dark:text-neutral-400">
+            This folder is empty.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            {data.files.map((file) => (
+              <ShareFileRow
+                key={file.id}
+                shareToken={token}
+                file={file}
+                getAuthToken={user ? getAuthToken : undefined}
+                onDownload={handleDownload}
+                onPreview={setPreviewFile}
+                downloadingId={downloadingId}
+                canDownload={canDownload}
+              />
+            ))}
           </div>
-        ) : (
-          <>
-            <div className="space-y-2">
-              {data.files.map((file) => (
-                <ShareFileRow
-                  key={file.id}
-                  shareToken={token}
-                  file={file}
-                  getAuthToken={user ? getAuthToken : undefined}
-                  onDownload={handleDownload}
-                  onPreview={setPreviewFile}
-                  downloadingId={downloadingId}
-                  canDownload={data.permission !== "view"}
-                />
-              ))}
-            </div>
-            <SharePreviewModal
-              shareToken={token}
-              file={previewFile}
-              onClose={() => setPreviewFile(null)}
-              getAuthToken={user ? getAuthToken : undefined}
-              canDownload={data.permission !== "view"}
-            />
-          </>
-        )}
-      </main>
+          <SharePreviewModal
+            shareToken={token}
+            file={previewFile}
+            onClose={() => setPreviewFile(null)}
+            getAuthToken={user ? getAuthToken : undefined}
+            canDownload={canDownload}
+          />
+        </>
+      )}
     </div>
   );
 }
