@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth-token";
+import { usePageVisibility } from "@/hooks/usePageVisibility";
 import type { Comment } from "@/types/collaboration";
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 30_000;
 
 export function useComments(fileId: string | null) {
   const { user } = useAuth();
+  const isVisible = usePageVisibility();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,10 +40,10 @@ export function useComments(fileId: string | null) {
   useEffect(() => {
     setLoading(true);
     fetchComments();
-    if (!fileId) return;
+    if (!fileId || !isVisible) return;
     const interval = setInterval(fetchComments, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fileId, fetchComments]);
+  }, [fileId, fetchComments, isVisible]);
 
   const addComment = useCallback(
     async (body: string, parentCommentId?: string | null) => {

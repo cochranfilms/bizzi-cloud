@@ -2,8 +2,8 @@
  * Limits concurrent thumbnail API requests to avoid overwhelming
  * serverless functions and prevent ERR_INSUFFICIENT_RESOURCES in the browser.
  */
-const VIDEO_MAX_CONCURRENT = 4;
-const IMAGE_MAX_CONCURRENT = 8;
+const VIDEO_MAX_CONCURRENT = 3;
+const IMAGE_MAX_CONCURRENT = 6;
 
 const videoQueue: Array<() => void> = [];
 let videoActive = 0;

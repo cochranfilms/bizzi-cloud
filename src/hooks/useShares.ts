@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
 export interface ShareListItem {
@@ -30,6 +30,8 @@ export function useShares(): UseSharesResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchingRef = useRef(false);
+
   const fetchShares = useCallback(async () => {
     if (!user) {
       setOwned([]);
@@ -38,12 +40,16 @@ export function useShares(): UseSharesResult {
       return;
     }
 
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/shares", {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -77,6 +83,7 @@ export function useShares(): UseSharesResult {
       setOwned([]);
       setInvited([]);
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
     }
   }, [user]);

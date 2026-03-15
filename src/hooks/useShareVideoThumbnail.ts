@@ -73,18 +73,19 @@ export function useShareVideoThumbnail(
     };
 
     const tryClientSide = async (headers: Record<string, string>): Promise<boolean> => {
-      const streamRes = await fetch(
-        `/api/shares/${encodeURIComponent(shareToken)}/video-stream-url`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...headers },
-          body: JSON.stringify({ object_key: objectKey }),
-        }
-      );
-      if (!streamRes.ok || cancelled) return false;
-
-      const data = (await streamRes.json()) as { streamUrl?: string };
-      const streamUrl = data?.streamUrl;
+      const streamUrl = await withThumbnailSlot(async () => {
+        const streamRes = await fetch(
+          `/api/shares/${encodeURIComponent(shareToken)}/video-stream-url`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers },
+            body: JSON.stringify({ object_key: objectKey }),
+          }
+        );
+        if (!streamRes.ok || cancelled) return null;
+        const data = (await streamRes.json()) as { streamUrl?: string };
+        return data?.streamUrl ?? null;
+      });
       if (!streamUrl || cancelled) return false;
 
       const fullUrl = streamUrl.startsWith("/")

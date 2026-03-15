@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, Copy, Check, Link2, Lock, UserPlus, Download, File } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -45,6 +45,7 @@ export default function ShareModal({
   const [copied, setCopied] = useState(false);
 
   const hasValidShareName = shareName.trim().length > 0;
+  const lastFetchedForRef = useRef<string | null>(null);
 
   const shareUrl =
     shareToken && typeof window !== "undefined"
@@ -110,13 +111,13 @@ export default function ShareModal({
           setAccessLevel((data.access_level as "private" | "public") ?? "private");
           setPermission((data.permission as "view" | "edit") ?? "view");
           setInvitedEmails(Array.isArray(data.invited_emails) ? data.invited_emails : []);
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-  },
-  [user, folderName]
-);
+    },
+    [user, folderName]
+  );
 
   useEffect(() => {
     if (open) {
@@ -129,13 +130,16 @@ export default function ShareModal({
         setInvitedEmails(initialInvitedEmails);
         if (linkedDriveId) {
           fetchShareVersion(initialShareToken).then(setShareVersion);
-        } else {
+        } else if (lastFetchedForRef.current !== initialShareToken) {
+          lastFetchedForRef.current = initialShareToken;
           fetchShareDetails(initialShareToken);
         }
       } else if (linkedDriveId) {
+        lastFetchedForRef.current = null;
         fetchExistingShare();
       }
     } else {
+      lastFetchedForRef.current = null;
       setShareToken(initialShareToken ?? null);
       setShareVersion(1);
       setShareName(folderName);
@@ -343,9 +347,49 @@ export default function ShareModal({
     [shareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
+    const token = shareToken ?? initialShareToken ?? null;
+    const nameChanged =
+      token &&
+      user &&
+      shareName.trim().length > 0 &&
+      shareName.trim() !== folderName.trim();
+
+    if (nameChanged) {
+      setLoading(true);
+      try {
+        const authToken = await user.getIdToken();
+        const res = await fetch(`/api/shares/${encodeURIComponent(token!)}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            folder_name: shareName.trim(),
+            version: shareVersion,
+          }),
+        });
+        if (res.ok) {
+          // Name saved; onClose will trigger refetch
+        }
+        // On 409/error we still close; user can retry by reopening
+      } catch {
+        // Ignore; close anyway
+      } finally {
+        setLoading(false);
+      }
+    }
     onClose();
-  }, [onClose]);
+  }, [
+    onClose,
+    shareToken,
+    initialShareToken,
+    user,
+    shareName,
+    folderName,
+    shareVersion,
+  ]);
 
   if (!open) return null;
 

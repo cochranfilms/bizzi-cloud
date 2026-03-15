@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth-token";
+import { usePageVisibility } from "@/hooks/usePageVisibility";
 import type { Notification } from "@/types/collaboration";
 
 const POLL_INTERVAL_MS = 30_000;
 
 export function useUnreadCount() {
   const { user } = useAuth();
+  const isVisible = usePageVisibility();
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -41,9 +43,10 @@ export function useUnreadCount() {
 
   useEffect(() => {
     fetchCount();
+    if (!isVisible) return;
     const interval = setInterval(fetchCount, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchCount]);
+  }, [fetchCount, isVisible]);
 
   return { count, loading, refresh: fetchCount };
 }
@@ -99,12 +102,15 @@ export function useNotifications(options?: {
     [user, limit, unreadOnly]
   );
 
+  const isVisible = usePageVisibility();
+
   useEffect(() => {
     setLoading(true);
     fetchPage(null);
+    if (!isVisible) return;
     const interval = setInterval(() => fetchPage(null), pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPage, pollInterval]);
+  }, [fetchPage, pollInterval, isVisible]);
 
   const loadMore = useCallback(() => {
     if (nextCursor && hasMore) fetchPage(nextCursor);

@@ -191,6 +191,7 @@ export async function PATCH(
     access_level: accessLevel,
     invited_emails: invitedEmails,
     permission: permissionUpdate,
+    folder_name: folderNameUpdate,
     version: requestedVersion,
   } = body;
 
@@ -218,6 +219,12 @@ export async function PATCH(
     }
     if (permissionUpdate === "view" || permissionUpdate === "edit") {
       updates.permission = permissionUpdate;
+    }
+    if (
+      typeof folderNameUpdate === "string" &&
+      folderNameUpdate.trim().length > 0
+    ) {
+      updates.folder_name = folderNameUpdate.trim();
     }
     const prevInvited = (share.invited_emails as string[] | undefined) ?? [];
     let newInvitedEmails: string[] = [];
