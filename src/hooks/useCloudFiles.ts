@@ -360,12 +360,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     [user, linkedDrives]
   );
 
-  /** Fetches RecentFile[] from backup_files by document IDs (max 30, batched for Firestore 'in' limit of 10). */
+  /** Fetches RecentFile[] from backup_files by document IDs (default max 30, batched for Firestore 'in' limit of 10). */
   const fetchFilesByIds = useCallback(
-    async (ids: string[]): Promise<RecentFile[]> => {
+    async (ids: string[], limitParam?: number): Promise<RecentFile[]> => {
       if (!isFirebaseConfigured() || !user || ids.length === 0) return [];
+      const cap = limitParam != null ? Math.min(Math.max(1, limitParam), 50) : 30;
       const db = getFirebaseFirestore();
-      const limited = ids.slice(0, 30);
+      const limited = ids.slice(0, cap);
       const driveMap = new Map(linkedDrives.map((d) => [d.id, d.name]));
       const allFiles: RecentFile[] = [];
       const IN_LIMIT = 10;

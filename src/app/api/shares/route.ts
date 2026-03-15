@@ -1,6 +1,7 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
+import { createShareNotifications } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -239,9 +240,11 @@ export async function POST(request: Request) {
   }
 
   let uid: string;
+  let email: string | undefined;
   try {
     const decoded = await verifyIdToken(token);
     uid = decoded.uid;
+    email = decoded.email;
   } catch {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
@@ -334,6 +337,21 @@ export async function POST(request: Request) {
     };
 
     await db.collection("folder_shares").doc(shareToken).set(shareData);
+
+    if (shareData.invited_emails.length > 0) {
+      const profileSnap = await db.collection("profiles").doc(uid).get();
+      const actorDisplayName =
+        (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
+      await createShareNotifications({
+        sharedByUserId: uid,
+        actorDisplayName,
+        fileIds: uniqueIds,
+        folderShareId: shareToken,
+        permission,
+        invitedEmails: shareData.invited_emails,
+        folderName: shareData.folder_name,
+      });
+    }
 
     return NextResponse.json({
       token: shareToken,
@@ -429,6 +447,25 @@ export async function POST(request: Request) {
   };
 
   await db.collection("folder_shares").doc(shareToken).set(shareData);
+
+  if (shareData.invited_emails.length > 0) {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    const actorDisplayName =
+      (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
+    const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
+    const folderName = !backupFileIdToStore
+      ? (driveData?.name as string) ?? "Folder"
+      : undefined;
+    await createShareNotifications({
+      sharedByUserId: uid,
+      actorDisplayName,
+      fileIds,
+      folderShareId: shareToken,
+      permission,
+      invitedEmails: shareData.invited_emails,
+      folderName,
+    });
+  }
 
   return NextResponse.json({
     token: shareToken,

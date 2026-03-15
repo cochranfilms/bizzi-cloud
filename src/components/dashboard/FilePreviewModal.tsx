@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { X, Download, FileIcon, Loader2, Film, ImageIcon, FileAudio } from "lucide-react";
+import HeartButton from "@/components/collaboration/HeartButton";
+import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
+import { useHearts } from "@/hooks/useHearts";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -46,6 +49,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
   const [lutEnabled, setLutEnabled] = useState(false);
 
   const previewType = file ? getPreviewType(file.name, file.contentType) : "other";
+  const hearts = useHearts(file?.id ?? null);
   const lowResPreviewUrl = useThumbnail(
     file?.objectKey,
     file?.name ?? "",
@@ -220,6 +224,16 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
             </h2>
           </div>
           <div className="flex items-center gap-1">
+            {file.id && (
+              <HeartButton
+                count={hearts.count}
+                hasHearted={hearts.hasHearted}
+                loading={hearts.loading}
+                onToggle={hearts.toggle}
+                size="sm"
+                showCount
+              />
+            )}
             <button
               type="button"
               onClick={handleDownload}
@@ -347,6 +361,11 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
               </>
             )}
         </div>
+        {file && (
+          <div className="border-t border-neutral-200 bg-neutral-50/50 px-5 py-4 dark:border-neutral-700 dark:bg-neutral-900/50">
+            <FileCommentsPanel fileId={file.id} />
+          </div>
+        )}
       </div>
     </div>
   );

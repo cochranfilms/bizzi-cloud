@@ -19,6 +19,7 @@ import {
   Film,
 } from "lucide-react";
 import UserMenu from "./UserMenu";
+import NotificationBell from "@/components/collaboration/NotificationBell";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const navItems: Array<{
@@ -119,8 +120,9 @@ export default function TopNavbar() {
         />
       </div>
 
-      {/* User menu */}
-      <div className="flex flex-shrink-0 items-center">
+      {/* Notifications & User menu */}
+      <div className="flex flex-shrink-0 items-center gap-1">
+        <NotificationBell />
         <UserMenu compact />
       </div>
 

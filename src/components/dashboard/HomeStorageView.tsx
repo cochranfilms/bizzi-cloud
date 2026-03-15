@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Film, FolderInput, Images, Send, Share2, Trash2 } from "lucide-react";
+import { Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
   filterDriveFoldersByPowerUp,
@@ -22,6 +22,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
+import { useBulkDownload } from "@/hooks/useBulkDownload";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -39,6 +40,8 @@ function BulkActionBar({
   onMove,
   onNewTransfer,
   onShare,
+  onDownload,
+  isDownloading,
   onDelete,
   onClear,
 }: {
@@ -47,6 +50,8 @@ function BulkActionBar({
   onMove: () => void;
   onNewTransfer: () => void;
   onShare: () => void;
+  onDownload?: () => void;
+  isDownloading?: boolean;
   onDelete: () => void;
   onClear: () => void;
 }) {
@@ -56,6 +61,9 @@ function BulkActionBar({
   if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} folder${selectedFolderCount === 1 ? "" : "s"}`);
   const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
   const canShare = total >= 1;
+  const showDownload = selectedFileCount >= 1;
+  const downloadDisabled = selectedFileCount > 50 || isDownloading;
+  const downloadTitle = selectedFileCount > 50 ? "Download supports up to 50 files at once" : undefined;
 
   return (
     <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
@@ -87,6 +95,22 @@ function BulkActionBar({
           >
             <Share2 className="h-4 w-4" />
             Share
+          </button>
+        )}
+        {showDownload && onDownload && (
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={downloadDisabled}
+            title={downloadTitle}
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            {isDownloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Download
           </button>
         )}
         <button

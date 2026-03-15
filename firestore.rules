@@ -79,5 +79,18 @@ service cloud.firestore {
     match /enterprise_contacts/{doc} {
       allow read, write: if false;
     }
+    match /notifications/{notifId} {
+      allow read: if request.auth != null && resource.data.recipientUserId == request.auth.uid;
+      allow write: if false;
+    }
+    match /file_comments/{commentId} {
+      allow read, write: if false;
+    }
+    match /file_hearts/{heartId} {
+      allow read, write: if false;
+    }
+    match /file_share_recipients/{recId} {
+      allow read, write: if false;
+    }
   }
 }

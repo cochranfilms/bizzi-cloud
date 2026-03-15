@@ -17,6 +17,8 @@ import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useConfirm } from "@/hooks/useConfirm";
+import HeartButton from "@/components/collaboration/HeartButton";
+import { useHearts } from "@/hooks/useHearts";
 
 interface FileCardProps {
   file: RecentFile;
@@ -90,6 +92,7 @@ export default function FileCard({
   const isImage = isImageFile(file.name);
   const hasLargePreview = isVideo || isImage;
   const { confirm } = useConfirm();
+  const hearts = useHearts(file.id);
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -245,6 +248,20 @@ export default function FileCard({
       <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
         {formatDate(file.modifiedAt)}
       </p>
+      <div
+        className="mt-2 flex justify-center"
+        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        <HeartButton
+          count={hearts.count}
+          hasHearted={hearts.hasHearted}
+          loading={hearts.loading}
+          onToggle={hearts.toggle}
+          size="sm"
+          showCount
+        />
+      </div>
 
       <ShareModal
         open={shareOpen}
