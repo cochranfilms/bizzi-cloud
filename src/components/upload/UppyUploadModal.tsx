@@ -35,8 +35,10 @@ export default function UppyUploadModal({
       return;
     }
 
-    const getIdToken = () =>
-      getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null);
+    const getAuthHeaders = async () => {
+      const token = await (getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null));
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    };
 
     const uppy = new Uppy({
       id: "uppy-upload",
@@ -44,15 +46,21 @@ export default function UppyUploadModal({
     });
 
     const awsS3Opts = {
+      id: "AwsS3",
       endpoint: typeof window !== "undefined" ? `${window.location.origin}/api/uppy` : "",
-      async headers() {
-        const token = await getIdToken();
-        return token ? { Authorization: `Bearer ${token}` } : {};
-      },
-      shouldUseMultipart: (file: { size?: number }) => (file.size ?? 0) > 5 * 1024 * 1024,
+      headers: {} as Record<string, string>,
+      shouldUseMultipart: (file: { size?: number | null }) => (file.size ?? 0) > 5 * 1024 * 1024,
     };
-    // @ts-expect-error Uppy types don't support async headers but runtime does
     uppy.use(AwsS3, awsS3Opts);
+
+    uppy.addPreProcessor(async () => {
+      const plugin = uppy.getPlugin("AwsS3");
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) {
+        throw new Error("You must be signed in to upload files.");
+      }
+      plugin?.setOptions({ headers });
+    });
 
     uppy.on("file-added", (file) => {
       const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
