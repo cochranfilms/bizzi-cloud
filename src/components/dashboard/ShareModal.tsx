@@ -62,6 +62,7 @@ export default function ShareModal({
         setShareToken(data.token);
         setShareVersion(typeof data.version === "number" ? data.version : 1);
         setAccessLevel((data.access_level as "private" | "public") ?? "private");
+        setPermission((data.permission as "view" | "edit") ?? "view");
         setInvitedEmails(data.invited_emails ?? []);
       }
     } catch {
@@ -89,6 +90,28 @@ export default function ShareModal({
     [user]
   );
 
+  const fetchShareDetails = useCallback(
+    async (token: string) => {
+      if (!user) return;
+      try {
+        const authToken = await user.getIdToken();
+        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setShareVersion(typeof data.version === "number" ? data.version : 1);
+          setAccessLevel((data.access_level as "private" | "public") ?? "private");
+          setPermission((data.permission as "view" | "edit") ?? "view");
+          setInvitedEmails(Array.isArray(data.invited_emails) ? data.invited_emails : []);
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [user]
+  );
+
   useEffect(() => {
     if (open) {
       if (initialShareToken) {
@@ -96,7 +119,11 @@ export default function ShareModal({
         setAccessLevel(initialAccessLevel);
         setPermission(initialPermission);
         setInvitedEmails(initialInvitedEmails);
-        fetchShareVersion(initialShareToken).then(setShareVersion);
+        if (linkedDriveId) {
+          fetchShareVersion(initialShareToken).then(setShareVersion);
+        } else {
+          fetchShareDetails(initialShareToken);
+        }
       } else if (linkedDriveId) {
         fetchExistingShare();
       }
@@ -116,6 +143,7 @@ export default function ShareModal({
     initialInvitedEmails,
     fetchExistingShare,
     fetchShareVersion,
+    fetchShareDetails,
   ]);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
@@ -242,10 +270,15 @@ export default function ShareModal({
   );
 
   const saveChanges = useCallback(
-    async (overrides?: { access_level?: "private" | "public"; invited_emails?: string[] }) => {
+    async (overrides?: {
+      access_level?: "private" | "public";
+      invited_emails?: string[];
+      permission?: "view" | "edit";
+    }) => {
       if (!shareToken || !user) return;
       const level = overrides?.access_level ?? accessLevel;
       const emails = overrides?.invited_emails ?? invitedEmails;
+      const perm = overrides?.permission ?? permission;
       setLoading(true);
       setError(null);
       try {
@@ -259,6 +292,7 @@ export default function ShareModal({
           body: JSON.stringify({
             access_level: level,
             invited_emails: emails,
+            permission: perm,
             version: shareVersion,
           }),
         });
@@ -278,7 +312,7 @@ export default function ShareModal({
         setLoading(false);
       }
     },
-    [shareToken, user, accessLevel, invitedEmails, shareVersion, fetchShareVersion]
+    [shareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
   const handleClose = useCallback(() => {
@@ -403,7 +437,10 @@ export default function ShareModal({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setPermission("view")}
+                onClick={() => {
+                  setPermission("view");
+                  if (shareToken && user) saveChanges({ permission: "view" });
+                }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "view"
                     ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
@@ -415,7 +452,10 @@ export default function ShareModal({
               </button>
               <button
                 type="button"
-                onClick={() => setPermission("edit")}
+                onClick={() => {
+                  setPermission("edit");
+                  if (shareToken && user) saveChanges({ permission: "edit" });
+                }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "edit"
                     ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"

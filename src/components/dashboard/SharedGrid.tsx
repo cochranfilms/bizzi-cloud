@@ -2,17 +2,19 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox } from "lucide-react";
+import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox, Settings } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
+import ShareModal from "./ShareModal";
 import { useShares } from "@/hooks/useShares";
 import { useConfirm } from "@/hooks/useConfirm";
 
 export default function SharedGrid() {
-  const { owned, invited, loading, error, deleteShare } = useShares();
+  const { owned, invited, loading, error, deleteShare, refetch } = useShares();
   const { confirm } = useConfirm();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sentReceivedFilter, setSentReceivedFilter] = useState<"all" | "sent" | "received">("all");
   const [filter, setFilter] = useState<"all" | "folders" | "files">("all");
+  const [editShare, setEditShare] = useState<{ token: string; folderName: string } | null>(null);
 
   const sharedItems: (SharedItem & { token: string; isOwned?: boolean })[] = useMemo(() => {
     const invitedItems = invited.map((s) => ({
@@ -220,6 +222,9 @@ export default function SharedGrid() {
               key={item.key}
               item={item}
               isOwned={item.isOwned}
+              onEdit={
+                item.isOwned ? (e) => (e.preventDefault(), e.stopPropagation(), setEditShare({ token: item.token, folderName: item.name })) : undefined
+              }
               onDelete={
                 item.isOwned ? (e) => handleDeleteShare(e, item.token, item.name) : undefined
               }
@@ -247,7 +252,7 @@ export default function SharedGrid() {
                     {item.name}
                   </p>
                   <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-                    Shared by {item.sharedBy} · {item.permission === "edit" ? "Can download" : "Can view"}
+                    Shared by {item.sharedBy} · {item.permission === "edit" ? "Download" : "View only"}
                   </p>
                 </div>
                 <span
@@ -257,21 +262,35 @@ export default function SharedGrid() {
                       : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
                   }`}
                 >
-                  {item.permission === "edit" ? "Can download" : "Can view"}
+                  {item.permission === "edit" ? "Download" : "View only"}
                 </span>
                 {item.isOwned && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDeleteShare(e, item.token, item.name);
-                    }}
-                    className="flex-shrink-0 rounded p-2 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-                    aria-label="Delete share"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setEditShare({ token: item.token, folderName: item.name });
+                      }}
+                      className="flex-shrink-0 rounded p-2 text-neutral-400 transition-colors hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+                      aria-label="Edit share"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDeleteShare(e, item.token, item.name);
+                      }}
+                      className="flex-shrink-0 rounded p-2 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                      aria-label="Delete share"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -284,6 +303,18 @@ export default function SharedGrid() {
             );
           })}
         </div>
+      )}
+
+      {editShare && (
+        <ShareModal
+          open={!!editShare}
+          onClose={() => {
+            setEditShare(null);
+            refetch();
+          }}
+          folderName={editShare.folderName}
+          initialShareToken={editShare.token}
+        />
       )}
     </div>
   );

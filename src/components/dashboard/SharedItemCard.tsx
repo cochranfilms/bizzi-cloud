@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { File, Folder, Trash2 } from "lucide-react";
+import { File, Folder, Trash2, Settings } from "lucide-react";
 
 export interface SharedItem {
   name: string;
@@ -19,12 +19,13 @@ interface SharedItemCardProps {
   item: SharedItem;
   isOwned?: boolean;
   onDelete?: (e: React.MouseEvent) => void;
+  onEdit?: (e: React.MouseEvent) => void;
 }
 
 const cardClassName =
   "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
 
-export default function SharedItemCard({ item, isOwned, onDelete }: SharedItemCardProps) {
+export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: SharedItemCardProps) {
   const content = (
     <>
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
@@ -47,7 +48,7 @@ export default function SharedItemCard({ item, isOwned, onDelete }: SharedItemCa
             : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
         }`}
       >
-        {item.permission === "edit" ? "Can download" : "Can view"}
+        {item.permission === "edit" ? "Download" : "View only"}
       </span>
     </>
   );
@@ -55,19 +56,37 @@ export default function SharedItemCard({ item, isOwned, onDelete }: SharedItemCa
   const cardContent = (
     <div className="relative">
       {content}
-      {isOwned && onDelete && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDelete(e);
-          }}
-          className="absolute right-2 top-2 rounded p-1.5 text-neutral-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-          aria-label="Delete share"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+      {isOwned && (onEdit || onDelete) && (
+        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit(e);
+              }}
+              className="rounded p-1.5 text-neutral-400 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+              aria-label="Edit share"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(e);
+              }}
+              className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+              aria-label="Delete share"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

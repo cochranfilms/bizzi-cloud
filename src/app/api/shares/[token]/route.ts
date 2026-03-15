@@ -1,5 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
+import { createShareNotifications } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -133,14 +134,28 @@ export async function GET(
   }
 
   const version = typeof share.version === "number" ? share.version : 1;
-  return NextResponse.json({
+  const response: Record<string, unknown> = {
     folder_name: folderName,
     item_type: itemType,
     permission: share.permission ?? "view",
     access_level: share.access_level ?? "public",
     version,
     files,
-  });
+  };
+  // Include invited_emails for owner (so they can edit the share)
+  let requesterUid: string | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const decoded = await verifyIdToken(authHeader.slice(7).trim());
+      requesterUid = decoded.uid;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (requesterUid === ownerId) {
+    response.invited_emails = share.invited_emails ?? [];
+  }
+  return NextResponse.json(response);
 }
 
 export async function PATCH(
@@ -172,7 +187,12 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  const { access_level: accessLevel, invited_emails: invitedEmails, version: requestedVersion } = body;
+  const {
+    access_level: accessLevel,
+    invited_emails: invitedEmails,
+    permission: permissionUpdate,
+    version: requestedVersion,
+  } = body;
 
   if (typeof requestedVersion !== "number") {
     return NextResponse.json(
@@ -196,16 +216,32 @@ export async function PATCH(
     if (accessLevel === "private" || accessLevel === "public") {
       updates.access_level = accessLevel;
     }
+    if (permissionUpdate === "view" || permissionUpdate === "edit") {
+      updates.permission = permissionUpdate;
+    }
+    const prevInvited = (share.invited_emails as string[] | undefined) ?? [];
+    let newInvitedEmails: string[] = [];
     if (Array.isArray(invitedEmails)) {
-      updates.invited_emails = invitedEmails
+      newInvitedEmails = invitedEmails
         .filter((e: unknown) => typeof e === "string")
-        .map((e) => (e as string).trim().toLowerCase());
+        .map((e) => (e as string).trim().toLowerCase())
+        .filter(Boolean);
+      updates.invited_emails = newInvitedEmails;
     }
     if (Object.keys(updates).length === 0) return { status: 200 as const, ok: true };
 
     updates.version = currentVersion + 1;
     tx.update(shareRef, updates);
-    return { status: 200 as const, ok: true };
+    return {
+      status: 200 as const,
+      ok: true,
+      newInvitedEmails,
+      prevInvited,
+      folderName: (share.folder_name as string) ?? "Shared folder",
+      fileIds: (share.referenced_file_ids as string[] | undefined) ?? (share.backup_file_id ? [share.backup_file_id] : []),
+      linkedDriveId: share.linked_drive_id as string | undefined,
+      permission: (updates.permission as string) ?? share.permission ?? "view",
+    };
   });
 
   if (result.status === 404) return NextResponse.json({ error: "Share not found" }, { status: 404 });
@@ -216,6 +252,34 @@ export async function PATCH(
       { status: 409 }
     );
   }
+
+  // Send notifications to newly added invitees
+  const newEmails = result.ok && "newInvitedEmails" in result ? (result.newInvitedEmails ?? []) : [];
+  if (newEmails.length > 0) {
+    const prevSet = new Set((result.prevInvited ?? []).map((e: string) => e.toLowerCase()));
+    const newlyAdded = (result.newInvitedEmails as string[]).filter((e) => !prevSet.has(e.toLowerCase()));
+    if (newlyAdded.length > 0) {
+      const profileSnap = await db.collection("profiles").doc(uid).get();
+      const actorDisplayName =
+        (profileSnap.data()?.displayName as string) ?? "Someone";
+      let folderNameVal = result.folderName as string;
+      const fileIds = (result.fileIds as string[]) ?? [];
+      if (!folderNameVal && (result.linkedDriveId as string)) {
+        const driveSnap = await db.collection("linked_drives").doc(result.linkedDriveId as string).get();
+        folderNameVal = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Folder";
+      }
+      await createShareNotifications({
+        sharedByUserId: uid,
+        actorDisplayName,
+        fileIds,
+        folderShareId: shareToken,
+        permission: (result.permission as string) ?? "view",
+        invitedEmails: newlyAdded,
+        folderName: folderNameVal,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 

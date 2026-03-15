@@ -32,6 +32,8 @@ interface SharePreviewModalProps {
   file: ShareFile | null;
   onClose: () => void;
   getAuthToken?: () => Promise<string | null>;
+  /** When false, hides download button (view-only share) */
+  canDownload?: boolean;
 }
 
 export default function SharePreviewModal({
@@ -39,6 +41,7 @@ export default function SharePreviewModal({
   file,
   onClose,
   getAuthToken,
+  canDownload = true,
 }: SharePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
@@ -202,15 +205,17 @@ export default function SharePreviewModal({
             {file.name}
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={downloading}
-              className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
-              aria-label="Download full resolution"
-            >
-              <Download className="h-4 w-4" />
-            </button>
+            {canDownload && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
+                aria-label="Download full resolution"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -257,14 +262,16 @@ export default function SharePreviewModal({
             <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
               <FileIcon className="h-12 w-12" />
               <p className="text-sm">{error}</p>
-              <button
-                type="button"
-                onClick={handleDownload}
-                disabled={downloading}
-                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
-              >
-                Download
-              </button>
+              {canDownload && (
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+                >
+                  Download
+                </button>
+              )}
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
@@ -316,14 +323,16 @@ export default function SharePreviewModal({
                   <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">
                     <FileIcon className="h-16 w-16" />
                     <p className="text-sm">Preview not available for this file type</p>
-                    <button
-                      type="button"
-                      onClick={handleDownload}
-                      disabled={downloading}
-                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
-                    >
-                      Download
-                    </button>
+                    {canDownload && (
+                      <button
+                        type="button"
+                        onClick={handleDownload}
+                        disabled={downloading}
+                        className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+                      >
+                        Download
+                      </button>
+                    )}
                   </div>
                 )}
               </>

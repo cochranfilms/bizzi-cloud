@@ -346,6 +346,7 @@ export default function ShareView({ token }: ShareViewProps) {
               file={previewFile}
               onClose={() => setPreviewFile(null)}
               getAuthToken={user ? getAuthToken : undefined}
+              canDownload={data.permission !== "view"}
             />
           </>
         )}
