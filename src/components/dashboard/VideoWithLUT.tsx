@@ -499,7 +499,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
           src={!videoSrc.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls={false}
-          preload="auto"
+          preload="metadata"
           playsInline
           className={`max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : "max-h-[70vh]"}`}
         />

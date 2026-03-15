@@ -2,6 +2,9 @@
  * Server-side helper to ensure Storage, RAW, and Gallery Media drives exist for a user.
  * Call from webhook and sync endpoints when a user subscribes (paid plan).
  * Only creates RAW if user has editor/fullframe addon; only creates Gallery Media if user has gallery/fullframe addon.
+ *
+ * Idempotent: queries existing drives first; only creates missing ones.
+ * Safe if Stripe webhook fires twice—second run sees drives and skips creation.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 

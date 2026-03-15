@@ -2,6 +2,10 @@
  * GET /api/profile - Return current user's profile (handle/public_slug, etc.)
  * PATCH /api/profile - Update profile fields (e.g. public_slug/handle)
  * Requires auth. Handle is same across personal and enterprise (per user/email).
+ *
+ * Profile field split (Option A): Webhook writes billing fields only (plan_id, storage_quota_bytes,
+ * stripe_*, addon_ids, storage_addon_id); user PATCH writes profile fields only (public_slug,
+ * share_image_*). No overlap, so no race between webhook and user updates.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isReservedHandle } from "@/lib/public-handle";

@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Share expired" }, { status: 404 });
     }
 
+    const version = typeof data.version === "number" ? data.version : 1;
     return NextResponse.json({
       token: data.token,
       share_url: `/s/${data.token}`,
@@ -70,6 +71,7 @@ export async function GET(request: Request) {
       invited_emails: data.invited_emails ?? [],
       linked_drive_id: data.linked_drive_id,
       backup_file_id: data.backup_file_id ?? null,
+      version,
     });
   }
 

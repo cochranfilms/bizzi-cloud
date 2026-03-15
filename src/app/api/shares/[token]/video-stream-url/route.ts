@@ -99,9 +99,15 @@ export async function POST(
 
   try {
     const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
-    // Return direct B2/CDN URL - no file bytes through Vercel (4.5 MB limit).
-    const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
+    const proxyExists = await objectExists(proxyKey);
+    if (!proxyExists) {
+      return NextResponse.json({
+        processing: true,
+        message: "Generating preview. Check back in a moment.",
+        estimatedSeconds: 60,
+      });
+    }
+    const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({ streamUrl });
   } catch (err) {
     console.error("[share video-stream-url] Error:", err);

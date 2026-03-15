@@ -228,8 +228,11 @@ export interface CreateGalleryInput {
   lut?: Partial<GalleryLUTSettings> | null;
 }
 
-/** Update gallery input – partial */
-export interface UpdateGalleryInput extends Partial<CreateGalleryInput> {}
+/** Update gallery input – partial. Include version for optimistic locking. */
+export interface UpdateGalleryInput extends Partial<CreateGalleryInput> {
+  /** Client must send version from latest GET to prevent concurrent overwrites. */
+  version?: number;
+}
 
 /** Gallery view for client – public-facing payload */
 export interface GalleryPublicPayload {

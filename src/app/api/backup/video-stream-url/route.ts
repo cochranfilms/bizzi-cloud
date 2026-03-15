@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         if (storedStatus !== "ready" && muxDoc) {
           muxDoc.ref.update({ mux_status: "ready" }).catch(() => {});
         }
-        const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8`;
+        const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8?max_resolution=720p`;
         return NextResponse.json({ streamUrl, isHls: true });
       }
       return NextResponse.json({
@@ -90,8 +90,15 @@ export async function POST(request: Request) {
     }
 
     const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
-    const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
+    const proxyExists = await objectExists(proxyKey);
+    if (!proxyExists) {
+      return NextResponse.json({
+        processing: true,
+        message: "Generating preview. Check back in a moment.",
+        estimatedSeconds: 60,
+      });
+    }
+    const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({ streamUrl });
   } catch (err) {
     console.error("[video-stream-url] Error:", err);

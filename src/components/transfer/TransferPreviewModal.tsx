@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Download, FileIcon, Loader2 } from "lucide-react";
+import { X, Download, FileIcon, Loader2, Film } from "lucide-react";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import type { TransferFile } from "@/types/transfer";
 
@@ -40,6 +40,7 @@ export default function TransferPreviewModal({
 }: TransferPreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
+  const [videoProcessing, setVideoProcessing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export default function TransferPreviewModal({
     setLoading(true);
     setError(null);
     setVideoStreamUrl(null);
+    setVideoProcessing(false);
     try {
       const body: { object_key: string; password?: string } = {
         object_key: objectKey!,
@@ -76,7 +78,10 @@ export default function TransferPreviewModal({
           body: JSON.stringify(body),
         })
           .then((r) => r.json())
-          .then((d) => d?.streamUrl && setVideoStreamUrl(d.streamUrl))
+          .then((d) => {
+            if (d?.processing) setVideoProcessing(true);
+            else if (d?.streamUrl) setVideoStreamUrl(d.streamUrl);
+          })
           .catch(() => {});
       } else {
         const res = await fetch(`${baseUrl}/preview-url`, {
@@ -99,9 +104,38 @@ export default function TransferPreviewModal({
     if (file) fetchFullUrl();
     else {
       setFullUrl(null);
+      setVideoStreamUrl(null);
+      setVideoProcessing(false);
       setError(null);
     }
   }, [file, fetchFullUrl]);
+
+  // Poll video-stream-url when processing (proxy not ready)
+  useEffect(() => {
+    if (!objectKey || previewType !== "video" || !videoProcessing) return;
+    const body: { object_key: string; password?: string } = { object_key: objectKey };
+    if (password) body.password = password;
+    const baseUrl = `/api/transfers/${encodeURIComponent(slug)}`;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(baseUrl + "/video-stream-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data?.streamUrl) {
+          setVideoStreamUrl(data.streamUrl);
+          setVideoProcessing(false);
+        } else if (!data?.processing && res.ok) {
+          setVideoProcessing(false);
+        }
+      } catch {
+        // ignore
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [slug, objectKey, previewType, password, videoProcessing]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -196,6 +230,25 @@ export default function TransferPreviewModal({
               </div>
             </div>
           )}
+          {previewType === "video" && videoProcessing && !error && (
+            <div
+              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50"
+              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+            >
+              <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-200 bg-neutral-100 px-12 py-14 dark:border-neutral-700/50 dark:bg-neutral-800/50">
+                <div className="relative">
+                  <Film className="h-16 w-16 text-bizzi-blue/60" />
+                  <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
+                </div>
+                <div className="space-y-2 text-center">
+                  <p className="text-base font-medium text-neutral-900 dark:text-white">Video is processing</p>
+                  <p className="max-w-xs text-sm text-neutral-500 dark:text-neutral-400">
+                    Your video is being prepared for streaming. Check back in a moment to preview.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
               <FileIcon className="h-12 w-12" />
@@ -212,7 +265,7 @@ export default function TransferPreviewModal({
               )}
             </div>
           )}
-          {fullUrl && !error && !loading && (
+          {fullUrl && !error && !loading && !(previewType === "video" && videoProcessing) && (
             <>
               {previewType === "image" && (
                 <div

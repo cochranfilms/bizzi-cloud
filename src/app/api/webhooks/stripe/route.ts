@@ -70,6 +70,19 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
+
+  // Idempotency: Stripe retries webhooks on timeout or non-2xx. Process each event at most once.
+  const eventDocRef = db.collection("webhook_events").doc(event.id);
+  const existingSnap = await eventDocRef.get();
+  if (existingSnap.exists) {
+    return NextResponse.json({ received: true });
+  }
+
+  await eventDocRef.set({
+    event_type: event.type,
+    processed_at: new Date().toISOString(),
+  });
+
   const stripe = getStripeInstance();
 
   switch (event.type) {

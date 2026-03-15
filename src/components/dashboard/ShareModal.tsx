@@ -33,6 +33,7 @@ export default function ShareModal({
 }: ShareModalProps) {
   const { user } = useAuth();
   const [shareToken, setShareToken] = useState<string | null>(initialShareToken ?? null);
+  const [shareVersion, setShareVersion] = useState<number>(1);
   const [accessLevel, setAccessLevel] = useState<"private" | "public">(initialAccessLevel);
   const [permission, setPermission] = useState<"view" | "edit">(initialPermission);
   const [invitedEmails, setInvitedEmails] = useState<string[]>(initialInvitedEmails);
@@ -59,6 +60,7 @@ export default function ShareModal({
       if (res.ok) {
         const data = await res.json();
         setShareToken(data.token);
+        setShareVersion(typeof data.version === "number" ? data.version : 1);
         setAccessLevel((data.access_level as "private" | "public") ?? "private");
         setInvitedEmails(data.invited_emails ?? []);
       }
@@ -67,6 +69,26 @@ export default function ShareModal({
     }
   }, [linkedDriveId, backupFileId, user]);
 
+  const fetchShareVersion = useCallback(
+    async (token: string) => {
+      if (!user) return 1;
+      try {
+        const authToken = await user.getIdToken();
+        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return typeof data.version === "number" ? data.version : 1;
+        }
+      } catch {
+        // ignore
+      }
+      return 1;
+    },
+    [user]
+  );
+
   useEffect(() => {
     if (open) {
       if (initialShareToken) {
@@ -74,11 +96,13 @@ export default function ShareModal({
         setAccessLevel(initialAccessLevel);
         setPermission(initialPermission);
         setInvitedEmails(initialInvitedEmails);
+        fetchShareVersion(initialShareToken).then(setShareVersion);
       } else if (linkedDriveId) {
         fetchExistingShare();
       }
     } else {
       setShareToken(initialShareToken ?? null);
+      setShareVersion(1);
       setError(null);
       setCopied(false);
       setEmailInput("");
@@ -91,6 +115,7 @@ export default function ShareModal({
     initialPermission,
     initialInvitedEmails,
     fetchExistingShare,
+    fetchShareVersion,
   ]);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
@@ -122,6 +147,7 @@ export default function ShareModal({
       }
       const data = await res.json();
       setShareToken(data.token);
+      setShareVersion(1);
       return data.token;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create share");
@@ -160,16 +186,24 @@ export default function ShareModal({
             "Content-Type": "application/json",
             Authorization: `Bearer ${authToken}`,
           },
-          body: JSON.stringify({ invited_emails: next }),
+          body: JSON.stringify({ invited_emails: next, version: shareVersion }),
         });
-        if (!res.ok) throw new Error("Failed to add");
+        if (!res.ok) {
+          if (res.status === 409) {
+            fetchShareVersion(token).then(setShareVersion);
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error ?? "Share was modified. Refreshed.");
+          }
+          throw new Error("Failed to add");
+        }
+        setShareVersion((v) => v + 1);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to add");
       } finally {
         setLoading(false);
       }
     }
-  }, [emailInput, invitedEmails, ensureShare, user]);
+  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion]);
 
   const removeEmail = useCallback(
     async (email: string) => {
@@ -186,9 +220,17 @@ export default function ShareModal({
               "Content-Type": "application/json",
               Authorization: `Bearer ${authToken}`,
             },
-            body: JSON.stringify({ invited_emails: next }),
+            body: JSON.stringify({ invited_emails: next, version: shareVersion }),
           });
-          if (!res.ok) throw new Error("Failed to remove");
+          if (!res.ok) {
+            if (res.status === 409) {
+              fetchShareVersion(shareToken).then(setShareVersion);
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error ?? "Share was modified. Refreshed.");
+            }
+            throw new Error("Failed to remove");
+          }
+          setShareVersion((v) => v + 1);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Failed to remove");
         } finally {
@@ -196,7 +238,7 @@ export default function ShareModal({
         }
       }
     },
-    [invitedEmails, shareToken, user]
+    [invitedEmails, shareToken, user, shareVersion, fetchShareVersion]
   );
 
   const saveChanges = useCallback(
@@ -217,19 +259,26 @@ export default function ShareModal({
           body: JSON.stringify({
             access_level: level,
             invited_emails: emails,
+            version: shareVersion,
           }),
         });
         if (!res.ok) {
+          if (res.status === 409) {
+            fetchShareVersion(shareToken).then(setShareVersion);
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error ?? "Share was modified. Refreshed.");
+          }
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error ?? "Failed to update");
         }
+        setShareVersion((v) => v + 1);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to update");
       } finally {
         setLoading(false);
       }
     },
-    [shareToken, user, accessLevel, invitedEmails]
+    [shareToken, user, accessLevel, invitedEmails, shareVersion, fetchShareVersion]
   );
 
   const handleClose = useCallback(() => {

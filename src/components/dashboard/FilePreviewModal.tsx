@@ -118,6 +118,33 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     }
   }, [file, fetchFullUrl]);
 
+  // Poll video-stream-url when processing (proxy/Mux not ready yet)
+  useEffect(() => {
+    if (!file?.objectKey || previewType !== "video" || !videoProcessing) return;
+    const token = getFirebaseAuth().currentUser;
+    if (!token) return;
+    const interval = setInterval(async () => {
+      try {
+        const t = await token.getIdToken(true);
+        const res = await fetch("/api/backup/video-stream-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+          body: JSON.stringify({ object_key: file.objectKey, user_id: token.uid }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data?.streamUrl) {
+          setVideoStreamUrl(data.streamUrl);
+          setVideoProcessing(false);
+        } else if (!data?.processing && res.ok) {
+          setVideoProcessing(false);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [file?.objectKey, previewType, videoProcessing]);
+
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

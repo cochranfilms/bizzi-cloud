@@ -3,6 +3,7 @@
  * Public gallery view – returns gallery metadata + assets for client display.
  * Access: public, password, or invite_only.
  */
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
@@ -46,9 +47,9 @@ export async function GET(
     );
   }
 
-  // Increment view count (fire and forget, don't block response)
+  // Increment view count atomically (fire and forget, don't block response)
   db.collection("galleries").doc(id).update({
-    view_count: (g.view_count ?? 0) + 1,
+    view_count: FieldValue.increment(1),
     updated_at: new Date(),
   }).catch(() => {});
 

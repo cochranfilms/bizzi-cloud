@@ -1,7 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
-import { slugify, ensureUniqueSlug } from "@/lib/gallery-slug";
+import { slugify, ensureUniqueSlugInTransaction } from "@/lib/gallery-slug";
 import type { UpdateGalleryInput } from "@/types/gallery";
 import { NextResponse } from "next/server";
 
@@ -46,16 +46,19 @@ export async function GET(
     owner_handle = (profileSnap.data()?.public_slug as string) ?? null;
   }
 
+  const version = typeof data.version === "number" ? data.version : 1;
+
   return NextResponse.json({
     id: snap.id,
     ...data,
     owner_handle,
+    version,
     created_at: data.created_at?.toDate?.()?.toISOString?.(),
     updated_at: data.updated_at?.toDate?.()?.toISOString?.(),
   });
 }
 
-/** PATCH /api/galleries/[id] – update gallery */
+/** PATCH /api/galleries/[id] – update gallery (optimistic locking via version) */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -68,21 +71,31 @@ export async function PATCH(
   if (!id) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   const body = (await request.json().catch(() => ({}))) as UpdateGalleryInput;
+  const requestedVersion = typeof body.version === "number" ? body.version : undefined;
+  if (requestedVersion === undefined) {
+    return NextResponse.json(
+      { error: "Version required for optimistic locking; refetch gallery and retry" },
+      { status: 400 }
+    );
+  }
 
   const db = getAdminFirestore();
   const ref = db.collection("galleries").doc(id);
-  const snap = await ref.get();
-  if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
-  const data = snap.data()!;
-  if (data.photographer_id !== uid) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  }
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { status: 404 as const };
+    const data = snap.data()!;
+    if (data.photographer_id !== uid) return { status: 403 as const };
+    const currentVersion = typeof data.version === "number" ? data.version : 1;
+    if (currentVersion !== requestedVersion) {
+      return { status: 409 as const };
+    }
 
-  const updates: Record<string, unknown> = {};
-  const now = new Date();
+    const updates: Record<string, unknown> = {};
+    const now = new Date();
 
-  if (body.title !== undefined) updates.title = String(body.title).trim();
+    if (body.title !== undefined) updates.title = String(body.title).trim();
   if (body.cover_asset_id !== undefined) updates.cover_asset_id = body.cover_asset_id ?? null;
   if (body.share_image_asset_id !== undefined)
     updates.share_image_asset_id = body.share_image_asset_id ?? null;
@@ -126,16 +139,28 @@ export async function PATCH(
 
   if (body.title && body.title !== data.title) {
     const baseSlug = slugify(body.title.trim());
-    updates.slug = await ensureUniqueSlug(db, uid, baseSlug, id);
+    updates.slug = await ensureUniqueSlugInTransaction(tx, db, uid, baseSlug, id);
   }
 
   if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ ok: true });
+    return { status: 200 as const, ok: true };
   }
 
   updates.updated_at = now;
-  await ref.update(updates);
+  updates.version = currentVersion + 1;
+  tx.update(ref, updates);
 
+  return { status: 200 as const, ok: true };
+  });
+
+  if (result.status === 404) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  if (result.status === 403) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (result.status === 409) {
+    return NextResponse.json(
+      { error: "Document was modified by another user; refetch and try again" },
+      { status: 409 }
+    );
+  }
   return NextResponse.json({ ok: true });
 }
 

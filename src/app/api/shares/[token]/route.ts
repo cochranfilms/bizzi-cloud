@@ -132,11 +132,13 @@ export async function GET(
     }
   }
 
+  const version = typeof share.version === "number" ? share.version : 1;
   return NextResponse.json({
     folder_name: folderName,
     item_type: itemType,
     permission: share.permission ?? "view",
     access_level: share.access_level ?? "public",
+    version,
     files,
   });
 }
@@ -170,37 +172,48 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  const { access_level: accessLevel, invited_emails: invitedEmails } = body;
+  const { access_level: accessLevel, invited_emails: invitedEmails, version: requestedVersion } = body;
+
+  if (typeof requestedVersion !== "number") {
+    return NextResponse.json(
+      { error: "Version required for optimistic locking; refetch share and retry" },
+      { status: 400 }
+    );
+  }
 
   const db = getAdminFirestore();
   const shareRef = db.collection("folder_shares").doc(shareToken);
-  const shareSnap = await shareRef.get();
 
-  if (!shareSnap.exists) {
-    return NextResponse.json({ error: "Share not found" }, { status: 404 });
+  const result = await db.runTransaction(async (tx) => {
+    const shareSnap = await tx.get(shareRef);
+    if (!shareSnap.exists) return { status: 404 as const };
+    const share = shareSnap.data()!;
+    if (share.owner_id !== uid) return { status: 403 as const };
+    const currentVersion = typeof share.version === "number" ? share.version : 1;
+    if (currentVersion !== requestedVersion) return { status: 409 as const };
+
+    const updates: Record<string, unknown> = {};
+    if (accessLevel === "private" || accessLevel === "public") {
+      updates.access_level = accessLevel;
+    }
+    if (Array.isArray(invitedEmails)) {
+      updates.invited_emails = invitedEmails.filter((e: unknown) => typeof e === "string");
+    }
+    if (Object.keys(updates).length === 0) return { status: 200 as const, ok: true };
+
+    updates.version = currentVersion + 1;
+    tx.update(shareRef, updates);
+    return { status: 200 as const, ok: true };
+  });
+
+  if (result.status === 404) return NextResponse.json({ error: "Share not found" }, { status: 404 });
+  if (result.status === 403) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (result.status === 409) {
+    return NextResponse.json(
+      { error: "Share was modified by another user; refetch and try again" },
+      { status: 409 }
+    );
   }
-
-  const share = shareSnap.data();
-  if (share?.owner_id !== uid) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  }
-
-  const updates: Record<string, unknown> = {};
-
-  if (accessLevel === "private" || accessLevel === "public") {
-    updates.access_level = accessLevel;
-  }
-
-  if (Array.isArray(invitedEmails)) {
-    updates.invited_emails = invitedEmails.filter((e: unknown) => typeof e === "string");
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ ok: true });
-  }
-
-  await shareRef.update(updates);
-
   return NextResponse.json({ ok: true });
 }
 

@@ -11,6 +11,7 @@ import type { CoverPosition } from "@/types/gallery";
 
 interface GalleryData {
   id: string;
+  version?: number;
   title: string;
   description?: string | null;
   event_date?: string | null;
@@ -91,7 +92,11 @@ export default function GallerySettingsPage() {
             <ChevronLeft className="h-4 w-4" />
             Back to {gallery.title}
           </Link>
-          <GallerySettingsForm galleryId={id} initialData={gallery} />
+          <GallerySettingsForm
+            galleryId={id}
+            initialData={gallery}
+            onRefetch={fetchGallery}
+          />
         </div>
       </main>
     </>

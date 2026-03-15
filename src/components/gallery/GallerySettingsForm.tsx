@@ -92,7 +92,9 @@ function CoverAssetThumbnail({
 
 interface GallerySettingsFormProps {
   galleryId: string;
+  onRefetch?: () => void | Promise<void>;
   initialData: {
+    version?: number;
     title?: string;
     cover_asset_id?: string | null;
     share_image_asset_id?: string | null;
@@ -119,8 +121,13 @@ interface GallerySettingsFormProps {
 export default function GallerySettingsForm({
   galleryId,
   initialData,
+  onRefetch,
 }: GallerySettingsFormProps) {
   const { user } = useAuth();
+  const versionRef = useRef<number>(initialData.version ?? 1);
+  useEffect(() => {
+    versionRef.current = initialData.version ?? 1;
+  }, [initialData.version]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +292,9 @@ export default function GallerySettingsForm({
     setError(null);
     try {
       const token = await user.getIdToken();
+      const version = versionRef.current;
       const body: Record<string, unknown> = {
+        version,
         title: title.trim(),
         cover_asset_id: coverAssetId || null,
         share_image_asset_id: shareImageAssetId || null,
@@ -344,10 +353,17 @@ export default function GallerySettingsForm({
       });
       if (!res.ok) {
         const data = await res.json();
+        if (res.status === 409) {
+          onRefetch?.();
+          throw new Error(
+            data.error ?? "Gallery was modified by another user. Refreshed. Please try again."
+          );
+        }
         throw new Error(data.error ?? "Failed to save");
       }
       setSaved(true);
       setPassword("");
+      versionRef.current += 1;
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");

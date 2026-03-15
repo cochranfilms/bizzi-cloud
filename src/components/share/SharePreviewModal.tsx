@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Download, FileIcon, Loader2 } from "lucide-react";
+import { X, Download, FileIcon, Loader2, Film } from "lucide-react";
 import { useShareThumbnail } from "@/hooks/useShareThumbnail";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 
@@ -42,6 +42,7 @@ export default function SharePreviewModal({
 }: SharePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
+  const [videoProcessing, setVideoProcessing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export default function SharePreviewModal({
     setLoading(true);
     setError(null);
     setVideoStreamUrl(null);
+    setVideoProcessing(false);
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -85,7 +87,10 @@ export default function SharePreviewModal({
           body: JSON.stringify({ object_key: file.object_key }),
         })
           .then((r) => r.json())
-          .then((d) => d?.streamUrl && setVideoStreamUrl(d.streamUrl))
+          .then((d) => {
+            if (d?.processing) setVideoProcessing(true);
+            else if (d?.streamUrl) setVideoStreamUrl(d.streamUrl);
+          })
           .catch(() => {});
       } else {
         const res = await fetch(`${baseUrl}/preview-url`, {
@@ -108,9 +113,36 @@ export default function SharePreviewModal({
     if (file) fetchFullUrl();
     else {
       setFullUrl(null);
+      setVideoStreamUrl(null);
+      setVideoProcessing(false);
       setError(null);
     }
   }, [file, fetchFullUrl]);
+
+  // Poll video-stream-url when processing (proxy not ready)
+  useEffect(() => {
+    if (!file?.object_key || previewType !== "video" || !videoProcessing) return;
+    const baseUrl = `/api/shares/${encodeURIComponent(shareToken)}`;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const fetchStream = async () => {
+      if (getAuthToken) {
+        const token = await getAuthToken();
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(`${baseUrl}/video-stream-url`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ object_key: file.object_key }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d?.streamUrl) {
+        setVideoStreamUrl(d.streamUrl);
+        setVideoProcessing(false);
+      } else if (!d?.processing && res.ok) setVideoProcessing(false);
+    };
+    const interval = setInterval(fetchStream, 6000);
+    return () => clearInterval(interval);
+  }, [shareToken, file?.object_key, previewType, videoProcessing, getAuthToken]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -202,6 +234,25 @@ export default function SharePreviewModal({
               </div>
             </div>
           )}
+          {previewType === "video" && videoProcessing && !error && (
+            <div
+              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50"
+              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
+            >
+              <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-200 bg-neutral-100 px-12 py-14 dark:border-neutral-700/50 dark:bg-neutral-800/50">
+                <div className="relative">
+                  <Film className="h-16 w-16 text-bizzi-blue/60" />
+                  <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
+                </div>
+                <div className="space-y-2 text-center">
+                  <p className="text-base font-medium text-neutral-900 dark:text-white">Generating preview</p>
+                  <p className="max-w-xs text-sm text-neutral-500 dark:text-neutral-400">
+                    Your video is being prepared for streaming. Check back in a moment.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
               <FileIcon className="h-12 w-12" />
@@ -217,7 +268,7 @@ export default function SharePreviewModal({
             </div>
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType === "video" && fullUrl) ||
+            (previewType === "video" && fullUrl && !videoProcessing) ||
             (previewType !== "image" &&
               previewType !== "video" &&
               fullUrl)) &&
