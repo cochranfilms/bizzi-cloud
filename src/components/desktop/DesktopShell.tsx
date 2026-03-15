@@ -2,6 +2,7 @@
 
 import { useState, createContext, useContext } from "react";
 import { PanelRight } from "lucide-react";
+import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
@@ -27,6 +28,7 @@ export default function DesktopShell({
   const [mountPanelOpen, setMountPanelOpen] = useState(true);
 
   return (
+    <UppyUploadProvider>
     <RightPanelContext.Provider value={{ rightPanelOpen, setRightPanelOpen }}>
       <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
         <DesktopTopNavbar
@@ -84,5 +86,6 @@ export default function DesktopShell({
         </div>
       </div>
     </RightPanelContext.Provider>
+    </UppyUploadProvider>
   );
 }

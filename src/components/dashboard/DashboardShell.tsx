@@ -6,6 +6,7 @@ import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
+import { UppyUploadProvider } from "@/context/UppyUploadContext";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -25,10 +26,11 @@ export default function DashboardShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   return (
-    <RightPanelContext.Provider
-      value={{ rightPanelOpen, setRightPanelOpen }}
-    >
-      <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
+    <UppyUploadProvider>
+      <RightPanelContext.Provider
+        value={{ rightPanelOpen, setRightPanelOpen }}
+      >
+        <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
         {/* Top navbar - main nav */}
         <TopNavbar />
         <PendingInvitesBanner />
@@ -73,5 +75,6 @@ export default function DashboardShell({
         </div>
       </div>
     </RightPanelContext.Provider>
+    </UppyUploadProvider>
   );
 }

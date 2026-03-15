@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PanelRight } from "lucide-react";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import EnterpriseNavbar from "./EnterpriseNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import EnterpriseStorageBadge from "./EnterpriseStorageBadge";
@@ -21,6 +22,7 @@ export default function EnterpriseShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   return (
+    <UppyUploadProvider>
     <div
       className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
       data-org-theme={theme}
@@ -68,5 +70,6 @@ export default function EnterpriseShell({
         </div>
       </div>
     </div>
+    </UppyUploadProvider>
   );
 }
