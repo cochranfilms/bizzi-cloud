@@ -31,6 +31,7 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
 
+  try {
   // Get existing share for a specific drive or file (for ShareModal get-or-create)
   if (linkedDriveIdParam) {
     let existingSnap;
@@ -125,16 +126,18 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const driveId = data.linked_drive_id as string;
-    const backupFileId = data.backup_file_id as string | null | undefined;
+    const driveId = (data.linked_drive_id as string)?.trim?.() || "";
+    const backupFileId = (data.backup_file_id as string | null | undefined)?.trim?.() || null;
     const isFileShare = !!backupFileId;
+
+    if (!driveId) continue;
 
     const driveSnap = await db.collection("linked_drives").doc(driveId).get();
 
     // Skip if drive was deleted
     if (!driveSnap.exists) continue;
 
-    if (isFileShare) {
+    if (isFileShare && backupFileId) {
       const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
       if (!fileSnap.exists) continue;
       const fileData = fileSnap.data();
@@ -160,47 +163,61 @@ export async function GET(request: Request) {
   }
 
   // Shares shared with me (invited by email)
+  // Shares shared with me (invited by email). Query uses lowercase; stored emails must match.
   const invited: ShareItem[] = [];
-  if (email) {
+  const emailForQuery = email?.trim().toLowerCase();
+  if (emailForQuery) {
     const invitedSnap = await db
       .collection("folder_shares")
-      .where("invited_emails", "array-contains", email)
+      .where("invited_emails", "array-contains", emailForQuery)
       .get();
 
     for (const d of invitedSnap.docs) {
       const data = d.data();
       if (data.owner_id === uid) continue; // already in owned
-      const driveId = data.linked_drive_id as string;
-      const backupFileId = data.backup_file_id as string | null | undefined;
-      const isFileShare = !!backupFileId;
-
-      const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-
-      // Skip if drive was deleted by owner
-      if (!driveSnap.exists) continue;
 
       const expiresAt = data.expires_at?.toDate?.();
       if (expiresAt && expiresAt < new Date()) continue;
 
-      // Invited list is already filtered by array-contains email; if owner removed
-      // this user, they won't be in invited_emails and won't appear here.
+      const referencedFileIds = data.referenced_file_ids as string[] | undefined;
+      const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
 
       let itemName: string;
-      if (isFileShare) {
-        const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
-        if (!fileSnap.exists) continue;
-        const fileData = fileSnap.data();
-        if (fileData?.deleted_at) continue;
-        const path = (fileData?.relative_path ?? "") as string;
-        itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+      let itemType: "file" | "folder";
+
+      if (isVirtualShare) {
+        itemName = (data.folder_name as string) ?? "Shared folder";
+        itemType = "folder";
       } else {
-        itemName = driveSnap.data()?.name ?? "Folder";
+        const driveId = data.linked_drive_id as string | undefined;
+        const backupFileId = data.backup_file_id as string | null | undefined;
+        const isFileShare = !!backupFileId;
+
+        const driveIdSafe = (driveId as string)?.trim?.() || "";
+        if (!driveIdSafe) continue;
+
+        const driveSnap = await db.collection("linked_drives").doc(driveIdSafe).get();
+        if (!driveSnap.exists) continue;
+
+        const backupFileIdSafe = (backupFileId as string)?.trim?.() || "";
+        if (isFileShare && backupFileIdSafe) {
+          const fileSnap = await db.collection("backup_files").doc(backupFileIdSafe).get();
+          if (!fileSnap.exists) continue;
+          const fileData = fileSnap.data();
+          if (fileData?.deleted_at) continue;
+          const path = (fileData?.relative_path ?? "") as string;
+          itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+          itemType = "file";
+        } else {
+          itemName = driveSnap.data()?.name ?? "Folder";
+          itemType = "folder";
+        }
       }
 
-      const ownerSnap = await db
-        .collection("profiles")
-        .doc(data.owner_id as string)
-        .get();
+      const ownerId = (data.owner_id as string)?.trim?.() || "";
+      const ownerSnap = ownerId
+        ? await db.collection("profiles").doc(ownerId).get()
+        : { exists: false, data: () => null };
       const sharedBy =
         ownerSnap.exists && ownerSnap.data()?.displayName
           ? ownerSnap.data()?.displayName
@@ -211,9 +228,9 @@ export async function GET(request: Request) {
       invited.push({
         id: d.id,
         token: data.token as string,
-        linked_drive_id: driveId,
+        linked_drive_id: isVirtualShare ? "" : (data.linked_drive_id as string),
         folder_name: itemName,
-        item_type: isFileShare ? "file" : "folder",
+        item_type: itemType,
         permission: (data.permission as string) ?? "view",
         created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         share_url: `/s/${data.token}`,
@@ -226,6 +243,13 @@ export async function GET(request: Request) {
     owned,
     invited,
   });
+  } catch (err) {
+    console.error("[GET /api/shares] Error:", err);
+    return NextResponse.json(
+      { error: "Failed to load shares" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -322,6 +346,9 @@ export async function POST(request: Request) {
     const shareToken = generateShareToken();
     const now = new Date();
 
+    const invitedEmailsNormalized = Array.isArray(invitedEmails)
+      ? invitedEmails.filter((e: unknown) => typeof e === "string").map((e) => (e as string).trim().toLowerCase())
+      : [];
     const shareData = {
       token: shareToken,
       owner_id: uid,
@@ -331,9 +358,7 @@ export async function POST(request: Request) {
       access_level: access_level as "private" | "public",
       expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
       created_at: now,
-      invited_emails: Array.isArray(invitedEmails)
-        ? invitedEmails.filter((e: unknown) => typeof e === "string")
-        : [],
+      invited_emails: invitedEmailsNormalized,
     };
 
     await db.collection("folder_shares").doc(shareToken).set(shareData);
@@ -432,6 +457,9 @@ export async function POST(request: Request) {
   const shareToken = generateShareToken();
   const now = new Date();
 
+  const invitedEmailsNormalized = Array.isArray(invitedEmails)
+    ? invitedEmails.filter((e: unknown) => typeof e === "string").map((e) => (e as string).trim().toLowerCase())
+    : [];
   const shareData = {
     token: shareToken,
     owner_id: uid,
@@ -441,9 +469,7 @@ export async function POST(request: Request) {
     access_level: access_level as "private" | "public",
     expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
     created_at: now,
-    invited_emails: Array.isArray(invitedEmails)
-      ? invitedEmails.filter((e: unknown) => typeof e === "string")
-      : [],
+    invited_emails: invitedEmailsNormalized,
   };
 
   await db.collection("folder_shares").doc(shareToken).set(shareData);

@@ -1,5 +1,5 @@
 import type { NotificationType } from "@/types/collaboration";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import { formatNotificationMessage } from "./notification-format";
 import { getFileDisplayName } from "./file-access";
 
@@ -86,16 +86,18 @@ export async function createShareNotifications(params: {
   const emailLower = invitedEmails.map((e) => e?.toLowerCase?.() ?? "").filter(Boolean);
   if (emailLower.length === 0) return;
 
-  const profilesSnap = await db.collection("profiles").get();
-  const emailToUid = new Map<string, string>();
-  for (const d of profilesSnap.docs) {
-    const email = (d.data()?.email as string)?.toLowerCase?.();
-    if (email && emailLower.includes(email)) {
-      emailToUid.set(email, d.id);
+  const recipientUids: string[] = [];
+  const auth = getAdminAuth();
+  for (const inviteEmail of emailLower) {
+    try {
+      const userRecord = await auth.getUserByEmail(inviteEmail);
+      if (userRecord?.uid && userRecord.uid !== sharedByUserId) {
+        recipientUids.push(userRecord.uid);
+      }
+    } catch {
+      // User not found by email (no Firebase account yet) – skip
     }
   }
-
-  const recipientUids = [...new Set(emailToUid.values())].filter((uid) => uid !== sharedByUserId);
   if (recipientUids.length === 0) return;
 
   const fileCount = fileIds.length;

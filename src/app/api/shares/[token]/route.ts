@@ -197,7 +197,9 @@ export async function PATCH(
       updates.access_level = accessLevel;
     }
     if (Array.isArray(invitedEmails)) {
-      updates.invited_emails = invitedEmails.filter((e: unknown) => typeof e === "string");
+      updates.invited_emails = invitedEmails
+        .filter((e: unknown) => typeof e === "string")
+        .map((e) => (e as string).trim().toLowerCase());
     }
     if (Object.keys(updates).length === 0) return { status: 200 as const, ok: true };
 
