@@ -274,8 +274,6 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           workspaceId={(pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id ? org.id : null}
           onUploadComplete={() => {
             bumpStorageVersion();
-            setUppyModalOpen(false);
-            setUppyDriveId(null);
           }}
         />
       )}
