@@ -7,10 +7,14 @@ import {
   AlertCircle,
   ChevronDown,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useConfirm } from "@/hooks/useConfirm";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+
+const MAX_SYNC_DRIVES = 5;
 
 export default function SyncDriveButton() {
   const {
@@ -23,7 +27,9 @@ export default function SyncDriveButton() {
     error,
     fsAccessSupported,
     pickDirectory,
+    unlinkDrive,
   } = useBackup();
+  const { confirm } = useConfirm();
   const { hasEditor, hasGallerySuite } = useSubscription();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
@@ -55,6 +61,7 @@ export default function SyncDriveButton() {
 
   const handleAddNewDrive = async () => {
     if (!fsAccessSupported) return;
+    if (visibleLinkedDrives.length >= MAX_SYNC_DRIVES) return;
     setLinking(true);
     try {
       const handle = await pickDirectory();
@@ -65,6 +72,20 @@ export default function SyncDriveButton() {
       console.error(err);
     } finally {
       setLinking(false);
+    }
+  };
+
+  const handleRemoveDrive = async (
+    e: React.MouseEvent,
+    drive: (typeof visibleLinkedDrives)[number]
+  ) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      message: `Remove "${drive.name}"? This will unlink the drive and remove it from your backups.`,
+      destructive: true,
+    });
+    if (ok) {
+      await unlinkDrive(drive);
     }
   };
 
@@ -127,28 +148,43 @@ export default function SyncDriveButton() {
               Select drive to sync
             </p>
             {visibleLinkedDrives.map((drive) => (
-              <button
+              <div
                 key={drive.id}
-                type="button"
-                onClick={() => handleSelectDrive(drive)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                className="group flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
               >
-                <HardDrive className="h-4 w-4 flex-shrink-0 text-neutral-500" />
-                <span className="truncate">{drive.name}</span>
-                {drive.last_synced_at && (
-                  <span className="ml-auto shrink-0 text-xs text-neutral-400">
-                    {new Date(drive.last_synced_at).toLocaleDateString()}
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectDrive(drive)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <HardDrive className="h-4 w-4 flex-shrink-0 text-neutral-500" />
+                  <span className="truncate">{drive.name}</span>
+                  {drive.last_synced_at && (
+                    <span className="ml-auto shrink-0 text-xs text-neutral-400">
+                      {new Date(drive.last_synced_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleRemoveDrive(e, drive)}
+                  className="flex-shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                  aria-label={`Remove ${drive.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
             <button
               type="button"
               onClick={handleAddNewDrive}
-              className="flex w-full items-center gap-2 border-t border-neutral-100 px-3 py-2.5 text-sm text-bizzi-blue transition-colors hover:bg-bizzi-blue/5 dark:border-neutral-700 dark:hover:bg-bizzi-blue/10"
+              disabled={visibleLinkedDrives.length >= MAX_SYNC_DRIVES}
+              className="flex w-full items-center gap-2 border-t border-neutral-100 px-3 py-2.5 text-sm text-bizzi-blue transition-colors hover:bg-bizzi-blue/5 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-bizzi-blue/10"
             >
               <Plus className="h-4 w-4 flex-shrink-0" />
-              Add new drive...
+              {visibleLinkedDrives.length >= MAX_SYNC_DRIVES
+                ? `Maximum ${MAX_SYNC_DRIVES} drives. Remove one to add another.`
+                : "Add new drive..."}
             </button>
           </div>
         )}

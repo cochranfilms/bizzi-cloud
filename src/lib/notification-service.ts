@@ -39,11 +39,15 @@ export async function createNotification(input: CreateNotificationInput): Promis
   }
 
   const actorDisplayName = input.metadata?.actorDisplayName ?? "Someone";
-  const metadata = {
+  const rawMetadata = {
     ...(input.metadata ?? {}),
     fileName: fileName ?? input.metadata?.fileName,
     actorDisplayName,
   };
+  // Firestore rejects undefined; omit undefined values
+  const metadata = Object.fromEntries(
+    Object.entries(rawMetadata).filter(([, v]) => v !== undefined)
+  );
 
   const message = formatNotificationMessage(input.type, actorDisplayName, metadata);
 
@@ -126,11 +130,13 @@ export async function createShareNotifications(params: {
       message,
       isRead: false,
       createdAt: now,
-      metadata: {
-        fileName,
-        actorDisplayName,
-        fileCount: fileCount > 1 ? fileCount : undefined,
-      },
+      metadata: Object.fromEntries(
+        Object.entries({
+          fileName,
+          actorDisplayName,
+          fileCount: fileCount > 1 ? fileCount : undefined,
+        }).filter(([, v]) => v !== undefined)
+      ),
     });
   }
   await batch.commit();

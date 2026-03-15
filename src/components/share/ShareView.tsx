@@ -50,13 +50,14 @@ function ShareFileRow({
   const [rowRef, isInView] = useInView<HTMLDivElement>();
   const thumbnailUrl = useShareThumbnail(shareToken, file.object_key, file.name, {
     size: "thumb",
+    enabled: isInView,
     getAuthToken,
   });
   const videoThumbnailUrl = useShareVideoThumbnail(
     shareToken,
     file.object_key,
     file.name,
-    { enabled: true, getAuthToken }
+    { enabled: isInView, getAuthToken }
   );
   const isVideo = isVideoFile(file.name);
   const isImage = isImageFile(file.name);

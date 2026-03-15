@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { withImageThumbnailSlot } from "@/lib/thumbnailQueue";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 
@@ -12,6 +13,8 @@ export type ShareThumbnailSize = "thumb" | "preview";
 
 export interface UseShareThumbnailOptions {
   size?: ShareThumbnailSize;
+  /** When false, skips fetching. Use with useInView to lazy-load only visible thumbnails. */
+  enabled?: boolean;
   /** For private shares, provide a function to get the auth token */
   getAuthToken?: () => Promise<string | null>;
 }
@@ -26,12 +29,12 @@ export function useShareThumbnail(
   fileName: string,
   options: UseShareThumbnailOptions = {}
 ): string | null {
-  const { size = "thumb", getAuthToken } = options;
+  const { size = "thumb", enabled = true, getAuthToken } = options;
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!shareToken || !objectKey || !isImageFile(fileName)) return;
+    if (!enabled || !shareToken || !objectKey || !isImageFile(fileName)) return;
     let cancelled = false;
     (async () => {
       try {
@@ -41,23 +44,22 @@ export function useShareThumbnail(
           if (token) headers.Authorization = `Bearer ${token}`;
         }
         if (cancelled) return;
-        const params = new URLSearchParams({
-          object_key: objectKey,
-          size,
-          name: fileName,
+        const blobUrl = await withImageThumbnailSlot(async () => {
+          const params = new URLSearchParams({
+            object_key: objectKey,
+            size,
+            name: fileName,
+          });
+          const res = await fetch(
+            `/api/shares/${encodeURIComponent(shareToken)}/thumbnail?${params}`,
+            { headers }
+          );
+          if (!res.ok || cancelled) return null;
+          const blob = await res.blob();
+          if (cancelled) return null;
+          return URL.createObjectURL(blob);
         });
-        const res = await fetch(
-          `/api/shares/${encodeURIComponent(shareToken)}/thumbnail?${params}`,
-          { headers }
-        );
-        if (!res.ok || cancelled) return;
-        const blob = await res.blob();
-        if (cancelled) return;
-        const blobUrl = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(blobUrl);
-          return;
-        }
+        if (cancelled || !blobUrl) return;
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = blobUrl;
         setUrl(blobUrl);
@@ -73,7 +75,7 @@ export function useShareThumbnail(
       }
       setUrl(null);
     };
-  }, [shareToken, objectKey, fileName, size, getAuthToken]);
+  }, [enabled, shareToken, objectKey, fileName, size, getAuthToken]);
 
   return url;
 }
