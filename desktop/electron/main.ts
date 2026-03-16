@@ -18,7 +18,7 @@ const store = new Store<{
   defaults: {
     apiBaseUrl: PRODUCTION_URL,
     cacheBaseDir: path.join(app.getPath("userData"), "BizziCloud"),
-    streamCacheMaxBytes: 50 * 1024 * 1024 * 1024, // 50 GB
+    streamCacheMaxBytes: 500 * 1024 * 1024 * 1024, // 500 GB (NLE editing)
     deviceId: null,
   },
 });

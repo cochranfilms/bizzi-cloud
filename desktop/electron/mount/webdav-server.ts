@@ -2,12 +2,19 @@
  * WebDAV server that proxies to Bizzi Cloud API (metadata + range).
  * Used by rclone mount to expose cloud storage as a local filesystem.
  */
+import * as fs from "fs";
 import * as http from "http";
+import { tmpdir } from "os";
+import { join } from "path";
 import { pipeline } from "stream";
 import { promisify } from "util";
 import { Readable } from "stream";
 
 const pipelineP = promisify(pipeline);
+
+/** PUT bodies above this threshold are buffered to temp file first to avoid
+ * "Controller is already closed" race when rclone/NLE disconnects mid-upload. */
+const LARGE_PUT_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export interface MountMetadataEntry {
   id: string;
@@ -494,24 +501,40 @@ export class WebDAVServer {
       }
 
       // 2. Stream request body to B2
-      // Note: We intentionally do NOT pass AbortController to fetch. When the client (rclone)
-      // closes the connection, req emits "close"/"aborted" - passing that to fetch would abort
-      // the B2 upload with AbortError. That can fire prematurely (e.g. rclone timeouts,
-      // Node requestTimeout). Letting the body stream error naturally avoids false aborts.
+      // For large uploads (NLE exports), buffer to temp file first to avoid "Controller is already closed"
+      // race when Readable.toWeb(req) stream closes mid-transfer.
       const putHeaders: Record<string, string> = {
         "Content-Type": contentType,
         "x-amz-server-side-encryption": "AES256",
       };
       if (sizeBytes > 0) putHeaders["Content-Length"] = String(sizeBytes);
 
-      // duplex: "half" required for streaming body in Node.js fetch (not in RequestInit types)
-      const putInit = {
-        method: "PUT" as const,
-        headers: putHeaders,
-        body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
-        duplex: "half" as const,
-      };
-      const uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
+      let uploadRes: Response;
+      if (sizeBytes >= LARGE_PUT_THRESHOLD_BYTES && req.readable) {
+        const tmpPath = join(tmpdir(), `put-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        const writeStream = fs.createWriteStream(tmpPath);
+        await pipelineP(req, writeStream);
+        const fileStream = fs.createReadStream(tmpPath);
+        try {
+          uploadRes = await fetch(urlData.uploadUrl, {
+            method: "PUT",
+            headers: putHeaders,
+            body: Readable.toWeb(fileStream) as BodyInit,
+            duplex: "half" as never,
+          });
+        } finally {
+          fileStream.destroy();
+          fs.unlink(tmpPath, () => {});
+        }
+      } else {
+        const putInit = {
+          method: "PUT" as const,
+          headers: putHeaders,
+          body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
+          duplex: "half" as const,
+        };
+        uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
+      }
 
       if (!uploadRes.ok) {
         console.error("[WebDAV] B2 upload error:", uploadRes.status, await uploadRes.text());

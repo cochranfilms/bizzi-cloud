@@ -55,7 +55,7 @@ export default function App() {
             />
             <StreamCachePanel
               cacheBaseDir={String(settings.cacheBaseDir ?? "")}
-              maxBytes={Number(settings.streamCacheMaxBytes ?? 50 * 1024 ** 3)}
+              maxBytes={Number(settings.streamCacheMaxBytes ?? 500 * 1024 ** 3)}
               onUpdate={updateSetting}
             />
             <LocalStorePanel />

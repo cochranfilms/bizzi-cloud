@@ -47,4 +47,4 @@ export interface StreamCacheEntry {
 }
 
 export const CHUNK_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB for video
-export const DEFAULT_STREAM_CACHE_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
+export const DEFAULT_STREAM_CACHE_MAX_BYTES = 500 * 1024 * 1024 * 1024; // 500 GB (NLE editing)

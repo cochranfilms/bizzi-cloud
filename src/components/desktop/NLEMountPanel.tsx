@@ -162,14 +162,14 @@ export function NLEMountPanel() {
   };
 
   const apiBaseUrl = String(settings.apiBaseUrl ?? "https://www.bizzicloud.io");
-  const maxBytes = Number(settings.streamCacheMaxBytes ?? 50 * 1024 ** 3);
+  const maxBytes = Number(settings.streamCacheMaxBytes ?? 500 * 1024 ** 3);
   const cacheBaseDir = String(settings.cacheBaseDir ?? "");
   const mountReady = (dependencies?.rclone.available && dependencies?.macFuse.installed) ?? fuseAvailable === true;
   const canMount = mountReady && !!user && !loading;
   const streamCachePresets = [
-    { label: "50 GB", value: 50 * 1024 ** 3 },
-    { label: "100 GB", value: 100 * 1024 ** 3 },
     { label: "500 GB", value: 500 * 1024 ** 3 },
+    { label: "250 GB", value: 250 * 1024 ** 3 },
+    { label: "100 GB", value: 100 * 1024 ** 3 },
   ];
 
   if (!isDesktop) {

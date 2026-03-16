@@ -5,6 +5,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
@@ -145,15 +146,15 @@ export async function POST(request: Request) {
     body: JSON.stringify({ backup_file_id: fileRef.id, object_key: objectKey }),
   }).catch((e) => console.error("[upload-complete] extract-metadata:", e));
 
-  // MUX asset and proxy for video files
+  // MUX asset and proxy for video files (proxy via queue to avoid serverless timeout)
   if (VIDEO_EXT.test(safePath) && token) {
-    await Promise.all([
-      fetch(`${base}/api/backup/generate-proxy`, {
-        method: "POST",
-        headers: fetchHeaders,
-        body: JSON.stringify({ object_key: objectKey, name: safePath }),
-      }).catch((e) => console.error("[upload-complete] generate-proxy:", e)),
-      fetch(`${base}/api/mux/create-asset`, {
+    queueProxyJob({
+      object_key: objectKey,
+      name: safePath,
+      backup_file_id: fileRef.id,
+      user_id: uid,
+    }).catch((e) => console.error("[upload-complete] queueProxyJob:", e));
+    fetch(`${base}/api/mux/create-asset`, {
         method: "POST",
         headers: fetchHeaders,
         body: JSON.stringify({
@@ -161,8 +162,7 @@ export async function POST(request: Request) {
           name: safePath,
           backup_file_id: fileRef.id,
         }),
-      }).catch((e) => console.error("[upload-complete] mux/create-asset:", e)),
-    ]);
+      }).catch((e) => console.error("[upload-complete] mux/create-asset:", e));
   }
 
   return NextResponse.json({

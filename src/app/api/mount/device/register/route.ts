@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     platform: platform ?? process.platform,
     last_seen_at: now,
     stream_cache_path: stream_cache_path ?? null,
-    stream_cache_max_bytes: stream_cache_max_bytes ?? 50 * 1024 * 1024 * 1024,
+    stream_cache_max_bytes: stream_cache_max_bytes ?? 500 * 1024 * 1024 * 1024,
     local_store_path: local_store_path ?? null,
     created_at: now,
   });

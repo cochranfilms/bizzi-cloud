@@ -786,6 +786,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   body: JSON.stringify({
                     object_key: objectKey,
                     name: relativePath,
+                    queue: true,
                   }),
                 }).catch(() => {});
               }
@@ -1343,7 +1344,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify({ object_key: ev.objectKey, name: file.name }),
+                body: JSON.stringify({ object_key: ev.objectKey, name: file.name, queue: true }),
               }).catch(() => {});
               fetch("/api/mux/create-asset", {
                 method: "POST",
@@ -1772,6 +1773,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({
               object_key: objectKey,
               name: relativePath,
+              queue: true,
             }),
           }).catch(() => {});
         }

@@ -1,18 +1,19 @@
-import { spawn } from "child_process";
-import { readFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+/**
+ * POST /api/backup/generate-proxy
+ * Generates 720p H.264 proxy for video files.
+ * With queue: true — enqueues to background job (recommended for upload flows).
+ * Without queue — runs synchronously (for manual/backfill triggers).
+ */
 import {
-  createPresignedDownloadUrl,
   getProxyObjectKey,
   isB2Configured,
   objectExists,
-  putObject,
 } from "@/lib/b2";
 import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { runProxyGeneration } from "@/lib/proxy-generation";
+import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
-import ffmpegPath from "ffmpeg-static";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -20,23 +21,10 @@ const isDevAuthBypass = () =>
 
 export const maxDuration = 300;
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
-
-function isVideoFile(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
-}
-
 export async function POST(request: Request) {
   if (!isB2Configured()) {
     return NextResponse.json(
       { error: "Backblaze B2 is not configured" },
-      { status: 503 }
-    );
-  }
-
-  if (!ffmpegPath) {
-    return NextResponse.json(
-      { error: "FFmpeg not available for proxy generation" },
       { status: 503 }
     );
   }
@@ -48,7 +36,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { object_key: objectKey, name: fileName, user_id: userIdFromBody, backup_file_id: backupFileId } = body;
+  const {
+    object_key: objectKey,
+    name: fileName,
+    user_id: userIdFromBody,
+    backup_file_id: backupFileId,
+    queue: queueParam,
+  } = body;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -71,18 +65,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key required" }, { status: 400 });
   }
 
-  // Allow extension-less videos when backup_file_id has media_type=video (from extract-metadata probe)
-  let allowVideo = isVideoFile((typeof fileName === "string" ? fileName : null) || objectKey);
-  if (!allowVideo && backupFileId && typeof backupFileId === "string") {
-    const { getAdminFirestore } = await import("@/lib/firebase-admin");
-    const db = getAdminFirestore();
-    const doc = await db.collection("backup_files").doc(backupFileId).get();
-    allowVideo = doc.exists && doc.data()?.media_type === "video";
-  }
-  if (!allowVideo) {
-    return NextResponse.json({ error: "Not a video file" }, { status: 400 });
-  }
-
   const hasAccess = await verifyBackupFileAccess(uid, objectKey);
   if (!hasAccess) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -93,63 +75,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, alreadyExists: true });
   }
 
-  const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
-
-  try {
-    const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
-
-    await new Promise<void>((resolve, reject) => {
-      const args = [
-        "-y",
-        "-probesize",
-        "32K",
-        "-analyzeduration",
-        "500000",
-        "-i",
-        presignedUrl,
-        "-t",
-        "3600",
-        "-vf",
-        "scale=720:-2",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-crf",
-        "28",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "96k",
-        "-movflags",
-        "+faststart",
-        tmpPath,
-      ];
-
-      const proc = spawn(ffmpegPath!, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
-      });
-
-      proc.stderr?.on("data", () => {});
-
-      proc.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`FFmpeg exited with code ${code}`));
-      });
-      proc.on("error", reject);
+  // Queue mode: enqueue and return immediately (used by upload flows)
+  if (queueParam === true) {
+    await queueProxyJob({
+      object_key: objectKey,
+      name: typeof fileName === "string" ? fileName : undefined,
+      backup_file_id: typeof backupFileId === "string" ? backupFileId : undefined,
+      user_id: uid,
     });
-
-    const buffer = await readFile(tmpPath);
-    await unlink(tmpPath).catch(() => {});
-
-    await putObject(proxyKey, buffer, "video/mp4");
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    await unlink(tmpPath).catch(() => {});
-    const msg = err instanceof Error ? err.message : "Proxy generation failed";
-    console.error("[generate-proxy] Error:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ ok: true, queued: true });
   }
+
+  // Synchronous mode: run now (for manual triggers, backfill)
+  const result = await runProxyGeneration({
+    objectKey,
+    fileName: typeof fileName === "string" ? fileName : null,
+    backupFileId: typeof backupFileId === "string" ? backupFileId : null,
+  });
+
+  if (result.ok) {
+    return NextResponse.json({ ok: true, alreadyExists: result.alreadyExists });
+  }
+  return NextResponse.json(
+    { error: result.error ?? "Proxy generation failed" },
+    { status: 500 }
+  );
 }

@@ -66,7 +66,16 @@ export class PrefetchService {
     this.recordActivity();
     if (!driveId) return; // root or top-level, no path
 
-    const videoFiles = entries.filter((e) => e.type === "file" && isVideoFile(e.name));
+    const videoFiles = entries
+      .filter((e) => e.type === "file" && isVideoFile(e.name))
+      // Prioritize proxies for NLE editing (proxy-first per performance guide)
+      .sort((a, b) => {
+        const aIsProxy = a.name.toLowerCase().endsWith("_proxy.mp4");
+        const bIsProxy = b.name.toLowerCase().endsWith("_proxy.mp4");
+        if (aIsProxy && !bIsProxy) return -1;
+        if (!aIsProxy && bIsProxy) return 1;
+        return 0;
+      });
     if (videoFiles.length === 0) return;
 
     // Store for idle prefetch and "next clips" heuristic

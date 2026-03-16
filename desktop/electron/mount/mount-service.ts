@@ -116,7 +116,7 @@ export interface MountDependencies {
   macFuse: { installed: boolean; version?: string };
 }
 
-const DEFAULT_STREAM_CACHE_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
+const DEFAULT_STREAM_CACHE_MAX_BYTES = 500 * 1024 * 1024 * 1024; // 500 GB (NLE editing)
 
 const FULL_DISK_ACCESS_MSG =
   "Can't access /Volumes. Add Bizzi Cloud to Full Disk Access for NLE visibility: System Settings → Privacy & Security → Full Disk Access. Then restart the app and mount again.";

@@ -18,6 +18,7 @@ import {
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { queueProxyJob } from "@/lib/proxy-queue";
 
 /** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
 export const maxDuration = 300;
@@ -229,14 +230,11 @@ export async function POST(request: Request) {
   if (isVideoNow && token) {
     const base = new URL(request.url).origin;
     const authHeader = { Authorization: `Bearer ${token}` };
-    fetch(`${base}/api/backup/generate-proxy`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({
-        object_key: objectKey,
-        name: fileName,
-        backup_file_id: backupFileId,
-      }),
+    queueProxyJob({
+      object_key: objectKey,
+      name: fileName,
+      backup_file_id: backupFileId,
+      user_id: uid,
     }).catch(() => {});
     fetch(`${base}/api/mux/create-asset`, {
       method: "POST",

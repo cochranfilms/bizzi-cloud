@@ -21,9 +21,9 @@ export function StreamCachePanel({
   const usedBytes = 0; // placeholder - would come from StreamCacheManager
   const percent = maxBytes > 0 ? Math.round((usedBytes / maxBytes) * 100) : 0;
   const presets = [
-    { label: "50 GB", value: 50 * 1024 ** 3 },
-    { label: "100 GB", value: 100 * 1024 ** 3 },
     { label: "500 GB", value: 500 * 1024 ** 3 },
+    { label: "250 GB", value: 250 * 1024 ** 3 },
+    { label: "100 GB", value: 100 * 1024 ** 3 },
   ];
 
   return (
