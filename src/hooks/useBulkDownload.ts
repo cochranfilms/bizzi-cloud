@@ -6,6 +6,30 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
 const DOWNLOAD_LIMIT = 50;
+const FETCH_RETRIES = 3;
+const RETRY_DELAY_MS = 1500;
+
+function isNotReadableError(err: unknown): boolean {
+  if (err instanceof DOMException) return err.name === "NotReadableError";
+  return err instanceof Error && err.name === "NotReadableError";
+}
+
+async function fetchWithRetry(url: string): Promise<Blob> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= FETCH_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.blob();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < FETCH_RETRIES) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * Deduplicates filenames within a zip (e.g. image.jpg, image (1).jpg, image (2).jpg).
@@ -67,6 +91,19 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
         const urls = data.urls ?? [];
         if (urls.length === 0) throw new Error("No download URLs returned");
 
+        // Single file: use direct download to avoid memory/stream issues with large files
+        if (urls.length === 1) {
+          const { url, name } = urls[0];
+          const fullUrl = url.startsWith("/") ? `${window.location.origin}${url}` : url;
+          const a = document.createElement("a");
+          a.href = fullUrl;
+          a.download = name;
+          a.rel = "noopener noreferrer";
+          a.target = "_blank";
+          a.click();
+          return;
+        }
+
         const zip = new JSZip();
         const names = uniqueZipNames(urls.map((u) => u.name));
 
@@ -74,7 +111,7 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
           const { url } = urls[i];
           const name = names[i];
           const fetchUrl = url.startsWith("/") ? `${window.location.origin}${url}` : url;
-          const blob = await fetch(fetchUrl).then((r) => r.blob());
+          const blob = await fetchWithRetry(fetchUrl);
           zip.file(name, blob);
         }
 
@@ -86,7 +123,11 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
         a.click();
         URL.revokeObjectURL(a.href);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Download failed";
+        const msg = isNotReadableError(err)
+          ? "The download was interrupted. This can happen with large files or unstable connections. Try again or download fewer files at once."
+          : err instanceof Error
+            ? err.message
+            : "Download failed";
         setError(msg);
         console.error("[useBulkDownload]", err);
       } finally {

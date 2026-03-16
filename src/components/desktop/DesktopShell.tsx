@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, createContext, useContext } from "react";
-import { PanelRight } from "lucide-react";
+import { PanelRight, HardDrive } from "lucide-react";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
@@ -46,11 +46,22 @@ export default function DesktopShell({
           />
         )}
 
+        {/* Backdrop for mount panel overlay on narrow screens */}
+        {mountPanelOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={() => setMountPanelOpen(false)}
+            aria-hidden
+          />
+        )}
+
         <div className="flex min-h-0 min-w-0 flex-1">
-          {/* NLE Mount panel - hidden on mobile, shown from md up */}
+          {/* NLE Mount panel: inline on md+, slide-over overlay on narrow screens */}
           {mountPanelOpen && (
             <aside
-              className="hidden w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 md:flex dark:border-neutral-800/60 dark:bg-transparent"
+              className="fixed left-0 top-14 bottom-0 z-50 w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 bg-white shadow-xl transition-transform duration-200 md:relative md:top-0 md:z-auto md:shadow-none md:dark:bg-transparent dark:border-neutral-800/60 dark:bg-neutral-950 ${
+                mountPanelOpen ? "translate-x-0" : "-translate-x-full"
+              } md:flex md:translate-x-0"
               aria-label="NLE Mount"
             >
               <div className="overflow-y-auto p-5">
@@ -60,6 +71,20 @@ export default function DesktopShell({
           )}
 
           <div className="flex min-w-0 flex-1 flex-col">
+            {/* Floating buttons on narrow screens: left = mount panel, right = backup panel */}
+            {!mountPanelOpen && (
+              <div className="fixed left-4 top-16 z-30 md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMountPanelOpen(true)}
+                  className="rounded-lg bg-white p-2 shadow text-bizzi-blue hover:bg-bizzi-blue/10 dark:bg-neutral-800 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/20"
+                  aria-label="Open NLE Mount panel"
+                  title="Mount Drive"
+                >
+                  <HardDrive className="h-5 w-5" />
+                </button>
+              </div>
+            )}
             <div className="fixed right-4 top-16 z-30 xl:hidden">
               <button
                 type="button"

@@ -74,11 +74,16 @@ export async function createMuxAssetFromUrl(
   });
 
   if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(
-      (errData as { error?: { message?: string } })?.error?.message ??
-        `Mux API error: ${res.status}`
-    );
+    const errData = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string; messages?: string[]; type?: string };
+    };
+    const err = errData?.error;
+    const msg =
+      err?.message ??
+      (Array.isArray(err?.messages) ? err.messages.join("; ") : null) ??
+      `Mux API error: ${res.status}`;
+    console.error("[mux create-asset] Mux API error response:", JSON.stringify(errData));
+    throw new Error(msg);
   }
 
   const data = (await res.json()) as {
@@ -136,8 +141,11 @@ export async function createMuxAssetFromBackup(
 
   const presignedUrl = await createPresignedDownloadUrl(objectKey, 7200);
 
+  // Mux passthrough max 255 chars; backupFileId is enough for lookup
+  const passthrough = `bf=${backupFileId}`.slice(0, 255);
+
   const result = await createMuxAssetFromUrl(presignedUrl, {
-    passthrough: JSON.stringify({ backupFileId, objectKey, fileName }),
+    passthrough,
     playbackPolicy: "public",
   });
 

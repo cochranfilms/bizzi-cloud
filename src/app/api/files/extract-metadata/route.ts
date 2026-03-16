@@ -2,6 +2,7 @@
  * POST /api/files/extract-metadata
  * Extracts video/photo metadata and updates backup_files.
  * Invoked asynchronously after upload (fire-and-forget).
+ * Can be slow for large videos (B2 fetch + ffmpeg probe) — allow up to 5 min.
  */
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
@@ -17,6 +18,9 @@ import {
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
+
+/** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
+export const maxDuration = 300;
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|heic|tiff|tif|cr2|cr3|nef|arw|raf|orf|rw2|dng|raw)$/i;
