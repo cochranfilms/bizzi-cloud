@@ -27,6 +27,8 @@ export interface MountMetadataEntry {
   linked_drive_id: string;
   /** MIME type for correct file icons in Finder (from backup_files.content_type or extension) */
   content_type?: string | null;
+  /** ETag derived from object_key; changes when proxy→original so rclone invalidates cache */
+  etag?: string | null;
 }
 
 export async function POST(request: Request) {
@@ -163,6 +165,9 @@ export async function POST(request: Request) {
         }
       }
 
+      // ETag based on object_key so rclone invalidates when conform switches proxy→original
+      const etag = objectKey ? `"bizzi-${objectKey.replace(/[/\\:"<>|?*]/g, "_").slice(-64)}"` : null;
+
       entries.push({
         id: doc.id,
         name,
@@ -173,6 +178,7 @@ export async function POST(request: Request) {
         type: "file",
         linked_drive_id: driveId,
         content_type: contentType,
+        etag: etag ?? undefined,
       });
     }
 
@@ -199,6 +205,7 @@ export async function POST(request: Request) {
         modified_at: null,
         type: "folder",
         linked_drive_id: primaryDriveId,
+        etag: null,
       });
     }
 

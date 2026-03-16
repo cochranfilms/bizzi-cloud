@@ -229,6 +229,18 @@ export class MountService {
     if (this._isMounted && token) this.currentToken = token;
   }
 
+  /** Trigger a directory read to force rclone to re-PROPFIND. Call after conform so NLE sees originals immediately. */
+  refreshFolder(driveSlug: string): void {
+    if (!this._isMounted || !this.mountPoint) return;
+    const slug = ["Storage", "RAW", "Gallery Media"].includes(driveSlug) ? driveSlug : "Storage";
+    const folderPath = path.join(this.mountPoint, slug);
+    try {
+      fs.readdirSync(folderPath);
+    } catch {
+      // Mount may be busy; ignore
+    }
+  }
+
   /** Returns true if the mount point is still in the system mount table (rclone is running). */
   private async isMountActuallyActive(): Promise<boolean> {
     if (!this.mountPoint) return false;
@@ -376,7 +388,7 @@ export class MountService {
       "--webdav-bearer-token", token,
       "--webdav-vendor", "other",
       "--timeout", "2h", // Video exports can take 30+ min; rclone default 5m aborts long PUTs
-      "--dir-cache-time", "72h",
+      "--dir-cache-time", "1s", // Near-instant so conform switch is visible immediately
       "--vfs-cache-mode", "full",
       "--vfs-read-chunk-size", "32M",
       "--vfs-read-ahead", "64M", // Predictive: prefetch ahead during sequential reads (video scrubbing, etc.)

@@ -116,6 +116,9 @@ ipcMain.handle("mount-unmount", () => mountService.unmount());
 ipcMain.handle("mount-refresh-token", (_e, token: string) => {
   mountService.refreshToken(token);
 });
+ipcMain.handle("mount-refresh-folder", (_e, driveSlug: string) => {
+  mountService.refreshFolder(driveSlug);
+});
 
 // Native Sync (File Provider) IPC
 ipcMain.handle("native-sync-available", () => fileProviderService.isAvailable());

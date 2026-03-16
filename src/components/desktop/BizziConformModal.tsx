@@ -127,6 +127,11 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
       if (!res.ok) throw new Error(data?.error ?? "Conform failed");
       setResult(data);
       fetchPreview(); // Refresh counts
+      // Trigger mount folder refresh so conform change is visible immediately in NLE
+      if ((data?.switchedAssets ?? 0) > 0 && typeof window?.bizzi?.mount?.refreshFolder === "function") {
+        const driveName = drives.find((d) => d.id === selectedDriveId)?.name ?? "Storage";
+        window.bizzi.mount.refreshFolder(driveName);
+      }
     } catch (err) {
       setResult({
         sessionId: "",
@@ -328,6 +333,10 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
               {result.switchedAssets} switched · {result.failedAssets} failed ·{" "}
               {result.skippedAssets} skipped
             </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              The mount folder was refreshed; changes should appear immediately. If your NLE still
+              shows proxy, close and reopen the project.
+            </p>
             {result.report.entries.filter((e) => e.status !== "switched").length > 0 && (
               <details className="text-sm">
                 <summary className="cursor-pointer">View report</summary>

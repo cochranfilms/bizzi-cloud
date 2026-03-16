@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("bizzi", {
       ipcRenderer.invoke("mount-mount", { apiBaseUrl, token }),
     unmount: () => ipcRenderer.invoke("mount-unmount"),
     refreshToken: (token: string) => ipcRenderer.invoke("mount-refresh-token", token),
+    refreshFolder: (driveSlug: string) => ipcRenderer.invoke("mount-refresh-folder", driveSlug),
   },
   nativeSync: {
     isAvailable: () => ipcRenderer.invoke("native-sync-available"),

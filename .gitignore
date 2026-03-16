@@ -46,3 +46,8 @@ desktop/release/
 
 # bundled rclone binaries (downloaded by scripts/download-rclone.js)
 desktop/bin/
+
+# ffmpeg-braw for BRAW proxy generation (downloaded by scripts/download-ffmpeg-braw.js)
+bin/ffmpeg-braw/
+bin/ffmpeg-braw-extract/
+bin/*.zip

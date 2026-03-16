@@ -17,9 +17,21 @@ import {
 import {
   canGenerateProxy,
   getProxyCapability,
+  isBrawFile,
   MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
 import ffmpegPath from "ffmpeg-static";
+
+/** BRAW-enabled FFmpeg path (e.g. from ffmpeg-braw fork). When set, .braw files use this binary. */
+const FFMPEG_BRAW_PATH = process.env.FFMPEG_BRAW_PATH || "";
+
+function getFfmpegPathForFile(nameOrPath: string): string | null {
+  const base = ffmpegPath ?? null;
+  if (!base) return null;
+  // Use BRAW-enabled FFmpeg for .braw when available
+  if (isBrawFile(nameOrPath) && FFMPEG_BRAW_PATH) return FFMPEG_BRAW_PATH;
+  return base;
+}
 
 export interface RunProxyGenerationOptions {
   objectKey: string;
@@ -137,8 +149,9 @@ export async function runProxyGeneration(
 
   const capability = getProxyCapability(nameOrPath, mediaType);
   if (capability === "raw_unsupported") {
-    return { ok: false, rawUnsupported: true, error: "RAW format requires dedicated transcode pipeline (BRAW, R3D, etc.)" };
+    return { ok: false, rawUnsupported: true, error: "RAW format requires dedicated transcode pipeline" };
   }
+  // raw_try: we attempt; on FFmpeg decode failure we return rawUnsupported below
   if (capability === "unsupported") {
     const allowVideo = isVideoFile(nameOrPath) || mediaType === "video";
     if (!allowVideo) {
@@ -157,9 +170,16 @@ export async function runProxyGeneration(
   }
 
   const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
+  const effectiveFfmpeg = getFfmpegPathForFile(nameOrPath);
+  if (!effectiveFfmpeg) {
+    return { ok: false, error: "FFmpeg not available" };
+  }
+
+  const isRawTry = capability === "raw_try";
 
   try {
     const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
+    let ffmpegStderr = "";
 
     await new Promise<void>((resolve, reject) => {
       const args = [
@@ -189,16 +209,18 @@ export async function runProxyGeneration(
         tmpPath,
       ];
 
-      const proc = spawn(ffmpegPath!, args, {
+      const proc = spawn(effectiveFfmpeg, args, {
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
       });
 
-      proc.stderr?.on("data", () => {});
+      proc.stderr?.on("data", (d: Buffer) => {
+        ffmpegStderr += d.toString();
+      });
 
       proc.on("close", (code) => {
         if (code === 0) resolve();
-        else reject(new Error(`FFmpeg exited with code ${code}`));
+        else reject(new Error(ffmpegStderr || `FFmpeg exited with code ${code}`));
       });
       proc.on("error", reject);
     });
@@ -227,6 +249,14 @@ export async function runProxyGeneration(
     await unlink(tmpPath).catch(() => {});
     const msg = err instanceof Error ? err.message : "Proxy generation failed";
     console.error("[proxy-generation] Error:", msg);
+    // RAW formats: on decode failure, mark raw_unsupported to avoid retries
+    if (capability === "raw_try") {
+      const decodeFailure =
+        /invalid data|could not find codec|format not found|no decoder|unknown decoder|not supported|does not support/i.test(msg);
+      if (decodeFailure) {
+        return { ok: false, rawUnsupported: true, error: msg };
+      }
+    }
     return { ok: false, error: msg };
   }
 }

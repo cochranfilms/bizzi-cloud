@@ -13,6 +13,7 @@ declare global {
         mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
         unmount: () => Promise<void>;
         refreshToken: (token: string) => Promise<void>;
+        refreshFolder: (driveSlug: string) => Promise<void>;
       };
     };
   }

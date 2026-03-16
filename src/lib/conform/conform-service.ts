@@ -8,14 +8,62 @@
  * This is V3: rendition resolver workflow, not V1 relink workflow.
  */
 
+import type { Firestore } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getObjectMetadata, getProxyObjectKey } from "@/lib/b2";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import type { ConformReport, ConformReportEntry, ConformSession } from "@/types/conform";
-import { getProjectRenditionState, setProjectRenditionState } from "./project-rendition-state";
+import { setProjectRenditionState } from "./project-rendition-state";
 import { validateAssetForConform } from "./validation";
 
 const CONFORM_SESSIONS = "conform_sessions";
+
+/** Returns all drive IDs that share the same slug as projectId (e.g. all Storage drives). */
+async function getDriveIdsForSlug(
+  db: Firestore,
+  userId: string,
+  projectId: string
+): Promise<string[]> {
+  const driveSnap = await db.collection("linked_drives").doc(projectId).get();
+  const data = driveSnap.exists ? driveSnap.data() : {};
+  const projectName = (data?.name ?? "Drive") as string;
+  const isCreatorRaw = data?.is_creator_raw === true;
+  const slug =
+    projectName === "Storage" || projectName === "Uploads"
+      ? "Storage"
+      : isCreatorRaw
+        ? "RAW"
+        : projectName === "Gallery Media"
+          ? "Gallery Media"
+          : projectName;
+
+  const [byUserId, byUserIdSnake] = await Promise.all([
+    db.collection("linked_drives").where("userId", "==", userId).get(),
+    db.collection("linked_drives").where("user_id", "==", userId).get(),
+  ]);
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const snap of [byUserId, byUserIdSnake]) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
+      const data = d.data();
+      if (data.deleted_at) continue;
+      const name = data.name ?? "Drive";
+      const isCreatorRaw = data.is_creator_raw === true;
+      const matches =
+        slug === "Storage"
+          ? name === "Storage" || name === "Uploads"
+          : slug === "RAW"
+            ? isCreatorRaw
+            : slug === "Gallery Media"
+              ? name === "Gallery Media"
+              : name === slug;
+      if (matches) ids.push(d.id);
+    }
+  }
+  return ids.length > 0 ? ids : [projectId];
+}
 
 export interface ConformScope {
   projectId: string; // linked_drive_id
@@ -172,13 +220,13 @@ export async function startConformSession(
       switched++;
     }
 
-    // 2. Update project rendition state to original
-    await setProjectRenditionState(
-      userId,
-      scope.projectId,
-      "original",
-      sessionId
-    );
+    // 2. Update project rendition state to original.
+    // When user selects "Storage" (or RAW/Gallery Media), set state for ALL drives with that slug
+    // so the mount (which merges files from all such drives) serves originals for every file.
+    const driveIdsToSet = await getDriveIdsForSlug(db, userId, scope.projectId);
+    for (const did of driveIdsToSet) {
+      await setProjectRenditionState(userId, did, "original", sessionId);
+    }
 
     const report: ConformReport = {
       sessionId,
@@ -231,14 +279,18 @@ export async function startConformSession(
 
 /**
  * Revert to proxies: flip preferredRendition back to proxy.
+ * Sets state for all drives in the same slug (Storage/RAW/Gallery Media).
  */
 export async function revertToProxies(
   userId: string,
   projectId: string
 ): Promise<void> {
-  await setProjectRenditionState(userId, projectId, "proxy", null);
-
   const db = getAdminFirestore();
+  const driveIdsToSet = await getDriveIdsForSlug(db, userId, projectId);
+  for (const did of driveIdsToSet) {
+    await setProjectRenditionState(userId, did, "proxy", null);
+  }
+
   await db.collection(CONFORM_SESSIONS).add({
     projectId,
     userId,

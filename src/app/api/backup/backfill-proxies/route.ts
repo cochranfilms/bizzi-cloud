@@ -9,7 +9,7 @@ import { verifyIdToken } from "@/lib/firebase-admin";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp|braw|r3d|ari|dng|crm|rcd|sir)$/i;
 const MAX_BATCH = 100;
 
 function isVideoPath(relativePath: string): boolean {

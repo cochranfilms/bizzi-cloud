@@ -26,6 +26,8 @@ export interface MountMetadataEntry {
   type: "file" | "folder";
   linked_drive_id: string;
   content_type?: string | null;
+  /** ETag from object_key; changes when conform switches proxy→original so rclone invalidates cache */
+  etag?: string | null;
 }
 
 export interface WebDAVServerOptions {
@@ -128,6 +130,7 @@ function buildPropfindResponse(
     const size = !isDir ? `<d:getcontentlength>${e.size_bytes}</d:getcontentlength>` : "";
     const mime = !isDir ? escapeXml(getContentType(e)) : "";
     const contentType = !isDir ? `<d:getcontenttype>${mime}</d:getcontenttype>` : "";
+    const etag = !isDir && e.etag ? `<d:getetag>${escapeXml(e.etag)}</d:getetag>` : "";
 
     responses.push(`
     <d:response>
@@ -139,6 +142,7 @@ function buildPropfindResponse(
           ${lastmod}
           ${size}
           ${contentType}
+          ${etag}
         </d:prop>
         <d:status>HTTP/1.1 200 OK</d:status>
       </d:propstat>

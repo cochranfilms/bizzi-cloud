@@ -23,7 +23,7 @@ import { queueProxyJob } from "@/lib/proxy-queue";
 /** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
 export const maxDuration = 300;
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp|braw|r3d|ari|dng|crm|rcd|sir)$/i;
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|heic|tiff|tif|cr2|cr3|nef|arw|raf|orf|rw2|dng|raw)$/i;
 
 /** Max bytes to fetch for video probe (metadata usually in first 20MB) */
