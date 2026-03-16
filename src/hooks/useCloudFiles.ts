@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   collection,
   doc,
@@ -84,6 +84,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const [allFilesForTransfer, setAllFilesForTransfer] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAllFiles, setLoadingAllFiles] = useState(false);
+  const hasInitiallyLoadedRef = useRef(false);
 
   const orgId = org?.id ?? null;
 
@@ -95,8 +96,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       return;
     }
 
+    const isBackgroundRefetch = hasInitiallyLoadedRef.current;
     try {
-      setLoading(true);
+      if (!isBackgroundRefetch) setLoading(true);
       const db = getFirebaseFirestore();
       // Fetch linked drives from Firestore so refetch() after delete uses fresh data
       // (React state may not have propagated yet when refetch runs)
@@ -195,6 +197,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       setDriveFolders([]);
       setRecentFiles([]);
     } finally {
+      hasInitiallyLoadedRef.current = true;
       setLoading(false);
     }
   }, [user, isEnterpriseContext, orgId, creatorOnly]);

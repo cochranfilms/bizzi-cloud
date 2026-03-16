@@ -40,8 +40,8 @@ export default function CreatorContent() {
   const creatorDrives = linkedDrives.filter((d) => d.creator_section);
 
   const loadDriveFiles = useCallback(
-    async (driveId: string) => {
-      setDriveFilesLoading(true);
+    async (driveId: string, options?: { silent?: boolean }) => {
+      if (!options?.silent) setDriveFilesLoading(true);
       try {
         const files = await fetchDriveFiles(driveId);
         setDriveFiles(files);
@@ -74,10 +74,10 @@ export default function CreatorContent() {
     getOrCreateCreatorRawDrive().catch(console.error);
   }, [getOrCreateCreatorRawDrive]);
 
-  // Refresh drive files when storage changes
+  // Refresh drive files when storage changes (e.g. after upload). Use silent to avoid loading flash.
   useEffect(() => {
     if (currentDrive && storageVersion > 0) {
-      loadDriveFiles(currentDrive.id);
+      loadDriveFiles(currentDrive.id, { silent: true });
     }
   }, [storageVersion, currentDrive, loadDriveFiles]);
 

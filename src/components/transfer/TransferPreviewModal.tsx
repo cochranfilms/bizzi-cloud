@@ -116,7 +116,9 @@ export default function TransferPreviewModal({
     const body: { object_key: string; password?: string } = { object_key: objectKey };
     if (password) body.password = password;
     const baseUrl = `/api/transfers/${encodeURIComponent(slug)}`;
+    let pollCount = 0;
     const interval = setInterval(async () => {
+      pollCount += 1;
       try {
         const res = await fetch(baseUrl + "/video-stream-url", {
           method: "POST",
@@ -129,13 +131,16 @@ export default function TransferPreviewModal({
           setVideoProcessing(false);
         } else if (!data?.processing && res.ok) {
           setVideoProcessing(false);
+        } else if (fullUrl && pollCount >= 12) {
+          // Fallback: after ~60s, if preview-url gave us a URL (proxy or original), show it
+          setVideoProcessing(false);
         }
       } catch {
         // ignore
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [slug, objectKey, previewType, password, videoProcessing]);
+  }, [slug, objectKey, previewType, password, videoProcessing, fullUrl]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

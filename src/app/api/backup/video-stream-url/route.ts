@@ -83,6 +83,13 @@ export async function POST(request: Request) {
         const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8?max_resolution=720p`;
         return NextResponse.json({ streamUrl, isHls: true });
       }
+      // Mux not ready; fall back to 720p proxy if it exists (proxy pipeline may have completed)
+      const proxyKey = getProxyObjectKey(objectKey);
+      const proxyExists = await objectExists(proxyKey);
+      if (proxyExists) {
+        const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
+        return NextResponse.json({ streamUrl });
+      }
       return NextResponse.json({
         processing: true,
         message: "Video is still processing. Check back soon to preview.",

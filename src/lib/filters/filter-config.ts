@@ -123,6 +123,16 @@ export const UNIVERSAL_FILTERS: FilterDef[] = [
       { value: "photo", label: "Photo" },
     ],
   },
+  {
+    id: "shared",
+    label: "Shared",
+    type: "checkbox",
+  },
+  {
+    id: "commented",
+    label: "Commented",
+    type: "checkbox",
+  },
 ];
 
 /** Video-specific filters (Best 10: resolution, aspect, framerate, duration, file type, codec, size, date, color, status) */

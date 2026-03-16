@@ -2,7 +2,13 @@
  * Client-side filter helpers: URL parsing, filter state, chip labels.
  */
 
-import { getFilterDef, type FilterDef } from "./filter-config";
+import { getFilterDef } from "./filter-config";
+import {
+  datePresetToRange,
+  DATE_PRESETS,
+  sizePresetToRange,
+  SIZE_PRESETS,
+} from "./filter-presets";
 
 /** Filter state as key-value pairs (multi-values as comma-separated) */
 export interface FilterState {
@@ -51,23 +57,71 @@ export function searchParamsFromFilters(state: FilterState): URLSearchParams {
   return params;
 }
 
-/** Map filter state keys to API param names */
+/** Build API-ready params from filter state (resolves presets, excludes UI-only keys) */
 export function filterStateToApiParams(state: FilterState): Record<string, string> {
   const params: Record<string, string> = {};
-  if (state.date_from) params.date_from = String(state.date_from);
-  if (state.date_to) params.date_to = String(state.date_to);
+  const skipKeys = new Set(["date_preset", "size_preset"]);
+
+  if (state.date_preset && state.date_preset !== "custom") {
+    const range = datePresetToRange(String(state.date_preset));
+    if (range) {
+      params.date_from = range.date_from;
+      params.date_to = range.date_to;
+    }
+  } else {
+    if (state.date_from) params.date_from = String(state.date_from);
+    if (state.date_to) params.date_to = String(state.date_to);
+  }
+
+  if (state.size_preset) {
+    const range = sizePresetToRange(String(state.size_preset));
+    if (range) {
+      if (range.size_min != null) params.size_min = String(range.size_min);
+      if (range.size_max != null) params.size_max = String(range.size_max);
+    }
+  } else {
+    if (state.size_min != null && state.size_min !== undefined)
+      params.size_min = String(state.size_min);
+    if (state.size_max != null && state.size_max !== undefined)
+      params.size_max = String(state.size_max);
+  }
+
   for (const [key, value] of Object.entries(state)) {
-    if (key === "date_from" || key === "date_to") continue;
+    if (skipKeys.has(key)) continue;
+    if (key === "date_from" || key === "date_to" || key === "size_min" || key === "size_max") continue;
     if (value === undefined || value === "" || value === false) continue;
     if (Array.isArray(value)) {
-      value.forEach((v) => {
-        if (v) params[key] = v; // API may need multiple - use last for simple case
-      });
+      const strings = value.filter((v): v is string => typeof v === "string");
+      if (strings.length > 0) {
+        for (const v of strings) params[key] = v;
+      }
+    } else if (typeof value === "boolean" && value) {
+      params[key] = "true";
     } else if (typeof value === "string") {
       params[key] = value;
     }
   }
   return params;
+}
+
+/** Build URLSearchParams from filter state for API requests (supports multi-value params) */
+export function filterStateToSearchParams(state: FilterState): URLSearchParams {
+  const params = filterStateToApiParams(state);
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    sp.set(key, value);
+  }
+  const mediaType = state.media_type;
+  if (Array.isArray(mediaType) && mediaType.length > 1) {
+    sp.delete("media_type");
+    mediaType.filter((v): v is string => typeof v === "string").forEach((v) => sp.append("media_type", v));
+  }
+  const fileType = state.file_type;
+  if (Array.isArray(fileType) && fileType.length > 0) {
+    sp.delete("file_type");
+    fileType.filter((v): v is string => typeof v === "string").forEach((v) => sp.append("file_type", v));
+  }
+  return sp;
 }
 
 /** Check if filter state has any active filters */
@@ -83,35 +137,47 @@ export function hasActiveFilters(state: FilterState): boolean {
 /** Get active filters for chip display */
 export function getActiveFilters(state: FilterState): ActiveFilter[] {
   const result: ActiveFilter[] = [];
-  const seenDate = !!state.date_from || !!state.date_to;
+  const seenDate = !!state.date_preset || !!state.date_from || !!state.date_to;
   if (seenDate) {
-    const from = state.date_from as string | undefined;
-    const to = state.date_to as string | undefined;
-    const label = from && to ? `${from} – ${to}` : from ?? to ?? "Date";
+    let label: string;
+    if (state.date_preset && state.date_preset !== "custom") {
+      const preset = DATE_PRESETS.find((p) => p.value === state.date_preset);
+      label = preset?.label ?? String(state.date_preset);
+    } else {
+      const from = state.date_from as string | undefined;
+      const to = state.date_to as string | undefined;
+      label = from && to ? `${from} – ${to}` : from ?? to ?? "Date";
+    }
     result.push({ id: "date", value: label, label });
   }
-  const seenSize = !!state.size_min || !!state.size_max;
+  const seenSize = !!state.size_preset || !!state.size_min || !!state.size_max;
   if (seenSize) {
-    const min = state.size_min as string | undefined;
-    const max = state.size_max as string | undefined;
-    const formatMb = (b: string) => {
-      const n = parseInt(b, 10);
-      if (isNaN(n)) return b;
-      const mb = Math.round(n / (1024 * 1024));
-      return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
-    };
-    const label =
-      min && max
-        ? `${formatMb(min)} – ${formatMb(max)}`
-        : min
-          ? `≥ ${formatMb(min)}`
-          : max
-            ? `≤ ${formatMb(max)}`
-            : "File size";
+    let label: string;
+    if (state.size_preset) {
+      const preset = SIZE_PRESETS.find((p) => p.value === state.size_preset);
+      label = preset?.label ?? String(state.size_preset);
+    } else {
+      const min = state.size_min as string | undefined;
+      const max = state.size_max as string | undefined;
+      const formatMb = (b: string) => {
+        const n = parseInt(b, 10);
+        if (isNaN(n)) return b;
+        const mb = Math.round(n / (1024 * 1024));
+        return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+      };
+      label =
+        min && max
+          ? `${formatMb(min)} – ${formatMb(max)}`
+          : min
+            ? `≥ ${formatMb(min)}`
+            : max
+              ? `≤ ${formatMb(max)}`
+              : "File size";
+    }
     result.push({ id: "file_size", value: label, label });
   }
   for (const [id, value] of Object.entries(state)) {
-    if (id === "date_from" || id === "date_to" || id === "size_min" || id === "size_max") continue;
+    if (id === "date_from" || id === "date_to" || id === "date_preset" || id === "size_min" || id === "size_max" || id === "size_preset") continue;
     if (value === undefined || value === "" || value === false) continue;
     const def = getFilterDef(id);
     if (Array.isArray(value)) {
@@ -138,7 +204,14 @@ export function removeFilter(
   value?: string
 ): FilterState {
   const next = { ...state };
+  if (id === "date") {
+    delete next.date_preset;
+    delete next.date_from;
+    delete next.date_to;
+    return next;
+  }
   if (id === "file_size") {
+    delete next.size_preset;
     delete next.size_min;
     delete next.size_max;
     return next;

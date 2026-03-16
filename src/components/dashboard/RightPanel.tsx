@@ -2,20 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
 import {
   Star,
   Clock,
   FolderKanban,
   Activity,
   Share2,
-  Loader2,
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
 import SyncDriveButton from "./SyncDriveButton";
-import GalleryPickerModal from "./GalleryPickerModal";
-import { useBackup } from "@/context/BackupContext";
-import { useCurrentFolder } from "@/context/CurrentFolderContext";
 
 const quickAccessItems = (basePath: string) => [
   { href: `${basePath}/starred`, label: "Starred", icon: Star },
@@ -31,10 +26,6 @@ interface RightPanelProps {
   storageComponent?: React.ReactNode;
 }
 
-const supportsDirectoryDrop =
-  typeof DataTransferItem !== "undefined" &&
-  "getAsFileSystemHandle" in DataTransferItem.prototype;
-
 export default function RightPanel({
   onMobileClose,
   basePath = "/dashboard",
@@ -42,142 +33,6 @@ export default function RightPanel({
 }: RightPanelProps) {
   const pathname = usePathname();
   const items = quickAccessItems(basePath);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragCounterRef = useRef(0);
-  const { currentDriveId } = useCurrentFolder();
-  const {
-    linkedDrives,
-    uploadFiles,
-    uploadFilesToGallery,
-    linkDrive,
-    startSync,
-    fsAccessSupported,
-    fileUploadProgress,
-    syncProgress,
-  } = useBackup();
-  const [galleryPickerFiles, setGalleryPickerFiles] = useState<File[] | null>(null);
-
-  const isGalleryMediaDrive = Boolean(
-    currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
-  );
-
-  const isUploading =
-    (fileUploadProgress?.status === "in_progress") ||
-    (syncProgress?.status === "in_progress");
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current += 1;
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDragging(true);
-    }
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current -= 1;
-    if (dragCounterRef.current === 0) {
-      setIsDragging(false);
-    }
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.types.includes("Files")) {
-      e.dataTransfer.dropEffect = "copy";
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsDragging(false);
-
-      if (isUploading) return;
-
-      const files: File[] = [];
-      const dirHandles: FileSystemDirectoryHandle[] = [];
-
-      if (supportsDirectoryDrop && fsAccessSupported) {
-        const items = Array.from(e.dataTransfer.items).filter(
-          (item) => item.kind === "file"
-        );
-        // CRITICAL: Start all getAsFileSystemHandle() calls synchronously - the data
-        // transfer context expires after the first await, so sequential awaits only
-        // retrieve the first file. We must create all promises in the same tick.
-        type ItemWithFS = DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> };
-        const promises = items.map(async (item) => {
-          try {
-            const handle = await (item as ItemWithFS).getAsFileSystemHandle?.();
-            if (!handle) {
-              const file = item.getAsFile();
-              return { file: file ?? null, dirHandle: null };
-            }
-            if (handle.kind === "directory") {
-              return { file: null, dirHandle: handle as FileSystemDirectoryHandle };
-            }
-            const file = await (handle as FileSystemFileHandle).getFile();
-            return { file, dirHandle: null };
-          } catch {
-            const file = item.getAsFile();
-            return { file: file ?? null, dirHandle: null };
-          }
-        });
-        const results = await Promise.all(promises);
-        for (const r of results) {
-          if (r.file) files.push(r.file);
-          if (r.dirHandle) dirHandles.push(r.dirHandle);
-        }
-      } else {
-        const droppedFiles = Array.from(e.dataTransfer.files);
-        files.push(...droppedFiles);
-      }
-
-      if (files.length > 0) {
-        if (isGalleryMediaDrive) {
-          setGalleryPickerFiles(files);
-        } else {
-          await uploadFiles(files, currentDriveId ?? undefined);
-        }
-      }
-
-      for (const handle of dirHandles) {
-        try {
-          const drive = await linkDrive(handle.name, handle);
-          await startSync(drive);
-        } catch (err) {
-          console.error("Folder link/sync failed:", err);
-        }
-      }
-    },
-    [
-      isUploading,
-      fsAccessSupported,
-      uploadFiles,
-      linkDrive,
-      startSync,
-      currentDriveId,
-      isGalleryMediaDrive,
-    ]
-  );
-
-  const handleGalleryPick = useCallback(
-    (galleryId: string, galleryTitle: string) => {
-      if (!galleryPickerFiles?.length) return;
-      uploadFilesToGallery(galleryPickerFiles, galleryId, { galleryTitle });
-      setGalleryPickerFiles(null);
-    },
-    [galleryPickerFiles, uploadFilesToGallery]
-  );
-
-  const handleGalleryPickerClose = useCallback(() => {
-    setGalleryPickerFiles(null);
-  }, []);
 
   return (
     <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
@@ -241,48 +96,13 @@ export default function RightPanel({
         </div>
       </div>
 
-      {/* Backup drive */}
-      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+      {/* Backup / Sync - fills remaining space */}
+      <div className="flex flex-1 flex-col border-t border-neutral-200 p-4 dark:border-neutral-800">
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Backup
         </h3>
         <SyncDriveButton />
       </div>
-
-      {/* Drag zone - on bottom, expanded to fill its container */}
-      <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-        <div
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          className={`flex min-h-[140px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
-            isDragging
-              ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
-              : "border-neutral-200 dark:border-neutral-700"
-          } ${isUploading ? "pointer-events-none opacity-70" : "cursor-pointer"}`}
-        >
-          {isUploading ? (
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="h-6 w-6 animate-spin text-bizzi-blue dark:text-bizzi-cyan" />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Uploading…
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Drag important items here
-            </p>
-          )}
-        </div>
-      </div>
-
-      <GalleryPickerModal
-        open={galleryPickerFiles !== null && galleryPickerFiles.length > 0}
-        onClose={handleGalleryPickerClose}
-        files={galleryPickerFiles ?? []}
-        onPick={handleGalleryPick}
-      />
     </aside>
   );
 }

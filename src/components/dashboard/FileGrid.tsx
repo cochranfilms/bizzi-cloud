@@ -34,8 +34,9 @@ import ItemActionsMenu from "./ItemActionsMenu";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
-import FilterSidebar from "@/components/filters/FilterSidebar";
-import FilterChips from "@/components/filters/FilterChips";
+import FileFiltersToolbar from "@/components/filters/FileFiltersToolbar";
+import ActiveFilterBar from "@/components/filters/ActiveFilterBar";
+import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
@@ -199,13 +200,14 @@ export default function FileGrid() {
     invitedEmails: string[];
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const searchParams = useSearchParams();
   const isBizziCloudBaseDrive = (name: string) =>
     name === "Storage" || name === "RAW" || name === "Gallery Media";
   const {
     files: filteredFiles,
     loading: filtersLoading,
+    totalCount,
     hasFilters,
     filterState,
     setFilter,
@@ -270,8 +272,8 @@ export default function FileGrid() {
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadDriveFiles = useCallback(
-    async (driveId: string) => {
-      setDriveFilesLoading(true);
+    async (driveId: string, options?: { silent?: boolean }) => {
+      if (!options?.silent) setDriveFilesLoading(true);
       try {
         const files = await fetchDriveFiles(driveId);
         setDriveFiles(files);
@@ -356,18 +358,23 @@ export default function FileGrid() {
     return { subfolderItems, displayedFiles: rootFiles };
   })();
 
+  /** Stale-while-revalidate: keep showing previous files during filter load to avoid blinking */
+  const fallbackFiles = currentDrive ? displayedFiles : recentFiles;
   const filesToShow = hasFilters
-    ? filteredFiles
+    ? filtersLoading && filteredFiles.length === 0
+      ? fallbackFiles
+      : filteredFiles
     : currentDrive
       ? displayedFiles
       : recentFiles;
 
   const showFolders = !hasFilters;
 
-  // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time
+  // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time.
+  // Use silent: true to avoid loading flash - keep current content visible during background refetch.
   useEffect(() => {
     if (currentDrive && storageVersion > 0) {
-      loadDriveFiles(currentDrive.id);
+      loadDriveFiles(currentDrive.id, { silent: true });
     }
   }, [storageVersion, currentDrive, loadDriveFiles]);
 
@@ -790,6 +797,12 @@ export default function FileGrid() {
     loadDriveFiles,
   ]);
 
+  const totalFileCount = hasFilters ? (() => {
+    const base = currentDrive ? displayedFiles.length : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
+    return base;
+  })() : (currentDrive ? displayedFiles.length : recentFiles.length);
+  const displayTotalCount = hasFilters ? totalCount : totalFileCount;
+
   return (
     <div
       ref={gridSectionRef}
@@ -797,62 +810,42 @@ export default function FileGrid() {
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
-      <div className="flex gap-6">
-        {/* Filter sidebar */}
-        <aside
-          className={`${
-            filterPanelOpen ? "block" : "hidden"
-          } w-60 min-w-0 flex-shrink-0 md:block`}
-        >
-          <div className="sticky top-24 min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-                Filters
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFilterPanelOpen(false)}
-                className="md:hidden"
-                aria-label="Close filters"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-            </div>
-            <FilterSidebar
-              filterState={filterState}
-              setFilter={setFilter}
-              drives={drivesForFilter}
-              galleries={galleriesForFilter}
-              insideFolder={!!currentDrive}
-            />
-          </div>
-        </aside>
-
-        <div className="min-w-0 flex-1 space-y-8">
-      {/* Filter chips + toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setFilterPanelOpen((o) => !o)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-              filterPanelOpen || hasFilters
-                ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan/10 dark:text-bizzi-cyan"
-                : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
-            }`}
-          >
-            <Filter className="h-4 w-4" />
-            Filters
-          </button>
-          {hasFilters && (
-            <FilterChips
-              activeFilters={activeFiltersWithLabels}
-              onRemove={removeFilterById}
-              onClearAll={clearFilters}
-            />
-          )}
+      <div className="min-w-0 space-y-6">
+        {/* Top filter toolbar + active filters */}
+        <div className="sticky top-16 z-30 -mx-2 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/95">
+          <FileFiltersToolbar
+            searchValue={(filterState.search as string) ?? ""}
+            onSearchChange={(v) => setFilter("search", v || undefined)}
+            filterState={filterState}
+            setFilter={setFilter}
+            sortValue={(filterState.sort as string) ?? "newest"}
+            onSortChange={() => {}}
+            onFiltersClick={() => setFilterDrawerOpen(true)}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            hasActiveFilters={hasFilters}
+          />
+          <ActiveFilterBar
+            activeFilters={activeFiltersWithLabels}
+            resultCount={filesToShow.length}
+            totalCount={hasFilters ? totalCount : displayTotalCount}
+            onRemove={removeFilterById}
+            onClearAll={clearFilters}
+            onSaveView={undefined}
+            isLoading={hasFilters && filtersLoading}
+          />
         </div>
-      </div>
+
+        <AdvancedFiltersDrawer
+          open={filterDrawerOpen}
+          onOpenChange={setFilterDrawerOpen}
+          filterState={filterState}
+          setFilter={setFilter}
+          onReset={clearFilters}
+          drives={drivesForFilter}
+          galleries={galleriesForFilter}
+          insideFolder={!!currentDrive}
+        />
 
       {/* Breadcrumb when inside a drive */}
       {currentDrive && (
@@ -1072,12 +1065,8 @@ export default function FileGrid() {
           </div>
         </div>
 
-        {/* File grid */}
-        {hasFilters && filtersLoading ? (
-          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading filtered results…
-          </div>
-        ) : currentDrive ? (
+        {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
+        {currentDrive ? (
           driveFilesLoading ? (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Loading files…
@@ -1089,8 +1078,16 @@ export default function FileGrid() {
         ) : hasFilters || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
             <div
               data-selectable-grid
-              className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+              className="relative grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
             >
+              {hasFilters && filtersLoading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
+                    Searching…
+                  </span>
+                </div>
+              )}
               {showFolders && subfolderItems.map((item) => {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 return (
@@ -1220,8 +1217,16 @@ export default function FileGrid() {
                 </h3>
                 <div
                   data-selectable-grid
-                  className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                  className="relative grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 >
+                  {hasFilters && filtersLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
+                        Searching…
+                      </span>
+                    </div>
+                  )}
                   {filesToShow.map((file) => (
                     <div
                       key={file.id}
@@ -1260,9 +1265,8 @@ export default function FileGrid() {
         )}
       </section>
         </div>
-      </div>
 
-      {selectedFileIds.size + selectedFolderKeys.size > 0 && (
+        {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar
           selectedFileCount={selectedFileIds.size}
           selectedFolderCount={selectedFolderKeys.size}

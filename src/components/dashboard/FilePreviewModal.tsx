@@ -127,7 +127,9 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     if (!file?.objectKey || previewType !== "video" || !videoProcessing) return;
     const token = getFirebaseAuth().currentUser;
     if (!token) return;
+    let pollCount = 0;
     const interval = setInterval(async () => {
+      pollCount += 1;
       try {
         const t = await token.getIdToken(true);
         const res = await fetch("/api/backup/video-stream-url", {
@@ -141,13 +143,16 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
           setVideoProcessing(false);
         } else if (!data?.processing && res.ok) {
           setVideoProcessing(false);
+        } else if (fullUrl && pollCount >= 10) {
+          // Fallback: after ~60s, if preview-url gave us a URL (proxy or original), show it
+          setVideoProcessing(false);
         }
       } catch {
         // ignore polling errors
       }
     }, 6000);
     return () => clearInterval(interval);
-  }, [file?.objectKey, previewType, videoProcessing]);
+  }, [file?.objectKey, previewType, videoProcessing, fullUrl]);
 
 
   useEffect(() => {

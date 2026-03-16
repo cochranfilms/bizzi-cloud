@@ -126,8 +126,10 @@ export default function SharePreviewModal({
   useEffect(() => {
     if (!file?.object_key || previewType !== "video" || !videoProcessing) return;
     const baseUrl = `/api/shares/${encodeURIComponent(shareToken)}`;
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    let pollCount = 0;
     const fetchStream = async () => {
+      pollCount += 1;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (getAuthToken) {
         const token = await getAuthToken();
         if (token) headers.Authorization = `Bearer ${token}`;
@@ -141,11 +143,16 @@ export default function SharePreviewModal({
       if (d?.streamUrl) {
         setVideoStreamUrl(d.streamUrl);
         setVideoProcessing(false);
-      } else if (!d?.processing && res.ok) setVideoProcessing(false);
+      } else if (!d?.processing && res.ok) {
+        setVideoProcessing(false);
+      } else if (fullUrl && pollCount >= 10) {
+        // Fallback: after ~60s, if preview-url gave us a URL (proxy or original), show it
+        setVideoProcessing(false);
+      }
     };
     const interval = setInterval(fetchStream, 6000);
     return () => clearInterval(interval);
-  }, [shareToken, file?.object_key, previewType, videoProcessing, getAuthToken]);
+  }, [shareToken, file?.object_key, previewType, videoProcessing, fullUrl, getAuthToken]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

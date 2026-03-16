@@ -14,12 +14,13 @@ import { NextResponse } from "next/server";
 const PAGE_SIZE = 50;
 const MAX_FETCH_FOR_POST_FILTER = 200;
 
-type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc";
+type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc" | "name_desc";
 
 function parseFilters(searchParams: URLSearchParams) {
   const driveId = searchParams.get("drive_id") ?? searchParams.get("drive") ?? undefined;
   const galleryId = searchParams.get("gallery_id") ?? searchParams.get("gallery") ?? undefined;
   const mediaType = searchParams.get("media_type") ?? undefined;
+  const mediaTypes = searchParams.getAll("media_type").filter(Boolean);
   const dateFrom = searchParams.get("date_from") ?? undefined;
   const dateTo = searchParams.get("date_to") ?? undefined;
   const sizeMin = searchParams.get("size_min");
@@ -48,6 +49,8 @@ function parseFilters(searchParams: URLSearchParams) {
   const cameraModel = searchParams.get("camera_model") ?? undefined;
   const lens = searchParams.get("lens") ?? undefined;
   const editedStatus = searchParams.get("edited_status") ?? undefined;
+  const shared = searchParams.get("shared");
+  const commented = searchParams.get("commented");
   const sort = (searchParams.get("sort") as SortOption) ?? "newest";
   const cursor = searchParams.get("cursor") ?? undefined;
   const pageSize = Math.min(
@@ -83,6 +86,9 @@ function parseFilters(searchParams: URLSearchParams) {
     cameraModel,
     lens,
     editedStatus,
+    shared: shared === "true",
+    commented: commented === "true",
+    mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
     sort,
     cursor,
     pageSize,
@@ -126,10 +132,15 @@ function matchesFrameRate(itemRate: number | null | undefined, want: string): bo
   return Math.abs(itemRate - wantNum) < 0.1;
 }
 
+type FiltersWithIds = ReturnType<typeof parseFilters> & {
+  sharedFileIds?: Set<string>;
+  commentedFileIds?: Set<string>;
+};
+
 /** Apply in-memory filters that Firestore cannot handle */
 function passesPostFilters(
   item: Record<string, unknown>,
-  filters: ReturnType<typeof parseFilters>
+  filters: FiltersWithIds
 ): boolean {
   if (filters.resolution) {
     const parts = filters.resolution.split(/[x×]/i);
@@ -264,6 +275,19 @@ function passesPostFilters(
     const es = String((item.edited_status as string) ?? "");
     if (es !== filters.editedStatus) return false;
   }
+  if (filters.shared) {
+    const set = (filters as FiltersWithIds).sharedFileIds;
+    if (!set?.has(String(item.id ?? ""))) return false;
+  }
+  if (filters.commented) {
+    const set = (filters as FiltersWithIds).commentedFileIds;
+    if (!set?.has(String(item.id ?? ""))) return false;
+  }
+  if (filters.mediaTypes?.length) {
+    const mt = String((item.media_type as string) ?? "").toLowerCase();
+    const hasMatch = filters.mediaTypes.some((m) => m.toLowerCase() === mt);
+    if (!hasMatch) return false;
+  }
   return true;
 }
 
@@ -319,9 +343,38 @@ export async function GET(request: Request) {
 
   try {
   const url = new URL(request.url);
-  const filters = parseFilters(url.searchParams);
-
   const db = getAdminFirestore();
+  const filters = parseFilters(url.searchParams) as ReturnType<typeof parseFilters> & {
+    sharedFileIds?: Set<string>;
+    commentedFileIds?: Set<string>;
+  };
+
+  const filtersWithIds = filters as FiltersWithIds;
+  if (filters.shared) {
+    const sharesSnap = await db
+      .collection("folder_shares")
+      .where("owner_id", "==", uid)
+      .get();
+    const sharedFileIds = new Set<string>();
+    for (const d of sharesSnap.docs) {
+      const data = d.data();
+      (data.referenced_file_ids as string[] | undefined)?.forEach((id: string) => sharedFileIds.add(id));
+      const backupId = data.backup_file_id as string | undefined;
+      if (backupId) sharedFileIds.add(backupId);
+    }
+    filtersWithIds.sharedFileIds = sharedFileIds;
+  }
+
+  if (filters.commented) {
+    const commentsSnap = await db.collection("file_comments").limit(2000).get();
+    const commentedFileIds = new Set<string>();
+    commentsSnap.docs.forEach((d) => {
+      const fileId = d.data().fileId as string | undefined;
+      if (fileId) commentedFileIds.add(fileId);
+    });
+    filtersWithIds.commentedFileIds = commentedFileIds;
+  }
+
   const drivesSnap = await db
     .collection("linked_drives")
     .where("userId", "==", uid)
@@ -344,7 +397,15 @@ export async function GET(request: Request) {
   if (filters.galleryId) {
     q = q.where("gallery_id", "==", filters.galleryId);
   }
-  if (filters.mediaType) {
+  if (filters.mediaTypes?.length) {
+    if (filters.mediaTypes.length === 1) {
+      q = q.where("media_type", "==", filters.mediaTypes[0]);
+    } else if (filters.mediaTypes.length <= 30) {
+      q = q.where("media_type", "in", filters.mediaTypes);
+    } else {
+      q = q.where("media_type", "in", filters.mediaTypes.slice(0, 30));
+    }
+  } else if (filters.mediaType) {
     q = q.where("media_type", "==", filters.mediaType);
   }
   if (filters.usageStatus) {
@@ -367,7 +428,9 @@ export async function GET(request: Request) {
         ? "size_bytes"
         : "relative_path";
   const orderDir =
-    filters.sort === "oldest" || filters.sort === "smallest" ? "asc" : "desc";
+    filters.sort === "oldest" || filters.sort === "smallest" || filters.sort === "name_asc"
+      ? "asc"
+      : "desc";
   if (orderField === "modified_at" && (filters.dateFrom || filters.dateTo)) {
     if (filters.dateFrom) q = q.where("modified_at", ">=", filters.dateFrom);
     if (filters.dateTo) q = q.where("modified_at", "<=", filters.dateTo);
@@ -396,6 +459,8 @@ export async function GET(request: Request) {
     !!filters.cameraModel ||
     !!filters.lens ||
     !!filters.editedStatus ||
+    !!filters.shared ||
+    !!filters.commented ||
     (orderField !== "modified_at" && (!!filters.dateFrom || !!filters.dateTo)) ||
     (orderField !== "size_bytes" && ((filters.sizeMin != null && filters.sizeMin >= 0) || (filters.sizeMax != null && filters.sizeMax > 0)));
   const fetchLimit = needsPostFilter ? MAX_FETCH_FOR_POST_FILTER : filters.pageSize;
@@ -420,7 +485,7 @@ export async function GET(request: Request) {
   if (needsPostFilter) {
     filteredDocs = filteredDocs.filter((doc) => {
       const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
-      return passesPostFilters(item, filters);
+      return passesPostFilters(item, filtersWithIds);
     });
   }
 

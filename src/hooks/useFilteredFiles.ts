@@ -7,6 +7,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import {
   filtersFromSearchParams,
   searchParamsFromFilters,
+  filterStateToSearchParams,
   hasActiveFilters,
   getActiveFilters,
   removeFilter,
@@ -116,12 +117,7 @@ export function useFilteredFiles(
   const removeFilterById = useCallback(
     (id: string, value?: string) => {
       setFilterState((prev) => {
-        let next = removeFilter(prev, id, value);
-        if (id === "date") {
-          next = { ...next };
-          delete next.date_from;
-          delete next.date_to;
-        }
+        const next = removeFilter(prev, id, value);
         updateUrl(next);
         return next;
       });
@@ -144,7 +140,7 @@ export function useFilteredFiles(
     setLoading(true);
     try {
       const token = await user.getIdToken(true);
-      const params = searchParamsFromFilters(effectiveFilterState);
+      const params = filterStateToSearchParams(effectiveFilterState);
       if (driveId) params.set("drive_id", driveId);
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
