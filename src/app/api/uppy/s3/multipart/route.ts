@@ -43,6 +43,7 @@ export async function POST(request: Request) {
   const relativePath = metadata.relativePath ?? metadata.relative_path ?? filename ?? "";
   const sizeBytes = parseInt(metadata.sizeBytes ?? metadata.size_bytes ?? "0", 10);
   const workspaceId = metadata.workspaceId ?? metadata.workspace_id ?? null;
+  const galleryId = metadata.galleryId ?? metadata.gallery_id ?? null;
   const lastModified =
     metadata.lastModified != null ? parseInt(String(metadata.lastModified), 10) : null;
 
@@ -107,6 +108,7 @@ export async function POST(request: Request) {
     driveId,
     objectKey,
     uploadId,
+    galleryId: galleryId ?? null,
     status: "pending",
     fileFingerprint: null,
     fileName: filename ?? relativePath,

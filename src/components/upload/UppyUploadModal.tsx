@@ -26,6 +26,8 @@ interface UppyUploadModalProps {
   driveId: string;
   pathPrefix?: string;
   workspaceId?: string | null;
+  galleryId?: string | null;
+  initialFiles?: File[] | null;
   onUploadComplete?: () => void;
 }
 
@@ -35,6 +37,8 @@ export default function UppyUploadModal({
   driveId,
   pathPrefix = "",
   workspaceId = null,
+  galleryId = null,
+  initialFiles = null,
   onUploadComplete,
 }: UppyUploadModalProps) {
   const uppyRef = useRef<Uppy | null>(null);
@@ -93,6 +97,7 @@ export default function UppyUploadModal({
           relativePath: relPath,
           sizeBytes: file.size ?? 0,
           workspaceId: workspaceId ?? undefined,
+          galleryId: galleryId ?? undefined,
           lastModified:
             (file.data instanceof File ? file.data.lastModified : null) ??
             (file as { lastModified?: number }).lastModified ??
@@ -150,6 +155,14 @@ export default function UppyUploadModal({
       onUploadComplete?.();
     });
 
+    if (initialFiles?.length) {
+      try {
+        initialFiles.forEach((f) => uppy.addFile({ name: f.name, data: f }));
+      } catch {
+        // ignore
+      }
+    }
+
     uppyRef.current = uppy;
     setReady(true);
 
@@ -159,7 +172,7 @@ export default function UppyUploadModal({
       uppyRef.current = null;
       setReady(false);
     };
-  }, [open, driveId, pathPrefix, workspaceId, onUploadComplete]);
+  }, [open, driveId, pathPrefix, workspaceId, galleryId, initialFiles, onUploadComplete]);
 
   if (!open) return null;
 

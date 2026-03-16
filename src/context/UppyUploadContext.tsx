@@ -6,8 +6,21 @@ import { useBackup } from "@/context/BackupContext";
 import { usePathname } from "next/navigation";
 import { useEnterprise } from "@/context/EnterpriseContext";
 
+export interface OpenPanelOptions {
+  galleryId?: string;
+  /** Files to add to Uppy when opening (e.g. from drop) */
+  initialFiles?: File[];
+  /** Called when upload completes (e.g. to refresh gallery) */
+  onUploadComplete?: () => void | Promise<void>;
+}
+
 interface UppyUploadContextValue {
-  openPanel: (driveId: string, pathPrefix?: string, workspaceId?: string | null) => void;
+  openPanel: (
+    driveId: string,
+    pathPrefix?: string,
+    workspaceId?: string | null,
+    options?: OpenPanelOptions
+  ) => void;
   closePanel: () => void;
 }
 
@@ -27,6 +40,11 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [driveId, setDriveId] = useState<string | null>(null);
   const [pathPrefix, setPathPrefix] = useState("");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [galleryId, setGalleryId] = useState<string | null>(null);
+  const [initialFiles, setInitialFiles] = useState<File[] | null>(null);
+  const [onUploadComplete, setOnUploadComplete] = useState<
+    (() => void | Promise<void>) | null
+  >(null);
 
   const { bumpStorageVersion } = useBackup();
   const pathname = usePathname();
@@ -36,10 +54,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     pathname.startsWith("/enterprise") || pathname.startsWith("/desktop");
 
   const openPanel = useCallback(
-    (d: string, prefix = "", ws: string | null = null) => {
+    (d: string, prefix = "", ws: string | null = null, options?: OpenPanelOptions) => {
       setDriveId(d);
       setPathPrefix(prefix);
       setWorkspaceId(ws);
+      setGalleryId(options?.galleryId ?? null);
+      setInitialFiles(options?.initialFiles ?? null);
+      setOnUploadComplete(options?.onUploadComplete ?? null);
       setOpen(true);
     },
     []
@@ -50,7 +71,15 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setDriveId(null);
     setPathPrefix("");
     setWorkspaceId(null);
+    setGalleryId(null);
+    setInitialFiles(null);
+    setOnUploadComplete(null);
   }, []);
+
+  const handleUploadComplete = useCallback(async () => {
+    bumpStorageVersion();
+    await onUploadComplete?.();
+  }, [bumpStorageVersion, onUploadComplete]);
 
   const effectiveWorkspaceId =
     isEnterpriseOrDesktop && org?.id ? org.id : null;
@@ -65,7 +94,9 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           driveId={driveId}
           pathPrefix={pathPrefix}
           workspaceId={workspaceId ?? effectiveWorkspaceId}
-          onUploadComplete={bumpStorageVersion}
+          galleryId={galleryId}
+          initialFiles={initialFiles}
+          onUploadComplete={handleUploadComplete}
         />
       )}
     </UppyUploadContext.Provider>

@@ -174,6 +174,26 @@ export async function POST(
     });
   }
 
+  // If this was a gallery upload, add the new file to gallery assets
+  const galleryId = data.galleryId ?? null;
+  if (galleryId && token) {
+    try {
+      const assetsRes = await fetch(`${baseUrl}/api/galleries/${galleryId}/assets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ backup_file_ids: [fileRef.id] }),
+      });
+      if (!assetsRes.ok) {
+        console.error("[uppy complete] Failed to add to gallery:", await assetsRes.text());
+      }
+    } catch (err) {
+      console.error("[uppy complete] Gallery assets add failed:", err);
+    }
+  }
+
   return NextResponse.json({
     location: objectKey,
     key: objectKey,

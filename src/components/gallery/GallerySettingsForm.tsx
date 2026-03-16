@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Save, Check, Loader2, Image as ImageIcon } from "lucide-react";
+import { Save, Check, Loader2, Image as ImageIcon, CreditCard } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
@@ -115,6 +115,11 @@ interface GallerySettingsFormProps {
     download_settings?: Record<string, unknown>;
     watermark?: Record<string, unknown>;
     lut?: { enabled?: boolean; storage_url?: string | null } | null;
+    /** Video gallery invoice settings */
+    invoice_url?: string | null;
+    invoice_label?: string | null;
+    invoice_status?: string | null;
+    invoice_required_for_download?: boolean;
   };
 }
 
@@ -257,6 +262,54 @@ export default function GallerySettingsForm({
     String((initialData.download_settings?.free_download_limit as number) ?? "")
   );
 
+  const [invoiceUrl, setInvoiceUrl] = useState(
+    (initialData.invoice_url as string) ?? ""
+  );
+  const [invoiceLabel, setInvoiceLabel] = useState(
+    (initialData.invoice_label as string) ?? "Pay Invoice"
+  );
+  const [invoiceStatus, setInvoiceStatus] = useState<string>(
+    (initialData.invoice_status as string) ?? "none"
+  );
+  const [invoiceRequiredForDownload, setInvoiceRequiredForDownload] = useState(
+    (initialData.invoice_required_for_download as boolean) ?? false
+  );
+  const [markingPaid, setMarkingPaid] = useState(false);
+
+  const handleMarkAsPaid = useCallback(async () => {
+    if (!user) return;
+    const nextStatus = invoiceStatus === "paid" ? "sent" : "paid";
+    setMarkingPaid(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${galleryId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          version: versionRef.current,
+          invoice_status: nextStatus,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        if (res.status === 409) {
+          onRefetch?.();
+        }
+        throw new Error(data.error ?? "Failed to update");
+      }
+      setInvoiceStatus(nextStatus);
+      versionRef.current += 1;
+      onRefetch?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setMarkingPaid(false);
+    }
+  }, [user, galleryId, invoiceStatus, onRefetch]);
+
   const [coverAssets, setCoverAssets] = useState<
     { id: string; name: string; object_key: string; media_type: string }[]
   >([]);
@@ -340,6 +393,10 @@ export default function GallerySettingsForm({
           enabled: lutEnabled,
           storage_url: lutStorageUrl ?? undefined,
         },
+        invoice_url: invoiceUrl.trim() || null,
+        invoice_label: invoiceLabel.trim() || null,
+        invoice_status: invoiceStatus || null,
+        invoice_required_for_download: invoiceRequiredForDownload,
       };
       if (accessMode === "password" && password) body.password = password;
 
@@ -796,6 +853,81 @@ export default function GallerySettingsForm({
               />
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Invoice (video galleries) */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          Invoice & payment
+        </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          Add a payment link so clients can pay their invoice. Once they&apos;ve paid, mark it as paid below to unlock downloads.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Invoice or payment URL
+            </label>
+            <input
+              type="url"
+              value={invoiceUrl}
+              onChange={(e) => setInvoiceUrl(e.target.value)}
+              placeholder="https://..."
+              className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Button label (what clients see)
+            </label>
+            <input
+              type="text"
+              value={invoiceLabel}
+              onChange={(e) => setInvoiceLabel(e.target.value)}
+              placeholder="Pay Invoice"
+              className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+          </div>
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={invoiceRequiredForDownload}
+              onChange={(e) => setInvoiceRequiredForDownload(e.target.checked)}
+              className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+            />
+            <span className="text-sm text-neutral-700 dark:text-neutral-300">
+              Block downloads until invoice is paid
+            </span>
+          </label>
+          {invoiceUrl && (
+            <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+              <CreditCard className="h-5 w-5 text-neutral-500" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Status:{" "}
+                </span>
+                <span
+                  className={
+                    invoiceStatus === "paid"
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-amber-600 dark:text-amber-400"
+                  }
+                >
+                  {invoiceStatus === "paid" ? "Paid ✓" : "Unpaid"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleMarkAsPaid}
+                disabled={saving}
+                className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {invoiceStatus === "paid" ? "Mark unpaid" : "Mark as paid"}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 

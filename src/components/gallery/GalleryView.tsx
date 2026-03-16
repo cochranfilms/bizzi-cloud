@@ -15,6 +15,7 @@ import {
   X,
   MessageCircle,
   Music2,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
@@ -32,6 +33,8 @@ interface GalleryData {
   invoice_required_for_download?: boolean;
   invoice_status?: string;
   invoice_url?: string | null;
+  invoice_label?: string | null;
+  featured_video_asset_id?: string | null;
   title: string;
   slug: string;
   description?: string | null;
@@ -562,6 +565,7 @@ function GalleryAssetCard({
   watermark,
   lut,
   lutPreviewEnabled = true,
+  isFeaturedVideo = false,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -577,10 +581,46 @@ function GalleryAssetCard({
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
   lutPreviewEnabled?: boolean;
+  isFeaturedVideo?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
+
+  // Featured video: fetch stream URL for autoplay thumbnail
+  useEffect(() => {
+    if (!isFeaturedVideo || !isVid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          object_key: asset.object_key,
+          name: asset.name,
+        });
+        if (password) params.set("password", password);
+        const headers: Record<string, string> = {};
+        if (getAuthToken) {
+          const t = await getAuthToken();
+          if (t) headers.Authorization = `Bearer ${t}`;
+        }
+        const res = await fetch(
+          `/api/galleries/${galleryId}/video-stream-url?${params}`,
+          { headers }
+        );
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (cancelled || !json.streamUrl) return;
+        setVideoStreamUrl(json.streamUrl);
+      } catch {
+        // fallback to thumbnail
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setVideoStreamUrl(null);
+    };
+  }, [isFeaturedVideo, isVid, galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
   useEffect(() => {
     if (!isImg && !isVid) return;
@@ -642,7 +682,18 @@ function GalleryAssetCard({
       <div
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
-        {thumbUrl ? (
+        {isFeaturedVideo && isVid && videoStreamUrl ? (
+          <video
+            src={videoStreamUrl}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className={`block w-full object-cover ${
+              useNaturalAspect ? "h-auto" : "h-full"
+            }`}
+          />
+        ) : thumbUrl ? (
           lut?.enabled && lut?.storage_url && isImg && lutPreviewEnabled ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
@@ -1103,6 +1154,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       });
       const json = await res.json();
       if (!res.ok) {
+        if (json.error === "invoice_required") {
+          setDownloadError("Payment required before download.");
+          return;
+        }
         const msg = json.message ?? json.error ?? "Download failed";
         throw new Error(msg);
       }
@@ -1614,6 +1669,19 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             >
               View gallery
             </button>
+            {gallery.invoice_url &&
+              gallery.invoice_status !== "paid" && (
+                <a
+                  href={gallery.invoice_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
+                  style={{ borderColor: accent, color: accent }}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {gallery.invoice_label || "Pay Invoice"}
+                </a>
+              )}
             {gallery.download_settings?.allow_full_gallery_download && assets.length > 0 && (
               <button
                 type="button"
@@ -1630,8 +1698,48 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           {downloadError && (
             <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
               {downloadError}
+              {gallery.invoice_url && gallery.invoice_status !== "paid" && (
+                <a
+                  href={gallery.invoice_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 inline-flex items-center gap-1 font-medium underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {gallery.invoice_label || "Pay Invoice"}
+                </a>
+              )}
             </div>
           )}
+          {gallery.invoice_url &&
+            gallery.invoice_status !== "paid" &&
+            !downloadError && (
+              <div
+                className={`mx-auto mb-4 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 ${
+                  isDarkBg
+                    ? "border-white/20 bg-white/5"
+                    : "border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900/50"
+                }`}
+              >
+                <span
+                  className={`text-sm ${
+                    isDarkBg ? "text-white/80" : "text-neutral-600"
+                  }`}
+                >
+                  Payment required for downloads.
+                </span>
+                <a
+                  href={gallery.invoice_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: accent }}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {gallery.invoice_label || "Pay Invoice"}
+                </a>
+              </div>
+            )}
           {downloadStatus && (
             <p
               className={`mx-auto mb-4 text-sm ${
@@ -1836,6 +1944,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 watermark={gallery.watermark}
                 lut={gallery.lut}
                 lutPreviewEnabled={lutPreviewEnabled}
+                isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
               />
             ))}
           </div>
