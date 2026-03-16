@@ -221,6 +221,10 @@ export default function FileGrid() {
       ? currentDrive?.id ?? null
       : null,
   });
+  const handleSearchChange = useCallback(
+    (v: string) => setFilter("search", v || undefined),
+    [setFilter]
+  );
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
     hasGallerySuite,
@@ -815,7 +819,7 @@ export default function FileGrid() {
         <div className="sticky top-16 z-30 -mx-2 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/95">
           <FileFiltersToolbar
             searchValue={(filterState.search as string) ?? ""}
-            onSearchChange={(v) => setFilter("search", v || undefined)}
+            onSearchChange={handleSearchChange}
             filterState={filterState}
             setFilter={setFilter}
             sortValue={(filterState.sort as string) ?? "newest"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
@@ -16,6 +16,12 @@ import {
 } from "@/lib/filters/apply-filters";
 
 const FILTER_DEBOUNCE_MS = 300;
+
+/** Stable serialization of filter state for effect deps - avoids refetch loops */
+function filterStateKey(state: FilterState): string {
+  const keys = Object.keys(state).sort();
+  return keys.map((k) => `${k}=${JSON.stringify(state[k])}`).join("|");
+}
 
 export interface UseFilteredFilesOptions {
   /** Scope to a specific drive when viewing inside a drive */
@@ -79,6 +85,7 @@ export function useFilteredFiles(
   const [totalCount, setTotalCount] = useState(0);
 
   /** When drive is navigation (Storage/RAW/Gallery Media), exclude it from "active filters" */
+  /** Stable ref so fetchFiltered doesn't need effectiveFilterState in deps (avoids refetch loop) */
   const effectiveFilterState =
     driveIdAsNavigation && filterState.drive === driveIdAsNavigation
       ? (() => {
@@ -86,7 +93,10 @@ export function useFilteredFiles(
           return rest;
         })()
       : filterState;
+  const effectiveFilterStateRef = useRef(effectiveFilterState);
+  effectiveFilterStateRef.current = effectiveFilterState;
   const hasFilters = hasActiveFilters(effectiveFilterState);
+  const filterKey = useMemo(() => filterStateKey(effectiveFilterState), [effectiveFilterState]);
 
   const updateUrl = useCallback(
     (state: FilterState) => {
@@ -137,10 +147,11 @@ export function useFilteredFiles(
       setLoading(false);
       return;
     }
+    const state = effectiveFilterStateRef.current;
     setLoading(true);
     try {
       const token = await user.getIdToken(true);
-      const params = filterStateToSearchParams(effectiveFilterState);
+      const params = filterStateToSearchParams(state);
       if (driveId) params.set("drive_id", driveId);
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
@@ -164,18 +175,25 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, effectiveFilterState, driveId]);
+  }, [user, driveId]);
+
+  const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 
   useEffect(() => {
-    setFilterState(filtersFromSearchParams(searchParams));
-  }, [searchParams]);
+    const next = filtersFromSearchParams(searchParams);
+    setFilterState((prev) => {
+      if (filterStateKey(prev) === filterStateKey(next)) return prev;
+      return next;
+    });
+    // searchQueryString is stable string from searchParams.toString(); using searchParams directly would cause refetch loops
+  }, [searchQueryString]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (hasFilters) {
       const t = setTimeout(fetchFiltered, FILTER_DEBOUNCE_MS);
       return () => clearTimeout(t);
     }
-  }, [hasFilters, fetchFiltered]);
+  }, [hasFilters, filterKey, fetchFiltered]);
 
   /** Replace URL with only drive= when opening Storage/RAW/Gallery Media (clears stale filters) */
   const clearFiltersAndKeepDrive = useCallback(
