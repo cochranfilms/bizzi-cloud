@@ -566,6 +566,7 @@ function GalleryAssetCard({
   lut,
   lutPreviewEnabled = true,
   isFeaturedVideo = false,
+  isVideoGallery = false,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -582,15 +583,18 @@ function GalleryAssetCard({
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
   lutPreviewEnabled?: boolean;
   isFeaturedVideo?: boolean;
+  /** When true, all videos autoplay muted (not just featured) */
+  isVideoGallery?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
+  const shouldAutoplayVideo = isVid && (isFeaturedVideo || isVideoGallery);
 
-  // Featured video: fetch stream URL for autoplay thumbnail
+  // Fetch stream URL for autoplay thumbnail (featured or all videos in video gallery)
   useEffect(() => {
-    if (!isFeaturedVideo || !isVid) return;
+    if (!shouldAutoplayVideo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -620,7 +624,7 @@ function GalleryAssetCard({
       cancelled = true;
       setVideoStreamUrl(null);
     };
-  }, [isFeaturedVideo, isVid, galleryId, asset.object_key, asset.name, password, getAuthToken]);
+  }, [shouldAutoplayVideo, galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
   useEffect(() => {
     if (!isImg && !isVid) return;
@@ -682,7 +686,7 @@ function GalleryAssetCard({
       <div
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
-        {isFeaturedVideo && isVid && videoStreamUrl ? (
+        {shouldAutoplayVideo && videoStreamUrl ? (
           <video
             src={videoStreamUrl}
             autoPlay
@@ -807,6 +811,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     { id: string; body: string; client_name?: string | null; created_at: string }[]
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
@@ -977,6 +982,49 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           a.id === data.gallery.cover_asset_id && isImage(a.name)
       ) ?? data.assets.find((a) => isImage(a.name))
     : null;
+
+  const featuredVideoAsset =
+    data?.gallery.gallery_type === "video" && data?.gallery.featured_video_asset_id
+      ? data.assets.find(
+          (a) => a.id === data.gallery.featured_video_asset_id && isVideo(a.name)
+        ) ?? null
+      : null;
+
+  useEffect(() => {
+    if (!featuredVideoAsset || !data) {
+      setFeaturedVideoStreamUrl(null);
+      return () => {};
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          object_key: featuredVideoAsset.object_key,
+          name: featuredVideoAsset.name,
+        });
+        if (password) params.set("password", password);
+        const headers: Record<string, string> = {};
+        if (user) {
+          const t = await user.getIdToken();
+          if (t) headers.Authorization = `Bearer ${t}`;
+        }
+        const res = await fetch(
+          `/api/galleries/${galleryId}/video-stream-url?${params}`,
+          { headers }
+        );
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (cancelled || !json.streamUrl) return;
+        setFeaturedVideoStreamUrl(json.streamUrl);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setFeaturedVideoStreamUrl(null);
+    };
+  }, [featuredVideoAsset, galleryId, password, user, data]);
 
   useEffect(() => {
     if (!bannerAsset || !data) {
@@ -1346,14 +1394,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       >
         <header
           className={`absolute left-0 right-0 top-0 z-20 border-b border-transparent ${
-            bannerUrl ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
+            bannerUrl || featuredVideoStreamUrl ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
           }`}
           style={{ ["--accent" as string]: accent }}
         >
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
             <Link
               href="/"
-              className={`flex items-center gap-2 ${bannerUrl ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
+              className={`flex items-center gap-2 ${bannerUrl || featuredVideoStreamUrl ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
             >
               <Image
                 src="/logo.png"
@@ -1372,7 +1420,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 type="button"
                 onClick={() => setMusicPlaying((p) => !p)}
                 className={`rounded-full p-2 transition-colors ${
-                  bannerUrl ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
+                  bannerUrl || featuredVideoStreamUrl ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
                 }`}
                 title={musicPlaying ? "Pause music" : "Play music"}
               >
@@ -1383,19 +1431,31 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         </header>
 
         <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6">
-          {bannerUrl ? (
+          {(bannerUrl || featuredVideoStreamUrl) ? (
             <>
               <div
                 className="pointer-events-none absolute inset-0 z-0"
                 aria-hidden
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={bannerUrl}
-                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                  className="h-full w-full object-cover"
-                  style={{ objectPosition: coverObjectPosition }}
-                />
+                {featuredVideoStreamUrl ? (
+                  <video
+                    src={featuredVideoStreamUrl}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: coverObjectPosition }}
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={bannerUrl!}
+                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: coverObjectPosition }}
+                  />
+                )}
                 <div
                   className="absolute inset-0"
                   style={{
@@ -1592,7 +1652,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         </div>
       </header>
 
-      {bannerUrl && (
+      {(bannerUrl || featuredVideoStreamUrl) && (
         <div
           className="relative w-full overflow-hidden"
           style={{
@@ -1606,13 +1666,25 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             })(),
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={bannerUrl}
-            alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-            className="h-full w-full object-cover"
-            style={{ objectPosition: coverObjectPosition }}
-          />
+          {featuredVideoStreamUrl ? (
+            <video
+              src={featuredVideoStreamUrl}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="h-full w-full object-cover"
+              style={{ objectPosition: coverObjectPosition }}
+            />
+          ) : bannerUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={bannerUrl}
+              alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+              className="h-full w-full object-cover"
+              style={{ objectPosition: coverObjectPosition }}
+            />
+          ) : null}
         </div>
       )}
 
@@ -1682,7 +1754,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   {gallery.invoice_label || "Pay Invoice"}
                 </a>
               )}
-            {gallery.download_settings?.allow_full_gallery_download && assets.length > 0 && (
+            {gallery.download_settings?.allow_full_gallery_download &&
+              assets.length > 0 &&
+              !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
               <button
                 type="button"
                 onClick={handleDownloadAll}
@@ -1711,35 +1785,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               )}
             </div>
           )}
-          {gallery.invoice_url &&
-            gallery.invoice_status !== "paid" &&
-            !downloadError && (
-              <div
-                className={`mx-auto mb-4 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 ${
-                  isDarkBg
-                    ? "border-white/20 bg-white/5"
-                    : "border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900/50"
-                }`}
-              >
-                <span
-                  className={`text-sm ${
-                    isDarkBg ? "text-white/80" : "text-neutral-600"
-                  }`}
-                >
-                  Payment required for downloads.
-                </span>
-                <a
-                  href={gallery.invoice_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: accent }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  {gallery.invoice_label || "Pay Invoice"}
-                </a>
-              </div>
-            )}
           {downloadStatus && (
             <p
               className={`mx-auto mb-4 text-sm ${
@@ -1932,19 +1977,24 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   fetchPreviewComments(asset.id);
                 }}
                 onDownload={
-                  gallery.download_settings?.allow_single_download
+                  gallery.download_settings?.allow_single_download &&
+                  !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid")
                     ? () => handleDownload(asset)
                     : undefined
                 }
                 onFavoriteToggle={() => toggleFavorite(asset.id)}
                 isFavorited={selectedFavorites.has(asset.id)}
-                canDownload={!!gallery.download_settings?.allow_single_download}
+                canDownload={
+                  !!gallery.download_settings?.allow_single_download &&
+                  !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid")
+                }
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
                 watermark={gallery.watermark}
                 lut={gallery.lut}
                 lutPreviewEnabled={lutPreviewEnabled}
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
+                isVideoGallery={gallery.gallery_type === "video"}
               />
             ))}
           </div>
@@ -1957,7 +2007,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             {selectedFavorites.size} selected
           </span>
           <div className="flex flex-col gap-2">
-            {gallery.download_settings?.allow_selected_download && (
+            {gallery.download_settings?.allow_selected_download &&
+              !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
               <button
                 type="button"
                 onClick={handleDownloadSelected}

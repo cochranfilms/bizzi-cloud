@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Save, Check, Loader2, Image as ImageIcon, CreditCard } from "lucide-react";
+import { Save, Check, Loader2, Image as ImageIcon, CreditCard, Film } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
@@ -120,6 +120,9 @@ interface GallerySettingsFormProps {
     invoice_label?: string | null;
     invoice_status?: string | null;
     invoice_required_for_download?: boolean;
+    /** Video gallery */
+    gallery_type?: "photo" | "video";
+    featured_video_asset_id?: string | null;
   };
 }
 
@@ -150,6 +153,9 @@ export default function GallerySettingsForm({
   const [layout, setLayout] = useState(initialData.layout ?? "masonry");
   const [coverAssetId, setCoverAssetId] = useState<string | null>(
     initialData.cover_asset_id ?? null
+  );
+  const [featuredVideoAssetId, setFeaturedVideoAssetId] = useState<string | null>(
+    initialData.featured_video_asset_id ?? null
   );
   const [shareImageAssetId, setShareImageAssetId] = useState<string | null>(
     initialData.share_image_asset_id ?? null
@@ -310,10 +316,16 @@ export default function GallerySettingsForm({
     }
   }, [user, galleryId, invoiceStatus, onRefetch]);
 
+  const isVideoGallery = initialData.gallery_type === "video";
+
   const [coverAssets, setCoverAssets] = useState<
     { id: string; name: string; object_key: string; media_type: string }[]
   >([]);
+  const [videoAssets, setVideoAssets] = useState<
+    { id: string; name: string; object_key: string; media_type: string }[]
+  >([]);
   const [coverAssetsLoading, setCoverAssetsLoading] = useState(false);
+  const [videoAssetsLoading, setVideoAssetsLoading] = useState(false);
 
   const fetchCoverAssets = useCallback(async () => {
     if (!user || !galleryId) return;
@@ -335,9 +347,33 @@ export default function GallerySettingsForm({
     }
   }, [user, galleryId]);
 
+  const fetchVideoAssets = useCallback(async () => {
+    if (!user || !galleryId) return;
+    setVideoAssetsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${galleryId}/view`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const assets = (data.assets ?? []).filter(
+        (a: { media_type: string; name: string }) =>
+          a.media_type === "video" || GALLERY_VIDEO_EXT.test(a.name ?? "")
+      );
+      setVideoAssets(assets);
+    } finally {
+      setVideoAssetsLoading(false);
+    }
+  }, [user, galleryId]);
+
   useEffect(() => {
     fetchCoverAssets();
   }, [fetchCoverAssets]);
+
+  useEffect(() => {
+    if (isVideoGallery) fetchVideoAssets();
+  }, [isVideoGallery, fetchVideoAssets]);
 
   const handleSave = async () => {
     if (!user) return;

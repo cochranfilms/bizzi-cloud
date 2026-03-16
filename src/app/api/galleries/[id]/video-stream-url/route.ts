@@ -114,14 +114,8 @@ export async function GET(
 
     const proxyKey = getProxyObjectKey(objectKey);
     const proxyExists = await objectExists(proxyKey);
-    if (!proxyExists) {
-      return NextResponse.json({
-        processing: true,
-        message: "Generating preview. Check back in a moment.",
-        estimatedSeconds: 60,
-      });
-    }
-    const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
+    const effectiveKey = proxyExists ? proxyKey : objectKey;
+    const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({ streamUrl });
   } catch (err) {
     console.error("[gallery video-stream-url] Error:", err);
