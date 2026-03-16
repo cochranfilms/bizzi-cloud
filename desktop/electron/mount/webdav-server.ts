@@ -520,8 +520,8 @@ export class WebDAVServer {
             method: "PUT",
             headers: putHeaders,
             body: Readable.toWeb(fileStream) as BodyInit,
-            duplex: "half" as never,
-          });
+            duplex: "half",
+          } as unknown as RequestInit);
         } finally {
           fileStream.destroy();
           fs.unlink(tmpPath, () => {});
@@ -531,9 +531,9 @@ export class WebDAVServer {
           method: "PUT" as const,
           headers: putHeaders,
           body: req.readable ? (Readable.toWeb(req) as BodyInit) : new ArrayBuffer(0),
-          duplex: "half" as const,
+          duplex: "half",
         };
-        uploadRes = await fetch(urlData.uploadUrl, putInit as RequestInit);
+        uploadRes = await fetch(urlData.uploadUrl, putInit as unknown as RequestInit);
       }
 
       if (!uploadRes.ok) {
