@@ -51,7 +51,9 @@ function parseFilters(searchParams: URLSearchParams) {
   const editedStatus = searchParams.get("edited_status") ?? undefined;
   const shared = searchParams.get("shared");
   const commented = searchParams.get("commented");
-  const sort = (searchParams.get("sort") as SortOption) ?? "newest";
+  const VALID_SORTS: SortOption[] = ["newest", "oldest", "largest", "smallest", "name_asc", "name_desc"];
+  const rawSort = (searchParams.get("sort") ?? "newest").split(/[:]/)[0]?.trim() || "newest";
+  const sort = (VALID_SORTS.includes(rawSort as SortOption) ? rawSort : "newest") as SortOption;
   const cursor = searchParams.get("cursor") ?? undefined;
   const pageSize = Math.min(
     parseInt(searchParams.get("page_size") ?? String(PAGE_SIZE), 10) || PAGE_SIZE,
