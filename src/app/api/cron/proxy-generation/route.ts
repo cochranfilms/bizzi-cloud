@@ -19,7 +19,7 @@ const BATCH_SIZE = 2; // Process up to 2 per run to stay within serverless timeo
 
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
+async function handleCron(request: Request) {
   if (CRON_SECRET) {
     const authHeader = request.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -67,4 +67,13 @@ export async function POST(request: Request) {
     completed,
     failed,
   });
+}
+
+/** Vercel cron sends GET requests */
+export async function GET(request: Request) {
+  return handleCron(request);
+}
+
+export async function POST(request: Request) {
+  return handleCron(request);
 }

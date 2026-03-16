@@ -1,55 +1,15 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import JSZip from "jszip";
+import streamSaver from "streamsaver";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
 const DOWNLOAD_LIMIT = 50;
-const FETCH_RETRIES = 3;
-const RETRY_DELAY_MS = 1500;
 
 function isNotReadableError(err: unknown): boolean {
   if (err instanceof DOMException) return err.name === "NotReadableError";
   return err instanceof Error && err.name === "NotReadableError";
-}
-
-async function fetchWithRetry(url: string): Promise<Blob> {
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= FETCH_RETRIES; attempt++) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.blob();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < FETCH_RETRIES) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      }
-    }
-  }
-  throw lastErr;
-}
-
-/**
- * Deduplicates filenames within a zip (e.g. image.jpg, image (1).jpg, image (2).jpg).
- */
-function uniqueZipNames(names: string[]): string[] {
-  const used = new Map<string, number>();
-  const result: string[] = [];
-  for (const raw of names) {
-    const base = raw.replace(/\.([^.]+)$/, "");
-    const ext = raw.includes(".") ? raw.slice(raw.lastIndexOf(".")) : "";
-    let name = raw;
-    let n = 0;
-    while (used.has(name)) {
-      n++;
-      name = `${base} (${n})${ext}`;
-    }
-    used.set(name, 1);
-    result.push(name);
-  }
-  return result;
 }
 
 export interface UseBulkDownloadOptions {
@@ -80,19 +40,17 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
           throw new Error("No downloadable files found");
         }
 
-        const res = await fetch("/api/backup/download-bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ items }),
-        });
-        const data = (await res.json().catch(() => ({}))) as { urls?: { url: string; name: string }[]; error?: string };
-        if (!res.ok) throw new Error(data?.error ?? "Failed to get download URLs");
-
-        const urls = data.urls ?? [];
-        if (urls.length === 0) throw new Error("No download URLs returned");
-
-        // Single file: use direct download to avoid memory/stream issues with large files
-        if (urls.length === 1) {
+        // Single file: use direct presigned download (B2→browser, no server proxy)
+        if (items.length === 1) {
+          const res = await fetch("/api/backup/download-bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ items }),
+          });
+          const data = (await res.json().catch(() => ({}))) as { urls?: { url: string; name: string }[]; error?: string };
+          if (!res.ok) throw new Error(data?.error ?? "Failed to get download URLs");
+          const urls = data.urls ?? [];
+          if (urls.length === 0) throw new Error("No download URLs returned");
           const { url, name } = urls[0];
           const fullUrl = url.startsWith("/") ? `${window.location.origin}${url}` : url;
           const a = document.createElement("a");
@@ -104,24 +62,21 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
           return;
         }
 
-        const zip = new JSZip();
-        const names = uniqueZipNames(urls.map((u) => u.name));
-
-        for (let i = 0; i < urls.length; i++) {
-          const { url } = urls[i];
-          const name = names[i];
-          const fetchUrl = url.startsWith("/") ? `${window.location.origin}${url}` : url;
-          const blob = await fetchWithRetry(fetchUrl);
-          zip.file(name, blob);
+        // Multi-file: server streams ZIP (avoids loading 10–20GB into browser memory)
+        const res = await fetch("/api/backup/download-bulk-zip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ items }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data?.error ?? "Failed to start download");
         }
+        const body = res.body;
+        if (!body) throw new Error("No response body");
 
-        const zipBlob = await zip.generateAsync({ type: "blob" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(zipBlob);
-        a.download = "download.zip";
-        a.rel = "noopener noreferrer";
-        a.click();
-        URL.revokeObjectURL(a.href);
+        const fileStream = streamSaver.createWriteStream("download.zip");
+        await body.pipeTo(fileStream);
       } catch (err) {
         const msg = isNotReadableError(err)
           ? "The download was interrupted. This can happen with large files or unstable connections. Try again or download fewer files at once."
