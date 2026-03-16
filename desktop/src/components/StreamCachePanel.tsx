@@ -27,38 +27,38 @@ export function StreamCachePanel({
   ];
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+    <section className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
       <h2 className="flex items-center gap-2 font-medium mb-3">
-        <Cpu className="w-5 h-5 text-zinc-400" />
+        <Cpu className="w-5 h-5 text-bizzi-blue" />
         Stream Cache
       </h2>
-      <p className="text-sm text-zinc-400 mb-4">
+      <p className="text-sm text-neutral-400 mb-4">
         Temporary cache for streamed chunks. Uses LRU eviction when full.
       </p>
       <div className="space-y-3">
         <div>
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-zinc-500">Usage</span>
+            <span className="text-neutral-500">Usage</span>
             <span>{formatBytes(usedBytes)} / {formatBytes(maxBytes)}</span>
           </div>
-          <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+          <div className="h-2 rounded-full bg-neutral-800 overflow-hidden">
             <div
-              className="h-full bg-emerald-600 transition-all"
+              className="h-full bg-bizzi-blue transition-all"
               style={{ width: `${percent}%` }}
             />
           </div>
         </div>
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Max size</label>
+          <label className="block text-xs text-neutral-500 mb-1">Max size</label>
           <div className="flex gap-2">
             {presets.map((p) => (
               <button
                 key={p.label}
                 onClick={() => onUpdate("streamCacheMaxBytes", p.value)}
-                className={`px-3 py-1.5 rounded text-sm ${
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                   maxBytes === p.value
-                    ? "bg-emerald-600 text-white"
-                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    ? "bg-bizzi-blue text-white"
+                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
                 }`}
               >
                 {p.label}
@@ -66,7 +66,7 @@ export function StreamCachePanel({
             ))}
           </div>
         </div>
-        <p className="text-xs text-zinc-500 truncate" title={cacheBaseDir}>
+        <p className="text-xs text-neutral-500 truncate" title={cacheBaseDir}>
           Location: {cacheBaseDir || "—"}
         </p>
       </div>

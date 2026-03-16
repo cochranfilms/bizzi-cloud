@@ -7,6 +7,7 @@ import {
   ToggleLeft,
   Wrench,
   Megaphone,
+  Globe,
 } from "lucide-react";
 import type { SettingsSection } from "@/admin/hooks/useAdminSettings";
 
@@ -17,6 +18,7 @@ const sections: { id: SettingsSection; label: string; icon: typeof HardDrive }[]
   { id: "features", label: "Feature flags", icon: ToggleLeft },
   { id: "maintenance", label: "Maintenance mode", icon: Wrench },
   { id: "banner", label: "Announcement banner", icon: Megaphone },
+  { id: "display", label: "Display (locale & currency)", icon: Globe },
 ];
 
 interface SettingsNavigationProps {

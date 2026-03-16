@@ -1,7 +1,7 @@
 "use client";
 
 import { TrendingUp, AlertTriangle } from "lucide-react";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 
 interface CostIntelligenceCardProps {
   mrr: number;
@@ -16,6 +16,7 @@ export default function CostIntelligenceCard({
   grossMarginPercent,
   costTrendVsRevenue = "ok",
 }: CostIntelligenceCardProps) {
+  const formatCurrency = useAdminFormatCurrency();
   const profit = mrr - infraCost;
   const isHealthy = grossMarginPercent >= 60;
 

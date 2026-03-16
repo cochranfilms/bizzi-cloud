@@ -66,16 +66,16 @@ export function AuthPanel({ children }: AuthPanelProps) {
   };
 
   const signInForm = isFirebaseConfigured() ? (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+    <div className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
       {user ? (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-400">
-            Signed in as <span className="text-zinc-200">{user.email}</span>
+          <span className="text-sm text-neutral-400">
+            Signed in as <span className="text-neutral-200">{user.email}</span>
           </span>
           <button
             type="button"
             onClick={handleSignOut}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
+            className="text-xs text-neutral-500 hover:text-neutral-300"
           >
             Sign out
           </button>
@@ -83,31 +83,31 @@ export function AuthPanel({ children }: AuthPanelProps) {
       ) : (
         <form onSubmit={handleSignIn} className="space-y-3">
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Email</label>
+            <label className="block text-xs text-neutral-500 mb-1">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 rounded bg-zinc-800 border border-zinc-700 text-sm"
+              className="w-full px-3 py-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-neutral-100 placeholder-neutral-500 focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/30 outline-none transition-colors"
               placeholder="you@example.com"
               required
             />
           </div>
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Password</label>
+            <label className="block text-xs text-neutral-500 mb-1">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 rounded bg-zinc-800 border border-zinc-700 text-sm"
+              className="w-full px-3 py-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-neutral-100 placeholder-neutral-500 focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/30 outline-none transition-colors"
               required
             />
           </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && <p className="text-xs text-red-400">{error}</p>}
           <button
             type="submit"
             disabled={signingIn}
-            className="w-full py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-sm disabled:opacity-60"
+            className="w-full py-2 rounded-lg bg-bizzi-blue hover:bg-bizzi-cyan text-white text-sm font-medium disabled:opacity-60 transition-colors"
           >
             {signingIn ? "Signing in…" : "Sign in to Bizzi Cloud"}
           </button>

@@ -2,13 +2,14 @@
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { RevenueByPlan } from "@/admin/types/adminRevenue.types";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 
 interface RevenueByPlanChartProps {
   data: RevenueByPlan[];
 }
 
 export default function RevenueByPlanChart({ data }: RevenueByPlanChartProps) {
+  const formatCurrency = useAdminFormatCurrency();
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
       <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">

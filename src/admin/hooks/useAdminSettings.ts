@@ -10,6 +10,7 @@ import type {
   FeatureFlags,
   MaintenanceSettings,
   BannerSettings,
+  DisplaySettings,
 } from "@/admin/types/adminSettings.types";
 
 export type SettingsSection =
@@ -18,7 +19,8 @@ export type SettingsSection =
   | "alerts"
   | "features"
   | "maintenance"
-  | "banner";
+  | "banner"
+  | "display";
 
 export function useAdminSettings() {
   const { user } = useAuth();
@@ -28,6 +30,7 @@ export function useAdminSettings() {
   const [features, setFeatures] = useState<FeatureFlags | null>(null);
   const [maintenance, setMaintenance] = useState<MaintenanceSettings | null>(null);
   const [banner, setBanner] = useState<BannerSettings | null>(null);
+  const [display, setDisplay] = useState<DisplaySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +50,7 @@ export function useAdminSettings() {
       setFeatures(data.features);
       setMaintenance(data.maintenance);
       setBanner(data.banner);
+      setDisplay(data.display ?? { locale: "en-US", currency: "USD" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load settings");
     } finally {
@@ -65,6 +69,7 @@ export function useAdminSettings() {
     features,
     maintenance,
     banner,
+    display,
     loading,
     error,
     refresh,

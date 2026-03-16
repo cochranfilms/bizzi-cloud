@@ -11,6 +11,8 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { LOADING_COPY } from "@/lib/loading-copy";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -153,8 +155,8 @@ export default function CreatorContent() {
 
         {currentDrive ? (
           driveFilesLoading ? (
-            <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Loading files…
+            <div className="py-12">
+              <LoadingSpinner label={LOADING_COPY.files} />
             </div>
           ) : driveFiles.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -180,8 +182,8 @@ export default function CreatorContent() {
             </div>
           )
         ) : loading ? (
-          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading…
+          <div className="py-12">
+            <LoadingSpinner label={LOADING_COPY.default} />
           </div>
         ) : folderItems.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

@@ -2,7 +2,7 @@
 
 import SideDrawer from "../shared/SideDrawer";
 import { formatBytes } from "@/admin/utils/formatBytes";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 import { formatDateTime } from "@/admin/utils/formatDateTime";
 import { mapPlanToLabel } from "@/admin/utils/mapPlanToLabel";
 import StatusBadge from "../shared/StatusBadge";
@@ -19,6 +19,7 @@ export default function UserDetailDrawer({
   isOpen,
   onClose,
 }: UserDetailDrawerProps) {
+  const formatCurrency = useAdminFormatCurrency();
   if (!user) return null;
 
   return (

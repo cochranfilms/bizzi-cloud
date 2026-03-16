@@ -39,3 +39,9 @@ export interface BannerSettings {
   message: string;
   severity: "info" | "warning" | "critical";
 }
+
+/** Display preferences for admin dashboard (locale, currency). */
+export interface DisplaySettings {
+  locale: string;
+  currency: string;
+}

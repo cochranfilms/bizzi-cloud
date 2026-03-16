@@ -23,16 +23,13 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { LOADING_COPY } from "@/lib/loading-copy";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 
-function rectsIntersect(
-  a: { left: number; top: number; right: number; bottom: number },
-  b: DOMRect
-): boolean {
-  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
-}
+import { rectsIntersect } from "@/lib/utils";
 
 function BulkActionBar({
   selectedFileCount,

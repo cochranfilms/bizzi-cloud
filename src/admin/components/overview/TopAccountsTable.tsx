@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { TopAccount } from "@/admin/types/adminOverview.types";
 import DataTable, { type Column } from "../shared/DataTable";
 import { formatBytes } from "@/admin/utils/formatBytes";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 import { formatRelativeTime } from "@/admin/utils/formatDateTime";
 import { mapPlanToLabel } from "@/admin/utils/mapPlanToLabel";
 
@@ -15,6 +15,7 @@ interface TopAccountsTableProps {
 
 export default function TopAccountsTable({ accounts }: TopAccountsTableProps) {
   const router = useRouter();
+  const formatCurrency = useAdminFormatCurrency();
   const columns: Column<TopAccount>[] = [
     {
       id: "name",

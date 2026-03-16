@@ -10,6 +10,7 @@ import type {
   FeatureFlags,
   MaintenanceSettings,
   BannerSettings,
+  DisplaySettings,
 } from "@/admin/types/adminSettings.types";
 
 async function apiAdmin<T>(
@@ -35,6 +36,7 @@ export interface FetchSettingsOptions {
 }
 
 export type SettingsResponse = {
+  display?: DisplaySettings;
   quotas: QuotaSettings;
   retention: RetentionSettings;
   alerts: AlertThresholdSettings;
@@ -79,6 +81,7 @@ export async function fetchBannerSettings(options?: FetchSettingsOptions): Promi
 
 /** Partial update payload for PATCH - any subset of settings sections */
 export type SettingsUpdatePayload = {
+  display?: Partial<DisplaySettings>;
   quotas?: Partial<QuotaSettings>;
   retention?: Partial<RetentionSettings>;
   alerts?: Partial<AlertThresholdSettings>;

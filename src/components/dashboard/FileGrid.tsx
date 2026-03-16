@@ -7,12 +7,7 @@ import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 
-function rectsIntersect(
-  a: { left: number; top: number; right: number; bottom: number },
-  b: DOMRect
-): boolean {
-  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
-}
+import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
 import FilePreviewModal from "./FilePreviewModal";
@@ -40,6 +35,8 @@ import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { LOADING_COPY } from "@/lib/loading-copy";
 
 function BulkActionBar({
   selectedFileCount,
@@ -1072,8 +1069,8 @@ export default function FileGrid() {
         {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
         {currentDrive ? (
           driveFilesLoading ? (
-            <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Loading files…
+            <div className="py-12">
+              <LoadingSpinner label={LOADING_COPY.files} centered />
             </div>
           ) : hasFilters && filesToShow.length === 0 && !filtersLoading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
@@ -1151,8 +1148,8 @@ export default function FileGrid() {
             </div>
           )
         ) : loading ? (
-          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading your files…
+          <div className="py-12">
+            <LoadingSpinner label={LOADING_COPY.filesYour} centered />
           </div>
         ) : activeTab === "recents" ? (
           <>

@@ -58,7 +58,7 @@ function TransferFileRow({
             }
           : undefined
       }
-      className={`flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+      className={`flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-colors sm:flex-row sm:items-center sm:justify-between dark:border-neutral-700 dark:bg-neutral-900 ${
         canPreview
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
           : ""
@@ -111,7 +111,7 @@ function TransferFileRow({
             e.stopPropagation();
             onDownload(file.id);
           }}
-          className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+          className="flex min-h-[44px] items-center justify-center gap-2 self-start rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue sm:self-auto dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
         >
           <Download className="h-4 w-4" />
           Download
@@ -287,9 +287,15 @@ export default function TransferView({ slug }: TransferViewProps) {
             <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
               Transfer not found
             </h1>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
               This transfer may have expired or been removed.
             </p>
+            <Link
+              href="/"
+              className="rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+            >
+              Back to home
+            </Link>
           </>
         )}
       </div>
@@ -303,9 +309,15 @@ export default function TransferView({ slug }: TransferViewProps) {
         <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
           Transfer expired
         </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
           This transfer has expired and is no longer available.
         </p>
+        <Link
+          href="/"
+          className="rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+        >
+          Back to home
+        </Link>
       </div>
     );
   }

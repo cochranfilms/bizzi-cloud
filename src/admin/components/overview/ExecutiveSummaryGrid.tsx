@@ -3,7 +3,7 @@
 import { Activity, DollarSign, HardDrive, Users } from "lucide-react";
 import SummaryCard from "../shared/SummaryCard";
 import { formatBytes } from "@/admin/utils/formatBytes";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 
 interface ExecutiveSummaryGridProps {
   platformHealth: "healthy" | "warning" | "critical";
@@ -24,6 +24,7 @@ export default function ExecutiveSummaryGrid({
   activeUsersToday,
   activeUsersDelta,
 }: ExecutiveSummaryGridProps) {
+  const formatCurrency = useAdminFormatCurrency();
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <SummaryCard

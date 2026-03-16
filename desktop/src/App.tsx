@@ -34,10 +34,12 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 p-6">
       <header className="mb-8">
-        <h1 className="text-2xl font-semibold">Bizzi Cloud Desktop</h1>
-        <p className="text-zinc-400 text-sm mt-1">
+        <h1 className="text-2xl font-semibold">
+          Bizzi <span className="text-bizzi-blue">Cloud</span> Desktop
+        </h1>
+        <p className="text-neutral-400 text-sm mt-1">
           Mount your cloud drive locally for NLE editing
         </p>
       </header>

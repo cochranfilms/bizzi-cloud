@@ -52,6 +52,12 @@ function toFirestoreUpdate(payload: Record<string, unknown>): Record<string, unk
     if (b.severity === "info" || b.severity === "warning" || b.severity === "critical") update.bannerSeverity = b.severity;
   }
 
+  const d = payload.display as Record<string, unknown> | undefined;
+  if (d) {
+    if (typeof d.locale === "string") update.displayLocale = d.locale;
+    if (typeof d.currency === "string") update.displayCurrency = d.currency;
+  }
+
   return update;
 }
 
@@ -86,7 +92,14 @@ export async function GET(request: Request) {
   const settingsSnap = await db.collection("admin_settings").doc("platform").get();
   const stored = settingsSnap.exists ? settingsSnap.data() : null;
 
+  const displayLocale = (stored?.displayLocale as string) ?? "en-US";
+  const displayCurrency = (stored?.displayCurrency as string) ?? "USD";
+
   return NextResponse.json({
+    display: {
+      locale: displayLocale,
+      currency: displayCurrency,
+    },
     quotas: {
       freeStorageBytes: PLAN_STORAGE_BYTES.free,
       starterStorageBytes: PLAN_STORAGE_BYTES.solo,

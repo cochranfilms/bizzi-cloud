@@ -10,13 +10,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { RevenueDataPoint } from "@/admin/types/adminRevenue.types";
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 
 interface OverviewChartsGridProps {
   revenueTrend: RevenueDataPoint[];
 }
 
 export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridProps) {
+  const formatCurrency = useAdminFormatCurrency();
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:shadow-neutral-900/50">

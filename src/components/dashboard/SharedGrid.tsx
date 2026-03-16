@@ -6,6 +6,8 @@ import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox, Settings } from "l
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import ShareModal from "./ShareModal";
 import { useShares } from "@/hooks/useShares";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { LOADING_COPY } from "@/lib/loading-copy";
 import { useConfirm } from "@/hooks/useConfirm";
 
 export default function SharedGrid() {
@@ -190,10 +192,7 @@ export default function SharedGrid() {
         </div>
       ) : loading ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
-          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            Loading shares…
-          </p>
+          <LoadingSpinner label={LOADING_COPY.shares} />
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">

@@ -10,12 +10,13 @@ import EmptyState from "../components/shared/EmptyState";
 import { useAdminUsers } from "../hooks/useAdminUsers";
 import type { AdminUser } from "../types/adminUsers.types";
 import { formatBytes } from "../utils/formatBytes";
-import { formatCurrency } from "../utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 import { formatRelativeTime } from "../utils/formatDateTime";
 import { mapPlanToLabel } from "../utils/mapPlanToLabel";
 import { Users } from "lucide-react";
 
 export default function UsersPage() {
+  const formatCurrency = useAdminFormatCurrency();
   const {
     users,
     total,

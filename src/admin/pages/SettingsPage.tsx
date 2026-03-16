@@ -9,6 +9,7 @@ import AlertThresholdSettingsPanel from "../components/settings/AlertThresholdSe
 import FeatureFlagsPanel from "../components/settings/FeatureFlagsPanel";
 import MaintenanceModePanel from "../components/settings/MaintenanceModePanel";
 import BannerSettingsPanel from "../components/settings/BannerSettingsPanel";
+import DisplaySettingsPanel from "../components/settings/DisplaySettingsPanel";
 import { useAdminSettings, type SettingsSection } from "../hooks/useAdminSettings";
 import { updateAdminSettings, type SettingsUpdatePayload } from "../services/adminSettingsService";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
@@ -23,6 +24,7 @@ export default function SettingsPage() {
     features,
     maintenance,
     banner,
+    display,
     loading,
     error,
     refresh,
@@ -123,6 +125,12 @@ export default function SettingsPage() {
             <BannerSettingsPanel
               settings={banner}
               onSave={(s) => handleSave({ banner: s })}
+            />
+          )}
+          {activeSection === "display" && (
+            <DisplaySettingsPanel
+              settings={display}
+              onSave={(s) => handleSave({ display: s })}
             />
           )}
         </div>

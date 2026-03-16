@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { TransferProvider } from "@/context/TransferContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { I18nProvider } from "@/i18n/I18nProvider";
 import { siteConfig, SITE_URL } from "@/lib/seo";
 import "./globals.css";
 
@@ -76,7 +77,9 @@ export default function RootLayout({
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="antialiased bg-white text-neutral-800 font-sans min-h-screen">
         <AuthProvider>
-          <TransferProvider>{children}</TransferProvider>
+          <I18nProvider>
+            <TransferProvider>{children}</TransferProvider>
+          </I18nProvider>
         </AuthProvider>
       </body>
     </html>

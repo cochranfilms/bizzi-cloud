@@ -1,6 +1,6 @@
 "use client";
 
-import { formatCurrency } from "@/admin/utils/formatCurrency";
+import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 import SummaryCard from "../shared/SummaryCard";
 
 interface RevenueSnapshotCardProps {
@@ -14,6 +14,7 @@ export default function RevenueSnapshotCard({
   grossMarginPercent,
   infraCost,
 }: RevenueSnapshotCardProps) {
+  const formatCurrency = useAdminFormatCurrency();
   return (
     <SummaryCard
       label="Revenue Snapshot"

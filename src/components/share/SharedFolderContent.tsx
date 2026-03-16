@@ -56,7 +56,7 @@ function ShareFileRow({
   return (
     <div
       ref={rowRef}
-      className={`flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 transition-colors dark:border-neutral-700 dark:bg-neutral-900 ${
+      className={`flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-colors sm:flex-row sm:items-center sm:justify-between dark:border-neutral-700 dark:bg-neutral-900 ${
         canPreview
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
           : ""
@@ -125,7 +125,7 @@ function ShareFileRow({
             onDownload(file);
           }}
           disabled={downloadingId === file.id}
-          className="ml-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+          className="min-h-[44px] flex flex-shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 sm:ml-4 sm:self-auto dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
         >
           <Download className="h-4 w-4" />
           {downloadingId === file.id ? "Downloading…" : "Download"}
@@ -260,14 +260,20 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
     }
 
     return (
-      <div className={`flex flex-col items-center justify-center ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
-        <FolderOpen className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
-        <h2 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
+      <div className={`flex flex-col items-center justify-center gap-4 ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
+        <FolderOpen className="h-16 w-16 text-neutral-300 dark:text-neutral-600" />
+        <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">
           {isExpired ? "Share expired" : "Share not found"}
         </h2>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           {error ?? "This share may have been removed."}
         </p>
+        <Link
+          href="/"
+          className="rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+        >
+          Back to home
+        </Link>
       </div>
     );
   }
