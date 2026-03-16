@@ -72,4 +72,20 @@ export interface FileMetadataFields {
   color_profile?: string | null;
   bit_depth?: number | null;
   edited_status?: string | null;
+
+  // Proxy (video files only)
+  proxy_status?: ProxyStatus | null;
+  proxy_object_key?: string | null;
+  proxy_size_bytes?: number | null;
+  proxy_duration_sec?: number | null;
+  proxy_generated_at?: string | null;
+  proxy_error_reason?: string | null;
 }
+
+export type ProxyStatus =
+  | "none"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "raw_unsupported";

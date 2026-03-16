@@ -8,7 +8,8 @@ import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+/** Includes RAW (braw, r3d, etc.) so queueProxyJob can mark raw_unsupported */
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp|m2ts|mpg|mpeg|ts|flv|wmv|ogv|braw|r3d|ari|dng)$/i;
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&

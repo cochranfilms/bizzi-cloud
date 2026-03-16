@@ -1,9 +1,11 @@
 /**
  * Firestore-backed queue for proxy generation jobs.
  * Upload flows enqueue jobs; cron processes them to avoid serverless timeouts.
+ * Skips RAW formats (BRAW, R3D, etc.) - they are marked raw_unsupported, not queued.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey, objectExists } from "@/lib/b2";
+import { canGenerateProxy, getProxyCapability } from "@/lib/format-detection";
 
 const PROXY_JOBS_COLLECTION = "proxy_jobs";
 const MAX_RETRIES = 5;
@@ -13,13 +15,34 @@ export interface ProxyJobInput {
   name?: string;
   backup_file_id?: string;
   user_id: string;
+  /** For extension-less files discovered via probe */
+  media_type?: string | null;
 }
 
 /**
  * Add a proxy generation job to the queue. Idempotent per object_key.
+ * Skips RAW formats (BRAW, R3D, etc.) - marks backup_files raw_unsupported, does not enqueue.
  */
 export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
-  const { object_key, name, backup_file_id, user_id } = input;
+  const { object_key, name, backup_file_id, user_id, media_type } = input;
+
+  const nameOrPath = name ?? object_key;
+  const capability = getProxyCapability(nameOrPath, media_type ?? undefined);
+
+  if (capability === "raw_unsupported") {
+    if (backup_file_id) {
+      const db = getAdminFirestore();
+      const now = new Date().toISOString();
+      await db.collection("backup_files").doc(backup_file_id).update({
+        proxy_status: "raw_unsupported",
+        proxy_error_reason: "RAW format requires dedicated transcode pipeline",
+        proxy_generated_at: now,
+      });
+    }
+    return;
+  }
+
+  if (!canGenerateProxy(nameOrPath, media_type ?? undefined)) return;
 
   const db = getAdminFirestore();
 
@@ -37,6 +60,7 @@ export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
   const proxyKey = getProxyObjectKey(object_key);
   if (await objectExists(proxyKey)) return;
 
+  const now = new Date().toISOString();
   await db.collection(PROXY_JOBS_COLLECTION).add({
     object_key,
     name: name ?? null,
@@ -44,9 +68,16 @@ export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
     user_id,
     status: "pending",
     retry_count: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   });
+  if (backup_file_id) {
+    await db.collection("backup_files").doc(backup_file_id).update({
+      proxy_status: "pending",
+      proxy_generated_at: null,
+      proxy_error_reason: null,
+    });
+  }
 }
 
 /**

@@ -239,24 +239,36 @@ export async function deleteObjects(objectKeys: string[]): Promise<void> {
   }
 }
 
-/** Check if an object exists in B2 (used for content-hash deduplication). */
-export async function objectExists(objectKey: string): Promise<boolean> {
+/** Get object metadata (size, content-type) without downloading. Returns null if not found. */
+export async function getObjectMetadata(objectKey: string): Promise<{
+  contentLength: number;
+  contentType?: string;
+} | null> {
   const client = getB2Client();
   try {
-    await client.send(
+    const r = await client.send(
       new HeadObjectCommand({
         Bucket: B2_BUCKET_NAME,
         Key: objectKey,
       })
     );
-    return true;
+    return {
+      contentLength: r.ContentLength ?? 0,
+      contentType: r.ContentType ?? undefined,
+    };
   } catch (err: unknown) {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
     if (e?.name === "NotFound" || e?.$metadata?.httpStatusCode === 404) {
-      return false;
+      return null;
     }
     throw err;
   }
+}
+
+/** Check if an object exists in B2 (used for content-hash deduplication). */
+export async function objectExists(objectKey: string): Promise<boolean> {
+  const meta = await getObjectMetadata(objectKey);
+  return meta !== null;
 }
 
 export async function createPresignedDownloadUrl(

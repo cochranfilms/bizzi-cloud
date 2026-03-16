@@ -248,6 +248,32 @@ export default function FileCard({
       <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
         {formatDate(file.modifiedAt)}
       </p>
+      {isVideo && file.proxyStatus && (
+        <p
+          className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400"
+          title={
+            file.proxyStatus === "ready"
+              ? "Proxy ready for editing"
+              : file.proxyStatus === "pending" || file.proxyStatus === "processing"
+                ? "Proxy generating..."
+                : file.proxyStatus === "failed"
+                  ? "Proxy failed"
+                  : file.proxyStatus === "raw_unsupported"
+                    ? "RAW original only"
+                    : ""
+          }
+        >
+          {file.proxyStatus === "ready"
+            ? "Proxy ready"
+            : file.proxyStatus === "pending" || file.proxyStatus === "processing"
+              ? "Proxy processing"
+              : file.proxyStatus === "failed"
+                ? "Proxy failed"
+                : file.proxyStatus === "raw_unsupported"
+                  ? "RAW only"
+                  : null}
+        </p>
+      )}
       <div
         className="mt-2 flex justify-center"
         onClick={(e) => e.stopPropagation()}

@@ -326,6 +326,7 @@ function toFileResponse(
     orientation: d.orientation ?? null,
     is_starred: d.is_starred ?? false,
     usage_status: d.usage_status ?? null,
+    proxyStatus: d.proxy_status ?? null,
   };
 }
 

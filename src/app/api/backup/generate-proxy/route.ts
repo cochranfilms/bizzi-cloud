@@ -10,7 +10,7 @@ import {
   objectExists,
 } from "@/lib/b2";
 import { verifyBackupFileAccess } from "@/lib/backup-access";
-import { verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
@@ -93,9 +93,42 @@ export async function POST(request: Request) {
     backupFileId: typeof backupFileId === "string" ? backupFileId : null,
   });
 
-  if (result.ok) {
+  const now = new Date().toISOString();
+  const bfId = typeof backupFileId === "string" ? backupFileId : null;
+
+  if (result.ok && bfId) {
+    const db = getAdminFirestore();
+    await db.collection("backup_files").doc(bfId).update({
+      proxy_status: "ready",
+      proxy_object_key: proxyKey,
+      proxy_size_bytes: result.proxySizeBytes ?? null,
+      proxy_duration_sec: result.proxyDurationSec ?? null,
+      proxy_generated_at: now,
+      proxy_error_reason: null,
+    });
     return NextResponse.json({ ok: true, alreadyExists: result.alreadyExists });
   }
+  if (result.rawUnsupported && bfId) {
+    const db = getAdminFirestore();
+    await db.collection("backup_files").doc(bfId).update({
+      proxy_status: "raw_unsupported",
+      proxy_error_reason: "RAW format requires dedicated transcode pipeline",
+      proxy_generated_at: now,
+    });
+    return NextResponse.json(
+      { error: result.error ?? "RAW format not supported for proxy" },
+      { status: 400 }
+    );
+  }
+  if (!result.ok && bfId) {
+    const db = getAdminFirestore();
+    await db.collection("backup_files").doc(bfId).update({
+      proxy_status: "failed",
+      proxy_error_reason: result.error ?? "Unknown error",
+      proxy_generated_at: now,
+    });
+  }
+  if (result.ok) return NextResponse.json({ ok: true, alreadyExists: result.alreadyExists });
   return NextResponse.json(
     { error: result.error ?? "Proxy generation failed" },
     { status: 500 }

@@ -1,13 +1,19 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { objectExists, getProxyObjectKey, isB2Configured } from "@/lib/b2";
+import {
+  getObjectMetadata,
+  getProxyObjectKey,
+  isB2Configured,
+} from "@/lib/b2";
+import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+/** Video extensions for proxy exposure (matches format-detection DIRECT_PROXY + common). */
+const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp|m2ts|mpg|mpeg|ts|flv|wmv|ogv|braw|r3d|ari|dng)$/i;
 
 export interface MountMetadataEntry {
   id: string;
@@ -144,7 +150,8 @@ export async function POST(request: Request) {
       });
     }
 
-    // Expose Bizzi proxies as ClipName_proxy.mp4 for NLE "Attach proxy" workflow
+    // Expose Bizzi proxies as ClipName_proxy.mp4 for NLE "Attach proxy" workflow.
+    // Only expose when proxy exists in B2 with real data (size >= MIN_PROXY_SIZE_BYTES).
     if (isB2Configured() && requestedPath !== undefined) {
       const videoEntries = entries.filter((e) => e.type === "file" && VIDEO_EXT.test(e.name));
       const proxyChecks = await Promise.all(
@@ -152,8 +159,8 @@ export async function POST(request: Request) {
           const objKey = e.object_key;
           if (!objKey) return null;
           const proxyKey = getProxyObjectKey(objKey);
-          const exists = await objectExists(proxyKey).catch(() => false);
-          if (!exists) return null;
+          const meta = await getObjectMetadata(proxyKey).catch(() => null);
+          if (!meta || meta.contentLength < MIN_PROXY_SIZE_BYTES) return null;
           const baseName = e.name.replace(/\.[^/.]+$/, "");
           const proxyName = `${baseName}_proxy.mp4`;
           const proxyPath = requestedPath ? `${requestedPath}/${proxyName}` : proxyName;
@@ -162,7 +169,7 @@ export async function POST(request: Request) {
             name: proxyName,
             path: proxyPath,
             object_key: proxyKey,
-            size_bytes: 0,
+            size_bytes: meta.contentLength,
             modified_at: e.modified_at,
             type: "file" as const,
             linked_drive_id: e.linked_drive_id,

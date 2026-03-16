@@ -143,6 +143,7 @@ export async function POST(request: Request) {
       name: fileName,
       backup_file_id: doc.id,
       user_id: uid,
+      media_type: (data.media_type as string) ?? undefined,
     });
   }
 

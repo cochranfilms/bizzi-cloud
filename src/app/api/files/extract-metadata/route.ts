@@ -235,6 +235,7 @@ export async function POST(request: Request) {
       name: fileName,
       backup_file_id: backupFileId,
       user_id: uid,
+      media_type: "video",
     }).catch(() => {});
     fetch(`${base}/api/mux/create-asset`, {
       method: "POST",

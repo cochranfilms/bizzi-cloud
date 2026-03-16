@@ -65,6 +65,7 @@ function toRecentFile(raw: Record<string, unknown>): RecentFile {
     driveName: String(raw.driveName ?? "Unknown"),
     contentType: (raw.contentType as string) ?? null,
     galleryId: (raw.galleryId as string) ?? null,
+    proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
   };
 }
 

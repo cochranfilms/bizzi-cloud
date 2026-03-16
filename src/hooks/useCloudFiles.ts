@@ -45,6 +45,14 @@ export interface DeletedDrive {
   deletedAt: string | null;
 }
 
+export type ProxyStatus =
+  | "none"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "raw_unsupported";
+
 export interface RecentFile {
   id: string;
   name: string;
@@ -60,6 +68,8 @@ export interface RecentFile {
   deletedAt?: string | null;
   /** When set, file is in Gallery Media and belongs to this gallery (enables stable folder grouping) */
   galleryId?: string | null;
+  /** Video proxy status (ready, pending, failed, raw_unsupported, etc.) */
+  proxyStatus?: ProxyStatus | null;
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
@@ -189,6 +199,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           driveName: drive?.name ?? "Unknown drive",
           contentType: data.content_type ?? null,
           galleryId: data.gallery_id ?? null,
+          proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
         };
       });
       setRecentFiles(recent);
@@ -276,6 +287,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
             galleryId: data.gallery_id ?? null,
+            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
           };
         });
       setAllFilesForTransfer(all);
@@ -318,6 +330,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
             galleryId: data.gallery_id ?? null,
+            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
           };
         });
     },
@@ -355,6 +368,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
               driveName: drive?.name ?? "Unknown drive",
               contentType: data.content_type ?? null,
               galleryId: data.gallery_id ?? null,
+              proxyStatus: data.proxy_status ?? null,
             };
           });
         onFiles(files);
