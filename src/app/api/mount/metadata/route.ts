@@ -5,6 +5,7 @@ import {
   getProxyObjectKey,
   isB2Configured,
 } from "@/lib/b2";
+import { getProjectRenditionState } from "@/lib/conform/project-rendition-state";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { NextResponse } from "next/server";
 
@@ -121,6 +122,10 @@ export async function POST(request: Request) {
     const entries: MountMetadataEntry[] = [];
     const requestedPath = pathsArray[0] ?? "";
 
+    // V3 Smart Rendition Switching: Get project-level preferred rendition (proxy = edit mode, original = conform mode).
+    // Same logical path resolves to different bytes based on this. No separate proxy file exposed.
+    const renditionState = await getProjectRenditionState(uid, driveIdsToQuery);
+
     for (const doc of filesSnap.docs) {
       const data = doc.data();
       if (data.deleted_at) continue; // Exclude soft-deleted files
@@ -137,49 +142,38 @@ export async function POST(request: Request) {
       if (!inDir && !exactFile) continue;
 
       const name = (relativePath.split("/").filter(Boolean).pop() ?? relativePath) || "?";
+      const driveId = data.linked_drive_id ?? driveIdStr;
+      let objectKey = data.object_key ?? "";
+      let sizeBytes = data.size_bytes ?? 0;
+      let contentType = (data.content_type as string) ?? null;
+
+      // V3: For video files with proxy, resolve to active rendition. ONE logical path, resolver picks bytes.
+      if (isB2Configured() && objectKey && VIDEO_EXT.test(name)) {
+        const proxyKey = getProxyObjectKey(objectKey);
+        const proxyMeta = await getObjectMetadata(proxyKey).catch(() => null);
+        const hasProxy = !!proxyMeta && proxyMeta.contentLength >= MIN_PROXY_SIZE_BYTES;
+        if (hasProxy) {
+          const preferred = renditionState.get(driveId) ?? "proxy";
+          if (preferred === "proxy") {
+            objectKey = proxyKey;
+            sizeBytes = proxyMeta!.contentLength;
+            contentType = "video/mp4";
+          }
+          // else: keep original objectKey, sizeBytes, contentType
+        }
+      }
+
       entries.push({
         id: doc.id,
         name,
         path: relativePath,
-        object_key: data.object_key ?? "",
-        size_bytes: data.size_bytes ?? 0,
+        object_key: objectKey,
+        size_bytes: sizeBytes,
         modified_at: data.modified_at ?? null,
         type: "file",
-        linked_drive_id: data.linked_drive_id ?? driveIdStr,
-        content_type: (data.content_type as string) ?? null,
+        linked_drive_id: driveId,
+        content_type: contentType,
       });
-    }
-
-    // Expose Bizzi proxies as ClipName_proxy.mp4 for NLE "Attach proxy" workflow.
-    // Only expose when proxy exists in B2 with real data (size >= MIN_PROXY_SIZE_BYTES).
-    if (isB2Configured() && requestedPath !== undefined) {
-      const videoEntries = entries.filter((e) => e.type === "file" && VIDEO_EXT.test(e.name));
-      const proxyChecks = await Promise.all(
-        videoEntries.map(async (e) => {
-          const objKey = e.object_key;
-          if (!objKey) return null;
-          const proxyKey = getProxyObjectKey(objKey);
-          const meta = await getObjectMetadata(proxyKey).catch(() => null);
-          if (!meta || meta.contentLength < MIN_PROXY_SIZE_BYTES) return null;
-          const baseName = e.name.replace(/\.[^/.]+$/, "");
-          const proxyName = `${baseName}_proxy.mp4`;
-          const proxyPath = requestedPath ? `${requestedPath}/${proxyName}` : proxyName;
-          return {
-            id: `proxy:${e.id}`,
-            name: proxyName,
-            path: proxyPath,
-            object_key: proxyKey,
-            size_bytes: meta.contentLength,
-            modified_at: e.modified_at,
-            type: "file" as const,
-            linked_drive_id: e.linked_drive_id,
-            content_type: "video/mp4",
-          };
-        })
-      );
-      for (const p of proxyChecks) {
-        if (p) entries.push(p);
-      }
     }
 
     const immediateSubfolders = new Set<string>();

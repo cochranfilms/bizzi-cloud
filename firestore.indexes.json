@@ -499,6 +499,14 @@
       ]
     },
     {
+      "collectionGroup": "project_rendition_state",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "projectId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "backup_files",
       "queryScope": "COLLECTION",
       "fields": [

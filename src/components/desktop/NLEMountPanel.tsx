@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HardDrive, Cpu, FolderDown, Cloud, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
+import { HardDrive, Cpu, FolderDown, Cloud, CheckCircle2, XCircle, ExternalLink, Film } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { BizziConformModal } from "./BizziConformModal";
 
 declare global {
   interface Window {
@@ -56,6 +57,7 @@ export function NLEMountPanel() {
   const [nativeSyncPath, setNativeSyncPath] = useState<string | null>(null);
   const [nativeSyncLoading, setNativeSyncLoading] = useState(false);
   const [nativeSyncError, setNativeSyncError] = useState<string | null>(null);
+  const [conformModalOpen, setConformModalOpen] = useState(false);
   const [dependencies, setDependencies] = useState<{
     rclone: { available: boolean; source: "bundled" | "system" | null };
     macFuse: { installed: boolean; version?: string };
@@ -293,6 +295,17 @@ export function NLEMountPanel() {
           )}
           {isMounted && mountPoint && (
             <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setConformModalOpen(true)}
+                className="w-full py-2 rounded text-sm font-medium bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-600/30 transition-colors flex items-center justify-center gap-2"
+              >
+                <Film className="w-4 h-4" />
+                Bizzi Conform
+              </button>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Switch mounted clips from proxy to full resolution. Same path, different bytes.
+              </p>
               <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
                 {mountPoint.startsWith("/Volumes/")
                   ? "Mounted to your Mac"
@@ -380,6 +393,13 @@ export function NLEMountPanel() {
           {cacheBaseDir || "—"}
         </p>
       </section>
+
+      {isDesktop && user && (
+        <BizziConformModal
+          open={conformModalOpen}
+          onClose={() => setConformModalOpen(false)}
+        />
+      )}
 
       {/* Local store info */}
       <section className="p-4">
