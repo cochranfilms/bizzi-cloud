@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 const DMG_URL =
-  "https://github.com/cochranfilms/bizzi-cloud/releases/download/v0.1.8/Bizzi.Cloud-0.1.8-arm64.dmg";
+  "https://github.com/cochranfilms/bizzi-cloud/releases/download/v0.1.9/Bizzi.Cloud-0.1.9-arm64.dmg";
 
 export default function DesktopLandingPage() {
   return (

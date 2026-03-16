@@ -648,7 +648,9 @@ export class WebDAVServer {
     }
   }
 
-  /** MKCOL = create directory. We accept and return 201; folder exists when files are added. */
+  /** MKCOL = create directory. Reject file-like paths to avoid rclone "is a directory not a file" when NLEs create temp dirs. */
+  private static readonly FILE_LIKE_EXT = /\.(mp4|mov|mxf|avi|mkv|mp3|wav|dng|braw|r3d|ari|crm|psd|pdf|zip)$/i;
+
   private async handleMkcol(
     res: http.ServerResponse,
     parts: string[],
@@ -657,6 +659,13 @@ export class WebDAVServer {
     if (parts.length < 1) {
       res.writeHead(400);
       res.end();
+      return;
+    }
+    const lastSegment = parts[parts.length - 1];
+    if (WebDAVServer.FILE_LIKE_EXT.test(lastSegment)) {
+      desktopLog.warn("[WebDAV] MKCOL rejected on file-like path", { path: parts.join("/") });
+      res.writeHead(409);
+      res.end("Conflict: path looks like a file, not a directory");
       return;
     }
     res.writeHead(201);

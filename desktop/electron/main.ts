@@ -125,9 +125,13 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
     process.resourcesPath && !process.defaultApp
       ? process.resourcesPath
       : app.getAppPath();
+  // fallbackMountDir: use Caches (local disk) when /Volumes inaccessible; Application Support can be on iCloud/FUSE
+  const cacheDir = path.join(app.getPath("userData"), "..", "Caches", "bizzi-cloud-desktop");
+  const fallbackMountDir = path.join(cacheDir, "BizziCloudMount");
   await mountService.mount({
     apiBaseUrl: baseUrl,
     cacheBaseDir,
+    fallbackMountDir,
     getAuthToken: async () => token,
     resourcesDir,
     streamCacheMaxBytes: Number(store.get("streamCacheMaxBytes")) || undefined,
@@ -138,7 +142,9 @@ ipcMain.handle("mount-unmount", () => mountService.unmount());
 ipcMain.handle("mount-refresh-token", (_e, token: string) => {
   mountService.refreshToken(token);
 });
-ipcMain.handle("mount-refresh-folder", (_e, driveSlug: string) => mountService.refreshFolder(driveSlug));
+ipcMain.handle("mount-refresh-folder", async (_e, driveSlug: string) =>
+  mountService.refreshFolder(driveSlug)
+);
 
 // Native Sync (File Provider) IPC
 ipcMain.handle("native-sync-available", () => fileProviderService.isAvailable());

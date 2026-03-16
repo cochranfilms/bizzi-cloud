@@ -20,6 +20,8 @@ export interface MountOptions {
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
   resourcesDir?: string;
+  /** When /Volumes is inaccessible, use this for mount point instead of cacheBaseDir. Must be on local disk (not iCloud/FUSE) to avoid "mount point is itself on a macFUSE volume". */
+  fallbackMountDir?: string;
   /** Max bytes for rclone VFS cache (default 50 GB). Shared with stream cache budget. */
   streamCacheMaxBytes?: number;
 }
@@ -39,7 +41,10 @@ function parseRcloneError(logFile: string, stderr: string, exitCode: number): st
 
   // Specific errors first (before generic FUSE match)
   if (combined.includes("mount_macfuse: the file system is not available")) {
-    return "macFUSE kernel extension isn't loaded. Open System Settings → Privacy & Security and allow the macFUSE extension, or restart your Mac.";
+    return "macFUSE kernel extension isn't loaded or incompatible. Update macFUSE to 5.0+ from https://osxfuse.github.io/ (required for macOS Sonoma+), then open System Settings → Privacy & Security and allow the macFUSE extension. Restart your Mac after installing.";
+  }
+  if (combined.includes("mount point") && combined.includes("is itself on a macFUSE volume")) {
+    return "Mount path is on a cloud/synced drive (e.g. iCloud). Add Bizzi Cloud to Full Disk Access so it can mount at /Volumes/BizziCloud, or restart the app to use the local cache path.";
   }
   if (combined.includes("is not empty") && combined.includes("--allow-non-empty")) {
     return "Mount point has leftover files. The app will retry with --allow-non-empty.";
@@ -61,6 +66,9 @@ function parseRcloneError(logFile: string, stderr: string, exitCode: number): st
   }
   if (combined.includes("connection refused") || combined.includes("ECONNREFUSED")) {
     return "Could not connect to local WebDAV. Try unmounting and mounting again.";
+  }
+  if (combined.includes("Bad file descriptor") || combined.includes("fuse: reading device")) {
+    return "macFUSE driver error. Restart your Mac, then update macFUSE to 5.0+ from https://osxfuse.github.io/ if needed.";
   }
 
   const criticalMatch = combined.match(/CRITICAL:\s*([^\n]+)/i);
@@ -410,8 +418,10 @@ export class MountService {
             "Unmount Bizzi Cloud first: click the eject icon next to it in Finder, or run in Terminal: diskutil unmount /Volumes/BizziCloud"
           );
         }
-        // Fall back to Application Support
-        this.mountPoint = path.join(options.cacheBaseDir, "Mount");
+        // Fall back to a path on local disk. cacheBaseDir (Application Support) may be on iCloud/FUSE;
+        // use fallbackMountDir (Caches) which is always local to avoid "mount point is itself on a macFUSE volume".
+        const fallbackBase = options.fallbackMountDir ?? path.join(options.cacheBaseDir, "Mount");
+        this.mountPoint = fallbackBase;
         await fs.promises.mkdir(this.mountPoint, { recursive: true });
         desktopLog.warn("Using fallback mount path (not in /Volumes)", this.mountPoint, err);
 

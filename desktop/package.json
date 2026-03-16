@@ -1,6 +1,6 @@
 {
   "name": "bizzi-cloud-desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Mount Bizzi Cloud as a local drive for NLE editing",
   "author": "Bizzi Byte",
   "repository": "https://github.com/cochranfilms/bizzi-cloud",
