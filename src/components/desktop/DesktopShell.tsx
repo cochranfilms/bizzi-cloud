@@ -59,9 +59,7 @@ export default function DesktopShell({
           {/* NLE Mount panel: inline on md+, slide-over overlay on narrow screens */}
           {mountPanelOpen && (
             <aside
-              className="fixed left-0 top-14 bottom-0 z-50 w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 bg-white shadow-xl transition-transform duration-200 md:relative md:top-0 md:z-auto md:shadow-none md:dark:bg-transparent dark:border-neutral-800/60 dark:bg-neutral-950 ${
-                mountPanelOpen ? "translate-x-0" : "-translate-x-full"
-              } md:flex md:translate-x-0"
+              className="fixed left-0 top-14 bottom-0 z-50 w-72 flex-shrink-0 flex-col border-r border-neutral-200/60 bg-white shadow-xl transition-transform duration-200 md:relative md:top-0 md:z-auto md:shadow-none md:dark:bg-transparent dark:border-neutral-800/60 dark:bg-neutral-950 translate-x-0 md:flex"
               aria-label="NLE Mount"
             >
               <div className="overflow-y-auto p-5">
