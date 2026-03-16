@@ -5,7 +5,7 @@
  * Supports RAW files via rawToThumbnail.
  */
 import {
-  getObjectBuffer,
+  getObjectHeadBuffer,
   isB2Configured,
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
@@ -93,7 +93,7 @@ export async function GET(
 
   try {
     if (GALLERY_IMAGE_EXT.test(nameForExt)) {
-      const buffer = await getObjectBuffer(objectKey!);
+      const buffer = await getObjectHeadBuffer(objectKey!, 50 * 1024 * 1024);
       let resized: Buffer;
 
       if (isRawFile(nameForExt)) {

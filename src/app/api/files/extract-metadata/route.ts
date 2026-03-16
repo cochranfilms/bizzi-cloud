@@ -242,13 +242,22 @@ export async function POST(request: Request) {
   if (isVideoNow && token) {
     const base = new URL(request.url).origin;
     const authHeader = { Authorization: `Bearer ${token}` };
-    queueProxyJob({
+    await queueProxyJob({
       object_key: objectKey,
       name: fileName,
       backup_file_id: backupFileId,
       user_id: uid,
       media_type: "video",
     }).catch(() => {});
+    // Trigger immediate proxy processing (fire-and-forget; cron fallback if this fails)
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      fetch(`${base}/api/proxy/process-one`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cronSecret}` },
+        body: JSON.stringify({ object_key: objectKey }),
+      }).catch(() => {});
+    }
     fetch(`${base}/api/mux/create-asset`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader },

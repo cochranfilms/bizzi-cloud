@@ -35,7 +35,8 @@ export async function GET(request: Request) {
   ]);
 
   const seen = new Set<string>();
-  const drives: Array<{ id: string; name: string }> = [];
+  /** Deduplicate by display name: one entry per name (e.g. single "Storage") */
+  const byName = new Map<string, string>();
 
   for (const snap of [byUserId, byUserIdSnake]) {
     for (const d of snap.docs) {
@@ -47,18 +48,25 @@ export async function GET(request: Request) {
       const isCreatorRaw = data.is_creator_raw === true;
       const rawName = data.name ?? "Drive";
 
+      let displayName: string | null = null;
       if (rawName === "Storage" || rawName === "Uploads") {
-        drives.push({ id: d.id, name: "Storage" });
+        displayName = "Storage";
       } else if (isCreatorRaw && hasEditor) {
-        drives.push({ id: d.id, name: "RAW" });
+        displayName = "RAW";
       } else if (rawName === "Gallery Media" && hasGallerySuite) {
-        drives.push({ id: d.id, name: "Gallery Media" });
+        displayName = "Gallery Media";
       } else if (!["Storage", "RAW", "Gallery Media"].includes(rawName)) {
-        drives.push({ id: d.id, name: rawName });
+        displayName = rawName;
+      }
+      if (displayName && !byName.has(displayName)) {
+        byName.set(displayName, d.id);
       }
     }
   }
 
+  const drives: Array<{ id: string; name: string }> = Array.from(byName.entries()).map(
+    ([name, id]) => ({ id, name })
+  );
   const order = (name: string) =>
     name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
   drives.sort((a, b) => order(a.name) - order(b.name));

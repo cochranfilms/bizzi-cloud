@@ -7,6 +7,7 @@
  */
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import {
+  getObjectHeadBuffer,
   getObjectBuffer,
   isB2Configured,
   objectExists,
@@ -123,7 +124,8 @@ export async function GET(
         // Regenerate
       }
 
-      const buffer = await getObjectBuffer(objectKey);
+      const THUMB_MAX_BYTES = 50 * 1024 * 1024;
+      const buffer = await getObjectHeadBuffer(objectKey, THUMB_MAX_BYTES);
       let resized: Uint8Array;
       if (isRaw) {
         let thumb: Buffer | null = null;
@@ -163,7 +165,8 @@ export async function GET(
       });
     }
 
-    const buffer = await getObjectBuffer(objectKey);
+    const THUMB_MAX_BYTES = 50 * 1024 * 1024;
+    const buffer = await getObjectHeadBuffer(objectKey, THUMB_MAX_BYTES);
     let resized: Uint8Array;
     if (isRaw) {
       let thumb: Buffer | null = null;

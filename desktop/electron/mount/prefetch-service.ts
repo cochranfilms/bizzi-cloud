@@ -19,6 +19,8 @@ const PREFETCH_HEAD_BYTES = 40 * 1024 * 1024; // 40 MB
 const IDLE_MS = 10 * 60 * 1000; // 10 minutes
 const CHECK_IDLE_INTERVAL_MS = 60 * 1000; // check every minute
 const MAX_CONCURRENT_PREFETCH = 2;
+/** Don't prefetch files modified in last N ms - NLE just wrote them; prefetch causes download loop */
+const RECENT_UPLOAD_MS = 2 * 60 * 1000; // 2 minutes
 const NEXT_CLIPS_COUNT = 3;
 const GRADING_NEXT_FILES = 2;
 
@@ -50,6 +52,8 @@ export class PrefetchService {
   private lastActivityAt = 0;
   private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
   private lastProjectFolder: { driveId: string; path: string; entries: MountMetadataEntry[] } | null = null;
+  /** Avoid re-prefetch loop: once prefetched, skip until unmount (fixes NLE export → repeated downloads) */
+  private prefetchedKeys = new Set<string>();
 
   constructor(options: PrefetchServiceOptions) {
     this.mountPoint = options.mountPoint;
@@ -83,7 +87,11 @@ export class PrefetchService {
 
     // Strategy 1: Pre-cache first 30s of every clip when folder is opened
     const relPath = folderPath ? `${folderPath}/` : "";
+    const now = Date.now();
     for (const e of videoFiles) {
+      // Skip recently-uploaded files - NLE just wrote them; prefetch causes download loop
+      const mod = e.modified_at ? new Date(e.modified_at).getTime() : 0;
+      if (mod && now - mod < RECENT_UPLOAD_MS) continue;
       this.enqueue({
         driveId,
         relativePath: `${relPath}${e.name}`,
@@ -152,6 +160,7 @@ export class PrefetchService {
 
   private enqueue(item: QueuedPrefetch): void {
     const key = `${item.driveId}:${item.relativePath}:${item.bytesToRead}`;
+    if (this.prefetchedKeys.has(key)) return;
     if (this.queue.some((q) => `${q.driveId}:${q.relativePath}:${q.bytesToRead}` === key)) return;
     this.queue.push(item);
     this.queue.sort((a, b) => {
@@ -173,6 +182,7 @@ export class PrefetchService {
   }
 
   private async prefetchOne(item: QueuedPrefetch): Promise<void> {
+    const key = `${item.driveId}:${item.relativePath}:${item.bytesToRead}`;
     const fullPath = path.join(this.mountPoint, item.driveId, item.relativePath);
     try {
       const stat = await fs.promises.stat(fullPath).catch(() => null);
@@ -194,6 +204,7 @@ export class PrefetchService {
       } finally {
         await fd.close();
       }
+      this.prefetchedKeys.add(key);
     } catch {
       // Ignore; file may not exist or mount may be busy
     }
@@ -205,7 +216,13 @@ export class PrefetchService {
     const folder = this.lastProjectFolder;
     if (!folder) return;
 
-    const mediaFiles = folder.entries.filter((e) => e.type === "file" && isMediaFile(e.name));
+    const now = Date.now();
+    const mediaFiles = folder.entries.filter((e) => {
+      if (e.type !== "file" || !isMediaFile(e.name)) return false;
+      const mod = e.modified_at ? new Date(e.modified_at).getTime() : 0;
+      if (mod && now - mod < RECENT_UPLOAD_MS) return false; // skip recent uploads
+      return true;
+    });
     const relPrefix = folder.path ? `${folder.path}/` : "";
     for (const e of mediaFiles) {
       this.enqueue({
@@ -233,5 +250,6 @@ export class PrefetchService {
     }
     this.queue = [];
     this.lastProjectFolder = null;
+    this.prefetchedKeys.clear();
   }
 }

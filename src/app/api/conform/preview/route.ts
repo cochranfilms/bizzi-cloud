@@ -70,23 +70,36 @@ export async function POST(request: Request) {
   let ready = 0;
   let missing = 0;
   let invalid = 0;
+  const invalidReasons: Array<{ name: string; reason: string }> = [];
 
   for (const doc of videoFiles) {
     const data = doc.data();
     const objectKey = data.object_key as string;
+    const relativePath = (data.relative_path as string) ?? "";
+    const displayName = relativePath.split("/").pop() ?? relativePath;
     const proxyObjectKey = (data.proxy_object_key as string) ?? getProxyObjectKey(objectKey);
     const proxyMeta = await getObjectMetadata(proxyObjectKey).catch(() => null);
     const hasProxy = !!proxyMeta && proxyMeta.contentLength >= MIN_PROXY_SIZE_BYTES;
 
     if (!hasProxy) {
       invalid++;
+      const proxyStatus = data.proxy_status as string | undefined;
+      const reason =
+        proxyStatus === "pending" || proxyStatus === "processing"
+          ? "Proxy still generating"
+          : proxyStatus === "failed"
+            ? "Proxy generation failed"
+            : proxyStatus === "raw_unsupported"
+              ? "RAW format (no proxy)"
+              : "Proxy not ready or missing";
+      invalidReasons.push({ name: displayName, reason });
       continue;
     }
 
     const validation = await validateAssetForConform({
       backupFileId: doc.id,
       objectKey,
-      relativePath: (data.relative_path as string) ?? "",
+      relativePath,
       proxyObjectKey,
       proxyStatus: data.proxy_status,
       durationSec: data.duration_sec,
@@ -97,8 +110,13 @@ export async function POST(request: Request) {
     });
 
     if (validation.status === "ready") ready++;
-    else if (validation.status === "missing_original") missing++;
-    else invalid++;
+    else if (validation.status === "missing_original") {
+      missing++;
+      invalidReasons.push({ name: displayName, reason: validation.reason ?? "Original missing" });
+    } else {
+      invalid++;
+      invalidReasons.push({ name: displayName, reason: validation.reason ?? "Validation failed" });
+    }
   }
 
   return NextResponse.json({
@@ -106,5 +124,6 @@ export async function POST(request: Request) {
     readyClips: ready,
     missingClips: missing,
     invalidClips: invalid,
+    invalidReasons,
   });
 }

@@ -1,4 +1,4 @@
-import { getObjectBuffer, isB2Configured } from "@/lib/b2";
+import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -49,7 +49,7 @@ export async function GET(
 
   if (isImageFile(fileName || objectKey)) {
     try {
-      const buffer = await getObjectBuffer(objectKey);
+      const buffer = await getObjectHeadBuffer(objectKey, 50 * 1024 * 1024);
       const resized = await sharp(buffer)
         .resize(OG_SIZE, OG_SIZE, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 85 })

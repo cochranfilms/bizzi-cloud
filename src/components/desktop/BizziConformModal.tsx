@@ -22,6 +22,8 @@ interface PreviewResult {
   readyClips: number;
   missingClips: number;
   invalidClips: number;
+  /** Per-clip reasons for invalid/missing (e.g. "Proxy not ready or missing") */
+  invalidReasons?: Array<{ name: string; reason: string }>;
 }
 
 interface ConformResult {
@@ -214,6 +216,9 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           V3 rendition switching: the same mounted clip path will resolve to full resolution originals. No relink required.
         </p>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">
+          Note: NLE proxies are created by FFmpeg (not Mux). Mux is for web streaming only. If clips show as invalid, proxies may still be generating—check back in a few minutes.
+        </p>
 
         {/* Drive selector */}
         <div>
@@ -259,6 +264,20 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
                 {preview.invalidClips} invalid
               </div>
             </div>
+            {preview.invalidReasons && preview.invalidReasons.length > 0 && (
+              <details className="mt-2 text-sm">
+                <summary className="cursor-pointer text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">
+                  Why are clips invalid?
+                </summary>
+                <ul className="mt-2 space-y-1 max-h-28 overflow-y-auto text-neutral-600 dark:text-neutral-400">
+                  {preview.invalidReasons.map((r, i) => (
+                    <li key={i}>
+                      {r.name}: {r.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         ) : null}
 

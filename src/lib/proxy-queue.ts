@@ -81,6 +81,38 @@ export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
 }
 
 /**
+ * Fetch a pending proxy job by object_key. Returns null if none found.
+ */
+export async function getProxyJobByObjectKey(object_key: string): Promise<{
+  id: string;
+  object_key: string;
+  name: string | null;
+  backup_file_id: string | null;
+  user_id: string;
+  retry_count: number;
+} | null> {
+  const db = getAdminFirestore();
+  const snap = await db
+    .collection(PROXY_JOBS_COLLECTION)
+    .where("object_key", "==", object_key)
+    .where("status", "==", "pending")
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  const data = d.data();
+  if ((data.retry_count ?? 0) >= MAX_RETRIES) return null;
+  return {
+    id: d.id,
+    object_key: data.object_key,
+    name: data.name ?? null,
+    backup_file_id: data.backup_file_id ?? null,
+    user_id: data.user_id,
+    retry_count: data.retry_count ?? 0,
+  };
+}
+
+/**
  * Fetch the next batch of pending jobs for processing (oldest first).
  */
 export async function getPendingProxyJobs(limit: number): Promise<

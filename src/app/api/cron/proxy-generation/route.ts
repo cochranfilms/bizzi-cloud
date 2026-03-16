@@ -18,7 +18,7 @@ import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 
 const CRON_SECRET = process.env.CRON_SECRET;
-const BATCH_SIZE = 2; // Process up to 2 per run to stay within serverless timeout
+const BATCH_SIZE = 6; // Process up to 6 per run; immediate trigger handles new uploads
 
 export const maxDuration = 300;
 

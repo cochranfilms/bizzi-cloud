@@ -149,12 +149,21 @@ export async function POST(request: Request) {
 
   // MUX asset and proxy for video files (proxy via queue to avoid serverless timeout)
   if (VIDEO_EXT.test(safePath) && token) {
-    queueProxyJob({
+    await queueProxyJob({
       object_key: objectKey,
       name: safePath,
       backup_file_id: fileRef.id,
       user_id: uid,
     }).catch((e) => console.error("[upload-complete] queueProxyJob:", e));
+    // Trigger immediate proxy processing (fire-and-forget; cron fallback if this fails)
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      fetch(`${base}/api/proxy/process-one`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cronSecret}` },
+        body: JSON.stringify({ object_key: objectKey }),
+      }).catch(() => {});
+    }
     fetch(`${base}/api/mux/create-asset`, {
         method: "POST",
         headers: fetchHeaders,

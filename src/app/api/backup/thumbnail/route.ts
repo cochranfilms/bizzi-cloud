@@ -1,4 +1,4 @@
-import { getObjectBuffer, isB2Configured } from "@/lib/b2";
+import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
@@ -86,8 +86,9 @@ async function handleThumbnail(request: Request) {
   const nameForExt = (fileName || objectKey || "").toLowerCase();
   const isRaw = isRawFile(nameForExt);
 
+  const THUMB_MAX_BYTES = 50 * 1024 * 1024; // 50 MB - enough for image/RAW thumbnail extraction
   try {
-    const buffer = await getObjectBuffer(objectKey);
+    const buffer = await getObjectHeadBuffer(objectKey, THUMB_MAX_BYTES);
     let resized: Uint8Array;
 
     if (isRaw) {

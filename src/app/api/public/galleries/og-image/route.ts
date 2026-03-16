@@ -4,10 +4,7 @@
  * Uses gallery's share_image_asset_id or falls back to cover_asset_id.
  * Supports RAW files via rawToThumbnail.
  */
-import {
-  getObjectBuffer,
-  isB2Configured,
-} from "@/lib/b2";
+import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { isReservedHandle } from "@/lib/public-handle";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawFile } from "@/lib/gallery-file-types";
@@ -103,7 +100,7 @@ export async function GET(request: Request) {
 
   try {
     if (GALLERY_IMAGE_EXT.test(nameForExt)) {
-      const buffer = await getObjectBuffer(objectKey);
+      const buffer = await getObjectHeadBuffer(objectKey, 50 * 1024 * 1024);
       let resized: Buffer;
 
       if (isRawFile(nameForExt)) {
