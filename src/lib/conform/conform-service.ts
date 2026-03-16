@@ -13,7 +13,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getObjectMetadata, getProxyObjectKey } from "@/lib/b2";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import type { ConformReport, ConformReportEntry, ConformSession } from "@/types/conform";
-import { setProjectRenditionState } from "./project-rendition-state";
+import { getProjectRenditionState, setProjectRenditionStates } from "./project-rendition-state";
 import { validateAssetForConform } from "./validation";
 
 const CONFORM_SESSIONS = "conform_sessions";
@@ -83,6 +83,8 @@ export interface ConformResult {
   switchedAssets: number;
   failedAssets: number;
   skippedAssets: number;
+  requestedModeApplied: boolean;
+  activeMode: "proxy" | "original";
   report: ConformReport;
 }
 
@@ -154,6 +156,7 @@ export async function startConformSession(
     );
 
     const reportEntries: ConformReportEntry[] = [];
+    const readyEntries: ConformReportEntry[] = [];
     let switched = 0;
     let failed = 0;
     let skipped = 0;
@@ -208,7 +211,7 @@ export async function startConformSession(
         continue;
       }
 
-      reportEntries.push({
+      readyEntries.push({
         bizziAssetId: doc.id,
         displayName: relativePath.split("/").pop() ?? relativePath,
         logicalMountPath: relativePath,
@@ -220,13 +223,36 @@ export async function startConformSession(
       switched++;
     }
 
-    // 2. Update project rendition state to original.
+    // 2. Update project rendition state to original only when validation succeeded for every
+    // proxy-backed clip. This avoids a project-level mode flip that would silently switch
+    // failed clips too, since the mount layer stores rendition state per drive/project.
     // When user selects "Storage" (or RAW/Gallery Media), set state for ALL drives with that slug
     // so the mount (which merges files from all such drives) serves originals for every file.
     const driveIdsToSet = await getDriveIdsForSlug(db, userId, scope.projectId);
-    for (const did of driveIdsToSet) {
-      await setProjectRenditionState(userId, did, "original", sessionId);
+    let requestedModeApplied = false;
+
+    if (failed === 0 && readyEntries.length > 0) {
+      await setProjectRenditionStates(userId, driveIdsToSet, "original", sessionId);
+      requestedModeApplied = true;
+      reportEntries.push(...readyEntries);
+    } else if (failed > 0) {
+      switched = 0;
+      for (const entry of readyEntries) {
+        reportEntries.push({
+          ...entry,
+          status: "skipped",
+          reason: "Conform did not switch the mounted drive because one or more clips failed validation.",
+        });
+        skipped++;
+      }
+    } else {
+      reportEntries.push(...readyEntries);
     }
+
+    const activeModeMap = await getProjectRenditionState(userId, driveIdsToSet);
+    const activeMode = driveIdsToSet.some((did) => activeModeMap.get(did) === "original")
+      ? "original"
+      : "proxy";
 
     const report: ConformReport = {
       sessionId,
@@ -240,11 +266,15 @@ export async function startConformSession(
     };
 
     const status: ConformSession["status"] =
-      failed > 0 || skipped > 0
-        ? switched > 0
+      requestedModeApplied
+        ? skipped > 0
           ? "partial"
-          : "failed"
-        : "completed";
+          : "completed"
+        : failed > 0
+          ? "failed"
+          : skipped > 0
+            ? "partial"
+            : "completed";
 
     await sessionRef.update({
       status,
@@ -253,6 +283,8 @@ export async function startConformSession(
       switchedAssets: switched,
       failedAssets: failed,
       skippedAssets: skipped,
+      requestedModeApplied,
+      activeMode,
       reportJson: JSON.stringify(report),
     });
 
@@ -263,6 +295,8 @@ export async function startConformSession(
       switchedAssets: switched,
       failedAssets: failed,
       skippedAssets: skipped,
+      requestedModeApplied,
+      activeMode,
       report,
     };
   } catch (err) {
@@ -287,9 +321,7 @@ export async function revertToProxies(
 ): Promise<void> {
   const db = getAdminFirestore();
   const driveIdsToSet = await getDriveIdsForSlug(db, userId, projectId);
-  for (const did of driveIdsToSet) {
-    await setProjectRenditionState(userId, did, "proxy", null);
-  }
+  await setProjectRenditionStates(userId, driveIdsToSet, "proxy", null);
 
   await db.collection(CONFORM_SESSIONS).add({
     projectId,

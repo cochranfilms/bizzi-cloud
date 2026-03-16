@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { HardDrive } from "lucide-react";
 
 const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (Firebase tokens ~1 hr)
+const STATUS_REFRESH_INTERVAL_MS = 3000;
 
 interface MountPanelProps {
   settings: Record<string, unknown>;
@@ -27,11 +28,22 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
     window.bizzi?.mount?.getStatus().then((s) => {
       setIsMounted(s.isMounted);
       setMountPoint(s.mountPoint);
-    });
+    }).catch(() => {});
 
   useEffect(() => {
     if (!window.bizzi?.mount) return;
     refreshStatus();
+    const interval = window.setInterval(refreshStatus, STATUS_REFRESH_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (!document.hidden) refreshStatus();
+    };
+    window.addEventListener("focus", refreshStatus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshStatus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [fuseAvailable]);
 
   // Refresh auth token every 50 min when mounted so mount keeps working after Firebase token expires
@@ -57,10 +69,12 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
     setLoading(true);
     setError(null);
     try {
-      if (isMounted) {
+      const latestStatus = await window.bizzi.mount.getStatus();
+      setIsMounted(latestStatus.isMounted);
+      setMountPoint(latestStatus.mountPoint);
+
+      if (latestStatus.isMounted) {
         await window.bizzi.mount.unmount();
-        setIsMounted(false);
-        setMountPoint(null);
       } else {
         const token = await getToken();
         if (!token) {
@@ -71,13 +85,11 @@ export function MountPanel({ settings, onUpdate, getToken, isSignedIn, authLoadi
         setIsMounted(true);
         setMountPoint(point);
       }
+      refreshStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       // Sync UI with main process (e.g. if "Already mounted" from stale state, show Unmount)
-      window.bizzi?.mount?.getStatus().then((s) => {
-        setIsMounted(s.isMounted);
-        setMountPoint(s.mountPoint);
-      });
+      refreshStatus();
     } finally {
       setLoading(false);
     }

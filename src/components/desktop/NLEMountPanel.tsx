@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { HardDrive, Cpu, FolderDown, Cloud, CheckCircle2, XCircle, ExternalLink, Film } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { BizziConformModal } from "./BizziConformModal";
@@ -37,6 +37,7 @@ declare global {
 }
 
 const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (Firebase tokens ~1 hr)
+const STATUS_REFRESH_INTERVAL_MS = 3000;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -87,9 +88,29 @@ export function NLEMountPanel() {
       window.bizzi?.mount?.getStatus().then((s) => {
         setIsMounted(s.isMounted);
         setMountPoint(s.mountPoint);
-      });
+      }).catch(() => {});
     refresh();
+    const interval = window.setInterval(refresh, STATUS_REFRESH_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (!document.hidden) refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [isDesktop, fuseAvailable]);
+
+  const refreshMountStatus = useCallback(async () => {
+    const status = await window.bizzi?.mount?.getStatus();
+    if (status) {
+      setIsMounted(status.isMounted);
+      setMountPoint(status.mountPoint);
+    }
+    return status;
+  }, []);
 
   // Refresh auth token every 50 min when mounted so mount keeps working after Firebase token expires
   useEffect(() => {
@@ -111,10 +132,9 @@ export function NLEMountPanel() {
     setLoading(true);
     setError(null);
     try {
-      if (isMounted) {
+      const latestStatus = await refreshMountStatus();
+      if (latestStatus?.isMounted) {
         await window.bizzi.mount.unmount();
-        setIsMounted(false);
-        setMountPoint(null);
       } else {
         const token = await user.getIdToken(true);
         if (!token) {
@@ -126,8 +146,10 @@ export function NLEMountPanel() {
         setIsMounted(true);
         setMountPoint(point);
       }
+      await refreshMountStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      await refreshMountStatus().catch(() => {});
     } finally {
       setLoading(false);
     }

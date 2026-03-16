@@ -9,6 +9,7 @@ import { join } from "path";
 import { pipeline } from "stream";
 import { promisify } from "util";
 import { Readable } from "stream";
+import { desktopLog } from "../logger";
 
 const pipelineP = promisify(pipeline);
 
@@ -166,7 +167,7 @@ export class WebDAVServer {
         try {
           await this.handleRequest(req, res);
         } catch (err) {
-          console.error("WebDAV error:", err);
+          desktopLog.error("WebDAV error:", err);
           res.writeHead(500, { "Content-Type": "text/plain" });
           res.end("Internal Server Error");
         }
@@ -241,7 +242,7 @@ export class WebDAVServer {
     const parts = pathname ? pathname.split("/") : [];
 
     // Debug: log all requests (run app from terminal to see)
-    console.log(`[WebDAV] ${req.method} ${url.pathname} -> pathname="${pathname}" parts=[${parts.join(", ")}] auth=${token ? "OK" : "MISSING"}`);
+    desktopLog.info(`[WebDAV] ${req.method} ${url.pathname} -> pathname="${pathname}" parts=[${parts.join(", ")}] auth=${token ? "OK" : "MISSING"}`);
 
     if (!token) {
       res.writeHead(401, { "WWW-Authenticate": 'Bearer realm="Bizzi Cloud"' });
@@ -330,7 +331,7 @@ export class WebDAVServer {
       this.options.onFolderListed?.(driveId, folderPath, entries);
     }
     } catch (err) {
-      console.error("[WebDAV] PROPFIND error:", err);
+      desktopLog.error("[WebDAV] PROPFIND error:", err);
       res.writeHead(500, { "Content-Type": "text/plain" });
       res.end("Internal Server Error");
     }
@@ -390,6 +391,8 @@ export class WebDAVServer {
     const resHeaders: Record<string, string> = {
       "Content-Type": "application/octet-stream",
     };
+    if (entry.etag) resHeaders.ETag = entry.etag;
+    if (entry.modified_at) resHeaders["Last-Modified"] = new Date(entry.modified_at).toUTCString();
     fetchRes.headers.forEach((v, k) => {
       const lower = k.toLowerCase();
       if (["content-length", "content-range", "accept-ranges"].includes(lower)) {
@@ -459,7 +462,7 @@ export class WebDAVServer {
       });
       if (!urlRes.ok) {
         const err = await urlRes.json().catch(() => ({}));
-        console.error("[WebDAV] upload-url error:", urlRes.status, err);
+        desktopLog.error("[WebDAV] upload-url error:", urlRes.status, err);
         res.writeHead(urlRes.status === 503 ? 503 : 400);
         res.end(err?.error ?? "Failed to get upload URL");
         return;
@@ -541,7 +544,7 @@ export class WebDAVServer {
       }
 
       if (!uploadRes.ok) {
-        console.error("[WebDAV] B2 upload error:", uploadRes.status, await uploadRes.text());
+        desktopLog.error("[WebDAV] B2 upload error:", uploadRes.status, await uploadRes.text());
         res.writeHead(502);
         res.end("Upload to storage failed");
         return;
@@ -565,7 +568,7 @@ export class WebDAVServer {
 
       if (!completeRes.ok) {
         const err = await completeRes.json().catch(() => ({}));
-        console.error("[WebDAV] upload-complete error:", completeRes.status, err);
+        desktopLog.error("[WebDAV] upload-complete error:", completeRes.status, err);
         res.writeHead(completeRes.status);
         res.end(err?.error ?? "Upload completed but failed to create file record");
         return;
@@ -575,7 +578,7 @@ export class WebDAVServer {
       res.writeHead(201);
       res.end();
     } catch (err) {
-      console.error("[WebDAV] PUT error:", err);
+      desktopLog.error("[WebDAV] PUT error:", err);
       res.writeHead(500);
       res.end("Internal Server Error");
     }
@@ -631,7 +634,7 @@ export class WebDAVServer {
       });
       if (!renameRes.ok) {
         const err = await renameRes.json().catch(() => ({}));
-        console.error("[WebDAV] rename error:", renameRes.status, err);
+        desktopLog.error("[WebDAV] rename error:", renameRes.status, err);
         res.writeHead(renameRes.status === 404 ? 404 : 502);
         res.end(err?.error ?? "Rename failed");
         return;
@@ -639,7 +642,7 @@ export class WebDAVServer {
       res.writeHead(201);
       res.end();
     } catch (err) {
-      console.error("[WebDAV] MOVE error:", err);
+      desktopLog.error("[WebDAV] MOVE error:", err);
       res.writeHead(500);
       res.end("Internal Server Error");
     }
@@ -684,7 +687,7 @@ export class WebDAVServer {
       });
       if (!deleteRes.ok) {
         const err = await deleteRes.json().catch(() => ({}));
-        console.error("[WebDAV] delete error:", deleteRes.status, err);
+        desktopLog.error("[WebDAV] delete error:", deleteRes.status, err);
         res.writeHead(deleteRes.status === 404 ? 404 : 502);
         res.end(err?.error ?? "Delete failed");
         return;
@@ -692,7 +695,7 @@ export class WebDAVServer {
       res.writeHead(204);
       res.end();
     } catch (err) {
-      console.error("[WebDAV] DELETE error:", err);
+      desktopLog.error("[WebDAV] DELETE error:", err);
       res.writeHead(500);
       res.end("Internal Server Error");
     }

@@ -11,6 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 import { Notification } from "electron";
+import { desktopLog } from "../logger";
 import { PrefetchService } from "./prefetch-service";
 import { WebDAVServer } from "./webdav-server";
 
@@ -220,6 +221,14 @@ export class MountService {
     return this._isMounted;
   }
 
+  async getStatus(): Promise<{ isMounted: boolean; mountPoint: string | null }> {
+    await this.reconcileMountState();
+    return {
+      isMounted: this._isMounted,
+      mountPoint: this._isMounted ? this.getMountPoint() : null,
+    };
+  }
+
   getMountPoint(): string {
     return this.symlinkForFallback ?? this.mountPoint;
   }
@@ -230,14 +239,35 @@ export class MountService {
   }
 
   /** Trigger a directory read to force rclone to re-PROPFIND. Call after conform so NLE sees originals immediately. */
-  refreshFolder(driveSlug: string): void {
+  async refreshFolder(driveSlug: string): Promise<void> {
+    await this.reconcileMountState();
     if (!this._isMounted || !this.mountPoint) return;
     const slug = ["Storage", "RAW", "Gallery Media"].includes(driveSlug) ? driveSlug : "Storage";
-    const folderPath = path.join(this.mountPoint, slug);
+    const rootPath = path.join(this.mountPoint, slug);
+    const touchDirectory = async (dirPath: string): Promise<fs.Dirent[]> => {
+      try {
+        await fs.promises.stat(dirPath);
+      } catch {
+        return [];
+      }
+      return fs.promises.readdir(dirPath, { withFileTypes: true }).catch(() => []);
+    };
+
     try {
-      fs.readdirSync(folderPath);
-    } catch {
-      // Mount may be busy; ignore
+      const rootEntries = await touchDirectory(rootPath);
+      for (const entry of rootEntries.slice(0, 50)) {
+        const childPath = path.join(rootPath, entry.name);
+        await fs.promises.stat(childPath).catch(() => null);
+        if (entry.isDirectory()) {
+          await touchDirectory(childPath);
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await touchDirectory(rootPath);
+      desktopLog.info("[mount] refreshed folder", { driveSlug: slug, rootPath });
+    } catch (err) {
+      desktopLog.warn("[mount] refresh folder failed", { driveSlug: slug, rootPath, err });
     }
   }
 
@@ -253,12 +283,60 @@ export class MountService {
     }
   }
 
+  private async cleanupInactiveMount(reason: string): Promise<void> {
+    desktopLog.warn("[mount] clearing inactive mount state", {
+      reason,
+      mountPoint: this.mountPoint,
+      symlinkForFallback: this.symlinkForFallback,
+    });
+
+    this.currentToken = null;
+    this._isMounted = false;
+    this.prefetch?.stop();
+    this.prefetch = null;
+
+    if (this.symlinkForFallback) {
+      try {
+        await fs.promises.unlink(this.symlinkForFallback);
+      } catch {
+        // ignore
+      }
+      this.symlinkForFallback = null;
+    }
+
+    if (this.webdav) {
+      await this.webdav.stop();
+      this.webdav = null;
+    }
+
+    this.mountPoint = "";
+  }
+
+  private async reconcileMountState(): Promise<void> {
+    if (!this._isMounted && !this.mountPoint && !this.symlinkForFallback) return;
+
+    const active = await this.isMountActuallyActive();
+    if (active) {
+      this._isMounted = true;
+      return;
+    }
+
+    await this.cleanupInactiveMount("mount no longer present in system mount table");
+  }
+
   async mount(options: MountOptions): Promise<void> {
+    await this.reconcileMountState();
+
     // If we think we're mounted, always unmount first. Fixes stuck "Already mounted" when
     // rclone died, user ejected, or state is stale. Mount button effectively becomes "remount".
     if (this.isMounted()) {
       await this.unmount();
     }
+
+    desktopLog.info("[mount] mount requested", {
+      apiBaseUrl: options.apiBaseUrl,
+      cacheBaseDir: options.cacheBaseDir,
+    });
 
     const token = await options.getAuthToken();
     if (!token) {
@@ -335,7 +413,7 @@ export class MountService {
         // Fall back to Application Support
         this.mountPoint = path.join(options.cacheBaseDir, "Mount");
         await fs.promises.mkdir(this.mountPoint, { recursive: true });
-        console.warn("Using fallback mount path (not in /Volumes):", this.mountPoint, err);
+        desktopLog.warn("Using fallback mount path (not in /Volumes)", this.mountPoint, err);
 
         // Create symlink at /Volumes/BizziCloud so NLEs can see it (may fail without Full Disk Access)
         try {
@@ -448,80 +526,98 @@ export class MountService {
       let stderr = "";
       proc.stderr?.on("data", (d) => { stderr += d.toString(); });
       let rcloneExitedWithError = false;
+      let settled = false;
+
+      const finishResolve = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      const finishReject = (err: Error): void => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
 
       proc.on("error", (err) => {
-        reject(new Error(`rclone failed to start: ${err.message}`));
+        desktopLog.error("[mount] rclone failed to start", err);
+        finishReject(new Error(`rclone failed to start: ${err.message}`));
       });
 
       proc.on("exit", (code, signal) => {
         if (code !== 0 && code !== null && !signal) {
           rcloneExitedWithError = true;
           const errMsg = parseRcloneError(logFile, stderr, code);
-          reject(new Error(errMsg));
+          desktopLog.error("[mount] rclone exited with error", { code, errMsg, logFile });
+          finishReject(new Error(errMsg));
         }
       });
 
       const mountReady = (): void => {
         this._isMounted = true;
         const openPath = this.symlinkForFallback ?? this.mountPoint;
+        desktopLog.info("[mount] mount active", { mountPoint: this.mountPoint, openPath, logFile });
         if (process.platform === "darwin" && openPath.startsWith("/Volumes/")) {
           spawn("open", [openPath], { stdio: "ignore" });
         }
-        resolve();
+        finishResolve();
       };
 
       const verifyAndResolve = async (): Promise<void> => {
-        try {
-          await fs.promises.access(this.mountPoint, fs.constants.R_OK);
-          mountReady();
-          // Start predictive prefetch (folder open, clip click, grading, idle)
-          this.prefetch?.start(this.mountPoint);
-        } catch {
-          // Don't set _isMounted when rclone failed—prevents "Already mounted" on retry.
-          if (!rcloneExitedWithError) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          if (await this.isMountActuallyActive()) {
             mountReady();
+            // Start predictive prefetch (folder open, clip click, grading, idle)
             this.prefetch?.start(this.mountPoint);
+            return;
           }
+          if (rcloneExitedWithError || settled) return;
+          await new Promise((resolveAttempt) => setTimeout(resolveAttempt, 500));
         }
+
+        desktopLog.error("[mount] mount did not become active", { mountPoint: this.mountPoint, logFile });
+        finishReject(new Error(`Mount did not become active. Check ${logFile} and desktop.log for details.`));
       };
 
-      setTimeout(verifyAndResolve, 2000);
+      void verifyAndResolve();
     });
   }
 
   async unmount(): Promise<void> {
-    this.currentToken = null;
-    this._isMounted = false;
-    this.prefetch?.stop();
-    this.prefetch = null;
+    await this.reconcileMountState();
+    if (!this.mountPoint) {
+      await this.cleanupInactiveMount("explicit unmount with no active mount");
+      return;
+    }
 
-    if (this.mountPoint) {
-      try {
-        await new Promise<void>((resolve) => {
-          const proc = spawn("umount", [this.mountPoint], { stdio: "ignore" });
-          proc.on("close", () => resolve());
-          proc.on("error", () => resolve());
-          setTimeout(resolve, 3000);
-        });
-      } catch {
-        // ignore
+    desktopLog.info("[mount] unmount requested", {
+      mountPoint: this.mountPoint,
+      symlinkForFallback: this.symlinkForFallback,
+    });
+
+    const tryUnmount = (cmd: string, args: string[]) =>
+      new Promise<void>((resolve) => {
+        const proc = spawn(cmd, args, { stdio: "ignore" });
+        proc.on("close", () => resolve());
+        proc.on("error", () => resolve());
+        setTimeout(resolve, 3000);
+      });
+
+    try {
+      await tryUnmount("umount", [this.mountPoint]);
+      if (process.platform === "darwin") {
+        await tryUnmount("diskutil", ["unmount", "force", this.mountPoint]);
       }
-      this.mountPoint = "";
+    } catch {
+      // ignore, final verification below decides success
     }
 
-    // Remove symlink created for fallback mount (so /Volumes/BizziCloud doesn't point to empty dir)
-    if (this.symlinkForFallback) {
-      try {
-        await fs.promises.unlink(this.symlinkForFallback);
-      } catch {
-        // ignore
-      }
-      this.symlinkForFallback = null;
+    if (await this.isMountActuallyActive()) {
+      desktopLog.warn("[mount] unmount verification failed", { mountPoint: this.mountPoint });
+      throw new Error("Bizzi Cloud is still mounted. Eject it in Finder, then try again.");
     }
 
-    if (this.webdav) {
-      await this.webdav.stop();
-      this.webdav = null;
-    }
+    await this.cleanupInactiveMount("explicit unmount completed");
   }
 }

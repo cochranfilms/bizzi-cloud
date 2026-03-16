@@ -63,18 +63,35 @@ export async function setProjectRenditionState(
   preferredRendition: PreferredRendition,
   lastConformSessionId?: string | null
 ): Promise<void> {
+  await setProjectRenditionStates(userId, [projectId], preferredRendition, lastConformSessionId);
+}
+
+export async function setProjectRenditionStates(
+  userId: string,
+  projectIds: string[],
+  preferredRendition: PreferredRendition,
+  lastConformSessionId?: string | null
+): Promise<void> {
+  if (projectIds.length === 0) return;
+
   const db = getAdminFirestore();
   const now = new Date().toISOString();
-  const docId = `${userId}:${projectId}`;
+  const batch = db.batch();
 
-  await db.collection(COLLECTION).doc(docId).set(
-    {
-      projectId,
-      userId,
-      preferredRendition,
-      lastConformSessionId: lastConformSessionId ?? null,
-      updatedAt: now,
-    },
-    { merge: true }
-  );
+  for (const projectId of projectIds) {
+    const docId = `${userId}:${projectId}`;
+    batch.set(
+      db.collection(COLLECTION).doc(docId),
+      {
+        projectId,
+        userId,
+        preferredRendition,
+        lastConformSessionId: lastConformSessionId ?? null,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  }
+
+  await batch.commit();
 }

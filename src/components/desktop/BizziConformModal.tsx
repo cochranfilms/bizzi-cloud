@@ -33,6 +33,8 @@ interface ConformResult {
   switchedAssets: number;
   failedAssets: number;
   skippedAssets: number;
+  requestedModeApplied?: boolean;
+  activeMode?: "proxy" | "original";
   report: {
     entries: Array<{
       displayName: string;
@@ -59,6 +61,7 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
   const [conformLoading, setConformLoading] = useState(false);
   const [result, setResult] = useState<ConformResult | null>(null);
   const [revertLoading, setRevertLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchDrives = useCallback(async () => {
     if (!user) return;
@@ -105,10 +108,17 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
     if (open && selectedDriveId) fetchPreview();
   }, [open, selectedDriveId, fetchPreview]);
 
+  const refreshMountedDrive = useCallback(async () => {
+    if (typeof window?.bizzi?.mount?.refreshFolder !== "function") return;
+    const driveName = drives.find((d) => d.id === selectedDriveId)?.name ?? "Storage";
+    await window.bizzi.mount.refreshFolder(driveName);
+  }, [drives, selectedDriveId]);
+
   const handleConform = async () => {
     if (!user || !selectedDriveId) return;
     setConformLoading(true);
     setResult(null);
+    setActionError(null);
     try {
       const token = await user.getIdToken(true);
       const res = await fetch("/api/conform/start", {
@@ -126,13 +136,14 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Conform failed");
       setResult(data);
-      fetchPreview(); // Refresh counts
+      await fetchPreview(); // Refresh counts
       // Trigger mount folder refresh so conform change is visible immediately in NLE
-      if ((data?.switchedAssets ?? 0) > 0 && typeof window?.bizzi?.mount?.refreshFolder === "function") {
-        const driveName = drives.find((d) => d.id === selectedDriveId)?.name ?? "Storage";
-        window.bizzi.mount.refreshFolder(driveName);
+      if (data?.requestedModeApplied) {
+        await refreshMountedDrive();
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Conform failed";
+      setActionError(message);
       setResult({
         sessionId: "",
         status: "failed",
@@ -140,6 +151,8 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
         switchedAssets: 0,
         failedAssets: 0,
         skippedAssets: 0,
+        requestedModeApplied: false,
+        activeMode: "proxy",
         report: {
           entries: [],
           summary: { total: 0, switched: 0, failed: 0, skipped: 0 },
@@ -153,6 +166,7 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
   const handleRevert = async () => {
     if (!user || !selectedDriveId) return;
     setRevertLoading(true);
+    setActionError(null);
     try {
       const token = await user.getIdToken(true);
       const res = await fetch("/api/conform/revert", {
@@ -163,11 +177,13 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
         },
         body: JSON.stringify({ projectId: selectedDriveId }),
       });
-      if (!res.ok) throw new Error("Revert failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Revert failed");
       setResult(null);
-      fetchPreview();
-    } catch {
-      // Show error
+      await fetchPreview();
+      await refreshMountedDrive();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Revert failed");
     } finally {
       setRevertLoading(false);
     }
@@ -175,6 +191,7 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
 
   const reset = () => {
     setResult(null);
+    setActionError(null);
   };
 
   return (
@@ -224,6 +241,11 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
         <p className="text-xs text-neutral-400 dark:text-neutral-500">
           Note: NLE proxies are created by FFmpeg (not Mux). Mux is for web streaming only. If clips show as invalid, proxies may still be generating—check back in a few minutes.
         </p>
+        {actionError && (
+          <p className="text-sm text-red-500">
+            {actionError}
+          </p>
+        )}
 
         {/* Drive selector */}
         <div>
@@ -326,7 +348,7 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
             {result.status === "failed" && (
               <div className="flex items-center gap-2 text-red-500 font-medium">
                 <XCircle className="w-5 h-5" />
-                Conform failed
+                {result.requestedModeApplied === false ? "Conform blocked" : "Conform failed"}
               </div>
             )}
             <div className="text-sm text-neutral-600 dark:text-neutral-400">
@@ -334,8 +356,11 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
               {result.skippedAssets} skipped
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              The mount folder was refreshed; changes should appear immediately. If your NLE still
-              shows proxy, close and reopen the project.
+              {result.requestedModeApplied
+                ? "The mounted drive was refreshed after the rendition switch. If your NLE still shows proxy, close and reopen the project."
+                : result.activeMode === "proxy"
+                  ? "The mounted drive stayed in proxy mode because one or more clips failed validation."
+                  : "The mounted drive stayed in full-resolution mode."}
             </p>
             {result.report.entries.filter((e) => e.status !== "switched").length > 0 && (
               <details className="text-sm">

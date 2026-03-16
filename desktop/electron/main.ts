@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import * as path from "path";
 import Store from "electron-store";
 import { FileProviderService } from "./file-provider/file-provider-service";
+import { desktopLog, setDesktopLogFile } from "./logger";
 import { MountService } from "./mount/mount-service";
 
 const mountService = new MountService();
@@ -24,6 +25,11 @@ const store = new Store<{
 });
 
 let mainWindow: BrowserWindow | null = null;
+
+function updateDesktopLogPath(): void {
+  const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));
+  setDesktopLogFile(path.join(cacheBaseDir, "desktop.log"));
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -50,12 +56,28 @@ function createWindow() {
     mainWindow.loadURL(desktopUrl);
   }
 
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    desktopLog.error("[desktop] renderer process exited", details);
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  updateDesktopLogPath();
+  desktopLog.info("[desktop] app ready");
+  createWindow();
+});
+
+process.on("uncaughtException", (error) => {
+  desktopLog.error("[desktop] uncaught exception", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  desktopLog.error("[desktop] unhandled rejection", reason);
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -68,6 +90,9 @@ app.on("activate", () => {
 ipcMain.handle("get-settings", () => store.store);
 ipcMain.handle("set-settings", (_e, key: string, value: unknown) => {
   store.set(key, value);
+  if (key === "cacheBaseDir") {
+    updateDesktopLogPath();
+  }
   return store.store;
 });
 ipcMain.handle("get-path", (_e, name: "userData" | "cacheBase") => {
@@ -87,10 +112,7 @@ ipcMain.handle("mount-dependencies", async () => {
       : app.getAppPath();
   return mountService.getMountDependencies(resourcesDir);
 });
-ipcMain.handle("mount-status", () => ({
-  isMounted: mountService.isMounted(),
-  mountPoint: mountService.isMounted() ? mountService.getMountPoint() : null,
-}));
+ipcMain.handle("mount-status", async () => mountService.getStatus());
 
 ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
   const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));
@@ -116,9 +138,7 @@ ipcMain.handle("mount-unmount", () => mountService.unmount());
 ipcMain.handle("mount-refresh-token", (_e, token: string) => {
   mountService.refreshToken(token);
 });
-ipcMain.handle("mount-refresh-folder", (_e, driveSlug: string) => {
-  mountService.refreshFolder(driveSlug);
-});
+ipcMain.handle("mount-refresh-folder", (_e, driveSlug: string) => mountService.refreshFolder(driveSlug));
 
 // Native Sync (File Provider) IPC
 ipcMain.handle("native-sync-available", () => fileProviderService.isAvailable());

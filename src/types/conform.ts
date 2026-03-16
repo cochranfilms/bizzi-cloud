@@ -29,6 +29,8 @@ export interface ConformSession {
   switchedAssets: number;
   failedAssets: number;
   skippedAssets: number;
+  requestedModeApplied?: boolean;
+  activeMode?: ConformRequestedMode;
   reportJson: string | null;
   /** Options used */
   pinOriginals: boolean;
