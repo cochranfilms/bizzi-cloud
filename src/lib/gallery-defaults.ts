@@ -2,7 +2,31 @@ import type {
   GalleryBrandingSettings,
   GalleryDownloadSettings,
   GalleryWatermarkSettings,
+  VideoDeliveryMode,
+  VideoDownloadPolicy,
+  VideoWorkflowStatus,
 } from "@/types/gallery";
+
+/** Default video gallery settings – used when gallery_type is video */
+export const DEFAULT_VIDEO_GALLERY_SETTINGS = {
+  delivery_mode: "video_review" as VideoDeliveryMode,
+  download_policy: "none" as VideoDownloadPolicy,
+  allow_comments: true,
+  allow_favorites: true,
+  allow_timestamp_comments: false,
+  allow_original_downloads: false,
+  allow_proxy_downloads: true,
+  revision_limit_enabled: false,
+  revision_limit_count: 2,
+  invoice_mode: null as "external_link" | "manual" | null,
+  invoice_url: null as string | null,
+  invoice_label: null as string | null,
+  invoice_status: "none" as const,
+  invoice_required_for_download: false,
+  featured_video_asset_id: null as string | null,
+  client_review_instructions: null as string | null,
+  workflow_status: "draft" as VideoWorkflowStatus,
+};
 
 export const DEFAULT_BRANDING: GalleryBrandingSettings = {
   logo_url: null,

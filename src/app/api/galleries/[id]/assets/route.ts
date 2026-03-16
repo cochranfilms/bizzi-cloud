@@ -47,6 +47,8 @@ export async function POST(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const galleryType = (gallerySnap.data()!.gallery_type === "video" ? "video" : "photo") as "photo" | "video";
+
   const existingSnap = await db
     .collection("gallery_assets")
     .where("gallery_id", "==", galleryId)
@@ -72,6 +74,10 @@ export async function POST(
     const objectKey = (fileData.object_key ?? "") as string;
     const sizeBytes = (fileData.size_bytes ?? 0) as number;
     const mediaType = getMediaType(name);
+
+    // Enforce gallery type: photo galleries = images only, video galleries = videos only
+    if (galleryType === "photo" && mediaType === "video") continue;
+    if (galleryType === "video" && mediaType === "image") continue;
 
     const assetRef = db.collection("gallery_assets").doc();
     const now = new Date();

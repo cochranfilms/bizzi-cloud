@@ -135,6 +135,7 @@ export async function POST(
     completed_at: new Date(),
   });
 
+  const lastModified = data.lastModified != null ? new Date(data.lastModified).toISOString() : null;
   const fileRef = await db.collection("backup_files").add({
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
@@ -143,7 +144,7 @@ export async function POST(
     object_key: objectKey,
     size_bytes: fileSize,
     content_type: contentType,
-    modified_at: null,
+    modified_at: lastModified,
     deleted_at: null,
     organization_id: data.workspaceId ?? data.organization_id ?? null,
   });

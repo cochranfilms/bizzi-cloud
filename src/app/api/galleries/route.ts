@@ -5,6 +5,7 @@ import {
   DEFAULT_BRANDING,
   DEFAULT_DOWNLOAD_SETTINGS,
   DEFAULT_WATERMARK,
+  DEFAULT_VIDEO_GALLERY_SETTINGS,
 } from "@/lib/gallery-defaults";
 import type { CreateGalleryInput, GalleryAccessMode } from "@/types/gallery";
 import { NextResponse } from "next/server";
@@ -73,8 +74,10 @@ export async function GET(request: Request) {
   const galleries = snap.docs.map((d) => {
     const data = d.data();
     const cover = coverMap[d.id] ?? null;
+    const galleryType = data.gallery_type === "video" ? "video" : "photo";
     return {
       id: d.id,
+      gallery_type: galleryType,
       title: data.title,
       slug: data.slug,
       photographer_id: data.photographer_id,
@@ -106,6 +109,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as CreateGalleryInput;
   const {
+    gallery_type: rawGalleryType,
     title,
     description,
     event_date,
@@ -118,7 +122,27 @@ export async function POST(request: Request) {
     branding,
     download_settings,
     watermark,
+    // Video gallery specific
+    delivery_mode,
+    download_policy,
+    allow_comments,
+    allow_favorites,
+    allow_timestamp_comments,
+    allow_original_downloads,
+    allow_proxy_downloads,
+    revision_limit_enabled,
+    revision_limit_count,
+    invoice_mode,
+    invoice_url,
+    invoice_label,
+    invoice_status,
+    invoice_required_for_download,
+    featured_video_asset_id,
+    client_review_instructions,
+    workflow_status,
   } = body;
+
+  const galleryType = rawGalleryType === "video" ? "video" : "photo";
 
   if (!title || typeof title !== "string" || title.trim().length === 0) {
     return NextResponse.json(
@@ -138,7 +162,8 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const galleryData = {
+  const baseGalleryData = {
+    gallery_type: galleryType,
     title: title.trim(),
     slug,
     photographer_id: uid,
@@ -157,7 +182,7 @@ export async function POST(request: Request) {
       : [],
     branding: { ...DEFAULT_BRANDING, ...branding },
     layout,
-    source_format: source_format === "raw" ? "raw" : "jpg",
+    source_format: galleryType === "photo" ? (source_format === "raw" ? "raw" : "jpg") : "jpg",
     download_settings: { ...DEFAULT_DOWNLOAD_SETTINGS, ...download_settings },
     watermark: { ...DEFAULT_WATERMARK, ...watermark },
     view_count: 0,
@@ -167,6 +192,32 @@ export async function POST(request: Request) {
     created_at: now,
     updated_at: now,
   };
+
+  const videoSettings =
+    galleryType === "video"
+      ? {
+          ...DEFAULT_VIDEO_GALLERY_SETTINGS,
+          delivery_mode: delivery_mode ?? DEFAULT_VIDEO_GALLERY_SETTINGS.delivery_mode,
+          download_policy: download_policy ?? DEFAULT_VIDEO_GALLERY_SETTINGS.download_policy,
+          allow_comments: allow_comments ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_comments,
+          allow_favorites: allow_favorites ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_favorites,
+          allow_timestamp_comments: allow_timestamp_comments ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_timestamp_comments,
+          allow_original_downloads: allow_original_downloads ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_original_downloads,
+          allow_proxy_downloads: allow_proxy_downloads ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_proxy_downloads,
+          revision_limit_enabled: revision_limit_enabled ?? DEFAULT_VIDEO_GALLERY_SETTINGS.revision_limit_enabled,
+          revision_limit_count: revision_limit_count ?? DEFAULT_VIDEO_GALLERY_SETTINGS.revision_limit_count,
+          invoice_mode: invoice_mode ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_mode,
+          invoice_url: invoice_url ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_url,
+          invoice_label: invoice_label ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_label,
+          invoice_status: invoice_status ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_status,
+          invoice_required_for_download: invoice_required_for_download ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_required_for_download,
+          featured_video_asset_id: featured_video_asset_id ?? null,
+          client_review_instructions: client_review_instructions ?? null,
+          workflow_status: workflow_status ?? DEFAULT_VIDEO_GALLERY_SETTINGS.workflow_status,
+        }
+      : {};
+
+  const galleryData = { ...baseGalleryData, ...videoSettings };
 
   const ref = await db.collection("galleries").add(galleryData);
 

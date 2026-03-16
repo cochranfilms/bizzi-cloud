@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export interface GalleryListItem {
   id: string;
+  gallery_type: "photo" | "video";
   title: string;
   slug: string;
   photographer_id: string;
@@ -60,6 +61,7 @@ export function useGalleries() {
 
   const createGallery = useCallback(
     async (input: {
+      gallery_type: "photo" | "video";
       title: string;
       description?: string | null;
       event_date?: string | null;
@@ -70,6 +72,24 @@ export function useGalleries() {
       invited_emails?: string[];
       layout?: string;
       source_format?: "raw" | "jpg";
+      /** Video gallery specific */
+      delivery_mode?: string;
+      download_policy?: string;
+      allow_comments?: boolean;
+      allow_favorites?: boolean;
+      allow_timestamp_comments?: boolean;
+      allow_original_downloads?: boolean;
+      allow_proxy_downloads?: boolean;
+      revision_limit_enabled?: boolean;
+      revision_limit_count?: number;
+      invoice_mode?: "external_link" | "manual" | null;
+      invoice_url?: string | null;
+      invoice_label?: string | null;
+      invoice_status?: string | null;
+      invoice_required_for_download?: boolean;
+      featured_video_asset_id?: string | null;
+      client_review_instructions?: string | null;
+      workflow_status?: string | null;
     }) => {
       if (!user) throw new Error("Not authenticated");
       const token = await user.getIdToken();

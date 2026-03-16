@@ -43,6 +43,8 @@ export async function POST(request: Request) {
   const relativePath = metadata.relativePath ?? metadata.relative_path ?? filename ?? "";
   const sizeBytes = parseInt(metadata.sizeBytes ?? metadata.size_bytes ?? "0", 10);
   const workspaceId = metadata.workspaceId ?? metadata.workspace_id ?? null;
+  const lastModified =
+    metadata.lastModified != null ? parseInt(String(metadata.lastModified), 10) : null;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
     fileFingerprint: null,
     fileName: filename ?? relativePath,
     fileSize: sizeBytes,
-    lastModified: null,
+    lastModified,
     contentType,
     partSize,
     totalParts,

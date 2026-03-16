@@ -77,6 +77,39 @@ export interface GalleryLUTSettings {
   storage_url?: string | null;   // Signed URL if using Firebase Storage
 }
 
+/** Gallery type: photo for photographers, video for videographers */
+export type GalleryType = "photo" | "video";
+
+/** Video delivery mode – optimizes UI and permissions */
+export type VideoDeliveryMode =
+  | "standard_client_gallery"   // Showcase, approved download
+  | "video_review"              // Watch, heart, comment, request revisions
+  | "private_editor_review";    // Stricter, WIP-style
+
+/** Invoice status – external link or manual for V1 */
+export type InvoiceStatus =
+  | "none"
+  | "attached"
+  | "sent"
+  | "paid"
+  | "overdue";
+
+/** Invoice mode – external link preferred for V1 (no Stripe Connect) */
+export type InvoiceMode =
+  | "external_link"  // Creator pastes hosted invoice/payment URL
+  | "manual"         // Creator marks status manually
+  | "future_native"; // Reserved for future
+
+/** Video gallery workflow status */
+export type VideoWorkflowStatus =
+  | "draft"
+  | "sent_to_client"
+  | "awaiting_feedback"
+  | "revisions_in_progress"
+  | "awaiting_payment"
+  | "approved"
+  | "archived";
+
 /** Cover photo object-position presets (CSS object-position values) */
 export type CoverPosition =
   | "center"
@@ -89,9 +122,18 @@ export type CoverPosition =
   | "bottom left"
   | "bottom right";
 
+/** Download policy for video galleries – stricter than photos */
+export type VideoDownloadPolicy =
+  | "none"           // No downloads at all
+  | "preview_only"   // Optimized preview sources only
+  | "selected_assets" // Only creator-chosen assets
+  | "all_assets";    // All videos downloadable
+
 /** Main gallery document (Firestore: galleries) */
 export interface Gallery {
   id: string;
+  /** photo | video – required for new galleries; legacy default to photo */
+  gallery_type?: GalleryType;
   title: string;
   slug: string;                  // URL-safe, unique per photographer
   photographer_id: string;
@@ -131,6 +173,24 @@ export interface Gallery {
   unique_visitor_count: number;
   favorite_count: number;
   download_count: number;
+  /** Video gallery specific – optional for photo galleries */
+  delivery_mode?: VideoDeliveryMode | null;
+  download_policy?: VideoDownloadPolicy | null;
+  allow_comments?: boolean;
+  allow_favorites?: boolean;
+  allow_timestamp_comments?: boolean;
+  allow_original_downloads?: boolean;
+  allow_proxy_downloads?: boolean;
+  revision_limit_enabled?: boolean;
+  revision_limit_count?: number;
+  invoice_mode?: "external_link" | "manual" | "future_native" | null;
+  invoice_url?: string | null;
+  invoice_label?: string | null;
+  invoice_status?: InvoiceStatus | null;
+  invoice_required_for_download?: boolean;
+  featured_video_asset_id?: string | null;
+  client_review_instructions?: string | null;
+  workflow_status?: VideoWorkflowStatus | null;
   created_at: string;
   updated_at: string;
 }
@@ -148,6 +208,16 @@ export interface GalleryAsset {
   collection_id?: string | null; // Optional sub-group
   is_visible: boolean;           // Hide from client without deleting
   is_hero: boolean;               // Mark as hero/cover candidate
+  /** Optional – video metadata */
+  duration?: number | null;      // seconds
+  resolution?: string | null;     // e.g. "1920x1080"
+  thumbnail_url?: string | null;
+  proxy_url?: string | null;
+  is_downloadable?: boolean;     // Per-asset override for video galleries
+  version_number?: number | null;
+  version_label?: string | null;
+  replaces_asset_id?: string | null;
+  is_current_review_version?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -183,7 +253,7 @@ export interface FavoriteItem {
   created_at: string;
 }
 
-/** Asset comment (Phase 2) */
+/** Asset comment (Phase 2) – supports optional timestamp for video */
 export interface AssetComment {
   id: string;
   gallery_id: string;
@@ -191,6 +261,10 @@ export interface AssetComment {
   client_email?: string | null;
   client_name?: string | null;
   body: string;
+  /** Video: optional timestamp in seconds for context */
+  timestamp_seconds?: number | null;
+  /** open | addressed | resolved */
+  status?: "open" | "addressed" | "resolved" | null;
   created_at: string;
 }
 
@@ -203,6 +277,8 @@ export type ProofingStatus =
 
 /** Create gallery input */
 export interface CreateGalleryInput {
+  /** Required – photo or video */
+  gallery_type: GalleryType;
   title: string;
   cover_asset_id?: string | null;
   share_image_asset_id?: string | null;
@@ -226,6 +302,24 @@ export interface CreateGalleryInput {
   download_settings?: Partial<GalleryDownloadSettings>;
   watermark?: Partial<GalleryWatermarkSettings>;
   lut?: Partial<GalleryLUTSettings> | null;
+  /** Video gallery specific */
+  delivery_mode?: VideoDeliveryMode | null;
+  download_policy?: VideoDownloadPolicy | null;
+  allow_comments?: boolean;
+  allow_favorites?: boolean;
+  allow_timestamp_comments?: boolean;
+  allow_original_downloads?: boolean;
+  allow_proxy_downloads?: boolean;
+  revision_limit_enabled?: boolean;
+  revision_limit_count?: number;
+  invoice_mode?: "external_link" | "manual" | null;
+  invoice_url?: string | null;
+  invoice_label?: string | null;
+  invoice_status?: InvoiceStatus | null;
+  invoice_required_for_download?: boolean;
+  featured_video_asset_id?: string | null;
+  client_review_instructions?: string | null;
+  workflow_status?: VideoWorkflowStatus | null;
 }
 
 /** Update gallery input – partial. Include version for optimistic locking. */
@@ -238,6 +332,7 @@ export interface UpdateGalleryInput extends Partial<CreateGalleryInput> {
 export interface GalleryPublicPayload {
   gallery: {
     id: string;
+    gallery_type: GalleryType;
     title: string;
     slug: string;
     description?: string | null;
@@ -248,6 +343,21 @@ export interface GalleryPublicPayload {
     watermark: GalleryWatermarkSettings;
     lut?: { enabled: boolean; storage_url?: string | null } | null;
     cover_asset_id?: string | null;
+    /** Video gallery specific */
+    featured_video_asset_id?: string | null;
+    delivery_mode?: VideoDeliveryMode | null;
+    download_policy?: VideoDownloadPolicy | null;
+    allow_comments?: boolean;
+    allow_favorites?: boolean;
+    allow_timestamp_comments?: boolean;
+    invoice_required_for_download?: boolean;
+    invoice_url?: string | null;
+    invoice_label?: string | null;
+    invoice_status?: InvoiceStatus | null;
+    client_review_instructions?: string | null;
+    workflow_status?: VideoWorkflowStatus | null;
+    revision_limit_enabled?: boolean;
+    revision_limit_count?: number;
   };
   collections: GalleryCollection[];
   assets: GalleryAssetPublic[];
@@ -261,4 +371,6 @@ export interface GalleryAssetPublic {
   collection_id?: string | null;
   sort_order: number;
   thumbnail_url?: string;  // Resolved by client from API
+  duration?: number | null;
+  is_downloadable?: boolean;
 }

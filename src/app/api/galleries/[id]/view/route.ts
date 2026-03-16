@@ -86,13 +86,17 @@ export async function GET(
       collection_id: a.collection_id ?? null,
       sort_order: a.sort_order ?? 0,
       proofing_status: a.proofing_status ?? "pending",
+      duration: a.duration ?? null,
+      is_downloadable: a.is_downloadable ?? null,
     };
   });
 
   const lut = g.lut ?? null;
+  const galleryType = g.gallery_type === "video" ? "video" : "photo";
   return NextResponse.json({
     gallery: {
       id: gallerySnap.id,
+      gallery_type: galleryType,
       title: g.title,
       slug: g.slug,
       description: g.description ?? null,
@@ -113,6 +117,21 @@ export async function GET(
       cover_overlay_opacity: g.cover_overlay_opacity ?? null,
       cover_title_alignment: g.cover_title_alignment ?? null,
       cover_hero_height: g.cover_hero_height ?? null,
+      // Video gallery specific – present for all, meaningful for video
+      featured_video_asset_id: g.featured_video_asset_id ?? null,
+      delivery_mode: g.delivery_mode ?? null,
+      download_policy: g.download_policy ?? null,
+      allow_comments: g.allow_comments ?? true,
+      allow_favorites: g.allow_favorites ?? true,
+      allow_timestamp_comments: g.allow_timestamp_comments ?? false,
+      invoice_required_for_download: g.invoice_required_for_download ?? false,
+      invoice_url: g.invoice_url ?? null,
+      invoice_label: g.invoice_label ?? null,
+      invoice_status: g.invoice_status ?? "none",
+      client_review_instructions: g.client_review_instructions ?? null,
+      workflow_status: g.workflow_status ?? null,
+      revision_limit_enabled: g.revision_limit_enabled ?? false,
+      revision_limit_count: g.revision_limit_count ?? null,
     },
     collections,
     assets,

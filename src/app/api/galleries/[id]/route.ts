@@ -129,6 +129,24 @@ export async function PATCH(
   if (body.lut !== undefined) {
     updates.lut = { ...data.lut, ...body.lut };
   }
+  // Video gallery specific fields
+  if (body.delivery_mode !== undefined) updates.delivery_mode = body.delivery_mode ?? null;
+  if (body.download_policy !== undefined) updates.download_policy = body.download_policy ?? null;
+  if (body.allow_comments !== undefined) updates.allow_comments = body.allow_comments;
+  if (body.allow_favorites !== undefined) updates.allow_favorites = body.allow_favorites;
+  if (body.allow_timestamp_comments !== undefined) updates.allow_timestamp_comments = body.allow_timestamp_comments;
+  if (body.allow_original_downloads !== undefined) updates.allow_original_downloads = body.allow_original_downloads;
+  if (body.allow_proxy_downloads !== undefined) updates.allow_proxy_downloads = body.allow_proxy_downloads;
+  if (body.revision_limit_enabled !== undefined) updates.revision_limit_enabled = body.revision_limit_enabled;
+  if (body.revision_limit_count !== undefined) updates.revision_limit_count = body.revision_limit_count ?? null;
+  if (body.invoice_mode !== undefined) updates.invoice_mode = body.invoice_mode ?? null;
+  if (body.invoice_url !== undefined) updates.invoice_url = body.invoice_url ?? null;
+  if (body.invoice_label !== undefined) updates.invoice_label = body.invoice_label ?? null;
+  if (body.invoice_status !== undefined) updates.invoice_status = body.invoice_status ?? null;
+  if (body.invoice_required_for_download !== undefined) updates.invoice_required_for_download = body.invoice_required_for_download;
+  if (body.featured_video_asset_id !== undefined) updates.featured_video_asset_id = body.featured_video_asset_id ?? null;
+  if (body.client_review_instructions !== undefined) updates.client_review_instructions = body.client_review_instructions?.trim() ?? null;
+  if (body.workflow_status !== undefined) updates.workflow_status = body.workflow_status ?? null;
 
   if (body.access_mode === "password" && body.password) {
     updates.password_hash = await hashSecret(body.password);

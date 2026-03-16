@@ -46,6 +46,16 @@ export function isGalleryFile(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name) || GALLERY_VIDEO_EXT.test(name);
 }
 
+/** Test if filename is a video (for gallery type filtering) */
+export function isGalleryVideo(name: string): boolean {
+  return GALLERY_VIDEO_EXT.test(name);
+}
+
+/** Test if filename is an image (for gallery type filtering) */
+export function isGalleryImage(name: string): boolean {
+  return GALLERY_IMAGE_EXT.test(name);
+}
+
 /** Regex to test if a filename is a RAW format (needs exiftool preview extraction) */
 export const RAW_EXT =
   new RegExp(`\\.(${RAW_EXTENSIONS.join("|")})$`, "i");

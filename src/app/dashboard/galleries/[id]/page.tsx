@@ -17,6 +17,7 @@ import {
   Settings,
   Heart,
   ImagePlus,
+  Star,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -87,12 +88,13 @@ function AddFileButton({
   );
 }
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { isGalleryFile } from "@/lib/gallery-file-types";
+import { isGalleryFile, isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
 
 interface GalleryData {
   id: string;
+  gallery_type?: "photo" | "video";
   title: string;
   slug: string;
   description?: string | null;
@@ -103,7 +105,9 @@ interface GalleryData {
   view_count: number;
   download_count: number;
   cover_asset_id?: string | null;
+  featured_video_asset_id?: string | null;
   owner_handle?: string | null;
+  version?: number;
   branding?: { business_name?: string; accent_color?: string };
 }
 
@@ -130,9 +134,36 @@ export default function GalleryDetailPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [settingCover, setSettingCover] = useState<string | null>(null);
+  const [settingFeatured, setSettingFeatured] = useState<string | null>(null);
+  const isVideoGallery = gallery?.gallery_type === "video";
+
+  const handleSetFeaturedVideo = async (assetId: string) => {
+    if (!user || !id || gallery?.version == null || !isVideoGallery) return;
+    setSettingFeatured(assetId);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ featured_video_asset_id: assetId, version: gallery.version }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed to set featured video");
+      }
+      await fetchGallery();
+    } catch (err) {
+      console.error("Set featured video failed:", err);
+    } finally {
+      setSettingFeatured(null);
+    }
+  };
 
   const handleSetCover = async (assetId: string) => {
-    if (!user || !id) return;
+    if (!user || !id || gallery?.version == null) return;
     setSettingCover(assetId);
     try {
       const token = await user.getIdToken();
@@ -142,7 +173,7 @@ export default function GalleryDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ cover_asset_id: assetId }),
+        body: JSON.stringify({ cover_asset_id: assetId, version: gallery.version }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -337,7 +368,9 @@ export default function GalleryDetailPage() {
 
           <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-700">
-              <h2 className="font-medium text-neutral-900 dark:text-white">Assets</h2>
+              <h2 className="font-medium text-neutral-900 dark:text-white">
+                {isVideoGallery ? "Video gallery" : "Photo gallery"} · Assets
+              </h2>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -362,15 +395,20 @@ export default function GalleryDetailPage() {
             {assets.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  Upload above or add from your existing files.
+                  {isVideoGallery
+                    ? "Upload videos or add from your existing files to start this review gallery."
+                    : "Upload photos or add from your existing files."}
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
                 {assets.map((a) => {
                   const isImage = a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name);
+                  const isVideo = a.media_type === "video" || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(a.name);
                   const isCover = gallery.cover_asset_id === a.id;
+                  const isFeatured = gallery.featured_video_asset_id === a.id;
                   const settingThis = settingCover === a.id;
+                  const settingFeaturedThis = settingFeatured === a.id;
                   return (
                     <div
                       key={a.id}
@@ -383,30 +421,63 @@ export default function GalleryDetailPage() {
                         mediaType={a.media_type}
                         className="w-full rounded-lg"
                       />
-                      {isImage && (
-                        <>
-                          {isCover && (
-                            <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">
-                              Cover
-                            </div>
-                          )}
-                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={() => handleSetCover(a.id)}
-                              disabled={settingThis || isCover}
-                              className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
-                            >
-                              {settingThis ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <ImagePlus className="h-4 w-4" />
-                              )}
-                              {settingThis ? "Setting…" : "Set as cover"}
-                            </button>
-                          </div>
-                        </>
+                      {isCover && (
+                        <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">
+                          Cover
+                        </div>
                       )}
+                      {isVideoGallery && isFeatured && (
+                        <div className="absolute left-0 top-0 mt-6 rounded-br bg-violet-600 px-2 py-0.5 text-xs font-medium text-white">
+                          Featured
+                        </div>
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                        {isImage && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetCover(a.id)}
+                            disabled={settingThis || isCover}
+                            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
+                          >
+                            {settingThis ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ImagePlus className="h-4 w-4" />
+                            )}
+                            {settingThis ? "Setting…" : "Set as cover"}
+                          </button>
+                        )}
+                        {isVideoGallery && isVideo && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetFeaturedVideo(a.id)}
+                            disabled={settingFeaturedThis || isFeatured}
+                            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
+                          >
+                            {settingFeaturedThis ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Star className="h-4 w-4" />
+                            )}
+                            {settingFeaturedThis ? "Setting…" : "Set featured"}
+                          </button>
+                        )}
+                        {!isImage && isVideo && !isVideoGallery && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetCover(a.id)}
+                            disabled={settingThis || isCover}
+                            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
+                          >
+                            {settingThis ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ImagePlus className="h-4 w-4" />
+                            )}
+                            {settingThis ? "Setting…" : "Set as cover"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -421,7 +492,7 @@ export default function GalleryDetailPage() {
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-700">
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-                Add photos & videos
+                {isVideoGallery ? "Add videos" : "Add photos"}
               </h2>
               <button
                 type="button"
@@ -436,11 +507,16 @@ export default function GalleryDetailPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-                Select from your recent files. Supported: JPEG, PNG, GIF, RAW (ARW, CR2, NEF, DNG, etc.), MP4, MOV, WebM.
+                {isVideoGallery
+                  ? "Select from your recent video files. Supported: MP4, MOV, WebM, M4V, AVI, MKV."
+                  : "Select from your recent image files. Supported: JPEG, PNG, GIF, RAW (ARW, CR2, NEF, DNG, etc.)."}
               </p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
                 {recentFiles
-                  .filter((f) => isGalleryFile(f.name))
+                  .filter((f) =>
+                    isGalleryFile(f.name) &&
+                    (isVideoGallery ? isGalleryVideo(f.name) : isGalleryImage(f.name))
+                  )
                   .slice(0, 50)
                   .map((f) => (
                     <AddFileButton
@@ -451,9 +527,14 @@ export default function GalleryDetailPage() {
                     />
                   ))}
               </div>
-              {recentFiles.filter((f) => isGalleryFile(f.name)).length === 0 && (
+              {recentFiles.filter((f) =>
+                isGalleryFile(f.name) &&
+                (isVideoGallery ? isGalleryVideo(f.name) : isGalleryImage(f.name))
+              ).length === 0 && (
                 <p className="py-8 text-center text-sm text-neutral-500">
-                  No supported files in recent uploads. Upload some photos or videos first.
+                  {isVideoGallery
+                    ? "No video files in recent uploads. Upload some videos first."
+                    : "No image files in recent uploads. Upload some photos first."}
                 </p>
               )}
             </div>

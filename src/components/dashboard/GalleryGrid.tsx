@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
   Images,
@@ -11,6 +11,13 @@ import {
   Key,
   Mail,
   Plus,
+  Film,
+  Play,
+  Filter,
+  ArrowUpDown,
+  Calendar,
+  Eye,
+  AlertCircle,
 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useGalleries } from "@/hooks/useGalleries";
@@ -49,6 +56,7 @@ function accessIcon(access: string) {
 type GalleryCardProps = {
   gallery: {
     id: string;
+    gallery_type: "photo" | "video";
     title: string;
     access_mode: string;
     view_count: number;
@@ -69,11 +77,16 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
     g.cover_name ?? "",
     { enabled: !!g.cover_object_key && isInView, size: "cover-sm" }
   );
+  const isVideo = g.gallery_type === "video";
 
   return (
     <Link
       href={`/dashboard/galleries/${g.id}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:border-bizzi-blue/40 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-cyan/40"
+      className={`group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${
+        isVideo
+          ? "hover:border-violet-400/50 dark:hover:border-violet-500/50"
+          : "hover:border-bizzi-blue/40 dark:hover:border-bizzi-cyan/40"
+      }`}
     >
       <div
         ref={cardRef}
@@ -87,10 +100,30 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
               alt=""
               className="h-full w-full object-cover"
             />
+            {isVideo && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 shadow-lg ring-2 ring-white/30">
+                  <Play className="ml-0.5 h-6 w-6 fill-white text-white" />
+                </div>
+              </div>
+            )}
           </>
         ) : (
-          <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
+          isVideo ? (
+            <Film className="h-12 w-12 text-neutral-400 dark:text-neutral-500" />
+          ) : (
+            <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
+          )
         )}
+        <div
+          className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-medium ${
+            isVideo
+              ? "bg-violet-600/90 text-white"
+              : "bg-amber-600/90 text-white"
+          }`}
+        >
+          {isVideo ? "Video" : "Photo"}
+        </div>
       </div>
       <div className="flex flex-1 flex-col p-4">
         <div className="mb-2 flex items-start justify-between gap-2">
@@ -135,12 +168,45 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
   );
 }
 
+type TypeFilter = "all" | "photo" | "video";
+type SortOption = "updated" | "event_date" | "views" | "expiring";
+
 export default function GalleryGrid() {
   const { galleries, loading, error, createGallery, deleteGallery } = useGalleries();
   const { bumpStorageVersion } = useBackup();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("updated");
+
+  const filteredAndSorted = useMemo(() => {
+    let list = galleries;
+    if (typeFilter !== "all") {
+      list = list.filter((g) => g.gallery_type === typeFilter);
+    }
+    const now = new Date().toISOString();
+    list = [...list].sort((a, b) => {
+      if (sortBy === "updated") {
+        return (b.updated_at ?? "").localeCompare(a.updated_at ?? "");
+      }
+      if (sortBy === "event_date") {
+        const aDate = a.event_date ?? "9999";
+        const bDate = b.event_date ?? "9999";
+        return bDate.localeCompare(aDate);
+      }
+      if (sortBy === "views") {
+        return (b.view_count ?? 0) - (a.view_count ?? 0);
+      }
+      if (sortBy === "expiring") {
+        const aExp = a.expiration_date ?? "9999";
+        const bExp = b.expiration_date ?? "9999";
+        return aExp.localeCompare(bExp);
+      }
+      return 0;
+    });
+    return list;
+  }, [galleries, typeFilter, sortBy]);
 
   const handleDeleteClick = (e: React.MouseEvent, g: { id: string; title: string }) => {
     e.preventDefault();

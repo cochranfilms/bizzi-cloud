@@ -93,6 +93,10 @@ export default function UppyUploadModal({
           relativePath: relPath,
           sizeBytes: file.size ?? 0,
           workspaceId: workspaceId ?? undefined,
+          lastModified:
+            (file.data instanceof File ? file.data.lastModified : null) ??
+            (file as { lastModified?: number }).lastModified ??
+            null,
         },
       });
     });

@@ -25,6 +25,13 @@ import ImageWithLUT from "./ImageWithLUT";
 
 interface GalleryData {
   id: string;
+  gallery_type?: "photo" | "video";
+  allow_comments?: boolean;
+  allow_favorites?: boolean;
+  download_policy?: string;
+  invoice_required_for_download?: boolean;
+  invoice_status?: string;
+  invoice_url?: string | null;
   title: string;
   slug: string;
   description?: string | null;
@@ -302,6 +309,7 @@ function PreviewModal({
   lut,
   lutPreviewEnabled = true,
   onLutPreviewToggle,
+  allowComments = true,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -316,11 +324,53 @@ function PreviewModal({
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
   lutPreviewEnabled?: boolean;
   onLutPreviewToggle?: () => void;
+  allowComments?: boolean;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
   const [commentName, setCommentName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isVideo || !asset.object_key) return;
+    setVideoStreamUrl(null);
+    setVideoError(null);
+    setVideoLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = new URL(`/api/galleries/${galleryId}/video-stream-url`, window.location.origin);
+        url.searchParams.set("object_key", asset.object_key);
+        url.searchParams.set("name", asset.name);
+        if (password) url.searchParams.set("password", password);
+        const headers: Record<string, string> = {};
+        if (getAuthToken) {
+          const t = await getAuthToken();
+          if (t) headers.Authorization = `Bearer ${t}`;
+        }
+        const res = await fetch(url.toString(), { headers });
+        const body = await res.json();
+        if (cancelled) return;
+        if (body.processing) {
+          setVideoError(body.message ?? "Video is processing");
+          return;
+        }
+        if (body.streamUrl) {
+          setVideoStreamUrl(body.streamUrl);
+        } else if (body.error) {
+          setVideoError(body.error);
+        }
+      } catch (e) {
+        if (!cancelled) setVideoError(e instanceof Error ? e.message : "Failed to load video");
+      } finally {
+        if (!cancelled) setVideoLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isVideo, asset.object_key, asset.name, galleryId, password, getAuthToken]);
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,7 +426,25 @@ function PreviewModal({
       >
         <div className="relative flex flex-1 items-center justify-center">
           {isVideo ? (
-            <p className="text-white">Video preview – full playback coming soon</p>
+            <div className="flex max-h-[70vh] max-w-full flex-col items-center justify-center gap-4">
+              {videoLoading && (
+                <p className="text-white/80">Loading video…</p>
+              )}
+              {videoError && (
+                <p className="text-amber-400">{videoError}</p>
+              )}
+              {videoStreamUrl && !videoError && (
+                <video
+                  src={videoStreamUrl}
+                  controls
+                  playsInline
+                  className="max-h-[70vh] max-w-full rounded-lg bg-black"
+                />
+              )}
+              {!videoStreamUrl && !videoLoading && !videoError && (
+                <p className="text-white/80">Video unavailable</p>
+              )}
+            </div>
           ) : previewImageUrl ? (
             <>
               {lut?.enabled && lut?.storage_url && isImage(asset.name) && lutPreviewEnabled ? (
@@ -1846,6 +1914,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           lut={gallery.lut}
           lutPreviewEnabled={lutPreviewEnabled}
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
+          allowComments={gallery.allow_comments !== false}
         />
       )}
     </div>

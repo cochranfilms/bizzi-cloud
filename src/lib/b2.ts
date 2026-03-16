@@ -36,6 +36,10 @@ function getB2Client(): S3Client {
       secretAccessKey: B2_SECRET_ACCESS_KEY!,
     },
     forcePathStyle: true,
+    // Disable default CRC32 checksums on UploadPart — Backblaze B2's S3 API returns 500
+    // when presigned URLs include x-amz-checksum-crc32 / x-amz-sdk-checksum-algorithm.
+    requestChecksumCalculation: "WHEN_REQUIRED" as const,
+    responseChecksumValidation: "WHEN_REQUIRED" as const,
   });
 }
 

@@ -73,6 +73,15 @@ function parseFfmpegOutput(stderr: string, fileName: string): Record<string, unk
     const ch = audioMatch[1].toLowerCase();
     result.audio_channels = ch === "mono" ? 1 : ch === "stereo" ? 2 : ch === "5.1" ? 6 : 8;
   }
+  // creation_time from Metadata block (e.g. "creation_time   : 2022-08-28 15:25:09" or "creation_time   : 2022-08-28T15:25:09.000000Z")
+  const creationTimeMatch = stderr.match(
+    /creation_time\s*:\s*(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z?)?)/i
+  );
+  if (creationTimeMatch) {
+    const raw = creationTimeMatch[1].trim().replace(/\s+/, "T");
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) result.creation_time = new Date(parsed).toISOString();
+  }
   result.container_format = getExtension(fileName) || "mp4";
   return result;
 }
@@ -131,9 +140,6 @@ export async function POST(request: Request) {
     media_type: isVideo(fileName) ? "video" : isImage(fileName) ? "photo" : "other",
     uploader_id: uid,
   };
-  if (!fileData.created_at) {
-    updates.created_at = new Date().toISOString();
-  }
 
   try {
     if (shouldProbeForVideo) {
@@ -172,6 +178,9 @@ export async function POST(request: Request) {
         if (meta.container_format) updates.container_format = meta.container_format;
         if (meta.has_audio != null) updates.has_audio = meta.has_audio;
         if (meta.audio_channels != null) updates.audio_channels = meta.audio_channels;
+        if (meta.creation_time && typeof meta.creation_time === "string") {
+          updates.created_at = meta.creation_time;
+        }
       } finally {
         await fs.unlink(tmpPath).catch(() => {});
       }
@@ -221,6 +230,9 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!updates.created_at && !fileData.created_at) {
+    updates.created_at = new Date().toISOString();
+  }
   if (Object.keys(updates).length > 2) {
     await fileRef.update(updates);
   }

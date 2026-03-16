@@ -76,12 +76,58 @@ export async function POST(
     }
   }
 
-  if (!isOwner) {
-    const downloadSettings = g.download_settings ?? {};
+  const assetSnap = await db
+    .collection("gallery_assets")
+    .where("gallery_id", "==", galleryId)
+    .where("object_key", "==", objectKey)
+    .where("is_visible", "==", true)
+    .limit(1)
+    .get();
 
+  if (assetSnap.empty) {
+    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+  }
+
+  const galleryType = g.gallery_type === "video" ? "video" : "photo";
+
+  if (!isOwner) {
+    // Video gallery: invoice gating and download_policy
+    if (galleryType === "video") {
+      const invoiceRequired = g.invoice_required_for_download === true;
+      const invoiceStatus = g.invoice_status ?? "none";
+      if (invoiceRequired && invoiceStatus !== "paid") {
+        return NextResponse.json(
+          {
+            error: "invoice_required",
+            message: "Payment is required before downloads are available.",
+            invoice_url: g.invoice_url ?? null,
+          },
+          { status: 403 }
+        );
+      }
+      const downloadPolicy = g.download_policy ?? "none";
+      if (downloadPolicy === "none") {
+        return NextResponse.json(
+          { error: "download_disabled", message: "Downloads are not enabled for this video gallery." },
+          { status: 403 }
+        );
+      }
+      if (downloadPolicy === "selected_assets") {
+        const assetData = assetSnap.docs[0]?.data();
+        const isDownloadable = assetData?.is_downloadable === true;
+        if (!isDownloadable) {
+          return NextResponse.json(
+            { error: "download_disabled", message: "This asset is not available for download." },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    const downloadSettings = g.download_settings ?? {};
     if (downloadContext === "single" && !downloadSettings.allow_single_download) {
       return NextResponse.json(
-        { error: "download_disabled", message: "Single image download is not allowed for this gallery." },
+        { error: "download_disabled", message: "Single download is not allowed for this gallery." },
         { status: 403 }
       );
     }
@@ -97,18 +143,6 @@ export async function POST(
         { status: 403 }
       );
     }
-  }
-
-  const assetSnap = await db
-    .collection("gallery_assets")
-    .where("gallery_id", "==", galleryId)
-    .where("object_key", "==", objectKey)
-    .where("is_visible", "==", true)
-    .limit(1)
-    .get();
-
-  if (assetSnap.empty) {
-    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
   // Free download limit (after asset verified - only count successful downloads)
