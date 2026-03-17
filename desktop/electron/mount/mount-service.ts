@@ -8,6 +8,7 @@
  * so the WebDAV server uses a fresh token for API calls after Firebase tokens expire.
  */
 import * as fs from "fs";
+import * as net from "net";
 import * as path from "path";
 import { spawn } from "child_process";
 import { Notification } from "electron";
@@ -378,6 +379,9 @@ export class MountService {
 
     const port = await this.webdav.start();
     const webdavUrl = `http://127.0.0.1:${port}`;
+    desktopLog.info("[mount] WebDAV listening on port", port);
+
+    // Skip same-process health check (fetch/TCP to self can deadlock). Rclone will fail with "connection refused" if WebDAV is unreachable.
 
     if (process.platform === "darwin") {
       const volumesPath = "/Volumes/BizziCloud";
