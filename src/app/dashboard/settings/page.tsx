@@ -865,7 +865,7 @@ function SubscriptionSection() {
               <p className="text-sm text-neutral-600 dark:text-neutral-400">
                 Additional storage:{" "}
                 <strong className="text-neutral-900 dark:text-white">
-                  {STORAGE_ADDON_LABELS[storageAddonId] ?? storageAddonId}
+                  {STORAGE_ADDON_LABELS[storageAddonId as StorageAddonId] ?? storageAddonId}
                 </strong>
               </p>
             )}
