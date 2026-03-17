@@ -4,11 +4,11 @@
 export function mapPlanToLabel(planId: string | null): string {
   if (!planId) return "Free";
   const labels: Record<string, string> = {
-    free: "Free",
-    solo: "Solo Creator",
-    indie: "Indie Filmmaker",
-    video: "Video Pro",
-    production: "Production House",
+    free: "Starter Free",
+    solo: "Bizzi Creator",
+    indie: "Bizzi Pro",
+    video: "Bizzi Network",
+    production: "Enterprise Creative",
     starter: "Starter",
     pro: "Pro",
     team: "Team",

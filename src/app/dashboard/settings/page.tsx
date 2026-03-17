@@ -25,6 +25,12 @@ import {
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import Image from "next/image";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
+import {
+  PLAN_LABELS,
+  ADDON_LABELS,
+  STORAGE_ADDON_LABELS,
+  type StorageAddonId,
+} from "@/lib/pricing-data";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -687,31 +693,6 @@ function StorageSection() {
   );
 }
 
-const ADDON_LABELS: Record<string, string> = {
-  gallery: "Bizzi Gallery Suite",
-  editor: "Bizzi Editor",
-  fullframe: "Bizzi Full Frame",
-};
-
-const PLAN_LABELS: Record<string, string> = {
-  free: "Starter Free",
-  solo: "Solo Creator",
-  indie: "Indie Filmmaker",
-  video: "Video Pro",
-  production: "Production House",
-};
-
-const STORAGE_ADDON_LABELS: Record<string, string> = {
-  indie_1: "+1 TB",
-  indie_2: "+2 TB",
-  indie_3: "+3 TB",
-  video_1: "+1 TB",
-  video_2: "+2 TB",
-  video_3: "+3 TB",
-  video_4: "+4 TB",
-  video_5: "+5 TB",
-};
-
 function SubscriptionSection() {
   const { user } = useAuth();
   const router = useRouter();
@@ -805,18 +786,7 @@ function SubscriptionSection() {
     }
   };
 
-  const planLabel =
-    planId === "free"
-      ? "Starter Free"
-      : planId === "solo"
-        ? "Solo Creator"
-        : planId === "indie"
-          ? "Indie Filmmaker"
-          : planId === "video"
-            ? "Video Pro"
-            : planId === "production"
-              ? "Production House"
-              : planId ?? "Starter Free";
+  const planLabel = PLAN_LABELS[planId ?? "free"] ?? "Starter Free";
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

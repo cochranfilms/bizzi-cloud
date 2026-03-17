@@ -37,18 +37,20 @@ export const freeTier = {
 export const plans = [
   {
     id: "solo",
-    name: "Solo Creator",
+    name: "Bizzi Creator",
     tagline: "Essential",
     storage: "1 TB",
     price: 12,
     annualPrice: 108,
     features: [
-      "1 TB AES-256 encrypted storage",
-      "Files up to 20 GB each",
-      "Download & share links",
-      "Unlimited bandwidth",
-      "Password-protected links",
-      "30-day version history",
+      "1 TB Encrypted Cloud Storage",
+      "Access Your Files Anywhere (Wi‑Fi Enabled)",
+      "Creative Asset Management",
+      "Creator-Optimized Workflows",
+      "Multi-User Project Access",
+      "Large File Transfers (Up to 75 GB)",
+      "30-Day Deleted File Recovery",
+      "Creator-Optimized File Support (RAW video, S-Log, ProRes, BRAW, RAW photos, PNG, JPG and more)",
     ],
     limitations: ["No extra storage add-on"],
     addOnsNote: "Gallery Suite, Editor & Full Frame. Additional storage add-ons when plan is chosen.",
@@ -57,20 +59,22 @@ export const plans = [
   },
   {
     id: "indie",
-    name: "Indie Filmmaker",
+    name: "Bizzi Pro",
     tagline: "Most Popular",
     storage: "2 TB",
     price: 20,
     annualPrice: 180,
     popular: true,
     features: [
-      "2 TB AES-256 encrypted storage",
-      "Files up to 50 GB — RAW ready",
-      "Download & share links",
-      "Unlimited bandwidth",
-      "60-day version history",
-      "Up to 2 collaborators",
-      "Review & approval workflow",
+      "2 TB Encrypted Cloud Storage",
+      "Custom Branding & Custom URL Links",
+      "Large File Transfers (Up to 100 GB)",
+      "60-Day Deleted File Recovery",
+      "Access Your Files Anywhere (Wi‑Fi Enabled)",
+      "Advanced Creative Asset Management",
+      "Creator-Optimized Workflow",
+      "Multi-User Project Access",
+      "Creator-Optimized File Support (RAW video, S-Log, ProRes, BRAW, ARRIRAW, (RED) RAW, RAW photos, PNG, JPG and more)",
     ],
     addOnsNote:
       "Gallery Suite, Editor, Full Frame. Additional storage add-ons when plan is chosen.",
@@ -79,19 +83,22 @@ export const plans = [
   },
   {
     id: "video",
-    name: "Video Pro",
+    name: "Bizzi Network",
     tagline: "Professional",
     storage: "5 TB",
     price: 35,
     annualPrice: 315,
     features: [
-      "5 TB AES-256 encrypted storage",
-      "Files up to 200 GB each",
-      "Download & share links",
-      "Accelerated upload speeds",
-      "90-day version history",
-      "Up to 5 collaborators",
-      "Branded client delivery pages",
+      "5 TB Encrypted Cloud Storage",
+      "Up to 6 Team Seats",
+      "Custom Branding & Custom URL Links",
+      "Large File Transfers (Up to 100 GB)",
+      "90-Day Deleted File Recovery",
+      "Access Your Files Anywhere (Wi‑Fi Enabled)",
+      "Advanced Creative Asset Management",
+      "Creator-Optimized Workflow",
+      "Multi-User Project Access",
+      "Creator-Optimized File Support (RAW video, S-Log, ProRes, BRAW, ARRIRAW, (RED) RAW, RAW photos, PNG, JPG and more)",
     ],
     addOnsNote:
       "Gallery Suite, Editor, Full Frame. Additional storage add-ons when plan is chosen.",
@@ -100,19 +107,22 @@ export const plans = [
   },
   {
     id: "production",
-    name: "Production House",
+    name: "Enterprise Creative",
     tagline: "Agency & Production",
     storage: "10 TB",
     price: 70,
     annualPrice: 630,
     features: [
-      "10 TB AES-256 encrypted storage",
-      "Unlimited file size uploads",
-      "Download & share links",
-      "Priority transfer speeds",
-      "Unlimited version history",
-      "Up to 10 team seats",
-      "SSO & advanced permissions",
+      "10 TB Encrypted Cloud Storage",
+      "Up to 10 Team Seats",
+      "Custom Branding & Custom URL Links",
+      "Asset Management",
+      "Large File Transfers (Up to 100 GB)",
+      "180-Day Deleted File Recovery",
+      "Access Your Files Anywhere (Wi‑Fi Enabled)",
+      "Creator-Optimized Workflow",
+      "Multi-User Project Access",
+      "Creator-Optimized File Support (RAW video, S-Log, ProRes, BRAW, ARRIRAW, (RED) RAW, RAW photos, PNG, JPG and more)",
     ],
     addOnsNote:
       "Gallery Suite, Editor, Full Frame. Contact sales for enterprise storage.",
@@ -179,10 +189,10 @@ export const powerUpAddons = [
 
 export const PLAN_LABELS: Record<string, string> = {
   free: "Starter Free",
-  solo: "Solo Creator",
-  indie: "Indie Filmmaker",
-  video: "Video Pro",
-  production: "Production House",
+  solo: "Bizzi Creator",
+  indie: "Bizzi Pro",
+  video: "Bizzi Network",
+  production: "Enterprise Creative",
 };
 
 export const ADDON_LABELS: Record<string, string> = {
@@ -193,8 +203,8 @@ export const ADDON_LABELS: Record<string, string> = {
 
 /**
  * Storage add-ons (internal only — shown in Change Plan after signup).
- * Indie Filmmaker: +1, +2, +3 TB. Video Pro: +1, +2, +3, +4, +5 TB.
- * Solo Creator and Production House do not support storage add-ons.
+ * Bizzi Pro (indie): +1, +2, +3 TB. Bizzi Network (video): +1, +2, +3, +4, +5 TB.
+ * Bizzi Creator (solo) and Enterprise Creative (production) do not support storage add-ons.
  */
 export type StorageAddonId =
   | "indie_1"
@@ -212,15 +222,15 @@ export const STORAGE_ADDONS: Record<
 > = {
   indie: [
     { id: "indie_1", tb: 1, price: 8 },
-    { id: "indie_2", tb: 2, price: 15, upgradePrompt: "You're almost at Video Pro pricing. Upgrade for more features at the same cost." },
-    { id: "indie_3", tb: 3, price: 22, upgradePrompt: "You're almost at Video Pro pricing. Upgrade for more features at the same cost." },
+    { id: "indie_2", tb: 2, price: 15, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
+    { id: "indie_3", tb: 3, price: 22, upgradePrompt: "You're almost at Bizzi Network pricing. Upgrade for more features at the same cost." },
   ],
   video: [
     { id: "video_1", tb: 1, price: 10 },
     { id: "video_2", tb: 2, price: 19 },
     { id: "video_3", tb: 3, price: 27 },
-    { id: "video_4", tb: 4, price: 34, upgradePrompt: "You're almost at Production House pricing. Upgrade for more features." },
-    { id: "video_5", tb: 5, price: 40, upgradePrompt: "You're almost at Production House pricing. Upgrade for more features." },
+    { id: "video_4", tb: 4, price: 34, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
+    { id: "video_5", tb: 5, price: 40, upgradePrompt: "You're almost at Enterprise Creative pricing. Upgrade for more features." },
   ],
 };
 

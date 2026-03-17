@@ -80,10 +80,10 @@ export async function GET(request: Request) {
     payingUsers > 0 ? Math.round((estimatedCost / payingUsers) * 100) / 100 : 0;
 
   const planLabels: Record<string, string> = {
-    solo: "Solo Creator",
-    indie: "Indie Filmmaker",
-    video: "Video Pro",
-    production: "Production House",
+    solo: "Bizzi Creator",
+    indie: "Bizzi Pro",
+    video: "Bizzi Network",
+    production: "Enterprise Creative",
     free: "Free",
   };
 

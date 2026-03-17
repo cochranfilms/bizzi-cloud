@@ -17,10 +17,10 @@ const FIRESTORE_COLLECTION = "stripe_prices";
 
 /** Plan pricing: [monthly cents, annual cents] */
 const PLAN_PRICING: Record<Exclude<PlanId, "free">, { name: string; monthly: number; annual: number }> = {
-  solo: { name: "Solo Creator", monthly: 1200, annual: 10800 },
-  indie: { name: "Indie Filmmaker", monthly: 2000, annual: 18000 },
-  video: { name: "Video Pro", monthly: 3500, annual: 31500 },
-  production: { name: "Production House", monthly: 7000, annual: 63000 },
+  solo: { name: "Bizzi Creator", monthly: 1200, annual: 10800 },
+  indie: { name: "Bizzi Pro", monthly: 2000, annual: 18000 },
+  video: { name: "Bizzi Network", monthly: 3500, annual: 31500 },
+  production: { name: "Enterprise Creative", monthly: 7000, annual: 63000 },
 };
 
 /** Addon pricing: monthly cents */
@@ -32,14 +32,14 @@ const ADDON_PRICING: Record<AddonId, { name: string; monthly: number }> = {
 
 /** Storage add-on pricing: monthly cents. Indie +1/+2/+3 TB, Video +1..+5 TB */
 const STORAGE_ADDON_PRICING: Record<StorageAddonId, { name: string; monthly: number; plan: "indie" | "video"; tb: number }> = {
-  indie_1: { name: "Additional Storage +1 TB (Indie)", monthly: 800, plan: "indie", tb: 1 },
-  indie_2: { name: "Additional Storage +2 TB (Indie)", monthly: 1500, plan: "indie", tb: 2 },
-  indie_3: { name: "Additional Storage +3 TB (Indie)", monthly: 2200, plan: "indie", tb: 3 },
-  video_1: { name: "Additional Storage +1 TB (Video Pro)", monthly: 1000, plan: "video", tb: 1 },
-  video_2: { name: "Additional Storage +2 TB (Video Pro)", monthly: 1900, plan: "video", tb: 2 },
-  video_3: { name: "Additional Storage +3 TB (Video Pro)", monthly: 2700, plan: "video", tb: 3 },
-  video_4: { name: "Additional Storage +4 TB (Video Pro)", monthly: 3400, plan: "video", tb: 4 },
-  video_5: { name: "Additional Storage +5 TB (Video Pro)", monthly: 4000, plan: "video", tb: 5 },
+  indie_1: { name: "Additional Storage +1 TB (Bizzi Pro)", monthly: 800, plan: "indie", tb: 1 },
+  indie_2: { name: "Additional Storage +2 TB (Bizzi Pro)", monthly: 1500, plan: "indie", tb: 2 },
+  indie_3: { name: "Additional Storage +3 TB (Bizzi Pro)", monthly: 2200, plan: "indie", tb: 3 },
+  video_1: { name: "Additional Storage +1 TB (Bizzi Network)", monthly: 1000, plan: "video", tb: 1 },
+  video_2: { name: "Additional Storage +2 TB (Bizzi Network)", monthly: 1900, plan: "video", tb: 2 },
+  video_3: { name: "Additional Storage +3 TB (Bizzi Network)", monthly: 2700, plan: "video", tb: 3 },
+  video_4: { name: "Additional Storage +4 TB (Bizzi Network)", monthly: 3400, plan: "video", tb: 4 },
+  video_5: { name: "Additional Storage +5 TB (Bizzi Network)", monthly: 4000, plan: "video", tb: 5 },
 };
 
 /** Get price ID from env if set (backward compat) */
