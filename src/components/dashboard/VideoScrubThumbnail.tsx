@@ -30,6 +30,7 @@ export default function VideoScrubThumbnail({
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +48,7 @@ export default function VideoScrubThumbnail({
 
   const handleMouseLeave = useCallback(() => {
     setIsHovering(false);
+    setScrubPosition(null);
     const video = videoRef.current;
     if (video) {
       video.pause();
@@ -57,14 +59,17 @@ export default function VideoScrubThumbnail({
     (e: React.MouseEvent<HTMLDivElement>) => {
       const video = videoRef.current;
       const container = containerRef.current;
-      if (!video || !container || !streamUrl || video.readyState < 2) return;
+      if (!container) return;
 
       const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const pct = Math.max(0, Math.min(1, x / rect.width));
-      const time = pct * (video.duration || 0);
+      setScrubPosition(pct);
 
-      video.currentTime = time;
+      if (video && streamUrl && video.readyState >= 2) {
+        const time = pct * (video.duration || 0);
+        video.currentTime = time;
+      }
     },
     [streamUrl]
   );
@@ -113,6 +118,13 @@ export default function VideoScrubThumbnail({
             <Play className="ml-1 h-6 w-6 fill-white text-white" />
           </div>
         </div>
+      )}
+      {showVideo && scrubPosition !== null && (
+        <div
+          className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.8)]"
+          style={{ left: `${scrubPosition * 100}%` }}
+          aria-hidden
+        />
       )}
     </div>
   );
