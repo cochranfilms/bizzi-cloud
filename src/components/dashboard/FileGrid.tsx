@@ -37,6 +37,7 @@ import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
+import SectionTitle from "./SectionTitle";
 
 function BulkActionBar({
   selectedFileCount,
@@ -919,9 +920,7 @@ export default function FileGrid() {
       {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0 || pinnedFilesLoading) && (
         <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900/50">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-              Pinned
-            </h2>
+            <SectionTitle>Pinned</SectionTitle>
           </div>
           {pinnedFilesLoading ? (
             <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">

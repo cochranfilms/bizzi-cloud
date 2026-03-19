@@ -83,17 +83,27 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     [accentColor]
   );
 
+  const sectionTitleBg = useMemo(() => {
+    if (!/^#[0-9A-Fa-f]{6}$/.test(accentColor)) return "rgba(0, 191, 255, 0.2)";
+    const parsed = accentColor.replace(/^#/, "");
+    const r = parseInt(parsed.slice(0, 2), 16);
+    const g = parseInt(parsed.slice(2, 4), 16);
+    const b = parseInt(parsed.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.2)`;
+  }, [accentColor]);
+
   const cssVariables: React.CSSProperties = useMemo(() => {
     const vars: Record<string, string> = {
       "--bizzi-accent": accentColor,
       "--bizzi-accent-hover": accentHover,
+      "--bizzi-section-title-bg": sectionTitleBg,
     };
     if (dashboardBg) {
       vars["--dashboard-bg"] = dashboardBg;
       vars["backgroundColor"] = dashboardBg;
     }
     return vars as React.CSSProperties;
-  }, [accentColor, accentHover, dashboardBg]);
+  }, [accentColor, accentHover, dashboardBg, sectionTitleBg]);
 
   const contextValue: DashboardAppearanceContextType = useMemo(
     () => ({

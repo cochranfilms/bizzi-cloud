@@ -25,6 +25,7 @@ import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
+import SectionTitle from "./SectionTitle";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -691,9 +692,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Bizzi Cloud Base
-        </h2>
+        <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
         {loading ? (
           <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…
@@ -755,9 +754,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
       {/* Section 2: Pinned */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Pinned
-        </h2>
+        <SectionTitle className="mb-4">Pinned</SectionTitle>
         {isLoading || pinnedFilesLoading ? (
           <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…
@@ -846,12 +843,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Bizzi Cloud Folders
-        </h2>
-        <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500/80 dark:text-neutral-400/80">
+        <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
+        <SectionTitle as="h3" className="mb-3 text-xs font-medium">
           Your folders
-        </h3>
+        </SectionTitle>
         {loading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…
@@ -910,9 +905,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         )}
         {(visibleSystemDrives.some((d) => d.name === "Storage") || linkedDrives.some((d) => d.name === "Storage")) && (
           <>
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500/80 dark:text-neutral-400/80">
+            <SectionTitle as="h3" className="mb-3 text-xs font-medium">
               Recent Uploads
-            </h3>
+            </SectionTitle>
             {loading ? (
               <div className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 Loading…

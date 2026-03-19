@@ -13,6 +13,7 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
+import SectionTitle from "./SectionTitle";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -122,9 +123,9 @@ export default function CreatorContent() {
 
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          <SectionTitle>
             {currentDrive ? "Files" : "Folders"}
-          </h2>
+          </SectionTitle>
           <div className="flex gap-1">
             <button
               type="button"

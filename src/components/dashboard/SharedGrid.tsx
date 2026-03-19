@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox, Settings } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import SharerCard, { type SharerCardItem } from "./SharerCard";
+import SectionTitle from "./SectionTitle";
 import ShareModal from "./ShareModal";
 import { useShares } from "@/hooks/useShares";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -262,9 +263,7 @@ export default function SharedGrid() {
             hasReceivedContent && (
               <section>
                 {sentReceivedFilter === "all" && (
-                  <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                    Shared with you
-                  </h2>
+                  <SectionTitle className="mb-4">Shared with you</SectionTitle>
                 )}
                 <div className="space-y-6">
                   {sharers.map((sharer) => (
@@ -287,9 +286,7 @@ export default function SharedGrid() {
             hasSentContent && (
               <section>
                 {sentReceivedFilter === "all" && (
-                  <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                    Shared by you
-                  </h2>
+                  <SectionTitle className="mb-4">Shared by you</SectionTitle>
                 )}
                 {viewMode === "grid" ? (
                   <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
