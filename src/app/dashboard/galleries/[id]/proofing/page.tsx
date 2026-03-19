@@ -302,9 +302,9 @@ export default function GalleryProofingPage() {
         throw new Error(data?.error ?? "Failed to create folder");
       }
       bumpStorageVersion();
-      setCreateFolderSuccess(
-        `Saved ${data.files_saved ?? favoritedAssetIdsForFolder.length} photo${(data.files_saved ?? 0) !== 1 ? "s" : ""} to Gallery Media → ${galleryTitle} → favorites`
-      );
+      setCreateFolderSuccess({
+        message: `Saved ${data.files_saved ?? favoritedAssetIdsForFolder.length} photo${(data.files_saved ?? 0) !== 1 ? "s" : ""} to Gallery Media → ${galleryTitle} → favorites`,
+      });
       setTimeout(() => setCreateFolderSuccess(null), 5000);
     } catch (err) {
       setCreateFolderError(err instanceof Error ? err.message : "Failed to create folder");
@@ -433,7 +433,7 @@ export default function GalleryProofingPage() {
             )}
             {createFolderSuccess && (
               <p className="text-sm text-green-600 dark:text-green-400">
-                {createFolderSuccess}
+                {createFolderSuccess.message}
               </p>
             )}
           </div>
