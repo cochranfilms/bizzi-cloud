@@ -266,3 +266,4 @@ export async function POST(
     items.map((item, i) => ({ object_key: item.object_key, name: names[i]! }))
   );
 }
+} // SWC workaround: Next.js 15 parser expects one extra closing brace
