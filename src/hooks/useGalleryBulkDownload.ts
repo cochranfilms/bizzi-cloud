@@ -118,7 +118,9 @@ export function useGalleryBulkDownload({
               };
               const msg = data?.message ?? data?.error ?? `Failed to start download (${res.status})`;
               console.error("[useGalleryBulkDownload] Bulk zip error:", res.status, data);
-              throw new Error(msg);
+              const err = new Error(msg);
+              (err as Error & { status?: number }).status = res.status;
+              throw err;
             }
             const body = res.body;
             if (!body) throw new Error("No response body");
@@ -136,7 +138,8 @@ export function useGalleryBulkDownload({
           }
         }
 
-        if (isNetworkError(lastErr!)) {
+        const is500 = lastErr instanceof Error && (lastErr as Error & { status?: number }).status === 500;
+        if (isNetworkError(lastErr!) || is500) {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const res = await fetch(

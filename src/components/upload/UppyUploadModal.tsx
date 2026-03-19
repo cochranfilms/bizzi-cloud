@@ -89,8 +89,20 @@ export default function UppyUploadModal({
       plugin?.setOptions({ headers });
     });
 
+    const usedNames = new Map<string, number>();
     uppy.on("file-added", (file) => {
-      const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+      let uniqueName = file.name;
+      if (pathPrefix && galleryId) {
+        const key = file.name;
+        const n = usedNames.get(key) ?? 0;
+        usedNames.set(key, n + 1);
+        if (n > 0) {
+          const base = file.name.replace(/\.([^.]+)$/, "");
+          const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
+          uniqueName = `${base} (${n})${ext}`;
+        }
+      }
+      const relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
       uppy.setFileState(file.id, {
         meta: {
           ...file.meta,

@@ -389,6 +389,11 @@ export default function GalleryDetailPage() {
                 onUploadComplete={() => {
                   fetchAssets();
                   fetchGallery();
+                  // Refetch after delay so multipart/server-processing has time to add gallery assets
+                  setTimeout(() => {
+                    fetchAssets();
+                    fetchGallery();
+                  }, 1500);
                 }}
               />
             </div>

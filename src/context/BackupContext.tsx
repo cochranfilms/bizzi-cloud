@@ -1490,8 +1490,17 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
 
       const drive = await getOrCreateGalleryDrive();
-      const batchTs = Date.now();
       const db = getFirebaseFirestore();
+      const usedNames = new Map<string, number>();
+      const uniqueNames = files.map((f) => {
+        let finalName = f.name;
+        const base = f.name.replace(/\.([^.]+)$/, "");
+        const ext = f.name.includes(".") ? f.name.slice(f.name.lastIndexOf(".")) : "";
+        let n = usedNames.get(f.name) ?? 0;
+        if (n > 0) finalName = `${base} (${n})${ext}`;
+        usedNames.set(f.name, n + 1);
+        return finalName;
+      });
       let bytesSynced = 0;
       const completedBytesRef = { current: 0 };
       const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -1537,7 +1546,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             completed_at: new Date(),
           });
           const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
-          const relativePath = `${galleryId}/${batchTs}_${fileIndex}/${file.name}`;
+          const safeName = uniqueNames[fileIndex] ?? file.name;
+          const relativePath = `${galleryId}/${safeName}`;
           const fileRef = await addDoc(collection(db, "backup_files"), {
             backup_snapshot_id: snapshotRef.id,
             linked_drive_id: drive.id,
@@ -1598,7 +1608,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           id: item.id,
           file,
           driveId: drive.id,
-          relativePath: `${galleryId}/${batchTs}_${i}/${file.name}`,
+          relativePath: `${galleryId}/${uniqueNames[i]}`,
           workspaceId: undefined,
           organizationId: null,
         };

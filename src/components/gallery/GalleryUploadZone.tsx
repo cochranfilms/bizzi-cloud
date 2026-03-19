@@ -26,7 +26,7 @@ export default function GalleryUploadZone({
     if (disabled || !openPanel) return;
     try {
       const drive = await getOrCreateGalleryDrive();
-      const pathPrefix = `${galleryId}/${Date.now()}`;
+      const pathPrefix = galleryId;
       openPanel(drive.id, pathPrefix, null, {
         galleryId,
         initialFiles: droppedFiles && droppedFiles.length > 0 ? droppedFiles : undefined,
