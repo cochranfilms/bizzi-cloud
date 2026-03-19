@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import streamSaver from "streamsaver";
 
 const DOWNLOAD_LIMIT = 50;
 const BULK_ZIP_RETRIES = 4;
@@ -111,6 +110,7 @@ export function useTransferBulkDownload({
             const body = res.body;
             if (!body) throw new Error("No response body");
 
+            const streamSaver = (await import("streamsaver")).default;
             const fileStream = streamSaver.createWriteStream("download.zip");
             await body.pipeTo(fileStream);
             onComplete?.();

@@ -20,6 +20,9 @@ const MAX_ITEMS = 50;
 /** Allow up to 5 min for very large zip streams (Vercel Pro: 300s). */
 export const maxDuration = 300;
 
+/** Requires Node.js for stream/archiver (not Edge). */
+export const runtime = "nodejs";
+
 /** Deduplicates filenames for zip (e.g. image.jpg, image (1).jpg). */
 function uniqueZipNames(names: string[]): string[] {
   const used = new Map<string, number>();
@@ -261,37 +264,51 @@ export async function POST(
 
   const names = uniqueZipNames(items.map((i) => i.name));
 
-  const archive = archiver("zip", {
-    zlib: { level: 0 },
-  });
+  let passThrough: PassThrough;
+  let webStream: ReadableStream;
+  try {
+    const archive = archiver("zip", {
+      zlib: { level: 0 },
+    });
 
-  archive.on("error", (err) => {
-    console.error("[gallery download-bulk-zip] Archive error:", err);
-  });
+    archive.on("error", (err) => {
+      console.error("[gallery download-bulk-zip] Archive error:", err);
+    });
 
-  const passThrough = new PassThrough();
-  archive.pipe(passThrough);
+    passThrough = new PassThrough();
+    archive.pipe(passThrough);
 
-  (async () => {
-    try {
-      for (let i = 0; i < items.length; i++) {
-        const { object_key } = items[i];
-        const name = names[i];
-        const { body: objBody } = await getObject(object_key);
-        const nodeStream =
-          typeof (objBody as { getReader?: unknown }).getReader === "function"
-            ? Readable.fromWeb(objBody as any)
-            : (objBody as NodeJS.ReadableStream);
-        archive.append(nodeStream as import("stream").Readable, { name });
+    (async () => {
+      try {
+        for (let i = 0; i < items.length; i++) {
+          const { object_key } = items[i];
+          const name = names[i];
+          const { body: objBody } = await getObject(object_key);
+          const nodeStream =
+            typeof (objBody as { getReader?: unknown }).getReader === "function"
+              ? Readable.fromWeb(objBody as any)
+              : (objBody as NodeJS.ReadableStream);
+          archive.append(nodeStream as import("stream").Readable, { name });
+        }
+        await archive.finalize();
+      } catch (err) {
+        console.error("[gallery download-bulk-zip] Error:", err);
+        archive.emit("error", err);
       }
-      await archive.finalize();
-    } catch (err) {
-      console.error("[gallery download-bulk-zip] Error:", err);
-      archive.emit("error", err);
-    }
-  })();
+    })();
 
-  const webStream = Readable.toWeb(passThrough) as ReadableStream;
+    webStream = Readable.toWeb(passThrough) as ReadableStream;
+  } catch (streamErr) {
+    console.error("[gallery download-bulk-zip] Stream setup error:", streamErr);
+    return NextResponse.json(
+      {
+        error: "internal_error",
+        message: streamErr instanceof Error ? streamErr.message : "Failed to create download stream",
+      },
+      { status: 500 }
+    );
+  }
+
   return new Response(webStream, {
     headers: {
       "Content-Type": "application/zip",
@@ -299,5 +316,3 @@ export async function POST(
     },
   });
 }
-}
-

@@ -13,8 +13,10 @@ import {
   Loader2,
   Film,
   Download,
+  FolderPlus,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useBackup } from "@/context/BackupContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
@@ -184,6 +186,8 @@ export default function GalleryProofingPage() {
   const [filter, setFilter] = useState<"all" | "favorited" | "commented">("all");
   const [copiedIds, setCopiedIds] = useState(false);
 
+  const { bumpStorageVersion } = useBackup();
+
   const fetchData = useCallback(async () => {
     if (!user || !id) return;
     try {
@@ -251,9 +255,62 @@ export default function GalleryProofingPage() {
     error: downloadError,
   } = useGalleryBulkDownload({ galleryId: id, user, password: null });
 
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
+  const [createFolderSuccess, setCreateFolderSuccess] = useState<{ message: string; driveId?: string } | null>(null);
+  const [createdFolderDriveId, setCreatedFolderDriveId] = useState<string | null>(null);
+
+  const favoritedAssetIdsForFolder = assets
+    .filter(
+      (a) =>
+        favoritedAssetIds.has(a.id) &&
+        a.object_key &&
+        (a.media_type === "image" ||
+          a.media_type === "video" ||
+          IMAGE_EXT.test(a.name) ||
+          VIDEO_EXT.test(a.name))
+    )
+    .map((a) => a.id);
+
   const handleDownloadFavorites = () => {
     if (favoritedDownloadItems.length === 0) return;
     downloadFavorites(favoritedDownloadItems, "selected");
+  };
+
+  const handleCreateFavoriteFolder = async () => {
+    if (favoritedAssetIdsForFolder.length === 0) return;
+    setIsCreatingFolder(true);
+    setCreateFolderError(null);
+    setCreateFolderSuccess(null);
+    try {
+      const token = await user?.getIdToken();
+      if (!token) throw new Error("Not authenticated");
+      const res = await fetch(`/api/galleries/${id}/create-favorite-folder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ asset_ids: favoritedAssetIdsForFolder }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        files_saved?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to create folder");
+      }
+      bumpStorageVersion();
+      setCreateFolderSuccess(
+        `Saved ${data.files_saved ?? favoritedAssetIdsForFolder.length} photo${(data.files_saved ?? 0) !== 1 ? "s" : ""} to Gallery Media → ${galleryTitle} → favorites`
+      );
+      setTimeout(() => setCreateFolderSuccess(null), 5000);
+    } catch (err) {
+      setCreateFolderError(err instanceof Error ? err.message : "Failed to create folder");
+    } finally {
+      setIsCreatingFolder(false);
+    }
   };
 
   const filteredAssets =
@@ -350,10 +407,33 @@ export default function GalleryProofingPage() {
                   </>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={handleCreateFavoriteFolder}
+                disabled={favoritedAssetIdsForFolder.length === 0 || isCreatingFolder}
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                {isCreatingFolder ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    <FolderPlus className="h-4 w-4" />
+                    Create Favorite Folder
+                  </>
+                )}
+              </button>
             </div>
-            {downloadError && (
+            {(downloadError || createFolderError) && (
               <p className="text-sm text-red-600 dark:text-red-400">
-                {downloadError}
+                {downloadError ?? createFolderError}
+              </p>
+            )}
+            {createFolderSuccess && (
+              <p className="text-sm text-green-600 dark:text-green-400">
+                {createFolderSuccess}
               </p>
             )}
           </div>

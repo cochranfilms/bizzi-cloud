@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import streamSaver from "streamsaver";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
@@ -93,6 +92,7 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
             const body = res.body;
             if (!body) throw new Error("No response body");
 
+            const streamSaver = (await import("streamsaver")).default;
             const fileStream = streamSaver.createWriteStream("download.zip");
             await body.pipeTo(fileStream);
             return; // success

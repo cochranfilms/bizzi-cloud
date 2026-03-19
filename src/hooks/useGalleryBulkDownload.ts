@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import streamSaver from "streamsaver";
 import type { User } from "firebase/auth";
 
 const DOWNLOAD_LIMIT = 50;
@@ -117,13 +116,14 @@ export function useGalleryBulkDownload({
                 error?: string;
                 message?: string;
               };
-              throw new Error(
-                data?.message ?? data?.error ?? "Failed to start download"
-              );
+              const msg = data?.message ?? data?.error ?? `Failed to start download (${res.status})`;
+              console.error("[useGalleryBulkDownload] Bulk zip error:", res.status, data);
+              throw new Error(msg);
             }
             const body = res.body;
             if (!body) throw new Error("No response body");
 
+            const streamSaver = (await import("streamsaver")).default;
             const fileStream = streamSaver.createWriteStream("download.zip");
             await body.pipeTo(fileStream);
             onComplete?.();
