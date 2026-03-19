@@ -68,10 +68,12 @@ export const UNIVERSAL_FILTERS: FilterDef[] = [
       { value: "image/heic", label: "HEIC" },
       { value: "image/tiff", label: "TIFF" },
       { value: "image/webp", label: "WEBP" },
+      { value: "application/pdf", label: "PDF" },
       { value: "video/mp4", label: "MP4" },
       { value: "video/quicktime", label: "MOV" },
       { value: "video/x-msvideo", label: "AVI" },
       { value: "video/x-matroska", label: "MKV" },
+      { value: "application/pdf", label: "PDF" },
     ],
   },
   {

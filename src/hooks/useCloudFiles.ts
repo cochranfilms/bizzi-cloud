@@ -91,6 +91,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [recentUploads, setRecentUploads] = useState<RecentFile[]>([]);
+  const [recentUploadsLoading, setRecentUploadsLoading] = useState(false);
   const [allFilesForTransfer, setAllFilesForTransfer] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAllFiles, setLoadingAllFiles] = useState(false);
@@ -131,7 +133,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           const creatorSection = d.data().creator_section === true;
           const isCreatorRaw = d.data().is_creator_raw === true;
           if (creatorOnly) return creatorSection;
-          // On Home: show non-creator drives OR the RAW folder (always visible in Bizzi Cloud Drive)
+          // On Home: show non-creator drives OR the RAW folder (always visible in Bizzi Cloud Folders)
           return !creatorSection || isCreatorRaw;
         })
         .map((d) => {
@@ -336,6 +338,72 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     },
     [user, linkedDrives]
   );
+
+  /** Fetches files uploaded to Storage in the past 72 hours. Reference view—files live in Storage, not duplicated. */
+  const fetchRecentUploads = useCallback(async (): Promise<RecentFile[]> => {
+    if (!isFirebaseConfigured() || !user) return [];
+    const db = getFirebaseFirestore();
+    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    const storageDriveIds = linkedDrives
+      .filter((d) => d.name === "Storage" || d.name === "Uploads")
+      .map((d) => d.id);
+    if (storageDriveIds.length === 0) return [];
+    const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+    const all: RecentFile[] = [];
+    for (const driveId of storageDriveIds) {
+      const drive = driveMap.get(driveId);
+      try {
+        const filesSnap = await getDocs(
+          query(
+            collection(db, "backup_files"),
+            where("userId", "==", user.uid),
+            where("linked_drive_id", "==", driveId),
+            where("deleted_at", "==", null),
+            orderBy("modified_at", "desc"),
+            limit(50)
+          )
+        );
+        for (const docSnap of filesSnap.docs) {
+          const data = docSnap.data();
+          const modifiedAt = data.modified_at ?? null;
+          const createdAt = data.created_at ?? null;
+          const raw = createdAt ?? modifiedAt;
+          let dateStr: string | null = null;
+          if (raw) {
+            if (typeof raw === "string") dateStr = raw;
+            else if (typeof (raw as { toDate?: () => Date }).toDate === "function")
+              dateStr = (raw as { toDate: () => Date }).toDate().toISOString();
+          }
+          if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
+          const path = data.relative_path ?? "";
+          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+          all.push({
+            id: docSnap.id,
+            name,
+            path,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: modifiedAt ?? null,
+            driveId: data.linked_drive_id,
+            driveName: drive?.name ?? "Storage",
+            contentType: data.content_type ?? null,
+            galleryId: data.gallery_id ?? null,
+            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
+          });
+        }
+      } catch {
+        // Index may not exist; skip this drive
+      }
+    }
+    all.sort((a, b) => {
+      const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
+      const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+      return tb - ta;
+    });
+    const result = all.slice(0, 24);
+    setRecentUploads(result);
+    return result;
+  }, [user, linkedDrives]);
 
   /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
   const subscribeToDriveFiles = useCallback(
@@ -841,6 +909,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   return {
     driveFolders,
     recentFiles,
+    recentUploads,
+    fetchRecentUploads,
     allFilesForTransfer,
     loading,
     loadingAllFiles,

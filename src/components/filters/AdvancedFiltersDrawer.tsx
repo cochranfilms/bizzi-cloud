@@ -24,15 +24,20 @@ interface AdvancedFiltersDrawerProps {
   insideFolder?: boolean;
 }
 
+const MEDIA_TYPE_VALUES = new Set(["video", "photo", "other"]);
+
 const FILE_TYPE_OPTIONS = [
+  { value: "__all__", label: "All files" },
   { value: "video", label: "Video" },
   { value: "photo", label: "Photo" },
+  { value: "other", label: "Documents" },
   { value: "raw", label: "RAW" },
   { value: "image/jpeg", label: "JPG" },
   { value: "image/png", label: "PNG" },
   { value: "image/heic", label: "HEIC" },
   { value: "image/tiff", label: "TIFF" },
   { value: "image/webp", label: "WEBP" },
+  { value: "application/pdf", label: "PDF" },
   { value: "video/mp4", label: "MP4" },
   { value: "video/quicktime", label: "MOV" },
 ];
@@ -136,22 +141,31 @@ export default function AdvancedFiltersDrawer({
         <FilterSection title="File type" defaultCollapsed={false}>
           <FileTypeChips
             options={FILE_TYPE_OPTIONS}
-            value={[
-              ...(Array.isArray(filterState.media_type)
+            value={(() => {
+              const media = Array.isArray(filterState.media_type)
                 ? filterState.media_type
                 : filterState.media_type && typeof filterState.media_type === "string"
                   ? [filterState.media_type]
-                  : []),
-              ...(Array.isArray(filterState.file_type)
+                  : [];
+              const file = Array.isArray(filterState.file_type)
                 ? (filterState.file_type as string[])
                 : filterState.file_type && typeof filterState.file_type === "string"
                   ? [filterState.file_type]
-                  : []),
-            ].filter((x): x is string => typeof x === "string")}
+                  : [];
+              const combined = [...media, ...file].filter((x): x is string => typeof x === "string");
+              return combined.length === 0 ? ["__all__"] : combined;
+            })()}
             onChange={(v: string | string[]) => {
               const arr = (Array.isArray(v) ? v : v ? [v] : []).filter((x): x is string => typeof x === "string");
-              const mediaTypes = arr.filter((x): x is string => typeof x === "string" && ["video", "photo"].includes(x));
-              const fileTypes = arr.filter((x): x is string => typeof x === "string" && !["video", "photo"].includes(x));
+              const withoutAll = arr.filter((x) => x !== "__all__");
+              // Clear filters only when "All files" is the sole selection (or nothing selected)
+              if (withoutAll.length === 0) {
+                setFilter("media_type", undefined);
+                setFilter("file_type", undefined);
+                return;
+              }
+              const mediaTypes = withoutAll.filter((x): x is string => MEDIA_TYPE_VALUES.has(x));
+              const fileTypes = withoutAll.filter((x): x is string => !MEDIA_TYPE_VALUES.has(x));
               setFilter("media_type", mediaTypes.length <= 1 ? mediaTypes[0] : mediaTypes.length ? mediaTypes : undefined);
               setFilter("file_type", fileTypes.length <= 1 ? fileTypes[0] : fileTypes.length ? fileTypes : undefined);
             }}
