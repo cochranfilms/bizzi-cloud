@@ -684,13 +684,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   return (
     <div
       ref={gridSectionRef}
-      className={`mx-auto max-w-6xl space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
+      className={`w-full space-y-0 ${dragState?.isActive ? "select-none" : ""}`}
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Bizzi Cloud Base
         </h2>
@@ -699,7 +699,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -754,7 +754,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </section>
 
       {/* Section 2: Pinned */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Pinned
         </h2>
@@ -763,7 +763,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : hasPinned ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 const driveId = item.driveId ?? "";
@@ -845,7 +845,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </section>
 
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Bizzi Cloud Folders
         </h2>
@@ -857,7 +857,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : driveFolderItems.length > 0 ? (
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {driveFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -918,7 +918,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 Loading…
               </div>
             ) : recentUploads.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {recentUploads.map((file) => (
                   <div
                     key={file.id}
