@@ -1,5 +1,5 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
 import { createShareNotifications } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
@@ -95,6 +95,10 @@ export async function GET(request: Request) {
     created_at: string;
     share_url: string;
     sharedBy?: string;
+    owner_id?: string;
+    sharedByEmail?: string;
+    sharedByPhotoUrl?: string;
+    invited_emails?: string[];
   };
 
   const owned: ShareItem[] = [];
@@ -123,6 +127,7 @@ export async function GET(request: Request) {
         permission: (data.permission as string) ?? "view",
         created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         share_url: `/s/${data.token}`,
+        invited_emails: (data.invited_emails as string[] | undefined) ?? [],
       });
       continue;
     }
@@ -160,6 +165,7 @@ export async function GET(request: Request) {
       permission: (data.permission as string) ?? "view",
       created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
       share_url: `/s/${data.token}`,
+      invited_emails: (data.invited_emails as string[] | undefined) ?? [],
     });
   }
 
@@ -167,6 +173,12 @@ export async function GET(request: Request) {
   // Shares shared with me (invited by email). Query uses lowercase; stored emails must match.
   const invited: ShareItem[] = [];
   const emailForQuery = email?.trim().toLowerCase();
+  const adminAuth = getAdminAuth();
+  const sharerCache = new Map<
+    string,
+    { sharedBy: string; sharedByEmail: string; sharedByPhotoUrl: string | null }
+  >();
+
   if (emailForQuery) {
     const invitedSnap = await db
       .collection("folder_shares")
@@ -216,15 +228,28 @@ export async function GET(request: Request) {
       }
 
       const ownerId = (data.owner_id as string)?.trim?.() || "";
-      const ownerSnap = ownerId
-        ? await db.collection("profiles").doc(ownerId).get()
-        : { exists: false, data: () => null };
-      const sharedBy =
-        ownerSnap.exists && ownerSnap.data()?.displayName
-          ? ownerSnap.data()?.displayName
-          : ownerSnap.exists && ownerSnap.data()?.email
-            ? ownerSnap.data()?.email
-            : "Unknown";
+      let sharerInfo = ownerId ? sharerCache.get(ownerId) : null;
+      if (ownerId && !sharerInfo) {
+        const ownerSnap = await db.collection("profiles").doc(ownerId).get();
+        const profileData = ownerSnap.exists ? ownerSnap.data() : null;
+        const sharedBy =
+          (profileData?.displayName as string) || (profileData?.email as string) || "Unknown";
+        const sharedByEmail = (profileData?.email as string) || "";
+        let sharedByPhotoUrl: string | null = null;
+        try {
+          const authUser = await adminAuth.getUser(ownerId);
+          sharedByPhotoUrl = authUser.photoURL ?? null;
+        } catch {
+          // User may be deleted or disabled
+        }
+        sharerInfo = { sharedBy, sharedByEmail, sharedByPhotoUrl };
+        sharerCache.set(ownerId, sharerInfo);
+      }
+      const resolvedSharer = sharerInfo ?? {
+        sharedBy: "Unknown",
+        sharedByEmail: "",
+        sharedByPhotoUrl: null as string | null,
+      };
 
       invited.push({
         id: d.id,
@@ -235,7 +260,10 @@ export async function GET(request: Request) {
         permission: (data.permission as string) ?? "view",
         created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         share_url: `/s/${data.token}`,
-        sharedBy,
+        sharedBy: resolvedSharer.sharedBy,
+        owner_id: ownerId || undefined,
+        sharedByEmail: resolvedSharer.sharedByEmail || undefined,
+        sharedByPhotoUrl: resolvedSharer.sharedByPhotoUrl ?? undefined,
       });
     }
   }

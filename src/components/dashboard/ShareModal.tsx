@@ -225,7 +225,9 @@ export default function ShareModal({
     const trimmed = emailInput.trim().toLowerCase();
     if (!trimmed) return;
     if (invitedEmails.includes(trimmed)) return;
-    if (!hasValidShareName && !shareToken && !initialShareToken) {
+    // When we have an existing share token, always allow adding (edit mode)
+    const tokenForCheck = shareToken ?? initialShareToken;
+    if (!tokenForCheck && !(linkedDriveId && hasValidShareName)) {
       setNameError("Please name your share before adding people.");
       return;
     }
@@ -233,7 +235,7 @@ export default function ShareModal({
     const next = [...invitedEmails, trimmed];
     setInvitedEmails(next);
     setEmailInput("");
-    const token = await ensureShare();
+    const token = (await ensureShare()) ?? shareToken ?? initialShareToken ?? null;
     if (token) {
       setLoading(true);
       setError(null);
@@ -269,12 +271,13 @@ export default function ShareModal({
     async (email: string) => {
       const next = invitedEmails.filter((e) => e !== email);
       setInvitedEmails(next);
-      if (shareToken && user) {
+      const token = shareToken ?? initialShareToken;
+      if (token && user) {
         setLoading(true);
         setError(null);
         try {
           const authToken = await user.getIdToken();
-          const res = await fetch(`/api/shares/${shareToken}`, {
+          const res = await fetch(`/api/shares/${token}`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
@@ -284,7 +287,7 @@ export default function ShareModal({
           });
           if (!res.ok) {
             if (res.status === 409) {
-              fetchShareVersion(shareToken).then(setShareVersion);
+              fetchShareVersion(token).then(setShareVersion);
               const data = await res.json().catch(() => ({}));
               throw new Error(data.error ?? "Share was modified. Refreshed.");
             }
@@ -298,7 +301,7 @@ export default function ShareModal({
         }
       }
     },
-    [invitedEmails, shareToken, user, shareVersion, fetchShareVersion]
+    [invitedEmails, shareToken, initialShareToken, user, shareVersion, fetchShareVersion]
   );
 
   const saveChanges = useCallback(
@@ -307,7 +310,8 @@ export default function ShareModal({
       invited_emails?: string[];
       permission?: "view" | "edit";
     }) => {
-      if (!shareToken || !user) return;
+      const shareTokenToUse = shareToken ?? initialShareToken;
+      if (!shareTokenToUse || !user) return;
       const level = overrides?.access_level ?? accessLevel;
       const emails = overrides?.invited_emails ?? invitedEmails;
       const perm = overrides?.permission ?? permission;
@@ -315,7 +319,7 @@ export default function ShareModal({
       setError(null);
       try {
         const token = await user.getIdToken();
-        const res = await fetch(`/api/shares/${shareToken}`, {
+        const res = await fetch(`/api/shares/${shareTokenToUse}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -328,9 +332,9 @@ export default function ShareModal({
             version: shareVersion,
           }),
         });
-        if (!res.ok) {
-          if (res.status === 409) {
-            fetchShareVersion(shareToken).then(setShareVersion);
+            if (!res.ok) {
+              if (res.status === 409) {
+                fetchShareVersion(shareTokenToUse).then(setShareVersion);
             const data = await res.json().catch(() => ({}));
             throw new Error(data.error ?? "Share was modified. Refreshed.");
           }
@@ -344,7 +348,7 @@ export default function ShareModal({
         setLoading(false);
       }
     },
-    [shareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
+    [shareToken, initialShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
   const handleClose = useCallback(async () => {

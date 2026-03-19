@@ -11,6 +11,10 @@ export interface ShareListItem {
   permission: "view" | "edit";
   share_url: string;
   sharedBy?: string;
+  owner_id?: string;
+  sharedByEmail?: string;
+  sharedByPhotoUrl?: string;
+  invited_emails?: string[];
 }
 
 export interface UseSharesResult {
@@ -57,7 +61,7 @@ export function useShares(): UseSharesResult {
       }
       const data = await res.json();
       setOwned(
-        (data.owned ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string }) => ({
+        (data.owned ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; invited_emails?: string[] }) => ({
           id: s.id,
           token: s.token,
           folder_name: s.folder_name,
@@ -65,10 +69,11 @@ export function useShares(): UseSharesResult {
           permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
           share_url: s.share_url,
           sharedBy: "You",
+          invited_emails: Array.isArray(s.invited_emails) ? s.invited_emails : [],
         }))
       );
       setInvited(
-        (data.invited ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; sharedBy?: string }) => ({
+        (data.invited ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; sharedBy?: string; owner_id?: string; sharedByEmail?: string; sharedByPhotoUrl?: string }) => ({
           id: s.id,
           token: s.token,
           folder_name: s.folder_name,
@@ -76,6 +81,9 @@ export function useShares(): UseSharesResult {
           permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
           share_url: s.share_url,
           sharedBy: s.sharedBy ?? "Someone",
+          owner_id: s.owner_id,
+          sharedByEmail: s.sharedByEmail,
+          sharedByPhotoUrl: s.sharedByPhotoUrl,
         }))
       );
     } catch (err) {
