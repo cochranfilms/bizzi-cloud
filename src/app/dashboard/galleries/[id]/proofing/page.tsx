@@ -184,6 +184,7 @@ export default function GalleryProofingPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "favorited" | "commented">("all");
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [copiedIds, setCopiedIds] = useState(false);
 
   const { bumpStorageVersion } = useBackup();
@@ -237,10 +238,19 @@ export default function GalleryProofingPage() {
   const favoritedAssetIds = new Set(favorites.flatMap((f) => f.asset_ids));
   const commentedAssetIds = new Set(comments.map((c) => c.asset_id));
 
+  const selectedList = selectedListId
+    ? favorites.find((f) => f.id === selectedListId)
+    : null;
+  const selectedListAssetIds = selectedList
+    ? new Set(selectedList.asset_ids)
+    : null;
+
+  const effectiveFavoritedIds = selectedListAssetIds ?? favoritedAssetIds;
+
   const favoritedDownloadItems = assets
     .filter(
       (a) =>
-        favoritedAssetIds.has(a.id) &&
+        effectiveFavoritedIds.has(a.id) &&
         a.object_key &&
         (a.media_type === "image" ||
           a.media_type === "video" ||
@@ -263,7 +273,7 @@ export default function GalleryProofingPage() {
   const favoritedAssetIdsForFolder = assets
     .filter(
       (a) =>
-        favoritedAssetIds.has(a.id) &&
+        effectiveFavoritedIds.has(a.id) &&
         a.object_key &&
         (a.media_type === "image" ||
           a.media_type === "video" ||
@@ -313,12 +323,17 @@ export default function GalleryProofingPage() {
     }
   };
 
-  const filteredAssets =
+  const typeFilteredAssets =
     filter === "favorited"
       ? assets.filter((a) => favoritedAssetIds.has(a.id))
       : filter === "commented"
         ? assets.filter((a) => commentedAssetIds.has(a.id))
         : assets;
+
+  const filteredAssets =
+    selectedListAssetIds !== null
+      ? typeFilteredAssets.filter((a) => selectedListAssetIds.has(a.id))
+      : typeFilteredAssets;
 
   const exportIds = () => {
     const ids = filteredAssets.map((a) => a.id).join("\n");
@@ -450,32 +465,60 @@ export default function GalleryProofingPage() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {favorites.map((f) => (
-                    <div
-                      key={f.id}
-                      className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedListId(null)}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                        selectedListId === null
+                          ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-600 dark:text-white"
+                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                      }`}
                     >
-                      <p className="font-medium text-neutral-900 dark:text-white">
-                        {f.client_name || f.client_email || "Anonymous"}
-                      </p>
-                      {f.client_email && f.client_name !== f.client_email && (
-                        <p className="text-xs text-neutral-500">{f.client_email}</p>
-                      )}
-                      <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-                        {f.asset_ids.length} photo{f.asset_ids.length !== 1 ? "s" : ""} selected
-                      </p>
-                      <p className="text-xs text-neutral-400">
-                        {f.created_at
-                          ? new Date(f.created_at).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })
-                          : ""}
-                      </p>
-                    </div>
-                  ))}
+                      All lists
+                    </button>
+                  </div>
+                  {favorites.map((f) => {
+                    const isSelected = selectedListId === f.id;
+                    const label = f.client_name || f.client_email || "Anonymous";
+                    const dateStr = f.created_at
+                      ? new Date(f.created_at).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "";
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedListId(isSelected ? null : f.id)
+                        }
+                        className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                          isSelected
+                            ? "border-bizzi-blue bg-bizzi-blue/5 ring-2 ring-bizzi-blue/50 dark:border-bizzi-cyan dark:bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
+                            : "border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/50"
+                        }`}
+                      >
+                        <p className="font-medium text-neutral-900 dark:text-white">
+                          {label}
+                          {dateStr && (
+                            <span className="ml-1.5 font-normal text-neutral-500 dark:text-neutral-400">
+                              · {dateStr}
+                            </span>
+                          )}
+                        </p>
+                        {f.client_email && f.client_name !== f.client_email && (
+                          <p className="text-xs text-neutral-500">{f.client_email}</p>
+                        )}
+                        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                          {f.asset_ids.length} photo{f.asset_ids.length !== 1 ? "s" : ""} selected
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

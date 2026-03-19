@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -1997,48 +1998,55 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         )}
       </main>
 
-      {selectedFavorites.size > 0 && (
-        <div className="fixed right-6 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            {selectedFavorites.size} selected
-          </span>
-          <div className="flex flex-col gap-2">
-            {gallery.download_settings?.allow_selected_download &&
-              !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
+      {selectedFavorites.size > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed right-6 top-1/2 z-40 flex w-48 -translate-y-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            role="complementary"
+            aria-label="Favorites selection"
+          >
+            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              {selectedFavorites.size} selected
+            </span>
+            <div className="flex flex-col gap-2">
+              {gallery.download_settings?.allow_selected_download &&
+                !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
+                <button
+                  type="button"
+                  onClick={handleDownloadSelected}
+                  disabled={bulkDownloading}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {bulkDownloading ? "Downloading…" : "Download selected"}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleDownloadSelected}
-                disabled={bulkDownloading}
-                className="flex items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                onClick={() => setShowSaveFavorites(true)}
+                className="flex items-center justify-center rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
               >
-                <Download className="h-4 w-4" />
-                {bulkDownloading ? "Downloading…" : "Download selected"}
+                Save favorites list
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowSaveFavorites(true)}
-              className="flex items-center justify-center rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-            >
-              Save favorites list
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFavorites(new Set());
-                try {
-                  localStorage.removeItem(`gallery-favorites-${galleryId}`);
-                } catch {
-                  // ignore
-                }
-              }}
-              className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-400"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFavorites(new Set());
+                  try {
+                    localStorage.removeItem(`gallery-favorites-${galleryId}`);
+                  } catch {
+                    // ignore
+                  }
+                }}
+                className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-400"
+              >
+                Clear
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {showSaveFavorites && (
         <SaveFavoritesModal

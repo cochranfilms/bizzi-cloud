@@ -104,9 +104,9 @@ export default function CreatorContent() {
     });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="w-full space-y-0">
       {currentDrive && (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="mb-4 flex items-center gap-2 text-sm">
           <button
             type="button"
             onClick={closeDrive}
@@ -120,7 +120,7 @@ export default function CreatorContent() {
         </div>
       )}
 
-      <section className="relative rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             {currentDrive ? "Files" : "Folders"}
@@ -159,7 +159,7 @@ export default function CreatorContent() {
               <LoadingSpinner label={LOADING_COPY.files} />
             </div>
           ) : driveFiles.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {driveFiles.map((file) => (
                 <div key={file.id}>
                   <FileCard
@@ -186,7 +186,7 @@ export default function CreatorContent() {
             <LoadingSpinner label={LOADING_COPY.default} />
           </div>
         ) : folderItems.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {folderItems.map((item) => {
               const drive = creatorDrives.find((d) => d.id === item.driveId);
               return (
