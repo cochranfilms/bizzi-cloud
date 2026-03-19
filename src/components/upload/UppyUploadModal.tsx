@@ -147,7 +147,45 @@ export default function UppyUploadModal({
 
     uppy.on("upload-progress", updateProgress);
     uppy.on("upload-error", updateProgress);
-    uppy.on("upload-success", () => {
+    uppy.on("upload-success", async (file) => {
+      if (!file) return;
+      // Files ≤5MB use presigned PUT — no server callback; we must create backup_files here
+      const size = file.size ?? 0;
+      if (size > 0 && size <= 5 * 1024 * 1024) {
+        const meta = file.meta ?? {};
+        const driveId = meta.driveId ?? meta.drive_id;
+        const relativePath = meta.relativePath ?? meta.relative_path ?? file.name ?? "";
+        const sizeBytes = meta.sizeBytes ?? meta.size_bytes ?? size;
+        const contentType = file.type ?? meta.contentType ?? "application/octet-stream";
+        const lastModified =
+          (file.data instanceof File ? file.data.lastModified : null) ??
+          meta.lastModified ??
+          null;
+        if (driveId && relativePath && sizeBytes) {
+          try {
+            const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+            if (!token) return;
+            await fetch(`${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                driveId,
+                relativePath,
+                sizeBytes: Number(sizeBytes),
+                contentType,
+                lastModified: lastModified != null ? Number(lastModified) : null,
+                workspaceId: meta.workspaceId ?? null,
+                galleryId: meta.galleryId ?? null,
+              }),
+            });
+          } catch {
+            // Non-blocking; file is in B2, record creation may retry or user can re-upload
+          }
+        }
+      }
       updateProgress();
       onUploadComplete?.();
     });
