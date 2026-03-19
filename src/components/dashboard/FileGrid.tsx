@@ -323,7 +323,35 @@ export default function FileGrid() {
       ? driveFiles.filter((f) => f.path.startsWith(prefix))
       : driveFiles;
     if (currentDrivePath) {
-      return { subfolderItems: [], displayedFiles: filesInView };
+      // Inside a gallery folder: show nested subfolders (e.g. "favorites") and files at this level
+      const pathSegments = currentDrivePath.split("/").filter(Boolean);
+      const nextSegmentCounts = new Map<string, number>();
+      const directFiles: typeof driveFiles = [];
+      for (const f of filesInView) {
+        const afterPrefix = f.path.slice(prefix.length);
+        const rest = afterPrefix.split("/").filter(Boolean);
+        if (rest.length === 1) {
+          directFiles.push(f);
+        } else if (rest.length >= 2) {
+          const nextSegment = rest[0];
+          nextSegmentCounts.set(nextSegment, (nextSegmentCounts.get(nextSegment) ?? 0) + 1);
+        }
+      }
+      const nestedSubfolders: FolderItem[] = Array.from(nextSegmentCounts.entries()).map(
+        ([segment, count]) => ({
+          name: segment === "favorites" ? "Favorites" : segment,
+          type: "folder" as const,
+          key: `gallery-nested-${currentDrive.id}|${currentDrivePath}|${segment}`,
+          items: count,
+          driveId: undefined,
+          virtualFolder: true,
+          hideShare: true,
+          preventDelete: true,
+          preventRename: true,
+          pathPrefix: `${currentDrivePath}/${segment}`,
+        })
+      );
+      return { subfolderItems: nestedSubfolders, displayedFiles: directFiles };
     }
     const galleryTitleMap = new Map(galleries.map((g) => [g.id, g.title]));
     const seen = new Map<string, { count: number; displayName: string }>();
