@@ -698,7 +698,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="flex flex-wrap justify-center gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
