@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bizzi Cloud Design Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #171717;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+    @media print {
+      body { padding: 24px; }
+      .print-hint { display: none !important; }
+    }
+    .print-hint {
+      background: #e8f4fc;
+      border: 1px solid #00BFFF;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 32px;
+      font-size: 10pt;
+    }
+    .print-hint strong { color: #1e3a5f; }
+    h1 {
+      font-size: 26pt;
+      font-weight: 700;
+      color: #1e3a5f;
+      margin: 0 0 8px;
+      border-bottom: 3px solid #00BFFF;
+      padding-bottom: 12px;
+    }
+    .subtitle {
+      font-size: 11pt;
+      color: #525252;
+      margin-bottom: 32px;
+    }
+    h2 {
+      font-size: 15pt;
+      font-weight: 600;
+      color: #1e3a5f;
+      margin-top: 28px;
+      margin-bottom: 10px;
+    }
+    h3 {
+      font-size: 12pt;
+      font-weight: 600;
+      color: #404040;
+      margin-top: 18px;
+      margin-bottom: 6px;
+    }
+    p { margin: 0 0 10px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 20px;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1px solid #e5e5e5;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: #1e3a5f;
+    }
+    tr:nth-child(even) { background: #fafafa; }
+    .swatch {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.12);
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    ul { margin: 6px 0 14px; padding-left: 22px; }
+    li { margin-bottom: 3px; }
+    hr { border: none; border-top: 1px solid #e5e5e5; margin: 20px 0; }
+    code {
+      font-family: ui-monospace, monospace;
+      font-size: 9pt;
+      background: #f0f0f0;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    .note { font-style: italic; color: #525252; font-size: 10pt; }
+  </style>
+</head>
+<body>
+  <div class="print-hint">
+    <strong>To save as PDF:</strong> File → Print (or Ctrl/Cmd+P) → choose "Save as PDF" as the destination.
+  </div>
+
+  <h1>Bizzi Cloud Design Reference</h1>
+  <p class="subtitle">Design tokens and patterns for building Figma files and maintaining visual consistency with the Bizzi Cloud web app.</p>
+
+  <h2>Typography</h2>
+  <table>
+    <tr><th>Token</th><th>Font</th><th>Usage</th></tr>
+    <tr><td><strong>Sans</strong></td><td>Geist Sans</td><td>Body text, headings, UI labels</td></tr>
+    <tr><td><strong>Mono</strong></td><td>Geist Mono</td><td>Code, technical content</td></tr>
+  </table>
+  <p><strong>Source:</strong> <a href="https://vercel.com/font">Geist font</a> (Vercel). Use geist package or Google Fonts equivalent.</p>
+  <p><strong>Common sizes:</strong></p>
+  <ul>
+    <li><code>text-xs</code> — 12px — Captions, metadata</li>
+    <li><code>text-sm</code> — 14px — Body text, buttons</li>
+    <li><code>text-base</code> — 16px — Default body</li>
+    <li><code>text-lg</code> — 18px — Section headings</li>
+    <li><code>text-xl</code> — 20px — Page titles</li>
+    <li><code>text-2xl</code> — 24px — Hero, large headings</li>
+  </ul>
+  <p><strong>Weights:</strong> font-medium (500), font-semibold (600), font-bold (700)</p>
+
+  <hr>
+
+  <h2>Colors</h2>
+
+  <h3>Primary / Accent (Brand)</h3>
+  <table>
+    <tr><th>Name</th><th>Hex</th><th>Usage</th></tr>
+    <tr><td><span class="swatch" style="background:#00BFFF"></span><strong>Bizzi Blue</strong></td><td>#00BFFF</td><td>Primary accent, buttons, links</td></tr>
+    <tr><td><span class="swatch" style="background:#00D4FF"></span><strong>Bizzi Cyan</strong></td><td>#00D4FF</td><td>Hover states</td></tr>
+    <tr><td><span class="swatch" style="background:#1e3a5f"></span><strong>Bizzi Navy</strong></td><td>#1e3a5f</td><td>Dark accent, headers</td></tr>
+    <tr><td><span class="swatch" style="background:#e8f4fc"></span><strong>Bizzi Sky</strong></td><td>#e8f4fc</td><td>Light accent backgrounds</td></tr>
+  </table>
+  <p class="note">Note: Accent colors are user-customizable on the dashboard. Use these as defaults.</p>
+
+  <h3>Neutral Palette (Tailwind)</h3>
+  <table>
+    <tr><th>Token</th><th>Light</th><th>Dark</th></tr>
+    <tr><td>50</td><td><span class="swatch" style="background:#fafafa"></span>#fafafa</td><td>—</td></tr>
+    <tr><td>100</td><td><span class="swatch" style="background:#f5f5f5"></span>#f5f5f5</td><td>—</td></tr>
+    <tr><td>200</td><td><span class="swatch" style="background:#e5e5e5"></span>#e5e5e5</td><td>—</td></tr>
+    <tr><td>300</td><td><span class="swatch" style="background:#d4d4d4"></span>#d4d4d4</td><td>—</td></tr>
+    <tr><td>400</td><td><span class="swatch" style="background:#a3a3a3"></span>#a3a3a3</td><td>—</td></tr>
+    <tr><td>500</td><td><span class="swatch" style="background:#737373"></span>#737373</td><td>—</td></tr>
+    <tr><td>600</td><td><span class="swatch" style="background:#525252"></span>#525252</td><td>—</td></tr>
+    <tr><td>700</td><td><span class="swatch" style="background:#404040"></span>#404040</td><td>—</td></tr>
+    <tr><td>800</td><td><span class="swatch" style="background:#262626"></span>#262626</td><td>—</td></tr>
+    <tr><td>900</td><td><span class="swatch" style="background:#171717"></span>#171717</td><td>—</td></tr>
+    <tr><td>950</td><td><span class="swatch" style="background:#0a0a0a"></span>#0a0a0a</td><td>—</td></tr>
+  </table>
+
+  <h3>Dashboard Background Themes (10 options)</h3>
+  <p>User-selectable. Each theme has light and dark variants.</p>
+  <table>
+    <tr><th>Name</th><th>Light</th><th>Dark</th></tr>
+    <tr><td>White</td><td><span class="swatch" style="background:#ffffff"></span>#ffffff</td><td><span class="swatch" style="background:#0a0a0a"></span>#0a0a0a</td></tr>
+    <tr><td>Off-white</td><td><span class="swatch" style="background:#fafafa"></span>#fafafa</td><td><span class="swatch" style="background:#171717"></span>#171717</td></tr>
+    <tr><td>Cream</td><td><span class="swatch" style="background:#f5f0e8"></span>#f5f0e8</td><td><span class="swatch" style="background:#262626"></span>#262626</td></tr>
+    <tr><td>Warm beige</td><td><span class="swatch" style="background:#ebe6df"></span>#ebe6df</td><td><span class="swatch" style="background:#1c1917"></span>#1c1917</td></tr>
+    <tr><td>Light gray</td><td><span class="swatch" style="background:#f0f0f0"></span>#f0f0f0</td><td><span class="swatch" style="background:#27272a"></span>#27272a</td></tr>
+    <tr><td>Slate</td><td><span class="swatch" style="background:#f8fafc"></span>#f8fafc</td><td><span class="swatch" style="background:#0f172a"></span>#0f172a</td></tr>
+    <tr><td>Stone</td><td><span class="swatch" style="background:#e7e5e4"></span>#e7e5e4</td><td><span class="swatch" style="background:#292524"></span>#292524</td></tr>
+    <tr><td>Neutral</td><td><span class="swatch" style="background:#f5f5f5"></span>#f5f5f5</td><td><span class="swatch" style="background:#171717"></span>#171717</td></tr>
+    <tr><td>Charcoal</td><td><span class="swatch" style="background:#404040"></span>#404040</td><td><span class="swatch" style="background:#2d2d2d"></span>#2d2d2d</td></tr>
+    <tr><td>Black</td><td><span class="swatch" style="background:#525252"></span>#525252</td><td><span class="swatch" style="background:#0a0a0a"></span>#0a0a0a</td></tr>
+  </table>
+
+  <h3>Enterprise Themes (Org branding)</h3>
+  <table>
+    <tr><th>Name</th><th>Primary</th><th>Accent</th></tr>
+    <tr><td>Bizzi</td><td><span class="swatch" style="background:#00BFFF"></span>#00BFFF</td><td><span class="swatch" style="background:#00D4FF"></span>#00D4FF</td></tr>
+    <tr><td>Slate</td><td><span class="swatch" style="background:#475569"></span>#475569</td><td><span class="swatch" style="background:#64748b"></span>#64748b</td></tr>
+    <tr><td>Emerald</td><td><span class="swatch" style="background:#059669"></span>#059669</td><td><span class="swatch" style="background:#10b981"></span>#10b981</td></tr>
+    <tr><td>Violet</td><td><span class="swatch" style="background:#7c3aed"></span>#7c3aed</td><td><span class="swatch" style="background:#8b5cf6"></span>#8b5cf6</td></tr>
+    <tr><td>Amber</td><td><span class="swatch" style="background:#d97706"></span>#d97706</td><td><span class="swatch" style="background:#f59e0b"></span>#f59e0b</td></tr>
+    <tr><td>Rose</td><td><span class="swatch" style="background:#e11d48"></span>#e11d48</td><td><span class="swatch" style="background:#f43f5e"></span>#f43f5e</td></tr>
+    <tr><td>Teal</td><td><span class="swatch" style="background:#0d9488"></span>#0d9488</td><td><span class="swatch" style="background:#14b8a6"></span>#14b8a6</td></tr>
+  </table>
+
+  <hr>
+
+  <h2>Spacing</h2>
+  <p>Tailwind spacing scale (1 unit = 4px)</p>
+  <table>
+    <tr><th>Token</th><th>px</th><th>Usage</th></tr>
+    <tr><td>1</td><td>4</td><td>Tight gaps</td></tr>
+    <tr><td>2</td><td>8</td><td>Icon gaps, small padding</td></tr>
+    <tr><td>4</td><td>16</td><td>Standard padding, gaps</td></tr>
+    <tr><td>6</td><td>24</td><td>Card padding</td></tr>
+    <tr><td>8</td><td>32</td><td>Large gaps</td></tr>
+    <tr><td>14</td><td>56</td><td>Nav height</td></tr>
+  </table>
+  <p><strong>Common patterns:</strong> Card padding p-4 (16px) or p-6 (24px) · Modal p-4 · Gap gap-2 (8px), gap-4 (16px)</p>
+
+  <hr>
+
+  <h2>Border Radius</h2>
+  <table>
+    <tr><th>Token</th><th>px</th><th>Usage</th></tr>
+    <tr><td>rounded</td><td>4</td><td>Small elements</td></tr>
+    <tr><td>rounded-md</td><td>6</td><td>Buttons, chips</td></tr>
+    <tr><td>rounded-lg</td><td>8</td><td>Inputs, cards</td></tr>
+    <tr><td>rounded-xl</td><td>12</td><td>Modals, large cards</td></tr>
+    <tr><td>rounded-full</td><td>9999</td><td>Avatars, pills</td></tr>
+  </table>
+
+  <hr>
+
+  <h2>Touch Targets</h2>
+  <p><strong>Minimum tap target:</strong> 44×44px (mobile) · <strong>Small target:</strong> 40×40px</p>
+
+  <hr>
+
+  <h2>Breakpoints</h2>
+  <table>
+    <tr><th>Name</th><th>Min width</th></tr>
+    <tr><td>sm</td><td>640px</td></tr>
+    <tr><td>md</td><td>768px</td></tr>
+    <tr><td>lg</td><td>1024px</td></tr>
+    <tr><td>xl</td><td>1280px</td></tr>
+    <tr><td>2xl</td><td>1536px</td></tr>
+  </table>
+
+  <hr>
+
+  <h2>Component Patterns</h2>
+  <ul>
+    <li><strong>Modals:</strong> max-w-md (448px) or max-w-lg (512px), rounded-xl, p-4</li>
+    <li><strong>Buttons:</strong> rounded-lg, px-4 py-2, text-sm font-medium</li>
+    <li><strong>Inputs:</strong> rounded-lg, px-4 py-2, border border-neutral-200</li>
+    <li><strong>Dropdowns:</strong> min-w-[200px], rounded-lg, py-1</li>
+    <li><strong>Color swatches:</strong> h-8 w-8 (32px), rounded-full or rounded-lg</li>
+  </ul>
+</body>
+</html>

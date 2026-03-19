@@ -144,16 +144,9 @@ export async function POST(request: Request) {
     await pendingRef.update({ status: "completed" });
   }
 
-  let customToken: string;
-  try {
-    customToken = await auth.createCustomToken(uid);
-  } catch (err) {
-    console.error("[create-from-checkout] createCustomToken error:", err);
-    return NextResponse.json(
-      { error: "Failed to create session" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ customToken });
+  // Guest checkout: require user to set password before signing in
+  return NextResponse.json({
+    needsPassword: true,
+    email: customerEmail,
+  });
 }
