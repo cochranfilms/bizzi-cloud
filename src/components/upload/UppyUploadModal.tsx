@@ -65,6 +65,7 @@ export default function UppyUploadModal({
       return token ? { Authorization: `Bearer ${token}` } : {};
     };
 
+    // No file type restrictions — Storage accepts all formats (video, photo, document, archives, etc.)
     const uppy = new Uppy({
       id: "uppy-upload",
       autoProceed: false,

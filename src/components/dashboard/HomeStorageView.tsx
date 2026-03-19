@@ -844,51 +844,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           )}
       </section>
 
-      {/* Section 3: Bizzi Cloud Folders (newly created folders) + Recent Uploads */}
+      {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Bizzi Cloud Folders
         </h2>
-        {(visibleSystemDrives.some((d) => d.name === "Storage") || linkedDrives.some((d) => d.name === "Storage")) && (
-          <>
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500/80 dark:text-neutral-400/80">
-              Recent Uploads
-            </h3>
-            {loading ? (
-              <div className="mb-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                Loading…
-              </div>
-            ) : recentUploads.length > 0 ? (
-              <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {recentUploads.map((file) => (
-                  <div
-                    key={file.id}
-                    data-selectable-item
-                    data-item-type="file"
-                    data-item-id={file.id}
-                  >
-                    <FileCard
-                      file={file}
-                      onClick={() => setPreviewFile(file)}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                        await refetch();
-                        fetchRecentUploads();
-                      }}
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-                Files uploaded to Storage in the past 72 hours will appear here.
-              </p>
-            )}
-          </>
-        )}
         <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500/80 dark:text-neutral-400/80">
           Your folders
         </h3>
@@ -897,7 +857,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : driveFolderItems.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {driveFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -944,9 +904,49 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             })}
           </div>
         ) : (
-          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="mb-6 py-4 text-sm text-neutral-500 dark:text-neutral-400">
             Newly created folders will appear here.
           </p>
+        )}
+        {(visibleSystemDrives.some((d) => d.name === "Storage") || linkedDrives.some((d) => d.name === "Storage")) && (
+          <>
+            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500/80 dark:text-neutral-400/80">
+              Recent Uploads
+            </h3>
+            {loading ? (
+              <div className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                Loading…
+              </div>
+            ) : recentUploads.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                {recentUploads.map((file) => (
+                  <div
+                    key={file.id}
+                    data-selectable-item
+                    data-item-type="file"
+                    data-item-id={file.id}
+                  >
+                    <FileCard
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        await refetch();
+                        fetchRecentUploads();
+                      }}
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+                Files uploaded to Storage in the past 72 hours will appear here.
+              </p>
+            )}
+          </>
         )}
       </section>
 

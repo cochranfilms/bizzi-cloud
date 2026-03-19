@@ -508,7 +508,7 @@ export class UploadManager {
           relative_path: relativePath,
           content_type: contentType,
           size_bytes: file.size,
-          modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+          modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
           organization_id: organizationId ?? null,
           user_id: this.opts.getUserId?.() ?? undefined,
         },

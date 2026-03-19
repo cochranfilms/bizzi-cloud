@@ -19,25 +19,19 @@ import {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { queueProxyJob } from "@/lib/proxy-queue";
+import {
+  isDocumentFile,
+  isVideoFile,
+  isImageFile,
+} from "@/lib/bizzi-file-types";
 
 /** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
 export const maxDuration = 300;
-
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp|braw|r3d|ari|dng|crm|rcd|sir)$/i;
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|heic|tiff|tif|cr2|cr3|nef|arw|raf|orf|rw2|dng|raw)$/i;
 
 /** Max bytes to fetch for video probe (metadata usually in first 20MB) */
 const VIDEO_PROBE_BYTES = 20 * 1024 * 1024;
 /** Max bytes for image metadata (full file for small images) */
 const IMAGE_METADATA_BYTES = 50 * 1024 * 1024;
-
-function isVideo(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
-}
-
-function isImage(name: string): boolean {
-  return IMAGE_EXT.test(name.toLowerCase());
-}
 
 function getExtension(name: string): string {
   return path.extname(name).toLowerCase().slice(1) || "";
@@ -133,11 +127,14 @@ export async function POST(request: Request) {
 
   const isGenericType =
     !contentType || contentType === "application/octet-stream" || contentType === "binary/octet-stream";
+  const isDocument = isDocumentFile(fileName);
   const shouldProbeForVideo =
-    (isVideo(fileName) || (isGenericType && !isImage(fileName))) && !!ffmpegPath;
+    !isDocument &&
+    (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName))) &&
+    !!ffmpegPath;
 
   const updates: Record<string, unknown> = {
-    media_type: isVideo(fileName) ? "video" : isImage(fileName) ? "photo" : "other",
+    media_type: isVideoFile(fileName) ? "video" : isImageFile(fileName) ? "photo" : "other",
     uploader_id: uid,
   };
 
@@ -184,9 +181,10 @@ export async function POST(request: Request) {
       } finally {
         await fs.unlink(tmpPath).catch(() => {});
       }
-    } else if (isImage(fileName)) {
-      const buffer = await getObjectBuffer(objectKey, IMAGE_METADATA_BYTES);
-      const meta = await sharp(buffer).metadata();
+    } else if (isImageFile(fileName)) {
+      try {
+        const buffer = await getObjectBuffer(objectKey, IMAGE_METADATA_BYTES);
+        const meta = await sharp(buffer).metadata();
       if (meta.width) updates.width = meta.width;
       if (meta.height) updates.height = meta.height;
       if (meta.width) updates.resolution_w = meta.width;
@@ -221,19 +219,20 @@ export async function POST(request: Request) {
       } catch {
         // Exiftool may not be available; dimensions from Sharp are enough
       }
+      } catch {
+        // Sharp may fail on unsupported formats (PSD, SVG, some RAW); media_type persists
+      }
     }
   } catch (err) {
+    // Log but do NOT return 500 — we still persist media_type and created_at so files show in Storage/Recent
     console.error("[extract-metadata] Extraction failed:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Extraction failed" },
-      { status: 500 }
-    );
   }
 
   if (!updates.created_at && !fileData.created_at) {
     updates.created_at = new Date().toISOString();
   }
-  if (Object.keys(updates).length > 2) {
+  // Always persist media_type and created_at (e.g. for PDFs) even when extraction fails
+  if (Object.keys(updates).length >= 2) {
     await fileRef.update(updates);
   }
 

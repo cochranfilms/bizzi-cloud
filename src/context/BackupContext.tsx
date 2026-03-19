@@ -758,7 +758,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 content_type: contentType,
                 modified_at: modifiedAt
                   ? new Date(modifiedAt).toISOString()
-                  : null,
+                  : new Date().toISOString(),
                 deleted_at: null,
                 organization_id: drive.organization_id ?? null,
               });
@@ -1314,7 +1314,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               content_type: file.type || "application/octet-stream",
               modified_at: file.lastModified
                 ? new Date(file.lastModified).toISOString()
-                : null,
+                : new Date().toISOString(),
               deleted_at: null,
               organization_id: drive.organization_id ?? null,
             });
@@ -1546,7 +1546,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             object_key: ev.objectKey,
             size_bytes: file.size,
             content_type: file.type || "application/octet-stream",
-            modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+            modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
             deleted_at: null,
             organization_id: null,
             gallery_id: galleryId,
@@ -1744,9 +1744,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           object_key: objectKey,
           size_bytes: file.size,
           content_type: contentType,
-          modified_at: file.lastModified
-            ? new Date(file.lastModified).toISOString()
-            : null,
+              modified_at: file.lastModified
+                ? new Date(file.lastModified).toISOString()
+                : new Date().toISOString(),
           deleted_at: null,
           organization_id: drive.organization_id ?? null,
         });

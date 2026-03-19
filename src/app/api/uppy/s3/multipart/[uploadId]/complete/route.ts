@@ -9,12 +9,11 @@ import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { createMuxAssetFromBackup } from "@/lib/mux";
+import { isVideoFile } from "@/lib/bizzi-file-types";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
-
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp|braw|r3d|ari|dng|crm|rcd|sir)$/i;
 
 export async function POST(
   request: Request,
@@ -135,7 +134,7 @@ export async function POST(
     completed_at: new Date(),
   });
 
-  const lastModified = data.lastModified != null ? new Date(data.lastModified).toISOString() : null;
+  const lastModified = data.lastModified != null ? new Date(data.lastModified).toISOString() : new Date().toISOString();
   const fileRef = await db.collection("backup_files").add({
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
@@ -168,7 +167,7 @@ export async function POST(
     }).catch(() => {});
   }
 
-  if (VIDEO_EXT.test(relativePath)) {
+  if (isVideoFile(relativePath)) {
     createMuxAssetFromBackup(objectKey, relativePath, fileRef.id).catch((err) => {
       console.error("[uppy complete] Mux create failed:", err);
     });
