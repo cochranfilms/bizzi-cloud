@@ -246,8 +246,8 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
   }, []);
 
   const setSelectionFromDrag = useCallback((fileIds: string[], folderIds: string[]) => {
-    setSelectedFileIds(new Set(fileIds));
-    setSelectedFolderIds(new Set(folderIds));
+    setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
+    setSelectedFolderIds((prev) => new Set([...prev, ...folderIds]));
   }, []);
 
   const [dragState, setDragState] = useState<{

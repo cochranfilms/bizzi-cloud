@@ -449,83 +449,6 @@ export default function PricingSection() {
           </p>
         </div>
 
-        {/* Free Tier */}
-        <div className="mb-12">
-          <div
-            className="rounded-2xl border-2 bg-white p-6 shadow-lg md:p-8"
-            style={{
-              borderColor: freeTier.accentColor + "40",
-              background: `linear-gradient(to bottom right, ${freeTier.accentColor}08, white)`,
-              boxShadow: `0 10px 15px -3px ${freeTier.accentColor}15`,
-            }}
-          >
-            <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-              <div className="flex-1">
-                <div className="mb-3" style={{ minHeight: BADGE_MIN_H }}>
-                  <span
-                    className="inline-block rounded-full px-3 py-1 text-xs font-semibold"
-                    style={{
-                      backgroundColor: freeTier.accentColor + "20",
-                      color: freeTier.accentColor,
-                    }}
-                  >
-                    {freeTier.tagline}
-                  </span>
-                </div>
-                <h3 className="text-2xl font-semibold text-neutral-900">
-                  {freeTier.name}
-                </h3>
-                <p className="mt-1 text-neutral-600">{freeTier.description}</p>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-neutral-900">$0</span>
-                  <span className="text-base font-normal text-neutral-500">
-                    /mo
-                  </span>
-                </div>
-                <p className="mt-0.5 text-sm text-neutral-500">
-                  {freeTier.subtext}
-                </p>
-                <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-sm font-medium text-neutral-500">
-                    Cloud Storage
-                  </span>
-                  <span className="text-lg font-semibold text-neutral-900">
-                    {freeTier.storage}
-                  </span>
-                </div>
-                <ul className="mt-4 space-y-1.5 text-sm text-neutral-700">
-                  {freeTier.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span
-                        className="shrink-0"
-                        style={{ color: freeTier.accentColor }}
-                      >
-                        ✓
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <ul className="mt-3 space-y-1 text-sm text-neutral-500">
-                  {freeTier.limitations.map((l) => (
-                    <li key={l}>— {l}</li>
-                  ))}
-                </ul>
-                <p className="mt-3 text-xs text-neutral-500">
-                  {freeTier.addOnsNote}
-                </p>
-                <a
-                  href="#paid-plans"
-                  className="mt-6 inline-block w-full rounded-xl px-8 py-3 font-medium text-center text-white transition-colors hover:opacity-90 md:w-auto"
-                  style={{ backgroundColor: freeTier.accentColor }}
-                >
-                  Choose a paid plan below
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {checkoutError && (
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
             {checkoutError}
@@ -566,6 +489,42 @@ export default function PricingSection() {
                 minBadgeHeight={BADGE_MIN_H}
               />
             ))}
+          </div>
+        </div>
+
+        {/* Compact Free Tier — above plan builder */}
+        <div className="mb-8">
+          <div
+            className="flex flex-wrap items-center justify-between gap-4 rounded-xl border-2 bg-white px-6 py-4"
+            style={{
+              borderColor: freeTier.accentColor + "40",
+              background: `linear-gradient(to right, ${freeTier.accentColor}08, white)`,
+            }}
+          >
+            <div className="flex items-center gap-4">
+              <span
+                className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                style={{
+                  backgroundColor: freeTier.accentColor + "20",
+                  color: freeTier.accentColor,
+                }}
+              >
+                {freeTier.tagline}
+              </span>
+              <span className="text-lg font-semibold text-neutral-900">
+                {freeTier.name}
+              </span>
+              <span className="text-base font-medium text-neutral-500">
+                {freeTier.storage}
+              </span>
+            </div>
+            <a
+              href="#paid-plans"
+              className="shrink-0 rounded-lg px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+              style={{ backgroundColor: freeTier.accentColor }}
+            >
+              Choose a paid plan above
+            </a>
           </div>
         </div>
 

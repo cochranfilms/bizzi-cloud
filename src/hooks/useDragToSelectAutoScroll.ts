@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 
 const DRAG_THRESHOLD_PX = 5;
-const SCROLL_ZONE_HEIGHT = 80;
-const SCROLL_SPEED = 12;
+const SCROLL_ZONE_HEIGHT = 120;
+const SCROLL_SPEED = 24;
 
 interface DragState {
   isActive: boolean;
@@ -33,6 +33,7 @@ export function useDragToSelectAutoScroll(
     if (!moved) return;
 
     const scrollContainer =
+      (gridSectionRef.current?.querySelector("[data-scroll-container]") as HTMLElement | null) ??
       (gridSectionRef.current?.closest("main") as HTMLElement | null) ??
       document.scrollingElement;
     if (!scrollContainer) return;

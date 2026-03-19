@@ -40,7 +40,6 @@ interface GalleryAsset {
   name: string;
   object_key?: string;
   media_type?: "image" | "video";
-  proofing_status?: string;
 }
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
@@ -246,24 +245,6 @@ export default function GalleryProofingPage() {
     setTimeout(() => setCopiedIds(false), 2000);
   };
 
-  const updateProofingStatus = async (assetId: string, status: string) => {
-    if (!user) return;
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/galleries/${id}/assets/${assetId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ proofing_status: status }),
-      });
-      if (res.ok) fetchData();
-    } catch (err) {
-      console.error("Update proofing status failed:", err);
-    }
-  };
-
   if (loading) {
     return (
       <>
@@ -433,9 +414,6 @@ export default function GalleryProofingPage() {
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                       Comments
                     </th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
-                      Status
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -456,20 +434,6 @@ export default function GalleryProofingPage() {
                         {commentedAssetIds.has(a.id)
                           ? comments.filter((c) => c.asset_id === a.id).length
                           : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={a.proofing_status ?? "pending"}
-                          onChange={(e) =>
-                            updateProofingStatus(a.id, e.target.value)
-                          }
-                          className="rounded border border-neutral-200 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="selected">Selected</option>
-                          <option value="editing">Editing</option>
-                          <option value="delivered">Delivered</option>
-                        </select>
                       </td>
                     </tr>
                   ))}

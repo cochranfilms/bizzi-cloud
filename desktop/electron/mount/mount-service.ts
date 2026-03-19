@@ -131,6 +131,10 @@ const DEFAULT_STREAM_CACHE_MAX_BYTES = 500 * 1024 * 1024 * 1024; // 500 GB (NLE 
 const FULL_DISK_ACCESS_MSG =
   "Can't access /Volumes. Add Bizzi Cloud to Full Disk Access for NLE visibility: System Settings → Privacy & Security → Full Disk Access. Then restart the app and mount again.";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Returns true if the error indicates a permission/access denial (e.g. needs Full Disk Access). */
 function isPermissionError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException)?.code;
@@ -150,6 +154,7 @@ export class MountService {
   private symlinkForFallback: string | null = null;
   private currentToken: string | null = null;
   private _isMounted = false;
+  private _mountInProgress = false;
   private prefetch: PrefetchService | null = null;
 
   /**
@@ -191,9 +196,24 @@ export class MountService {
     }
   }
 
-  /** Prefer bundled rclone, fall back to system (excluding Homebrew). */
+  /**
+   * On macOS, prefer system rclone when available (excluding Homebrew).
+   * System rclone works from terminal; bundled rclone fails when spawned from Electron
+   * because macOS strips DYLD_FALLBACK_LIBRARY_PATH from GUI app children, so the
+   * bundled binary can't load libfuse. System rclone often resolves libs correctly.
+   */
   private async findRclone(resourcesDir?: string): Promise<string | null> {
-    if (process.platform === "darwin" && resourcesDir) {
+    if (process.platform === "darwin") {
+      const system = await this.findSystemRclone();
+      if (system) return system;
+      if (resourcesDir) {
+        const arch = getDarwinArch();
+        const bundled = path.join(resourcesDir, "bin", arch, "rclone");
+        if (fs.existsSync(bundled)) return bundled;
+      }
+      return null;
+    }
+    if (resourcesDir) {
       const arch = getDarwinArch();
       const bundled = path.join(resourcesDir, "bin", arch, "rclone");
       if (fs.existsSync(bundled)) return bundled;
@@ -292,6 +312,38 @@ export class MountService {
     }
   }
 
+  /**
+   * FUSE can briefly register a mount point before it is actually usable.
+   * Require a real directory read so the UI only flips after Finder can browse it.
+   */
+  private async isMountBrowseable(): Promise<boolean> {
+    if (!this.mountPoint) return false;
+    try {
+      const entries = await Promise.race([
+        fs.promises.readdir(this.mountPoint),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+      ]);
+      return Array.isArray(entries);
+    } catch {
+      return false;
+    }
+  }
+
+  private async bestEffortUnmountPath(mountPath: string): Promise<void> {
+    const tryUnmount = (cmd: string, args: string[]) =>
+      new Promise<void>((resolve) => {
+        const proc = spawn(cmd, args, { stdio: "ignore" });
+        proc.on("close", () => resolve());
+        proc.on("error", () => resolve());
+        setTimeout(resolve, 3000);
+      });
+
+    await tryUnmount("umount", [mountPath]);
+    if (process.platform === "darwin") {
+      await tryUnmount("diskutil", ["unmount", "force", mountPath]);
+    }
+  }
+
   private async cleanupInactiveMount(reason: string): Promise<void> {
     desktopLog.warn("[mount] clearing inactive mount state", {
       reason,
@@ -323,6 +375,9 @@ export class MountService {
 
   private async reconcileMountState(): Promise<void> {
     if (!this._isMounted && !this.mountPoint && !this.symlinkForFallback) return;
+    // Don't cleanup while mount() is in progress—the status poll would otherwise stop WebDAV
+    // before rclone can connect, causing "connection refused" and mount never becoming active.
+    if (this._mountInProgress) return;
 
     const active = await this.isMountActuallyActive();
     if (active) {
@@ -342,6 +397,15 @@ export class MountService {
       await this.unmount();
     }
 
+    this._mountInProgress = true;
+    try {
+      await this.doMount(options);
+    } finally {
+      this._mountInProgress = false;
+    }
+  }
+
+  private async doMount(options: MountOptions): Promise<void> {
     desktopLog.info("[mount] mount requested", {
       apiBaseUrl: options.apiBaseUrl,
       cacheBaseDir: options.cacheBaseDir,
@@ -389,17 +453,9 @@ export class MountService {
         const volsDir = "/Volumes";
         await fs.promises.access(volsDir, fs.constants.W_OK);
 
-        // Try to clean up a stale/orphaned mount from a previous session
-        const tryUnmount = (cmd: string, args: string[]) =>
-          new Promise<void>((resolve) => {
-            const proc = spawn(cmd, args, { stdio: "ignore" });
-            proc.on("close", () => resolve());
-            proc.on("error", () => resolve());
-            setTimeout(resolve, 2000);
-          });
-        await tryUnmount("umount", [volumesPath]);
-        await tryUnmount("diskutil", ["unmount", "force", volumesPath]);
-        await new Promise((r) => setTimeout(r, 500)); // Brief wait for FS to settle
+        // Try to clean up a stale/orphaned mount from a previous session.
+        await this.bestEffortUnmountPath(volumesPath);
+        await sleep(500); // Brief wait for FS to settle
 
         const stat = await fs.promises.stat(volumesPath).catch(() => null);
         if (stat) {
@@ -456,6 +512,11 @@ export class MountService {
       this.mountPoint = path.join(options.cacheBaseDir, "Mount");
       await fs.promises.mkdir(this.mountPoint, { recursive: true });
     }
+
+    // Failed rclone daemon attempts can leave a stale FUSE mount attached to the
+    // fallback path, which makes the next retry fail immediately.
+    await this.bestEffortUnmountPath(this.mountPoint);
+    await sleep(300);
 
     const resourcesDir =
       options.resourcesDir ??
@@ -540,6 +601,7 @@ export class MountService {
       let stderr = "";
       proc.stderr?.on("data", (d) => { stderr += d.toString(); });
       let rcloneExitedWithError = false;
+      let exitError: Error | null = null;
       let settled = false;
 
       const finishResolve = (): void => {
@@ -563,8 +625,13 @@ export class MountService {
         if (code !== 0 && code !== null && !signal) {
           rcloneExitedWithError = true;
           const errMsg = parseRcloneError(logFile, stderr, code);
+          exitError = new Error(errMsg);
           desktopLog.error("[mount] rclone exited with error", { code, errMsg, logFile });
-          finishReject(new Error(errMsg));
+          if (settled) {
+            void this.cleanupInactiveMount(`rclone exited after mount appeared active: ${errMsg}`);
+            return;
+          }
+          finishReject(exitError);
         }
       });
 
@@ -579,15 +646,25 @@ export class MountService {
       };
 
       const verifyAndResolve = async (): Promise<void> => {
-        for (let attempt = 0; attempt < 20; attempt++) {
-          if (await this.isMountActuallyActive()) {
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const mountActive = await this.isMountActuallyActive();
+          if (mountActive && await this.isMountBrowseable()) {
+            await sleep(1200);
+            if (rcloneExitedWithError || settled) {
+              if (!settled) finishReject(exitError ?? new Error("Mount failed immediately after startup."));
+              return;
+            }
+            if (!(await this.isMountActuallyActive()) || !(await this.isMountBrowseable())) {
+              await sleep(300);
+              continue;
+            }
             mountReady();
             // Start predictive prefetch (folder open, clip click, grading, idle)
             this.prefetch?.start(this.mountPoint);
             return;
           }
           if (rcloneExitedWithError || settled) return;
-          await new Promise((resolveAttempt) => setTimeout(resolveAttempt, 500));
+          await sleep(500);
         }
 
         desktopLog.error("[mount] mount did not become active", { mountPoint: this.mountPoint, logFile });

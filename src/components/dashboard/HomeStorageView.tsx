@@ -330,8 +330,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   }, []);
 
   const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[]) => {
-    setSelectedFileIds(new Set(fileIds));
-    setSelectedFolderKeys(new Set(folderKeys));
+    setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
+    setSelectedFolderKeys((prev) => new Set([...prev, ...folderKeys]));
   }, []);
 
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);

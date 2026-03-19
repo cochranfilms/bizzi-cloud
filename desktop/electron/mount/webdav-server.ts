@@ -16,6 +16,8 @@ const pipelineP = promisify(pipeline);
 /** PUT bodies above this threshold are buffered to temp file first to avoid
  * "Controller is already closed" race when rclone/NLE disconnects mid-upload. */
 const LARGE_PUT_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
+const API_FETCH_TIMEOUT_MS = 30000; // Production API can be slow (cold start, Firestore)
+const API_FETCH_RETRY_DELAY_MS = 1500;
 
 export interface MountMetadataEntry {
   id: string;
@@ -59,6 +61,23 @@ function toRFC3986(pathSegment: string): string {
     .split("/")
     .map((p) => encodeURIComponent(p).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`))
     .join("/");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFetchError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes("fetch failed") ||
+    message.includes("Connect Timeout Error") ||
+    message.includes("UND_ERR_CONNECT_TIMEOUT") ||
+    message.includes("ECONNRESET") ||
+    message.includes("ETIMEDOUT") ||
+    message.includes("timed out") ||
+    message.includes("aborted")
+  );
 }
 
 /** MIME type from content_type or filename extension. Finder uses this for correct file icons. */
@@ -205,6 +224,34 @@ export class WebDAVServer {
         resolve();
       }
     });
+  }
+
+  private async fetchApi(input: string, init: RequestInit, options?: { timeoutMs?: number; retries?: number }): Promise<Response> {
+    const timeoutMs = options?.timeoutMs ?? API_FETCH_TIMEOUT_MS;
+    const retries = options?.retries ?? 1;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error(`API request timed out after ${timeoutMs}ms`)), timeoutMs);
+      try {
+        const response = await fetch(input, {
+          ...init,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        return response;
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+        const shouldRetry = attempt < retries && isRetryableFetchError(err);
+        if (!shouldRetry) throw err;
+        desktopLog.warn("[WebDAV] API fetch retrying", { url: input, attempt: attempt + 1, timeoutMs, err });
+        await sleep(API_FETCH_RETRY_DELAY_MS);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   private async getToken(req: http.IncomingMessage): Promise<string | null> {
@@ -715,14 +762,14 @@ export class WebDAVServer {
     driveId: string | null,
     paths: string[]
   ): Promise<{ entries: MountMetadataEntry[] }> {
-    const res = await fetch(`${this.options.apiBaseUrl}/api/mount/metadata`, {
+    const res = await this.fetchApi(`${this.options.apiBaseUrl}/api/mount/metadata`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ drive_id: driveId, paths }),
-    });
+    }, { timeoutMs: API_FETCH_TIMEOUT_MS, retries: 3 });
 
     if (!res.ok) {
       throw new Error(`Metadata API error: ${res.status}`);

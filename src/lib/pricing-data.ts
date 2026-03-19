@@ -107,7 +107,7 @@ export const plans = [
   },
   {
     id: "production",
-    name: "Enterprise Creative",
+    name: "We Bizzi",
     tagline: "Agency & Production",
     storage: "10 TB",
     price: 70,
@@ -192,7 +192,7 @@ export const PLAN_LABELS: Record<string, string> = {
   solo: "Bizzi Creator",
   indie: "Bizzi Pro",
   video: "Bizzi Network",
-  production: "Enterprise Creative",
+  production: "We Bizzi",
 };
 
 export const ADDON_LABELS: Record<string, string> = {

@@ -8,7 +8,6 @@ import {
   Home,
   FolderOpen,
   Share2,
-  FileQuestion,
   Trash2,
   Send,
   Search,
@@ -35,7 +34,6 @@ const navItems: Array<{
   { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
-  { href: "/dashboard/requests", label: "File requests", icon: FileQuestion },
   { href: "/dashboard/trash", label: "Deleted files", icon: Trash2 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

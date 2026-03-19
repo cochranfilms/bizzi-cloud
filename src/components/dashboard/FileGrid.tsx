@@ -448,9 +448,14 @@ export default function FileGrid() {
     setSelectedFolderKeys(new Set());
   }, []);
 
-  const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[]) => {
-    setSelectedFileIds(new Set(fileIds));
-    setSelectedFolderKeys(new Set(folderKeys));
+  const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[], additive?: boolean) => {
+    if (additive) {
+      setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
+      setSelectedFolderKeys((prev) => new Set([...prev, ...folderKeys]));
+    } else {
+      setSelectedFileIds(new Set(fileIds));
+      setSelectedFolderKeys(new Set(folderKeys));
+    }
   }, []);
 
   const currentDriveId = currentDrive?.id;
@@ -555,7 +560,7 @@ export default function FileGrid() {
         return;
       }
       lastSelectionRef.current = { files: filesKey, folders: foldersKey };
-      setSelectionFromDrag(fileIds, folderKeys);
+      setSelectionFromDrag(fileIds, folderKeys, true);
     };
 
     if (selectionUpdateRef.current !== null) {
@@ -807,13 +812,12 @@ export default function FileGrid() {
   return (
     <div
       ref={gridSectionRef}
-      className={`mx-auto max-w-6xl ${dragState?.isActive ? "select-none" : ""}`}
+      className={`mx-auto flex max-w-6xl flex-1 min-h-0 flex-col ${dragState?.isActive ? "select-none" : ""}`}
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
-      <div className="min-w-0 space-y-6">
-        {/* Top filter toolbar + active filters */}
-        <div className="sticky top-16 z-30 -mx-2 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/95">
+      {/* Filter section — fixed at top, does not scroll */}
+      <div className="shrink-0 -mx-2 mb-4 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/95 z-30">
           <FileFiltersToolbar
             searchValue={(filterState.search as string) ?? ""}
             onSearchChange={handleSearchChange}
@@ -848,6 +852,8 @@ export default function FileGrid() {
           insideFolder={!!currentDrive}
         />
 
+      {/* Scrollable content — filter stays fixed above */}
+      <div className="min-h-0 flex-1 overflow-auto space-y-6" data-scroll-container>
       {/* Breadcrumb when inside a drive */}
       {currentDrive && (
         <div className="flex items-center gap-2 text-sm">

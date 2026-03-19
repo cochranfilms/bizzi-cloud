@@ -4,7 +4,6 @@ import Hero from "@/components/Hero";
 import TrustedByBrands from "@/components/landing/TrustedByBrands";
 import KeyFeaturesPills from "@/components/landing/KeyFeaturesPills";
 import HowItWorks from "@/components/landing/HowItWorks";
-import FeatureComparison from "@/components/landing/FeatureComparison";
 import PricingSection from "@/components/PricingSection";
 import TrustedByTeams from "@/components/landing/TrustedByTeams";
 import FAQ from "@/components/landing/FAQ";
@@ -28,7 +27,6 @@ export default function Home() {
         <div id="features">
           <HowItWorks />
         </div>
-        <FeatureComparison />
         <Suspense fallback={null}>
           <PricingSection />
         </Suspense>

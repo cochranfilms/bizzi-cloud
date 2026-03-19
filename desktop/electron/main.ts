@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { tmpdir } from "os";
 import * as path from "path";
 import Store from "electron-store";
 import { FileProviderService } from "./file-provider/file-provider-service";
@@ -125,9 +126,9 @@ ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: s
     process.resourcesPath && !process.defaultApp
       ? process.resourcesPath
       : app.getAppPath();
-  // fallbackMountDir: use Caches (local disk) when /Volumes inaccessible; Application Support can be on iCloud/FUSE
-  const cacheDir = path.join(app.getPath("userData"), "..", "Caches", "bizzi-cloud-desktop");
-  const fallbackMountDir = path.join(cacheDir, "BizziCloudMount");
+  // fallbackMountDir: use tmpdir (always on local boot volume) when /Volumes inaccessible.
+  // ~/Library/Caches can be on iCloud/FUSE, causing "mount point is itself on a macFUSE volume".
+  const fallbackMountDir = path.join(tmpdir(), "bizzi-cloud-desktop", "BizziCloudMount");
   await mountService.mount({
     apiBaseUrl: baseUrl,
     cacheBaseDir,
