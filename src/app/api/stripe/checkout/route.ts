@@ -139,7 +139,6 @@ export async function POST(request: Request) {
       payment_method_types: ["card"],
       line_items: lineItems,
       customer_email: email ?? undefined,
-      customer_creation: isGuestCheckout ? "always" : undefined,
       success_url: successUrl,
       cancel_url: `${baseUrl}/?checkout=cancelled`,
       metadata,

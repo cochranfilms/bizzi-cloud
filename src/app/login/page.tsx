@@ -19,9 +19,7 @@ function LoginForm() {
   const redirectTo = searchParams.get("redirect") || "/dashboard";
   const mode = searchParams.get("mode");
   const emailParam = searchParams.get("email") ?? "";
-  // Allow signup only for invite flow (redirect contains /invite/join)
-  const allowSignup = redirectTo.includes("/invite/join");
-  const [isSignUp, setIsSignUp] = useState(allowSignup && mode === "signup");
+  const [isSignUp, setIsSignUp] = useState(mode === "signup");
   const [email, setEmail] = useState(emailParam);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -154,12 +152,17 @@ function LoginForm() {
             ) : (
               <>
                 Don&apos;t have an account?{" "}
-                <Link
-                  href="/#pricing"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setError(null);
+                    setMessage(null);
+                  }}
                   className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
                 >
-                  Choose a plan to get started
-                </Link>
+                  Create a free account
+                </button>
               </>
             )}
           </p>
