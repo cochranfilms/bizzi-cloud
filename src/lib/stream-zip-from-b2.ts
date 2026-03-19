@@ -44,9 +44,9 @@ export function createZipStream(
         const { body: objBody } = await getObject(object_key);
         const nodeStream =
           typeof (objBody as { getReader?: unknown }).getReader === "function"
-            ? Readable.fromWeb(objBody as ReadableStream)
+            ? Readable.fromWeb(objBody as any)
             : (objBody as NodeJS.ReadableStream);
-        archive.append(nodeStream as NodeJS.ReadableStream, { name });
+        archive.append(nodeStream as any, { name });
       }
       await archive.finalize();
     } catch (err) {
