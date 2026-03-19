@@ -12,8 +12,10 @@ import {
   Check,
   Loader2,
   Film,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
@@ -231,6 +233,29 @@ export default function GalleryProofingPage() {
   const favoritedAssetIds = new Set(favorites.flatMap((f) => f.asset_ids));
   const commentedAssetIds = new Set(comments.map((c) => c.asset_id));
 
+  const favoritedDownloadItems = assets
+    .filter(
+      (a) =>
+        favoritedAssetIds.has(a.id) &&
+        a.object_key &&
+        (a.media_type === "image" ||
+          a.media_type === "video" ||
+          IMAGE_EXT.test(a.name) ||
+          VIDEO_EXT.test(a.name))
+    )
+    .map((a) => ({ object_key: a.object_key!, name: a.name }));
+
+  const {
+    download: downloadFavorites,
+    isLoading: isDownloadingFavorites,
+    error: downloadError,
+  } = useGalleryBulkDownload({ galleryId: id, user, password: null });
+
+  const handleDownloadFavorites = () => {
+    if (favoritedDownloadItems.length === 0) return;
+    downloadFavorites(favoritedDownloadItems, "selected");
+  };
+
   const filteredAssets =
     filter === "favorited"
       ? assets.filter((a) => favoritedAssetIds.has(a.id))
@@ -307,7 +332,30 @@ export default function GalleryProofingPage() {
                   </>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={handleDownloadFavorites}
+                disabled={favoritedDownloadItems.length === 0 || isDownloadingFavorites}
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50 dark:border-neutral-700 dark:bg-bizzi-blue dark:hover:bg-bizzi-cyan"
+              >
+                {isDownloadingFavorites ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Downloading…
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Download Favorited Photos
+                  </>
+                )}
+              </button>
             </div>
+            {downloadError && (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {downloadError}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">

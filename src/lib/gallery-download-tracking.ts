@@ -42,6 +42,41 @@ export async function checkAndIncrementDownloadCount(
   return result;
 }
 
+/** Bulk download: check and increment by count files. */
+export async function checkAndIncrementDownloadCountBulk(
+  db: Firestore,
+  galleryId: string,
+  clientId: string,
+  limit: number,
+  count: number
+): Promise<{ allowed: boolean; used: number; remaining: number }> {
+  if (count <= 0) return { allowed: true, used: 0, remaining: limit };
+  const docId = `${galleryId}_${clientId}`;
+  const ref = db.collection("gallery_download_counts").doc(docId);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists ? (snap.data()?.count as number) ?? 0 : 0;
+    const after = current + count;
+
+    if (current >= limit) {
+      return { allowed: false, used: current, remaining: 0 };
+    }
+    if (after > limit) {
+      return { allowed: false, used: current, remaining: Math.max(0, limit - current) };
+    }
+
+    tx.set(ref, {
+      count: after,
+      updated_at: new Date(),
+    });
+
+    return { allowed: true, used: after, remaining: limit - after };
+  });
+
+  return result;
+}
+
 export async function getDownloadCount(
   db: Firestore,
   galleryId: string,

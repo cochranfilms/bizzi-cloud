@@ -18,6 +18,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 import { getCoverObjectPosition } from "@/lib/cover-position";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
@@ -790,7 +791,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [previewAsset, setPreviewAsset] = useState<GalleryAsset | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadingAll, setDownloadingAll] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedFavorites, setSelectedFavorites] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -928,6 +928,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     setLoading(true);
     fetchGallery(passwordInput);
   };
+
+  const {
+    download: bulkDownload,
+    isLoading: bulkDownloading,
+    error: bulkDownloadError,
+  } = useGalleryBulkDownload({
+    galleryId,
+    user: user ?? null,
+    password: password || null,
+    onComplete: fetchDownloadStatus,
+  });
 
   const getAuthToken = useCallback(
     async () => (user ? user.getIdToken() : null),
@@ -1236,40 +1247,25 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const handleDownloadAll = useCallback(async () => {
     if (!data) return;
-    setDownloadingAll(true);
-    setDownloadError(null);
     const downloadable = data.assets.filter(
       (a) =>
         a.media_type === "image" ||
         /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic|mp4|webm|mov|m4v)$/i.test(a.name)
     );
-    for (let i = 0; i < downloadable.length; i++) {
-      try {
-        await downloadOne(downloadable[i], "full");
-      } catch (err) {
-        setDownloadError(err instanceof Error ? err.message : "Download failed");
-        break;
-      }
-    }
-    setDownloadingAll(false);
-  }, [data, downloadOne]);
+    if (downloadable.length === 0) return;
+    setDownloadError(null);
+    const items = downloadable.map((a) => ({ object_key: a.object_key, name: a.name }));
+    await bulkDownload(items, "full");
+  }, [data, bulkDownload]);
 
   const handleDownloadSelected = useCallback(async () => {
     if (!data) return;
     const toDownload = data.assets.filter((a) => selectedFavorites.has(a.id));
     if (toDownload.length === 0) return;
-    setDownloadingAll(true);
     setDownloadError(null);
-    for (let i = 0; i < toDownload.length; i++) {
-      try {
-        await downloadOne(toDownload[i], "selected");
-      } catch (err) {
-        setDownloadError(err instanceof Error ? err.message : "Download failed");
-        break;
-      }
-    }
-    setDownloadingAll(false);
-  }, [data, selectedFavorites, downloadOne]);
+    const items = toDownload.map((a) => ({ object_key: a.object_key, name: a.name }));
+    await bulkDownload(items, "selected");
+  }, [data, selectedFavorites, bulkDownload]);
 
   useEffect(() => {
     if (hasEnteredGallery) setMusicPlaying(false);
@@ -1760,18 +1756,18 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               <button
                 type="button"
                 onClick={handleDownloadAll}
-                disabled={downloadingAll}
+                disabled={bulkDownloading}
                 className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: accent, color: accent }}
               >
                 <Download className="h-4 w-4" />
-                {downloadingAll ? "Downloading…" : "Download all"}
+                {bulkDownloading ? "Downloading…" : "Download all"}
               </button>
             )}
           </div>
-          {downloadError && (
+          {(bulkDownloadError ?? downloadError) && (
             <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
-              {downloadError}
+              {bulkDownloadError ?? downloadError}
               {gallery.invoice_url && gallery.invoice_status !== "paid" && (
                 <a
                   href={gallery.invoice_url}
@@ -2012,11 +2008,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               <button
                 type="button"
                 onClick={handleDownloadSelected}
-                disabled={downloadingAll}
+                disabled={bulkDownloading}
                 className="flex items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
-                {downloadingAll ? "Downloading…" : "Download selected"}
+                {bulkDownloading ? "Downloading…" : "Download selected"}
               </button>
             )}
             <button

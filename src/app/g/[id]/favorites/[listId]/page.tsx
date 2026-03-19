@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
@@ -49,8 +50,17 @@ export default function FavoritesListPage() {
   const [password, setPassword] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadingAll, setDownloadingAll] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const {
+    download: bulkDownload,
+    isLoading: bulkDownloading,
+    error: bulkDownloadError,
+  } = useGalleryBulkDownload({
+    galleryId,
+    user: user ?? null,
+    password: password || null,
+  });
 
   const fetchFavoritesList = useCallback(
     async (pwd?: string) => {
@@ -157,18 +167,11 @@ export default function FavoritesListPage() {
         a.media_type === "image" ||
         /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic|mp4|webm|mov|m4v)$/i.test(a.name)
     );
-    setDownloadingAll(true);
+    if (downloadable.length === 0) return;
     setDownloadError(null);
-    for (let i = 0; i < downloadable.length; i++) {
-      try {
-        await downloadOne(downloadable[i]);
-      } catch (err) {
-        setDownloadError(err instanceof Error ? err.message : "Download failed");
-        break;
-      }
-    }
-    setDownloadingAll(false);
-  }, [data, downloadOne]);
+    const items = downloadable.map((a) => ({ object_key: a.object_key, name: a.name }));
+    await bulkDownload(items, "selected");
+  }, [data, bulkDownload]);
 
   if (loading && !data) {
     return (
@@ -300,17 +303,17 @@ export default function FavoritesListPage() {
             <button
               type="button"
               onClick={handleDownloadAll}
-              disabled={downloadingAll}
+              disabled={bulkDownloading}
               className="mt-4 flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: accent }}
             >
               <Download className="h-4 w-4" />
-              {downloadingAll ? "Downloading…" : "Download all"}
+              {bulkDownloading ? "Downloading…" : "Download all"}
             </button>
           )}
-          {downloadError && (
+          {(bulkDownloadError ?? downloadError) && (
             <div className="mx-auto mt-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
-              {downloadError}
+              {bulkDownloadError ?? downloadError}
             </div>
           )}
         </div>

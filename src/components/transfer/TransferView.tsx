@@ -8,6 +8,7 @@ import Image from "next/image";
 import type { Transfer, TransferFile } from "@/types/transfer";
 import TransferPreviewModal from "./TransferPreviewModal";
 import { useTransferThumbnail } from "@/hooks/useTransferThumbnail";
+import { useTransferBulkDownload } from "@/hooks/useTransferBulkDownload";
 import { useTransferVideoThumbnail } from "@/hooks/useTransferVideoThumbnail";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
@@ -132,9 +133,22 @@ export default function TransferView({ slug }: TransferViewProps) {
   const [error, setError] = useState("");
   const [fetching, setFetching] = useState(false);
   const [previewFile, setPreviewFile] = useState<TransferFile | null>(null);
-  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const localTransfer = getTransferBySlug(slug);
+  const transfer = localTransfer;
+  const {
+    download: bulkDownload,
+    isLoading: bulkDownloading,
+  } = useTransferBulkDownload({
+    slug,
+    password: transfer?.hasPassword && unlocked ? password : null,
+    onComplete: transfer
+      ? () => {
+          const downloadable = transfer.files.filter((f) => f.objectKey ?? f.backupFileId);
+          downloadable.forEach((f) => recordDownload(slug, f.id));
+        }
+      : undefined,
+  });
 
   const fetchTransfer = useCallback(async () => {
     const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -181,7 +195,6 @@ export default function TransferView({ slug }: TransferViewProps) {
     fetchTransfer().finally(() => setFetching(false));
   }, [localTransfer, fetchTransfer]);
 
-  const transfer = localTransfer;
   const needsPassword = !!transfer?.hasPassword && !unlocked;
 
   useEffect(() => {
@@ -260,18 +273,13 @@ export default function TransferView({ slug }: TransferViewProps) {
   const handleDownloadAll = useCallback(async () => {
     if (!transfer || transfer.permission === "view") return;
     const downloadable = transfer.files.filter((f) => f.objectKey ?? f.backupFileId);
-    if (downloadingAll || downloadable.length === 0) return;
-    setDownloadingAll(true);
-    for (let i = 0; i < downloadable.length; i++) {
-      try {
-        await downloadOne(downloadable[i]);
-      } catch (err) {
-        console.error("Download error:", err);
-        break;
-      }
-    }
-    setDownloadingAll(false);
-  }, [transfer, downloadingAll, downloadOne]);
+    if (downloadable.length === 0) return;
+    const items = downloadable.map((f) => ({
+      object_key: f.objectKey ?? f.backupFileId!,
+      name: f.name,
+    }));
+    await bulkDownload(items);
+  }, [transfer, bulkDownload]);
 
   if (!transfer) {
     return (
@@ -419,11 +427,11 @@ export default function TransferView({ slug }: TransferViewProps) {
             <button
               type="button"
               onClick={handleDownloadAll}
-              disabled={downloadingAll}
+              disabled={bulkDownloading}
               className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-6 py-3 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
             >
               <Download className="h-4 w-4" />
-              {downloadingAll ? "Downloading…" : "Download ALL"}
+              {bulkDownloading ? "Downloading…" : "Download ALL"}
             </button>
           </div>
         )}
