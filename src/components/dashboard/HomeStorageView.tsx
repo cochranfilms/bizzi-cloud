@@ -844,9 +844,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
-        <SectionTitle as="h3" className="mb-3 text-xs font-medium">
-          Your folders
-        </SectionTitle>
         {loading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Loading…

@@ -15,7 +15,7 @@ export default function SectionTitle({
 }) {
   return (
     <Tag
-      className={`inline-block rounded-lg px-3 py-1.5 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 ${className}`}
+      className={`block w-full rounded-lg px-4 py-2 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 ${className}`}
       style={{ backgroundColor: "var(--bizzi-section-title-bg)" }}
     >
       {children}
