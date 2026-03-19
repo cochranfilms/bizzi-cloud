@@ -4,6 +4,7 @@ import { useState, createContext, useContext } from "react";
 import { PanelRight, HardDrive } from "lucide-react";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
@@ -28,11 +29,15 @@ export default function DesktopShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mountPanelOpen, setMountPanelOpen] = useState(true);
   const { hasEditor } = useSubscription();
+  const { cssVariables } = useDashboardAppearance();
 
   return (
     <UppyUploadProvider>
     <RightPanelContext.Provider value={{ rightPanelOpen, setRightPanelOpen }}>
-      <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
+      <div
+        className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
+        style={cssVariables}
+      >
         <DesktopTopNavbar
           mountPanelOpen={hasEditor ? mountPanelOpen : false}
           onMountPanelToggle={hasEditor ? () => setMountPanelOpen((o) => !o) : undefined}

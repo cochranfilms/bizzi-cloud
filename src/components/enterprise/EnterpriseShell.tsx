@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PanelRight } from "lucide-react";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import EnterpriseNavbar from "./EnterpriseNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
@@ -17,8 +18,9 @@ export default function EnterpriseShell({
   children: React.ReactNode;
 }) {
   const { org } = useEnterprise();
+  const { cssVariables } = useDashboardAppearance();
   const theme = org?.theme ?? "bizzi";
-  const vars = getThemeVariables(theme);
+  const orgVars = getThemeVariables(theme);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   return (
@@ -26,7 +28,7 @@ export default function EnterpriseShell({
     <div
       className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
       data-org-theme={theme}
-      style={vars as React.CSSProperties}
+      style={{ ...orgVars, ...cssVariables } as React.CSSProperties}
     >
       <EnterpriseNavbar />
       <PendingInvitesBanner />

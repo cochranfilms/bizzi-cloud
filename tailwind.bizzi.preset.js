@@ -6,8 +6,8 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        "bizzi-blue": "#00BFFF",
-        "bizzi-cyan": "#00D4FF",
+        "bizzi-blue": "var(--bizzi-accent, #00BFFF)",
+        "bizzi-cyan": "var(--bizzi-accent-hover, #00D4FF)",
         "bizzi-navy": "#1e3a5f",
         "bizzi-sky": "#e8f4fc",
       },

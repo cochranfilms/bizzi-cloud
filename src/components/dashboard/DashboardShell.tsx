@@ -2,6 +2,7 @@
 
 import { useState, createContext, useContext } from "react";
 import { PanelRight } from "lucide-react";
+import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
@@ -24,13 +25,17 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const { cssVariables } = useDashboardAppearance();
 
   return (
     <UppyUploadProvider>
       <RightPanelContext.Provider
         value={{ rightPanelOpen, setRightPanelOpen }}
       >
-        <div className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950">
+        <div
+          className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
+          style={cssVariables}
+        >
         {/* Top navbar - main nav */}
         <TopNavbar />
         <PendingInvitesBanner />

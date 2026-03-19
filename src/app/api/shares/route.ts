@@ -232,16 +232,24 @@ export async function GET(request: Request) {
       if (ownerId && !sharerInfo) {
         const ownerSnap = await db.collection("profiles").doc(ownerId).get();
         const profileData = ownerSnap.exists ? ownerSnap.data() : null;
-        const sharedBy =
-          (profileData?.displayName as string) || (profileData?.email as string) || "Unknown";
-        const sharedByEmail = (profileData?.email as string) || "";
+        let authEmail: string | undefined;
         let sharedByPhotoUrl: string | null = null;
         try {
           const authUser = await adminAuth.getUser(ownerId);
+          authEmail = authUser.email ?? undefined;
           sharedByPhotoUrl = authUser.photoURL ?? null;
         } catch {
           // User may be deleted or disabled
         }
+        const sharedByEmail =
+          (profileData?.email as string)?.trim() ||
+          (authEmail?.trim()) ||
+          "";
+        const sharedBy =
+          (profileData?.displayName as string)?.trim() ||
+          sharedByEmail ||
+          authEmail ||
+          "Unknown";
         sharerInfo = { sharedBy, sharedByEmail, sharedByPhotoUrl };
         sharerCache.set(ownerId, sharerInfo);
       }

@@ -93,14 +93,9 @@ export default function SharerCard({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-neutral-900 dark:text-white">
-            {displayName}
+          <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+            {email || displayName}
           </p>
-          {email && (
-            <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-              {email}
-            </p>
-          )}
         </div>
       </div>
 

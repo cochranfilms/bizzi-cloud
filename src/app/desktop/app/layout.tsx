@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
 import { BackupProvider } from "@/context/BackupContext";
 import { CurrentFolderProvider } from "@/context/CurrentFolderContext";
 import { EnterpriseProvider } from "@/context/EnterpriseContext";
@@ -22,10 +23,12 @@ export default function DesktopAppLayout({
             <DesktopAuthGuard>
               <SubscriptionProvider>
                 <ConfirmProvider>
-                  <Suspense fallback={null}>
-                    <CheckoutSuccessSync />
-                  </Suspense>
-                  <DesktopShell>{children}</DesktopShell>
+                  <DashboardAppearanceProvider>
+                    <Suspense fallback={null}>
+                      <CheckoutSuccessSync />
+                    </Suspense>
+                    <DesktopShell>{children}</DesktopShell>
+                  </DashboardAppearanceProvider>
                 </ConfirmProvider>
               </SubscriptionProvider>
             </DesktopAuthGuard>
