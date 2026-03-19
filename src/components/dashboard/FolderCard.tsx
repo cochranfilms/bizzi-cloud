@@ -1,7 +1,8 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import { useCallback, useState } from "react";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -185,8 +186,8 @@ export default function FolderCard({
           >
             {item.customIcon ? (
               <item.customIcon className="h-8 w-8" />
-            ) : item.name === "Storage" ? (
-              <Cloud className="h-8 w-8" />
+            ) : item.name === "Storage" || item.name === "Uploads" ? (
+              <BizzicloudStorageIcon className="h-8 w-8" />
             ) : (
               <Folder className="h-8 w-8" />
             )}
