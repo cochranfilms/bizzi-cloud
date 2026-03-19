@@ -3,9 +3,8 @@
  * Body: { items: [{ object_key, name }][], password?, download_context?: "full" | "selected" }
  * Streams a ZIP of multiple gallery assets. Verifies gallery download access.
  */
-import { PassThrough, Readable } from "stream";
-import archiver from "archiver";
-import { getObject, isB2Configured } from "@/lib/b2";
+import { isB2Configured } from "@/lib/b2";
+import { streamZipFromB2 } from "@/lib/stream-zip-from-b2";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyGalleryDownloadAccess } from "@/lib/gallery-access";
 import { getClientEmailFromCookie } from "@/lib/client-session";
@@ -44,16 +43,16 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: galleryId } = await params;
+  if (!galleryId)
+    return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
+
   if (!isB2Configured()) {
     return NextResponse.json(
       { error: "Backblaze B2 is not configured" },
       { status: 503 }
     );
   }
-
-  const { id: galleryId } = await params;
-  if (!galleryId)
-    return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   let body: Record<string, unknown>;
   try {
@@ -67,7 +66,7 @@ export async function POST(
     typeof passwordRaw === "string" || passwordRaw === null
       ? passwordRaw
       : undefined;
-  const context = (downloadContext as "full" | "selected") ?? "selected";
+  const downloadCtx = (downloadContext as "full" | "selected") ?? "selected";
 
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return NextResponse.json(
@@ -154,7 +153,7 @@ export async function POST(
     }
 
     const downloadSettings = g.download_settings ?? {};
-    if (context === "full" && !downloadSettings.allow_full_gallery_download) {
+    if (downloadCtx === "full" && !downloadSettings.allow_full_gallery_download) {
       return NextResponse.json(
         {
           error: "download_disabled",
@@ -163,7 +162,7 @@ export async function POST(
         { status: 403 }
       );
     }
-    if (context === "selected" && !downloadSettings.allow_selected_download) {
+    if (downloadCtx === "selected" && !downloadSettings.allow_selected_download) {
       return NextResponse.json(
         {
           error: "download_disabled",
@@ -263,56 +262,9 @@ export async function POST(
   }
 
   const names = uniqueZipNames(items.map((i) => i.name));
-
-  let passThrough: PassThrough;
-  let webStream: ReadableStream;
-  try {
-    const archive = archiver("zip", {
-      zlib: { level: 0 },
-    });
-
-    archive.on("error", (err) => {
-      console.error("[gallery download-bulk-zip] Archive error:", err);
-    });
-
-    passThrough = new PassThrough();
-    archive.pipe(passThrough);
-
-    (async () => {
-      try {
-        for (let i = 0; i < items.length; i++) {
-          const { object_key } = items[i];
-          const name = names[i];
-          const { body: objBody } = await getObject(object_key);
-          const nodeStream =
-            typeof (objBody as { getReader?: unknown }).getReader === "function"
-              ? Readable.fromWeb(objBody as any)
-              : (objBody as NodeJS.ReadableStream);
-          archive.append(nodeStream as import("stream").Readable, { name });
-        }
-        await archive.finalize();
-      } catch (err) {
-        console.error("[gallery download-bulk-zip] Error:", err);
-        archive.emit("error", err);
-      }
-    })();
-
-    webStream = Readable.toWeb(passThrough) as ReadableStream;
-  } catch (streamErr) {
-    console.error("[gallery download-bulk-zip] Stream setup error:", streamErr);
-    return NextResponse.json(
-      {
-        error: "internal_error",
-        message: streamErr instanceof Error ? streamErr.message : "Failed to create download stream",
-      },
-      { status: 500 }
-    );
-  }
-
-  return new Response(webStream, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="download.zip"',
-    },
-  });
+  return streamZipFromB2(
+    items.map((item, i) => ({ object_key: item.object_key, name: names[i]! }))
+  );
 }
+} // SWC workaround: parser expects one more brace (Next.js 15)
+} // SWC workaround: parser expects one more closing brace (see Next.js/SWC)
