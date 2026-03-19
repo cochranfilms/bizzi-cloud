@@ -262,8 +262,16 @@ export async function POST(
   }
 
   const names = uniqueZipNames(items.map((i) => i.name));
-  return streamZipFromB2(
-    items.map((item, i) => ({ object_key: item.object_key, name: names[i]! }))
-  );
+  try {
+    return streamZipFromB2(
+      items.map((item, i) => ({ object_key: item.object_key, name: names[i]! }))
+    );
+  } catch (err) {
+    console.error("[download-bulk-zip] streamZipFromB2 error:", err);
+    return NextResponse.json(
+      { error: "zip_error", message: err instanceof Error ? err.message : "Failed to create download" },
+      { status: 500 }
+    );
+  }
 }
 } // SWC workaround: Next.js 15 parser expects one extra closing brace

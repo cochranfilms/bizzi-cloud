@@ -60,8 +60,9 @@ export function useGalleryBulkDownload({
         };
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        if (items.length === 1) {
-          const [item] = items;
+        // Bulk zip returns "No response" on Vercel—use individual downloads for all files
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
           const res = await fetch(
             `${baseUrl}/api/galleries/${galleryId}/download`,
             {
@@ -84,16 +85,19 @@ export function useGalleryBulkDownload({
             throw new Error(json.message ?? json.error ?? "Download failed");
           }
           const url = json.url;
-          if (!url) throw new Error("No download URL returned");
-          const fullUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
+          if (!url) continue;
+          const fullUrl = url!.startsWith("/") ? `${baseUrl}${url}` : url;
           const a = document.createElement("a");
           a.href = fullUrl;
           a.download = item.name;
           a.rel = "noopener noreferrer";
           a.click();
-          onComplete?.();
-          return;
+          if (i < items.length - 1) {
+            await new Promise((r) => setTimeout(r, 300));
+          }
         }
+        onComplete?.();
+        return;
 
         let lastErr: unknown;
         for (let attempt = 1; attempt <= BULK_ZIP_RETRIES; attempt++) {
@@ -122,18 +126,19 @@ export function useGalleryBulkDownload({
               (err as Error & { status?: number }).status = res.status;
               throw err;
             }
-            const body = res.body;
-            if (!body) throw new Error("No response body");
+            const resBody = res.body;
+            if (!resBody) throw new Error("No response body");
 
             const streamSaver = (await import("streamsaver")).default;
             const fileStream = streamSaver.createWriteStream("download.zip");
-            await body.pipeTo(fileStream);
+            await resBody!.pipeTo(fileStream);
             onComplete?.();
             return;
           } catch (e) {
             lastErr = e;
+            const is500 = e instanceof Error && (e as Error & { status?: number }).status === 500;
             if (attempt >= BULK_ZIP_RETRIES) break;
-            if (!isNetworkError(e)) throw e;
+            if (!isNetworkError(e) && !is500) throw e;
             await new Promise((r) => setTimeout(r, BULK_ZIP_RETRY_DELAY_MS));
           }
         }
@@ -164,7 +169,7 @@ export function useGalleryBulkDownload({
               throw new Error(json.message ?? json.error ?? "Download failed");
             const url = json.url;
             if (!url) continue;
-            const fullUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
+            const fullUrl = url!.startsWith("/") ? `${baseUrl}${url!}` : url!;
             const a = document.createElement("a");
             a.href = fullUrl;
             a.download = item.name;
@@ -214,7 +219,7 @@ export function useGalleryBulkDownload({
                 );
               const url = json.url;
               if (!url) continue;
-              const fullUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
+              const fullUrl = (url ?? "").startsWith("/") ? `${baseUrl}${url}` : (url ?? "");
               const a = document.createElement("a");
               a.href = fullUrl;
               a.download = item.name;
