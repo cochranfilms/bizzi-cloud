@@ -29,8 +29,7 @@ export default function BizzicloudStorageIcon({ className }: { className?: strin
       />
       <path
         d="M 146 84 L 114 136 L 134 136 L 120 176 L 158 118 L 136 118 Z"
-        fill="currentColor"
-        fillOpacity="0.9"
+        fill="var(--bizzi-accent)"
       />
     </svg>
   );
