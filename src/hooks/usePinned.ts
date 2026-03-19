@@ -14,7 +14,7 @@ import {
   deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { getFirebaseAuth, getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
+import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
@@ -26,19 +26,18 @@ const FETCH_PINNED_FILES_LIMIT = 30;
 export async function fetchPinnedFiles(ids: string[]): Promise<RecentFile[]> {
   if (!isFirebaseConfigured() || ids.length === 0) return [];
   const db = getFirebaseFirestore();
-  const auth = (await import("@/lib/firebase/client")).getFirebaseAuth();
-  const uid = auth.currentUser?.uid;
-  if (!uid) return [];
   const limited = ids.slice(0, FETCH_PINNED_FILES_LIMIT);
   const driveMap = new Map<string, string>();
   const allFiles: RecentFile[] = [];
 
+  // Query by documentId only (no userId filter) - matches fetchFilesByIds in useCloudFiles.
+  // Pinned IDs come from user's pinned_items, so we only fetch their own files.
+  // A userId+documentId composite index may not exist; documentId-only works without one.
   for (let i = 0; i < limited.length; i += DOC_ID_IN_QUERY_LIMIT) {
     const chunk = limited.slice(i, i + DOC_ID_IN_QUERY_LIMIT);
     const filesSnap = await getDocs(
       query(
         collection(db, "backup_files"),
-        where("userId", "==", uid),
         where(documentId(), "in", chunk)
       )
     );

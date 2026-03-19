@@ -5,6 +5,7 @@ import { TransferProvider } from "@/context/TransferContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { siteConfig, SITE_URL } from "@/lib/seo";
+import CookieConsentBanner from "@/components/CookieConsentBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -78,7 +79,10 @@ export default function RootLayout({
       <body className="antialiased bg-white text-neutral-800 font-sans min-h-screen">
         <AuthProvider>
           <I18nProvider>
-            <TransferProvider>{children}</TransferProvider>
+            <TransferProvider>
+              {children}
+              <CookieConsentBanner />
+            </TransferProvider>
           </I18nProvider>
         </AuthProvider>
       </body>

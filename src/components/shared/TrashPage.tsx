@@ -661,7 +661,7 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                 <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Deleted folders
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
                   {deletedDrives.map((folder) => (
                     <div
                       key={folder.id}
@@ -694,7 +694,7 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                 <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Deleted files
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
                   {deletedFiles.map((file) => (
                     <div
                       key={file.id}

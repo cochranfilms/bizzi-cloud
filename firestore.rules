@@ -92,5 +92,8 @@ service cloud.firestore {
     match /file_share_recipients/{recId} {
       allow read, write: if false;
     }
+    match /audit_logs/{docId} {
+      allow read, write: if false;
+    }
   }
 }

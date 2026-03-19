@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
@@ -21,6 +21,9 @@ import {
   ExternalLink,
   Image as ImageIcon,
   HardDrive,
+  Shield,
+  Download,
+  Trash2,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import Image from "next/image";
@@ -693,6 +696,281 @@ function StorageSection() {
   );
 }
 
+function PrivacySection() {
+  const { user } = useAuth();
+  const [doNotSell, setDoNotSell] = useState(false);
+  const [analytics, setAnalytics] = useState(false);
+  const [functional, setFunctional] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const fetchPrivacy = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/account/privacy", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDoNotSell(data.do_not_sell_personal_info ?? false);
+        const cc = data.cookie_consent ?? {};
+        setAnalytics(cc.analytics ?? false);
+        setFunctional(cc.functional ?? false);
+      }
+    } catch {
+      // ignore
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchPrivacy();
+  }, [fetchPrivacy]);
+
+  const handleSavePrivacy = async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/account/privacy", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          do_not_sell_personal_info: doNotSell,
+          cookie_consent: { essential: true, analytics, functional },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      setSuccess("Privacy preferences saved.");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!user) return;
+    setExportLoading(true);
+    setError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/account/export", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bizzi-cloud-export-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSuccess("Data exported. Download started.");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || deleteConfirm !== "DELETE") return;
+    setDeleteLoading(true);
+    setError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirmation: "DELETE" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Deletion failed");
+      setDeleteModalOpen(false);
+      setDeleteConfirm("");
+      const { signOut } = await import("firebase/auth");
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      await signOut(getFirebaseAuth());
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Deletion failed");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const router = useRouter();
+
+  return (
+    <section
+      id="privacy"
+      className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+    >
+      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+        <Shield className="h-5 w-5 text-bizzi-blue" />
+        Privacy
+      </h2>
+      <div className="space-y-6">
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+            Do Not Sell My Personal Information (CCPA)
+          </h3>
+          <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+            Bizzi Cloud does not sell your data. California residents can opt out of any future sale or sharing.
+          </p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={doNotSell}
+              onChange={(e) => setDoNotSell(e.target.checked)}
+              className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+            />
+            <span className="text-sm">Opt out of sale/sharing of my personal information</span>
+          </label>
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+            Cookie preferences
+          </h3>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={true}
+                disabled
+                className="rounded border-neutral-300 text-bizzi-blue"
+              />
+              <span className="text-sm">Essential (required)</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={analytics}
+                onChange={(e) => setAnalytics(e.target.checked)}
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+              />
+              <span className="text-sm">Analytics</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={functional}
+                onChange={(e) => setFunctional(e.target.checked)}
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+              />
+              <span className="text-sm">Functional</span>
+            </label>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleSavePrivacy}
+            disabled={loading}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-70"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save preferences"}
+          </button>
+        </div>
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {success && (
+          <p className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+            <Check className="h-4 w-4" /> {success}
+          </p>
+        )}
+        <div className="border-t border-neutral-200 pt-6 dark:border-neutral-700">
+          <h3 className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+            Your data rights
+          </h3>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exportLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
+            >
+              {exportLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Download my data
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete my account
+            </button>
+          </div>
+        </div>
+      </div>
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              Delete account
+            </h3>
+            <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+              This will permanently delete your account and all your data. This cannot be undone.
+            </p>
+            <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+              Type <strong>DELETE</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              className="mt-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setDeleteConfirm("");
+                }}
+                className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading || deleteConfirm !== "DELETE"}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete account"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SubscriptionSection() {
   const { user } = useAuth();
   const router = useRouter();
@@ -971,19 +1249,35 @@ function SubscriptionSection() {
   );
 }
 
+function SettingsContent() {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("tab") === "privacy") {
+      document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [searchParams]);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+          <ProfileSection />
+          <StudioHomepageSection />
+          <AccountSection />
+          <StorageSection />
+          <PrivacySection />
+          <CreateOrganizationSection />
+          <SubscriptionSection />
+        </div>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <>
       <TopBar title="Settings" />
       <main className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <ProfileSection />
-          <StudioHomepageSection />
-          <AccountSection />
-          <StorageSection />
-          <CreateOrganizationSection />
-          <SubscriptionSection />
-        </div>
+        <Suspense fallback={null}>
+          <SettingsContent />
+        </Suspense>
       </main>
     </>
   );

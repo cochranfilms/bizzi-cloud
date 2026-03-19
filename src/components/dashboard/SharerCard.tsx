@@ -102,7 +102,7 @@ export default function SharerCard({
       {/* Shared items */}
       <div className="p-4">
         {viewMode === "grid" ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
               <SharedItemCard
                 key={item.key}

@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
+import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -336,7 +337,7 @@ export default function FavoritesListPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {assets.map((asset) => (
               <FavoritesAssetCard
                 key={asset.id}
@@ -374,6 +375,30 @@ function FavoritesAssetCard({
   const thumbRef = useRef<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
+
+  const fetchGalleryVideoStreamUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const params = new URLSearchParams({
+        object_key: asset.object_key,
+        name: asset.name,
+      });
+      if (password) params.set("password", password);
+      const t = await getAuthToken();
+      const headers: Record<string, string> = {};
+      if (t) headers.Authorization = `Bearer ${t}`;
+      const res = await fetch(
+        `/api/galleries/${galleryId}/video-stream-url?${params}`,
+        { headers }
+      );
+      if (!res.ok) return null;
+      const json = await res.json();
+      const url = json?.streamUrl;
+      if (!url) return null;
+      return url.startsWith("/") ? `${window.location.origin}${url}` : url;
+    } catch {
+      return null;
+    }
+  }, [galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
   useEffect(() => {
     if (!isImg && !isVid) return;
@@ -421,7 +446,14 @@ function FavoritesAssetCard({
   return (
     <div className="group relative overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
       <div className="aspect-square">
-        {thumbUrl ? (
+        {isVid ? (
+          <VideoScrubThumbnail
+            fetchStreamUrl={fetchGalleryVideoStreamUrl}
+            thumbnailUrl={thumbUrl}
+            showPlayIcon
+            className="h-full w-full"
+          />
+        ) : thumbUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={thumbUrl}
@@ -430,18 +462,7 @@ function FavoritesAssetCard({
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            {isVid ? (
-              <Film className="h-12 w-12 text-neutral-400" />
-            ) : (
-              <ImageIcon className="h-12 w-12 text-neutral-400" />
-            )}
-          </div>
-        )}
-        {isVid && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50">
-              <Play className="ml-1 h-7 w-7 fill-white text-white" />
-            </div>
+            <ImageIcon className="h-12 w-12 text-neutral-400" />
           </div>
         )}
       </div>

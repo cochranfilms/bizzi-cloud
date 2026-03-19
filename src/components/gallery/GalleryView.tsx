@@ -25,6 +25,7 @@ import { getCoverObjectPosition } from "@/lib/cover-position";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import type { HeroHeightPreset } from "@/lib/cover-constants";
 import ImageWithLUT from "./ImageWithLUT";
+import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 
 interface GalleryData {
   id: string;
@@ -594,6 +595,32 @@ function GalleryAssetCard({
   const isVid = isVideo(asset.name);
   const shouldAutoplayVideo = isVid && (isFeaturedVideo || isVideoGallery);
 
+  const fetchGalleryVideoStreamUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const params = new URLSearchParams({
+        object_key: asset.object_key,
+        name: asset.name,
+      });
+      if (password) params.set("password", password);
+      const headers: Record<string, string> = {};
+      if (getAuthToken) {
+        const t = await getAuthToken();
+        if (t) headers.Authorization = `Bearer ${t}`;
+      }
+      const res = await fetch(
+        `/api/galleries/${galleryId}/video-stream-url?${params}`,
+        { headers }
+      );
+      if (!res.ok) return null;
+      const json = await res.json();
+      const url = json?.streamUrl;
+      if (!url) return null;
+      return url.startsWith("/") ? `${window.location.origin}${url}` : url;
+    } catch {
+      return null;
+    }
+  }, [galleryId, asset.object_key, asset.name, password, getAuthToken]);
+
   // Fetch stream URL for autoplay thumbnail (featured or all videos in video gallery)
   useEffect(() => {
     if (!shouldAutoplayVideo) return;
@@ -699,8 +726,17 @@ function GalleryAssetCard({
               useNaturalAspect ? "h-auto" : "h-full"
             }`}
           />
+        ) : isVid ? (
+          <div className={`block w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}>
+            <VideoScrubThumbnail
+              fetchStreamUrl={fetchGalleryVideoStreamUrl}
+              thumbnailUrl={thumbUrl}
+              showPlayIcon
+              className={useNaturalAspect ? "aspect-[4/3]" : "h-full"}
+            />
+          </div>
         ) : thumbUrl ? (
-          lut?.enabled && lut?.storage_url && isImg && lutPreviewEnabled ? (
+          lut?.enabled && lut?.storage_url && lutPreviewEnabled ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
                 imageUrl={thumbUrl}
@@ -729,13 +765,6 @@ function GalleryAssetCard({
             ) : (
               <ImageIcon className="h-12 w-12 text-neutral-400" />
             )}
-          </div>
-        )}
-        {isVid && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50">
-              <Play className="ml-1 h-7 w-7 fill-white text-white" />
-            </div>
           </div>
         )}
         {!isVid && watermark?.enabled && watermark?.image_url && (
@@ -1958,7 +1987,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               gallery.layout === "cinematic"
                 ? "grid grid-cols-1 gap-4 sm:grid-cols-2"
                 : gallery.layout === "justified"
-                  ? "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
                   : "columns-2 gap-3 sm:columns-3 md:columns-4"
             }
           >

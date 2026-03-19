@@ -22,6 +22,7 @@ import {
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
+import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
 import { useInView } from "@/hooks/useInView";
 import { useAuth } from "@/context/AuthContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
@@ -44,6 +45,10 @@ function AddFileButton({
     enabled: !!file.objectKey && isVideo && isInView,
     isVideo,
   });
+  const isPdf = /\.pdf$/i.test(file.name) || file.contentType === "application/pdf";
+  const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
+    enabled: !!file.objectKey && isPdf && isInView,
+  });
 
   return (
     <button
@@ -56,11 +61,11 @@ function AddFileButton({
           : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
       }`}
     >
-      {(thumbnailUrl || videoThumbnailUrl) ? (
+      {(thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API or video frame capture */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, video frame, or PDF first page */}
           <img
-            src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+            src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
             alt=""
             className="h-full w-full object-cover"
           />
@@ -406,7 +411,7 @@ export default function GalleryDetailPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                 {assets.map((a) => {
                   const isImage = a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name);
                   const isVideo = a.media_type === "video" || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(a.name);

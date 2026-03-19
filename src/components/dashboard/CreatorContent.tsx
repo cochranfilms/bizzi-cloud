@@ -160,7 +160,7 @@ export default function CreatorContent() {
               <LoadingSpinner label={LOADING_COPY.files} />
             </div>
           ) : driveFiles.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {driveFiles.map((file) => (
                 <div key={file.id}>
                   <FileCard
@@ -187,7 +187,7 @@ export default function CreatorContent() {
             <LoadingSpinner label={LOADING_COPY.default} />
           </div>
         ) : folderItems.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {folderItems.map((item) => {
               const drive = creatorDrives.find((d) => d.id === item.driveId);
               return (

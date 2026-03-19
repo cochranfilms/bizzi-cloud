@@ -10,6 +10,7 @@ import TransferPreviewModal from "./TransferPreviewModal";
 import { useTransferThumbnail } from "@/hooks/useTransferThumbnail";
 import { useTransferBulkDownload } from "@/hooks/useTransferBulkDownload";
 import { useTransferVideoThumbnail } from "@/hooks/useTransferVideoThumbnail";
+import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
@@ -25,6 +26,7 @@ function TransferFileRow({
   slug,
   file,
   permission,
+  password,
   onRecordView,
   onPreview,
   onDownload,
@@ -32,6 +34,7 @@ function TransferFileRow({
   slug: string;
   file: TransferFile;
   permission: "view" | "downloadable";
+  password?: string | null;
   onRecordView: (fileId: string) => void;
   onPreview: (file: TransferFile) => void;
   onDownload: (fileId: string) => void;
@@ -42,6 +45,29 @@ function TransferFileRow({
   const isImage = isImageFile(file.name);
   const canPreview = !!file.objectKey;
   const hasThumbnail = (isImage && thumbnailUrl) || (isVideo && videoThumbnailUrl);
+
+  const fetchTransferVideoStreamUrl = useCallback(async (): Promise<string | null> => {
+    if (!file.objectKey) return null;
+    try {
+      const body: { object_key: string; password?: string } = { object_key: file.objectKey };
+      if (password) body.password = password;
+      const res = await fetch(
+        `/api/transfers/${encodeURIComponent(slug)}/video-stream-url`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as { streamUrl?: string };
+      const url = data?.streamUrl;
+      if (!url) return null;
+      return url.startsWith("/") ? `${window.location.origin}${url}` : url;
+    } catch {
+      return null;
+    }
+  }, [slug, file.objectKey, password]);
 
   return (
     <div
@@ -67,31 +93,22 @@ function TransferFileRow({
     >
       <div className="flex items-center gap-3">
         <div className="relative flex h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-          {hasThumbnail ? (
+          {isVideo ? (
+            <VideoScrubThumbnail
+              fetchStreamUrl={fetchTransferVideoStreamUrl}
+              thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
+              showPlayIcon
+              className="h-full w-full"
+            />
+          ) : hasThumbnail ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+                src={thumbnailUrl ?? ""}
                 alt=""
                 className="h-full w-full object-cover"
               />
-              {isVideo && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
-                    <Play className="ml-1 h-5 w-5 fill-white text-white" />
-                  </div>
-                </div>
-              )}
             </>
-          ) : isVideo ? (
-            <div className="relative flex h-full w-full items-center justify-center">
-              <Film className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
-                  <Play className="ml-1 h-5 w-5 fill-white text-white" />
-                </div>
-              </div>
-            </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <File className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />
@@ -414,6 +431,7 @@ export default function TransferView({ slug }: TransferViewProps) {
               slug={slug}
               file={file}
               permission={transfer.permission}
+              password={transfer.hasPassword && unlocked ? password : undefined}
               onRecordView={handleFileView}
               onPreview={setPreviewFile}
               onDownload={handleFileDownload}

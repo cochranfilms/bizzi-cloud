@@ -10,6 +10,7 @@ import { useShareThumbnail } from "@/hooks/useShareThumbnail";
 import { useShareVideoThumbnail } from "@/hooks/useShareVideoThumbnail";
 import { useInView } from "@/hooks/useInView";
 import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
+import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 
 interface ShareViewProps {
   token: string;
@@ -64,6 +65,31 @@ function ShareFileRow({
   const isImage = isImageFile(file.name);
   const canPreview = !!file.object_key;
 
+  const fetchShareVideoStreamUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (getAuthToken) {
+        const t = await getAuthToken();
+        if (t) headers.Authorization = `Bearer ${t}`;
+      }
+      const res = await fetch(
+        `/api/shares/${encodeURIComponent(shareToken)}/video-stream-url`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ object_key: file.object_key }),
+        }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as { streamUrl?: string };
+      const url = data?.streamUrl;
+      if (!url) return null;
+      return url.startsWith("/") ? `${window.location.origin}${url}` : url;
+    } catch {
+      return null;
+    }
+  }, [shareToken, file.object_key, getAuthToken]);
+
   return (
     <div
       ref={rowRef}
@@ -88,31 +114,22 @@ function ShareFileRow({
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <div className="relative flex h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-          {(thumbnailUrl || videoThumbnailUrl) ? (
+          {isVideo ? (
+            <VideoScrubThumbnail
+              fetchStreamUrl={fetchShareVideoStreamUrl}
+              thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
+              showPlayIcon
+              className="h-full w-full"
+            />
+          ) : (thumbnailUrl || videoThumbnailUrl) ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+                src={thumbnailUrl ?? ""}
                 alt=""
                 className="h-full w-full object-cover"
               />
-              {isVideo && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
-                    <Play className="ml-1 h-5 w-5 fill-white text-white" />
-                  </div>
-                </div>
-              )}
             </>
-          ) : isVideo ? (
-            <div className="relative flex h-full w-full items-center justify-center">
-              <Film className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50">
-                  <Play className="ml-1 h-5 w-5 fill-white text-white" />
-                </div>
-              </div>
-            </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <File className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />

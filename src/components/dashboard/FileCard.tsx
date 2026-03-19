@@ -10,7 +10,10 @@ import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
+import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
+import { useBackupVideoStreamUrl } from "@/hooks/useVideoStreamUrl";
 import { useInView } from "@/hooks/useInView";
+import VideoScrubThumbnail from "./VideoScrubThumbnail";
 import ItemActionsMenu from "./ItemActionsMenu";
 import ShareModal from "./ShareModal";
 import RenameModal from "./RenameModal";
@@ -56,6 +59,9 @@ function isVideoFile(name: string) {
 function isImageFile(name: string) {
   return GALLERY_IMAGE_EXT.test(name);
 }
+function isPdfFile(name: string) {
+  return /\.pdf$/i.test(name);
+}
 
 export default function FileCard({
   file,
@@ -89,8 +95,13 @@ export default function FileCard({
     enabled: !!file.objectKey && isVideo && isInView,
     isVideo,
   });
+  const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isImage = isImageFile(file.name);
-  const hasLargePreview = isVideo || isImage;
+  const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
+  const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
+    enabled: !!file.objectKey && isPdf && isInView,
+  });
+  const hasLargePreview = isVideo || isImage || isPdf;
   const { confirm } = useConfirm();
   const hearts = useHearts(file.id);
 
@@ -210,21 +221,20 @@ export default function FileCard({
           hasLargePreview ? "w-full min-w-0 aspect-video" : "h-16 w-16"
         }`}
       >
-        {(thumbnailUrl || videoThumbnailUrl) ? (
+        {isVideo && file.objectKey ? (
+          <VideoScrubThumbnail
+            fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
+            thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
+            showPlayIcon
+          />
+        ) : (thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API or video frame capture */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, video frame, or PDF first page */}
             <img
-              src={videoThumbnailUrl ?? thumbnailUrl ?? ""}
+              src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
               alt=""
               className="h-full w-full object-cover"
             />
-            {isVideo && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
-                  <Play className="ml-1 h-6 w-6 fill-white text-white" />
-                </div>
-              </div>
-            )}
           </>
         ) : isVideo ? (
           <div className="relative flex h-full w-full items-center justify-center">

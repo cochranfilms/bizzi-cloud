@@ -173,6 +173,17 @@ function LoginForm() {
             Back to home
           </Link>
         </p>
+        <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+          <Link href="/privacy" className="hover:text-bizzi-blue hover:underline">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="hover:text-bizzi-blue hover:underline">
+            Terms of Service
+          </Link>
+          <Link href="/privacy#do-not-sell" className="hover:text-bizzi-blue hover:underline">
+            Don&apos;t Sell My Data
+          </Link>
+        </div>
 
         {!isFirebaseConfigured() && (
           <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/30">

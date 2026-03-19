@@ -17,6 +17,13 @@ const pagesLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "https://www.bizzibytestorage.com/", label: "Shop SSDs", external: true },
 ];
 
+const legalLinks: { href: string; label: string }[] = [
+  { href: "/privacy", label: "Privacy Policy" },
+  { href: "/terms", label: "Terms of Service" },
+  { href: "/privacy#cookies", label: "Cookie Policy" },
+  { href: "/privacy#do-not-sell", label: "Don't Sell My Data" },
+];
+
 const socialLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "https://facebook.com", label: "Facebook", external: true },
   { href: "https://linkedin.com", label: "LinkedIn", external: true },
@@ -35,7 +42,7 @@ export default function Footer() {
   return (
     <footer className="py-12 sm:py-16 px-4 sm:px-6 bg-white border-t border-neutral-200">
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 sm:gap-12">
           <div className="sm:col-span-2">
             <Link href="/" className="flex items-center gap-2 mb-4">
               <Image
@@ -65,6 +72,21 @@ export default function Footer() {
                 Subscribe
               </button>
             </form>
+          </div>
+          <div>
+            <h4 className="font-semibold text-bizzi-navy mb-4">Legal</h4>
+            <ul className="space-y-2">
+              {legalLinks.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-neutral-600 hover:text-bizzi-navy transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
           <div>
             <h4 className="font-semibold text-bizzi-navy mb-4">Company</h4>

@@ -32,7 +32,7 @@ export function LoadingSkeleton({
   if (variant === "grid") {
     return (
       <div
-        className={`grid gap-4 animate-pulse sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${className}`}
+        className={`grid gap-4 animate-pulse sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 ${className}`}
         aria-busy="true"
       >
         {Array.from({ length: count }).map((_, i) => (
