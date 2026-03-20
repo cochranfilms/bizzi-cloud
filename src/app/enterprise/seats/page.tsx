@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
-import { Users, UserPlus, Loader2, Trash2, HardDrive } from "lucide-react";
+import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useConfirm } from "@/hooks/useConfirm";
 import { ENTERPRISE_OWNER_STORAGE_BYTES } from "@/lib/enterprise-constants";
@@ -38,6 +38,13 @@ export default function EnterpriseSeatsPage() {
   const [updatingStorageId, setUpdatingStorageId] = useState<string | null>(null);
 
   const isAdmin = role === "admin";
+
+  const maxSeats = org?.max_seats;
+  const usedSeats = seats.length;
+  const hasSeatLimit = typeof maxSeats === "number" && maxSeats >= 1;
+  const seatsRemaining = hasSeatLimit ? Math.max(0, maxSeats - usedSeats) : null;
+  const atSeatLimit = hasSeatLimit && usedSeats >= maxSeats;
+  const needsSeatLimit = !hasSeatLimit;
 
   const STORAGE_OPTIONS = [
     { label: "100 GB", value: 100 * 1024 * 1024 * 1024 },
@@ -211,6 +218,59 @@ export default function EnterpriseSeatsPage() {
                 <UserPlus className="h-5 w-5 text-[var(--enterprise-primary)]" />
                 Invite member
               </h2>
+
+              {/* Seat status badge */}
+              <div className="mb-4">
+                {needsSeatLimit ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/50">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <p className="font-medium text-amber-900 dark:text-amber-100">
+                          Seat limit not set
+                        </p>
+                        <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-200">
+                          Contact sales to set your organization&apos;s seat limit before inviting members.
+                        </p>
+                        <a
+                          href="mailto:sales@bizzicloud.io"
+                          className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
+                        >
+                          Contact sales
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ) : atSeatLimit ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/50">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <p className="font-medium text-amber-900 dark:text-amber-100">
+                          All seats used ({usedSeats} of {maxSeats})
+                        </p>
+                        <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-200">
+                          Contact sales to add more seats before inviting new members.
+                        </p>
+                        <a
+                          href="mailto:sales@bizzicloud.io"
+                          className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
+                        >
+                          Contact sales to add more seats
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-[var(--enterprise-primary)]/10 px-3 py-1 text-sm font-medium text-[var(--enterprise-primary)]">
+                    {seatsRemaining === 1
+                      ? "1 seat remaining"
+                      : `${seatsRemaining} seats remaining`}
+                    {" "}({usedSeats} of {maxSeats} used)
+                  </span>
+                )}
+              </div>
+
               <form onSubmit={handleInvite} className="flex gap-2">
                 <input
                   type="email"
@@ -220,12 +280,12 @@ export default function EnterpriseSeatsPage() {
                     setInviteError(null);
                   }}
                   placeholder="colleague@company.com"
-                  disabled={inviting}
+                  disabled={inviting || atSeatLimit || needsSeatLimit}
                   className="flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--enterprise-primary)] disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                 />
                 <button
                   type="submit"
-                  disabled={inviting || !inviteEmail.trim()}
+                  disabled={inviting || !inviteEmail.trim() || atSeatLimit || needsSeatLimit}
                   className="flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {inviting ? (

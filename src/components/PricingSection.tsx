@@ -311,6 +311,91 @@ export default function PricingSection() {
           </div>
         )}
 
+        {/* Power Up comparison cards — informational only */}
+        <div className="mb-16">
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
+              Power up any plan
+            </h3>
+            <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
+              Add only what your workflow needs. Available on every paid plan
+              (except free).
+            </p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Stack freely. Cancel anytime. Add-ons billed monthly.
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-3">
+            {powerUpAddons.map((addon) => (
+              <div
+                key={addon.id}
+                className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900"
+              >
+                <div
+                  className="h-1 w-full shrink-0"
+                  style={{ backgroundColor: addon.accentColor }}
+                />
+                <div className="flex flex-grow flex-col p-6">
+                  <div className="flex items-center">
+                    <span
+                      className="text-xs font-semibold uppercase tracking-wider"
+                      style={{ color: addon.accentColor }}
+                    >
+                      {addon.tagline}
+                    </span>
+                  </div>
+                  <h4
+                    className="text-lg font-bold text-neutral-900 dark:text-white"
+                    style={{ color: addon.accentColor }}
+                  >
+                    {addon.name}
+                  </h4>
+                  <p className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                    {addon.description}
+                  </p>
+                  {addon.bundleNote && (
+                    <span
+                      className="mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+                      style={{
+                        backgroundColor: addon.accentColor + "15",
+                        color: addon.accentColor,
+                      }}
+                    >
+                      ✦ {addon.bundleNote}
+                    </span>
+                  )}
+                  <div className="mt-4 flex items-baseline gap-1">
+                    <span className="text-sm text-neutral-500">+</span>
+                    <span
+                      className="text-2xl font-bold"
+                      style={{ color: addon.accentColor }}
+                    >
+                      ${addon.price}
+                    </span>
+                    <span className="text-sm text-neutral-500">/mo</span>
+                  </div>
+                  <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                    {addon.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2">
+                        <span
+                          className="shrink-0"
+                          style={{ color: addon.accentColor }}
+                        >
+                          ✓
+                        </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                    Available on <strong>all paid plans</strong>
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Unified Plan Builder */}
         <div id="paid-plans" className="scroll-mt-24 mb-16 rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 dark:border-neutral-700 dark:bg-neutral-900">
           <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
@@ -382,12 +467,15 @@ export default function PricingSection() {
                     onClick={() => setSelectedAddonId(addon.id)}
                     className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all ${
                       selectedAddonId === addon.id
-                        ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                        ? "text-white"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
                     }`}
                     style={
                       selectedAddonId === addon.id
-                        ? { borderColor: addon.accentColor }
+                        ? {
+                            backgroundColor: addon.accentColor,
+                            borderColor: addon.accentColor,
+                          }
                         : undefined
                     }
                   >
@@ -512,7 +600,7 @@ export default function PricingSection() {
                 Enterprise
               </h3>
               <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-                Custom storage, unlimited seats, dedicated infrastructure and
+                Custom storage, dedicated infrastructure and
                 SLA-backed uptime. All add-ons included. Built for agencies,
                 post-houses and broadcast studios.
               </p>
@@ -529,10 +617,10 @@ export default function PricingSection() {
                 </div>
                 <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">
                   <span className="text-xl font-bold text-neutral-900 dark:text-white">
-                    Unlimited
+                    Custom
                   </span>
                   <span className="mt-0.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
-                    Team Seats
+                    Team Seats ($9/seat)
                   </span>
                 </div>
                 <div className="flex flex-col justify-center rounded-xl border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800">

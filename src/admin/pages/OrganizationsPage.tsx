@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
-import { Building2, Copy, Check, Loader2 } from "lucide-react";
+import { Building2, Copy, Check, Loader2, Users } from "lucide-react";
+
+export interface OrgListItem {
+  id: string;
+  name: string;
+  owner_email: string | null;
+  max_seats: number | null;
+  seat_count: number;
+  seats_accepted: number;
+  seats_pending: number;
+  storage_quota_bytes: number | null;
+  storage_used_bytes: number;
+  created_at: string | null;
+}
 
 export default function OrganizationsPage() {
   const { user } = useAuth();
+  const [organizations, setOrganizations] = useState<OrgListItem[]>([]);
+  const [orgsLoading, setOrgsLoading] = useState(true);
   const [orgName, setOrgName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [maxSeats, setMaxSeats] = useState("");
@@ -26,12 +41,17 @@ export default function OrganizationsPage() {
     setResult(null);
     const trimmedName = orgName.trim();
     const trimmedEmail = ownerEmail.trim().toLowerCase();
+    const seatsNum = maxSeats ? parseInt(maxSeats, 10) : 0;
     if (!trimmedName || trimmedName.length < 2) {
       setError("Organization name must be at least 2 characters");
       return;
     }
     if (!trimmedEmail || !trimmedEmail.includes("@")) {
       setError("Valid owner email is required");
+      return;
+    }
+    if (!seatsNum || seatsNum < 1) {
+      setError("Max seats is required (minimum 1)");
       return;
     }
     setCreating(true);
@@ -46,7 +66,7 @@ export default function OrganizationsPage() {
         body: JSON.stringify({
           org_name: trimmedName,
           owner_email: trimmedEmail,
-          max_seats: maxSeats ? parseInt(maxSeats, 10) : undefined,
+          max_seats: seatsNum,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -57,6 +77,7 @@ export default function OrganizationsPage() {
       setOrgName("");
       setOwnerEmail("");
       setMaxSeats("");
+      fetchOrganizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create");
     } finally {
@@ -71,12 +92,135 @@ export default function OrganizationsPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const fetchOrganizations = async () => {
+    if (!user) {
+      setOrgsLoading(false);
+      return;
+    }
+    setOrgsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/admin/enterprise/organizations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOrganizations(data.organizations ?? []);
+      }
+    } catch {
+      setOrganizations([]);
+    } finally {
+      setOrgsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrganizations();
+  }, [user]);
+
+  const formatStorage = (bytes: number) => {
+    if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`;
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+    return `${Math.round(bytes / 1024)} KB`;
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Organizations"
         subtitle="Create enterprise organizations and invite org owners. Copy the invite link and send it to the customer."
       />
+
+      {orgsLoading ? (
+        <div className="rounded-xl border border-neutral-200 bg-white p-12 dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="flex items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading organizations…
+          </div>
+        </div>
+      ) : organizations.length > 0 ? (
+        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="px-6 py-4 text-lg font-semibold text-neutral-900 dark:text-white border-b border-neutral-200 dark:border-neutral-700">
+            Organization accounts
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Organization
+                  </th>
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Owner
+                  </th>
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Seats
+                  </th>
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Storage
+                  </th>
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Created
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {organizations.map((org) => (
+                  <tr
+                    key={org.id}
+                    className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/30"
+                  >
+                    <td className="px-6 py-3 text-neutral-900 dark:text-white font-medium">
+                      {org.name}
+                    </td>
+                    <td className="px-6 py-3 text-neutral-600 dark:text-neutral-400">
+                      {org.owner_email ?? "—"}
+                    </td>
+                    <td className="px-6 py-3">
+                      <span className="font-medium text-neutral-900 dark:text-white">
+                        {org.seat_count}
+                      </span>
+                      {org.max_seats != null ? (
+                        <span className="text-neutral-500 dark:text-neutral-400">
+                          {" "}/ {org.max_seats} max
+                        </span>
+                      ) : (
+                        <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                          (limit not set — contact sales)
+                        </span>
+                      )}
+                      <span className="ml-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        ({org.seats_accepted} active, {org.seats_pending} pending)
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-neutral-600 dark:text-neutral-400">
+                      {formatStorage(org.storage_used_bytes)}
+                      {org.storage_quota_bytes != null && (
+                        <span className="text-neutral-500">
+                          {" "}/ {formatStorage(org.storage_quota_bytes)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-3 text-neutral-500 dark:text-neutral-400">
+                      {org.created_at
+                        ? new Date(org.created_at).toLocaleDateString()
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-6 py-8 text-center dark:border-neutral-700 dark:bg-neutral-800/30">
+          <Users className="mx-auto h-10 w-10 text-neutral-400 dark:text-neutral-500" />
+          <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+            No organizations yet. Create one below.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
@@ -122,7 +266,7 @@ export default function OrganizationsPage() {
               htmlFor="max_seats"
               className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
             >
-              Max seats (optional)
+              Max seats *
             </label>
             <input
               id="max_seats"
@@ -130,10 +274,14 @@ export default function OrganizationsPage() {
               min={1}
               value={maxSeats}
               onChange={(e) => setMaxSeats(e.target.value)}
-              placeholder="Unlimited"
+              placeholder="e.g. 5"
+              required
               className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
               disabled={creating}
             />
+            <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+              Seats are $9/seat/mo. Required for all organizations.
+            </p>
           </div>
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>

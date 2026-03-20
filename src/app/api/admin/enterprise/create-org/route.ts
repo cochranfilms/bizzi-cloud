@@ -55,9 +55,15 @@ export async function POST(request: Request) {
   }
 
   const maxSeats =
-    typeof body.max_seats === "number" && body.max_seats > 0
-      ? body.max_seats
-      : undefined;
+    typeof body.max_seats === "number" && body.max_seats >= 1
+      ? Math.floor(body.max_seats)
+      : null;
+  if (maxSeats === null) {
+    return NextResponse.json(
+      { error: "max_seats is required and must be at least 1" },
+      { status: 400 }
+    );
+  }
   const storageQuotaBytes =
     typeof body.storage_quota_bytes === "number" && body.storage_quota_bytes > 0
       ? body.storage_quota_bytes
@@ -80,7 +86,7 @@ export async function POST(request: Request) {
     storage_used_bytes: 0,
     created_at: now,
     created_by: authResult.uid,
-    max_seats: maxSeats ?? null,
+    max_seats: maxSeats,
   });
 
   await db.collection("organization_seats").doc(pendingId).set({

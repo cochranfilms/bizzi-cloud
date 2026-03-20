@@ -75,17 +75,21 @@ export async function POST(request: Request) {
 
   const orgSnap = await db.collection("organizations").doc(orgId).get();
   const org = orgSnap.data();
-  const maxSeats = org?.max_seats as number | undefined;
+  const maxSeats = org?.max_seats;
+
+  if (typeof maxSeats !== "number" || maxSeats < 1) {
+    return NextResponse.json(
+      { error: "Organization seat limit not set. Contact sales to add seats." },
+      { status: 400 }
+    );
+  }
 
   const existingSeatsSnap = await db
     .collection("organization_seats")
     .where("organization_id", "==", orgId)
     .get();
 
-  if (
-    typeof maxSeats === "number" &&
-    existingSeatsSnap.size >= maxSeats
-  ) {
+  if (existingSeatsSnap.size >= maxSeats) {
     return NextResponse.json(
       { error: "Organization has reached its seat limit" },
       { status: 400 }
