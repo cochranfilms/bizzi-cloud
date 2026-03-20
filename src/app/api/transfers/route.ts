@@ -1,5 +1,7 @@
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
+import { sendTransferEmailToClient } from "@/lib/emailjs";
+import { createTransferNotification } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
 function generateSlug(): string {
@@ -98,6 +100,50 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
   await db.collection("transfers").doc(slug).set(doc);
+
+  // Send email and create in-app notification when client email is provided
+  const clientEmailTrimmed = doc.clientEmail?.trim?.();
+  if (clientEmailTrimmed) {
+    let actorDisplayName: string;
+    try {
+      const profileSnap = await db.collection("profiles").doc(uid).get();
+      actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
+      if (!actorDisplayName) {
+        const authUser = await getAdminAuth().getUser(uid);
+        actorDisplayName =
+          (authUser.displayName as string)?.trim() ??
+          authUser.email?.split("@")[0] ??
+          "Someone";
+      } else {
+        actorDisplayName = actorDisplayName || "Someone";
+      }
+    } catch {
+      actorDisplayName = "Someone";
+    }
+
+    const fileNames = transferFiles.map((f) => f.name);
+
+    await Promise.all([
+      sendTransferEmailToClient({
+        clientEmail: clientEmailTrimmed,
+        sharedByUserId: uid,
+        actorDisplayName,
+        transferName: doc.name,
+        transferSlug: slug,
+        fileNames,
+      }),
+      createTransferNotification({
+        clientEmail: clientEmailTrimmed,
+        sharedByUserId: uid,
+        actorDisplayName,
+        transferSlug: slug,
+        transferName: doc.name,
+        fileCount: transferFiles.length,
+      }),
+    ]).catch((err) => {
+      console.error("[transfers] Email/notification error:", err);
+    });
+  }
 
   return NextResponse.json({
     slug,

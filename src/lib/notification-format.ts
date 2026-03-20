@@ -28,6 +28,11 @@ export function formatNotificationMessage(
         return `${actor} shared ${fileCount} files with you`;
       }
       return `${actor} shared ${folderName ?? fileName} with you`;
+    case "transfer_sent":
+      if (fileCount > 1) {
+        return `${actor} sent you a transfer with ${fileCount} files`;
+      }
+      return `${actor} sent you a transfer`;
     default:
       return "New activity";
   }

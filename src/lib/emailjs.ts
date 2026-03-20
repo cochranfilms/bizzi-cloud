@@ -1,8 +1,9 @@
 /**
- * EmailJS server-side helpers for enterprise invite flow and file sharing.
+ * EmailJS server-side helpers for enterprise invite flow, file sharing, and transfers.
  * Enterprise: EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID_INVOICE, EMAILJS_TEMPLATE_ID_SIGNUP,
  *   EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
  * Share emails: EMAILJS_TEMPLATE_ID_SHARE (optional; when set, share notifications send email)
+ * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -46,6 +47,26 @@ function getShareConfig(): {
   return {
     serviceId,
     templateShare,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getTransferConfig(): {
+  serviceId: string;
+  templateTransfer: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateTransfer = process.env.EMAILJS_TEMPLATE_ID_TRANSFER;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateTransfer || !publicKey) return null;
+  return {
+    serviceId,
+    templateTransfer,
     publicKey,
     privateKey: privateKey ?? undefined,
   };
@@ -189,6 +210,28 @@ export interface SendShareEmailsParams {
   shareToken: string;
 }
 
+export interface TransferEmailParams {
+  to_email: string;
+  sender_name: string;
+  /** Profile photo URL; fallback to avatar placeholder if empty */
+  sender_photo_url: string;
+  /** HTML list of file names (e.g. "<ul><li>file1.pdf</li></ul>") */
+  file_names_html: string;
+  /** Display title for the transfer (e.g. transfer name) */
+  transfer_title: string;
+  /** Full URL to the transfer */
+  transfer_url: string;
+}
+
+export interface SendTransferEmailParams {
+  clientEmail: string;
+  sharedByUserId: string;
+  actorDisplayName: string;
+  transferName: string;
+  transferSlug: string;
+  fileNames: string[];
+}
+
 /**
  * Send share notification emails to all invited recipients.
  * No-op if EMAILJS_TEMPLATE_ID_SHARE is not set.
@@ -247,6 +290,79 @@ export async function sendShareFileEmailsToInvitees(
   ).catch((err) => {
     console.error("[EmailJS] Share email batch error:", err);
   });
+}
+
+/**
+ * Send transfer notification email when a user creates a transfer and enters client email.
+ * Requires EMAILJS_TEMPLATE_ID_TRANSFER. If not set, does nothing (no-op).
+ * Template params: to_email, sender_name, sender_photo_url, file_names_html, transfer_title, transfer_url, logo_url
+ */
+export async function sendTransferEmail(params: TransferEmailParams): Promise<void> {
+  const config = getTransferConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateTransfer,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+/**
+ * Send transfer notification email to the client when a transfer is created.
+ * No-op if EMAILJS_TEMPLATE_ID_TRANSFER is not set or clientEmail is empty.
+ * Runs asynchronously; errors are logged but do not throw.
+ */
+export async function sendTransferEmailToClient(
+  params: SendTransferEmailParams
+): Promise<void> {
+  if (!getTransferConfig() || !params.clientEmail?.trim()) return;
+
+  let senderPhotoUrl: string;
+  try {
+    const authUser = await getAdminAuth().getUser(params.sharedByUserId);
+    senderPhotoUrl =
+      (authUser.photoURL as string) ??
+      getAvatarPlaceholder(params.actorDisplayName);
+  } catch {
+    senderPhotoUrl = getAvatarPlaceholder(params.actorDisplayName);
+  }
+
+  const fileNamesHtml =
+    params.fileNames.length > 0
+      ? `<ul>${params.fileNames
+          .slice(0, 20)
+          .map((n) => `<li>${escapeHtml(n)}</li>`)
+          .join("")}${
+          params.fileNames.length > 20
+            ? `<li><em>…and ${params.fileNames.length - 20} more</em></li>`
+            : ""
+        }</ul>`
+      : `<p><em>${escapeHtml(params.transferName)}</em></p>`;
+
+  const transferUrl = `${getShareBaseUrl()}/t/${params.transferSlug}`;
+
+  try {
+    await sendTransferEmail({
+      to_email: params.clientEmail.trim(),
+      sender_name: params.actorDisplayName,
+      sender_photo_url: senderPhotoUrl,
+      file_names_html: fileNamesHtml,
+      transfer_title: params.transferName,
+      transfer_url: transferUrl,
+    });
+  } catch (err) {
+    console.error("[EmailJS] Transfer email error:", err);
+  }
 }
 
 function escapeHtml(s: string): string {

@@ -27,6 +27,7 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
     case "file_hearted":
       return <Heart className="h-4 w-4 flex-shrink-0" />;
     case "file_shared":
+    case "transfer_sent":
       return <Share2 className="h-4 w-4 flex-shrink-0" />;
     default:
       return <FileText className="h-4 w-4 flex-shrink-0" />;
@@ -46,9 +47,11 @@ function NotificationLink({
     ? n.commentId
       ? `/dashboard?file=${n.fileId}#comment-${n.commentId}`
       : `/dashboard?file=${n.fileId}`
-    : n.shareId
-      ? `${shareBasePath}/shared/${n.shareId}`
-      : "/dashboard";
+    : n.type === "transfer_sent" && n.metadata?.transferSlug
+      ? `/t/${n.metadata.transferSlug}`
+      : n.shareId
+        ? `${shareBasePath}/shared/${n.shareId}`
+        : "/dashboard";
 
   return (
     <Link

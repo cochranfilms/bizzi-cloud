@@ -8,7 +8,8 @@ export type NotificationType =
   | "file_comment_edited"
   | "file_hearted"
   | "file_shared"
-  | "file_reply_created";
+  | "file_reply_created"
+  | "transfer_sent";
 
 export interface Notification {
   id: string;
@@ -27,6 +28,8 @@ export interface Notification {
     actorDisplayName?: string;
     fileCount?: number;
     parentCommentId?: string;
+    transferSlug?: string;
+    transferName?: string;
   } | null;
 }
 

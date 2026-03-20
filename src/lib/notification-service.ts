@@ -15,6 +15,8 @@ export interface CreateNotificationInput {
     actorDisplayName?: string;
     fileCount?: number;
     parentCommentId?: string;
+    transferSlug?: string;
+    transferName?: string;
   };
 }
 
@@ -145,4 +147,51 @@ export async function createShareNotifications(params: {
     });
   }
   await batch.commit();
+}
+
+/**
+ * Create in-app notification when a transfer is sent to a client who has a BizziCloud account.
+ * If the client email does not match a Firebase user, no notification is created (email is sent instead).
+ */
+export async function createTransferNotification(params: {
+  clientEmail: string;
+  sharedByUserId: string;
+  actorDisplayName: string;
+  transferSlug: string;
+  transferName: string;
+  fileCount: number;
+}): Promise<void> {
+  const { clientEmail, sharedByUserId, actorDisplayName, transferSlug, transferName, fileCount } =
+    params;
+
+  const emailTrimmed = clientEmail?.trim?.();
+  if (!emailTrimmed) return;
+
+  let recipientUid: string | null = null;
+  try {
+    const userRecord = await getAdminAuth().getUserByEmail(emailTrimmed.toLowerCase());
+    if (userRecord?.uid && userRecord.uid !== sharedByUserId) {
+      recipientUid = userRecord.uid;
+    }
+  } catch {
+    // User not found – no in-app notification, email only
+    return;
+  }
+
+  if (!recipientUid) return;
+
+  await createNotification({
+    recipientUserId: recipientUid,
+    actorUserId: sharedByUserId,
+    type: "transfer_sent",
+    fileId: null,
+    commentId: null,
+    shareId: null,
+    metadata: {
+      actorDisplayName,
+      transferSlug,
+      transferName,
+      fileCount: fileCount > 1 ? fileCount : undefined,
+    },
+  });
 }
