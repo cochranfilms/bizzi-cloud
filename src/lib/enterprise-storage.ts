@@ -50,43 +50,42 @@ export async function checkUserCanUpload(
   let usedBytes: number;
 
   if (orgId) {
-    const seatId = `${orgId}_${uid}`;
-    const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-    const seatData = seatSnap.data();
-    const isOwner = seatData?.role === "admin";
-    const seatQuota = seatData?.storage_quota_bytes;
-    quotaBytes = isOwner
-      ? ENTERPRISE_OWNER_STORAGE_BYTES
-      : typeof seatQuota === "number"
-        ? seatQuota
-        : seatQuota === null
-          ? null
-          : DEFAULT_SEAT_STORAGE_BYTES;
+    // Org storage is shared: quota and used are org-wide, not per-seat
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgData = orgSnap.data();
+    quotaBytes =
+      typeof orgData?.storage_quota_bytes === "number"
+        ? orgData.storage_quota_bytes
+        : null;
+
+    const orgFilesSnap = await db
+      .collection("backup_files")
+      .where("organization_id", "==", orgId)
+      .get();
+    usedBytes = 0;
+    for (const docSnap of orgFilesSnap.docs) {
+      const data = docSnap.data();
+      if (data.deleted_at) continue;
+      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    }
   } else {
     const profileQuota = profileData?.storage_quota_bytes;
     quotaBytes =
       typeof profileQuota === "number"
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
-  }
 
-  let filesQuery = db.collection("backup_files").where("userId", "==", uid);
-  if (orgId !== null) {
-    filesQuery = filesQuery.where("organization_id", "==", orgId) as ReturnType<
-      typeof db.collection
-    >;
-  } else {
+    let filesQuery = db.collection("backup_files").where("userId", "==", uid);
     filesQuery = filesQuery.where("organization_id", "==", null) as ReturnType<
       typeof db.collection
     >;
-  }
-  const filesSnap = await filesQuery.get();
-
-  usedBytes = 0;
-  for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (data.deleted_at) continue;
-    usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    const filesSnap = await filesQuery.get();
+    usedBytes = 0;
+    for (const docSnap of filesSnap.docs) {
+      const data = docSnap.data();
+      if (data.deleted_at) continue;
+      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    }
   }
 
   if (quotaBytes !== null && usedBytes + additionalBytes > quotaBytes) {
@@ -127,39 +126,40 @@ export async function getStorageStatus(
   let usedBytes: number;
 
   if (orgId) {
-    const seatId = `${orgId}_${uid}`;
-    const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-    const seatData = seatSnap.data();
-    const isOwner = seatData?.role === "admin";
-    const seatQuota = seatData?.storage_quota_bytes;
-    quotaBytes = isOwner
-      ? ENTERPRISE_OWNER_STORAGE_BYTES
-      : typeof seatQuota === "number"
-        ? seatQuota
-        : seatQuota === null
-          ? null
-          : DEFAULT_SEAT_STORAGE_BYTES;
+    // Org storage is shared: quota and used are org-wide, not per-seat
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgData = orgSnap.data();
+    quotaBytes =
+      typeof orgData?.storage_quota_bytes === "number"
+        ? orgData.storage_quota_bytes
+        : null;
+
+    const orgFilesSnap = await db
+      .collection("backup_files")
+      .where("organization_id", "==", orgId)
+      .get();
+    usedBytes = 0;
+    for (const docSnap of orgFilesSnap.docs) {
+      const data = docSnap.data();
+      if (data.deleted_at) continue;
+      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    }
   } else {
     const profileQuota = profileData?.storage_quota_bytes;
     quotaBytes =
       typeof profileQuota === "number"
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
-  }
 
-  let filesQuery = db.collection("backup_files").where("userId", "==", uid);
-  if (orgId) {
-    filesQuery = filesQuery.where("organization_id", "==", orgId) as typeof filesQuery;
-  } else {
+    let filesQuery = db.collection("backup_files").where("userId", "==", uid);
     filesQuery = filesQuery.where("organization_id", "==", null) as typeof filesQuery;
-  }
-  const filesSnap = await filesQuery.get();
-
-  usedBytes = 0;
-  for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (data.deleted_at) continue;
-    usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    const filesSnap = await filesQuery.get();
+    usedBytes = 0;
+    for (const docSnap of filesSnap.docs) {
+      const data = docSnap.data();
+      if (data.deleted_at) continue;
+      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    }
   }
 
   return {

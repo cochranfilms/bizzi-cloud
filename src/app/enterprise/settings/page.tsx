@@ -5,6 +5,7 @@ import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
+import { ADDON_LABELS } from "@/lib/pricing-data";
 import Image from "next/image";
 import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive, CreditCard, Zap } from "lucide-react";
 import Link from "next/link";
@@ -311,13 +312,19 @@ export default function EnterpriseSettingsPage() {
                 <Zap className="h-4 w-4 text-amber-500" />
                 Power ups
               </h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Editor and Gallery Suite are tied to your personal plan. Upgrade at{" "}
-                <Link href="/dashboard/settings" className="text-[var(--enterprise-primary)] hover:underline">
-                  Dashboard Settings
-                </Link>{" "}
-                to add these power ups.
-              </p>
+              {org?.addon_ids && org.addon_ids.length > 0 ? (
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Your package includes:{" "}
+                  {org.addon_ids
+                    .map((id) => ADDON_LABELS[id] ?? id)
+                    .join(", ")}
+                  . Contact sales to add or change power ups.
+                </p>
+              ) : (
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  No power ups in your package. Contact sales to add Editor, Gallery Suite, or Full Frame.
+                </p>
+              )}
             </div>
           </section>
 

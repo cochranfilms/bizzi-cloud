@@ -7,8 +7,6 @@ import { useAuth } from "@/context/AuthContext";
 import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useConfirm } from "@/hooks/useConfirm";
-import { ENTERPRISE_OWNER_STORAGE_BYTES } from "@/lib/enterprise-constants";
-
 interface Seat {
   id: string;
   organization_id: string;
@@ -61,9 +59,9 @@ export default function EnterpriseSeatsPage() {
     return `${gb.toFixed(0)} GB`;
   };
 
-  /** Admin/owner always shows 16GB; others show their seat quota from dropdown */
+  /** Admin/owner shows org total; others show their seat quota from dropdown */
   const getDisplayQuota = (seat: Seat) =>
-    seat.role === "admin" ? ENTERPRISE_OWNER_STORAGE_BYTES : (seat.storage_quota_bytes ?? null);
+    seat.role === "admin" ? (org?.storage_quota_bytes ?? null) : (seat.storage_quota_bytes ?? null);
 
   const handleStorageChange = async (seatId: string, newQuota: number | null) => {
     if (!isAdmin) return;
@@ -330,7 +328,7 @@ export default function EnterpriseSeatsPage() {
 
                   const isOwner = seat.role === "admin";
                   const displayQuotaBytes = isOwner
-                    ? ENTERPRISE_OWNER_STORAGE_BYTES
+                    ? (org?.storage_quota_bytes ?? null)
                     : (seat.storage_quota_bytes ?? null);
                   return (
                     <li
@@ -356,9 +354,14 @@ export default function EnterpriseSeatsPage() {
                         </p>
                         <p className="mt-0.5 flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                           <HardDrive className="h-3.5 w-3.5" />
-                          {(seat.storage_used_bytes ?? 0) / (1024 ** 3) >= 1024
-                            ? `${((seat.storage_used_bytes ?? 0) / (1024 ** 4)).toFixed(1)} TB`
-                            : `${((seat.storage_used_bytes ?? 0) / (1024 ** 3)).toFixed(1)} GB`}{" "}
+                          {(() => {
+                            const used = isOwner
+                              ? (org?.storage_used_bytes ?? seat.storage_used_bytes ?? 0)
+                              : (seat.storage_used_bytes ?? 0);
+                            return used / (1024 ** 3) >= 1024
+                              ? `${(used / (1024 ** 4)).toFixed(1)} TB`
+                              : `${(used / (1024 ** 3)).toFixed(1)} GB`;
+                          })()}{" "}
                           of {formatStorage(displayQuotaBytes)} used
                         </p>
                       </div>

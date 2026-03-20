@@ -41,28 +41,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const seatsSnap = await db
-    .collection("organization_seats")
+  const filesSnap = await db
+    .collection("backup_files")
     .where("organization_id", "==", orgId)
-    .where("status", "==", "active")
     .get();
 
-  const userIds = seatsSnap.docs
-    .map((d) => d.data().user_id as string)
-    .filter((id): id is string => !!id && id.length > 0);
-
   let totalBytes = 0;
-  for (const userId of userIds) {
-    const filesSnap = await db
-      .collection("backup_files")
-      .where("userId", "==", userId)
-      .get();
-
-    for (const docSnap of filesSnap.docs) {
-      const data = docSnap.data();
-      if (data.deleted_at) continue;
-      totalBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
-    }
+  for (const docSnap of filesSnap.docs) {
+    const data = docSnap.data();
+    if (data.deleted_at) continue;
+    totalBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
   }
 
   const orgRef = db.collection("organizations").doc(orgId);

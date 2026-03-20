@@ -34,9 +34,20 @@ export async function GET(request: Request) {
   const handle = data.public_slug ?? null;
   const planId = (data.plan_id as string) ?? "free";
   const hasPortalAccess = !!data.stripe_customer_id;
-  const addonIds = Array.isArray(data.addon_ids)
+  let addonIds = Array.isArray(data.addon_ids)
     ? (data.addon_ids as string[])
     : [];
+
+  // For enterprise users, use org addon_ids instead of personal
+  const orgId = data.organization_id as string | undefined;
+  if (orgId) {
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgData = orgSnap.data();
+    if (orgData && Array.isArray(orgData.addon_ids) && orgData.addon_ids.length > 0) {
+      addonIds = orgData.addon_ids as string[];
+    }
+  }
+
   const storageAddonId =
     typeof data.storage_addon_id === "string" ? data.storage_addon_id : null;
   return NextResponse.json({

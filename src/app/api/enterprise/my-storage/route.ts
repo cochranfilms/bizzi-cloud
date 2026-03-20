@@ -1,11 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
-import {
-  DEFAULT_SEAT_STORAGE_BYTES,
-  ENTERPRISE_OWNER_STORAGE_BYTES,
-} from "@/lib/enterprise-storage";
-
-/** GET - Current user's storage quota and used (for enterprise users). */
+/** GET - Current user's storage quota and used (for enterprise users). Org storage is shared. */
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ")
@@ -42,22 +37,15 @@ export async function GET(request: Request) {
     );
   }
 
-  const seatId = `${orgId}_${uid}`;
-  const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-  const seatData = seatSnap.data();
-  const isOwner = seatData?.role === "admin";
-  const seatQuota = seatData?.storage_quota_bytes;
-  const storageQuotaBytes = isOwner
-    ? ENTERPRISE_OWNER_STORAGE_BYTES
-    : typeof seatQuota === "number"
-      ? seatQuota
-      : seatQuota === null
-        ? null
-        : DEFAULT_SEAT_STORAGE_BYTES;
+  const orgSnap = await db.collection("organizations").doc(orgId).get();
+  const orgData = orgSnap.data();
+  const storageQuotaBytes =
+    typeof orgData?.storage_quota_bytes === "number"
+      ? orgData.storage_quota_bytes
+      : null;
 
   const filesSnap = await db
     .collection("backup_files")
-    .where("userId", "==", uid)
     .where("organization_id", "==", orgId)
     .get();
 

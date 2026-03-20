@@ -51,6 +51,7 @@ export async function GET(request: Request) {
         const filesSnap = await db
           .collection("backup_files")
           .where("userId", "==", userId)
+          .where("organization_id", "==", orgId)
           .get();
         for (const f of filesSnap.docs) {
           const data = f.data();

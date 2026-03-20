@@ -26,6 +26,9 @@
   <div class="invoice-box">
     <p><strong>{{storage_line}}</strong></p>
     <p><strong>{{seats_line}}</strong></p>
+    {{#addons_line}}
+    <p><strong>{{addons_line}}</strong></p>
+    {{/addons_line}}
     <p style="margin-top: 12px;"><strong>Total: {{amount}}</strong></p>
   </div>
   <p>

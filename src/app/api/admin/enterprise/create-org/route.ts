@@ -9,22 +9,16 @@ import { hashInviteToken } from "@/lib/invite-token";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { EnterpriseThemeId } from "@/types/enterprise";
-import {
-  ENTERPRISE_ORG_STORAGE_BYTES,
-  DEFAULT_SEAT_STORAGE_BYTES,
-} from "@/lib/enterprise-storage";
-import {
-  ENTERPRISE_SEAT_PRICE,
-  getStoragePriceMonthly,
-  getStorageTierByBytes,
-} from "@/lib/enterprise-pricing";
+import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { ENTERPRISE_SEAT_PRICE } from "@/lib/enterprise-pricing";
 import Stripe from "stripe";
 import { getStripeInstance } from "@/lib/stripe";
 import {
-  getOrCreateStripeEnterpriseStoragePrice,
   getOrCreateStripeSeatPrice,
-  type EnterpriseStorageTierId,
+  getOrCreateStripeAddonPrice,
 } from "@/lib/stripe-prices";
+import type { AddonId } from "@/lib/plan-constants";
+import { powerUpAddons } from "@/lib/pricing-data";
 import { sendInvoiceEmail } from "@/lib/emailjs";
 
 const TB = 1024 * 1024 * 1024 * 1024;
@@ -40,11 +34,15 @@ export async function POST(request: Request) {
   const authResult = await requireAdminAuth(request);
   if (authResult instanceof NextResponse) return authResult;
 
+  const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"] as const;
+  const MIN_STORAGE_TB = 20;
   let body: {
     org_name?: string;
     owner_email?: string;
     max_seats?: number;
-    storage_quota_bytes?: number;
+    storage_tb?: number;
+    storage_price_monthly?: number;
+    addon_ids?: string[];
   };
   try {
     body = await request.json();
@@ -86,10 +84,32 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const storageQuotaBytes =
-    typeof body.storage_quota_bytes === "number" && body.storage_quota_bytes > 0
-      ? body.storage_quota_bytes
-      : ENTERPRISE_ORG_STORAGE_BYTES;
+  const storageTb =
+    typeof body.storage_tb === "number" && body.storage_tb >= MIN_STORAGE_TB
+      ? Math.floor(body.storage_tb)
+      : MIN_STORAGE_TB;
+  const storagePriceMonthly =
+    typeof body.storage_price_monthly === "number" && body.storage_price_monthly > 0
+      ? body.storage_price_monthly
+      : 0;
+  if (storagePriceMonthly <= 0) {
+    return NextResponse.json(
+      { error: "storage_price_monthly is required and must be greater than 0" },
+      { status: 400 }
+    );
+  }
+  const storageQuotaBytes = storageTb * TB;
+
+  // Normalize addon_ids: if fullframe selected, use only fullframe; else use selected gallery/editor
+  const rawAddonIds = Array.isArray(body.addon_ids)
+    ? body.addon_ids.filter((id): id is AddonId =>
+        typeof id === "string" && VALID_ADDON_IDS.includes(id as (typeof VALID_ADDON_IDS)[number])
+      )
+    : [];
+  const addonIds: AddonId[] =
+    rawAddonIds.includes("fullframe")
+      ? ["fullframe"]
+      : (rawAddonIds as AddonId[]);
 
   const db = getAdminFirestore();
   const stripe = getStripeInstance();
@@ -118,20 +138,35 @@ export async function POST(request: Request) {
     stripeCustomerId = customer.id;
   }
 
-  // Get storage tier for Stripe price (must be a standard tier: 1tb, 5tb, 16tb)
-  const storageTier = getStorageTierByBytes(storageQuotaBytes);
-  const tierId = (storageTier?.id ?? "1tb") as EnterpriseStorageTierId;
-
-  const storagePriceId = await getOrCreateStripeEnterpriseStoragePrice(tierId);
   const seatPriceId = await getOrCreateStripeSeatPrice();
+
+  // Create custom Stripe price for this org's storage (TB + custom price)
+  const storageProduct = await stripe.products.create({
+    name: `Enterprise Storage ${storageTb} TB`,
+    metadata: { organization_id: orgId, storage_tb: String(storageTb) },
+  });
+  const storagePrice = await stripe.prices.create({
+    product: storageProduct.id,
+    unit_amount: Math.round(storagePriceMonthly * 100),
+    currency: "usd",
+    recurring: { interval: "month" },
+    metadata: { organization_id: orgId, storage_tb: String(storageTb) },
+  });
+
+  const subscriptionItems: Stripe.SubscriptionCreateParams.Item[] = [
+    { price: storagePrice.id, quantity: 1 },
+    { price: seatPriceId, quantity: maxSeats },
+  ];
+
+  for (const addonId of addonIds) {
+    const addonPriceId = await getOrCreateStripeAddonPrice(addonId);
+    subscriptionItems.push({ price: addonPriceId, quantity: 1 });
+  }
 
   // Create subscription (recurring monthly). First invoice is unpaid; we send payment link.
   const subscription = await stripe.subscriptions.create({
     customer: stripeCustomerId,
-    items: [
-      { price: storagePriceId, quantity: 1 },
-      { price: seatPriceId, quantity: maxSeats },
-    ],
+    items: subscriptionItems,
     payment_behavior: "default_incomplete",
     payment_settings: {
       save_default_payment_method: "on_subscription",
@@ -153,7 +188,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const storagePriceMonthly = getStoragePriceMonthly(storageQuotaBytes);
   const storageLabel = formatStorageLabel(storageQuotaBytes);
 
   // Create org and pending seat in Firestore (store invite_token for webhook fallback)
@@ -165,6 +199,7 @@ export async function POST(request: Request) {
     created_at: now,
     created_by: authResult.uid,
     max_seats: maxSeats,
+    addon_ids: addonIds.length > 0 ? addonIds : [],
     stripe_customer_id: stripeCustomerId,
     stripe_subscription_id: subscription.id,
     invite_token: inviteToken,
@@ -185,21 +220,34 @@ export async function POST(request: Request) {
   });
 
   // Send subscription payment email via EmailJS
-  const totalCents =
+  let totalCents =
     Math.round(storagePriceMonthly * 100) + maxSeats * ENTERPRISE_SEAT_PRICE * 100;
+  let addonsLine: string | undefined;
+  for (const addonId of addonIds) {
+    const addon = powerUpAddons.find((a) => a.id === addonId);
+    const price = addon?.price ?? 0;
+    totalCents += price * 100;
+    const label = addon?.name ?? addonId;
+    addonsLine = addonsLine
+      ? `${addonsLine}; ${label} — $${price.toFixed(2)}/mo`
+      : `${label} — $${price.toFixed(2)}/mo`;
+  }
   const amountStr = `$${(totalCents / 100).toFixed(2)}/mo`;
   const storageLine = `${storageLabel} Enterprise Storage — $${storagePriceMonthly.toFixed(2)}/mo`;
   const seatsLine = `${maxSeats} seat${maxSeats > 1 ? "s" : ""} × $${ENTERPRISE_SEAT_PRICE}/mo — $${(maxSeats * ENTERPRISE_SEAT_PRICE).toFixed(2)}/mo`;
 
+  const emailParams: Parameters<typeof sendInvoiceEmail>[0] = {
+    to_email: ownerEmail,
+    org_name: orgName,
+    invoice_url: hostedInvoiceUrl,
+    amount: amountStr,
+    storage_line: storageLine,
+    seats_line: seatsLine,
+  };
+  if (addonsLine) emailParams.addons_line = addonsLine;
+
   try {
-    await sendInvoiceEmail({
-      to_email: ownerEmail,
-      org_name: orgName,
-      invoice_url: hostedInvoiceUrl,
-      amount: amountStr,
-      storage_line: storageLine,
-      seats_line: seatsLine,
-    });
+    await sendInvoiceEmail(emailParams);
   } catch (err) {
     console.error("[create-org] EmailJS subscription email failed:", err);
     return NextResponse.json(

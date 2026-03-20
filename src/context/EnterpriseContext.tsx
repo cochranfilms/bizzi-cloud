@@ -29,6 +29,9 @@ function parseOrgFromFirestore(
   data: FirebaseFirestore.DocumentData
 ): Organization {
   const created_at = data.created_at?.toDate?.();
+  const addonIds = Array.isArray(data.addon_ids)
+    ? (data.addon_ids as string[])
+    : [];
   return {
     id,
     name: data.name ?? "",
@@ -37,6 +40,7 @@ function parseOrgFromFirestore(
     storage_quota_bytes: data.storage_quota_bytes ?? 0,
     storage_used_bytes: data.storage_used_bytes ?? 0,
     max_seats: data.max_seats ?? null,
+    addon_ids: addonIds.length > 0 ? addonIds : undefined,
     created_at: created_at ? created_at.toISOString() : "",
     created_by: data.created_by ?? "",
   };

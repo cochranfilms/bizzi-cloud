@@ -6,7 +6,7 @@ Source of truth for EmailJS templates. Copy content into EmailJS dashboard when 
 
 ## Templates
 
-- **invoice.html** — Sent when admin creates org (subscription payment link). Variables: `to_email`, `org_name`, `invoice_url`, `amount`, `storage_line`, `seats_line`, `logo_url`
+- **invoice.html** — Sent when admin creates org (subscription payment link). Variables: `to_email`, `org_name`, `invoice_url`, `amount`, `storage_line`, `seats_line`, `addons_line` (optional), `logo_url`
 - **signup-link.html** — Sent when first subscription payment is received (Stripe webhook `invoice.paid`). Variables: `to_email`, `org_name`, `invite_url`, `logo_url`
 
 ## Logo

@@ -22,6 +22,8 @@ export interface Organization {
   storage_quota_bytes: number;
   storage_used_bytes?: number;
   max_seats?: number | null;
+  /** Power-up add-ons included in the subscription (e.g. ["gallery"], ["editor"], ["fullframe"]) */
+  addon_ids?: string[];
   created_at: string;
   created_by: string;
 }

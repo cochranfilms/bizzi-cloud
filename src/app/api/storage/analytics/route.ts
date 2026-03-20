@@ -6,10 +6,6 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
-import {
-  DEFAULT_SEAT_STORAGE_BYTES,
-  ENTERPRISE_OWNER_STORAGE_BYTES,
-} from "@/lib/enterprise-storage";
 import { aggregateFiles } from "@/lib/analytics/aggregate";
 
 const isDevAuthBypass = () =>
@@ -63,18 +59,12 @@ export async function GET(request: Request) {
 
   let quotaBytes: number | null;
   if (orgId) {
-    const seatId = `${orgId}_${uid}`;
-    const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-    const seatData = seatSnap.data();
-    const isOwner = seatData?.role === "admin";
-    const seatQuota = seatData?.storage_quota_bytes;
-    quotaBytes = isOwner
-      ? ENTERPRISE_OWNER_STORAGE_BYTES
-      : typeof seatQuota === "number"
-        ? seatQuota
-        : seatQuota === null
-          ? null
-          : DEFAULT_SEAT_STORAGE_BYTES;
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgData = orgSnap.data();
+    quotaBytes =
+      typeof orgData?.storage_quota_bytes === "number"
+        ? orgData.storage_quota_bytes
+        : null;
   } else {
     const profileQuota = profileData?.storage_quota_bytes;
     quotaBytes =
@@ -83,11 +73,14 @@ export async function GET(request: Request) {
         : 50 * 1024 * 1024 * 1024;
   }
 
-  let filesQuery = db.collection("backup_files").where("userId", "==", uid);
+  let filesQuery;
   if (orgId) {
-    filesQuery = filesQuery.where("organization_id", "==", orgId) as typeof filesQuery;
+    filesQuery = db.collection("backup_files").where("organization_id", "==", orgId);
   } else {
-    filesQuery = filesQuery.where("organization_id", "==", null) as typeof filesQuery;
+    filesQuery = db
+      .collection("backup_files")
+      .where("userId", "==", uid)
+      .where("organization_id", "==", null);
   }
 
   const filesSnap = await filesQuery.get();

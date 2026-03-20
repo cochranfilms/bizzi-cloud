@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
 import { Building2, Loader2, Users, Send } from "lucide-react";
-import { ENTERPRISE_STORAGE_TIERS } from "@/lib/enterprise-pricing";
+const MIN_STORAGE_TB = 20;
+import { powerUpAddons } from "@/lib/pricing-data";
 
 export interface OrgListItem {
   id: string;
@@ -28,7 +29,9 @@ export default function OrganizationsPage() {
   const [orgName, setOrgName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
   const [maxSeats, setMaxSeats] = useState("1");
-  const [storageTierId, setStorageTierId] = useState("1tb");
+  const [storageTb, setStorageTb] = useState("20");
+  const [storagePriceMonthly, setStoragePriceMonthly] = useState("");
+  const [addonIds, setAddonIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -48,7 +51,8 @@ export default function OrganizationsPage() {
     const trimmedName = orgName.trim();
     const trimmedEmail = ownerEmail.trim().toLowerCase();
     const seatsNum = maxSeats ? parseInt(maxSeats, 10) : 0;
-    const tier = ENTERPRISE_STORAGE_TIERS.find((t) => t.id === storageTierId);
+    const tbNum = storageTb ? parseInt(storageTb, 10) : 0;
+    const priceNum = storagePriceMonthly ? parseFloat(storagePriceMonthly) : 0;
     if (!trimmedName || trimmedName.length < 2) {
       setError("Organization name must be at least 2 characters");
       return;
@@ -61,8 +65,12 @@ export default function OrganizationsPage() {
       setError("Seats is required (minimum 1)");
       return;
     }
-    if (!tier) {
-      setError("Storage tier is required");
+    if (!tbNum || tbNum < MIN_STORAGE_TB) {
+      setError(`Storage must be at least ${MIN_STORAGE_TB} TB`);
+      return;
+    }
+    if (!priceNum || priceNum <= 0) {
+      setError("Storage price is required and must be greater than 0");
       return;
     }
     setCreating(true);
@@ -78,7 +86,9 @@ export default function OrganizationsPage() {
           org_name: trimmedName,
           owner_email: trimmedEmail,
           max_seats: seatsNum,
-          storage_quota_bytes: tier.bytes,
+          storage_tb: tbNum,
+          storage_price_monthly: priceNum,
+          addon_ids: addonIds.length > 0 ? addonIds : undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -89,7 +99,9 @@ export default function OrganizationsPage() {
       setOrgName("");
       setOwnerEmail("");
       setMaxSeats("1");
-      setStorageTierId("1tb");
+      setStorageTb("20");
+      setStoragePriceMonthly("");
+      setAddonIds([]);
       fetchOrganizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create");
@@ -307,26 +319,63 @@ export default function OrganizationsPage() {
               disabled={creating}
             />
           </div>
-          <div>
-            <label
-              htmlFor="storage"
-              className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
-            >
-              Storage *
-            </label>
-            <select
-              id="storage"
-              value={storageTierId}
-              onChange={(e) => setStorageTierId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              disabled={creating}
-            >
-              {ENTERPRISE_STORAGE_TIERS.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label} — ${t.priceMonthly}/mo
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="storage_tb"
+                className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Storage (TB) *
+              </label>
+              <input
+                id="storage_tb"
+                type="number"
+                min={MIN_STORAGE_TB}
+                step={1}
+                value={storageTb}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const n = parseInt(v, 10);
+                  if (v === "" || (n >= MIN_STORAGE_TB && Number.isInteger(n))) {
+                    setStorageTb(v === "" ? "" : String(n));
+                  }
+                }}
+                onBlur={() => {
+                  const n = parseInt(storageTb, 10);
+                  if (!storageTb || isNaN(n) || n < MIN_STORAGE_TB) {
+                    setStorageTb(String(MIN_STORAGE_TB));
+                  }
+                }}
+                placeholder={`min ${MIN_STORAGE_TB}`}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                disabled={creating}
+              />
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                Minimum {MIN_STORAGE_TB} TB. Increments of 1.
+              </p>
+            </div>
+            <div>
+              <label
+                htmlFor="storage_price"
+                className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Storage price ($/mo) *
+              </label>
+              <input
+                id="storage_price"
+                type="number"
+                min={0}
+                step={0.01}
+                value={storagePriceMonthly}
+                onChange={(e) => setStoragePriceMonthly(e.target.value)}
+                placeholder="e.g. 150.00"
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                disabled={creating}
+              />
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                Custom price for this organization.
+              </p>
+            </div>
           </div>
           <div>
             <label
@@ -348,6 +397,45 @@ export default function OrganizationsPage() {
             />
             <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
               Seats are $9/seat/mo. Required for all organizations.
+            </p>
+          </div>
+          <div>
+            <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Power ups
+            </span>
+            <div className="space-y-2">
+              {powerUpAddons.map((addon) => (
+                <label
+                  key={addon.id}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <input
+                    type="checkbox"
+                    checked={addonIds.includes(addon.id)}
+                    onChange={(e) => {
+                      if (addon.id === "fullframe") {
+                        setAddonIds(e.target.checked ? ["fullframe"] : []);
+                      } else {
+                        const hasFullframe = addonIds.includes("fullframe");
+                        if (hasFullframe) return;
+                        setAddonIds((prev) =>
+                          e.target.checked
+                            ? [...prev, addon.id]
+                            : prev.filter((id) => id !== addon.id)
+                        );
+                      }
+                    }}
+                    disabled={creating || (addon.id !== "fullframe" && addonIds.includes("fullframe"))}
+                    className="rounded border-neutral-300 text-[var(--enterprise-primary)] focus:ring-[var(--enterprise-primary)]"
+                  />
+                  <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                    {addon.name} — ${addon.price}/mo
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+              Optional. Full Frame includes both Gallery Suite and Editor.
             </p>
           </div>
           {error && (

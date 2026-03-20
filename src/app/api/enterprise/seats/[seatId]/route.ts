@@ -1,10 +1,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import {
-  SEAT_STORAGE_TIERS,
-  ENTERPRISE_ORG_STORAGE_BYTES,
-} from "@/lib/enterprise-storage";
+import { SEAT_STORAGE_TIERS } from "@/lib/enterprise-storage";
 
 /** PATCH - Update a seat's storage allocation (admin only). */
 export async function PATCH(
@@ -100,14 +97,21 @@ export async function PATCH(
     if (typeof q === "number") allocatedTotal += q;
   }
 
+  const orgSnap = await db.collection("organizations").doc(orgId).get();
+  const orgQuota =
+    typeof orgSnap.data()?.storage_quota_bytes === "number"
+      ? orgSnap.data()!.storage_quota_bytes
+      : 16 * 1024 * 1024 * 1024 * 1024;
+
   const newAllocated =
     newQuota === null ? allocatedTotal : allocatedTotal + newQuota;
-  if (newAllocated > ENTERPRISE_ORG_STORAGE_BYTES) {
+  if (newAllocated > orgQuota) {
+    const orgTb = (orgQuota / (1024 ** 4)).toFixed(0);
     return NextResponse.json(
       {
-        error: `Total allocation would exceed 16TB. ${(
-          (allocatedTotal / (1024 ** 4))
-        ).toFixed(1)}TB already allocated.`,
+        error: `Total allocation would exceed org storage (${orgTb} TB). ${(
+          allocatedTotal / (1024 ** 4)
+        ).toFixed(1)} TB already allocated.`,
       },
       { status: 400 }
     );

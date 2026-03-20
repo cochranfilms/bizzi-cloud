@@ -46,6 +46,8 @@ export interface InvoiceEmailParams {
   amount: string;
   storage_line: string;
   seats_line: string;
+  /** Optional line for power-up add-ons (e.g. "Bizzi Editor — $10/mo") */
+  addons_line?: string;
 }
 
 /**
