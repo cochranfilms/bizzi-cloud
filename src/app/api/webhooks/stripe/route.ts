@@ -2,7 +2,8 @@ import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
-import { sendSignupLinkEmail } from "@/lib/emailjs";
+import { sendSignupLinkEmail, sendSubscriptionWelcomeEmail } from "@/lib/emailjs";
+import { buildSubscriptionWelcomeParams } from "@/lib/subscription-welcome-params";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -100,6 +101,36 @@ export async function POST(request: Request) {
       await db.collection("pending_checkouts").doc(session.id).update({
         status: "completed",
       }).catch(() => {});
+
+      // Send subscription welcome email for first-time consumer purchases (not plan changes)
+      if (!replaceSubscriptionId && planId) {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_APP_URL ??
+          (typeof process.env.VERCEL_URL === "string"
+            ? `https://${process.env.VERCEL_URL}`
+            : null) ??
+          "https://www.bizzicloud.io";
+        let subscription: Stripe.Subscription | null = null;
+        const subId =
+          typeof session.subscription === "string"
+            ? session.subscription
+            : (session.subscription as Stripe.Subscription | null)?.id ?? null;
+        if (subId) {
+          try {
+            subscription = await stripe.subscriptions.retrieve(subId, {
+              expand: ["items.data.price", "latest_invoice"],
+            });
+          } catch {
+            // ignore
+          }
+        }
+        const welcomeParams = buildSubscriptionWelcomeParams(session, subscription, baseUrl);
+        if (welcomeParams) {
+          sendSubscriptionWelcomeEmail(welcomeParams).catch((err) => {
+            console.error("[Stripe webhook] subscription welcome email failed:", err);
+          });
+        }
+      }
 
       if (!userId || !planId) {
         // Guest checkout: account creation handled by /account/setup page

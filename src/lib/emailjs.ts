@@ -4,6 +4,7 @@
  *   EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
  * Share emails: EMAILJS_TEMPLATE_ID_SHARE (optional; when set, share notifications send email)
  * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
+ * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -67,6 +68,26 @@ function getTransferConfig(): {
   return {
     serviceId,
     templateTransfer,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getSubscriptionWelcomeConfig(): {
+  serviceId: string;
+  templateSubscriptionWelcome: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateSubscriptionWelcome = process.env.EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateSubscriptionWelcome || !publicKey) return null;
+  return {
+    serviceId,
+    templateSubscriptionWelcome,
     publicKey,
     privateKey: privateKey ?? undefined,
   };
@@ -363,6 +384,48 @@ export async function sendTransferEmailToClient(
   } catch (err) {
     console.error("[EmailJS] Transfer email error:", err);
   }
+}
+
+export interface SubscriptionWelcomeEmailParams {
+  to_email: string;
+  customer_name?: string;
+  intro_paragraph: string;
+  plan_name: string;
+  storage_line: string;
+  seats_line: string;
+  addons_line?: string;
+  amount: string;
+  cta_url: string;
+  cta_text: string;
+  footer_paragraph: string;
+}
+
+/**
+ * Send subscription welcome email when a consumer purchases a subscription.
+ * Requires EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME. If not set, does nothing (no-op).
+ * Template params: to_email, customer_name, intro_paragraph, plan_name, storage_line, seats_line,
+ *   addons_line (optional), amount, cta_url, cta_text, footer_paragraph, logo_url
+ */
+export async function sendSubscriptionWelcomeEmail(
+  params: SubscriptionWelcomeEmailParams
+): Promise<void> {
+  const config = getSubscriptionWelcomeConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateSubscriptionWelcome,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
 }
 
 function escapeHtml(s: string): string {
