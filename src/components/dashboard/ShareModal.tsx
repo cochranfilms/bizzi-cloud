@@ -13,6 +13,8 @@ interface ShareModalProps {
   linkedDriveId?: string;
   /** When sharing a single file, pass the backup_file id */
   backupFileId?: string;
+  /** When creating a bulk/virtual share, pass file IDs to reference (share created on first add/copy) */
+  referencedFileIds?: string[];
   /** When share already exists (e.g. virtual bulk share), pass token and initial state */
   initialShareToken?: string;
   initialAccessLevel?: "private" | "public";
@@ -26,6 +28,7 @@ export default function ShareModal({
   folderName,
   linkedDriveId,
   backupFileId,
+  referencedFileIds,
   initialShareToken,
   initialAccessLevel = "private",
   initialPermission = "view",
@@ -164,7 +167,6 @@ export default function ShareModal({
   const ensureShare = useCallback(async (): Promise<string | null> => {
     if (!user) return null;
     if (initialShareToken || shareToken) return initialShareToken ?? shareToken;
-    if (!linkedDriveId) return null;
     const name = shareName.trim();
     if (!name) {
       setNameError("Please name your share before copying the link or adding people.");
@@ -172,24 +174,32 @@ export default function ShareModal({
     }
     setNameError(null);
 
+    const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
+    if (!linkedDriveId && !isVirtualShare) return null;
+
     setLoading(true);
     setError(null);
     try {
       const token = await user.getIdToken();
+      const body: Record<string, unknown> = {
+        folder_name: name,
+        permission,
+        access_level: accessLevel,
+        invited_emails: invitedEmails,
+      };
+      if (isVirtualShare) {
+        body.referenced_file_ids = referencedFileIds;
+      } else {
+        body.linked_drive_id = linkedDriveId;
+        body.backup_file_id = backupFileId ?? undefined;
+      }
       const res = await fetch("/api/shares", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          linked_drive_id: linkedDriveId,
-          backup_file_id: backupFileId ?? undefined,
-          folder_name: name,
-          permission,
-          access_level: accessLevel,
-          invited_emails: invitedEmails,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -205,7 +215,7 @@ export default function ShareModal({
     } finally {
       setLoading(false);
     }
-  }, [linkedDriveId, backupFileId, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails, shareName]);
+  }, [linkedDriveId, backupFileId, referencedFileIds, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails, shareName]);
 
   const copyLink = useCallback(async () => {
     if (!hasValidShareName && !shareToken && !initialShareToken) {
@@ -227,7 +237,8 @@ export default function ShareModal({
     if (invitedEmails.includes(trimmed)) return;
     // When we have an existing share token, always allow adding (edit mode)
     const tokenForCheck = shareToken ?? initialShareToken;
-    if (!tokenForCheck && !(linkedDriveId && hasValidShareName)) {
+    const canCreate = (linkedDriveId && hasValidShareName) || (referencedFileIds?.length && hasValidShareName);
+    if (!tokenForCheck && !canCreate) {
       setNameError("Please name your share before adding people.");
       return;
     }
@@ -242,13 +253,20 @@ export default function ShareModal({
       try {
         const authToken = await user?.getIdToken();
         if (!authToken) return;
+        const patchBody: Record<string, unknown> = {
+          invited_emails: next,
+          version: shareVersion,
+        };
+        if (shareName.trim()) {
+          patchBody.folder_name = shareName.trim();
+        }
         const res = await fetch(`/api/shares/${token}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${authToken}`,
           },
-          body: JSON.stringify({ invited_emails: next, version: shareVersion }),
+          body: JSON.stringify(patchBody),
         });
         if (!res.ok) {
           if (res.status === 409) {
@@ -265,7 +283,7 @@ export default function ShareModal({
         setLoading(false);
       }
     }
-  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken]);
+  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken, shareName]);
 
   const removeEmail = useCallback(
     async (email: string) => {
@@ -463,7 +481,7 @@ export default function ShareModal({
             <button
               type="button"
               onClick={copyLink}
-              disabled={(!linkedDriveId && !initialShareToken) || !user || loading}
+              disabled={(!linkedDriveId && !initialShareToken && !(referencedFileIds?.length)) || !user || loading}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:opacity-50"
             >
               <Link2 className="h-4 w-4" />

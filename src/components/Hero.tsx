@@ -15,12 +15,14 @@ export default function Hero() {
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <div>
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-bizzi-navy mb-4 sm:mb-6">
-              Keep everything organized.
+              Your workflow optimized in the cloud.
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-neutral-600 mb-6 sm:mb-8 max-w-xl leading-relaxed">
-              Store all your logos, brand guidelines, templates, and campaign
-              assets in one secure, searchable hub. From your Bizzi Byte SSD to
-              the cloud—access your projects anywhere, anytime.
+              Bizzi Cloud is the cloud storage platform built exclusively for
+              photographers, filmmakers, and creative teams who need more than
+              generic file storage. We give creators a secure, organized home for
+              every asset they make. Built around the post-production workflows
+              and efficiency that creative work actually demands.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
               <Link

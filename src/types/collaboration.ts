@@ -23,6 +23,7 @@ export interface Notification {
   createdAt: string;
   metadata: {
     fileName?: string;
+    folderName?: string;
     actorDisplayName?: string;
     fileCount?: number;
     parentCommentId?: string;

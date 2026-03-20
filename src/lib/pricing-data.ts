@@ -205,10 +205,10 @@ export const powerUpAddons = [
   {
     id: "editor",
     name: "Bizzi Editor",
-    tagline: "NLE Cloud Drive + Rec.709",
+    tagline: "Cloud Native Drive",
     price: 10,
     description:
-      "Mount your cloud as a virtual SSD. NLE editing with Rec.709 LUTs — edit RAW natively in Premiere, Resolve & Final Cut.",
+      "Mount your cloud as a virtual SSD and edit videos and photos natively in any editing software. Bizzi Editor automatically generates proxies for smooth performance, then instantly relinks your timeline to full-resolution media with Bizzi Conform — all in one click.",
     features: [
       "Mount as virtual drive in Premiere, Resolve & Final Cut",
       "Rec.709 LUTs — toggle on/off per clip",

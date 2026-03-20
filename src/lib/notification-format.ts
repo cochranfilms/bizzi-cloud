@@ -11,6 +11,7 @@ export function formatNotificationMessage(
 ): string {
   const actor = actorDisplayName || "Someone";
   const fileName = metadata?.fileName ?? "your file";
+  const folderName = metadata?.folderName;
   const fileCount = metadata?.fileCount ?? 1;
 
   switch (type) {
@@ -26,7 +27,7 @@ export function formatNotificationMessage(
       if (fileCount > 1) {
         return `${actor} shared ${fileCount} files with you`;
       }
-      return `${actor} shared ${fileName} with you`;
+      return `${actor} shared ${folderName ?? fileName} with you`;
     default:
       return "New activity";
   }

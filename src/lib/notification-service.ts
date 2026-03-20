@@ -114,10 +114,10 @@ export async function createShareNotifications(params: {
   const message =
     fileCount > 1
       ? `${actor} ${verb} ${fileCount} files`
-      : fileCount === 1 && fileName
-        ? `${actor} ${verb} ${fileName}`
-        : folderName
-          ? `${actor} ${verb} ${folderName}`
+      : folderName
+        ? `${actor} ${verb} ${folderName}`
+        : fileCount === 1 && fileName
+          ? `${actor} ${verb} ${fileName}`
           : `${actor} ${verb} files`;
 
   const now = new Date();
@@ -137,6 +137,7 @@ export async function createShareNotifications(params: {
       metadata: Object.fromEntries(
         Object.entries({
           fileName,
+          folderName,
           actorDisplayName,
           fileCount: fileCount > 1 ? fileCount : undefined,
         }).filter(([, v]) => v !== undefined)

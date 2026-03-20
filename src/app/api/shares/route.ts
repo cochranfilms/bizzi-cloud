@@ -412,8 +412,21 @@ export async function POST(request: Request) {
 
     if (shareData.invited_emails.length > 0) {
       const profileSnap = await db.collection("profiles").doc(uid).get();
-      const actorDisplayName =
-        (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
+      let actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
+      if (!actorDisplayName) {
+        try {
+          const authUser = await getAdminAuth().getUser(uid);
+          actorDisplayName =
+            (authUser.displayName as string)?.trim() ??
+            email?.split("@")[0] ??
+            authUser.email?.split("@")[0] ??
+            "Someone";
+        } catch {
+          actorDisplayName = email?.split("@")[0] ?? "Someone";
+        }
+      } else {
+        actorDisplayName = actorDisplayName || email?.split("@")[0] ?? "Someone";
+      }
       await Promise.all([
         createShareNotifications({
           sharedByUserId: uid,
@@ -535,8 +548,21 @@ export async function POST(request: Request) {
 
   if (shareData.invited_emails.length > 0) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
-    const actorDisplayName =
-      (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
+    let actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
+    if (!actorDisplayName) {
+      try {
+        const authUser = await getAdminAuth().getUser(uid);
+        actorDisplayName =
+          (authUser.displayName as string)?.trim() ??
+          email?.split("@")[0] ??
+          authUser.email?.split("@")[0] ??
+          "Someone";
+      } catch {
+        actorDisplayName = email?.split("@")[0] ?? "Someone";
+      }
+    } else {
+      actorDisplayName = actorDisplayName || email?.split("@")[0] ?? "Someone";
+    }
     const actorEmail = email ?? undefined;
     const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
     await Promise.all([

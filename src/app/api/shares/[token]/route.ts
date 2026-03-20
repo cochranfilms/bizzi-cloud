@@ -1,4 +1,4 @@
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { createShareNotifications } from "@/lib/notification-service";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
@@ -240,12 +240,14 @@ export async function PATCH(
 
     updates.version = currentVersion + 1;
     tx.update(shareRef, updates);
+    const effectiveFolderName =
+      (updates.folder_name as string) ?? (share.folder_name as string) ?? "Shared folder";
     return {
       status: 200 as const,
       ok: true,
       newInvitedEmails,
       prevInvited,
-      folderName: (share.folder_name as string) ?? "Shared folder",
+      folderName: effectiveFolderName,
       fileIds: (share.referenced_file_ids as string[] | undefined) ?? (share.backup_file_id ? [share.backup_file_id] : []),
       linkedDriveId: share.linked_drive_id as string | undefined,
       permission: (updates.permission as string) ?? share.permission ?? "view",
@@ -268,8 +270,18 @@ export async function PATCH(
     const newlyAdded = (result.newInvitedEmails as string[]).filter((e) => !prevSet.has(e.toLowerCase()));
     if (newlyAdded.length > 0) {
       const profileSnap = await db.collection("profiles").doc(uid).get();
-      const actorDisplayName =
-        (profileSnap.data()?.displayName as string) ?? "Someone";
+      let actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
+      if (!actorDisplayName) {
+        try {
+          const authUser = await getAdminAuth().getUser(uid);
+          actorDisplayName =
+            (authUser.displayName as string)?.trim() ??
+            authUser.email?.split("@")[0] ??
+            "Someone";
+        } catch {
+          actorDisplayName = "Someone";
+        }
+      }
       let folderNameVal = result.folderName as string;
       const fileIds = (result.fileIds as string[]) ?? [];
       if (!folderNameVal && (result.linkedDriveId as string)) {
