@@ -77,7 +77,7 @@ function InviteJoinContent() {
   };
 
   const handleSignOutAndUse = async () => {
-    const url = `/login?mode=signup&email=${encodeURIComponent(invite?.email ?? "")}&redirect=${encodeURIComponent(`/invite/join?token=${token}`)}`;
+    const url = `/invite/signup?token=${encodeURIComponent(token ?? "")}&email=${encodeURIComponent(invite?.email ?? "")}`;
     setSigningOut(true);
     try {
       await signOut(getFirebaseAuth());
@@ -117,7 +117,7 @@ function InviteJoinContent() {
   const inviteEmail = invite.email?.toLowerCase() ?? "";
   const emailMatches = userEmail === inviteEmail;
 
-  const signUpUrl = `/login?mode=signup&email=${encodeURIComponent(invite.email)}&redirect=${encodeURIComponent(`/invite/join?token=${token}`)}`;
+  const signUpUrl = `/invite/signup?token=${encodeURIComponent(token ?? "")}&email=${encodeURIComponent(invite.email)}`;
   const signInUrl = `/login?redirect=${encodeURIComponent(`/invite/join?token=${token}`)}`;
 
   return (

@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
+  Building2,
 } from "lucide-react";
 import { mapSeverityToBadge } from "@/admin/utils/mapSeverityToBadge";
 
@@ -35,6 +36,7 @@ const navGroups = [
   {
     label: "Operations",
     items: [
+      { href: "/admin/organizations", label: "Organizations", icon: Building2 },
       { href: "/admin/files", label: "Files", icon: FileStack },
       { href: "/admin/uploads", label: "Upload Analytics", icon: Upload },
       { href: "/admin/support", label: "Support", icon: MessageSquare },

@@ -6,7 +6,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import Image from "next/image";
-import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive } from "lucide-react";
+import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive, CreditCard, Zap } from "lucide-react";
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 
@@ -290,6 +290,35 @@ export default function EnterpriseSettingsPage() {
               Storage
             </h2>
             <StorageAnalyticsPage basePath="/enterprise" />
+          </section>
+
+          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              <CreditCard className="h-5 w-5 text-[var(--enterprise-primary)]" />
+              Subscription
+            </h2>
+            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+              Storage and seats are managed by Bizzi. Contact our sales team to change your plan or add seats.
+            </p>
+            <a
+              href="mailto:sales@bizzicloud.io"
+              className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Contact sales
+            </a>
+            <div className="mt-6 border-t border-neutral-200 pt-6 dark:border-neutral-700">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-white">
+                <Zap className="h-4 w-4 text-amber-500" />
+                Power ups
+              </h3>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Editor and Gallery Suite are tied to your personal plan. Upgrade at{" "}
+                <Link href="/dashboard/settings" className="text-[var(--enterprise-primary)] hover:underline">
+                  Dashboard Settings
+                </Link>{" "}
+                to add these power ups.
+              </p>
+            </div>
           </section>
 
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

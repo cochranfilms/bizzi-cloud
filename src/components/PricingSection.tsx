@@ -6,184 +6,23 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import {
-  BIZZI_BYTE_COLORS,
   freeTier,
-  plans,
+  storageTiers,
   powerUpAddons,
+  SEAT_PRICE,
   PLAN_LABELS,
   ADDON_LABELS,
 } from "@/lib/pricing-data";
 import CheckoutModal from "@/components/CheckoutModal";
-
-function PlanCard({
-  plan,
-  minBadgeHeight,
-  onSelect,
-}: {
-  plan: (typeof plans)[0];
-  minBadgeHeight: string;
-  onSelect?: (planId: string) => void;
-}) {
-  const accent = plan.accentColor;
-  return (
-    <div
-      className="relative flex h-full flex-col rounded-2xl border-2 bg-white p-6 transition-all duration-200 hover:shadow-lg"
-      style={{
-        borderColor: plan.popular ? accent : accent + "50",
-        boxShadow: plan.popular
-          ? `0 10px 15px -3px ${accent}25, 0 0 0 2px ${accent}30`
-          : undefined,
-      }}
-    >
-      {/* Badge row - fixed height for alignment */}
-      <div
-        className="mb-3 flex items-center"
-        style={{ minHeight: minBadgeHeight }}
-      >
-        {plan.popular ? (
-          <span
-            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-white"
-            style={{ backgroundColor: accent }}
-          >
-            {plan.tagline}
-          </span>
-        ) : (
-          <span
-            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-            style={{ backgroundColor: accent + "15", color: accent }}
-          >
-            {plan.tagline}
-          </span>
-        )}
-      </div>
-      <h3 className="text-xl font-semibold text-neutral-900">{plan.name}</h3>
-      <div className="mt-4 flex items-baseline gap-1">
-        <span className="text-3xl font-bold text-neutral-900">
-          ${plan.price}
-        </span>
-        <span className="text-base font-normal text-neutral-500">/mo</span>
-      </div>
-      <p className="mt-0.5 text-sm text-neutral-500">
-        or ${plan.annualPrice}/yr — save 25%
-      </p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-sm font-medium text-neutral-500">Storage</span>
-        <span className="text-lg font-semibold text-neutral-900">
-          {plan.storage}
-        </span>
-      </div>
-      <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700">
-        {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-2">
-            <span className="shrink-0" style={{ color: accent }}>
-              ✓
-            </span>
-            {f}
-          </li>
-        ))}
-      </ul>
-      {plan.limitations && plan.limitations.length > 0 && (
-        <ul className="mt-2 space-y-0.5 text-xs text-neutral-500">
-          {plan.limitations.map((l) => (
-            <li key={l}>— {l}</li>
-          ))}
-        </ul>
-      )}
-      <p className="mt-2 text-xs text-neutral-500">{plan.addOnsNote}</p>
-      <button
-        type="button"
-        className="mt-6 w-full py-3 px-4 rounded-xl font-medium text-white transition-colors hover:opacity-90"
-        style={{ backgroundColor: accent }}
-        onClick={() => onSelect?.(plan.id)}
-      >
-        {plan.cta}
-      </button>
-    </div>
-  );
-}
-
-function AddonCard({
-  addon,
-  minBadgeHeight,
-}: {
-  addon: (typeof powerUpAddons)[0];
-  minBadgeHeight: string;
-}) {
-  return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-shadow hover:shadow-md">
-      <div
-        className="h-1 w-full shrink-0"
-        style={{ backgroundColor: addon.accentColor }}
-      />
-      <div className="flex flex-grow flex-col p-6">
-        <div
-          className="flex items-center"
-          style={{ minHeight: minBadgeHeight }}
-        >
-          <span
-            className="text-xs font-semibold uppercase tracking-wider"
-            style={{ color: addon.accentColor }}
-          >
-            {addon.tagline}
-          </span>
-        </div>
-        <h4
-          className="text-lg font-bold text-neutral-900"
-          style={{ color: addon.accentColor }}
-        >
-          {addon.name}
-        </h4>
-        <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-          {addon.description}
-        </p>
-        {addon.bundleNote && (
-          <span
-            className="mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{
-              backgroundColor: addon.accentColor + "15",
-              color: addon.accentColor,
-            }}
-          >
-            ✦ {addon.bundleNote}
-          </span>
-        )}
-        <div className="mt-4 flex items-baseline gap-1">
-          <span className="text-sm text-neutral-500">+</span>
-          <span
-            className="text-2xl font-bold"
-            style={{ color: addon.accentColor }}
-          >
-            ${addon.price}
-          </span>
-          <span className="text-sm text-neutral-500">/mo</span>
-        </div>
-        <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700">
-          {addon.features.map((f) => (
-            <li key={f} className="flex items-start gap-2">
-              <span
-                className="shrink-0"
-                style={{ color: addon.accentColor }}
-              >
-                ✓
-              </span>
-              {f}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
-          Available on <strong>all paid plans</strong>
-        </p>
-      </div>
-    </div>
-  );
-}
+import FreeSignUpModal from "@/components/FreeSignUpModal";
 
 export default function PricingSection() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedStorageId, setSelectedStorageId] = useState<string>("free");
   const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
+  const [seatCount, setSeatCount] = useState(1);
   const [selectedBilling, setSelectedBilling] = useState<"monthly" | "annual">("monthly");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -195,41 +34,54 @@ export default function PricingSection() {
     addonName?: string;
     billing: "monthly" | "annual";
     priceLabel: string;
+    seatCount: number;
   } | null>(null);
 
-  const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const selectedTier = storageTiers.find((t) => t.id === selectedStorageId);
   const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
-  const total =
-    selectedPlan && selectedAddon
-      ? selectedPlan.price + selectedAddon.price
-      : selectedPlan
-        ? selectedBilling === "annual"
-          ? selectedPlan.annualPrice / 12
-          : selectedPlan.price
-        : 0;
+  const isFree = selectedStorageId === "free";
+  const allowsSeats = selectedTier?.allowsSeats ?? false;
+  const extraSeats = Math.max(0, seatCount - 1);
+  const baseMonthly =
+    selectedTier && !isFree
+      ? selectedBilling === "annual"
+        ? selectedTier.annualPrice / 12
+        : selectedTier.price
+      : 0;
+  const addonMonthly = selectedAddon ? selectedAddon.price : 0;
+  const seatMonthly = allowsSeats ? extraSeats * SEAT_PRICE : 0;
+  const total = baseMonthly + addonMonthly + seatMonthly;
 
   const handleCheckout = useCallback(
-    async (planId: string, addonId: string | null, billing: "monthly" | "annual") => {
+    async (
+      planId: string,
+      addonId: string | null,
+      billing: "monthly" | "annual",
+      seats: number
+    ) => {
       if (!user) {
-        const plan = plans.find((p) => p.id === planId);
+        const tier = storageTiers.find((t) => t.id === planId);
         const addon = addonId
           ? powerUpAddons.find((a) => a.id === addonId)
           : null;
         const priceLabel =
-          plan && billing === "annual"
-            ? `$${plan.annualPrice}/yr`
-            : plan
-              ? `$${plan.price}/mo`
+          tier && billing === "annual"
+            ? `$${tier.annualPrice}/yr`
+            : tier
+              ? `$${tier.price}/mo`
               : "";
+        let label = priceLabel;
+        if (addon) label += ` + $${addon.price}/mo add-on`;
+        if (tier?.allowsSeats && seats > 1)
+          label += ` + ${seats - 1} seat(s) @ $${SEAT_PRICE}/mo`;
         setCheckoutModal({
           planId,
-          planName: plan?.name ?? PLAN_LABELS[planId] ?? planId,
+          planName: tier?.name ?? PLAN_LABELS[planId] ?? planId,
           addonId,
           addonName: addon?.name ?? (addonId ? ADDON_LABELS[addonId] : undefined),
           billing,
-          priceLabel: addon
-            ? `${priceLabel} + $${addon.price}/mo add-on`
-            : priceLabel,
+          priceLabel: label,
+          seatCount: seats,
         });
         return;
       }
@@ -252,6 +104,7 @@ export default function PricingSection() {
             planId,
             addonId: addonId || undefined,
             billing,
+            seatCount: seats,
           }),
         });
         const data = (await res.json()) as { url?: string; error?: string };
@@ -287,6 +140,7 @@ export default function PricingSection() {
             planId: checkoutModal.planId,
             addonId: checkoutModal.addonId ?? undefined,
             billing: checkoutModal.billing,
+            seatCount: checkoutModal.seatCount,
             email: data.email,
             name: data.name,
           }),
@@ -321,12 +175,14 @@ export default function PricingSection() {
         handleCheckout(
           purchase,
           addon && ["gallery", "editor", "fullframe"].includes(addon) ? addon : null,
-          billing === "annual" ? "annual" : "monthly"
+          billing === "annual" ? "annual" : "monthly",
+          1
         );
       }
     }
   }, [searchParams, user, handleCheckout]);
 
+  const [freeSignUpModalOpen, setFreeSignUpModalOpen] = useState(false);
   const [enterpriseModalOpen, setEnterpriseModalOpen] = useState(false);
   const [enterpriseSubmitting, setEnterpriseSubmitting] = useState(false);
   const [enterpriseSuccess, setEnterpriseSuccess] = useState(false);
@@ -450,176 +306,196 @@ export default function PricingSection() {
         </div>
 
         {checkoutError && (
-          <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+          <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-200">
             {checkoutError}
           </div>
         )}
 
-        {/* 4 Base Plans */}
-        <div id="paid-plans" className="scroll-mt-24 mb-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {plans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              minBadgeHeight={BADGE_MIN_H}
-              onSelect={() => handleCheckout(plan.id, null, "monthly")}
-            />
-          ))}
-        </div>
-
-        {/* Power Up Add-ons */}
-        <div className="mb-16">
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-neutral-900">
-              Power up any plan
-            </h3>
-            <p className="mt-0.5 text-sm text-neutral-500">
-              Add only what your workflow needs. Available on every paid plan
-              (except free).
-            </p>
-            <p className="mt-1 text-xs text-neutral-500">
-              Stack freely. Cancel anytime. Add-ons billed monthly.
-            </p>
-          </div>
-          <div className="grid gap-6 sm:grid-cols-3">
-            {powerUpAddons.map((addon) => (
-              <AddonCard
-                key={addon.id}
-                addon={addon}
-                minBadgeHeight={BADGE_MIN_H}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Compact Free Tier — above plan builder */}
-        <div className="mb-8">
-          <div
-            className="flex flex-wrap items-center justify-between gap-4 rounded-xl border-2 bg-white px-6 py-4"
-            style={{
-              borderColor: freeTier.accentColor + "40",
-              background: `linear-gradient(to right, ${freeTier.accentColor}08, white)`,
-            }}
-          >
-            <div className="flex items-center gap-4">
-              <span
-                className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                style={{
-                  backgroundColor: freeTier.accentColor + "20",
-                  color: freeTier.accentColor,
-                }}
-              >
-                {freeTier.tagline}
-              </span>
-              <span className="text-lg font-semibold text-neutral-900">
-                {freeTier.name}
-              </span>
-              <span className="text-base font-medium text-neutral-500">
-                {freeTier.storage}
-              </span>
-            </div>
-            <a
-              href="#paid-plans"
-              className="shrink-0 rounded-lg px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
-              style={{ backgroundColor: freeTier.accentColor }}
-            >
-              Choose a paid plan above
-            </a>
-          </div>
-        </div>
-
-        {/* Build your plan calculator */}
-        <div className="mb-16 rounded-2xl border border-neutral-200 bg-white p-6 md:p-8">
-          <h3 className="text-lg font-bold text-neutral-900">
+        {/* Unified Plan Builder */}
+        <div id="paid-plans" className="scroll-mt-24 mb-16 rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 dark:border-neutral-700 dark:bg-neutral-900">
+          <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
             Build your plan
           </h3>
-          <p className="mt-1 text-sm text-neutral-500">
-            Select a base plan and optional Power Up to see your total.
+          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+            Select storage, power ups, and seats. One clear price.
           </p>
-          <div className="mt-6 flex flex-wrap items-end gap-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
-                Base plan
-              </label>
-              <select
-                value={selectedPlanId ?? ""}
-                onChange={(e) =>
-                  setSelectedPlanId(e.target.value || null)
-                }
-                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
-              >
-                <option value="">Choose plan…</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — ${p.price}/mo ({p.storage})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
-                Power Up add-on
-              </label>
-              <select
-                value={selectedAddonId ?? ""}
-                onChange={(e) =>
-                  setSelectedAddonId(e.target.value || null)
-                }
-                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
-              >
-                <option value="">No add-on</option>
-                {powerUpAddons.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} — +${a.price}/mo
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
-                Billing
-              </label>
-              <select
-                value={selectedBilling}
-                onChange={(e) =>
-                  setSelectedBilling(e.target.value as "monthly" | "annual")
-                }
-                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue"
-              >
-                <option value="monthly">Monthly</option>
-                <option value="annual">Annual (save 25%)</option>
-              </select>
-            </div>
-            {selectedPlan && (
-              <div className="flex items-end gap-4">
-                <div className="flex items-baseline gap-2 rounded-lg bg-neutral-50 px-4 py-3">
-                  <span className="text-sm text-neutral-500">
-                    {selectedPlan.id === "solo" || selectedPlan.id === "indie" || selectedPlan.id === "video" || selectedPlan.id === "production"
-                      ? selectedBilling === "annual"
-                        ? `$${selectedPlan.annualPrice}/yr`
-                        : `$${selectedPlan.price}/mo`
-                      : `$${selectedPlan.price}/mo`}
-                    {selectedAddon && ` + $${selectedAddon.price}/mo`}
+
+          {/* Row 1: Storage tier */}
+          <div className="mt-6">
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              1. Storage tier
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {storageTiers.map((tier) => (
+                <button
+                  key={tier.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStorageId(tier.id);
+                    if (tier.id === "free") setSelectedAddonId(null);
+                  }}
+                  className={`rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                    selectedStorageId === tier.id
+                      ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600 dark:hover:border-neutral-500"
+                  }`}
+                  style={
+                    selectedStorageId === tier.id
+                      ? { borderColor: tier.accentColor }
+                      : undefined
+                  }
+                >
+                  <span className="block font-semibold text-neutral-900 dark:text-white">
+                    {tier.name}
                   </span>
-                  <span className="text-xl font-bold text-neutral-900">
-                    = ${Math.round(total)}/mo
+                  <span className="block text-sm text-neutral-500 dark:text-neutral-400">
+                    {tier.storage}
+                    {tier.price === 0 ? " · Free" : ` · $${tier.price}/mo`}
                   </span>
-                </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2: Power Up (hidden when free) */}
+          {!isFree && (
+            <div className="mt-6">
+              <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                2. Power Up
+              </label>
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  disabled={checkoutLoading}
-                  onClick={() =>
-                    handleCheckout(
-                      selectedPlan.id,
-                      selectedAddonId,
-                      selectedBilling
-                    )
-                  }
-                  className="rounded-xl bg-bizzi-blue px-6 py-3 font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                  onClick={() => setSelectedAddonId(null)}
+                  className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all ${
+                    !selectedAddonId
+                      ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
+                  }`}
                 >
-                  {checkoutLoading ? "Redirecting…" : "Subscribe"}
+                  No add-on
+                </button>
+                {powerUpAddons.map((addon) => (
+                  <button
+                    key={addon.id}
+                    type="button"
+                    onClick={() => setSelectedAddonId(addon.id)}
+                    className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all ${
+                      selectedAddonId === addon.id
+                        ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                        : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
+                    }`}
+                    style={
+                      selectedAddonId === addon.id
+                        ? { borderColor: addon.accentColor }
+                        : undefined
+                    }
+                  >
+                    {addon.name} (+${addon.price}/mo)
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Row 3: Seats (only when allowsSeats) */}
+          {allowsSeats && (
+            <div className="mt-6">
+              <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                3. Seats
+              </label>
+              <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+                1 seat included. Add more at ${SEAT_PRICE}/seat/mo.
+              </p>
+              <select
+                value={seatCount}
+                onChange={(e) => setSeatCount(parseInt(e.target.value, 10))}
+                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                  <option key={n} value={n}>
+                    {n} seat{n > 1 ? "s" : ""}
+                    {n > 1 ? ` (+$${(n - 1) * SEAT_PRICE}/mo)` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Row 4: Billing (only when paid) */}
+          {!isFree && (
+            <div className="mt-6">
+              <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                4. Billing
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBilling("monthly")}
+                  className={`rounded-xl border-2 px-4 py-2 text-sm font-medium ${
+                    selectedBilling === "monthly"
+                      ? "border-bizzi-blue bg-bizzi-blue/5"
+                      : "border-neutral-200 dark:border-neutral-600"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBilling("annual")}
+                  className={`rounded-xl border-2 px-4 py-2 text-sm font-medium ${
+                    selectedBilling === "annual"
+                      ? "border-bizzi-blue bg-bizzi-blue/5"
+                      : "border-neutral-200 dark:border-neutral-600"
+                  }`}
+                >
+                  Annual (save 25%)
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Summary + CTA */}
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 px-6 py-4 dark:border-neutral-700 dark:bg-neutral-800">
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg font-bold text-neutral-900 dark:text-white">
+                {isFree ? "Free" : `$${Math.round(total)}/mo`}
+              </span>
+              {!isFree && (
+                <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {selectedBilling === "annual" && selectedTier
+                    ? `($${selectedTier.annualPrice}/yr billed annually)`
+                    : "billed monthly"}
+                </span>
+              )}
+            </div>
+            {isFree ? (
+              <button
+                type="button"
+                onClick={() =>
+                  user ? router.push("/dashboard") : setFreeSignUpModalOpen(true)
+                }
+                className="rounded-xl bg-bizzi-blue px-6 py-3 font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                style={{ backgroundColor: freeTier.accentColor }}
+              >
+                {user ? "Go to Dashboard" : "Get Started Free"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={() =>
+                  handleCheckout(
+                    selectedStorageId,
+                    selectedAddonId,
+                    selectedBilling,
+                    seatCount
+                  )
+                }
+                className="rounded-xl bg-bizzi-blue px-6 py-3 font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                {checkoutLoading ? "Redirecting…" : "Subscribe"}
+              </button>
             )}
           </div>
         </div>
@@ -835,6 +711,10 @@ export default function PricingSection() {
           </div>
         )}
 
+        <FreeSignUpModal
+          isOpen={freeSignUpModalOpen}
+          onClose={() => setFreeSignUpModalOpen(false)}
+        />
         <CheckoutModal
           isOpen={!!checkoutModal}
           onClose={() => {

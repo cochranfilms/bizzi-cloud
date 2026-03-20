@@ -34,6 +34,58 @@ export const freeTier = {
   cta: "Get Started Free",
 };
 
+/** Extra seat price per month (for plans that allow seats) */
+export const SEAT_PRICE = 9;
+
+/** Storage tier options for unified plan builder. Includes free + paid. */
+export const storageTiers = [
+  {
+    id: "free",
+    name: "Free",
+    storage: "2 GB",
+    price: 0,
+    annualPrice: 0,
+    allowsSeats: false,
+    accentColor: BIZZI_BYTE_COLORS.matcha,
+  },
+  {
+    id: "solo",
+    name: "Bizzi Creator",
+    storage: "1 TB",
+    price: 12,
+    annualPrice: 108,
+    allowsSeats: false,
+    accentColor: BIZZI_BYTE_COLORS.matcha,
+  },
+  {
+    id: "indie",
+    name: "Bizzi Pro",
+    storage: "2 TB",
+    price: 20,
+    annualPrice: 180,
+    allowsSeats: true,
+    accentColor: BIZZI_BYTE_COLORS.habanero,
+  },
+  {
+    id: "video",
+    name: "Bizzi Network",
+    storage: "5 TB",
+    price: 35,
+    annualPrice: 315,
+    allowsSeats: true,
+    accentColor: BIZZI_BYTE_COLORS.frost,
+  },
+  {
+    id: "production",
+    name: "We Bizzi",
+    storage: "10 TB",
+    price: 70,
+    annualPrice: 630,
+    allowsSeats: true,
+    accentColor: BIZZI_BYTE_COLORS.onyx,
+  },
+];
+
 export const plans = [
   {
     id: "solo",

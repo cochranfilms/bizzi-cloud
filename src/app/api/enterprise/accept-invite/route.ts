@@ -126,11 +126,13 @@ export async function POST(request: Request) {
   }
 
   const pendingSeatData = pendingDocs[0].data();
+  const acceptedRole =
+    (pendingSeatData.role === "admin" ? "admin" : "member") as "admin" | "member";
   const seatRef = db.collection("organization_seats").doc(seatId);
   batch.set(seatRef, {
     organization_id: orgId,
     user_id: uid,
-    role: "member",
+    role: acceptedRole,
     email: email ?? "",
     display_name: null,
     invited_at: now,
@@ -148,7 +150,7 @@ export async function POST(request: Request) {
     profileRef,
     {
       organization_id: orgId,
-      organization_role: "member",
+      organization_role: acceptedRole,
     },
     { merge: true }
   );

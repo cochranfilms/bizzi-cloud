@@ -36,6 +36,7 @@ const STRIPE_PRICE_ENV_KEYS = {
   gallery: "STRIPE_PRICE_GALLERY",
   editor: "STRIPE_PRICE_EDITOR",
   fullframe: "STRIPE_PRICE_FULLFRAME",
+  seat: "STRIPE_PRICE_SEAT",
 } as const;
 
 export type BillingCycle = "monthly" | "annual";
@@ -59,6 +60,11 @@ export function getStripeAddonPriceId(addonId: AddonId): string | null {
   const envKey = STRIPE_PRICE_ENV_KEYS[addonId];
   if (!envKey) return null;
   return process.env[envKey] ?? null;
+}
+
+/** Get Stripe price ID for extra seat add-on ($9/mo) */
+export function getStripeSeatPriceId(): string | null {
+  return process.env[STRIPE_PRICE_ENV_KEYS.seat] ?? null;
 }
 
 /** Resolve plan ID or addon ID from Stripe price ID (for webhook) */
@@ -89,5 +95,8 @@ export function getPlanIdFromPriceId(priceId: string): PlanId | AddonId | null {
  *
  * Addons:
  *   STRIPE_PRICE_GALLERY, STRIPE_PRICE_EDITOR, STRIPE_PRICE_FULLFRAME
+ *
+ * Seats:
+ *   STRIPE_PRICE_SEAT — extra seat at $9/mo (for indie, video, production)
  */
 export const STRIPE_PRICE_ENV_KEYS_LIST = Object.values(STRIPE_PRICE_ENV_KEYS);

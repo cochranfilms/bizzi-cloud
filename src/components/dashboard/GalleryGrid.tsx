@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Images,
   ExternalLink,
@@ -54,6 +55,7 @@ function accessIcon(access: string) {
 }
 
 type GalleryCardProps = {
+  basePath: string;
   gallery: {
     id: string;
     gallery_type: "photo" | "video";
@@ -69,7 +71,7 @@ type GalleryCardProps = {
   deletingId: string | null;
 };
 
-function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
+function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCardProps) {
   const [cardRef, isInView] = useInView<HTMLDivElement>();
   const thumbUrl = useGalleryThumbnail(
     g.cover_object_key ? g.id : undefined,
@@ -81,7 +83,7 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
 
   return (
     <Link
-      href={`/dashboard/galleries/${g.id}`}
+      href={`${basePath}/galleries/${g.id}`}
       className={`group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${
         isVideo
           ? "hover:border-violet-400/50 dark:hover:border-violet-500/50"
@@ -171,7 +173,16 @@ function GalleryCard({ gallery: g, onDelete, deletingId }: GalleryCardProps) {
 type TypeFilter = "all" | "photo" | "video";
 type SortOption = "updated" | "event_date" | "views" | "expiring";
 
-export default function GalleryGrid() {
+interface GalleryGridProps {
+  /** Base path for gallery links (e.g. /dashboard or /enterprise). Defaults from pathname. */
+  basePath?: string;
+}
+
+export default function GalleryGrid({ basePath }: GalleryGridProps) {
+  const pathname = usePathname();
+  const resolvedBasePath =
+    basePath ??
+    (pathname?.startsWith("/enterprise") ? "/enterprise" : pathname?.startsWith("/desktop") ? "/desktop/app" : "/dashboard");
   const { galleries, loading, error, createGallery, deleteGallery } = useGalleries();
   const { bumpStorageVersion } = useBackup();
   const [showCreate, setShowCreate] = useState(false);
@@ -232,7 +243,7 @@ export default function GalleryGrid() {
   const handleCreate = async (input: Parameters<typeof createGallery>[0]) => {
     const created = await createGallery(input);
     if (created?.id) {
-      window.location.href = `/dashboard/galleries/${created.id}`;
+      window.location.href = `${resolvedBasePath}/galleries/${created.id}`;
     }
   };
 
@@ -289,7 +300,7 @@ export default function GalleryGrid() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {galleries.map((g) => (
-            <GalleryCard key={g.id} gallery={g} onDelete={handleDeleteClick} deletingId={deletingId} />
+            <GalleryCard key={g.id} basePath={resolvedBasePath} gallery={g} onDelete={handleDeleteClick} deletingId={deletingId} />
           ))}
         </div>
       )}

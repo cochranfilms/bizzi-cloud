@@ -2,6 +2,7 @@ import { getStripeInstance } from "@/lib/stripe";
 import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
+  getOrCreateStripeSeatPrice,
 } from "@/lib/stripe-prices";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
     planId?: string;
     addonId?: string;
     billing?: string;
+    seatCount?: number;
     email?: string;
     name?: string;
   };
@@ -33,6 +35,9 @@ export async function POST(request: Request) {
   const planId = body.planId as PlanId | undefined;
   const addonId = body.addonId as AddonId | undefined;
   const billing = (body.billing === "annual" ? "annual" : "monthly") as BillingCycle;
+  const seatCount = typeof body.seatCount === "number" && body.seatCount >= 1
+    ? Math.min(Math.floor(body.seatCount), 10)
+    : 1;
 
   const validPlanIds = ["solo", "indie", "video", "production"];
   if (!planId || !validPlanIds.includes(planId)) {
@@ -106,6 +111,21 @@ export async function POST(request: Request) {
     }
   }
 
+  const allowsSeats = ["indie", "video", "production"].includes(planId);
+  const extraSeats = allowsSeats ? Math.max(0, seatCount - 1) : 0;
+  if (extraSeats > 0) {
+    try {
+      const seatPriceId = await getOrCreateStripeSeatPrice();
+      lineItems.push({ price: seatPriceId, quantity: extraSeats });
+    } catch (err) {
+      console.error("[Stripe checkout] Failed to get/create seat price:", err);
+      return NextResponse.json(
+        { error: "Checkout failed. Please try again." },
+        { status: 500 }
+      );
+    }
+  }
+
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
     (typeof process.env.VERCEL_URL === "string"
@@ -120,6 +140,7 @@ export async function POST(request: Request) {
     planId,
     addonIds: addonIds.join(","),
     billing,
+    seat_count: String(seatCount),
   };
 
   if (isGuestCheckout) {

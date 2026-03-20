@@ -47,8 +47,12 @@ export default function EnterpriseSeatsPage() {
     { label: "Unlimited", value: null },
   ] as const;
 
-  const formatStorage = (bytes: number | null) =>
-    bytes === null ? "Unlimited" : `${(bytes / (1024 ** 3)).toFixed(0)} GB`;
+  const formatStorage = (bytes: number | null) => {
+    if (bytes === null) return "Unlimited";
+    const gb = bytes / (1024 ** 3);
+    if (gb >= 1024) return `${(gb / 1024).toFixed(0)} TB`;
+    return `${gb.toFixed(0)} GB`;
+  };
 
   /** Admin/owner always shows 16GB; others show their seat quota from dropdown */
   const getDisplayQuota = (seat: Seat) =>
@@ -302,7 +306,7 @@ export default function EnterpriseSeatsPage() {
                         <div className="flex w-28 shrink-0 items-center justify-end gap-2">
                           {isOwner ? (
                             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                              16 GB
+                              {formatStorage(displayQuotaBytes)}
                             </span>
                           ) : (
                             <>

@@ -86,6 +86,11 @@ export async function POST(request: Request) {
   const addonIds = addonIdsRaw
     ? (addonIdsRaw as string).split(",").filter(Boolean)
     : [];
+  const seatCountRaw = metadata.seat_count;
+  const seatCount =
+    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
+      ? parseInt(seatCountRaw, 10)
+      : 1;
 
   const auth = getAdminAuth();
   const db = getAdminFirestore();
@@ -126,6 +131,7 @@ export async function POST(request: Request) {
       userId: uid,
       plan_id: planId,
       addon_ids: addonIds,
+      seat_count: seatCount,
       storage_quota_bytes: storageQuotaBytes,
       storage_used_bytes: 0,
       stripe_customer_id: session.customer ?? null,

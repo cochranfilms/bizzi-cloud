@@ -11,6 +11,7 @@ import type { StorageAddonId } from "@/lib/pricing-data";
 import {
   getStripePriceId as getEnvPriceId,
   getStripeAddonPriceId as getEnvAddonPriceId,
+  getStripeSeatPriceId as getEnvSeatPriceId,
 } from "@/lib/plan-constants";
 
 const FIRESTORE_COLLECTION = "stripe_prices";
@@ -49,6 +50,10 @@ function getEnvFallback(planId: Exclude<PlanId, "free">, billing: BillingCycle):
 
 function getEnvAddonFallback(addonId: AddonId): string | null {
   return getEnvAddonPriceId(addonId);
+}
+
+function getEnvSeatFallback(): string | null {
+  return getEnvSeatPriceId();
 }
 
 /**
@@ -185,4 +190,49 @@ export async function getOrCreateStripeStorageAddonPrice(storageAddonId: Storage
   });
   await docRef.set({ price_id: price.id, product_id: product.id, storage_addon_id: storageAddonId, updated_at: new Date().toISOString() });
   return price.id;
+}
+
+/** Extra seat price: $9/mo. Get or create Stripe price. Caches in Firestore. */
+export async function getOrCreateStripeSeatPrice(): Promise<string> {
+  const envPrice = getEnvSeatFallback();
+  if (envPrice) return envPrice;
+
+  const docId = "seat";
+  const db = getAdminFirestore();
+  const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
+  const snap = await docRef.get();
+
+  if (snap.exists) {
+    const priceId = snap.data()?.price_id as string | undefined;
+    if (priceId) return priceId;
+  }
+
+  const stripe = getStripeInstance();
+
+  try {
+    const product = await stripe.products.create({
+      name: "Extra Seat",
+      metadata: { type: "seat" },
+    });
+
+    const price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: 900, // $9/mo
+      currency: "usd",
+      recurring: { interval: "month" },
+      metadata: { type: "seat" },
+    });
+
+    await docRef.set({
+      price_id: price.id,
+      product_id: product.id,
+      type: "seat",
+      updated_at: new Date().toISOString(),
+    });
+
+    return price.id;
+  } catch (err) {
+    console.error("[Stripe getOrCreateSeatPrice] Failed to create:", err);
+    throw err;
+  }
 }

@@ -119,6 +119,11 @@ export async function POST(request: Request) {
 
   const addonIdsRaw = session.metadata?.addonIds ?? "";
   const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
+  const seatCountRaw = session.metadata?.seat_count;
+  const seatCount =
+    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
+      ? parseInt(seatCountRaw, 10)
+      : 1;
   let storageQuotaBytes = getStorageBytesForPlan(planId);
   let storageAddonId: string | null = null;
   const subId: string | null =
@@ -145,6 +150,7 @@ export async function POST(request: Request) {
       userId: uid,
       plan_id: planId,
       addon_ids: addonIds,
+      seat_count: seatCount,
       storage_quota_bytes: storageQuotaBytes,
       storage_addon_id: storageAddonId,
       stripe_customer_id: session.customer ?? null,

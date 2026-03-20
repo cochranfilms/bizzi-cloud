@@ -16,14 +16,23 @@ import {
   X,
   Search,
   Film,
+  Images,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import { useSubscription } from "@/hooks/useSubscription";
 
-const navItems = [
+const navItems: Array<{
+  href: string;
+  label: string;
+  icon: typeof Home;
+  requiresEditor?: boolean;
+  requiresGallerySuite?: boolean;
+}> = [
   { href: "/enterprise", label: "Home", icon: Home },
   { href: "/enterprise/files", label: "All files", icon: FolderOpen },
-  { href: "/enterprise/creator", label: "Creator", icon: Film },
+  { href: "/enterprise/creator", label: "Creator", icon: Film, requiresEditor: true },
+  { href: "/enterprise/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
   { href: "/enterprise/shared", label: "Shared", icon: Share2 },
   { href: "/enterprise/transfers", label: "Transfers", icon: Send },
   { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },
@@ -34,6 +43,13 @@ const navItems = [
 export default function EnterpriseNavbar() {
   const pathname = usePathname();
   const { org } = useEnterprise();
+  const { hasEditor, hasGallerySuite } = useSubscription();
+
+  const filteredNavItems = navItems.filter((item) => {
+    if (item.requiresEditor && !hasEditor) return false;
+    if (item.requiresGallerySuite && !hasGallerySuite) return false;
+    return true;
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
 
@@ -83,7 +99,7 @@ export default function EnterpriseNavbar() {
       </Link>
 
       <nav className="hidden md:flex items-center gap-0.5">
-        {navItems.map((item) => {
+        {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive =
             pathname === item.href ||
@@ -143,7 +159,7 @@ export default function EnterpriseNavbar() {
         }`}
       >
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               pathname === item.href ||
