@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
-import { Building2, Loader2, Users } from "lucide-react";
+import { Building2, Loader2, Users, Send } from "lucide-react";
 import { ENTERPRISE_STORAGE_TIERS } from "@/lib/enterprise-pricing";
 
 export interface OrgListItem {
@@ -17,6 +17,8 @@ export interface OrgListItem {
   storage_quota_bytes: number | null;
   storage_used_bytes: number;
   created_at: string | null;
+  stripe_subscription_id: string | null;
+  stripe_invoice_id: string | null;
 }
 
 export default function OrganizationsPage() {
@@ -36,6 +38,8 @@ export default function OrganizationsPage() {
     success?: boolean;
     message?: string;
   } | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +95,26 @@ export default function OrganizationsPage() {
       setError(err instanceof Error ? err.message : "Failed to create");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleResendSignupLink = async (orgId: string) => {
+    setResendError(null);
+    setResendingId(orgId);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/admin/enterprise/organizations/${orgId}/resend-signup-link`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to send");
+      setResendError(null);
+      fetchOrganizations();
+    } catch (err) {
+      setResendError(err instanceof Error ? err.message : "Failed to send");
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -165,6 +189,9 @@ export default function OrganizationsPage() {
                   <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
                     Created
                   </th>
+                  <th className="px-6 py-3 text-left font-medium text-neutral-700 dark:text-neutral-300">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -208,6 +235,23 @@ export default function OrganizationsPage() {
                       {org.created_at
                         ? new Date(org.created_at).toLocaleDateString()
                         : "—"}
+                    </td>
+                    <td className="px-6 py-3">
+                      {org.seats_pending > 0 && (org.stripe_subscription_id || org.stripe_invoice_id) && (
+                        <button
+                          type="button"
+                          onClick={() => handleResendSignupLink(org.id)}
+                          disabled={resendingId === org.id}
+                          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        >
+                          {resendingId === org.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                          Resend sign-up link
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -328,6 +372,12 @@ export default function OrganizationsPage() {
           </button>
         </form>
       </div>
+
+      {resendError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30">
+          <p className="text-sm text-red-800 dark:text-red-200">{resendError}</p>
+        </div>
+      )}
 
       {result && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-800 dark:bg-emerald-950/30">

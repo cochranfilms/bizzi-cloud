@@ -247,19 +247,39 @@ export async function POST(request: Request) {
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
       // Only send sign-up link on first subscription payment (not renewals)
-      if (invoice.billing_reason !== "subscription_create") {
+      const billingReason = invoice.billing_reason;
+      if (billingReason !== "subscription_create" && billingReason !== "subscription") {
         return NextResponse.json({ received: true });
       }
 
       const sub = (invoice as { subscription?: string | { id: string } }).subscription;
       const subscriptionId = typeof sub === "string" ? sub : sub?.id;
-      if (!subscriptionId) return NextResponse.json({ received: true });
+      if (!subscriptionId) {
+        console.error("[Stripe webhook] invoice.paid: no subscription on invoice", invoice.id);
+        return NextResponse.json({ received: true });
+      }
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      const orgId = subscription.metadata?.organization_id as string | undefined;
-      const inviteToken = subscription.metadata?.invite_token as string | undefined;
+      let orgId = subscription.metadata?.organization_id as string | undefined;
+      let inviteToken = subscription.metadata?.invite_token as string | undefined;
+
+      // Fallback: find org by stripe_subscription_id if metadata missing (e.g. older subscriptions)
+      if (!orgId || !inviteToken) {
+        const orgsSnap = await db
+          .collection("organizations")
+          .where("stripe_subscription_id", "==", subscriptionId)
+          .limit(1)
+          .get();
+        const orgDoc = orgsSnap.docs[0];
+        if (orgDoc) {
+          const orgData = orgDoc.data();
+          orgId = orgDoc.id;
+          inviteToken = (orgData.invite_token as string) ?? inviteToken;
+        }
+      }
 
       if (!orgId || !inviteToken) {
+        console.error("[Stripe webhook] invoice.paid: no org or invite_token for subscription", subscriptionId);
         return NextResponse.json({ received: true });
       }
 
@@ -281,7 +301,7 @@ export async function POST(request: Request) {
       const ownerEmail =
         seatsSnap.docs[0]?.data()?.email as string | undefined;
       if (!ownerEmail) {
-        console.error("[Stripe webhook] invoice.paid: no pending admin seat for org", orgId);
+        console.error("[Stripe webhook] invoice.paid: no pending admin seat for org", orgId, "- ensure webhook has invoice.paid enabled");
         return NextResponse.json({ received: true });
       }
 
@@ -299,8 +319,10 @@ export async function POST(request: Request) {
           org_name: orgName,
           invite_url: inviteUrl,
         });
+        console.log("[Stripe webhook] invoice.paid: sign-up link email sent to", ownerEmail);
       } catch (err) {
         console.error("[Stripe webhook] invoice.paid: failed to send sign-up link email:", err);
+        console.error("[Stripe webhook] Ensure EMAILJS_TEMPLATE_ID_SIGNUP is set and signup-link template exists in EmailJS dashboard");
       }
 
       break;

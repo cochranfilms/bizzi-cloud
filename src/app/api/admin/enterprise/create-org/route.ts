@@ -156,7 +156,7 @@ export async function POST(request: Request) {
   const storagePriceMonthly = getStoragePriceMonthly(storageQuotaBytes);
   const storageLabel = formatStorageLabel(storageQuotaBytes);
 
-  // Create org and pending seat in Firestore
+  // Create org and pending seat in Firestore (store invite_token for webhook fallback)
   await orgRef.set({
     name: orgName,
     theme: "bizzi" as EnterpriseThemeId,
@@ -167,6 +167,7 @@ export async function POST(request: Request) {
     max_seats: maxSeats,
     stripe_customer_id: stripeCustomerId,
     stripe_subscription_id: subscription.id,
+    invite_token: inviteToken,
   });
 
   await db.collection("organization_seats").doc(pendingId).set({
