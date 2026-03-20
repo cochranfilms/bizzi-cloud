@@ -14,6 +14,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
+import FileListRow from "./FileListRow";
+import FolderListRow from "./FolderListRow";
 import FilePreviewModal from "./FilePreviewModal";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
@@ -706,23 +708,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div
-            className={`grid gap-4 max-w-4xl mx-auto ${
-              viewMode === "list"
-                ? "grid-cols-1"
-                : viewMode === "thumbnail"
-                  ? cardSize === "small"
-                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-                    : cardSize === "large"
-                      ? "grid-cols-1 sm:grid-cols-2"
-                      : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                  : cardSize === "small"
-                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-                    : cardSize === "large"
-                      ? "grid-cols-1 sm:grid-cols-2"
-                      : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-            }`}
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -747,6 +733,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    layoutSize="medium"
+                    layoutAspectRatio="landscape"
+                    showCardInfo={true}
                     onDelete={
                       drive && !item.preventDelete
                         ? async () => {
@@ -784,10 +773,79 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : hasPinned ? (
+          viewMode === "list" ? (
+            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                  </tr>
+                </thead>
+                <tbody data-selectable-grid>
+                  {pinnedFolderItems.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    return (
+                      <FolderListRow
+                        key={item.key}
+                        item={item}
+                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onDelete={
+                          drive && !item.preventDelete
+                            ? async () => {
+                                const ok = await confirm({
+                                  message: item.items === 0
+                                    ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                    : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`,
+                                  destructive: true,
+                                });
+                                if (ok) {
+                                  await deleteFolder(drive, item.items);
+                                  await refetch();
+                                  await refetchPinned();
+                                  loadPinnedFiles();
+                                }
+                              }
+                            : undefined
+                        }
+                        selectable={!!drive && !item.preventDelete}
+                        selected={selectedFolderKeys.has(item.key)}
+                        onSelect={() => toggleFolderSelection(item.key)}
+                      />
+                    );
+                  })}
+                  {pinnedFiles.map((file) => (
+                    <FileListRow
+                      key={file.id}
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        await refetch();
+                        await refetchPinned();
+                        loadPinnedFiles();
+                      }}
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
           <div
             className={`grid gap-4 ${
-              viewMode === "list"
-                ? "grid-cols-1"
+              viewMode === "thumbnail"
+                ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
                   ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
                   : cardSize === "large"
@@ -819,7 +877,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                      layoutSize={cardSize}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
                       onDelete={
@@ -867,7 +925,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     selectable
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
-                    layoutSize={cardSize}
+                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     thumbnailScale={thumbnailScale}
                     showCardInfo={showCardInfo}
@@ -875,6 +933,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 </div>
               ))}
             </div>
+          )
           ) : (
             <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
               Pin files or folders from the All Files tab for quick access.
@@ -890,10 +949,61 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : driveFolderItems.length > 0 ? (
+          viewMode === "list" ? (
+            <div className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                  </tr>
+                </thead>
+                <tbody data-selectable-grid>
+                  {driveFolderItems.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    return (
+                      <FolderListRow
+                        key={item.key}
+                        item={item}
+                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onDelete={
+                          drive && !item.preventDelete
+                            ? async () => {
+                                const ok = await confirm({
+                                  message: item.items === 0
+                                    ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                    : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`,
+                                  destructive: true,
+                                });
+                                if (ok) {
+                                  await deleteFolder(drive, item.items);
+                                  await refetch();
+                                }
+                              }
+                            : undefined
+                        }
+                        selectable={!!drive && !item.preventDelete}
+                        selected={selectedFolderKeys.has(item.key)}
+                        onSelect={() => toggleFolderSelection(item.key)}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
           <div
             className={`mb-6 grid gap-4 ${
-              viewMode === "list"
-                ? "grid-cols-1"
+              viewMode === "thumbnail"
+                ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
                   ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
                   : cardSize === "large"
@@ -924,6 +1034,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                    layoutAspectRatio={aspectRatio}
+                    showCardInfo={showCardInfo}
                     onDelete={
                       drive && !item.preventDelete
                         ? async () => {
@@ -946,6 +1059,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               );
             })}
           </div>
+          )
         ) : (
           <p className="mb-6 py-4 text-sm text-neutral-500 dark:text-neutral-400">
             Newly created folders will appear here.
@@ -961,10 +1075,47 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 Loading…
               </div>
             ) : recentUploads.length > 0 ? (
+              viewMode === "list" ? (
+                <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                        <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                      </tr>
+                    </thead>
+                    <tbody data-selectable-grid>
+                      {recentUploads.map((file) => (
+                        <FileListRow
+                          key={file.id}
+                          file={file}
+                          onClick={() => setPreviewFile(file)}
+                          onDelete={async () => {
+                            await deleteFile(file.id);
+                            await refetch();
+                            fetchRecentUploads();
+                          }}
+                          selectable
+                          selected={selectedFileIds.has(file.id)}
+                          onSelect={() => toggleFileSelection(file.id)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
               <div
                 className={`grid gap-4 ${
-                  viewMode === "list"
-                    ? "grid-cols-1"
+                  viewMode === "thumbnail"
+                    ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                     : cardSize === "small"
                       ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
                       : cardSize === "large"
@@ -990,7 +1141,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       selectable
                       selected={selectedFileIds.has(file.id)}
                       onSelect={() => toggleFileSelection(file.id)}
-                      layoutSize={cardSize}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       thumbnailScale={thumbnailScale}
                       showCardInfo={showCardInfo}
@@ -998,6 +1149,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   </div>
                 ))}
               </div>
+              )
             ) : (
               <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
                 Files uploaded to Storage in the past 72 hours will appear here.

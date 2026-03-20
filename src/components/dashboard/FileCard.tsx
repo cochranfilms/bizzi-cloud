@@ -132,6 +132,9 @@ export default function FileCard({
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
   const aspectClass = FILE_ASPECT_CLASSES[layoutAspectRatio];
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
+  // Videos always use object-cover to avoid pillarboxing on vertical (9:16) content in landscape containers.
+  // The "fit" setting is respected for images/PDFs; videos fill the frame like the scrub preview.
+  const videoObjectFit = "object-cover";
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -255,7 +258,7 @@ export default function FileCard({
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
-            objectFit={objectFit}
+            objectFit={videoObjectFit}
           />
         ) : (thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
           <>

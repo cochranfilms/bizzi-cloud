@@ -66,6 +66,12 @@ function toRecentFile(raw: Record<string, unknown>): RecentFile {
     contentType: (raw.contentType as string) ?? null,
     galleryId: (raw.galleryId as string) ?? null,
     proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
+    resolution_w: (raw.resolution_w as number) ?? null,
+    resolution_h: (raw.resolution_h as number) ?? null,
+    duration_sec: (raw.duration_sec as number) ?? null,
+    video_codec: (raw.video_codec as string) ?? null,
+    width: (raw.width as number) ?? null,
+    height: (raw.height as number) ?? null,
   };
 }
 

@@ -10,6 +10,8 @@ const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
+import FileListRow from "./FileListRow";
+import FolderListRow from "./FolderListRow";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -149,13 +151,14 @@ export default function FileGrid() {
     showCardInfo,
   } = useLayoutSettings();
   const gridColsClass =
-    viewMode === "list"
-      ? "grid-cols-1"
+    viewMode === "thumbnail"
+      ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
       : cardSize === "small"
         ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
         : cardSize === "large"
           ? "sm:grid-cols-1 md:grid-cols-2"
           : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3";
+  const listColSpan = 10;
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
@@ -943,6 +946,73 @@ export default function FileGrid() {
             <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Loading…
             </div>
+          ) : viewMode === "list" ? (
+            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                  </tr>
+                </thead>
+                <tbody data-selectable-grid>
+                  {pinnedFolderItems.map((item) => {
+                    const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    return (
+                      <FolderListRow
+                        key={item.key}
+                        item={item}
+                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onDelete={
+                          drive && !item.preventDelete
+                            ? async () => {
+                                const ok = await confirm({
+                                  message: item.items === 0
+                                    ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                    : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`,
+                                  destructive: true,
+                                });
+                                if (ok) {
+                                  await deleteFolder(drive, item.items);
+                                  await refetch();
+                                  await refetchPinned();
+                                }
+                              }
+                            : undefined
+                        }
+                        selectable={!!drive && !item.preventDelete}
+                        selected={selectedFolderKeys.has(item.key)}
+                        onSelect={() => toggleFolderSelection(item.key)}
+                      />
+                    );
+                  })}
+                  {pinnedFiles.map((file) => (
+                    <FileListRow
+                      key={file.id}
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        await refetch();
+                        await refetchPinned();
+                        loadPinnedFiles();
+                      }}
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className={`grid gap-4 ${gridColsClass}`}>
               {pinnedFolderItems.map((item) => {
@@ -969,7 +1039,7 @@ export default function FileGrid() {
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
-                      layoutSize={cardSize}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
                       onDelete={
@@ -1016,7 +1086,7 @@ export default function FileGrid() {
                     selectable
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
-                    layoutSize={cardSize}
+                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     thumbnailScale={thumbnailScale}
                     showCardInfo={showCardInfo}
@@ -1149,6 +1219,67 @@ export default function FileGrid() {
             No files match your filters. Try adjusting or clearing filters.
           </div>
         ) : hasFilters || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
+            viewMode === "list" ? (
+              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                      <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                    </tr>
+                  </thead>
+                  <tbody data-selectable-grid>
+                    {hasFilters && filtersLoading && (
+                      <tr>
+                        <td colSpan={listColSpan} className="px-4 py-8 text-center text-neutral-500 dark:text-neutral-400">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
+                            Searching…
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    {showFolders && subfolderItems.map((item) => (
+                      <FolderListRow
+                        key={item.key}
+                        item={item}
+                        onClick={() => {
+                          setCurrentDrivePath(item.pathPrefix ?? item.name);
+                          setSelectedFileIds(new Set());
+                          setSelectedFolderKeys(new Set());
+                        }}
+                        selectable={!!item.driveId || !!item.virtualFolder}
+                        selected={selectedFolderKeys.has(item.key)}
+                        onSelect={() => toggleFolderSelection(item.key)}
+                      />
+                    ))}
+                    {filesToShow.map((file) => (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        onClick={() => setPreviewFile(file)}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          if (currentDrive) loadDriveFiles(currentDrive.id);
+                        }}
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                        onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
             <div
               data-selectable-grid
               className={`relative grid gap-4 ${gridColsClass}`}
@@ -1183,7 +1314,7 @@ export default function FileGrid() {
                       selectable
                       selected={isFolderInSelection}
                       onSelect={() => toggleFolderSelection(item.key)}
-                      layoutSize={cardSize}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
                     />
@@ -1211,7 +1342,7 @@ export default function FileGrid() {
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
                     onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
-                    layoutSize={cardSize}
+                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     thumbnailScale={thumbnailScale}
                     showCardInfo={showCardInfo}
@@ -1219,6 +1350,7 @@ export default function FileGrid() {
                 </div>
               ))}
             </div>
+            )
           ) : (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {isGalleryMediaDrive
@@ -1235,6 +1367,59 @@ export default function FileGrid() {
             {showFolders && folderItems.length > 0 && (
               <>
                 <SectionTitle as="h3" className="mb-4">Your synced drives</SectionTitle>
+                {viewMode === "list" ? (
+                  <div className="mb-8 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                          <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                        </tr>
+                      </thead>
+                      <tbody data-selectable-grid>
+                        {folderItems.map((item) => {
+                          const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                          const driveId = drive?.id;
+                          return (
+                            <FolderListRow
+                              key={item.key}
+                              item={item}
+                              onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                              onDelete={
+                                drive && !item.preventDelete
+                                  ? async () => {
+                                      const ok = await confirm({
+                                        message: item.items === 0
+                                          ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                          : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`,
+                                        destructive: true,
+                                      });
+                                      if (ok) {
+                                        await deleteFolder(drive, item.items);
+                                        if (currentDriveId === driveId) closeDrive();
+                                        await refetch();
+                                      }
+                                    }
+                                  : undefined
+                              }
+                              selectable={!!drive && !item.preventDelete}
+                              selected={selectedFolderKeys.has(item.key)}
+                              onSelect={() => toggleFolderSelection(item.key)}
+                            />
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
                 <div
                   data-selectable-grid
                   className={`mb-8 grid gap-4 ${gridColsClass}`}
@@ -1263,7 +1448,7 @@ export default function FileGrid() {
                           onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                           isDropTarget={isDropTarget}
                           onItemsDropped={handleDropOnFolder}
-                          layoutSize={cardSize}
+                          layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                           layoutAspectRatio={aspectRatio}
                           showCardInfo={showCardInfo}
                           onDelete={
@@ -1289,11 +1474,47 @@ export default function FileGrid() {
                     );
                   })}
                 </div>
+                )}
               </>
             )}
             {filesToShow.length > 0 && (
               <>
                 <SectionTitle as="h3" className="mb-4">Recently synced files</SectionTitle>
+                {viewMode === "list" ? (
+                  <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                          <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                        </tr>
+                      </thead>
+                      <tbody data-selectable-grid>
+                        {filesToShow.map((file) => (
+                          <FileListRow
+                            key={file.id}
+                            file={file}
+                            onClick={() => setPreviewFile(file)}
+                            onDelete={async () => {
+                              await deleteFile(file.id);
+                            }}
+                            selectable
+                            selected={selectedFileIds.has(file.id)}
+                            onSelect={() => toggleFileSelection(file.id)}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
                 <div
                   data-selectable-grid
                   className={`relative grid gap-4 ${gridColsClass}`}
@@ -1325,7 +1546,7 @@ export default function FileGrid() {
                         selectable
                         selected={selectedFileIds.has(file.id)}
                         onSelect={() => toggleFileSelection(file.id)}
-                        layoutSize={cardSize}
+                        layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                         layoutAspectRatio={aspectRatio}
                         thumbnailScale={thumbnailScale}
                         showCardInfo={showCardInfo}
@@ -1333,6 +1554,7 @@ export default function FileGrid() {
                     </div>
                   ))}
                 </div>
+                )}
               </>
             )}
             {!loading && !hasFilters && folderItems.length === 0 && filesToShow.length === 0 && (

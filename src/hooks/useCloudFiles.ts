@@ -70,6 +70,13 @@ export interface RecentFile {
   galleryId?: string | null;
   /** Video proxy status (ready, pending, failed, raw_unsupported, etc.) */
   proxyStatus?: ProxyStatus | null;
+  /** Optional metadata from filter API / backup_files */
+  resolution_w?: number | null;
+  resolution_h?: number | null;
+  duration_sec?: number | null;
+  video_codec?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
