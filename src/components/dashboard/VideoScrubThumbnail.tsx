@@ -83,7 +83,7 @@ export default function VideoScrubThumbnail({
   return (
     <div
       ref={containerRef}
-      className={`relative flex h-full w-full items-center justify-center overflow-hidden ${className}`}
+      className={`relative flex h-full w-full items-center justify-center overflow-hidden bg-neutral-100 dark:bg-neutral-700 ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
@@ -95,7 +95,7 @@ export default function VideoScrubThumbnail({
           muted
           playsInline
           preload="metadata"
-          className={`h-full w-full ${objectFit}`}
+          className={`h-full w-full bg-neutral-100 dark:bg-neutral-700 ${objectFit}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             if (v.duration && v.duration > 0) {
