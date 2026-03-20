@@ -10,18 +10,24 @@ import { createCanvas } from "@napi-rs/canvas";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import sharp from "sharp";
 
-let pdfjsPath: string | null = null;
+// Derive pdfjs-dist path from current module - avoids require.resolve which
+// gets mangled by Next.js bundler in production (returns number instead of string)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// From .next/server/app/api/backup/pdf-thumbnail/ up to project root
+const projectRoot = path.resolve(__dirname, "..", "..", "..", "..", "..", "..", "..");
+const PDFJS_PATH = path.join(projectRoot, "node_modules", "pdfjs-dist");
+const WORKER_PATH = path.join(PDFJS_PATH, "legacy", "build", "pdf.worker.min.mjs");
+
+let workerInitialized = false;
 function getPdfjsPath(): string {
-  if (pdfjsPath) return pdfjsPath;
-  const require = createRequire(import.meta.url);
-  pdfjsPath = path.dirname(require.resolve("pdfjs-dist/package.json"));
-  const workerPath = path.join(pdfjsPath, "legacy", "build", "pdf.worker.min.mjs");
-  GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
-  return pdfjsPath;
+  if (!workerInitialized) {
+    GlobalWorkerOptions.workerSrc = pathToFileURL(WORKER_PATH).toString();
+    workerInitialized = true;
+  }
+  return PDFJS_PATH;
 }
 
 const isDevAuthBypass = () =>
