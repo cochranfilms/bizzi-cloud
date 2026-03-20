@@ -425,7 +425,7 @@ export async function POST(request: Request) {
           actorDisplayName = email?.split("@")[0] ?? "Someone";
         }
       } else {
-        actorDisplayName = actorDisplayName || email?.split("@")[0] ?? "Someone";
+        actorDisplayName = actorDisplayName || (email?.split("@")[0] ?? "Someone");
       }
       await Promise.all([
         createShareNotifications({
@@ -561,7 +561,7 @@ export async function POST(request: Request) {
         actorDisplayName = email?.split("@")[0] ?? "Someone";
       }
     } else {
-      actorDisplayName = actorDisplayName || email?.split("@")[0] ?? "Someone";
+      actorDisplayName = actorDisplayName || (email?.split("@")[0] ?? "Someone");
     }
     const actorEmail = email ?? undefined;
     const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
