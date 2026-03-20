@@ -2,6 +2,7 @@ import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
 import { createShareNotifications } from "@/lib/notification-service";
+import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -413,16 +414,26 @@ export async function POST(request: Request) {
       const profileSnap = await db.collection("profiles").doc(uid).get();
       const actorDisplayName =
         (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
-      await createShareNotifications({
-        sharedByUserId: uid,
-        actorDisplayName,
-        actorEmail: email ?? undefined,
-        fileIds: uniqueIds,
-        folderShareId: shareToken,
-        permission,
-        invitedEmails: shareData.invited_emails,
-        folderName: shareData.folder_name,
-      });
+      await Promise.all([
+        createShareNotifications({
+          sharedByUserId: uid,
+          actorDisplayName,
+          actorEmail: email ?? undefined,
+          fileIds: uniqueIds,
+          folderShareId: shareToken,
+          permission,
+          invitedEmails: shareData.invited_emails,
+          folderName: shareData.folder_name,
+        }),
+        sendShareFileEmailsToInvitees({
+          invitedEmails: shareData.invited_emails,
+          sharedByUserId: uid,
+          actorDisplayName,
+          fileIds: uniqueIds,
+          folderName: shareData.folder_name,
+          shareToken,
+        }),
+      ]);
     }
 
     return NextResponse.json({
@@ -528,16 +539,26 @@ export async function POST(request: Request) {
       (profileSnap.data()?.displayName as string) ?? email?.split("@")[0] ?? "Someone";
     const actorEmail = email ?? undefined;
     const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
-    await createShareNotifications({
-      sharedByUserId: uid,
-      actorDisplayName,
-      actorEmail,
-      fileIds,
-      folderShareId: shareToken,
-      permission,
-      invitedEmails: shareData.invited_emails,
-      folderName: shareData.folder_name,
-    });
+    await Promise.all([
+      createShareNotifications({
+        sharedByUserId: uid,
+        actorDisplayName,
+        actorEmail,
+        fileIds,
+        folderShareId: shareToken,
+        permission,
+        invitedEmails: shareData.invited_emails,
+        folderName: shareData.folder_name,
+      }),
+      sendShareFileEmailsToInvitees({
+        invitedEmails: shareData.invited_emails,
+        sharedByUserId: uid,
+        actorDisplayName,
+        fileIds,
+        folderName: shareData.folder_name,
+        shareToken,
+      }),
+    ]);
   }
 
   return NextResponse.json({

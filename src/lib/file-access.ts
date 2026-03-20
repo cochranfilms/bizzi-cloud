@@ -105,3 +105,17 @@ export async function getFileDisplayName(fileId: string): Promise<string> {
   const path = (fileSnap.data()?.relative_path ?? "") as string;
   return path.split("/").filter(Boolean).pop() ?? "a file";
 }
+
+/**
+ * Get display names for multiple files. Returns up to maxNames, then "and X more" if truncated.
+ */
+export async function getFileDisplayNames(
+  fileIds: string[],
+  maxNames = 10
+): Promise<string[]> {
+  const names: string[] = [];
+  for (const id of fileIds.slice(0, maxNames)) {
+    names.push(await getFileDisplayName(id));
+  }
+  return names;
+}

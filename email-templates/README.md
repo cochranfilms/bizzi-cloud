@@ -2,12 +2,15 @@
 
 Source of truth for EmailJS templates. Copy content into EmailJS dashboard when creating or updating templates.
 
-**Both templates must be created in EmailJS** and their IDs set in env: `EMAILJS_TEMPLATE_ID_INVOICE`, `EMAILJS_TEMPLATE_ID_SIGNUP`.
+**Enterprise templates** must be created and their IDs set in env: `EMAILJS_TEMPLATE_ID_INVOICE`, `EMAILJS_TEMPLATE_ID_SIGNUP`.
+
+**Share template** (optional): Set `EMAILJS_TEMPLATE_ID_SHARE` to enable email notifications when users share files/folders with others.
 
 ## Templates
 
 - **invoice.html** — Sent when admin creates org (subscription payment link). Variables: `to_email`, `org_name`, `invoice_url`, `amount`, `storage_line`, `seats_line`, `addons_line` (optional), `logo_url`
 - **signup-link.html** — Sent when first subscription payment is received (Stripe webhook `invoice.paid`). Variables: `to_email`, `org_name`, `invite_url`, `logo_url`
+- **share-files.html** — Sent when a user shares files or folders with another user. Variables: `to_email`, `sender_name`, `sender_photo_url`, `file_names_html`, `share_title`, `share_url`, `logo_url`. In EmailJS, set **To** to `{{to_email}}` and **Subject** to e.g. `{{sender_name}} shared {{share_title}} with you`.
 
 ## Logo
 
