@@ -14,9 +14,10 @@
     "download:ffmpeg-braw": "node scripts/download-ffmpeg-braw.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.88",
     "@aws-sdk/client-s3": "^3.1003.0",
     "@aws-sdk/s3-request-presigner": "^3.1003.0",
+    "@emailjs/nodejs": "^5.0.2",
+    "@napi-rs/canvas": "^0.1.88",
     "@uppy/aws-s3": "^5.1.0",
     "@uppy/core": "^5.2.0",
     "@uppy/dashboard": "^5.1.1",

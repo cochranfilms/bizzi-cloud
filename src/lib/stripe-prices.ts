@@ -27,8 +27,8 @@ const PLAN_PRICING: Record<Exclude<PlanId, "free">, { name: string; monthly: num
 /** Addon pricing: monthly cents */
 const ADDON_PRICING: Record<AddonId, { name: string; monthly: number }> = {
   gallery: { name: "Bizzi Gallery Suite", monthly: 500 },
-  editor: { name: "Bizzi Editor", monthly: 800 },
-  fullframe: { name: "Bizzi Full Frame", monthly: 1000 },
+  editor: { name: "Bizzi Editor", monthly: 1000 },
+  fullframe: { name: "Bizzi Full Frame", monthly: 1200 },
 };
 
 /** Storage add-on pricing: monthly cents. Indie +1/+2/+3 TB, Video +1..+5 TB */
@@ -189,6 +189,58 @@ export async function getOrCreateStripeStorageAddonPrice(storageAddonId: Storage
     metadata: { storage_addon_id: storageAddonId, storage_addon_plan: pricing.plan, storage_addon_tb: String(pricing.tb) },
   });
   await docRef.set({ price_id: price.id, product_id: product.id, storage_addon_id: storageAddonId, updated_at: new Date().toISOString() });
+  return price.id;
+}
+
+/** Enterprise storage tier IDs for recurring subscription prices */
+export type EnterpriseStorageTierId = "1tb" | "5tb" | "16tb";
+
+/** Enterprise storage pricing: monthly cents */
+const ENTERPRISE_STORAGE_PRICING: Record<EnterpriseStorageTierId, { name: string; monthly: number }> = {
+  "1tb": { name: "Enterprise Storage 1 TB", monthly: 5000 },
+  "5tb": { name: "Enterprise Storage 5 TB", monthly: 20000 },
+  "16tb": { name: "Enterprise Storage 16 TB", monthly: 50000 },
+};
+
+/** Get or create Stripe price for enterprise storage. Caches in Firestore. */
+export async function getOrCreateStripeEnterpriseStoragePrice(
+  tierId: EnterpriseStorageTierId
+): Promise<string> {
+  const docId = `enterprise_storage_${tierId}`;
+  const db = getAdminFirestore();
+  const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
+  const snap = await docRef.get();
+
+  if (snap.exists) {
+    const priceId = snap.data()?.price_id as string | undefined;
+    if (priceId) return priceId;
+  }
+
+  const pricing = ENTERPRISE_STORAGE_PRICING[tierId];
+  if (!pricing) throw new Error(`Unknown enterprise storage tier: ${tierId}`);
+
+  const stripe = getStripeInstance();
+
+  const product = await stripe.products.create({
+    name: pricing.name,
+    metadata: { enterprise_storage_tier: tierId },
+  });
+
+  const price = await stripe.prices.create({
+    product: product.id,
+    unit_amount: pricing.monthly,
+    currency: "usd",
+    recurring: { interval: "month" },
+    metadata: { enterprise_storage_tier: tierId },
+  });
+
+  await docRef.set({
+    price_id: price.id,
+    product_id: product.id,
+    enterprise_storage_tier: tierId,
+    updated_at: new Date().toISOString(),
+  });
+
   return price.id;
 }
 

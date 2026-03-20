@@ -1,7 +1,7 @@
 /**
  * POST /api/admin/enterprise/create-org
- * Admin-only: Create an organization and send invite to org owner.
- * Returns org_id and invite_link for admin to copy and send to customer.
+ * Admin-only: Create an organization, Stripe subscription (recurring monthly), and send payment email via EmailJS.
+ * Org receives sign-up link only after paying the first invoice (via webhook). Subsequent months auto-charge.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
@@ -13,6 +13,28 @@ import {
   ENTERPRISE_ORG_STORAGE_BYTES,
   DEFAULT_SEAT_STORAGE_BYTES,
 } from "@/lib/enterprise-storage";
+import {
+  ENTERPRISE_SEAT_PRICE,
+  getStoragePriceMonthly,
+  getStorageTierByBytes,
+} from "@/lib/enterprise-pricing";
+import Stripe from "stripe";
+import { getStripeInstance } from "@/lib/stripe";
+import {
+  getOrCreateStripeEnterpriseStoragePrice,
+  getOrCreateStripeSeatPrice,
+  type EnterpriseStorageTierId,
+} from "@/lib/stripe-prices";
+import { sendInvoiceEmail } from "@/lib/emailjs";
+
+const TB = 1024 * 1024 * 1024 * 1024;
+
+function formatStorageLabel(bytes: number): string {
+  const tb = bytes / TB;
+  if (tb >= 1) return `${tb} TB`;
+  const gb = bytes / (1024 ** 3);
+  return `${gb} GB`;
+}
 
 export async function POST(request: Request) {
   const authResult = await requireAdminAuth(request);
@@ -70,6 +92,7 @@ export async function POST(request: Request) {
       : ENTERPRISE_ORG_STORAGE_BYTES;
 
   const db = getAdminFirestore();
+  const stripe = getStripeInstance();
 
   const inviteToken = crypto.randomUUID();
   const inviteTokenHash = hashInviteToken(inviteToken);
@@ -79,6 +102,61 @@ export async function POST(request: Request) {
   const orgRef = db.collection("organizations").doc();
   const orgId = orgRef.id;
 
+  // Create or get Stripe customer by email
+  const existingCustomers = await stripe.customers.list({
+    email: ownerEmail,
+    limit: 1,
+  });
+  let stripeCustomerId: string;
+  if (existingCustomers.data.length > 0) {
+    stripeCustomerId = existingCustomers.data[0].id;
+  } else {
+    const customer = await stripe.customers.create({
+      email: ownerEmail,
+      name: orgName,
+    });
+    stripeCustomerId = customer.id;
+  }
+
+  // Get storage tier for Stripe price (must be a standard tier: 1tb, 5tb, 16tb)
+  const storageTier = getStorageTierByBytes(storageQuotaBytes);
+  const tierId = (storageTier?.id ?? "1tb") as EnterpriseStorageTierId;
+
+  const storagePriceId = await getOrCreateStripeEnterpriseStoragePrice(tierId);
+  const seatPriceId = await getOrCreateStripeSeatPrice();
+
+  // Create subscription (recurring monthly). First invoice is unpaid; we send payment link.
+  const subscription = await stripe.subscriptions.create({
+    customer: stripeCustomerId,
+    items: [
+      { price: storagePriceId, quantity: 1 },
+      { price: seatPriceId, quantity: maxSeats },
+    ],
+    payment_behavior: "default_incomplete",
+    payment_settings: {
+      save_default_payment_method: "on_subscription",
+    },
+    metadata: {
+      organization_id: orgId,
+      invite_token: inviteToken,
+    },
+    expand: ["latest_invoice"],
+  });
+
+  const latestInvoice = subscription.latest_invoice as Stripe.Invoice;
+  const hostedInvoiceUrl = latestInvoice?.hosted_invoice_url;
+
+  if (!hostedInvoiceUrl) {
+    return NextResponse.json(
+      { error: "Failed to get subscription payment URL" },
+      { status: 500 }
+    );
+  }
+
+  const storagePriceMonthly = getStoragePriceMonthly(storageQuotaBytes);
+  const storageLabel = formatStorageLabel(storageQuotaBytes);
+
+  // Create org and pending seat in Firestore
   await orgRef.set({
     name: orgName,
     theme: "bizzi" as EnterpriseThemeId,
@@ -87,6 +165,8 @@ export async function POST(request: Request) {
     created_at: now,
     created_by: authResult.uid,
     max_seats: maxSeats,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: subscription.id,
   });
 
   await db.collection("organization_seats").doc(pendingId).set({
@@ -103,21 +183,37 @@ export async function POST(request: Request) {
     storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (typeof process.env.VERCEL_URL === "string"
-      ? `https://${process.env.VERCEL_URL}`
-      : null) ??
-    request.headers.get("origin") ??
-    "http://localhost:3000";
+  // Send subscription payment email via EmailJS
+  const totalCents =
+    Math.round(storagePriceMonthly * 100) + maxSeats * ENTERPRISE_SEAT_PRICE * 100;
+  const amountStr = `$${(totalCents / 100).toFixed(2)}/mo`;
+  const storageLine = `${storageLabel} Enterprise Storage — $${storagePriceMonthly.toFixed(2)}/mo`;
+  const seatsLine = `${maxSeats} seat${maxSeats > 1 ? "s" : ""} × $${ENTERPRISE_SEAT_PRICE}/mo — $${(maxSeats * ENTERPRISE_SEAT_PRICE).toFixed(2)}/mo`;
 
-  const inviteLink = `${baseUrl}/invite/join?token=${inviteToken}`;
+  try {
+    await sendInvoiceEmail({
+      to_email: ownerEmail,
+      org_name: orgName,
+      invoice_url: hostedInvoiceUrl,
+      amount: amountStr,
+      storage_line: storageLine,
+      seats_line: seatsLine,
+    });
+  } catch (err) {
+    console.error("[create-org] EmailJS subscription email failed:", err);
+    return NextResponse.json(
+      {
+        error: "Organization and subscription created, but failed to send payment email. Check EmailJS configuration.",
+      },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({
     organization_id: orgId,
     org_name: orgName,
     owner_email: ownerEmail,
-    invite_link: inviteLink,
-    invite_token: inviteToken,
+    success: true,
+    message: "Organization created. Subscription payment link sent to owner. Sign-up link will be sent after first payment. Future months will auto-charge.",
   });
 }

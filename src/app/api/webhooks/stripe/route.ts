@@ -2,6 +2,7 @@ import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
+import { sendSignupLinkEmail } from "@/lib/emailjs";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -240,6 +241,68 @@ export async function POST(request: Request) {
       if (planId && planId !== "free") {
         await ensureDefaultDrivesForUser(userId);
       }
+      break;
+    }
+
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      // Only send sign-up link on first subscription payment (not renewals)
+      if (invoice.billing_reason !== "subscription_create") {
+        return NextResponse.json({ received: true });
+      }
+
+      const sub = (invoice as { subscription?: string | { id: string } }).subscription;
+      const subscriptionId = typeof sub === "string" ? sub : sub?.id;
+      if (!subscriptionId) return NextResponse.json({ received: true });
+
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const orgId = subscription.metadata?.organization_id as string | undefined;
+      const inviteToken = subscription.metadata?.invite_token as string | undefined;
+
+      if (!orgId || !inviteToken) {
+        return NextResponse.json({ received: true });
+      }
+
+      const orgSnap = await db.collection("organizations").doc(orgId).get();
+      const orgData = orgSnap.data();
+      if (!orgSnap.exists || !orgData) {
+        return NextResponse.json({ received: true });
+      }
+
+      const orgName = (orgData.name as string) ?? "Organization";
+      const seatsSnap = await db
+        .collection("organization_seats")
+        .where("organization_id", "==", orgId)
+        .where("role", "==", "admin")
+        .where("status", "==", "pending")
+        .limit(1)
+        .get();
+
+      const ownerEmail =
+        seatsSnap.docs[0]?.data()?.email as string | undefined;
+      if (!ownerEmail) {
+        console.error("[Stripe webhook] invoice.paid: no pending admin seat for org", orgId);
+        return NextResponse.json({ received: true });
+      }
+
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ??
+        (typeof process.env.VERCEL_URL === "string"
+          ? `https://${process.env.VERCEL_URL}`
+          : null) ??
+        "https://www.bizzicloud.io";
+      const inviteUrl = `${baseUrl}/invite/join?token=${inviteToken}`;
+
+      try {
+        await sendSignupLinkEmail({
+          to_email: ownerEmail,
+          org_name: orgName,
+          invite_url: inviteUrl,
+        });
+      } catch (err) {
+        console.error("[Stripe webhook] invoice.paid: failed to send sign-up link email:", err);
+      }
+
       break;
     }
 

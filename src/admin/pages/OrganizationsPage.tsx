@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
-import { Building2, Copy, Check, Loader2, Users } from "lucide-react";
+import { Building2, Loader2, Users } from "lucide-react";
+import { ENTERPRISE_STORAGE_TIERS } from "@/lib/enterprise-pricing";
 
 export interface OrgListItem {
   id: string;
@@ -24,16 +25,17 @@ export default function OrganizationsPage() {
   const [orgsLoading, setOrgsLoading] = useState(true);
   const [orgName, setOrgName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
-  const [maxSeats, setMaxSeats] = useState("");
+  const [maxSeats, setMaxSeats] = useState("1");
+  const [storageTierId, setStorageTierId] = useState("1tb");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     organization_id: string;
     org_name: string;
     owner_email: string;
-    invite_link: string;
+    success?: boolean;
+    message?: string;
   } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +44,7 @@ export default function OrganizationsPage() {
     const trimmedName = orgName.trim();
     const trimmedEmail = ownerEmail.trim().toLowerCase();
     const seatsNum = maxSeats ? parseInt(maxSeats, 10) : 0;
+    const tier = ENTERPRISE_STORAGE_TIERS.find((t) => t.id === storageTierId);
     if (!trimmedName || trimmedName.length < 2) {
       setError("Organization name must be at least 2 characters");
       return;
@@ -51,7 +54,11 @@ export default function OrganizationsPage() {
       return;
     }
     if (!seatsNum || seatsNum < 1) {
-      setError("Max seats is required (minimum 1)");
+      setError("Seats is required (minimum 1)");
+      return;
+    }
+    if (!tier) {
+      setError("Storage tier is required");
       return;
     }
     setCreating(true);
@@ -67,6 +74,7 @@ export default function OrganizationsPage() {
           org_name: trimmedName,
           owner_email: trimmedEmail,
           max_seats: seatsNum,
+          storage_quota_bytes: tier.bytes,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -76,20 +84,14 @@ export default function OrganizationsPage() {
       setResult(data);
       setOrgName("");
       setOwnerEmail("");
-      setMaxSeats("");
+      setMaxSeats("1");
+      setStorageTierId("1tb");
       fetchOrganizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create");
     } finally {
       setCreating(false);
     }
-  };
-
-  const handleCopyLink = () => {
-    if (!result?.invite_link) return;
-    navigator.clipboard.writeText(result.invite_link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const fetchOrganizations = async () => {
@@ -129,7 +131,7 @@ export default function OrganizationsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Organizations"
-        subtitle="Create enterprise organizations and invite org owners. Copy the invite link and send it to the customer."
+        subtitle="Create enterprise organizations. Invoice is sent to the owner email; sign-up link is sent automatically after payment."
       />
 
       {orgsLoading ? (
@@ -263,10 +265,31 @@ export default function OrganizationsPage() {
           </div>
           <div>
             <label
+              htmlFor="storage"
+              className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+            >
+              Storage *
+            </label>
+            <select
+              id="storage"
+              value={storageTierId}
+              onChange={(e) => setStorageTierId(e.target.value)}
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              disabled={creating}
+            >
+              {ENTERPRISE_STORAGE_TIERS.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label} — ${t.priceMonthly}/mo
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
               htmlFor="max_seats"
               className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
             >
-              Max seats *
+              Seats *
             </label>
             <input
               id="max_seats"
@@ -274,7 +297,7 @@ export default function OrganizationsPage() {
               min={1}
               value={maxSeats}
               onChange={(e) => setMaxSeats(e.target.value)}
-              placeholder="e.g. 5"
+              placeholder="e.g. 3"
               required
               className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
               disabled={creating}
@@ -299,7 +322,7 @@ export default function OrganizationsPage() {
             ) : (
               <>
                 <Building2 className="h-4 w-4" />
-                Create & get invite link
+                Create & send invoice
               </>
             )}
           </button>
@@ -311,35 +334,10 @@ export default function OrganizationsPage() {
           <h3 className="mb-2 font-semibold text-emerald-900 dark:text-emerald-100">
             Organization created
           </h3>
-          <p className="mb-4 text-sm text-emerald-800 dark:text-emerald-200">
-            Send this invite link to {result.owner_email}:
+          <p className="mb-2 text-sm text-emerald-800 dark:text-emerald-200">
+            Subscription payment link sent to {result.owner_email}. Sign-up link will be sent after first payment. Future months will auto-charge.
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              type="text"
-              readOnly
-              value={result.invite_link}
-              className="flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-neutral-700 dark:border-emerald-700 dark:bg-neutral-900 dark:text-neutral-300"
-            />
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-50 dark:border-emerald-700 dark:bg-neutral-900 dark:text-emerald-200 dark:hover:bg-emerald-900/30"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copy link
-                </>
-              )}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+          <p className="text-xs text-emerald-700 dark:text-emerald-300">
             Org ID: {result.organization_id}
           </p>
         </div>

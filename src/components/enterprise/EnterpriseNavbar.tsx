@@ -22,17 +22,22 @@ import UserMenu from "@/components/dashboard/UserMenu";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useSubscription } from "@/hooks/useSubscription";
 
+/** Powerup colors matching pricing cards */
+const CREATOR_COLOR = "#A47BFF"; // Editor purple
+const GALLERIES_COLOR = "#ECA000"; // Gallery Suite yellow
+
 const navItems: Array<{
   href: string;
   label: string;
   icon: typeof Home;
   requiresEditor?: boolean;
   requiresGallerySuite?: boolean;
+  activeBgColor?: string;
 }> = [
   { href: "/enterprise", label: "Home", icon: Home },
   { href: "/enterprise/files", label: "All files", icon: FolderOpen },
-  { href: "/enterprise/creator", label: "Creator", icon: Film, requiresEditor: true },
-  { href: "/enterprise/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
+  { href: "/enterprise/creator", label: "Creator", icon: Film, requiresEditor: true, activeBgColor: CREATOR_COLOR },
+  { href: "/enterprise/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true, activeBgColor: GALLERIES_COLOR },
   { href: "/enterprise/shared", label: "Shared", icon: Share2 },
   { href: "/enterprise/transfers", label: "Transfers", icon: Send },
   { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },
@@ -104,15 +109,19 @@ export default function EnterpriseNavbar() {
           const isActive =
             pathname === item.href ||
             (item.href !== "/enterprise" && pathname.startsWith(item.href));
+          const hasPowerupColor = isActive && item.activeBgColor;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors enterprise-nav-link ${
-                isActive
-                  ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                hasPowerupColor
+                  ? "font-medium text-white"
+                  : isActive
+                    ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
+                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
               }`}
+              style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
               <span className="hidden lg:inline">{item.label}</span>
@@ -164,16 +173,20 @@ export default function EnterpriseNavbar() {
             const isActive =
               pathname === item.href ||
               (item.href !== "/enterprise" && pathname.startsWith(item.href));
+            const hasPowerupColor = isActive && item.activeBgColor;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-                      : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    hasPowerupColor
+                      ? "font-medium text-white"
+                      : isActive
+                        ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
+                        : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
+                  style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
                 >
                   <Icon className="h-4 w-4 flex-shrink-0" />
                   {item.label}

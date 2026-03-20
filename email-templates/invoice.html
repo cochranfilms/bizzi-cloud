@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BizziCloud Enterprise Subscription</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .invoice-box { background: #f8fafc; border-radius: 8px; padding: 20px; margin: 24px 0; }
+    .invoice-box p { margin: 4px 0; }
+    .cta { display: inline-block; background: #0ea5e9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="Bizzi Byte" />
+  </div>
+  <h1>Enterprise Subscription for {{org_name}}</h1>
+  <p>Hello,</p>
+  <p>Your BizziCloud Enterprise subscription is ready. This is a monthly recurring plan. Please complete your first payment below to activate your organization account. Future months will be charged automatically.</p>
+  <div class="invoice-box">
+    <p><strong>{{storage_line}}</strong></p>
+    <p><strong>{{seats_line}}</strong></p>
+    <p style="margin-top: 12px;"><strong>Total: {{amount}}</strong></p>
+  </div>
+  <p>
+    <a href="{{invoice_url}}" class="cta">Complete Payment</a>
+  </p>
+  <p>Once your first payment is received, you will receive a sign-up link to access your BizziCloud Enterprise dashboard.</p>
+  <div class="footer">
+    <p>BizziCloud · Enterprise Storage &amp; Collaboration</p>
+  </div>
+</body>
+</html>

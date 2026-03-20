@@ -206,7 +206,7 @@ export const powerUpAddons = [
     id: "editor",
     name: "Bizzi Editor",
     tagline: "NLE Cloud Drive + Rec.709",
-    price: 8,
+    price: 10,
     description:
       "Mount your cloud as a virtual SSD. NLE editing with Rec.709 LUTs — edit RAW natively in Premiere, Resolve & Final Cut.",
     features: [
@@ -223,7 +223,7 @@ export const powerUpAddons = [
     id: "fullframe",
     name: "Bizzi Full Frame",
     tagline: "Gallery Suite + Editor bundled",
-    price: 10,
+    price: 12,
     description:
       "The complete creative stack — galleries, invoicing, proofing, and NLE editing with Rec.709. Both Power Ups in one.",
     bundleNote: "Save $3/mo vs buying separately",

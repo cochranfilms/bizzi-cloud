@@ -16,17 +16,22 @@ import {
 } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 
+/** Powerup colors matching pricing cards */
+const CREATOR_COLOR = "#A47BFF"; // Editor purple
+const GALLERIES_COLOR = "#ECA000"; // Gallery Suite yellow
+
 const navItems: Array<{
   href: string;
   label: string;
   icon: typeof Home;
   requiresGallerySuite?: boolean;
   requiresEditor?: boolean;
+  activeBgColor?: string;
 }> = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/files", label: "All files", icon: FolderOpen },
-  { href: "/dashboard/creator", label: "Creator", icon: Film, requiresEditor: true },
-  { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true },
+  { href: "/dashboard/creator", label: "Creator", icon: Film, requiresEditor: true, activeBgColor: CREATOR_COLOR },
+  { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true, activeBgColor: GALLERIES_COLOR },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },
   { href: "/dashboard/transfers", label: "Transfers", icon: Send },
   { href: "/dashboard/trash", label: "Deleted files", icon: Trash2 },
@@ -75,15 +80,19 @@ export default function Sidebar() {
           {filteredItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
+            const hasPowerupColor = isActive && item.activeBgColor;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                      : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    hasPowerupColor
+                      ? "font-medium text-white"
+                      : isActive
+                        ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                        : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
+                  style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
                 >
                   <Icon className="h-4 w-4 flex-shrink-0" />
                   {item.label}
