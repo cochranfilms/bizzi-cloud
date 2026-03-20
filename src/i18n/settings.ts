@@ -4,6 +4,7 @@ import { initReactI18next } from "react-i18next";
 const defaultLocale = "en";
 
 void i18n.use(initReactI18next).init({
+  showSupportNotice: false,
   lng: defaultLocale,
   fallbackLng: defaultLocale,
   defaultNS: "common",

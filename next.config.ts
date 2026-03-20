@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["sharp", "ffmpeg-static"],
+  serverExternalPackages: ["sharp", "ffmpeg-static", "@napi-rs/canvas", "pdfjs-dist"],
   async headers() {
     return [
       {

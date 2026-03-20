@@ -1,12 +1,22 @@
 /**
  * GET /api/backup/pdf-thumbnail?object_key=...&name=...
  * Renders the first page of a PDF as a JPEG thumbnail for card previews.
+ * Uses pdfjs-dist + @napi-rs/canvas for Vercel serverless compatibility.
  */
 import { getObjectBuffer, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { createCanvas } from "@napi-rs/canvas";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { NextResponse } from "next/server";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import sharp from "sharp";
+
+// Worker path - process.cwd() is project root in Vercel/serverless
+const pdfjsPath = path.join(process.cwd(), "node_modules/pdfjs-dist");
+const workerPath = path.join(pdfjsPath, "legacy/build/pdf.worker.min.mjs");
+GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -72,16 +82,37 @@ async function handlePdfThumbnail(request: Request) {
 
   try {
     const buffer = await getObjectBuffer(objectKey, PDF_MAX_BYTES);
-    const dataUrl = `data:application/pdf;base64,${buffer.toString("base64")}`;
+    const data = new Uint8Array(buffer);
 
-    const { pdf } = await import("pdf-to-img");
-    const document = await pdf(dataUrl, { scale: 2 });
-    const firstPage = await document.getPage(1);
-    if (!firstPage) {
+    const pdfDocument = await getDocument({
+      data,
+      standardFontDataUrl: path.join(pdfjsPath, "standard_fonts/"),
+      cMapUrl: path.join(pdfjsPath, "cmaps/"),
+      cMapPacked: true,
+      isEvalSupported: false,
+    }).promise;
+
+    if (pdfDocument.numPages < 1) {
       return new NextResponse("PDF has no pages", { status: 422 });
     }
 
-    const resized = await sharp(Buffer.from(firstPage))
+    const page = await pdfDocument.getPage(1);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = createCanvas(
+      Math.floor(viewport.width),
+      Math.floor(viewport.height)
+    );
+    const context = canvas.getContext("2d");
+
+    await page.render({
+      canvasContext: context as unknown as CanvasRenderingContext2D,
+      canvas: canvas as unknown as HTMLCanvasElement,
+      viewport,
+    }).promise;
+
+    const pngBuffer = await canvas.toBuffer("image/png");
+
+    const resized = await sharp(pngBuffer)
       .resize(THUMB_SIZE, THUMB_SIZE, { fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toBuffer();

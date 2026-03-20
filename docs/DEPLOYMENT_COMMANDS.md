@@ -65,6 +65,28 @@ npm run build
 3. Deploy Firestore rules
 4. Deploy the app
 
+## Orphan B2 Cleanup
+
+B2 objects can become orphaned (in B2 but not referenced by any `backup_file`) when:
+- B2 delete failed during permanent-delete (network/timeout) but Firestore was still deleted
+- Historical bugs before the fix
+
+**Dry run** (report only):
+
+```bash
+npm run orphan-cleanup
+```
+
+**Actually delete** orphan objects from B2:
+
+```bash
+npm run orphan-cleanup -- --delete
+```
+
+Requires `.env.local` with `FIREBASE_SERVICE_ACCOUNT_JSON` and B2 vars (`B2_ACCESS_KEY_ID`, `B2_SECRET_ACCESS_KEY`, `B2_BUCKET_NAME`, `B2_ENDPOINT`).
+
+You can also use the Admin Storage page → "Check for orphans" / "Delete orphans".
+
 ## Verification
 
 - **Personal dashboard** (`/dashboard`): Only personal drives and files
