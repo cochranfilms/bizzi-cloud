@@ -3,7 +3,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import { sendSignupLinkEmail, sendSubscriptionWelcomeEmail } from "@/lib/emailjs";
-import { buildSubscriptionWelcomeParams } from "@/lib/subscription-welcome-params";
+import { buildSubscriptionWelcomeParamsFromInvoice } from "@/lib/subscription-welcome-params";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -102,35 +102,7 @@ export async function POST(request: Request) {
         status: "completed",
       }).catch(() => {});
 
-      // Send subscription welcome email for first-time consumer purchases (not plan changes)
-      if (!replaceSubscriptionId && planId) {
-        const baseUrl =
-          process.env.NEXT_PUBLIC_APP_URL ??
-          (typeof process.env.VERCEL_URL === "string"
-            ? `https://${process.env.VERCEL_URL}`
-            : null) ??
-          "https://www.bizzicloud.io";
-        let subscription: Stripe.Subscription | null = null;
-        const subId =
-          typeof session.subscription === "string"
-            ? session.subscription
-            : (session.subscription as Stripe.Subscription | null)?.id ?? null;
-        if (subId) {
-          try {
-            subscription = await stripe.subscriptions.retrieve(subId, {
-              expand: ["items.data.price", "latest_invoice"],
-            });
-          } catch {
-            // ignore
-          }
-        }
-        const welcomeParams = buildSubscriptionWelcomeParams(session, subscription, baseUrl);
-        if (welcomeParams) {
-          sendSubscriptionWelcomeEmail(welcomeParams).catch((err) => {
-            console.error("[Stripe webhook] subscription welcome email failed:", err);
-          });
-        }
-      }
+      // Subscription welcome email is sent from invoice.paid (reliable trigger when payment succeeds)
 
       if (!userId || !planId) {
         // Guest checkout: account creation handled by /account/setup page
@@ -290,7 +262,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true });
       }
 
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ["items.data.price"],
+      });
       let orgId = subscription.metadata?.organization_id as string | undefined;
       let inviteToken = subscription.metadata?.invite_token as string | undefined;
 
@@ -310,7 +284,42 @@ export async function POST(request: Request) {
       }
 
       if (!orgId || !inviteToken) {
-        console.error("[Stripe webhook] invoice.paid: no org or invite_token for subscription", subscriptionId);
+        // Consumer subscription — send subscription welcome email (only on first payment)
+        if (billingReason !== "subscription_create") {
+          return NextResponse.json({ received: true });
+        }
+        const baseUrl =
+          process.env.NEXT_PUBLIC_APP_URL ??
+          (typeof process.env.VERCEL_URL === "string"
+            ? `https://${process.env.VERCEL_URL}`
+            : null) ??
+          "https://www.bizzicloud.io";
+        let sessionId: string | null = null;
+        try {
+          const sessions = await stripe.checkout.sessions.list({
+            subscription: subscriptionId,
+            status: "complete",
+            limit: 1,
+          });
+          sessionId = sessions.data[0]?.id ?? null;
+        } catch (err) {
+          console.warn("[Stripe webhook] invoice.paid: could not list checkout sessions:", err);
+        }
+        const welcomeParams = buildSubscriptionWelcomeParamsFromInvoice(
+          subscription,
+          invoice,
+          sessionId,
+          baseUrl
+        );
+        if (welcomeParams) {
+          sendSubscriptionWelcomeEmail(welcomeParams)
+            .then(() => {
+              console.log("[Stripe webhook] invoice.paid: subscription welcome email sent to", welcomeParams.to_email);
+            })
+            .catch((err) => {
+              console.error("[Stripe webhook] invoice.paid: subscription welcome email failed:", err);
+            });
+        }
         return NextResponse.json({ received: true });
       }
 

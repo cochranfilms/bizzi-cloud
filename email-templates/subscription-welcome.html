@@ -22,15 +22,13 @@
     <img src="{{logo_url}}" alt="BizziCloud" />
   </div>
   <h1>Welcome to BizziCloud!</h1>
-  <p>Hello{{#if customer_name}} {{customer_name}}{{/if}},</p>
+  <p>{{greeting_line}}</p>
   <p>{{intro_paragraph}}</p>
   <div class="subscription-box">
     <p><strong>{{plan_name}}</strong></p>
     <p>{{storage_line}}</p>
     <p>{{seats_line}}</p>
-    {{#if addons_line}}
-    <p>{{addons_line}}</p>
-    {{/if}}
+    {{{addons_block}}}
     <p style="margin-top: 12px;"><strong>{{amount}}</strong></p>
   </div>
   <p>

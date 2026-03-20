@@ -17,14 +17,22 @@ import type Stripe from "stripe";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export interface SubscriptionWelcomeParams {
   to_email: string;
-  customer_name?: string;
+  greeting_line: string;
   intro_paragraph: string;
   plan_name: string;
   storage_line: string;
   seats_line: string;
-  addons_line?: string;
+  addons_block: string;
   amount: string;
   cta_url: string;
   cta_text: string;
@@ -48,6 +56,110 @@ function getAddonPrice(addonId: string): number {
 }
 
 /**
+ * Build subscription welcome email params from subscription + invoice (for invoice.paid webhook).
+ * Uses subscription metadata (same as session metadata from checkout) and invoice for amount/email.
+ * Pass sessionId for guest checkout URL; null for auth (uses /dashboard).
+ */
+export function buildSubscriptionWelcomeParamsFromInvoice(
+  subscription: Stripe.Subscription,
+  invoice: Stripe.Invoice,
+  sessionId: string | null,
+  baseUrl: string
+): SubscriptionWelcomeParams | null {
+  const metadata = subscription.metadata ?? {};
+  const planId = metadata.planId as string | undefined;
+  const addonIdsRaw = metadata.addonIds as string | undefined;
+  const billing = (metadata.billing as string) ?? "monthly";
+  const seatCountRaw = metadata.seat_count;
+  const seatCount =
+    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
+      ? parseInt(seatCountRaw, 10)
+      : 1;
+  const userId = metadata.userId as string | undefined;
+  const customerName = (metadata.customer_name as string)?.trim?.() || undefined;
+
+  const toEmail =
+    (invoice.customer_email as string) ??
+    (metadata.customer_email as string)?.trim?.();
+  if (!toEmail?.trim()) return null;
+
+  if (!planId || !["solo", "indie", "video", "production"].includes(planId)) return null;
+
+  // Skip plan changes (replace_subscription = existing sub being upgraded)
+  if (metadata.replace_subscription) return null;
+
+  const addonIds: string[] = addonIdsRaw ? addonIdsRaw.split(",").filter(Boolean) : [];
+  const isGuest = !userId;
+
+  let storageLine = getPlanStorage(planId) + " Encrypted Cloud Storage";
+  const items = subscription.items.data as SubscriptionItemWithPrice[];
+  for (const item of items) {
+    if (item.deleted) continue;
+    const meta = item.price?.metadata;
+    const addonId = meta?.storage_addon_id as string | undefined;
+    if (addonId) {
+      const label = getStorageAddonLabel(addonId);
+      if (label) storageLine += ` + ${label}`;
+      break;
+    }
+  }
+
+  const planName = PLAN_LABELS[planId] ?? planId;
+  const seatsLine = seatCount === 1 ? "1 seat" : `${seatCount} seats`;
+  const addonParts = addonIds
+    .map((id) => {
+      const name = ADDON_LABELS[id] ?? id;
+      const price = getAddonPrice(id);
+      return price > 0 ? `${name} — $${price}/mo` : name;
+    })
+    .filter(Boolean);
+  const addonsLine = addonParts.length > 0 ? addonParts.join(" · ") : undefined;
+
+  let amountStr = "";
+  const amountCents = invoice.amount_paid;
+  if (typeof amountCents === "number" && amountCents > 0) {
+    const isAnnual = billing === "annual";
+    amountStr = `$${(amountCents / 100).toFixed(2)}${isAnnual ? "/year" : "/mo"}`;
+  }
+  if (!amountStr) {
+    const tier = storageTiers.find((t) => t.id === planId);
+    const planPrice = billing === "annual" ? tier?.annualPrice ?? 0 : tier?.price ?? 0;
+    const addonTotal = addonIds.reduce((s, id) => s + getAddonPrice(id), 0);
+    const seatExtra = Math.max(0, seatCount - 1) * SEAT_PRICE;
+    const total = planPrice + addonTotal + seatExtra;
+    amountStr = billing === "annual" ? `$${total}/year` : `$${total}/mo`;
+  }
+
+  const ctaUrl = isGuest && sessionId
+    ? `${baseUrl}/account/setup?session_id=${sessionId}`
+    : `${baseUrl}/dashboard`;
+  const ctaText = isGuest ? "Complete Account Setup" : "Go to Dashboard";
+  const introParagraph = isGuest
+    ? "Your subscription payment has been received. Complete your account setup below to access your dashboard and start using your storage."
+    : "Your subscription payment has been received. Your subscription is now active.";
+  const footerParagraph = isGuest
+    ? "You'll set your password on the next step. If you already have an account, please sign in."
+    : "You can manage your subscription and billing in Settings.";
+
+  const greetingLine = customerName ? `Hello ${escapeHtml(customerName)},` : "Hello,";
+  const addonsBlock = addonsLine ? `<p>${escapeHtml(addonsLine)}</p>` : "";
+
+  return {
+    to_email: toEmail.trim(),
+    greeting_line: greetingLine,
+    intro_paragraph: introParagraph,
+    plan_name: planName,
+    storage_line: storageLine,
+    seats_line: seatsLine,
+    addons_block: addonsBlock,
+    amount: amountStr,
+    cta_url: ctaUrl,
+    cta_text: ctaText,
+    footer_paragraph: footerParagraph,
+  };
+}
+
+/**
  * Build subscription welcome email params from checkout session.
  * Call from checkout.session.completed for consumer subscriptions.
  */
@@ -68,10 +180,14 @@ export function buildSubscriptionWelcomeParams(
   const userId = metadata.userId as string | undefined;
   const customerName = (metadata.customer_name as string)?.trim?.() || undefined;
 
+  const cust = session.customer;
+  const custEmail =
+    typeof cust === "object" && cust && "email" in cust ? (cust as Stripe.Customer).email : undefined;
   const toEmail =
     (session.customer_email as string) ??
-    (session.customer as Stripe.Customer)?.email ??
-    (metadata.customer_email as string);
+    (session.customer_details as { email?: string } | null)?.email ??
+    (metadata.customer_email as string) ??
+    custEmail;
   if (!toEmail?.trim()) return null;
 
   if (!planId || !["solo", "indie", "video", "production"].includes(planId)) return null;
@@ -148,14 +264,17 @@ export function buildSubscriptionWelcomeParams(
     ? "You'll set your password on the next step. If you already have an account, please sign in."
     : "You can manage your subscription and billing in Settings.";
 
+  const greetingLine = customerName ? `Hello ${escapeHtml(customerName)},` : "Hello,";
+  const addonsBlock = addonsLine ? `<p>${escapeHtml(addonsLine)}</p>` : "";
+
   return {
     to_email: toEmail.trim(),
-    customer_name: customerName,
+    greeting_line: greetingLine,
     intro_paragraph: introParagraph,
     plan_name: planName,
     storage_line: storageLine,
     seats_line: seatsLine,
-    addons_line: addonsLine,
+    addons_block: addonsBlock,
     amount: amountStr,
     cta_url: ctaUrl,
     cta_text: ctaText,

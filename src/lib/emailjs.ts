@@ -388,12 +388,12 @@ export async function sendTransferEmailToClient(
 
 export interface SubscriptionWelcomeEmailParams {
   to_email: string;
-  customer_name?: string;
+  greeting_line: string;
   intro_paragraph: string;
   plan_name: string;
   storage_line: string;
   seats_line: string;
-  addons_line?: string;
+  addons_block: string;
   amount: string;
   cta_url: string;
   cta_text: string;
@@ -403,14 +403,19 @@ export interface SubscriptionWelcomeEmailParams {
 /**
  * Send subscription welcome email when a consumer purchases a subscription.
  * Requires EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME. If not set, does nothing (no-op).
- * Template params: to_email, customer_name, intro_paragraph, plan_name, storage_line, seats_line,
- *   addons_line (optional), amount, cta_url, cta_text, footer_paragraph, logo_url
+ * Template params: to_email, greeting_line, intro_paragraph, plan_name, storage_line, seats_line,
+ *   addons_block, amount, cta_url, cta_text, footer_paragraph, logo_url
  */
 export async function sendSubscriptionWelcomeEmail(
   params: SubscriptionWelcomeEmailParams
 ): Promise<void> {
   const config = getSubscriptionWelcomeConfig();
-  if (!config) return;
+  if (!config) {
+    console.warn(
+      "[EmailJS] Subscription welcome email skipped: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME not set"
+    );
+    return;
+  }
 
   const templateParams = {
     ...params,
