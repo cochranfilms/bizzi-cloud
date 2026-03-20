@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useSubscription } from "@/hooks/useSubscription";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
@@ -32,6 +33,14 @@ interface FileCardProps {
   selectable?: boolean;
   /** Called after a successful rename to refresh the view */
   onAfterRename?: () => void;
+  /** Layout: card size (small/medium/large) */
+  layoutSize?: CardSize;
+  /** Layout: aspect ratio of the thumbnail area */
+  layoutAspectRatio?: AspectRatio;
+  /** Layout: how thumbnail fills the area (fit = show full, fill = crop to fill) */
+  thumbnailScale?: ThumbnailScale;
+  /** Layout: whether to show metadata (filename, size, date, etc.) */
+  showCardInfo?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -63,6 +72,18 @@ function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
 
+const FILE_SIZE_CLASSES = {
+  small: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
+  medium: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
+  large: { padding: "p-8", icon: "h-20 w-20", iconInner: "h-10 w-10", text: "text-base" },
+} as const;
+
+const FILE_ASPECT_CLASSES = {
+  landscape: "aspect-video",
+  square: "aspect-square",
+  portrait: "aspect-[3/4]",
+} as const;
+
 export default function FileCard({
   file,
   onClick,
@@ -71,6 +92,10 @@ export default function FileCard({
   onSelect,
   selectable = false,
   onAfterRename,
+  layoutSize = "medium",
+  layoutAspectRatio = "landscape",
+  thumbnailScale = "fit",
+  showCardInfo = true,
 }: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -104,6 +129,9 @@ export default function FileCard({
   const hasLargePreview = isVideo || isImage || isPdf;
   const { confirm } = useConfirm();
   const hearts = useHearts(file.id);
+  const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
+  const aspectClass = FILE_ASPECT_CLASSES[layoutAspectRatio];
+  const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -117,7 +145,8 @@ export default function FileCard({
   return (
     <div
       ref={cardRef}
-      className={`group relative flex flex-col rounded-xl border p-6 transition-colors ${
+      title={!showCardInfo ? file.name : undefined}
+      className={`group relative flex min-w-0 flex-col rounded-xl border transition-colors ${sizeClasses.padding} ${
         hasLargePreview ? "items-stretch" : "items-center"
       } ${
         selected
@@ -217,8 +246,8 @@ export default function FileCard({
         </div>
       )}
       <div
-        className={`relative mb-3 flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
-          hasLargePreview ? "w-full min-w-0 aspect-video" : "h-16 w-16"
+        className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
+          hasLargePreview ? `mb-3 w-full min-w-0 ${aspectClass}` : sizeClasses.icon
         }`}
       >
         {isVideo && file.objectKey ? (
@@ -226,6 +255,7 @@ export default function FileCard({
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
+            objectFit={objectFit}
           />
         ) : (thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
           <>
@@ -233,7 +263,7 @@ export default function FileCard({
             <img
               src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
               alt=""
-              className="h-full w-full object-cover"
+              className={`h-full w-full ${objectFit}`}
             />
           </>
         ) : isVideo ? (
@@ -246,58 +276,62 @@ export default function FileCard({
             </div>
           </div>
         ) : (
-          <FileIcon className="h-8 w-8" />
+          <FileIcon className={sizeClasses.iconInner} />
         )}
       </div>
-      <h3 className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white" title={file.name}>
-        {file.name}
-      </h3>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        {formatBytes(file.size)} · {file.driveName}
-      </p>
-      <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-        {formatDate(file.modifiedAt)}
-      </p>
-      {isVideo && file.proxyStatus && (
-        <p
-          className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400"
-          title={
-            file.proxyStatus === "ready"
-              ? "Proxy ready for editing"
-              : file.proxyStatus === "pending" || file.proxyStatus === "processing"
-                ? "Proxy generating..."
-                : file.proxyStatus === "failed"
-                  ? "Proxy failed"
-                  : file.proxyStatus === "raw_unsupported"
-                    ? "RAW original only"
-                    : ""
-          }
-        >
-          {file.proxyStatus === "ready"
-            ? "Proxy ready"
-            : file.proxyStatus === "pending" || file.proxyStatus === "processing"
-              ? "Proxy processing"
-              : file.proxyStatus === "failed"
-                ? "Proxy failed"
-                : file.proxyStatus === "raw_unsupported"
-                  ? "RAW only"
-                  : null}
-        </p>
+      {showCardInfo && (
+        <>
+          <h3 className={`mb-1 truncate w-full text-center font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
+            {file.name}
+          </h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {formatBytes(file.size)} · {file.driveName}
+          </p>
+          <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+            {formatDate(file.modifiedAt)}
+          </p>
+          {isVideo && file.proxyStatus && (
+            <p
+              className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400"
+              title={
+                file.proxyStatus === "ready"
+                  ? "Proxy ready for editing"
+                  : file.proxyStatus === "pending" || file.proxyStatus === "processing"
+                    ? "Proxy generating..."
+                    : file.proxyStatus === "failed"
+                      ? "Proxy failed"
+                      : file.proxyStatus === "raw_unsupported"
+                        ? "RAW original only"
+                        : ""
+              }
+            >
+              {file.proxyStatus === "ready"
+                ? "Proxy ready"
+                : file.proxyStatus === "pending" || file.proxyStatus === "processing"
+                  ? "Proxy processing"
+                  : file.proxyStatus === "failed"
+                    ? "Proxy failed"
+                    : file.proxyStatus === "raw_unsupported"
+                      ? "RAW only"
+                      : null}
+            </p>
+          )}
+          <div
+            className="mt-2 flex justify-center"
+            onClick={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <HeartButton
+              count={hearts.count}
+              hasHearted={hearts.hasHearted}
+              loading={hearts.loading}
+              onToggle={hearts.toggle}
+              size="sm"
+              showCount
+            />
+          </div>
+        </>
       )}
-      <div
-        className="mt-2 flex justify-center"
-        onClick={(e) => e.stopPropagation()}
-        role="presentation"
-      >
-        <HeartButton
-          count={hearts.count}
-          hasHearted={hearts.hasHearted}
-          loading={hearts.loading}
-          onToggle={hearts.toggle}
-          size="sm"
-          showCount
-        />
-      </div>
 
       <ShareModal
         open={shareOpen}

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
+import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
 import { CurrentFolderProvider } from "@/context/CurrentFolderContext";
 import { EnterpriseProvider } from "@/context/EnterpriseContext";
@@ -24,10 +25,12 @@ export default function DashboardLayout({
               <SubscriptionProvider>
                 <ConfirmProvider>
                   <DashboardAppearanceProvider>
-                    <Suspense fallback={null}>
-                      <CheckoutSuccessSync />
-                    </Suspense>
-                    <DashboardShell>{children}</DashboardShell>
+                    <LayoutSettingsProvider>
+                      <Suspense fallback={null}>
+                        <CheckoutSuccessSync />
+                      </Suspense>
+                      <DashboardShell>{children}</DashboardShell>
+                    </LayoutSettingsProvider>
                   </DashboardAppearanceProvider>
                 </ConfirmProvider>
               </SubscriptionProvider>

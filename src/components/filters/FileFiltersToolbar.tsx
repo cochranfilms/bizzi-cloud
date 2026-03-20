@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Filter, LayoutGrid, List } from "lucide-react";
+import { Search, Filter, LayoutGrid, List, ImageIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import QuickFilterChips from "./QuickFilterChips";
 import SortDropdown from "./SortDropdown";
@@ -15,8 +15,8 @@ interface FileFiltersToolbarProps {
   sortValue: string;
   onSortChange: (value: string) => void;
   onFiltersClick: () => void;
-  viewMode?: "grid" | "list";
-  onViewModeChange?: (mode: "grid" | "list") => void;
+  viewMode?: "grid" | "list" | "thumbnail";
+  onViewModeChange?: (mode: "grid" | "list" | "thumbnail") => void;
   hasActiveFilters?: boolean;
   className?: string;
 }
@@ -92,6 +92,18 @@ export default function FileFiltersToolbar({
             <div className="flex shrink-0 gap-0.5 rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-600 dark:bg-neutral-800">
               <button
                 type="button"
+                onClick={() => onViewModeChange("list")}
+                className={`rounded-md p-2 transition-colors ${
+                  viewMode === "list"
+                    ? "bg-white text-bizzi-blue shadow dark:bg-neutral-700"
+                    : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+                }`}
+                aria-label="List view"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => onViewModeChange("grid")}
                 className={`rounded-md p-2 transition-colors ${
                   viewMode === "grid"
@@ -104,15 +116,15 @@ export default function FileFiltersToolbar({
               </button>
               <button
                 type="button"
-                onClick={() => onViewModeChange("list")}
+                onClick={() => onViewModeChange("thumbnail")}
                 className={`rounded-md p-2 transition-colors ${
-                  viewMode === "list"
+                  viewMode === "thumbnail"
                     ? "bg-white text-bizzi-blue shadow dark:bg-neutral-700"
                     : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
                 }`}
-                aria-label="List view"
+                aria-label="Thumbnail view"
               >
-                <List className="h-4 w-4" />
+                <ImageIcon className="h-4 w-4" />
               </button>
             </div>
           )}

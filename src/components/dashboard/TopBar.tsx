@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Upload, FolderPlus, Folder, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
+import AppearanceSettingsMenu from "./AppearanceSettingsMenu";
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
@@ -127,6 +128,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
         </h1>
 
       <div className="flex flex-wrap items-center gap-2">
+        <AppearanceSettingsMenu />
         {showCreateTransfer ? (
             <button
               type="button"

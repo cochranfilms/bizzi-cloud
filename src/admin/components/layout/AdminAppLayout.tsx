@@ -27,7 +27,7 @@ export default function AdminAppLayout({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-neutral-100 dark:bg-neutral-950">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-neutral-100 dark:bg-neutral-950">
       <AdminSidebar
         systemStatus={systemStatus}
         mobileOpen={mobileSidebarOpen}

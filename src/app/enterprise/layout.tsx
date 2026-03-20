@@ -1,5 +1,6 @@
 import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
+import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
 import { CurrentFolderProvider } from "@/context/CurrentFolderContext";
 import { EnterpriseProvider } from "@/context/EnterpriseContext";
@@ -21,9 +22,11 @@ export default function EnterpriseLayout({
             <DashboardAuthGuard>
               <ConfirmProvider>
                 <DashboardAppearanceProvider>
-                  <EnterpriseAuthGuard>
-                    <EnterpriseShell>{children}</EnterpriseShell>
-                  </EnterpriseAuthGuard>
+                  <LayoutSettingsProvider>
+                    <EnterpriseAuthGuard>
+                      <EnterpriseShell>{children}</EnterpriseShell>
+                    </EnterpriseAuthGuard>
+                  </LayoutSettingsProvider>
                 </DashboardAppearanceProvider>
               </ConfirmProvider>
             </DashboardAuthGuard>

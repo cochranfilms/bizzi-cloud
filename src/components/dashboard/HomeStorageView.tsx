@@ -26,6 +26,7 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
+import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -162,6 +163,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getOrCreateGalleryDrive,
   } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
+  const {
+    viewMode,
+    cardSize,
+    aspectRatio,
+    thumbnailScale,
+    showCardInfo,
+  } = useLayoutSettings();
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -698,7 +706,23 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          <div
+            className={`grid gap-4 max-w-4xl mx-auto ${
+              viewMode === "list"
+                ? "grid-cols-1"
+                : viewMode === "thumbnail"
+                  ? cardSize === "small"
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                    : cardSize === "large"
+                      ? "grid-cols-1 sm:grid-cols-2"
+                      : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
+                  : cardSize === "small"
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                    : cardSize === "large"
+                      ? "grid-cols-1 sm:grid-cols-2"
+                      : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
+            }`}
+          >
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -760,7 +784,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : hasPinned ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={`grid gap-4 ${
+              viewMode === "list"
+                ? "grid-cols-1"
+                : cardSize === "small"
+                  ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                  : cardSize === "large"
+                    ? "sm:grid-cols-1 md:grid-cols-2"
+                    : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
             {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 const driveId = item.driveId ?? "";
@@ -785,6 +819,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      layoutSize={cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
                       onDelete={
                         drive && !item.preventDelete
                           ? async () => {
@@ -830,6 +867,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     selectable
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
+                    layoutSize={cardSize}
+                    layoutAspectRatio={aspectRatio}
+                    thumbnailScale={thumbnailScale}
+                    showCardInfo={showCardInfo}
                   />
                 </div>
               ))}
@@ -849,7 +890,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : driveFolderItems.length > 0 ? (
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={`mb-6 grid gap-4 ${
+              viewMode === "list"
+                ? "grid-cols-1"
+                : cardSize === "small"
+                  ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                  : cardSize === "large"
+                    ? "sm:grid-cols-1 md:grid-cols-2"
+                    : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
             {driveFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -910,7 +961,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 Loading…
               </div>
             ) : recentUploads.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
+              <div
+                className={`grid gap-4 ${
+                  viewMode === "list"
+                    ? "grid-cols-1"
+                    : cardSize === "small"
+                      ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                      : cardSize === "large"
+                        ? "sm:grid-cols-1 md:grid-cols-2"
+                        : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
                 {recentUploads.map((file) => (
                   <div
                     key={file.id}
@@ -929,6 +990,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       selectable
                       selected={selectedFileIds.has(file.id)}
                       onSelect={() => toggleFileSelection(file.id)}
+                      layoutSize={cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      thumbnailScale={thumbnailScale}
+                      showCardInfo={showCardInfo}
                     />
                   </div>
                 ))}

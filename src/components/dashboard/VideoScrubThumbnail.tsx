@@ -14,6 +14,8 @@ interface VideoScrubThumbnailProps {
   isLoading?: boolean;
   /** Show play icon overlay */
   showPlayIcon?: boolean;
+  /** How thumbnail/video fills the container: cover (crop) or contain (fit) */
+  objectFit?: "object-cover" | "object-contain";
 }
 
 /**
@@ -26,6 +28,7 @@ export default function VideoScrubThumbnail({
   className = "",
   isLoading = false,
   showPlayIcon = true,
+  objectFit = "object-cover",
 }: VideoScrubThumbnailProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
@@ -92,7 +95,7 @@ export default function VideoScrubThumbnail({
           muted
           playsInline
           preload="metadata"
-          className="h-full w-full object-cover"
+          className={`h-full w-full ${objectFit}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             if (v.duration && v.duration > 0) {
@@ -106,7 +109,7 @@ export default function VideoScrubThumbnail({
           <img
             src={thumbnailUrl ?? ""}
             alt=""
-            className="h-full w-full object-cover"
+            className={`h-full w-full ${objectFit}`}
           />
         </>
       ) : (

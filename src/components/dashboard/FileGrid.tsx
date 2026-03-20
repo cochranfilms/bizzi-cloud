@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, LayoutGrid, List, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, ImageIcon, Images, LayoutGrid, List, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -38,6 +38,7 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
+import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 function BulkActionBar({
   selectedFileCount,
@@ -139,7 +140,22 @@ function BulkActionBar({
 }
 
 export default function FileGrid() {
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const {
+    viewMode,
+    setViewMode,
+    cardSize,
+    aspectRatio,
+    thumbnailScale,
+    showCardInfo,
+  } = useLayoutSettings();
+  const gridColsClass =
+    viewMode === "list"
+      ? "grid-cols-1"
+      : cardSize === "small"
+        ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+        : cardSize === "large"
+          ? "sm:grid-cols-1 md:grid-cols-2"
+          : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3";
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
@@ -928,7 +944,7 @@ export default function FileGrid() {
               Loading…
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
+            <div className={`grid gap-4 ${gridColsClass}`}>
               {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 const driveId = item.driveId ?? "";
@@ -953,6 +969,9 @@ export default function FileGrid() {
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
+                      layoutSize={cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
                       onDelete={
                         drive && !item.preventDelete
                           ? async () => {
@@ -997,6 +1016,10 @@ export default function FileGrid() {
                     selectable
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
+                    layoutSize={cardSize}
+                    layoutAspectRatio={aspectRatio}
+                    thumbnailScale={thumbnailScale}
+                    showCardInfo={showCardInfo}
                   />
                 </div>
               ))}
@@ -1099,6 +1122,18 @@ export default function FileGrid() {
             >
               <List className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("thumbnail")}
+              className={`rounded p-2 ${
+                viewMode === "thumbnail"
+                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
+                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              }`}
+              aria-label="Thumbnail view"
+            >
+              <ImageIcon className="h-4 w-4" />
+            </button>
             </div>
           </div>
         </div>
@@ -1116,7 +1151,7 @@ export default function FileGrid() {
         ) : hasFilters || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
             <div
               data-selectable-grid
-              className="relative grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+              className={`relative grid gap-4 ${gridColsClass}`}
             >
               {hasFilters && filtersLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
@@ -1148,6 +1183,9 @@ export default function FileGrid() {
                       selectable
                       selected={isFolderInSelection}
                       onSelect={() => toggleFolderSelection(item.key)}
+                      layoutSize={cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
                     />
                   </div>
                 );
@@ -1173,6 +1211,10 @@ export default function FileGrid() {
                     selected={selectedFileIds.has(file.id)}
                     onSelect={() => toggleFileSelection(file.id)}
                     onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                    layoutSize={cardSize}
+                    layoutAspectRatio={aspectRatio}
+                    thumbnailScale={thumbnailScale}
+                    showCardInfo={showCardInfo}
                   />
                 </div>
               ))}
@@ -1195,7 +1237,7 @@ export default function FileGrid() {
                 <SectionTitle as="h3" className="mb-4">Your synced drives</SectionTitle>
                 <div
                   data-selectable-grid
-                  className="mb-8 grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                  className={`mb-8 grid gap-4 ${gridColsClass}`}
                 >
                   {folderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
@@ -1221,6 +1263,9 @@ export default function FileGrid() {
                           onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                           isDropTarget={isDropTarget}
                           onItemsDropped={handleDropOnFolder}
+                          layoutSize={cardSize}
+                          layoutAspectRatio={aspectRatio}
+                          showCardInfo={showCardInfo}
                           onDelete={
                             drive && !item.preventDelete
                               ? async () => {
@@ -1251,7 +1296,7 @@ export default function FileGrid() {
                 <SectionTitle as="h3" className="mb-4">Recently synced files</SectionTitle>
                 <div
                   data-selectable-grid
-                  className="relative grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                  className={`relative grid gap-4 ${gridColsClass}`}
                 >
                   {hasFilters && filtersLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
@@ -1280,6 +1325,10 @@ export default function FileGrid() {
                         selectable
                         selected={selectedFileIds.has(file.id)}
                         onSelect={() => toggleFileSelection(file.id)}
+                        layoutSize={cardSize}
+                        layoutAspectRatio={aspectRatio}
+                        thumbnailScale={thumbnailScale}
+                        showCardInfo={showCardInfo}
                       />
                     </div>
                   ))}

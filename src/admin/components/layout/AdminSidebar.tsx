@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
-  X,
 } from "lucide-react";
 import { mapSeverityToBadge } from "@/admin/utils/mapSeverityToBadge";
 
@@ -69,110 +68,9 @@ export default function AdminSidebar({
         : "healthy"
   );
 
-  const NavContent = (
-    <>
-      <div className="flex h-14 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
-        {!collapsed && (
-          <Link href="/admin" className="flex items-center gap-2" onClick={onMobileClose}>
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
-            <span className="font-semibold text-neutral-900 dark:text-white">
-              Admin
-            </span>
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 lg:block hidden"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-5 w-5" />
-          ) : (
-            <ChevronLeft className="h-5 w-5" />
-          )}
-        </button>
-        {onMobileClose && (
-          <button
-            type="button"
-            onClick={onMobileClose}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 lg:hidden"
-            aria-label="Close menu"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-        )}
-      </div>
-
-      <nav className="flex-1 overflow-y-auto py-4">
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-4">
-            {!collapsed && (
-              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                {group.label}
-              </p>
-            )}
-            <ul className="space-y-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/admin" && pathname.startsWith(item.href));
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={onMobileClose}
-                      className={`flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
-                        collapsed ? "justify-center" : ""
-                      } ${
-                        isActive
-                          ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
-                          : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                      }`}
-                      title={collapsed ? item.label : undefined}
-                    >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
-                      {!collapsed && <span>{item.label}</span>}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </nav>
-
-      {!collapsed && (
-        <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
-          <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800/50">
-            <Activity className="h-4 w-4 text-neutral-500" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                System
-              </p>
-              <span className={badge.className}>
-                <span
-                  className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${badge.dotClassName}`}
-                />
-                {systemStatus}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile overlay - click to close drawer */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -180,50 +78,53 @@ export default function AdminSidebar({
           aria-hidden
         />
       )}
+      {/* Desktop: relative so content shifts. Mobile: fixed overlay that slides in. */}
       <aside
         className={`flex shrink-0 flex-col border-r border-neutral-200 bg-white transition-[width] duration-200 ease-out dark:border-neutral-800 dark:bg-neutral-950
-          fixed inset-y-0 left-0 z-50 w-64 shadow-xl
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
+          max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50 max-lg:w-64 max-lg:shadow-xl max-lg:transition-transform max-lg:duration-200
+          ${mobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"}
           lg:relative lg:z-auto lg:translate-x-0 lg:shadow-none
           ${collapsed ? "lg:w-16" : "lg:w-56"}`}
       >
-      <div className="flex h-14 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
+      <div className="flex h-14 min-w-0 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
         {!collapsed && (
-          <Link href="/admin" className="flex items-center gap-2" onClick={onMobileClose}>
+          <Link href="/admin" className="flex min-w-0 items-center gap-2" onClick={onMobileClose}>
             <Image
               src="/logo.png"
               alt="Bizzi Cloud"
               width={24}
               height={24}
-              className="object-contain"
+              className="flex-shrink-0 object-contain"
             />
-            <span className="font-semibold text-neutral-900 dark:text-white">
+            <span className="truncate font-semibold text-neutral-900 dark:text-white">
               Admin
             </span>
           </Link>
         )}
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="hidden rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 lg:block dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-5 w-5" />
-          ) : (
-            <ChevronLeft className="h-5 w-5" />
-          )}
-        </button>
-        {onMobileClose && (
+        <div className="flex flex-shrink-0 items-center gap-0.5">
           <button
             type="button"
-            onClick={onMobileClose}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 lg:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-            aria-label="Close menu"
+            onClick={() => setCollapsed((c) => !c)}
+            className="hidden rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 lg:flex dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <X className="h-5 w-5" />
+            {collapsed ? (
+              <ChevronRight className="h-5 w-5" />
+            ) : (
+              <ChevronLeft className="h-5 w-5" />
+            )}
           </button>
-        )}
+          {onMobileClose && (
+            <button
+              type="button"
+              onClick={onMobileClose}
+              className="flex rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 lg:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+              aria-label="Close menu"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4">

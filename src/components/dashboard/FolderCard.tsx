@@ -1,6 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
+import type { CardSize, AspectRatio } from "@/context/LayoutSettingsContext";
 import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import { useCallback, useState } from "react";
@@ -53,7 +54,25 @@ interface FolderCardProps {
   isDropTarget?: boolean;
   /** Called when items are dropped on this folder; parent extracts fileIds/folderKeys from event */
   onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
+  /** Layout: card size (small/medium/large) */
+  layoutSize?: CardSize;
+  /** Layout: aspect ratio of the card */
+  layoutAspectRatio?: AspectRatio;
+  /** Layout: whether to show metadata (item count) */
+  showCardInfo?: boolean;
 }
+
+const SIZE_CLASSES = {
+  small: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
+  medium: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
+  large: { padding: "p-8", icon: "h-20 w-20", iconInner: "h-10 w-10", text: "text-base" },
+} as const;
+
+const ASPECT_CLASSES = {
+  landscape: "aspect-[4/3]",
+  square: "aspect-square",
+  portrait: "aspect-[3/4]",
+} as const;
 
 export default function FolderCard({
   item,
@@ -64,6 +83,9 @@ export default function FolderCard({
   selectable = false,
   isDropTarget = false,
   onItemsDropped,
+  layoutSize = "medium",
+  layoutAspectRatio = "landscape",
+  showCardInfo = true,
 }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -120,11 +142,13 @@ export default function FolderCard({
   );
 
   const isSystemFolder = item.isSystemFolder === true;
+  const sizeClasses = SIZE_CLASSES[layoutSize];
+  const aspectClass = ASPECT_CLASSES[layoutAspectRatio];
 
   return (
     <>
       <div
-        className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
+        className={`group relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${sizeClasses.padding} ${aspectClass} ${
           isSystemFolder
             ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
             : selected
@@ -176,20 +200,20 @@ export default function FolderCard({
             {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
           </button>
         )}
-        <div className="relative mb-3">
+        <div className={`relative ${layoutSize === "small" ? "mb-2" : "mb-3"}`}>
           <div
-            className={`flex h-16 w-16 items-center justify-center rounded-xl ${
+            className={`flex items-center justify-center rounded-xl ${sizeClasses.icon} ${
               isSystemFolder
                 ? "bg-white/20 text-white dark:bg-white/25 dark:text-bizzi-cyan"
                 : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
             }`}
           >
             {item.customIcon ? (
-              <item.customIcon className="h-8 w-8" />
+              <item.customIcon className={sizeClasses.iconInner} />
             ) : item.name === "Storage" || item.name === "Uploads" ? (
-              <BizzicloudStorageIcon className="h-8 w-8" />
+              <BizzicloudStorageIcon className={sizeClasses.iconInner} />
             ) : (
-              <Folder className="h-8 w-8" />
+              <Folder className={sizeClasses.iconInner} />
             )}
           </div>
           {item.isShared && (
@@ -199,17 +223,19 @@ export default function FolderCard({
           )}
         </div>
         <h3
-          className={`mb-1 w-full truncate text-center text-sm font-medium ${
+          className={`mb-1 w-full truncate text-center font-medium ${sizeClasses.text} ${
             isSystemFolder ? "text-white dark:text-white" : "text-neutral-900 dark:text-white"
           }`}
         >
           {item.name}
         </h3>
-        <p
-          className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-bizzi-cyan/90" : "text-neutral-500 dark:text-neutral-400"}`}
-        >
-          {item.items} {item.items === 1 ? "item" : "items"}
-        </p>
+        {showCardInfo && (
+          <p
+            className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-bizzi-cyan/90" : "text-neutral-500 dark:text-neutral-400"}`}
+          >
+            {item.items} {item.items === 1 ? "item" : "items"}
+          </p>
+        )}
         <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {!item.hideShare && (
             <button
