@@ -1,6 +1,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { createShareNotifications } from "@/lib/notification-service";
+import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -260,7 +261,7 @@ export async function PATCH(
     );
   }
 
-  // Send notifications to newly added invitees
+  // Send notifications and emails to newly added invitees
   const newEmails = result.ok && "newInvitedEmails" in result ? (result.newInvitedEmails ?? []) : [];
   if (newEmails.length > 0) {
     const prevSet = new Set((result.prevInvited ?? []).map((e: string) => e.toLowerCase()));
@@ -275,15 +276,25 @@ export async function PATCH(
         const driveSnap = await db.collection("linked_drives").doc(result.linkedDriveId as string).get();
         folderNameVal = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Folder";
       }
-      await createShareNotifications({
-        sharedByUserId: uid,
-        actorDisplayName,
-        fileIds,
-        folderShareId: shareToken,
-        permission: (result.permission as string) ?? "view",
-        invitedEmails: newlyAdded,
-        folderName: folderNameVal,
-      });
+      await Promise.all([
+        createShareNotifications({
+          sharedByUserId: uid,
+          actorDisplayName,
+          fileIds,
+          folderShareId: shareToken,
+          permission: (result.permission as string) ?? "view",
+          invitedEmails: newlyAdded,
+          folderName: folderNameVal,
+        }),
+        sendShareFileEmailsToInvitees({
+          invitedEmails: newlyAdded,
+          sharedByUserId: uid,
+          actorDisplayName,
+          fileIds,
+          folderName: folderNameVal,
+          shareToken,
+        }),
+      ]);
     }
   }
 
