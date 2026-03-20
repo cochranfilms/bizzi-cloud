@@ -4,6 +4,7 @@ import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
 import { CurrentFolderProvider } from "@/context/CurrentFolderContext";
 import { EnterpriseProvider } from "@/context/EnterpriseContext";
+import { SubscriptionProvider } from "@/context/SubscriptionContext";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import DashboardAuthGuard from "@/components/dashboard/DashboardAuthGuard";
 import EnterpriseAuthGuard from "@/components/enterprise/EnterpriseAuthGuard";
@@ -20,15 +21,17 @@ export default function EnterpriseLayout({
         <BackupProvider>
           <CurrentFolderProvider>
             <DashboardAuthGuard>
-              <ConfirmProvider>
-                <DashboardAppearanceProvider>
-                  <LayoutSettingsProvider>
-                    <EnterpriseAuthGuard>
-                      <EnterpriseShell>{children}</EnterpriseShell>
-                    </EnterpriseAuthGuard>
-                  </LayoutSettingsProvider>
-                </DashboardAppearanceProvider>
-              </ConfirmProvider>
+              <SubscriptionProvider>
+                <ConfirmProvider>
+                  <DashboardAppearanceProvider>
+                    <LayoutSettingsProvider>
+                      <EnterpriseAuthGuard>
+                        <EnterpriseShell>{children}</EnterpriseShell>
+                      </EnterpriseAuthGuard>
+                    </LayoutSettingsProvider>
+                  </DashboardAppearanceProvider>
+                </ConfirmProvider>
+              </SubscriptionProvider>
             </DashboardAuthGuard>
           </CurrentFolderProvider>
         </BackupProvider>

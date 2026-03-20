@@ -132,8 +132,8 @@ export default function FileCard({
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
   const aspectClass = FILE_ASPECT_CLASSES[layoutAspectRatio];
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
-  // Videos use object-contain to show full 9:16 aspect ratio. Pillarbox areas use card background (no black bars).
-  const videoObjectFit = "object-contain";
+  // Videos respect thumbnailScale like images: Fill = object-cover (Frame.io style, no black bars), Fit = object-contain.
+  const videoObjectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
 
   const handleDelete = async () => {
     const ok = await confirm({
