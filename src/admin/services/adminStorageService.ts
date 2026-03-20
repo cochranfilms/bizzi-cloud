@@ -92,9 +92,15 @@ export async function fetchBucketStats(
 export interface OrphanCleanupResult {
   dryRun: boolean;
   referencedCount: number;
-  checked: number;
+  contentChecked?: number;
+  proxyChecked?: number;
+  thumbChecked?: number;
+  checked?: number; // legacy
+  contentOrphanCount?: number;
+  proxyOrphanCount?: number;
+  thumbOrphanCount?: number;
   orphanCount: number;
-  orphanKeys?: string[];
+  orphanKeys?: string[] | { content?: string[]; proxies?: string[]; thumbnails?: string[] };
   deleted: number;
 }
 

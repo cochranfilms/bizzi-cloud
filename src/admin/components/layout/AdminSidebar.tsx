@@ -181,9 +181,11 @@ export default function AdminSidebar({
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-neutral-200 bg-white shadow-xl transition-transform duration-200 ease-out dark:border-neutral-800 dark:bg-neutral-950 lg:static lg:z-auto lg:ml-0 lg:shadow-none ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        } ${collapsed ? "lg:w-16" : "lg:w-56"}`}
+        className={`flex shrink-0 flex-col border-r border-neutral-200 bg-white transition-[width] duration-200 ease-out dark:border-neutral-800 dark:bg-neutral-950
+          fixed inset-y-0 left-0 z-50 w-64 shadow-xl
+          ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:relative lg:z-auto lg:translate-x-0 lg:shadow-none
+          ${collapsed ? "lg:w-16" : "lg:w-56"}`}
       >
       <div className="flex h-14 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
         {!collapsed && (

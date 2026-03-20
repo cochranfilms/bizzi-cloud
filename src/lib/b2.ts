@@ -222,6 +222,27 @@ export async function deleteObject(objectKey: string): Promise<void> {
   );
 }
 
+/** Delete with retries. Use for permanent-delete flows to reduce orphan risk from transient B2 failures. */
+export async function deleteObjectWithRetry(
+  objectKey: string,
+  maxRetries = 3
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await deleteObject(objectKey);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxRetries - 1) {
+        const delay = Math.min(1000 * 2 ** attempt, 10000);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /** Delete up to 1000 objects in one request. */
 export async function deleteObjects(objectKeys: string[]): Promise<void> {
   if (objectKeys.length === 0) return;

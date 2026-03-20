@@ -6,7 +6,7 @@
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import {
   isB2Configured,
-  deleteObject,
+  deleteObjectWithRetry,
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
@@ -69,11 +69,12 @@ export async function POST(request: Request) {
       const otherRefs = refsSnap.docs.filter((d) => d.id !== id);
       if (otherRefs.length > 0) continue;
       try {
-        await deleteObject(object_key);
-        await deleteObject(getProxyObjectKey(object_key)).catch(() => {});
-        await deleteObject(getVideoThumbnailCacheKey(object_key)).catch(() => {});
+        await deleteObjectWithRetry(object_key);
+        await deleteObjectWithRetry(getProxyObjectKey(object_key)).catch(() => {});
+        await deleteObjectWithRetry(getVideoThumbnailCacheKey(object_key)).catch(() => {});
       } catch (err) {
-        console.error("[account-delete] B2 delete failed:", object_key, err);
+        console.error("[account-delete] B2 delete failed after retries:", object_key, err);
+        // Orphan-cleanup cron will remove B2 object later
       }
     }
   }

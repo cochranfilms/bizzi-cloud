@@ -15,6 +15,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/cron/orphan-cleanup",
+      "schedule": "0 5 * * 0"
+    },
+    {
       "path": "/api/cron/proxy-generation",
       "schedule": "*/5 * * * *"
     }

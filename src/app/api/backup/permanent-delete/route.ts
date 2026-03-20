@@ -10,7 +10,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   isB2Configured,
-  deleteObject,
+  deleteObjectWithRetry,
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
@@ -93,17 +93,17 @@ export async function POST(request: Request) {
       }
 
       try {
-        await deleteObject(object_key);
+        await deleteObjectWithRetry(object_key);
         b2Deleted++;
         const proxyKey = getProxyObjectKey(object_key);
         const thumbKey = getVideoThumbnailCacheKey(object_key);
         await Promise.all([
-          deleteObject(proxyKey).catch(() => {}),
-          deleteObject(thumbKey).catch(() => {}),
+          deleteObjectWithRetry(proxyKey).catch(() => {}),
+          deleteObjectWithRetry(thumbKey).catch(() => {}),
         ]);
       } catch (err) {
-        console.error("[permanent-delete] B2 delete failed:", object_key, err);
-        // Continue - delete Firestore doc anyway to avoid orphan DB records
+        console.error("[permanent-delete] B2 delete failed after retries:", object_key, err);
+        // Continue - delete Firestore doc anyway; orphan-cleanup cron will remove B2 object later
       }
     }
   }

@@ -1,18 +1,12 @@
 /**
- * POST /api/admin/storage/orphan-cleanup
- * Finds and optionally deletes B2 objects not referenced by backup_files:
- * - content/ (originals)
- * - proxies/ (video proxies derived from content)
- * - thumbnails/ (video thumbnails derived from content)
+ * Cron: Run orphan cleanup to remove B2 objects not referenced by backup_files.
+ * Catches content/, proxies/, thumbnails/ left behind when permanent-delete B2 calls failed.
  *
- * Body: { dry_run?: boolean }
- * - dry_run: true (default) — report orphans only, do not delete
- * - dry_run: false — delete orphan objects from B2
- *
- * Admin only. May be slow for large buckets.
+ * Schedule: weekly (e.g. Sunday 5am). Requires CRON_SECRET.
+ * Runs with dry_run: false to actually delete orphans.
  */
+import { NextResponse } from "next/server";
 import type { DocumentSnapshot } from "firebase-admin/firestore";
-import { requireAdminAuth } from "@/lib/admin-auth";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import {
   isB2Configured,
@@ -21,8 +15,8 @@ import {
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
-import { NextResponse } from "next/server";
 
+const CRON_SECRET = process.env.CRON_SECRET;
 const MAX_OBJECT_KEYS = 500_000;
 const MAX_ORPHANS_PER_PREFIX = 10_000;
 
@@ -63,74 +57,63 @@ async function getReferencedKeys(): Promise<{
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminAuth(request);
-  if (auth instanceof NextResponse) return auth;
+  if (CRON_SECRET) {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+    if (token !== CRON_SECRET) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
 
   if (!isB2Configured()) {
     return NextResponse.json({ error: "B2 not configured" }, { status: 503 });
   }
 
-  let body: { dry_run?: boolean };
-  try {
-    body = (await request.json()) as { dry_run?: boolean };
-  } catch {
-    body = {};
-  }
-  const dryRun = body.dry_run !== false;
-
   const referenced = await getReferencedKeys();
   const contentOrphans: string[] = [];
   const proxyOrphans: string[] = [];
   const thumbOrphans: string[] = [];
-  let contentChecked = 0;
-  let proxyChecked = 0;
-  let thumbChecked = 0;
 
-  // Scan content/
   for await (const key of listObjectKeys("content/", MAX_OBJECT_KEYS)) {
-    contentChecked++;
     if (!referenced.content.has(key)) {
       contentOrphans.push(key);
       if (contentOrphans.length >= MAX_ORPHANS_PER_PREFIX) break;
     }
   }
 
-  // Scan proxies/
   for await (const key of listObjectKeys("proxies/", MAX_OBJECT_KEYS)) {
-    proxyChecked++;
     if (!referenced.proxies.has(key)) {
       proxyOrphans.push(key);
       if (proxyOrphans.length >= MAX_ORPHANS_PER_PREFIX) break;
     }
   }
 
-  // Scan thumbnails/
   for await (const key of listObjectKeys("thumbnails/", MAX_OBJECT_KEYS)) {
-    thumbChecked++;
     if (!referenced.thumbnails.has(key)) {
       thumbOrphans.push(key);
       if (thumbOrphans.length >= MAX_ORPHANS_PER_PREFIX) break;
     }
   }
 
-  const allOrphans = [
-    ...contentOrphans,
-    ...contentOrphans.flatMap((k) => [
-      getProxyObjectKey(k),
-      getVideoThumbnailCacheKey(k),
+  const toDelete = [
+    ...new Set([
+      ...contentOrphans,
+      ...contentOrphans.flatMap((k) => [
+        getProxyObjectKey(k),
+        getVideoThumbnailCacheKey(k),
+      ]),
+      ...proxyOrphans,
+      ...thumbOrphans,
     ]),
-    ...proxyOrphans,
-    ...thumbOrphans,
   ];
-  const toDelete = [...new Set(allOrphans)];
-  let deleted = 0;
 
-  if (!dryRun && toDelete.length > 0) {
+  let deleted = 0;
+  if (toDelete.length > 0) {
     try {
       await deleteObjects(toDelete);
       deleted = toDelete.length;
     } catch (err) {
-      console.error("[orphan-cleanup] Delete failed:", err);
+      console.error("[orphan-cleanup-cron] Delete failed:", err);
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Delete failed" },
         { status: 500 }
@@ -138,24 +121,11 @@ export async function POST(request: Request) {
     }
   }
 
-  const totalOrphans = contentOrphans.length + proxyOrphans.length + thumbOrphans.length;
   return NextResponse.json({
-    dryRun,
-    referencedCount: referenced.content.size,
-    contentChecked,
-    proxyChecked,
-    thumbChecked,
-    contentOrphanCount: contentOrphans.length,
-    proxyOrphanCount: proxyOrphans.length,
-    thumbOrphanCount: thumbOrphans.length,
-    orphanCount: totalOrphans,
-    orphanKeys: dryRun
-      ? {
-          content: contentOrphans.slice(0, 50),
-          proxies: proxyOrphans.slice(0, 50),
-          thumbnails: thumbOrphans.slice(0, 50),
-        }
-      : undefined,
+    ok: true,
+    contentOrphans: contentOrphans.length,
+    proxyOrphans: proxyOrphans.length,
+    thumbOrphans: thumbOrphans.length,
     deleted,
   });
 }

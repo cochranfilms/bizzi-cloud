@@ -78,25 +78,25 @@ export default function StoragePage() {
 
       <div className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
         <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
-          Bucket vs platform
+          Why B2 shows more than Platform
         </h4>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          Platform totals come from Firestore. Bucket totals are the actual B2 storage. Compare to spot orphaned files or drift.
+          <strong>Platform</strong> counts only original file sizes (from Firestore). <strong>B2</strong> stores originals plus video proxies and thumbnails, which can be 2–5× the content size for video-heavy workloads. The difference is expected.
         </p>
         {bucketStats ? (
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span>Platform (Firestore)</span>
+              <span>Platform (content only, from Firestore)</span>
               <span className="font-medium">{formatBytes(totalBytes)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Bucket content/</span>
+              <span>B2 content/ (originals)</span>
               <span className="font-medium">
                 {formatBytes(bucketStats.content.totalBytes)} ({bucketStats.content.objectCount} objects)
               </span>
             </div>
             <div className="flex justify-between">
-              <span>Bucket total</span>
+              <span>B2 total (content + proxies + thumbnails)</span>
               <span className="font-medium">
                 {formatBytes(bucketStats.all.totalBytes)} ({bucketStats.all.objectCount} objects)
               </span>
@@ -124,7 +124,7 @@ export default function StoragePage() {
           Orphan cleanup
         </h4>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          Find and delete B2 content/ objects not referenced by any backup_file (e.g. from permanent deletes before this fix).
+          Find and delete B2 objects (content/, proxies/, thumbnails/) not referenced by any backup_file. Catches orphans from failed permanent deletes.
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -156,7 +156,7 @@ export default function StoragePage() {
         {orphanResult && (
           <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
             {orphanResult.dryRun
-              ? `Found ${orphanResult.orphanCount} orphans (dry run). Referenced in DB: ${orphanResult.referencedCount}, checked ${orphanResult.checked} bucket objects.`
+              ? `Found ${orphanResult.orphanCount} orphans (dry run). Content: ${orphanResult.contentOrphanCount ?? 0}, proxies: ${orphanResult.proxyOrphanCount ?? 0}, thumbnails: ${orphanResult.thumbOrphanCount ?? 0}. Referenced in DB: ${orphanResult.referencedCount}.`
               : `Deleted ${orphanResult.deleted} objects.`}
           </div>
         )}

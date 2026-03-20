@@ -71,7 +71,12 @@ B2 objects can become orphaned (in B2 but not referenced by any `backup_file`) w
 - B2 delete failed during permanent-delete (network/timeout) but Firestore was still deleted
 - Historical bugs before the fix
 
-**Dry run** (report only):
+**Production safeguards:**
+- B2 delete uses retries (3 attempts with backoff) in permanent-delete, trash-cleanup, account-delete
+- Orphan cleanup scans `content/`, `proxies/`, and `thumbnails/` (not just content)
+- Weekly cron (`/api/cron/orphan-cleanup`, Sundays 5am) auto-deletes orphans
+
+**Manual dry run** (report only):
 
 ```bash
 npm run orphan-cleanup

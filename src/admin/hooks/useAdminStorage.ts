@@ -74,6 +74,10 @@ export function useAdminStorage() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (user) void loadBucketStats();
+  }, [user, loadBucketStats]);
+
   return {
     summary,
     largestAccounts,
