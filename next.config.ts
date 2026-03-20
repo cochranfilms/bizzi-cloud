@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
     "/api/backup/generate-proxy": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/shares/[token]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/transfers/[slug]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/api/backup/pdf-thumbnail": [
+      "./node_modules/pdfjs-dist/**/*",
+      "./node_modules/@napi-rs/canvas/**/*",
+    ],
   },
   async rewrites() {
     return [{ source: "/favicon.ico", destination: "/icon" }];

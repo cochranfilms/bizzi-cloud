@@ -11,12 +11,18 @@ import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mj
 import { NextResponse } from "next/server";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import sharp from "sharp";
 
-// Worker path - process.cwd() is project root in Vercel/serverless
-const pdfjsPath = path.join(process.cwd(), "node_modules/pdfjs-dist");
-const workerPath = path.join(pdfjsPath, "legacy/build/pdf.worker.min.mjs");
-GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
+let pdfjsPath: string | null = null;
+function getPdfjsPath(): string {
+  if (pdfjsPath) return pdfjsPath;
+  const require = createRequire(import.meta.url);
+  pdfjsPath = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  const workerPath = path.join(pdfjsPath, "legacy", "build", "pdf.worker.min.mjs");
+  GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
+  return pdfjsPath;
+}
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -81,13 +87,14 @@ async function handlePdfThumbnail(request: Request) {
   }
 
   try {
+    const basePath = getPdfjsPath();
     const buffer = await getObjectBuffer(objectKey, PDF_MAX_BYTES);
     const data = new Uint8Array(buffer);
 
     const pdfDocument = await getDocument({
       data,
-      standardFontDataUrl: path.join(pdfjsPath, "standard_fonts/"),
-      cMapUrl: path.join(pdfjsPath, "cmaps/"),
+      standardFontDataUrl: path.join(basePath, "standard_fonts") + path.sep,
+      cMapUrl: path.join(basePath, "cmaps") + path.sep,
       cMapPacked: true,
       isEvalSupported: false,
     }).promise;
