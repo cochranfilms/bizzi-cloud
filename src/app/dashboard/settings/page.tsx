@@ -22,6 +22,7 @@ import {
   Shield,
   Download,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import Image from "next/image";
@@ -675,6 +676,8 @@ function SubscriptionSection() {
 
   const [showConfirmationBanner, setShowConfirmationBanner] = useState(false);
   const [confirmationType, setConfirmationType] = useState<"updated" | "cancelled" | "purchase" | null>(null);
+  const [powerUpWarningModalOpen, setPowerUpWarningModalOpen] = useState(false);
+  const [powerUpCheckLoading, setPowerUpCheckLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -715,6 +718,38 @@ function SubscriptionSection() {
       setPortalError("Failed to sync");
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const handleChangePlanClick = async () => {
+    if (!user) return;
+    setPowerUpCheckLoading(true);
+    try {
+      const token = await user.getIdToken(true);
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/storage/powerup-files-check`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as { hasRawFiles?: boolean; hasGalleryMediaFiles?: boolean };
+      const hasAtRiskFiles =
+        (data.hasRawFiles || data.hasGalleryMediaFiles) === true;
+      if (hasAtRiskFiles && (addonIds.includes("editor") || addonIds.includes("gallery") || addonIds.includes("fullframe"))) {
+        setPowerUpWarningModalOpen(true);
+      } else {
+        navigateToChangePlan();
+      }
+    } catch {
+      navigateToChangePlan();
+    } finally {
+      setPowerUpCheckLoading(false);
+    }
+  };
+
+  const navigateToChangePlan = () => {
+    if (isDesktop) {
+      window.open(`${WEB_APP_URL}/dashboard/change-plan`, "_blank");
+    } else {
+      router.push("/dashboard/change-plan");
     }
   };
 
@@ -839,10 +874,15 @@ function SubscriptionSection() {
                   <>
                     <button
                       type="button"
-                      onClick={() => window.open(`${WEB_APP_URL}/dashboard/change-plan`, "_blank")}
-                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                      onClick={handleChangePlanClick}
+                      disabled={powerUpCheckLoading}
+                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      {powerUpCheckLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4" />
+                      )}
                       Manage subscription on web
                     </button>
                     <button
@@ -864,12 +904,17 @@ function SubscriptionSection() {
                   </>
                 ) : (
                   <>
-                    <Link
-                      href="/dashboard/change-plan"
-                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+                    <button
+                      type="button"
+                      onClick={handleChangePlanClick}
+                      disabled={powerUpCheckLoading}
+                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
                     >
+                      {powerUpCheckLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
                       Change plan
-                    </Link>
+                    </button>
                     <button
                       type="button"
                       onClick={openPortal}
@@ -931,6 +976,48 @@ function SubscriptionSection() {
           </div>
         )}
       </div>
+
+      {powerUpWarningModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="powerup-warning-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex gap-3">
+              <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
+              <div className="min-w-0 flex-1">
+                <h3 id="powerup-warning-title" className="font-semibold text-neutral-900 dark:text-white">
+                  Before you go
+                </h3>
+                <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+                  If you downgrade your power-up, some files (in RAW or Gallery Media) may no longer be visible in the app. They will still take up storage space on your account.
+                </p>
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPowerUpWarningModalOpen(false)}
+                    className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPowerUpWarningModalOpen(false);
+                      navigateToChangePlan();
+                    }}
+                    className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

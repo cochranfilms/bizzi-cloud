@@ -107,10 +107,19 @@ export default function ChangePlanPage() {
       setSelectedPlanId(currentPlanId);
       setSelectedAddonIds(currentAddonIds ?? []);
       setSelectedStorageAddonId(currentStorageAddonId ?? null);
-    } else if (currentPlanId === "free" && restoreRequirements?.requiredAddonIds?.length) {
-      setSelectedAddonIds(restoreRequirements.requiredAddonIds);
     }
   }, [subLoading, currentPlanId, currentAddonIds, currentStorageAddonId, restoreRequirements]);
+
+  // Restore flow: auto-select required addons only after user has selected a plan (storage)
+  useEffect(() => {
+    if (
+      currentPlanId === "free" &&
+      restoreRequirements?.requiredAddonIds?.length &&
+      selectedPlanId
+    ) {
+      setSelectedAddonIds(restoreRequirements.requiredAddonIds);
+    }
+  }, [currentPlanId, restoreRequirements?.requiredAddonIds, selectedPlanId]);
 
   useEffect(() => {
     if (selectedPlanId === "solo" || selectedPlanId === "production") {
@@ -329,6 +338,7 @@ export default function ChangePlanPage() {
   const minStorageBytes = restoreRequirements?.totalBytesUsed ?? 0;
   const requiredAddonIds = restoreRequirements?.requiredAddonIds ?? [];
   const isRestoringFromDelete = currentPlanId === "free" && !!restoreRequirements;
+  const storageSelected = !!selectedPlanId;
 
   const planMeetsStorage = useCallback(
     (planId: string, storageAddonId: string | null) => {
@@ -501,12 +511,16 @@ export default function ChangePlanPage() {
                   <li>
                     <strong>Storage:</strong> You used {formatBytes(minStorageBytes)} before deleting. Choose only plans that offer at least that much storage (base plan or plan + storage add-on).
                   </li>
-                  {requiredAddonIds.length > 0 ? (
-                    <li>
-                      <strong>Power-up:</strong> You had{" "}
-                      {requiredAddonIds.map((id) => ADDON_LABELS[id] ?? id).join(" or ")} with galleries or RAW folder files. You must select the same power-up so your files restore correctly into the right place.
-                    </li>
-                  ) : null}
+                  <li>
+                    <strong>Power-up:</strong>{" "}
+                    {requiredAddonIds.length > 0 ? (
+                      <>
+                        You had {requiredAddonIds.map((id) => ADDON_LABELS[id] ?? id).join(" or ")} with galleries or RAW folder files. You must select the same power-up so your files restore correctly into the right place.
+                      </>
+                    ) : (
+                      <>You had no power-ups.</>
+                    )}
+                  </li>
                 </ul>
               </div>
             </div>
@@ -588,60 +602,6 @@ export default function ChangePlanPage() {
             </div>
           </div>
 
-          <div className="mb-8">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-              Power Ups
-            </h3>
-            <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-              Add or remove Power Ups to match your workflow.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-3">
-              {allowedAddons.map((addon) => {
-                const isSelected = selectedAddonIds.includes(addon.id);
-                const isRequired = requiredAddonIds.includes(addon.id);
-                return (
-                  <button
-                    key={addon.id}
-                    type="button"
-                    onClick={() => !isRequired && toggleAddon(addon.id)}
-                    disabled={isRequired}
-                    className={`flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
-                      isRequired
-                        ? "cursor-default border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
-                        : isSelected
-                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
-                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
-                    }`}
-                  >
-                    <div className="mb-2 flex items-center justify-between">
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: addon.accentColor }}
-                      >
-                        {isRequired ? "Required for restore" : addon.tagline}
-                      </span>
-                      {(isSelected || isRequired) && (
-                        <Check
-                          className="h-5 w-5"
-                          style={{ color: addon.accentColor }}
-                        />
-                      )}
-                    </div>
-                    <h4 className="font-semibold text-neutral-900 dark:text-white">
-                      {addon.name}
-                      {isRequired && (
-                        <span className="ml-1 text-xs font-normal text-neutral-500">(required)</span>
-                      )}
-                    </h4>
-                    <p className="mt-1 text-lg font-bold text-neutral-900 dark:text-white">
-                      +${addon.price}/mo
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {(selectedPlanId === "indie" || selectedPlanId === "video") && (
             <div className="mb-8">
               <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
@@ -699,6 +659,70 @@ export default function ChangePlanPage() {
               </div>
             </div>
           )}
+
+          <div
+            className={`relative mb-8 ${isRestoringFromDelete && !storageSelected ? "opacity-60" : ""}`}
+          >
+            {isRestoringFromDelete && !storageSelected && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-neutral-100/80 dark:bg-neutral-800/80">
+                <p className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 shadow-sm dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200">
+                  Select a plan (and storage add-on if applicable) above to continue.
+                </p>
+              </div>
+            )}
+            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+              Power Ups
+            </h3>
+            <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
+              Add or remove Power Ups to match your workflow.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {allowedAddons.map((addon) => {
+                const isSelected = selectedAddonIds.includes(addon.id);
+                const isRequired = requiredAddonIds.includes(addon.id);
+                const powerUpDisabled = isRestoringFromDelete && !storageSelected;
+                return (
+                  <button
+                    key={addon.id}
+                    type="button"
+                    onClick={() => !isRequired && !powerUpDisabled && toggleAddon(addon.id)}
+                    disabled={isRequired || powerUpDisabled}
+                    className={`flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
+                      isRequired
+                        ? "cursor-default border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
+                        : isSelected
+                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
+                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: addon.accentColor }}
+                      >
+                        {isRequired ? "Required for restore" : addon.tagline}
+                      </span>
+                      {(isSelected || isRequired) && (
+                        <Check
+                          className="h-5 w-5"
+                          style={{ color: addon.accentColor }}
+                        />
+                      )}
+                    </div>
+                    <h4 className="font-semibold text-neutral-900 dark:text-white">
+                      {addon.name}
+                      {isRequired && (
+                        <span className="ml-1 text-xs font-normal text-neutral-500">(required)</span>
+                      )}
+                    </h4>
+                    <p className="mt-1 text-lg font-bold text-neutral-900 dark:text-white">
+                      +${addon.price}/mo
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="mb-8 flex flex-wrap items-center gap-4">
             <div>
