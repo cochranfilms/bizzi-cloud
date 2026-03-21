@@ -185,7 +185,9 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
   const resolvedBasePath =
     basePath ??
     (pathname?.startsWith("/enterprise") ? "/enterprise" : pathname?.startsWith("/desktop") ? "/desktop/app" : "/dashboard");
-  const { galleries, loading, error, createGallery, deleteGallery } = useGalleries();
+  const { galleries, loading, error, createGallery, deleteGallery } = useGalleries({
+    basePath: resolvedBasePath,
+  });
   const { bumpStorageVersion } = useBackup();
   const [showCreate, setShowCreate] = useState(false);
   const [showGallerySettings, setShowGallerySettings] = useState(false);

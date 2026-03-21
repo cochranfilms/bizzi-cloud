@@ -27,8 +27,9 @@ export default function EnterpriseShell({
   return (
     <UppyUploadProvider>
     <div
-      className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
+      className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 border-l-4 border-[var(--enterprise-primary)]"
       data-org-theme={theme}
+      data-context="enterprise"
       style={{ ...orgVars, ...cssVariables } as React.CSSProperties}
     >
       <EnterpriseNavbar />

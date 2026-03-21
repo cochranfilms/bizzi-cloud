@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 
 export interface GalleryListItem {
   id: string;
@@ -25,8 +26,11 @@ export interface GalleryListItem {
   updated_at: string;
 }
 
-export function useGalleries() {
+export function useGalleries(options?: { basePath?: string }) {
   const { user } = useAuth();
+  const { org } = useEnterprise();
+  const basePath = options?.basePath ?? "";
+  const isEnterprise = basePath === "/enterprise";
   const [galleries, setGalleries] = useState<GalleryListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +45,13 @@ export function useGalleries() {
     setError(null);
     try {
       const token = await user.getIdToken();
-      const res = await fetch("/api/galleries", {
+      const params = new URLSearchParams();
+      if (isEnterprise && org?.id) {
+        params.set("context", "enterprise");
+        params.set("organization_id", org.id);
+      }
+      const url = params.toString() ? `/api/galleries?${params.toString()}` : "/api/galleries";
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -53,7 +63,7 @@ export function useGalleries() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, isEnterprise, org?.id]);
 
   useEffect(() => {
     fetchGalleries();
@@ -62,6 +72,7 @@ export function useGalleries() {
   const createGallery = useCallback(
     async (input: {
       gallery_type: "photo" | "video";
+      organization_id?: string | null;
       title: string;
       description?: string | null;
       event_date?: string | null;
@@ -93,20 +104,24 @@ export function useGalleries() {
     }) => {
       if (!user) throw new Error("Not authenticated");
       const token = await user.getIdToken();
+      const body = {
+        ...input,
+        organization_id: isEnterprise && org?.id ? org.id : null,
+      };
       const res = await fetch("/api/galleries", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create gallery");
       await fetchGalleries();
       return data;
     },
-    [user, fetchGalleries]
+    [user, fetchGalleries, isEnterprise, org?.id]
   );
 
   const deleteGallery = useCallback(

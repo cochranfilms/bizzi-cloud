@@ -18,6 +18,8 @@ const MAX_FETCH_FOR_POST_FILTER = 200;
 type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc" | "name_desc";
 
 function parseFilters(searchParams: URLSearchParams) {
+  const context = searchParams.get("context") ?? undefined;
+  const organizationId = searchParams.get("organization_id")?.trim() || null;
   const driveId = searchParams.get("drive_id") ?? searchParams.get("drive") ?? undefined;
   const galleryId = searchParams.get("gallery_id") ?? searchParams.get("gallery") ?? undefined;
   const mediaType = searchParams.get("media_type") ?? undefined;
@@ -61,6 +63,8 @@ function parseFilters(searchParams: URLSearchParams) {
     50
   );
   return {
+    context,
+    organizationId,
     driveId,
     galleryId,
     mediaType,
@@ -404,14 +408,37 @@ export async function GET(request: Request) {
     filtersWithIds.commentedFileIds = commentedFileIds;
   }
 
-  const drivesSnap = await db
+  // Scope drives and files by context: enterprise = org only, personal = org_id null
+  let orgFilter: string | null = null;
+  if (filters.context === "enterprise" && filters.organizationId) {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
+    if (profileOrgId !== filters.organizationId) {
+      return NextResponse.json(
+        { error: "Unauthorized to access this organization's files" },
+        { status: 403 }
+      );
+    }
+    orgFilter = filters.organizationId;
+  } else {
+    orgFilter = null; // personal: only organization_id null
+  }
+
+  const drivesQuery = db
     .collection("linked_drives")
-    .where("userId", "==", uid)
-    .get();
+    .where("userId", "==", uid);
+  const drivesSnap = orgFilter != null
+    ? await drivesQuery.where("organization_id", "==", orgFilter).get()
+    : await drivesQuery.get();
   const driveMap = new Map<string, string>();
   drivesSnap.docs.forEach((d) => {
     const data = d.data();
-    if (!data.deleted_at) driveMap.set(d.id, data.name ?? "Folder");
+    if (!data.deleted_at) {
+      const oid = data.organization_id ?? null;
+      if (orgFilter != null ? oid === orgFilter : !oid) {
+        driveMap.set(d.id, data.name ?? "Folder");
+      }
+    }
   });
   const driveIds = new Set(driveMap.keys());
 
@@ -419,6 +446,12 @@ export async function GET(request: Request) {
     .collection("backup_files")
     .where("userId", "==", uid)
     .where("deleted_at", "==", null);
+
+  if (orgFilter != null) {
+    q = q.where("organization_id", "==", orgFilter);
+  } else {
+    q = q.where("organization_id", "==", null);
+  }
 
   if (filters.driveId && driveIds.has(filters.driveId)) {
     q = q.where("linked_drive_id", "==", filters.driveId);

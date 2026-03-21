@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Send, Lock, ExternalLink, BarChart2, Trash2, Pencil, Link2, Check } from "lucide-react";
 import { useTransfers } from "@/context/TransferContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import EditTransferModal from "@/components/dashboard/EditTransferModal";
 import type { Transfer } from "@/types/transfer";
@@ -25,8 +26,17 @@ function formatExpires(iso: string | null) {
 
 export default function TransferGrid() {
   const pathname = usePathname();
+  const { org } = useEnterprise();
   const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
+
+  const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
+  const orgId = org?.id ?? null;
+
+  const scopeTransfers = useMemo(() => {
+    if (!isEnterprise || !orgId) return transfers;
+    return transfers.filter((t) => (t.organizationId ?? null) === orgId);
+  }, [transfers, isEnterprise, orgId]);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
@@ -73,8 +83,8 @@ export default function TransferGrid() {
 
   const filtered =
     filter === "all"
-      ? transfers
-      : transfers.filter((t) => {
+      ? scopeTransfers
+      : scopeTransfers.filter((t) => {
           if (filter === "active")
             return t.status === "active" && (!t.expiresAt || new Date(t.expiresAt) >= new Date());
           if (filter === "expired")

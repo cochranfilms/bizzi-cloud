@@ -27,18 +27,47 @@ function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> 
     );
 }
 
-/** GET /api/galleries – list photographer's galleries */
+/** GET /api/galleries – list photographer's galleries
+ * Query param ?context=enterprise&organization_id=X – only return org-scoped galleries
+ * When context=personal or omitted – only return personal galleries (organization_id null)
+ */
 export async function GET(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
   const { uid } = auth;
 
+  const url = new URL(request.url);
+  const context = url.searchParams.get("context") ?? "personal";
+  const organizationId = url.searchParams.get("organization_id")?.trim() || null;
+
   const db = getAdminFirestore();
-  const snap = await db
-    .collection("galleries")
-    .where("photographer_id", "==", uid)
-    .orderBy("created_at", "desc")
-    .get();
+
+  let snap;
+  if (context === "enterprise" && organizationId) {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
+    if (profileOrgId !== organizationId) {
+      return NextResponse.json({ error: "Unauthorized to list this organization's galleries" }, { status: 403 });
+    }
+    snap = await db
+      .collection("galleries")
+      .where("photographer_id", "==", uid)
+      .where("organization_id", "==", organizationId)
+      .orderBy("created_at", "desc")
+      .get();
+  } else {
+    const allSnap = await db
+      .collection("galleries")
+      .where("photographer_id", "==", uid)
+      .orderBy("created_at", "desc")
+      .get();
+    snap = {
+      docs: allSnap.docs.filter((d) => {
+        const oid = d.data().organization_id;
+        return oid === null || oid === undefined || oid === "";
+      }),
+    };
+  }
 
   const galleryIds = snap.docs.map((d) => d.id);
   let coverMap: Record<string, { object_key: string; name: string }> = {};
@@ -109,8 +138,9 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
   const { uid } = auth;
 
-  const body = (await request.json().catch(() => ({}))) as CreateGalleryInput;
+  const body = (await request.json().catch(() => ({}))) as CreateGalleryInput & { organization_id?: string | null };
   const {
+    organization_id: bodyOrgId,
     gallery_type: rawGalleryType,
     title,
     description,
@@ -154,6 +184,17 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
+  const organizationId =
+    typeof bodyOrgId === "string" && bodyOrgId.trim()
+      ? bodyOrgId.trim()
+      : null;
+  if (organizationId) {
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
+    if (profileOrgId !== organizationId) {
+      return NextResponse.json({ error: "Unauthorized to create gallery for this organization" }, { status: 403 });
+    }
+  }
   const baseSlug = slugify(title.trim());
   const slug = await ensureUniqueSlug(db, uid, baseSlug);
 
@@ -165,6 +206,7 @@ export async function POST(request: Request) {
 
   const now = new Date();
   const baseGalleryData = {
+    ...(organizationId ? { organization_id: organizationId } : { organization_id: null }),
     gallery_type: galleryType,
     title: title.trim(),
     slug,

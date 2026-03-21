@@ -30,6 +30,8 @@ export interface Transfer {
   createdAt: string;
   status: "active" | "expired" | "cancelled";
   slug: string;
+  /** Organization ID when transfer belongs to an enterprise org. Null for personal. */
+  organizationId?: string | null;
 }
 
 export interface CreateTransferInput {

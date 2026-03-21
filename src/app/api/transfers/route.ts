@@ -81,6 +81,7 @@ export async function POST(request: Request) {
     password_hash = await hashSecret(password.trim());
   }
 
+  const organizationIdToStore = organizationId ?? null;
   const doc = {
     slug,
     name: name.trim(),
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     created_at: now,
     status: "active",
     user_id: uid,
-    organization_id: organizationId ?? null,
+    organization_id: organizationIdToStore,
   };
 
   const db = getAdminFirestore();
@@ -157,5 +158,6 @@ export async function POST(request: Request) {
     expiresAt: doc.expires_at,
     createdAt: doc.created_at,
     status: doc.status,
+    organizationId: organizationIdToStore,
   });
 }

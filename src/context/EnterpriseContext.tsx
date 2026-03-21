@@ -57,7 +57,8 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
     if (!user) {
       setOrganization(null);
       setRole(null);
-      setLoading(false);
+      // Keep loading=true so EnterpriseAuthGuard doesn't redirect prematurely while auth resolves
+      setLoading(true);
       return;
     }
 
@@ -77,6 +78,13 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
         setOrganization(null);
         setRole(null);
         setLoading(false);
+        if (typeof window !== "undefined") {
+          try {
+            sessionStorage.removeItem("bizzi-enterprise-org");
+          } catch {
+            // ignore
+          }
+        }
         return;
       }
 
@@ -93,6 +101,14 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
       const org = parseOrgFromFirestore(orgSnap.id, orgSnap.data()!);
       setOrganization(org);
       setRole(orgRole ?? "member");
+      // Persist org id for resilience on refresh (EnterpriseAuthGuard can use for retry)
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("bizzi-enterprise-org", org.id);
+        } catch {
+          // ignore
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load organization");
       setOrganization(null);

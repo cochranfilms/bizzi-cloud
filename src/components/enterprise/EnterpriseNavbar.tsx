@@ -101,6 +101,12 @@ export default function EnterpriseNavbar() {
         <span className="font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
           {org?.name ?? "Enterprise"}
         </span>
+        <span
+          className="rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]"
+          aria-label="Enterprise workspace"
+        >
+          Enterprise
+        </span>
       </Link>
 
       <nav className="hidden md:flex items-center gap-0.5">
@@ -145,12 +151,13 @@ export default function EnterpriseNavbar() {
         />
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-2">
+      <div className="flex flex-shrink-0 items-center gap-3">
         <Link
           href="/dashboard"
-          className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+          className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          title="Switch to personal account"
         >
-          Personal
+          Switch to Personal
         </Link>
         <UserMenu compact />
       </div>

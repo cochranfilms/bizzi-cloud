@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import {
   filtersFromSearchParams,
@@ -79,10 +80,12 @@ export function useFilteredFiles(
   options?: UseFilteredFilesOptions
 ): UseFilteredFilesResult {
   const { user } = useAuth();
+  const { org } = useEnterprise();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const { driveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
+  const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
 
   const [filterState, setFilterState] = useState<FilterState>(() =>
     filtersFromSearchParams(searchParams)
@@ -160,6 +163,10 @@ export function useFilteredFiles(
       const token = await user.getIdToken(true);
       const params = filterStateToSearchParams(state);
       if (driveId) params.set("drive_id", driveId);
+      if (isEnterprise && org?.id) {
+        params.set("context", "enterprise");
+        params.set("organization_id", org.id);
+      }
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -182,7 +189,7 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, driveId]);
+  }, [user, driveId, isEnterprise, org?.id]);
 
   const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 

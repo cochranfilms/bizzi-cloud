@@ -375,6 +375,7 @@ export default function CreateTransferModal({
       expiresAt: data.expiresAt,
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",
+      organizationId: (data as { organizationId?: string | null }).organizationId ?? null,
     };
 
     addTransferFromApi(transfer);
