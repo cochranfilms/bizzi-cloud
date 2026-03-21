@@ -39,6 +39,7 @@ export async function GET(request: Request) {
     const ownerEmail = adminSeat?.email ?? null;
 
     const removalDeadline = data.removal_deadline?.toDate?.();
+    const addonIds = Array.isArray(data.addon_ids) ? data.addon_ids : [];
     return {
       id: orgId,
       name: data.name ?? "Unnamed",
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
       seats_pending: pendingCount,
       storage_quota_bytes: data.storage_quota_bytes ?? null,
       storage_used_bytes: data.storage_used_bytes ?? 0,
+      addon_ids: addonIds.length > 0 ? addonIds : [],
       created_at: data.created_at?.toDate?.()?.toISOString() ?? null,
       stripe_subscription_id: data.stripe_subscription_id ?? null,
       stripe_invoice_id: data.stripe_invoice_id ?? null,

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
-import { Building2, Loader2, Users, Send, Trash2 } from "lucide-react";
+import { Building2, Loader2, Users, Send, Trash2, Pencil } from "lucide-react";
 const MIN_STORAGE_TB = 20;
 import { powerUpAddons } from "@/lib/pricing-data";
 
@@ -17,6 +17,7 @@ export interface OrgListItem {
   seats_pending: number;
   storage_quota_bytes: number | null;
   storage_used_bytes: number;
+  addon_ids: string[];
   created_at: string | null;
   stripe_subscription_id: string | null;
   stripe_invoice_id: string | null;
@@ -48,6 +49,13 @@ export default function OrganizationsPage() {
   const [removeModalOrg, setRemoveModalOrg] = useState<OrgListItem | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [editModalOrg, setEditModalOrg] = useState<OrgListItem | null>(null);
+  const [editStorageTb, setEditStorageTb] = useState("20");
+  const [editStoragePriceMonthly, setEditStoragePriceMonthly] = useState("");
+  const [editAddonIds, setEditAddonIds] = useState<string[]>([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editDetailLoading, setEditDetailLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +140,103 @@ export default function OrganizationsPage() {
       setResendError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       setResendingId(null);
+    }
+  };
+
+  const openEditModal = useCallback(
+    async (org: OrgListItem) => {
+      setEditModalOrg(org);
+      setEditError(null);
+      const storageTbNum =
+        org.storage_quota_bytes != null
+          ? Math.round(org.storage_quota_bytes / (1024 ** 4))
+          : 20;
+      setEditStorageTb(String(Math.max(MIN_STORAGE_TB, storageTbNum)));
+      setEditAddonIds(org.addon_ids ?? []);
+      setEditStoragePriceMonthly("");
+      setEditDetailLoading(true);
+      try {
+        const token = await user?.getIdToken();
+        const res = await fetch(`/api/admin/enterprise/organizations/${org.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            storage_tb?: number;
+            storage_price_monthly?: number | null;
+            addon_ids?: string[];
+          };
+          if (typeof data.storage_tb === "number") {
+            setEditStorageTb(String(Math.max(MIN_STORAGE_TB, data.storage_tb)));
+          }
+          if (typeof data.storage_price_monthly === "number") {
+            setEditStoragePriceMonthly(String(data.storage_price_monthly));
+          }
+          if (Array.isArray(data.addon_ids)) {
+            setEditAddonIds(data.addon_ids);
+          }
+        }
+      } catch {
+        setEditError("Failed to load organization details");
+      } finally {
+        setEditDetailLoading(false);
+      }
+    },
+    [user]
+  );
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModalOrg) return;
+    setEditError(null);
+    setEditLoading(true);
+    try {
+      const tbNum = parseInt(editStorageTb, 10);
+      const priceNum = parseFloat(editStoragePriceMonthly);
+      const token = await user?.getIdToken();
+      const body: Record<string, unknown> = { addon_ids: editAddonIds };
+      const currentTb =
+        editModalOrg.storage_quota_bytes != null
+          ? Math.round(editModalOrg.storage_quota_bytes / (1024 ** 4))
+          : 20;
+      const storageChanged = !isNaN(tbNum) && tbNum >= MIN_STORAGE_TB && tbNum !== currentTb;
+      const priceChanged = !isNaN(priceNum) && priceNum > 0;
+      if (storageChanged && !priceChanged) {
+        setEditError("Enter storage price ($/mo) when changing storage amount");
+        return;
+      }
+      if (storageChanged || priceChanged) {
+        if (storageChanged) body.storage_tb = tbNum;
+        if (priceChanged) body.storage_price_monthly = priceNum;
+      }
+      const addonsChanged =
+        JSON.stringify([...editAddonIds].sort()) !==
+        JSON.stringify([...(editModalOrg.addon_ids ?? [])].sort());
+      if (!storageChanged && !priceChanged && !addonsChanged) {
+        setEditError("Change storage, price, or power-ups to update");
+        return;
+      }
+      const res = await fetch(
+        `/api/admin/enterprise/organizations/${editModalOrg.id}/update-subscription`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to update");
+      }
+      setEditModalOrg(null);
+      fetchOrganizations();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -281,6 +386,17 @@ export default function OrganizationsPage() {
                             Removal pending (deadline: {org.removal_deadline ? new Date(org.removal_deadline).toLocaleDateString() : "—"})
                           </span>
                         ) : (
+                          <>
+                        {org.stripe_subscription_id && (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(org)}
+                            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit plan
+                          </button>
+                        )}
                           <button
                             type="button"
                             onClick={() => setRemoveModalOrg(org)}
@@ -294,6 +410,7 @@ export default function OrganizationsPage() {
                             )}
                             Remove organization
                           </button>
+                        </>
                         )}
                         {org.seats_pending > 0 && (org.stripe_subscription_id || org.stripe_invoice_id) && !org.removal_requested_at && (
                           <button
@@ -551,6 +668,158 @@ export default function OrganizationsPage() {
                 {removingId ? "Removing…" : "Remove organization"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editModalOrg && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !editLoading && setEditModalOrg(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+              Edit plan — {editModalOrg.name}
+            </h3>
+            <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+              Changes will trigger a prorated invoice charged to the organization&apos;s card on file.
+            </p>
+            {editDetailLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-neutral-500">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Loading…
+              </div>
+            ) : (
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="edit_storage_tb"
+                      className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                    >
+                      Storage (TB) *
+                    </label>
+                    <input
+                      id="edit_storage_tb"
+                      type="number"
+                      min={MIN_STORAGE_TB}
+                      step={1}
+                      value={editStorageTb}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const n = parseInt(v, 10);
+                        if (v === "" || (n >= MIN_STORAGE_TB && Number.isInteger(n))) {
+                          setEditStorageTb(v === "" ? "" : String(n));
+                        }
+                      }}
+                      onBlur={() => {
+                        const n = parseInt(editStorageTb, 10);
+                        if (!editStorageTb || isNaN(n) || n < MIN_STORAGE_TB) {
+                          setEditStorageTb(String(MIN_STORAGE_TB));
+                        }
+                      }}
+                      placeholder={`min ${MIN_STORAGE_TB}`}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      disabled={editLoading}
+                    />
+                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      Minimum {MIN_STORAGE_TB} TB.
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="edit_storage_price"
+                      className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                    >
+                      Storage price ($/mo) *
+                    </label>
+                    <input
+                      id="edit_storage_price"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={editStoragePriceMonthly}
+                      onChange={(e) => setEditStoragePriceMonthly(e.target.value)}
+                      placeholder="e.g. 150.00"
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                      disabled={editLoading}
+                    />
+                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      Required when changing storage.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    Power ups
+                  </span>
+                  <div className="space-y-2">
+                    {powerUpAddons.map((addon) => (
+                      <label
+                        key={addon.id}
+                        className="flex cursor-pointer items-center gap-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editAddonIds.includes(addon.id)}
+                          onChange={(e) => {
+                            if (addon.id === "fullframe") {
+                              setEditAddonIds(e.target.checked ? ["fullframe"] : []);
+                            } else {
+                              const hasFullframe = editAddonIds.includes("fullframe");
+                              if (hasFullframe) return;
+                              setEditAddonIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, addon.id]
+                                  : prev.filter((id) => id !== addon.id)
+                              );
+                            }
+                          }}
+                          disabled={editLoading || (addon.id !== "fullframe" && editAddonIds.includes("fullframe"))}
+                          className="rounded border-neutral-300 text-[var(--enterprise-primary)] focus:ring-[var(--enterprise-primary)]"
+                        />
+                        <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                          {addon.name} — ${addon.price}/mo
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    Full Frame includes both Gallery Suite and Editor.
+                  </p>
+                </div>
+                {editError && (
+                  <p className="text-sm text-red-600 dark:text-red-400">{editError}</p>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditModalOrg(null)}
+                    disabled={editLoading}
+                    className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editLoading}
+                    className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                  >
+                    {editLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Updating…
+                      </>
+                    ) : (
+                      "Update & charge"
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

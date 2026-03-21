@@ -1,5 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashInviteToken } from "@/lib/invite-token";
+import { sendOrgSeatInviteEmail } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
@@ -132,10 +133,30 @@ export async function POST(request: Request) {
     storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
 
-  const inviteLink =
-    typeof process.env.NEXT_PUBLIC_APP_URL === "string"
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/invite/join?token=${inviteToken}`
-      : null;
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (typeof process.env.VERCEL_URL === "string"
+      ? `https://${process.env.VERCEL_URL}`
+      : null) ??
+    "https://www.bizzicloud.io";
+  const inviteLink = `${baseUrl}/invite/join?token=${inviteToken}`;
+
+  try {
+    await sendOrgSeatInviteEmail({
+      to_email: email,
+      org_name: (org?.name as string) ?? "Organization",
+      invite_url: inviteLink,
+    });
+  } catch (err) {
+    console.error("[enterprise/invite] EmailJS org seat invite failed:", err);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Invite created but failed to send email. Check EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE configuration.",
+      },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({
     success: true,
@@ -143,6 +164,6 @@ export async function POST(request: Request) {
     invite_token: inviteToken,
     invite_link: inviteLink,
     message:
-      "Invite sent. The user will see the invite when they log in with this email. For testing without email, share the invite link.",
+      "Invite sent via email. The user will receive the invite link and can accept it when logged in or sign up with their invited email.",
   });
 }

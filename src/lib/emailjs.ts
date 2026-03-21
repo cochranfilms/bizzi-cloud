@@ -6,6 +6,7 @@
  * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
  * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
  * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
+ * Org seat invite: EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE (optional; when set, invite email sent when org admin invites member)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -134,6 +135,26 @@ function getSupportTicketConfig(): {
   };
 }
 
+function getOrgSeatInviteConfig(): {
+  serviceId: string;
+  templateOrgSeatInvite: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateOrgSeatInvite = process.env.EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateOrgSeatInvite || !publicKey) return null;
+  return {
+    serviceId,
+    templateOrgSeatInvite,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
 function getOrgRemovalConfig(): {
   serviceId: string;
   templateOwner: string;
@@ -218,6 +239,12 @@ export interface SignupLinkEmailParams {
   invite_url: string;
 }
 
+export interface OrgSeatInviteEmailParams {
+  to_email: string;
+  org_name: string;
+  invite_url: string;
+}
+
 /**
  * Send sign-up link email after invoice is paid.
  * Template params: to_email, org_name, invite_url, logo_url
@@ -234,6 +261,33 @@ export async function sendSignupLinkEmail(
   await emailjs.send(
     config.serviceId,
     config.templateSignup,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+/**
+ * Send organization seat invite email when admin invites a member by email.
+ * Requires EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE. If not set, does nothing (no-op).
+ * Template params: to_email, org_name, invite_url, logo_url
+ */
+export async function sendOrgSeatInviteEmail(
+  params: OrgSeatInviteEmailParams
+): Promise<void> {
+  const config = getOrgSeatInviteConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateOrgSeatInvite,
     templateParams,
     {
       publicKey: config.publicKey,

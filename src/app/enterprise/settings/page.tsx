@@ -298,6 +298,22 @@ export default function EnterpriseSettingsPage() {
               <CreditCard className="h-5 w-5 text-[var(--enterprise-primary)]" />
               Subscription
             </h2>
+            {org.storage_quota_bytes > 0 && (
+              <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                  Total storage: {org.storage_quota_bytes >= 1024 ** 4
+                    ? `${(org.storage_quota_bytes / 1024 ** 4).toFixed(1)} TB`
+                    : org.storage_quota_bytes >= 1024 ** 3
+                      ? `${(org.storage_quota_bytes / 1024 ** 3).toFixed(1)} GB`
+                      : `${Math.round(org.storage_quota_bytes / 1024 ** 2)} MB`}
+                </p>
+                {org.max_seats != null && (
+                  <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                    {org.max_seats} seat{org.max_seats !== 1 ? "s" : ""} included
+                  </p>
+                )}
+              </div>
+            )}
             <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
               Storage and seats are managed by Bizzi. Contact our sales team to change your plan or add seats.
             </p>
