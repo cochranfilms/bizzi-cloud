@@ -8,6 +8,7 @@ import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
 import SupportHelpButton from "./SupportHelpButton";
+import GlobalDropZone from "./GlobalDropZone";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 
 const RightPanelContext = createContext<{
@@ -30,6 +31,7 @@ export default function DashboardShell({
 
   return (
     <UppyUploadProvider>
+      <GlobalDropZone />
       <RightPanelContext.Provider
         value={{ rightPanelOpen, setRightPanelOpen }}
       >

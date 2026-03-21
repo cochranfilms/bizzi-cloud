@@ -166,7 +166,6 @@ export default function FileGrid() {
   const [activeTab, setActiveTab] = useState<"recents" | "hearts">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
-  const [currentDrivePath, setCurrentDrivePath] = useState<string>("");
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const {
@@ -189,7 +188,7 @@ export default function FileGrid() {
   const { files: heartedFiles, loading: heartedLoading, hasMore: heartedHasMore, loadMore: loadMoreHearted, refresh: refreshHearted } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
   const { hasEditor, hasGallerySuite } = useSubscription();
-  const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
+  const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [dragState, setDragState] = useState<{
@@ -326,7 +325,7 @@ export default function FileGrid() {
         clearFiltersAndKeepDrive(id);
       }
     },
-    [loadDriveFiles, setCurrentFolderDriveId, clearFiltersAndKeepDrive]
+    [loadDriveFiles, setCurrentFolderDriveId, setCurrentDrivePath, clearFiltersAndKeepDrive]
   );
 
   const closeDrive = useCallback(() => {
@@ -336,7 +335,7 @@ export default function FileGrid() {
     setDriveFiles([]);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
-  }, [setCurrentFolderDriveId]);
+  }, [setCurrentFolderDriveId, setCurrentDrivePath]);
 
   const isGalleryMediaDrive =
     !!currentDrive && linkedDrives.some((d) => d.id === currentDrive.id && d.name === "Gallery Media");

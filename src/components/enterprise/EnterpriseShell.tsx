@@ -11,6 +11,7 @@ import EnterpriseStorageBadge from "./EnterpriseStorageBadge";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
 import BackgroundUploadIndicator from "@/components/dashboard/BackgroundUploadIndicator";
 import SupportHelpButton from "@/components/dashboard/SupportHelpButton";
+import GlobalDropZone from "@/components/dashboard/GlobalDropZone";
 import { getThemeVariables } from "@/lib/enterprise-themes";
 
 export default function EnterpriseShell({
@@ -26,6 +27,7 @@ export default function EnterpriseShell({
 
   return (
     <UppyUploadProvider>
+    <GlobalDropZone />
     <div
       className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 border-l-4 border-[var(--enterprise-primary)]"
       data-org-theme={theme}

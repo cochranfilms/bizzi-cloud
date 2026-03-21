@@ -9,6 +9,7 @@ import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
 import BackgroundUploadIndicator from "@/components/dashboard/BackgroundUploadIndicator";
+import GlobalDropZone from "@/components/dashboard/GlobalDropZone";
 import { NLEMountPanel } from "./NLEMountPanel";
 
 const RightPanelContext = createContext<{
@@ -33,6 +34,7 @@ export default function DesktopShell({
 
   return (
     <UppyUploadProvider>
+    <GlobalDropZone />
     <RightPanelContext.Provider value={{ rightPanelOpen, setRightPanelOpen }}>
       <div
         className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
