@@ -4,7 +4,7 @@ import Image from "next/image";
 
 const BRAND_LOGOS = [
   { name: "Bizzi Byte", logo: "/logo.png" },
-  { name: "JW FLIX", logo: "/JW-Logo.PNG" },
+  { name: "JW FLIX", logo: "/JW-Logo.png" },
   { name: "Mastery United", logo: "/Mastery-United-Logo.png" },
   { name: "Saoirse Leon", logo: "/Saoirse-Leon-Logo.png" },
   { name: "Cochran Films", logo: "/CF_Logo_Black2025.png" },
