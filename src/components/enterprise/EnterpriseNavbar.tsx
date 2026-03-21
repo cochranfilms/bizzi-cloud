@@ -19,6 +19,7 @@ import {
   Images,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
+import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -154,13 +155,7 @@ export default function EnterpriseNavbar() {
 
       <div className="flex flex-shrink-0 items-center gap-3">
         <NotificationBell />
-        <Link
-          href="/dashboard"
-          className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          title="Switch to personal account"
-        >
-          Switch to Personal
-        </Link>
+        <WorkspaceSwitcher />
         <UserMenu compact />
       </div>
 

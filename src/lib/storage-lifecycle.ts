@@ -4,7 +4,10 @@
  *
  * V1 flow: active → grace_period → cold_storage → active or deleted
  * scheduled_delete = account deletion requested (narrow scope)
+ *
+ * Personal workspace: personal_status scopes deletion to personal only when org seats exist.
  */
+import type { PersonalStatus } from "@/types/profile";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { writeAuditLog } from "@/lib/audit-log";
 import { FieldValue } from "firebase-admin/firestore";
@@ -25,11 +28,20 @@ export interface StorageLifecycleInfo {
   accountDeletionEffectiveAt: Date | null;
   isProfile: boolean;
   orgId: string | null;
+  /** Personal workspace lifecycle; only relevant when isProfile/orgId null */
+  personalStatus?: PersonalStatus;
+  personalRestoreAvailableUntil?: Date | null;
 }
 
 /** True when read/write access should be denied (files in cold or scheduled for deletion) */
 export function storageLifecycleBlocksAccess(status: StorageLifecycleStatus): boolean {
   return status === "cold_storage" || status === "scheduled_delete";
+}
+
+/** True when personal workspace is deleted/purged and blocks personal access */
+export function personalStatusBlocksAccess(status: PersonalStatus | undefined): boolean {
+  if (!status || status === "active") return false;
+  return status === "scheduled_delete" || status === "purged";
 }
 
 /**
@@ -45,6 +57,7 @@ export async function getEffectiveStorageLifecycle(uid: string): Promise<Storage
 /**
  * Throws if the user's effective storage lifecycle blocks access.
  * Use before read/write operations.
+ * When in enterprise context (orgId from profile), personal lifecycle does not block.
  */
 export async function assertStorageLifecycleAllowsAccess(uid: string): Promise<void> {
   const info = await getEffectiveStorageLifecycle(uid);
@@ -54,6 +67,11 @@ export async function assertStorageLifecycleAllowsAccess(uid: string): Promise<v
         ? "Your account is scheduled for deletion. Files remain recoverable until the deletion date."
         : "Your account is past due. Your files are protected in recovery storage. Pay your invoice to restore full access.";
     throw new Error(msg);
+  }
+  if (info.isProfile && personalStatusBlocksAccess(info.personalStatus)) {
+    throw new Error(
+      "Your personal account has been deleted. You can restore it within the grace period or continue to your enterprise workspace."
+    );
   }
 }
 
@@ -87,6 +105,8 @@ export async function getStorageLifecycleStatus(params: {
   const status = (profileData?.storage_lifecycle_status as StorageLifecycleStatus) ?? "active";
   const graceEnd = profileData?.grace_period_ends_at?.toDate?.() ?? null;
   const deletionAt = profileData?.account_deletion_effective_at?.toDate?.() ?? null;
+  const personalStatus = (profileData?.personal_status as PersonalStatus | undefined) ?? "active";
+  const personalRestoreUntil = profileData?.personal_restore_available_until?.toDate?.() ?? null;
 
   return {
     status,
@@ -94,6 +114,8 @@ export async function getStorageLifecycleStatus(params: {
     accountDeletionEffectiveAt: deletionAt,
     isProfile: true,
     orgId: null,
+    personalStatus,
+    personalRestoreAvailableUntil: personalRestoreUntil,
   };
 }
 
@@ -219,6 +241,68 @@ export async function transitionToScheduledDelete(params: {
     action: "scheduled_deletion_created",
     uid: userId,
     metadata: { effective_at: effectiveAt.toISOString() },
+  });
+}
+
+/**
+ * Transition to personal workspace scheduled delete (personal-only deletion).
+ * Preserves organization_id and organization_role.
+ * Use when user has active org seats.
+ */
+export async function transitionToPersonalScheduledDelete(params: {
+  userId: string;
+  requestedAt: Date;
+  effectiveAt: Date;
+}): Promise<void> {
+  const db = getAdminFirestore();
+  const { userId, requestedAt, effectiveAt } = params;
+
+  const { Timestamp } = await import("firebase-admin/firestore");
+
+  await db.collection("profiles").doc(userId).set(
+    {
+      personal_status: "scheduled_delete" as const,
+      personal_deleted_at: Timestamp.fromDate(requestedAt),
+      personal_restore_available_until: Timestamp.fromDate(effectiveAt),
+      storage_lifecycle_status: "scheduled_delete" as const,
+      account_deletion_requested_at: Timestamp.fromDate(requestedAt),
+      account_deletion_effective_at: Timestamp.fromDate(effectiveAt),
+      plan_id: "free",
+      addon_ids: [],
+      seat_count: 1,
+      storage_addon_id: null,
+      storage_quota_bytes: getStorageBytesForPlan("free"),
+      stripe_subscription_id: null,
+      billing_status: "canceled",
+      unpaid_invoice_url: null,
+      grace_period_ends_at: FieldValue.delete(),
+      stripe_updated_at: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+
+  await writeAuditLog({
+    action: "personal_scheduled_deletion_created",
+    uid: userId,
+    metadata: { effective_at: effectiveAt.toISOString() },
+  });
+}
+
+/**
+ * Restore personal workspace to active (restore completed).
+ * Clears personal_status and deletion timestamps.
+ */
+export async function restorePersonalToActive(params: { userId: string }): Promise<void> {
+  const db = getAdminFirestore();
+
+  await db.collection("profiles").doc(params.userId).update({
+    personal_status: "active",
+    personal_deleted_at: FieldValue.delete(),
+    personal_restore_available_until: FieldValue.delete(),
+    personal_purge_at: FieldValue.delete(),
+    storage_lifecycle_status: "active",
+    account_deletion_requested_at: FieldValue.delete(),
+    account_deletion_effective_at: FieldValue.delete(),
   });
 }
 

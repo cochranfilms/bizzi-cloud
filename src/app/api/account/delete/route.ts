@@ -1,7 +1,8 @@
 /**
  * POST /api/account/delete
  * Cold-storage account deletion: files move to cold storage for 30 days.
- * Profile and Firebase Auth retained for 30 days so user can resubscribe and restore.
+ * When user has enterprise seats: personal workspace deletion only; org access preserved.
+ * When user has no enterprise seats: full account deletion.
  * Requires confirmation in body.
  * Body: { confirmation: "DELETE" }
  */
@@ -11,7 +12,10 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import { migrateAccountDeleteToColdStorage } from "@/lib/cold-storage-migrate";
 import { snapshotConsumerGalleries } from "@/lib/cold-storage-gallery-snapshot";
-import { transitionToScheduledDelete } from "@/lib/storage-lifecycle";
+import {
+  transitionToScheduledDelete,
+  transitionToPersonalScheduledDelete,
+} from "@/lib/storage-lifecycle";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 
@@ -83,6 +87,45 @@ export async function POST(request: Request) {
     ["gallery", "editor", "fullframe"].includes(id)
   );
 
+  // Check for active enterprise seats
+  const activeSeatsSnap = await db
+    .collection("organization_seats")
+    .where("user_id", "==", uid)
+    .where("status", "==", "active")
+    .get();
+  const hasEnterpriseAccess = !activeSeatsSnap.empty;
+
+  const ownedOrgsSnap = await db
+    .collection("organizations")
+    .where("created_by", "==", uid)
+    .limit(1)
+    .get();
+  const ownsOrg = !ownedOrgsSnap.empty;
+
+  if (!hasEnterpriseAccess && ownsOrg) {
+    return NextResponse.json(
+      {
+        error:
+          "You still administer an organization. Transfer ownership or delete the organization before closing your identity.",
+        ownsOrg: true,
+      },
+      { status: 400 }
+    );
+  }
+
+  const orgs: { id: string; name: string }[] = [];
+  if (hasEnterpriseAccess) {
+    for (const seatDoc of activeSeatsSnap.docs) {
+      const orgId = seatDoc.data().organization_id as string;
+      const orgSnap = await db.collection("organizations").doc(orgId).get();
+      const orgData = orgSnap.data();
+      orgs.push({
+        id: orgId,
+        name: (orgData?.name as string) ?? "Organization",
+      });
+    }
+  }
+
   // Compute total bytes used and store restore requirements BEFORE we clear profile/migrate
   let totalBytesUsed = 0;
   const backupFilesSnap = await db
@@ -98,14 +141,23 @@ export async function POST(request: Request) {
   const effectiveAt = new Date(now);
   effectiveAt.setDate(effectiveAt.getDate() + RETENTION_DAYS);
 
-  // 1. Transition to scheduled_delete (narrow scope: account deletion only)
-  await transitionToScheduledDelete({
-    userId: uid,
-    requestedAt: now,
-    effectiveAt,
-  });
+  if (hasEnterpriseAccess) {
+    // Personal-only deletion: preserve org seats and profile org link
+    await transitionToPersonalScheduledDelete({
+      userId: uid,
+      requestedAt: now,
+      effectiveAt,
+    });
+  } else {
+    // Full account deletion
+    await transitionToScheduledDelete({
+      userId: uid,
+      requestedAt: now,
+      effectiveAt,
+    });
+  }
 
-  // 2. Cancel Stripe subscription immediately (stops future billing)
+  // Cancel Stripe subscription immediately (stops future billing)
   if (stripeSubscriptionId) {
     try {
       const stripe = getStripeInstance();
@@ -122,7 +174,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // 2b. Snapshot galleries, gallery_assets, favorites_lists, file_hearts, pinned_items (before migration deletes them)
+  // Snapshot galleries, gallery_assets, favorites_lists, file_hearts, pinned_items (before migration deletes them)
   try {
     const snapshotCount = await snapshotConsumerGalleries(db, uid);
     if (snapshotCount > 0) {
@@ -136,7 +188,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Migrate backup_files to cold_storage (30-day retention)
+  // Migrate backup_files to cold_storage (30-day retention)
   try {
     const result = await migrateAccountDeleteToColdStorage(uid);
     console.log(
@@ -153,7 +205,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3b. Store restore requirements so change-plan can enforce min storage and required addons
+  // Store restore requirements so change-plan can enforce min storage and required addons
   await db.collection("cold_storage_restore_requirements").doc(uid).set({
     total_bytes_used: totalBytesUsed,
     required_addon_ids: requiredAddonIds,
@@ -161,7 +213,7 @@ export async function POST(request: Request) {
     created_at: now.toISOString(),
   });
 
-  // 4. Delete other user data (keep profile and Firebase Auth)
+  // Delete other user data (keep profile and Firebase Auth)
   const deleteByQuery = async (
     collection: string,
     field: string,
@@ -184,7 +236,7 @@ export async function POST(request: Request) {
     }
   };
 
-  // Galleries and related data
+  // Galleries and related data (personal only)
   const galleriesSnap = await db
     .collection("galleries")
     .where("photographer_id", "==", uid)
@@ -259,22 +311,24 @@ export async function POST(request: Request) {
     await d.ref.delete();
   }
 
-  await deleteByQuery("organization_seats", "user_id", uid);
-
-  // Clear organization_id / organization_role from profile if present
-  await db
-    .collection("profiles")
-    .doc(uid)
-    .update({
-      organization_id: FieldValue.delete(),
-      organization_role: FieldValue.delete(),
-    });
+  // Only delete organization_seats and clear org from profile when NO enterprise access
+  if (!hasEnterpriseAccess) {
+    await deleteByQuery("organization_seats", "user_id", uid);
+    await db
+      .collection("profiles")
+      .doc(uid)
+      .update({
+        organization_id: FieldValue.delete(),
+        organization_role: FieldValue.delete(),
+      });
+  }
 
   await writeAuditLog({
     action: "account_delete_requested",
     uid,
     ip: getClientIp(request),
     userAgent: request.headers.get("user-agent") ?? null,
+    metadata: hasEnterpriseAccess ? { personal_only: true, org_count: orgs.length } : undefined,
   });
 
   const formattedDate = effectiveAt.toLocaleDateString("en-US", {
@@ -285,6 +339,10 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: `Your account is scheduled for permanent deletion on ${formattedDate}. Until then, your files remain recoverable. Log back in and resubscribe to restore them.`,
+    message: hasEnterpriseAccess
+      ? `Your personal account has been deleted and is recoverable until ${formattedDate}. You still have access to your enterprise workspace(s).`
+      : `Your account is scheduled for permanent deletion on ${formattedDate}. Until then, your files remain recoverable. Log back in and resubscribe to restore them.`,
+    hasEnterpriseAccess,
+    orgs,
   });
 }

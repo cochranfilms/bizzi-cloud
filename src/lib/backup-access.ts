@@ -5,6 +5,7 @@ import { getProxyObjectKey } from "@/lib/b2";
 import {
   getEffectiveStorageLifecycle,
   storageLifecycleBlocksAccess,
+  personalStatusBlocksAccess,
 } from "@/lib/storage-lifecycle";
 
 export interface BackupAccessResult {
@@ -29,6 +30,14 @@ export async function verifyBackupFileAccessWithLifecycle(
         ? "Your account is scheduled for deletion. Files remain recoverable until the deletion date."
         : "Your account is past due. Your files are protected in recovery storage. Pay your invoice to restore full access.";
     return { allowed: false, status: 403, message: msg };
+  }
+  if (info.isProfile && personalStatusBlocksAccess(info.personalStatus)) {
+    return {
+      allowed: false,
+      status: 403,
+      message:
+        "Your personal account has been deleted. You can restore it within the grace period or continue to your enterprise workspace.",
+    };
   }
   const hasAccess = await verifyBackupFileAccess(uid, objectKey);
   return hasAccess
@@ -111,6 +120,14 @@ export async function verifyBackupFileAccessWithGalleryFallbackAndLifecycle(
         ? "Your account is scheduled for deletion. Files remain recoverable until the deletion date."
         : "Your account is past due. Your files are protected in recovery storage. Pay your invoice to restore full access.";
     return { allowed: false, status: 403, message: msg };
+  }
+  if (info.isProfile && personalStatusBlocksAccess(info.personalStatus)) {
+    return {
+      allowed: false,
+      status: 403,
+      message:
+        "Your personal account has been deleted. You can restore it within the grace period or continue to your enterprise workspace.",
+    };
   }
   const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
   return hasAccess

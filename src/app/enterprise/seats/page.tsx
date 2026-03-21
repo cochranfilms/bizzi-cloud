@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
-import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle } from "lucide-react";
+import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle, Shield } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useConfirm } from "@/hooks/useConfirm";
 interface Seat {
@@ -33,7 +33,9 @@ export default function EnterpriseSeatsPage() {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
   const [updatingStorageId, setUpdatingStorageId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   const isAdmin = role === "admin";
 
@@ -184,6 +186,67 @@ export default function EnterpriseSeatsPage() {
     }
   };
 
+  const handlePromoteToAdmin = async (seatId: string) => {
+    if (!isAdmin) return;
+    setPromotingId(seatId);
+    setInviteError(null);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/enterprise/seats/${encodeURIComponent(seatId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: "admin" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to promote");
+      await fetchSeats();
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Failed to promote");
+    } finally {
+      setPromotingId(null);
+    }
+  };
+
+  const handleLeave = async () => {
+    const ok = await confirm({
+      message:
+        "Leave this organization? You will lose access to all organization files and storage.",
+      destructive: true,
+      confirmLabel: "Leave organization",
+    });
+    if (!ok) return;
+    setLeaving(true);
+    setInviteError(null);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch("/api/enterprise/leave", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        soleAdmin?: boolean;
+        suggestIdentityDeletion?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to leave");
+      }
+      refetch();
+      if (data.suggestIdentityDeletion) {
+        window.location.href = "/dashboard/settings#privacy";
+      } else {
+        window.location.href = "/dashboard";
+      }
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Failed to leave");
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   if (!org) {
     return (
       <>
@@ -325,6 +388,12 @@ export default function EnterpriseSeatsPage() {
                   const isPending = seat.status === "pending";
                   const canRemove =
                     isAdmin && !isSelf && removingId !== seat.id;
+                  const canPromote =
+                    isAdmin &&
+                    !isSelf &&
+                    seat.role !== "admin" &&
+                    !isPending &&
+                    promotingId !== seat.id;
 
                   const isOwner = seat.role === "admin";
                   const displayQuotaBytes = isOwner
@@ -408,18 +477,32 @@ export default function EnterpriseSeatsPage() {
                         </div>
                       )}
                       <div className="flex w-10 shrink-0 justify-end">
-                        {removingId === seat.id ? (
+                        {removingId === seat.id || promotingId === seat.id ? (
                           <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
-                        ) : canRemove ? (
+                        ) : canRemove || canPromote ? (
                           <ItemActionsMenu
                             actions={[
-                              {
-                                id: "remove",
-                                label: "Remove from organization",
-                                icon: <Trash2 className="h-4 w-4" />,
-                                onClick: () => handleRemove(seat.id, seat.user_id),
-                                destructive: true,
-                              },
+                              ...(canPromote
+                                ? [
+                                    {
+                                      id: "promote",
+                                      label: "Make admin",
+                                      icon: <Shield className="h-4 w-4" />,
+                                      onClick: () => handlePromoteToAdmin(seat.id),
+                                    },
+                                  ]
+                                : []),
+                              ...(canRemove
+                                ? [
+                                    {
+                                      id: "remove",
+                                      label: "Remove from organization",
+                                      icon: <Trash2 className="h-4 w-4" />,
+                                      onClick: () => handleRemove(seat.id, seat.user_id),
+                                      destructive: true,
+                                    },
+                                  ]
+                                : []),
                             ]}
                             ariaLabel="Seat actions"
                             alignRight
@@ -431,6 +514,25 @@ export default function EnterpriseSeatsPage() {
                 })}
               </ul>
             )}
+          </section>
+
+          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              Your membership
+            </h2>
+            <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+              You can leave this organization at any time. You will lose access to all
+              organization files. {isAdmin && "As an admin, you must transfer ownership to another member before leaving."}
+            </p>
+            <button
+              type="button"
+              onClick={handleLeave}
+              disabled={leaving}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              {leaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Leave organization
+            </button>
           </section>
         </div>
       </main>

@@ -39,7 +39,7 @@ export async function PATCH(
     );
   }
 
-  let body: { storage_quota_bytes?: number | null };
+  let body: { storage_quota_bytes?: number | null; role?: "admin" | "member" };
   try {
     body = await request.json();
   } catch {
@@ -67,6 +67,49 @@ export async function PATCH(
       { error: "Seat not found" },
       { status: 404 }
     );
+  }
+
+  const newRole = body.role;
+  if (newRole === "admin" || newRole === "member") {
+    const seatSnap = await db.collection("organization_seats").doc(seatId).get();
+    if (!seatSnap.exists) {
+      return NextResponse.json({ error: "Seat not found" }, { status: 404 });
+    }
+    const targetUserId = seatSnap.data()?.user_id as string;
+    const targetRole = seatSnap.data()?.role as string;
+    if (targetRole === newRole) {
+      return NextResponse.json({ success: true });
+    }
+    if (newRole === "member") {
+      const adminCount = (
+        await db
+          .collection("organization_seats")
+          .where("organization_id", "==", orgId)
+          .where("role", "==", "admin")
+          .where("status", "==", "active")
+          .get()
+      ).docs.length;
+      if (adminCount <= 1) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot demote the only admin. Promote another member to admin first, or transfer ownership.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+    if (newRole === "admin") {
+      const orgRef = db.collection("organizations").doc(orgId);
+      await orgRef.update({ created_by: targetUserId });
+    }
+    await db.collection("organization_seats").doc(seatId).update({ role: newRole });
+    if (targetUserId) {
+      await db.collection("profiles").doc(targetUserId).update({
+        organization_role: newRole,
+      });
+    }
+    return NextResponse.json({ success: true });
   }
 
   const newQuota = body.storage_quota_bytes;

@@ -378,6 +378,7 @@ function StorageSection() {
 
 function PrivacySection() {
   const { user } = useAuth();
+  const { org } = useEnterprise();
   const [doNotSell, setDoNotSell] = useState(false);
   const [analytics, setAnalytics] = useState(false);
   const [functional, setFunctional] = useState(false);
@@ -386,8 +387,25 @@ function PrivacySection() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [ownsOrg, setOwnsOrg] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const fetchAccountStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/account/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOwnsOrg(data.owns_org ?? false);
+      }
+    } catch {
+      setOwnsOrg(false);
+    }
+  }, [user]);
 
   const fetchPrivacy = useCallback(async () => {
     if (!user) return;
@@ -411,6 +429,10 @@ function PrivacySection() {
   useEffect(() => {
     fetchPrivacy();
   }, [fetchPrivacy]);
+
+  useEffect(() => {
+    fetchAccountStatus();
+  }, [fetchAccountStatus]);
 
   const handleSavePrivacy = async () => {
     if (!user) return;
@@ -485,15 +507,24 @@ function PrivacySection() {
         },
         body: JSON.stringify({ confirmation: "DELETE" }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string;
+        hasEnterpriseAccess?: boolean;
+        ownsOrg?: boolean;
+      };
       if (!res.ok) throw new Error(data.error ?? "Deletion failed");
       setDeleteModalOpen(false);
       setDeleteConfirm("");
-      const { signOut } = await import("firebase/auth");
-      const { getFirebaseAuth } = await import("@/lib/firebase/client");
-      await signOut(getFirebaseAuth());
-      router.push("/");
-      router.refresh();
+      if (data.hasEnterpriseAccess) {
+        router.push("/account/personal-deleted");
+        router.refresh();
+      } else {
+        const { signOut } = await import("firebase/auth");
+        const { getFirebaseAuth } = await import("@/lib/firebase/client");
+        await signOut(getFirebaseAuth());
+        router.push("/");
+        router.refresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deletion failed");
     } finally {
@@ -502,6 +533,7 @@ function PrivacySection() {
   };
 
   const router = useRouter();
+  const hasEnterpriseAccess = !!org;
 
   return (
     <section
@@ -584,6 +616,20 @@ function PrivacySection() {
           <h3 className="mb-2 text-sm font-medium text-neutral-800 dark:text-neutral-200">
             Your data rights
           </h3>
+          {ownsOrg && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                You still administer an organization. Transfer ownership or delete the organization
+                before closing your identity.
+              </p>
+              <Link
+                href="/enterprise/seats"
+                className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
+              >
+                Go to organization seats to transfer ownership
+              </Link>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
@@ -597,10 +643,11 @@ function PrivacySection() {
             <button
               type="button"
               onClick={() => setDeleteModalOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
+              disabled={ownsOrg}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
             >
               <Trash2 className="h-4 w-4" />
-              Delete my account
+              {hasEnterpriseAccess ? "Delete personal account" : "Delete my account"}
             </button>
           </div>
         </div>
@@ -609,16 +656,26 @@ function PrivacySection() {
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
           <div className="max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              Delete account
+              {hasEnterpriseAccess ? "Delete personal account" : "Delete account"}
             </h3>
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-              Your account is scheduled for permanent deletion on{" "}
-              {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
-              . Until then, your files remain recoverable. Log back in and resubscribe to restore them.
+              {hasEnterpriseAccess ? (
+                <>
+                  Your personal workspace will be deleted and is recoverable for 30 days. Your
+                  enterprise workspace access will remain active. You can continue to sign in
+                  and use your team storage, or restore your personal account within the grace period.
+                </>
+              ) : (
+                <>
+                  Your account is scheduled for permanent deletion on{" "}
+                  {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                  . Until then, your files remain recoverable. Log back in and resubscribe to restore them.
+                </>
+              )}
             </p>
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
               Type <strong>DELETE</strong> to confirm:
@@ -647,7 +704,13 @@ function PrivacySection() {
                 disabled={deleteLoading || deleteConfirm !== "DELETE"}
                 className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete account"}
+                {deleteLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : hasEnterpriseAccess ? (
+                  "Delete personal account"
+                ) : (
+                  "Delete account"
+                )}
               </button>
             </div>
           </div>

@@ -22,6 +22,7 @@ export type AuditAction =
   | "restore_failed"
   | "retention_extended"
   | "scheduled_deletion_created"
+  | "personal_scheduled_deletion_created"
   | "storage_lifecycle_deleted";
 
 export interface AuditEntry {
