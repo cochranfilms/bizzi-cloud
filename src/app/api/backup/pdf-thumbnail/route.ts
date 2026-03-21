@@ -4,7 +4,7 @@
  * Uses pdfjs-dist + @napi-rs/canvas for Vercel serverless compatibility.
  */
 import { getObjectBuffer, isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -86,9 +86,11 @@ async function handlePdfThumbnail(request: Request) {
     return new NextResponse("Not a PDF file", { status: 400 });
   }
 
-  const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
-  if (!hasAccess) {
-    return new NextResponse("Access denied", { status: 403 });
+  const result = await verifyBackupFileAccessWithGalleryFallbackAndLifecycle(uid, objectKey);
+  if (!result.allowed) {
+    return new NextResponse(result.message ?? "Access denied", {
+      status: result.status ?? 403,
+    });
   }
 
   try {

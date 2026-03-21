@@ -1,6 +1,6 @@
 import { getDownloadUrl } from "@/lib/cdn";
 import { isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -91,9 +91,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, resolvedObjectKey);
-  if (!hasAccess) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const result = await verifyBackupFileAccessWithLifecycle(uid, resolvedObjectKey);
+  if (!result.allowed) {
+    return NextResponse.json(
+      { error: result.message ?? "Access denied" },
+      { status: result.status ?? 403 }
+    );
   }
 
   const existing = await db

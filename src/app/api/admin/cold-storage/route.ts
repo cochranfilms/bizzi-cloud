@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     string,
     {
       folder: string;
+      ownerType: string;
       sourceType: string;
       planTier: string;
       fileCount: number;
@@ -35,26 +36,32 @@ export async function GET(request: Request) {
       expiresAt: string | null;
       orgId: string | null;
       orgName: string | null;
+      userId: string | null;
       fileIds: string[];
     }
   >();
 
   for (const doc of snap.docs) {
     const d = doc.data();
+    const ownerType = (d.owner_type as string) ?? (d.org_id ? "organization" : "consumer");
+    const orgId = (d.org_id as string) ?? null;
+    const userId = (d.user_id as string) ?? null;
     const folder = (d.cold_storage_folder as string) ?? "unknown";
-    const key = folder;
+    const key = orgId ? `org:${orgId}` : `user:${userId ?? folder}`;
 
     if (!byFolder.has(key)) {
       byFolder.set(key, {
         folder,
+        ownerType,
         sourceType: (d.source_type as string) ?? "org_removal",
         planTier: (d.plan_tier as string) ?? "enterprise",
         fileCount: 0,
         totalBytes: 0,
         coldStorageStartedAt: d.cold_storage_started_at?.toDate?.()?.toISOString() ?? null,
         expiresAt: d.cold_storage_expires_at?.toDate?.()?.toISOString() ?? null,
-        orgId: (d.org_id as string) ?? null,
+        orgId,
         orgName: (d.org_name as string) ?? null,
+        userId: orgId ? null : userId,
         fileIds: [],
       });
     }

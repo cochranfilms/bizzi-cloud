@@ -5,6 +5,7 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 
@@ -59,6 +60,12 @@ export async function POST(request: Request) {
     });
     extended++;
   }
+
+  await writeAuditLog({
+    action: "retention_extended",
+    uid: auth.uid,
+    metadata: { folder, orgId, days, fileCount: extended },
+  });
 
   return NextResponse.json({
     success: true,

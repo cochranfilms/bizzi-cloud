@@ -1,5 +1,5 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -75,9 +75,12 @@ export async function POST(request: Request) {
   const urls: { url: string; name: string }[] = [];
 
   for (const item of items) {
-    const hasAccess = await verifyBackupFileAccess(uid, item.object_key);
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Access denied to one or more files" }, { status: 403 });
+    const result = await verifyBackupFileAccessWithLifecycle(uid, item.object_key);
+    if (!result.allowed) {
+      return NextResponse.json(
+        { error: result.message ?? "Access denied to one or more files" },
+        { status: result.status ?? 403 }
+      );
     }
 
     try {

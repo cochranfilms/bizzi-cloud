@@ -611,7 +611,13 @@ function PrivacySection() {
               Delete account
             </h3>
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-              This will permanently delete your account and all your data. This cannot be undone.
+              Your account is scheduled for permanent deletion on{" "}
+              {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+              . Until then, your files remain recoverable. Log back in and resubscribe to restore them.
             </p>
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
               Type <strong>DELETE</strong> to confirm:

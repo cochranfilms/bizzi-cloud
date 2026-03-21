@@ -27,6 +27,14 @@
       "schedule": "45 5 * * *"
     },
     {
+      "path": "/api/cron/account-deletion-cleanup",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/grace-period-expiry",
+      "schedule": "15 5 * * *"
+    },
+    {
       "path": "/api/cron/proxy-generation",
       "schedule": "*/5 * * * *"
     }

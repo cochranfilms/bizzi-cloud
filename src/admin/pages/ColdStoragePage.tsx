@@ -7,6 +7,7 @@ import { Archive, Loader2, RotateCcw, Eye, CalendarPlus, Copy, ExternalLink } fr
 
 interface ColdStorageFolder {
   folder: string;
+  ownerType: string;
   sourceType: string;
   planTier: string;
   fileCount: number;
@@ -15,6 +16,7 @@ interface ColdStorageFolder {
   expiresAt: string | null;
   orgId: string | null;
   orgName: string | null;
+  userId: string | null;
   fileIds: string[];
 }
 
@@ -45,9 +47,12 @@ export default function ColdStoragePage() {
   const [folderFiles, setFolderFiles] = useState<ColdStorageFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [restoringOrgId, setRestoringOrgId] = useState<string | null>(null);
+  const [restoringUserId, setRestoringUserId] = useState<string | null>(null);
   const [restoreResult, setRestoreResult] = useState<{
-    hosted_invoice_url: string;
-    org_name: string;
+    hosted_invoice_url?: string;
+    checkout_url?: string;
+    org_name?: string;
+    user_email?: string;
   } | null>(null);
   const [extendingFolder, setExtendingFolder] = useState<string | null>(null);
 
@@ -87,6 +92,7 @@ export default function ColdStoragePage() {
         const token = await user.getIdToken();
         const params = new URLSearchParams();
         if (folder.orgId) params.set("orgId", folder.orgId);
+        else if (folder.userId) params.set("userId", folder.userId);
         else params.set("folder", folder.folder);
         const res = await fetch(
           `/api/admin/cold-storage/files?${params.toString()}`,
@@ -137,6 +143,34 @@ export default function ColdStoragePage() {
       setError(err instanceof Error ? err.message : "Restore failed");
     } finally {
       setRestoringOrgId(null);
+    }
+  };
+
+  const handleRestoreConsumer = async (userId: string) => {
+    if (!user) return;
+    setRestoringUserId(userId);
+    setRestoreResult(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/admin/cold-storage/restore-consumer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to restore");
+      setRestoreResult({
+        checkout_url: data.checkout_url,
+        user_email: data.user_email,
+      });
+      fetchColdStorage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Restore failed");
+    } finally {
+      setRestoringUserId(null);
     }
   };
 
@@ -191,28 +225,30 @@ export default function ColdStoragePage() {
       {restoreResult && (
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
           <p className="font-medium text-green-900 dark:text-green-100">
-            Restore initiated for {restoreResult.org_name}
+            Restore initiated for {restoreResult.org_name ?? restoreResult.user_email}
           </p>
           <p className="mt-1 text-sm text-green-800 dark:text-green-200">
-            Owner must pay the invoice to complete restore. Copy the payment link and send to the owner.
+            {restoreResult.hosted_invoice_url
+              ? "Owner must pay the invoice to complete restore. Copy the payment link and send to the owner."
+              : "User must complete checkout to restore. Send the checkout link to the user."}
           </p>
           <div className="mt-3 flex items-center gap-2">
             <input
               type="text"
               readOnly
-              value={restoreResult.hosted_invoice_url}
+              value={restoreResult.hosted_invoice_url ?? restoreResult.checkout_url ?? ""}
               className="flex-1 rounded border border-neutral-200 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
             />
             <button
               type="button"
-              onClick={() => copyToClipboard(restoreResult.hosted_invoice_url)}
+              onClick={() => copyToClipboard(restoreResult.hosted_invoice_url ?? restoreResult.checkout_url ?? "")}
               className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
             >
               <Copy className="h-4 w-4" />
               Copy
             </button>
             <a
-              href={restoreResult.hosted_invoice_url}
+              href={restoreResult.hosted_invoice_url ?? restoreResult.checkout_url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 rounded-lg bg-bizzi-blue px-2 py-1.5 text-sm font-medium text-white"
@@ -270,6 +306,7 @@ export default function ColdStoragePage() {
           <option value="org_removal">Org removal</option>
           <option value="subscription_end">Subscription end</option>
           <option value="account_delete">Account delete</option>
+          <option value="payment_failed">Payment failed</option>
         </select>
       </div>
 
@@ -294,6 +331,9 @@ export default function ColdStoragePage() {
                   Folder
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  Owner
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   Source
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -305,6 +345,9 @@ export default function ColdStoragePage() {
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   Expires
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  Days left
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   Actions
                 </th>
@@ -312,9 +355,13 @@ export default function ColdStoragePage() {
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
               {folders.map((folder) => {
-                const key = folder.orgId ?? folder.folder;
+                const key = folder.orgId ? `org:${folder.orgId}` : `user:${folder.userId ?? folder.folder}`;
                 const isExpanded = expandedFolder === key;
+                const isOrg = folder.ownerType === "organization" || folder.orgId;
                 const isOrgRemoval = folder.sourceType === "org_removal";
+                const daysRemaining = folder.expiresAt
+                  ? Math.max(0, Math.ceil((new Date(folder.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+                  : null;
                 return (
                   <React.Fragment key={key}>
                     <tr className="bg-white dark:bg-neutral-900">
@@ -325,6 +372,17 @@ export default function ColdStoragePage() {
                             ({folder.orgName})
                           </span>
                         )}
+                      </td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs ${
+                            isOrg
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                          }`}
+                        >
+                          {isOrg ? "Organization" : "Consumer"}
+                        </span>
                       </td>
                       <td className="px-6 py-3">
                         <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-800">
@@ -341,6 +399,9 @@ export default function ColdStoragePage() {
                         {folder.expiresAt
                           ? new Date(folder.expiresAt).toLocaleDateString()
                           : "—"}
+                      </td>
+                      <td className="px-6 py-3 text-sm text-neutral-600 dark:text-neutral-400">
+                        {daysRemaining != null ? String(daysRemaining) : "—"}
                       </td>
                       <td className="px-6 py-3 text-right">
                         <div className="flex justify-end gap-2">
@@ -380,12 +441,27 @@ export default function ColdStoragePage() {
                               Restore Organization
                             </button>
                           )}
+                          {!isOrg && folder.userId && (
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreConsumer(folder.userId!)}
+                              disabled={restoringUserId === folder.userId}
+                              className="flex items-center gap-1 rounded-lg bg-bizzi-blue px-2 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              {restoringUserId === folder.userId ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                              Restore Consumer
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={6} className="bg-neutral-50 px-6 py-4 dark:bg-neutral-800/50">
+                        <td colSpan={7} className="bg-neutral-50 px-6 py-4 dark:bg-neutral-800/50">
                           {loadingFiles ? (
                             <div className="flex items-center gap-2 text-sm text-neutral-500">
                               <Loader2 className="h-4 w-4 animate-spin" />

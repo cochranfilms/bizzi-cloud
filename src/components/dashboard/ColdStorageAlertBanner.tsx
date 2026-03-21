@@ -8,13 +8,16 @@ export function ColdStorageAlertBanner() {
   const {
     hasColdStorage,
     expiresAt,
+    daysRemaining,
     restoreUrl,
+    billingStatus,
     orgName,
     loading,
   } = useColdStorageStatus();
 
   if (loading || !hasColdStorage) return null;
 
+  const isPastDue = billingStatus === "past_due";
   const expiresStr = expiresAt
     ? new Date(expiresAt).toLocaleDateString("en-US", {
         year: "numeric",
@@ -23,20 +26,33 @@ export function ColdStorageAlertBanner() {
       })
     : null;
 
+  const mainCopy = isPastDue
+    ? "Your account is past due. Your files are protected in recovery storage."
+    : "Your files are in recovery storage.";
+  const dateCopy = expiresStr
+    ? (orgName
+        ? `Files for ${orgName} are protected until ${expiresStr}. `
+        : `Your files are protected until ${expiresStr}. `)
+    : "";
+  const ctaCopy = "Pay your invoice to restore full access.";
+
   return (
     <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-amber-900 dark:text-amber-100">
-          Your files are in cold storage
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-amber-900 dark:text-amber-100">
+            {mainCopy}
+          </p>
+          {daysRemaining != null && (
+            <span className="rounded bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-800 dark:text-amber-100">
+              {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-          {orgName
-            ? `Files for ${orgName} will be permanently deleted on ${expiresStr ?? "the expiration date"}. `
-            : expiresStr
-              ? `They will be permanently deleted on ${expiresStr}. `
-              : ""}
-          Pay your subscription invoice to restore access to your files.
+          {dateCopy}
+          {ctaCopy}
         </p>
         {restoreUrl ? (
           restoreUrl.startsWith("http") ? (
@@ -46,14 +62,14 @@ export function ColdStorageAlertBanner() {
               rel="noopener noreferrer"
               className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:no-underline dark:text-amber-300"
             >
-              Restore now →
+              {isPastDue ? "Pay unpaid invoice" : "Restore now"} →
             </a>
           ) : (
             <Link
               href={restoreUrl}
               className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:no-underline dark:text-amber-300"
             >
-              Restore now →
+              {isPastDue ? "Pay unpaid invoice" : "Restore now"} →
             </Link>
           )
         ) : (

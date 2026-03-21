@@ -9,6 +9,7 @@ import {
   DEFAULT_SEAT_STORAGE_BYTES,
 } from "./enterprise-constants";
 import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
+import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -30,6 +31,7 @@ export async function checkUserCanUpload(
   additionalBytes: number,
   driveId?: string
 ): Promise<void> {
+  await assertStorageLifecycleAllowsAccess(uid);
   const db = getAdminFirestore();
 
   let orgId: string | null;
@@ -53,8 +55,10 @@ export async function checkUserCanUpload(
     // Org storage is shared: quota and used are org-wide, not per-seat
     const orgSnap = await db.collection("organizations").doc(orgId).get();
     const orgData = orgSnap.data();
-    quotaBytes =
-      typeof orgData?.storage_quota_bytes === "number"
+    const orgBillingPastDue = orgData?.billing_status === "past_due";
+    quotaBytes = orgBillingPastDue
+      ? FREE_TIER_STORAGE_BYTES
+      : typeof orgData?.storage_quota_bytes === "number"
         ? orgData.storage_quota_bytes
         : null;
 
@@ -69,9 +73,11 @@ export async function checkUserCanUpload(
       usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   } else {
+    const profileBillingPastDue = profileData?.billing_status === "past_due";
     const profileQuota = profileData?.storage_quota_bytes;
-    quotaBytes =
-      typeof profileQuota === "number"
+    quotaBytes = profileBillingPastDue
+      ? FREE_TIER_STORAGE_BYTES
+      : typeof profileQuota === "number"
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
 
@@ -129,8 +135,10 @@ export async function getStorageStatus(
     // Org storage is shared: quota and used are org-wide, not per-seat
     const orgSnap = await db.collection("organizations").doc(orgId).get();
     const orgData = orgSnap.data();
-    quotaBytes =
-      typeof orgData?.storage_quota_bytes === "number"
+    const orgBillingPastDue = orgData?.billing_status === "past_due";
+    quotaBytes = orgBillingPastDue
+      ? FREE_TIER_STORAGE_BYTES
+      : typeof orgData?.storage_quota_bytes === "number"
         ? orgData.storage_quota_bytes
         : null;
 
@@ -145,9 +153,11 @@ export async function getStorageStatus(
       usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   } else {
+    const profileBillingPastDue = profileData?.billing_status === "past_due";
     const profileQuota = profileData?.storage_quota_bytes;
-    quotaBytes =
-      typeof profileQuota === "number"
+    quotaBytes = profileBillingPastDue
+      ? FREE_TIER_STORAGE_BYTES
+      : typeof profileQuota === "number"
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
 

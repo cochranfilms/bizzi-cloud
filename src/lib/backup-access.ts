@@ -2,6 +2,39 @@ import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore"
 import { FieldPath } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey } from "@/lib/b2";
+import {
+  getEffectiveStorageLifecycle,
+  storageLifecycleBlocksAccess,
+} from "@/lib/storage-lifecycle";
+
+export interface BackupAccessResult {
+  allowed: boolean;
+  /** When allowed is false: 403 for lifecycle block, 404 for not found */
+  status?: 403 | 404;
+  message?: string;
+}
+
+/**
+ * Verifies backup file access with storage lifecycle check.
+ * Returns 403 when cold_storage/scheduled_delete; 404 when file not found.
+ */
+export async function verifyBackupFileAccessWithLifecycle(
+  uid: string,
+  objectKey: string
+): Promise<BackupAccessResult> {
+  const info = await getEffectiveStorageLifecycle(uid);
+  if (storageLifecycleBlocksAccess(info.status)) {
+    const msg =
+      info.status === "scheduled_delete"
+        ? "Your account is scheduled for deletion. Files remain recoverable until the deletion date."
+        : "Your account is past due. Your files are protected in recovery storage. Pay your invoice to restore full access.";
+    return { allowed: false, status: 403, message: msg };
+  }
+  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
+  return hasAccess
+    ? { allowed: true }
+    : { allowed: false, status: 404, message: "File not found" };
+}
 
 /**
  * Verifies that a user has access to a backup file by checking backup_files.
@@ -62,6 +95,27 @@ async function getUserLinkedDriveIds(db: Firestore, uid: string): Promise<Set<st
     if (!d.data().deleted_at) ids.add(d.id);
   });
   return ids;
+}
+
+/**
+ * Verifies access with gallery fallback and lifecycle check.
+ */
+export async function verifyBackupFileAccessWithGalleryFallbackAndLifecycle(
+  uid: string,
+  objectKey: string
+): Promise<BackupAccessResult> {
+  const info = await getEffectiveStorageLifecycle(uid);
+  if (storageLifecycleBlocksAccess(info.status)) {
+    const msg =
+      info.status === "scheduled_delete"
+        ? "Your account is scheduled for deletion. Files remain recoverable until the deletion date."
+        : "Your account is past due. Your files are protected in recovery storage. Pay your invoice to restore full access.";
+    return { allowed: false, status: 403, message: msg };
+  }
+  const hasAccess = await verifyBackupFileAccessWithGalleryFallback(uid, objectKey);
+  return hasAccess
+    ? { allowed: true }
+    : { allowed: false, status: 404, message: "File not found" };
 }
 
 /**

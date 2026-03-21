@@ -13,7 +13,14 @@ export const COLD_STORAGE_RETENTION_DAYS: Record<string, number> = {
 /** Retention for account_delete source type (user explicitly deleted account). */
 export const ACCOUNT_DELETE_RETENTION_DAYS = 30;
 
-export type ColdStorageSourceType = "org_removal" | "subscription_end" | "account_delete";
+/** Days before cold storage migration after first payment failure. */
+export const GRACE_PERIOD_DAYS = 7;
+
+export type ColdStorageSourceType =
+  | "org_removal"
+  | "subscription_end"
+  | "account_delete"
+  | "payment_failed";
 
 export function getRetentionDays(
   planTier: string,

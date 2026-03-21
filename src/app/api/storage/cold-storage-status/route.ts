@@ -37,14 +37,38 @@ export async function GET(request: Request) {
   if (!consumerSnap.empty) {
     const doc = consumerSnap.docs[0];
     const data = doc.data();
-    const expiresAt = data.cold_storage_expires_at?.toDate?.();
+    const expiresAt =
+      data.cold_storage_expires_at?.toDate?.() ??
+      data.retention_end_at?.toDate?.();
     const sourceType = (data.source_type as string) ?? "subscription_end";
+
+    const profileSnapForConsumer = await db.collection("profiles").doc(uid).get();
+    const profileDataForConsumer = profileSnapForConsumer.data();
+    const unpaidInvoiceUrl = profileDataForConsumer?.unpaid_invoice_url as
+      | string
+      | undefined;
+    const billingStatus = profileDataForConsumer?.billing_status as
+      | string
+      | undefined;
+
+    const daysRemaining = expiresAt
+      ? Math.max(
+          0,
+          Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+        )
+      : null;
 
     return NextResponse.json({
       hasColdStorage: true,
       sourceType,
       expiresAt: expiresAt?.toISOString() ?? null,
-      restoreUrl: "/dashboard/change-plan",
+      daysRemaining,
+      restoreUrl:
+        unpaidInvoiceUrl && billingStatus === "past_due"
+          ? unpaidInvoiceUrl
+          : "/dashboard/change-plan",
+      unpaidInvoiceUrl: unpaidInvoiceUrl ?? null,
+      billingStatus: billingStatus ?? null,
     });
   }
 
@@ -82,15 +106,32 @@ export async function GET(request: Request) {
   const orgSnap = await db.collection("organizations").doc(orgId).get();
   const orgData = orgSnap.data();
   const restoreInvoiceUrl = orgData?.restore_invoice_url as string | undefined;
+  const unpaidInvoiceUrl = orgData?.unpaid_invoice_url as string | undefined;
+  const billingStatus = orgData?.billing_status as string | undefined;
 
   const firstFile = coldStorageSnap.docs[0].data();
-  const expiresAt = firstFile.cold_storage_expires_at?.toDate?.();
+  const expiresAt =
+    firstFile.cold_storage_expires_at?.toDate?.() ??
+    firstFile.retention_end_at?.toDate?.();
+
+  const daysRemaining = expiresAt
+    ? Math.max(
+        0,
+        Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+      )
+    : null;
 
   return NextResponse.json({
     hasColdStorage: true,
     sourceType: "org_removal",
     expiresAt: expiresAt?.toISOString() ?? null,
-    restoreUrl: restoreInvoiceUrl ?? null,
+    daysRemaining,
+    restoreUrl:
+      unpaidInvoiceUrl && billingStatus === "past_due"
+        ? unpaidInvoiceUrl
+        : restoreInvoiceUrl ?? null,
+    unpaidInvoiceUrl: unpaidInvoiceUrl ?? null,
+    billingStatus: billingStatus ?? null,
     orgName: orgData?.name ?? null,
   });
 }

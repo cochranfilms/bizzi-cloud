@@ -9,9 +9,20 @@ import { redact } from "@/lib/safe-log";
 export type AuditAction =
   | "account_export"
   | "account_delete"
+  | "account_delete_requested"
+  | "account_deletion_canceled_by_payment"
+  | "cold_storage_deleted"
+  | "cold_storage_entered"
   | "do_not_sell_opt_out"
+  | "grace_period_started"
   | "privacy_preferences_update"
-  | "auth_failure";
+  | "auth_failure"
+  | "restore_triggered"
+  | "restore_succeeded"
+  | "restore_failed"
+  | "retention_extended"
+  | "scheduled_deletion_created"
+  | "storage_lifecycle_deleted";
 
 export interface AuditEntry {
   action: AuditAction;

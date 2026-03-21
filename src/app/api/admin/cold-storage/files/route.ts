@@ -13,10 +13,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const folder = searchParams.get("folder")?.trim();
   const orgId = searchParams.get("orgId")?.trim();
+  const userId = searchParams.get("userId")?.trim();
 
-  if (!folder && !orgId) {
+  if (!folder && !orgId && !userId) {
     return NextResponse.json(
-      { error: "folder or orgId is required" },
+      { error: "folder, orgId, or userId is required" },
       { status: 400 }
     );
   }
@@ -25,6 +26,10 @@ export async function GET(request: Request) {
   let query = db.collection("cold_storage_files");
   if (orgId) {
     query = query.where("org_id", "==", orgId) as ReturnType<
+      typeof db.collection
+    >;
+  } else if (userId) {
+    query = query.where("user_id", "==", userId).where("org_id", "==", null) as ReturnType<
       typeof db.collection
     >;
   } else {

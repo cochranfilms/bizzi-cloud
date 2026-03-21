@@ -1,6 +1,8 @@
 /**
  * Cron: Permanently delete cold storage files past their expiration date.
  * Deletes B2 objects and cold_storage_files documents.
+ * Skips docs with cold_storage_status === "restored".
+ * Logs each deletion to audit_logs.
  *
  * Schedule: daily (e.g. 5:45 UTC). Requires CRON_SECRET.
  */
@@ -11,6 +13,7 @@ import {
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
+import { writeAuditLog } from "@/lib/audit-log";
 import { NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 
@@ -44,14 +47,25 @@ export async function POST(request: Request) {
   }
 
   let deletedCount = 0;
+  let skippedCount = 0;
   let errorCount = 0;
 
   for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
     const batch = snap.docs.slice(i, i + BATCH_SIZE);
     for (const doc of batch) {
       const data = doc.data();
+      const status = (data.cold_storage_status as string) ?? "active";
+
+      if (status === "restored") {
+        skippedCount++;
+        continue;
+      }
+
       const objectKey = (data.object_key as string) ?? "";
       const docId = doc.id;
+      const ownerType = (data.owner_type as string) ?? "unknown";
+      const userId = (data.user_id as string) ?? null;
+      const orgId = (data.org_id as string) ?? null;
 
       if (objectKey && isB2Configured()) {
         try {
@@ -77,11 +91,22 @@ export async function POST(request: Request) {
       }
       await doc.ref.delete();
       deletedCount++;
+
+      await writeAuditLog({
+        action: "cold_storage_deleted",
+        metadata: {
+          doc_id: docId,
+          owner_type: ownerType,
+          user_id: userId,
+          org_id: orgId,
+        },
+      });
     }
   }
 
   return NextResponse.json({
     processed: deletedCount,
+    skipped: skippedCount,
     errors: errorCount,
     message: `Deleted ${deletedCount} cold storage file(s)`,
   });

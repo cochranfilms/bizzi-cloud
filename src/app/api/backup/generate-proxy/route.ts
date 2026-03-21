@@ -9,7 +9,7 @@ import {
   isB2Configured,
   objectExists,
 } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import { queueProxyJob } from "@/lib/proxy-queue";
@@ -65,9 +65,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key required" }, { status: 400 });
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
-  if (!hasAccess) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const accessResult = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
+  if (!accessResult.allowed) {
+    return NextResponse.json(
+      { error: accessResult.message ?? "Access denied" },
+      { status: accessResult.status ?? 403 }
+    );
   }
 
   const proxyKey = getProxyObjectKey(objectKey);

@@ -4,8 +4,23 @@ import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import { sendSignupLinkEmail, sendSubscriptionWelcomeEmail } from "@/lib/emailjs";
 import { buildSubscriptionWelcomeParamsFromInvoice } from "@/lib/subscription-welcome-params";
-import { hasColdStorage, restoreColdStorageToHot } from "@/lib/cold-storage-restore";
+import {
+  hasColdStorage,
+  restoreColdStorageToHot,
+} from "@/lib/cold-storage-restore";
+import {
+  migrateConsumerToColdStorage,
+  migrateOrgToColdStorage,
+} from "@/lib/cold-storage-migrate";
+import type { ColdStorageSourceType } from "@/lib/cold-storage-retention";
+import {
+  transitionToGracePeriod,
+  restoreToActive,
+  type StorageLifecycleStatus,
+} from "@/lib/storage-lifecycle";
+import { writeAuditLog } from "@/lib/audit-log";
 import Stripe from "stripe";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
@@ -156,6 +171,7 @@ export async function POST(request: Request) {
         try {
           const result = await restoreColdStorageToHot({ type: "consumer", userId });
           console.log("[Stripe webhook] checkout.session.completed: restored cold storage for user", userId, "files:", result.restored);
+          await restoreToActive({ target: "profile", id: userId });
         } catch (err) {
           console.error("[Stripe webhook] Failed to restore cold storage for user", userId, err);
         }
@@ -171,6 +187,8 @@ export async function POST(request: Request) {
           storage_addon_id: storageAddonId,
           stripe_customer_id: session.customer ?? null,
           stripe_subscription_id: subId,
+          billing_status: "active",
+          unpaid_invoice_url: null,
           stripe_updated_at: new Date().toISOString(),
         },
         { merge: true }
@@ -191,70 +209,272 @@ export async function POST(request: Request) {
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
       const subMeta = subscription.metadata;
-      const userId = subMeta?.userId;
+      const userId = subMeta?.userId as string | undefined;
+      const orgId = subMeta?.organization_id as string | undefined;
       const planId = subMeta?.planId as PlanId | undefined;
-
-      if (!userId) {
-        return NextResponse.json({ received: true });
-      }
+      const planTier = (planId ?? "solo") as string;
 
       if (event.type === "customer.subscription.deleted") {
-        await db.collection("profiles").doc(userId).set(
-          {
+        // Consumer: migrate unless account delete flow handles it
+        if (userId) {
+          const profileSnap = await db.collection("profiles").doc(userId).get();
+          const accountDeletionRequested = !!profileSnap.data()?.account_deletion_requested_at;
+          if (!accountDeletionRequested) {
+            try {
+              const result = await migrateConsumerToColdStorage(
+                userId,
+                "subscription_end" as ColdStorageSourceType,
+                planTier
+              );
+              console.log(
+                "[Stripe webhook] subscription.deleted: migrated consumer",
+                userId,
+                "files:",
+                result.migrated
+              );
+            } catch (err) {
+              console.error(
+                "[Stripe webhook] Failed to migrate consumer to cold storage:",
+                err
+              );
+            }
+          }
+          await db.collection("profiles").doc(userId).set(
+            {
+              plan_id: "free",
+              addon_ids: [],
+              seat_count: 1,
+              storage_addon_id: null,
+              storage_quota_bytes: getStorageBytesForPlan("free"),
+              stripe_subscription_id: null,
+              billing_status: "canceled",
+              unpaid_invoice_url: null,
+              storage_lifecycle_status: "cold_storage",
+              grace_period_ends_at: FieldValue.delete(),
+              stripe_updated_at: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }
+
+        // Org: migrate only if NOT admin removal (org status !== cold_storage)
+        if (orgId) {
+          const orgSnap = await db.collection("organizations").doc(orgId).get();
+          const orgStatus = orgSnap.data()?.status as string | undefined;
+          if (orgStatus !== "cold_storage") {
+            try {
+              const result = await migrateOrgToColdStorage(
+                orgId,
+                "subscription_end" as ColdStorageSourceType
+              );
+              console.log(
+                "[Stripe webhook] subscription.deleted: migrated org",
+                orgId,
+                "files:",
+                result.migrated
+              );
+            } catch (err) {
+              console.error(
+                "[Stripe webhook] Failed to migrate org to cold storage:",
+                err
+              );
+            }
+          }
+          await db.collection("organizations").doc(orgId).update({
             plan_id: "free",
-            addon_ids: [],
-            seat_count: 1,
-            storage_addon_id: null,
             storage_quota_bytes: getStorageBytesForPlan("free"),
             stripe_subscription_id: null,
+            billing_status: "canceled",
+            unpaid_invoice_url: null,
+            storage_lifecycle_status: "cold_storage",
+            grace_period_ends_at: FieldValue.delete(),
+          });
+        }
+        break;
+      }
+
+      // customer.subscription.updated
+      if (subscription.status === "past_due" || subscription.status === "unpaid") {
+        let unpaidInvoiceUrl: string | null = null;
+        try {
+          const latestInvoiceId =
+            typeof subscription.latest_invoice === "string"
+              ? subscription.latest_invoice
+              : subscription.latest_invoice?.id;
+          if (latestInvoiceId) {
+            const inv = await stripe.invoices.retrieve(latestInvoiceId);
+            unpaidInvoiceUrl = inv.hosted_invoice_url ?? null;
+          }
+        } catch (err) {
+          console.warn("[Stripe webhook] Could not fetch latest_invoice:", err);
+        }
+
+        // Grace period: first failure -> transitionToGracePeriod, no migration
+        if (userId) {
+          const profileSnap = await db.collection("profiles").doc(userId).get();
+          const currentStatus = profileSnap.data()?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+          if (currentStatus === "active" || !currentStatus) {
+            await transitionToGracePeriod({
+              target: "profile",
+              id: userId,
+              unpaidInvoiceUrl,
+            });
+          } else if (currentStatus === "grace_period") {
+            await db.collection("profiles").doc(userId).update({
+              unpaid_invoice_url: unpaidInvoiceUrl,
+              stripe_updated_at: new Date().toISOString(),
+            });
+          } else {
+            await db.collection("profiles").doc(userId).update({
+              unpaid_invoice_url: unpaidInvoiceUrl,
+              stripe_updated_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        if (orgId) {
+          const orgSnap = await db.collection("organizations").doc(orgId).get();
+          const orgData = orgSnap.data();
+          const removalDeadline = orgData?.removal_deadline;
+          if (!removalDeadline) {
+            const currentStatus = orgData?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+            if (currentStatus === "active" || !currentStatus) {
+              await transitionToGracePeriod({
+                target: "org",
+                id: orgId,
+                unpaidInvoiceUrl,
+              });
+            } else {
+              await db.collection("organizations").doc(orgId).update({
+                unpaid_invoice_url: unpaidInvoiceUrl,
+              });
+            }
+          }
+        }
+        break;
+      }
+
+      // Status active: restore from grace or cold (restoreToActive clears grace/cold state)
+      if (subscription.status === "active") {
+        if (userId) {
+          const profileSnap = await db.collection("profiles").doc(userId).get();
+          const status = profileSnap.data()?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+          if (status === "grace_period") {
+            await restoreToActive({ target: "profile", id: userId });
+          }
+        }
+        if (orgId) {
+          const orgSnap = await db.collection("organizations").doc(orgId).get();
+          const status = orgSnap.data()?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+          if (status === "grace_period") {
+            await restoreToActive({ target: "org", id: orgId });
+          }
+        }
+      }
+
+      // Standard profile/org update for active subscription (consumer only in this branch)
+      if (userId && subscription.status === "active") {
+        const addonIdsRaw = subMeta?.addonIds ?? "";
+        const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
+        const seatCountRaw = subMeta?.seat_count;
+        const seatCount =
+          typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
+            ? parseInt(seatCountRaw, 10)
+            : 1;
+
+        let storageQuotaBytes = planId
+          ? getStorageBytesForPlan(planId)
+          : getStorageBytesForPlan("free");
+        let storageAddonId: string | null = null;
+        try {
+          const sub = await stripe.subscriptions.retrieve(subscription.id, {
+            expand: ["items.data.price"],
+          });
+          const items = sub.items.data as SubscriptionItemWithPrice[];
+          const computed = computeStorageFromSubscription(
+            (planId as PlanId) ?? "free",
+            items
+          );
+          storageQuotaBytes = computed.storageQuotaBytes;
+          storageAddonId = computed.storageAddonId;
+        } catch (err) {
+          console.error("[Stripe webhook] Failed to expand subscription:", err);
+        }
+
+        await db.collection("profiles").doc(userId).set(
+          {
+            plan_id: planId ?? "free",
+            addon_ids: addonIds,
+            seat_count: seatCount,
+            storage_quota_bytes: storageQuotaBytes,
+            storage_addon_id: storageAddonId,
+            stripe_subscription_id: subscription.id,
             stripe_updated_at: new Date().toISOString(),
           },
           { merge: true }
         );
-        break;
+        if (planId && planId !== "free") {
+          await ensureDefaultDrivesForUser(userId);
+        }
+      }
+      break;
+    }
+
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice & { subscription?: string | { id: string } };
+      const sub = invoice.subscription;
+      const subscriptionId = typeof sub === "string" ? sub : sub?.id;
+      if (!subscriptionId) {
+        return NextResponse.json({ received: true });
       }
 
-      const addonIdsRaw = subMeta?.addonIds ?? "";
-      const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
-      const seatCountRaw = subMeta?.seat_count;
-      const seatCount =
-        typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-          ? parseInt(seatCountRaw, 10)
-          : 1;
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subMeta = subscription.metadata;
+      const userId = subMeta?.userId as string | undefined;
+      const orgId = subMeta?.organization_id as string | undefined;
+      const planTier = (subMeta?.planId ?? "solo") as string;
+      const unpaidInvoiceUrl = invoice.hosted_invoice_url ?? null;
 
-      let storageQuotaBytes = planId
-        ? getStorageBytesForPlan(planId)
-        : getStorageBytesForPlan("free");
-      let storageAddonId: string | null = null;
-      try {
-        const sub = await stripe.subscriptions.retrieve(subscription.id, {
-          expand: ["items.data.price"],
-        });
-        const items = sub.items.data as SubscriptionItemWithPrice[];
-        const computed = computeStorageFromSubscription(
-          (planId as PlanId) ?? "free",
-          items
-        );
-        storageQuotaBytes = computed.storageQuotaBytes;
-        storageAddonId = computed.storageAddonId;
-      } catch (err) {
-        console.error("[Stripe webhook] Failed to expand subscription:", err);
+      if (userId) {
+        const profileSnap = await db.collection("profiles").doc(userId).get();
+        const currentStatus = profileSnap.data()?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+        if (currentStatus === "active" || !currentStatus) {
+          await transitionToGracePeriod({
+            target: "profile",
+            id: userId,
+            unpaidInvoiceUrl,
+          });
+        } else if (currentStatus === "grace_period") {
+          await db.collection("profiles").doc(userId).update({
+            unpaid_invoice_url: unpaidInvoiceUrl,
+            stripe_updated_at: new Date().toISOString(),
+          });
+        } else {
+          await db.collection("profiles").doc(userId).update({
+            unpaid_invoice_url: unpaidInvoiceUrl,
+            stripe_updated_at: new Date().toISOString(),
+          });
+        }
       }
 
-      await db.collection("profiles").doc(userId).set(
-        {
-          plan_id: planId ?? "free",
-          addon_ids: addonIds,
-          seat_count: seatCount,
-          storage_quota_bytes: storageQuotaBytes,
-          storage_addon_id: storageAddonId,
-          stripe_subscription_id: subscription.id,
-          stripe_updated_at: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-      if (planId && planId !== "free") {
-        await ensureDefaultDrivesForUser(userId);
+      if (orgId) {
+        const orgSnap = await db.collection("organizations").doc(orgId).get();
+        const orgData = orgSnap.data();
+        const removalDeadline = orgData?.removal_deadline;
+        if (!removalDeadline) {
+          const currentStatus = orgData?.storage_lifecycle_status as StorageLifecycleStatus | undefined;
+          if (currentStatus === "active" || !currentStatus) {
+            await transitionToGracePeriod({
+              target: "org",
+              id: orgId,
+              unpaidInvoiceUrl,
+            });
+          } else {
+            await db.collection("organizations").doc(orgId).update({
+              unpaid_invoice_url: unpaidInvoiceUrl,
+            });
+          }
+        }
       }
       break;
     }
@@ -301,9 +521,25 @@ export async function POST(request: Request) {
         if (consumerUserId) {
           const consumerHadColdStorage = await hasColdStorage({ userId: consumerUserId });
           if (consumerHadColdStorage) {
+            const wasScheduledDelete = await db
+              .collection("cold_storage_files")
+              .where("user_id", "==", consumerUserId)
+              .where("org_id", "==", null)
+              .where("source_type", "==", "account_delete")
+              .limit(1)
+              .get()
+              .then((s) => !s.empty);
             try {
               const result = await restoreColdStorageToHot({ type: "consumer", userId: consumerUserId });
               console.log("[Stripe webhook] invoice.paid: restored consumer cold storage for user", consumerUserId, "files:", result.restored);
+              await restoreToActive({ target: "profile", id: consumerUserId });
+              if (wasScheduledDelete) {
+                await writeAuditLog({
+                  action: "account_deletion_canceled_by_payment",
+                  uid: consumerUserId,
+                  metadata: {},
+                });
+              }
             } catch (err) {
               console.error("[Stripe webhook] Failed to restore consumer cold storage for user", consumerUserId, err);
             }
@@ -365,6 +601,7 @@ export async function POST(request: Request) {
             stripeSubscriptionId: subscriptionId,
           });
           console.log("[Stripe webhook] invoice.paid: restored cold storage for org", orgId, "files:", result.restored);
+          await restoreToActive({ target: "org", id: orgId });
         } catch (err) {
           console.error("[Stripe webhook] Failed to restore cold storage for org", orgId, err);
         }

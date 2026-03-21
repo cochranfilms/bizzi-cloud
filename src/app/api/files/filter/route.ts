@@ -10,6 +10,7 @@ import type {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -354,6 +355,15 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: "Too many requests", retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) },
       { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
+  }
+
+  try {
+    await assertStorageLifecycleAllowsAccess(uid);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Access restricted" },
+      { status: 403 }
     );
   }
 

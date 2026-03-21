@@ -7,7 +7,10 @@ export interface ColdStorageStatus {
   hasColdStorage: boolean;
   sourceType?: string;
   expiresAt?: string | null;
+  daysRemaining?: number | null;
   restoreUrl?: string | null;
+  unpaidInvoiceUrl?: string | null;
+  billingStatus?: string | null;
   orgName?: string | null;
 }
 
@@ -49,7 +52,10 @@ export function useColdStorageStatus() {
     hasColdStorage: data.hasColdStorage,
     sourceType: data.sourceType,
     expiresAt: data.expiresAt,
+    daysRemaining: data.daysRemaining,
     restoreUrl: data.restoreUrl,
+    unpaidInvoiceUrl: data.unpaidInvoiceUrl,
+    billingStatus: data.billingStatus,
     orgName: data.orgName,
     loading,
     refetch: fetchStatus,

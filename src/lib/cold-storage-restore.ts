@@ -7,6 +7,43 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { writeAuditLog } from "@/lib/audit-log";
+
+const IN_QUERY_LIMIT = 30;
+
+async function getExistingBackupObjectKeys(
+  db: Firestore,
+  params: { userId?: string; orgId?: string; objectKeys: string[] }
+): Promise<Set<string>> {
+  if (params.objectKeys.length === 0) return new Set();
+  const uniqueKeys = [...new Set(params.objectKeys)];
+  const existing = new Set<string>();
+
+  for (let i = 0; i < uniqueKeys.length; i += IN_QUERY_LIMIT) {
+    const chunk = uniqueKeys.slice(i, i + IN_QUERY_LIMIT);
+    let q;
+    if (params.orgId) {
+      q = db
+        .collection("backup_files")
+        .where("organization_id", "==", params.orgId)
+        .where("object_key", "in", chunk);
+    } else if (params.userId) {
+      q = db
+        .collection("backup_files")
+        .where("userId", "==", params.userId)
+        .where("organization_id", "==", null)
+        .where("object_key", "in", chunk);
+    } else {
+      continue;
+    }
+    const snap = await q.get();
+    for (const d of snap.docs) {
+      const key = d.data().object_key as string;
+      if (key) existing.add(key);
+    }
+  }
+  return existing;
+}
 
 export interface ColdStorageFileDoc {
   id: string;
@@ -69,15 +106,41 @@ export async function restoreColdStorageToHot(params: {
     return { restored: 0, drivesCreated: 0, seatsCreated: 0 };
   }
 
+  await writeAuditLog({
+    action: "restore_triggered",
+    uid: type === "consumer" ? userId : undefined,
+    metadata: { type, orgId, userId, fileCount: snap.size },
+  });
+
   const files = snap.docs.map((d) => ({
     id: d.id,
     ...d.data(),
   })) as ColdStorageFileDoc[];
 
-  if (type === "org") {
-    return restoreOrgColdStorage(db, files, orgId!, stripeSubscriptionId);
+  try {
+    const result =
+      type === "org"
+        ? await restoreOrgColdStorage(db, files, orgId!, stripeSubscriptionId)
+        : await restoreConsumerColdStorage(db, files, userId!);
+    await writeAuditLog({
+      action: "restore_succeeded",
+      uid: type === "consumer" ? userId : undefined,
+      metadata: { type, orgId, userId, ...result },
+    });
+    return result;
+  } catch (err) {
+    await writeAuditLog({
+      action: "restore_failed",
+      uid: type === "consumer" ? userId : undefined,
+      metadata: {
+        type,
+        orgId,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    });
+    throw err;
   }
-  return restoreConsumerColdStorage(db, files, userId!);
 }
 
 async function restoreOrgColdStorage(
@@ -87,10 +150,27 @@ async function restoreOrgColdStorage(
   stripeSubscriptionId?: string
 ): Promise<RestoreResult> {
   const now = new Date();
-
-  // Group files by (user_id, drive_name) to create linked_drives
   const driveKey = (uid: string, name: string) => `${uid}::${name}`;
+
+  // Use cold_storage_org_snapshots if available, else infer from files
+  const snapshotSnap = await db
+    .collection("cold_storage_org_snapshots")
+    .doc(orgId)
+    .get();
+  const snapshotData = snapshotSnap.data() as
+    | { drives?: Array<{ name: string; userId?: string; user_id?: string }>; seats?: Array<{ user_id: string; email: string; role: string }> }
+    | undefined;
+
   const driveMap = new Map<string, { userId: string; driveName: string }>();
+  if (snapshotData?.drives?.length) {
+    for (const d of snapshotData.drives) {
+      const uid = (d.userId ?? d.user_id ?? "") as string;
+      const name = (d.name ?? "Drive") as string;
+      if (uid && name) {
+        driveMap.set(driveKey(uid, name), { userId: uid, driveName: name });
+      }
+    }
+  }
   for (const f of files) {
     const key = driveKey(f.user_id, f.drive_name);
     if (!driveMap.has(key)) {
@@ -112,6 +192,13 @@ async function restoreOrgColdStorage(
     driveIdByKey.set(key, ref.id);
   }
 
+  // Idempotency: skip creating backup_files that already exist
+  const orgObjectKeys = files.map((f) => f.object_key).filter(Boolean);
+  const existingBackupKeys = await getExistingBackupObjectKeys(db, {
+    orgId,
+    objectKeys: orgObjectKeys,
+  });
+
   // Create backup_snapshots and backup_files
   const batchSize = 400;
   let restoredCount = 0;
@@ -119,6 +206,12 @@ async function restoreOrgColdStorage(
     const batch = db.batch();
     const chunk = files.slice(i, i + batchSize);
     for (const f of chunk) {
+      if (existingBackupKeys.has(f.object_key)) {
+        batch.delete(db.collection("cold_storage_files").doc(f.id));
+        restoredCount++;
+        continue;
+      }
+
       const dkey = driveKey(f.user_id, f.drive_name);
       const newDriveId = driveIdByKey.get(dkey);
       if (!newDriveId) continue;
@@ -156,47 +249,58 @@ async function restoreOrgColdStorage(
     await batch.commit();
   }
 
-  // Recreate organization_seats from unique owner+member emails
-  const seatEmails = new Set<string>();
-  let ownerEmail: string | null = null;
-  for (const f of files) {
-    const email = (f.owner_email ?? "").trim().toLowerCase();
-    if (email) seatEmails.add(email);
-    if (!f.member_email && email) ownerEmail = email;
-    const memEmail = (f.member_email ?? "").trim().toLowerCase();
-    if (memEmail) seatEmails.add(memEmail);
-  }
-  if (!ownerEmail && seatEmails.size > 0) {
-    ownerEmail = Array.from(seatEmails)[0];
-  }
-
-  // Find user_id by email from profiles
+  // Recreate organization_seats: prefer snapshot, else infer from files
   const emailToUid = new Map<string, string>();
   const profilesSnap = await db.collection("profiles").get();
   for (const d of profilesSnap.docs) {
     const email = (d.data()?.email as string)?.trim()?.toLowerCase();
     if (email) emailToUid.set(email, d.id);
   }
-  // Also from cold storage user_id (files have user_id; owner may match first file's owner)
   for (const f of files) {
     const email = (f.owner_email ?? "").trim().toLowerCase();
-    if (email && !emailToUid.has(email)) {
-      emailToUid.set(email, f.user_id);
-    }
+    if (email && !emailToUid.has(email)) emailToUid.set(email, f.user_id);
     const mem = (f.member_email ?? "").trim().toLowerCase();
     if (mem) emailToUid.set(mem, f.user_id);
   }
 
-  const orgSnap = await db.collection("organizations").doc(orgId).get();
-  const maxSeats = (orgSnap.data()?.max_seats as number) ?? 10;
+  type SeatInput = { uid: string; email: string; role: string };
+  let seatsToCreate: SeatInput[] = [];
+  if (snapshotData?.seats?.length) {
+    for (const s of snapshotData.seats) {
+      const uid = (s.user_id ?? "").trim();
+      const email = (s.email ?? "").trim().toLowerCase();
+      const role = (s.role ?? "member") as string;
+      if (uid && email) {
+        seatsToCreate.push({ uid, email, role });
+      }
+    }
+  }
+  if (seatsToCreate.length === 0) {
+    const seatEmails = new Set<string>();
+    let ownerEmail: string | null = null;
+    for (const f of files) {
+      const email = (f.owner_email ?? "").trim().toLowerCase();
+      if (email) seatEmails.add(email);
+      if (!f.member_email && email) ownerEmail = email;
+      const mem = (f.member_email ?? "").trim().toLowerCase();
+      if (mem) seatEmails.add(mem);
+    }
+    if (!ownerEmail && seatEmails.size > 0) ownerEmail = Array.from(seatEmails)[0];
+    for (const email of seatEmails) {
+      const uid = emailToUid.get(email);
+      if (!uid) continue;
+      seatsToCreate.push({
+        uid,
+        email,
+        role: email === ownerEmail ? "admin" : "member",
+      });
+    }
+  }
 
   let seatsCreated = 0;
-  for (const email of seatEmails) {
-    const uid = emailToUid.get(email);
-    if (!uid) continue;
-
-    const role = email === ownerEmail ? "admin" : "member";
-    const seatId = `${orgId}_${uid}_${Date.now()}`;
+  for (let i = 0; i < seatsToCreate.length; i++) {
+    const { uid, email, role } = seatsToCreate[i];
+    const seatId = `${orgId}_${uid}_${Date.now()}_${i}`;
     await db.collection("organization_seats").doc(seatId).set({
       organization_id: orgId,
       user_id: uid,
@@ -216,7 +320,7 @@ async function restoreOrgColdStorage(
     });
   }
 
-  // Update org: status active, stripe_subscription_id, clear restore invoice url
+  // Update org: status active, stripe_subscription_id, clear restore/billing urls
   const orgUpdate: Record<string, unknown> = {
     status: "active",
     removal_completed_at: FieldValue.delete(),
@@ -224,6 +328,8 @@ async function restoreOrgColdStorage(
     removal_deadline: FieldValue.delete(),
     removal_requested_by: FieldValue.delete(),
     restore_invoice_url: FieldValue.delete(),
+    billing_status: "active",
+    unpaid_invoice_url: FieldValue.delete(),
   };
   if (stripeSubscriptionId) {
     orgUpdate.stripe_subscription_id = stripeSubscriptionId;
@@ -260,12 +366,25 @@ async function restoreConsumerColdStorage(
     }
   }
 
+  // Idempotency: skip creating backup_files that already exist
+  const consumerObjectKeys = files.map((f) => f.object_key).filter(Boolean);
+  const existingBackupKeys = await getExistingBackupObjectKeys(db, {
+    userId,
+    objectKeys: consumerObjectKeys,
+  });
+
   const batchSize = 400;
   let restoredCount = 0;
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = db.batch();
     const chunk = files.slice(i, i + batchSize);
     for (const f of chunk) {
+      if (existingBackupKeys.has(f.object_key)) {
+        batch.delete(db.collection("cold_storage_files").doc(f.id));
+        restoredCount++;
+        continue;
+      }
+
       const newDriveId = driveMap.get(f.drive_name);
       if (!newDriveId) continue;
 
@@ -300,6 +419,17 @@ async function restoreConsumerColdStorage(
       restoredCount++;
     }
     await batch.commit();
+  }
+
+  // If restored from account_delete, clear deletion flags on profile
+  const fromAccountDelete = files.some(
+    (f) => (f as { source_type?: string }).source_type === "account_delete"
+  );
+  if (fromAccountDelete) {
+    await db.collection("profiles").doc(userId).update({
+      account_deletion_requested_at: FieldValue.delete(),
+      account_deletion_effective_at: FieldValue.delete(),
+    });
   }
 
   return {

@@ -1,6 +1,6 @@
 import { getDownloadUrl } from "@/lib/cdn";
 import { isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -50,11 +50,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const hasAccess = await verifyBackupFileAccess(uid, objectKey);
-  if (!hasAccess) {
+  const result = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
+  if (!result.allowed) {
     return new NextResponse(
-      JSON.stringify({ error: "Access denied" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ error: result.message ?? "Access denied" }),
+      { status: result.status ?? 403, headers: { "Content-Type": "application/json" } }
     );
   }
 
