@@ -3,6 +3,7 @@ import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
   getOrCreateStripeSeatPrice,
+  getOrCreateStripeStorageAddonPrice,
 } from "@/lib/stripe-prices";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
@@ -18,8 +19,10 @@ export async function POST(request: Request) {
   let body: {
     planId?: string;
     addonId?: string;
+    addonIds?: string[];
     billing?: string;
     seatCount?: number;
+    storageAddonId?: string | null;
     email?: string;
     name?: string;
   };
@@ -34,10 +37,17 @@ export async function POST(request: Request) {
 
   const planId = body.planId as PlanId | undefined;
   const addonId = body.addonId as AddonId | undefined;
+  const addonIdsRaw = Array.isArray(body.addonIds) ? body.addonIds : [];
+  const addonIdsFromBody = addonIdsRaw.filter(
+    (id): id is AddonId => typeof id === "string" && ["gallery", "editor", "fullframe"].includes(id)
+  );
   const billing = (body.billing === "annual" ? "annual" : "monthly") as BillingCycle;
   const seatCount = typeof body.seatCount === "number" && body.seatCount >= 1
     ? Math.min(Math.floor(body.seatCount), 10)
     : 1;
+  const storageAddonId = body.storageAddonId && typeof body.storageAddonId === "string"
+    ? body.storageAddonId
+    : null;
 
   const validPlanIds = ["solo", "indie", "video", "production"];
   if (!planId || !validPlanIds.includes(planId)) {
@@ -95,15 +105,35 @@ export async function POST(request: Request) {
   const lineItems: { price: string; quantity: number }[] = [
     { price: priceId, quantity: 1 },
   ];
-  let addonIds: string[] = [];
+  const addonIds = addonIdsFromBody.length > 0 ? addonIdsFromBody : (addonId ? [addonId] : []);
 
-  if (addonId) {
+  for (const aid of addonIds) {
     try {
-      const addonPriceId = await getOrCreateStripeAddonPrice(addonId);
+      const addonPriceId = await getOrCreateStripeAddonPrice(aid);
       lineItems.push({ price: addonPriceId, quantity: 1 });
-      addonIds = [addonId];
     } catch (err) {
       console.error("[Stripe checkout] Failed to get/create addon price:", err);
+      return NextResponse.json(
+        { error: "Checkout failed. Please try again." },
+        { status: 500 }
+      );
+    }
+  }
+
+  const VALID_STORAGE_ADDON_IDS = [
+    "indie_1", "indie_2", "indie_3",
+    "video_1", "video_2", "video_3", "video_4", "video_5",
+  ];
+  const STORAGE_ADDON_PLAN_MAP: Record<string, string> = {
+    indie_1: "indie", indie_2: "indie", indie_3: "indie",
+    video_1: "video", video_2: "video", video_3: "video", video_4: "video", video_5: "video",
+  };
+  if (storageAddonId && VALID_STORAGE_ADDON_IDS.includes(storageAddonId) && STORAGE_ADDON_PLAN_MAP[storageAddonId] === planId) {
+    try {
+      const storagePriceId = await getOrCreateStripeStorageAddonPrice(storageAddonId as import("@/lib/pricing-data").StorageAddonId);
+      lineItems.push({ price: storagePriceId, quantity: 1 });
+    } catch (err) {
+      console.error("[Stripe checkout] Failed to get storage addon price:", err);
       return NextResponse.json(
         { error: "Checkout failed. Please try again." },
         { status: 500 }
@@ -141,6 +171,7 @@ export async function POST(request: Request) {
     addonIds: addonIds.join(","),
     billing,
     seat_count: String(seatCount),
+    ...(storageAddonId ? { storageAddonId } : {}),
   };
 
   if (isGuestCheckout) {
@@ -154,12 +185,20 @@ export async function POST(request: Request) {
     ? `${baseUrl}/account/setup?session_id={CHECKOUT_SESSION_ID}`
     : `${baseUrl}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`;
 
+  // Reuse existing Stripe customer for returning users (e.g. after account delete + restore)
+  let stripeCustomerId: string | undefined;
+  if (!isGuestCheckout && uid) {
+    const db = getAdminFirestore();
+    const profileSnap = await db.collection("profiles").doc(uid).get();
+    stripeCustomerId = profileSnap.data()?.stripe_customer_id as string | undefined;
+  }
+
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: lineItems,
-      customer_email: email ?? undefined,
+      ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: email ?? undefined }),
       success_url: successUrl,
       cancel_url: `${baseUrl}/?checkout=cancelled`,
       metadata,

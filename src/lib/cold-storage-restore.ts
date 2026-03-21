@@ -421,7 +421,7 @@ async function restoreConsumerColdStorage(
     await batch.commit();
   }
 
-  // If restored from account_delete, clear deletion flags on profile
+  // If restored from account_delete, clear deletion flags on profile and restore requirements
   const fromAccountDelete = files.some(
     (f) => (f as { source_type?: string }).source_type === "account_delete"
   );
@@ -430,6 +430,7 @@ async function restoreConsumerColdStorage(
       account_deletion_requested_at: FieldValue.delete(),
       account_deletion_effective_at: FieldValue.delete(),
     });
+    await db.collection("cold_storage_restore_requirements").doc(userId).delete();
   }
 
   return {

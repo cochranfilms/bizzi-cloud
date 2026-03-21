@@ -14,9 +14,11 @@ import {
   ADDON_LABELS,
   STORAGE_ADDONS,
   STORAGE_ADDON_LABELS,
+  getStorageAddonTb,
   type StorageAddonId,
 } from "@/lib/pricing-data";
-import { ArrowLeft, Check, Loader2 } from "lucide-react";
+import { PLAN_STORAGE_BYTES } from "@/lib/plan-constants";
+import { ArrowLeft, AlertTriangle, Check, Loader2 } from "lucide-react";
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -28,8 +30,24 @@ function formatCents(cents: number): string {
 const PLAN_ORDER = ["solo", "indie", "video", "production"];
 
 function getPlanOrder(planId: string): number {
+  if (planId === "free") return -1; // Free is lowest tier; paid plans are Upgrades
   const i = PLAN_ORDER.indexOf(planId);
   return i >= 0 ? i : 999;
+}
+
+/** Bytes for plan base + optional storage addon (indie/video only) */
+function getPlanStorageBytes(planId: string, storageAddonId: string | null): number {
+  const base = PLAN_STORAGE_BYTES[planId as keyof typeof PLAN_STORAGE_BYTES] ?? 0;
+  if (!storageAddonId || (planId !== "indie" && planId !== "video")) return base;
+  const addonTb = getStorageAddonTb(storageAddonId);
+  return base + addonTb * 1024 * 1024 * 1024 * 1024;
+}
+
+function formatBytes(bytes: number): string {
+  const tb = bytes / (1024 * 1024 * 1024 * 1024);
+  if (tb >= 1) return `${tb.toFixed(1)} TB`;
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(1)} GB`;
 }
 
 export default function ChangePlanPage() {
@@ -54,6 +72,34 @@ export default function ChangePlanPage() {
     amountCents: number | null;
     isCredit: boolean | null;
   } | null>(null);
+  const [restoreRequirements, setRestoreRequirements] = useState<{
+    totalBytesUsed: number;
+    requiredAddonIds: string[];
+  } | null>(null);
+
+  // Fetch restore requirements when free user may be restoring from account delete
+  useEffect(() => {
+    if (currentPlanId !== "free" || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (!token || cancelled) return;
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/storage/cold-storage-status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { restoreRequirements?: { totalBytesUsed: number; requiredAddonIds: string[] } };
+        if (!cancelled && data.restoreRequirements) {
+          setRestoreRequirements(data.restoreRequirements);
+        }
+      } catch {
+        // Ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentPlanId, user]);
 
   useEffect(() => {
     if (subLoading) return;
@@ -61,8 +107,10 @@ export default function ChangePlanPage() {
       setSelectedPlanId(currentPlanId);
       setSelectedAddonIds(currentAddonIds ?? []);
       setSelectedStorageAddonId(currentStorageAddonId ?? null);
+    } else if (currentPlanId === "free" && restoreRequirements?.requiredAddonIds?.length) {
+      setSelectedAddonIds(restoreRequirements.requiredAddonIds);
     }
-  }, [subLoading, currentPlanId, currentAddonIds, currentStorageAddonId]);
+  }, [subLoading, currentPlanId, currentAddonIds, currentStorageAddonId, restoreRequirements]);
 
   useEffect(() => {
     if (selectedPlanId === "solo" || selectedPlanId === "production") {
@@ -184,6 +232,30 @@ export default function ChangePlanPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       };
+
+      // Free users must create a new subscription via checkout; update-subscription requires existing subscription
+      if (currentPlanId === "free") {
+        const checkoutRes = await fetch(`${base}/api/stripe/checkout`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            planId: selectedPlanId,
+            addonIds: selectedAddonIds,
+            billing,
+            storageAddonId: selectedStorageAddonId,
+          }),
+        });
+        const checkoutData = (await checkoutRes.json()) as { url?: string; error?: string };
+        if (checkoutRes.ok && checkoutData.url) {
+          window.location.href = checkoutData.url;
+          return;
+        }
+        setApplyError(
+          checkoutData.error ?? "Checkout failed. Try the pricing page to start fresh."
+        );
+        return;
+      }
+
       let res = await fetch(`${base}/api/stripe/update-subscription`, {
         method: "POST",
         headers,
@@ -227,7 +299,7 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, refetch, displayAmount]);
+  }, [currentPlanId, selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, refetch, displayAmount]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
@@ -253,6 +325,47 @@ export default function ChangePlanPage() {
       setCancelLoading(false);
     }
   }, [user, router]);
+
+  const minStorageBytes = restoreRequirements?.totalBytesUsed ?? 0;
+  const requiredAddonIds = restoreRequirements?.requiredAddonIds ?? [];
+  const isRestoringFromDelete = currentPlanId === "free" && !!restoreRequirements;
+
+  const planMeetsStorage = useCallback(
+    (planId: string, storageAddonId: string | null) => {
+      if (minStorageBytes <= 0) return true;
+      return getPlanStorageBytes(planId, storageAddonId) >= minStorageBytes;
+    },
+    [minStorageBytes]
+  );
+
+  const planCanMeetStorage = useCallback(
+    (planId: string) => {
+      if (minStorageBytes <= 0) return true;
+      if (planId === "solo") return PLAN_STORAGE_BYTES.solo >= minStorageBytes;
+      if (planId === "production") return PLAN_STORAGE_BYTES.production >= minStorageBytes;
+      if (planId === "indie" || planId === "video") {
+        const base = PLAN_STORAGE_BYTES[planId as "indie" | "video"];
+        const addons = STORAGE_ADDONS[planId as "indie" | "video"] ?? [];
+        const maxAddonTb = addons.length > 0 ? Math.max(...addons.map((a) => a.tb)) : 0;
+        const maxBytes = base + maxAddonTb * 1024 * 1024 * 1024 * 1024;
+        return maxBytes >= minStorageBytes;
+      }
+      return true;
+    },
+    [minStorageBytes]
+  );
+
+  useEffect(() => {
+    if (
+      minStorageBytes &&
+      (selectedPlanId === "indie" || selectedPlanId === "video") &&
+      !planMeetsStorage(selectedPlanId, selectedStorageAddonId)
+    ) {
+      const addons = STORAGE_ADDONS[selectedPlanId as "indie" | "video"] ?? [];
+      const firstValid = addons.find((a) => planMeetsStorage(selectedPlanId, a.id));
+      if (firstValid) setSelectedStorageAddonId(firstValid.id);
+    }
+  }, [minStorageBytes, selectedPlanId, selectedStorageAddonId, planMeetsStorage]);
 
   if (!user) return null;
 
@@ -337,6 +450,30 @@ export default function ChangePlanPage() {
 
   const currentPlanLabel = PLAN_LABELS[currentPlanId ?? "free"] ?? "Starter Free";
 
+  const allowedPlans = isRestoringFromDelete
+    ? plans.filter((p) => planCanMeetStorage(p.id))
+    : plans;
+
+  const allowedAddons = isRestoringFromDelete && requiredAddonIds.length > 0
+    ? powerUpAddons.filter((a) => requiredAddonIds.includes(a.id))
+    : powerUpAddons;
+
+  const selectedPlanMeetsStorage =
+    !selectedPlanId ||
+    !isRestoringFromDelete ||
+    planMeetsStorage(selectedPlanId, selectedStorageAddonId);
+
+  const selectedAddonsCorrect =
+    !isRestoringFromDelete ||
+    requiredAddonIds.length === 0 ||
+    requiredAddonIds.every((id) => selectedAddonIds.includes(id));
+
+  const canApply =
+    selectedPlanId &&
+    selectedPlanMeetsStorage &&
+    selectedAddonsCorrect &&
+    (requiredAddonIds.length === 0 || selectedAddonIds.length === requiredAddonIds.length);
+
   return (
     <>
       <TopBar title="Change Plan" />
@@ -349,6 +486,31 @@ export default function ChangePlanPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Settings
           </Link>
+
+          {isRestoringFromDelete && (
+            <div
+              className="mb-6 flex gap-3 rounded-xl border-2 border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20"
+              role="alert"
+            >
+              <AlertTriangle className="h-6 w-6 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0 flex-1 space-y-2 text-sm">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">
+                  Restore requirements — your files need a plan that meets these conditions:
+                </p>
+                <ul className="list-inside list-disc space-y-1 text-amber-800 dark:text-amber-200">
+                  <li>
+                    <strong>Storage:</strong> You used {formatBytes(minStorageBytes)} before deleting. Choose only plans that offer at least that much storage (base plan or plan + storage add-on).
+                  </li>
+                  {requiredAddonIds.length > 0 ? (
+                    <li>
+                      <strong>Power-up:</strong> You had{" "}
+                      {requiredAddonIds.map((id) => ADDON_LABELS[id] ?? id).join(" or ")} with galleries or RAW folder files. You must select the same power-up so your files restore correctly into the right place.
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+            </div>
+          )}
 
           <div className="mb-8 rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
@@ -373,9 +535,11 @@ export default function ChangePlanPage() {
               Select a plan to upgrade or downgrade. You get credit for unused time on your current plan and pay only the difference.
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {plans.map((plan) => {
+              {allowedPlans.map((plan) => {
                 const isCurrent = plan.id === currentPlanId;
                 const isSelected = plan.id === selectedPlanId;
+                const meetsStorage = planCanMeetStorage(plan.id);
+                const isDisabled = !meetsStorage;
                 const badge =
                   isCurrent && !hasChanges
                     ? "Current"
@@ -388,11 +552,14 @@ export default function ChangePlanPage() {
                   <button
                     key={plan.id}
                     type="button"
-                    onClick={() => setSelectedPlanId(plan.id)}
+                    onClick={() => meetsStorage && setSelectedPlanId(plan.id)}
+                    disabled={!meetsStorage}
                     className={`relative flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
-                      isSelected
-                        ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
-                        : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                      !meetsStorage
+                        ? "cursor-not-allowed border-neutral-200 bg-neutral-100 opacity-60 dark:border-neutral-700 dark:bg-neutral-800/80"
+                        : isSelected
+                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
                     }`}
                   >
                     <div className="mb-2 flex items-center justify-between">
@@ -429,17 +596,21 @@ export default function ChangePlanPage() {
               Add or remove Power Ups to match your workflow.
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
-              {powerUpAddons.map((addon) => {
+              {allowedAddons.map((addon) => {
                 const isSelected = selectedAddonIds.includes(addon.id);
+                const isRequired = requiredAddonIds.includes(addon.id);
                 return (
                   <button
                     key={addon.id}
                     type="button"
-                    onClick={() => toggleAddon(addon.id)}
+                    onClick={() => !isRequired && toggleAddon(addon.id)}
+                    disabled={isRequired}
                     className={`flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
-                      isSelected
-                        ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
-                        : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                      isRequired
+                        ? "cursor-default border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
+                        : isSelected
+                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:border-bizzi-blue/10"
+                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
                     }`}
                   >
                     <div className="mb-2 flex items-center justify-between">
@@ -447,9 +618,9 @@ export default function ChangePlanPage() {
                         className="text-xs font-medium"
                         style={{ color: addon.accentColor }}
                       >
-                        {addon.tagline}
+                        {isRequired ? "Required for restore" : addon.tagline}
                       </span>
-                      {isSelected && (
+                      {(isSelected || isRequired) && (
                         <Check
                           className="h-5 w-5"
                           style={{ color: addon.accentColor }}
@@ -458,6 +629,9 @@ export default function ChangePlanPage() {
                     </div>
                     <h4 className="font-semibold text-neutral-900 dark:text-white">
                       {addon.name}
+                      {isRequired && (
+                        <span className="ml-1 text-xs font-normal text-neutral-500">(required)</span>
+                      )}
                     </h4>
                     <p className="mt-1 text-lg font-bold text-neutral-900 dark:text-white">
                       +${addon.price}/mo
@@ -482,15 +656,20 @@ export default function ChangePlanPage() {
                   ...(STORAGE_ADDONS[selectedPlanId as "indie" | "video"] ?? []),
                 ].map((opt) => {
                   const isSelected = opt.id === null ? !selectedStorageAddonId : selectedStorageAddonId === opt.id;
+                  const storageBytes = getPlanStorageBytes(selectedPlanId!, opt.id);
+                  const addonMeetsStorage = !minStorageBytes || (storageBytes !== null && storageBytes >= minStorageBytes);
                   return (
                     <button
                       key={opt.id ?? "none"}
                       type="button"
-                      onClick={() => setSelectedStorageAddonId(opt.id)}
+                      onClick={() => addonMeetsStorage && setSelectedStorageAddonId(opt.id)}
+                      disabled={!addonMeetsStorage}
                       className={`flex flex-col rounded-xl border-2 p-5 text-left transition-all ${
-                        isSelected
-                          ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
-                          : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                        !addonMeetsStorage
+                          ? "cursor-not-allowed border-neutral-200 bg-neutral-100 opacity-60 dark:border-neutral-700 dark:bg-neutral-800/80"
+                          : isSelected
+                            ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
+                            : "border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
                       }`}
                     >
                       <div className="mb-2 flex items-center justify-between">
@@ -587,7 +766,7 @@ export default function ChangePlanPage() {
             <button
               type="button"
               onClick={handleApply}
-              disabled={!hasChanges || applyLoading}
+              disabled={!hasChanges || applyLoading || !canApply}
               className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
             >
               {applyLoading ? (

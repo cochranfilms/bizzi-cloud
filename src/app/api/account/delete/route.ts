@@ -77,6 +77,21 @@ export async function POST(request: Request) {
   const stripeSubscriptionId = profileData?.stripe_subscription_id as
     | string
     | undefined;
+  const addonIds = (profileData?.addon_ids as string[] | undefined) ?? [];
+  const requiredAddonIds = addonIds.filter((id) =>
+    ["gallery", "editor", "fullframe"].includes(id)
+  );
+
+  // Compute total bytes used and store restore requirements BEFORE we clear profile/migrate
+  let totalBytesUsed = 0;
+  const backupFilesSnap = await db
+    .collection("backup_files")
+    .where("userId", "==", uid)
+    .where("organization_id", "==", null)
+    .get();
+  for (const d of backupFilesSnap.docs) {
+    totalBytesUsed += (d.data().size_bytes as number) ?? 0;
+  }
 
   const now = new Date();
   const effectiveAt = new Date(now);
@@ -122,6 +137,14 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  // 3b. Store restore requirements so change-plan can enforce min storage and required addons
+  await db.collection("cold_storage_restore_requirements").doc(uid).set({
+    total_bytes_used: totalBytesUsed,
+    required_addon_ids: requiredAddonIds,
+    source_type: "account_delete",
+    created_at: now.toISOString(),
+  });
 
   // 4. Delete other user data (keep profile and Firebase Auth)
   const deleteByQuery = async (

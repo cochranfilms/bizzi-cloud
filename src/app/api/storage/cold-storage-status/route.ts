@@ -58,6 +58,29 @@ export async function GET(request: Request) {
         )
       : null;
 
+    // Restore requirements: min storage and required addons (for account_delete restores)
+    let totalBytesUsed = 0;
+    let requiredAddonIds: string[] = [];
+    const requirementsSnap = await db
+      .collection("cold_storage_restore_requirements")
+      .doc(uid)
+      .get();
+    if (requirementsSnap.exists) {
+      const req = requirementsSnap.data();
+      totalBytesUsed = (req?.total_bytes_used as number) ?? 0;
+      requiredAddonIds = (req?.required_addon_ids as string[]) ?? [];
+    } else {
+      // Fallback for pre-migration: sum from cold_storage_files
+      const allFilesSnap = await db
+        .collection("cold_storage_files")
+        .where("user_id", "==", uid)
+        .where("org_id", "==", null)
+        .get();
+      for (const d of allFilesSnap.docs) {
+        totalBytesUsed += (d.data().size_bytes as number) ?? 0;
+      }
+    }
+
     return NextResponse.json({
       hasColdStorage: true,
       sourceType,
@@ -69,6 +92,10 @@ export async function GET(request: Request) {
           : "/dashboard/change-plan",
       unpaidInvoiceUrl: unpaidInvoiceUrl ?? null,
       billingStatus: billingStatus ?? null,
+      restoreRequirements:
+        sourceType === "account_delete" && totalBytesUsed > 0
+          ? { totalBytesUsed, requiredAddonIds }
+          : undefined,
     });
   }
 
