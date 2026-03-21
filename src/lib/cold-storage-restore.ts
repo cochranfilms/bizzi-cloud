@@ -65,6 +65,7 @@ export interface ColdStorageFileDoc {
   content_type?: string | null;
   modified_at?: string | null;
   created_at?: string;
+  is_starred?: boolean;
 }
 
 export interface RestoreResult {
@@ -354,13 +355,15 @@ async function restoreConsumerColdStorage(
   const driveMap = new Map<string, string>();
   for (const f of files) {
     if (!driveMap.has(f.drive_name)) {
+      const isRaw = f.drive_name === "RAW";
       const ref = await db.collection("linked_drives").add({
         userId,
         name: f.drive_name,
         permission_handle_id: `restored-${Date.now()}-${userId.slice(0, 8)}`,
         last_synced_at: null,
-        created_at: now.toISOString(),
+        createdAt: now,
         organization_id: null,
+        ...(isRaw ? { creator_section: true, is_creator_raw: true } : {}),
       });
       driveMap.set(f.drive_name, ref.id);
     }
@@ -373,6 +376,7 @@ async function restoreConsumerColdStorage(
     objectKeys: consumerObjectKeys,
   });
 
+  const objectKeyToBackupFileId = new Map<string, string>();
   const batchSize = 400;
   let restoredCount = 0;
   for (let i = 0; i < files.length; i += batchSize) {
@@ -413,19 +417,42 @@ async function restoreConsumerColdStorage(
         organization_id: null,
         gallery_id: null,
         created_at: now.toISOString(),
+        is_starred: f.is_starred ?? false,
       });
 
+      objectKeyToBackupFileId.set(f.object_key, fileRef.id);
       batch.delete(db.collection("cold_storage_files").doc(f.id));
       restoredCount++;
     }
     await batch.commit();
   }
 
-  // If restored from account_delete, clear deletion flags on profile and restore requirements
+  // If restored from account_delete: build full object_key map (include existing), restore galleries/hearts/pinned
   const fromAccountDelete = files.some(
     (f) => (f as { source_type?: string }).source_type === "account_delete"
   );
   if (fromAccountDelete) {
+    // Fill in object_key -> backup_file_id for files that already existed (idempotency skip)
+    const allObjectKeys = files.map((f) => f.object_key).filter(Boolean);
+    for (let k = 0; k < allObjectKeys.length; k += IN_QUERY_LIMIT) {
+      const chunk = allObjectKeys.slice(k, k + IN_QUERY_LIMIT);
+      const existingSnap = await db
+        .collection("backup_files")
+        .where("userId", "==", userId)
+        .where("organization_id", "==", null)
+        .where("object_key", "in", chunk)
+        .get();
+      for (const d of existingSnap.docs) {
+        const key = d.data().object_key as string;
+        if (key && !objectKeyToBackupFileId.has(key)) {
+          objectKeyToBackupFileId.set(key, d.id);
+        }
+      }
+    }
+
+    const { restoreConsumerGalleries } = await import("@/lib/cold-storage-gallery-snapshot");
+    await restoreConsumerGalleries(db, userId, objectKeyToBackupFileId, driveMap);
+
     await db.collection("profiles").doc(userId).update({
       account_deletion_requested_at: FieldValue.delete(),
       account_deletion_effective_at: FieldValue.delete(),

@@ -28,6 +28,18 @@ export async function ensureDefaultDrivesForUser(uid: string): Promise<void> {
   const drivesRef = db.collection("linked_drives");
   const snapshot = await drivesRef.where("userId", "==", uid).get();
 
+  // Backfill createdAt for restored drives (cold-storage restore used created_at)
+  for (const d of snapshot.docs) {
+    const data = d.data();
+    if (!data.deleted_at && data.created_at != null && data.createdAt == null) {
+      const createdAt =
+        typeof data.created_at === "string"
+          ? new Date(data.created_at)
+          : (data.created_at as { toDate?: () => Date })?.toDate?.() ?? new Date();
+      await d.ref.update({ createdAt });
+    }
+  }
+
   const existing = snapshot.docs
     .filter((d) => !d.data().deleted_at)
     .map((d) => {

@@ -170,6 +170,7 @@ export async function migrateConsumerToColdStorage(
         content_type: data.content_type ?? null,
         modified_at: data.modified_at ?? null,
         created_at: data.created_at ?? new Date().toISOString(),
+        is_starred: data.is_starred ?? false,
       });
       batch.delete(fileDoc.ref);
       migratedCount++;

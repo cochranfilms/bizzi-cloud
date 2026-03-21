@@ -10,6 +10,7 @@ import { getStripeInstance } from "@/lib/stripe";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import { migrateAccountDeleteToColdStorage } from "@/lib/cold-storage-migrate";
+import { snapshotConsumerGalleries } from "@/lib/cold-storage-gallery-snapshot";
 import { transitionToScheduledDelete } from "@/lib/storage-lifecycle";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -121,6 +122,20 @@ export async function POST(request: Request) {
     }
   }
 
+  // 2b. Snapshot galleries, gallery_assets, favorites_lists, file_hearts, pinned_items (before migration deletes them)
+  try {
+    const snapshotCount = await snapshotConsumerGalleries(db, uid);
+    if (snapshotCount > 0) {
+      console.log("[account-delete] Snapshot gallery/hearts/pinned for user", uid, "items:", snapshotCount);
+    }
+  } catch (err) {
+    console.error("[account-delete] Gallery snapshot failed:", err);
+    return NextResponse.json(
+      { error: "Snapshot failed. Please try again." },
+      { status: 500 }
+    );
+  }
+
   // 3. Migrate backup_files to cold_storage (30-day retention)
   try {
     const result = await migrateAccountDeleteToColdStorage(uid);
@@ -203,6 +218,32 @@ export async function POST(request: Request) {
     }
   }
 
+  // Delete gallery_collections and asset_comments (keyed by gallery_id)
+  for (let i = 0; i < galleryIds.length; i += 10) {
+    const batch = galleryIds.slice(i, i + 10);
+    const collectionsSnap = await db
+      .collection("gallery_collections")
+      .where("gallery_id", "in", batch)
+      .get();
+    for (let j = 0; j < collectionsSnap.docs.length; j += BATCH_SIZE) {
+      const chunk = collectionsSnap.docs.slice(j, j + BATCH_SIZE);
+      const batchWrite = db.batch();
+      chunk.forEach((d) => batchWrite.delete(d.ref));
+      await batchWrite.commit();
+    }
+    const commentsSnap = await db
+      .collection("asset_comments")
+      .where("gallery_id", "in", batch)
+      .get();
+    for (let j = 0; j < commentsSnap.docs.length; j += BATCH_SIZE) {
+      const chunk = commentsSnap.docs.slice(j, j + BATCH_SIZE);
+      const batchWrite = db.batch();
+      chunk.forEach((d) => batchWrite.delete(d.ref));
+      await batchWrite.commit();
+    }
+  }
+
+  await deleteByQuery("file_hearts", "userId", uid);
   await deleteByQuery("pinned_items", "userId", uid);
   await deleteByQuery("local_store_entries", "user_id", uid);
   await deleteByQuery("devices", "user_id", uid);
