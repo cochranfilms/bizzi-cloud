@@ -41,9 +41,24 @@ export interface PhotoMetadata {
   edited_status: string | null;
 }
 
+export type AssetType =
+  | "video"
+  | "photo"
+  | "audio"
+  | "document"
+  | "project_file"
+  | "archive"
+  | "generic_asset";
+
 /** Fields added to backup_files for filtering (all optional for backfill) */
 export interface FileMetadataFields {
   media_type?: MediaType | null;
+  /** Finer-grained classification for project files, archives, etc. */
+  asset_type?: AssetType | null;
+  /** NLE app: final_cut_pro, premiere_pro, davinci_resolve, after_effects, interchange, archive, unknown_project */
+  project_file_type?: string | null;
+  /** When false, UI should show "Preview not supported" instead of attempting preview. */
+  preview_supported?: boolean | null;
   created_at?: string | null;
   uploader_id?: string | null;
   tags?: string[];

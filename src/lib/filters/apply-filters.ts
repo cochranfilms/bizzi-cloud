@@ -121,6 +121,13 @@ export function filterStateToSearchParams(state: FilterState): URLSearchParams {
     sp.delete("file_type");
     fileType.filter((v): v is string => typeof v === "string").forEach((v) => sp.append("file_type", v));
   }
+  const assetType = state.asset_type;
+  if (Array.isArray(assetType) && assetType.length > 0) {
+    sp.delete("asset_type");
+    assetType.filter((v): v is string => typeof v === "string").forEach((v) => sp.append("asset_type", v));
+  } else if (typeof assetType === "string" && assetType) {
+    sp.set("asset_type", assetType);
+  }
   return sp;
 }
 

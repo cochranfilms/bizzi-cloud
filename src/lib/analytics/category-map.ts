@@ -3,6 +3,8 @@
  * REAL DATA: Ensure content_type and extension are populated on upload.
  */
 
+import { PROJECT_EXT, ARCHIVE_EXT } from "@/lib/bizzi-file-types";
+
 export interface StorageCategory {
   id: string;
   label: string;
@@ -13,7 +15,6 @@ const PHOTO_EXT = /\.(jpg|jpeg|png|webp|heic|tiff|tif)$/i;
 const RAW_EXT = /\.(arw|cr2|cr3|nef|raf|dng|orf|rw2|srw|pef)$/i;
 const AUDIO_EXT = /\.(wav|mp3|aiff|m4a|aac|flac|ogg)$/i;
 const DOC_EXT = /\.(pdf|docx|doc|txt|csv|xlsx|xls|pptx|ppt)$/i;
-const PROJECT_EXT = /\.(prproj|fcpx|drp|resolve|aep|xml)$/i;
 const LUT_EXT = /\.(cube|lut|xmp)$/i;
 
 export const STORAGE_CATEGORIES: StorageCategory[] = [
@@ -72,6 +73,7 @@ export function getCategoryFromFile(
   if (DOC_EXT.test(path) || ct.includes("pdf") || ct.includes("document"))
     return "documents";
   if (PROJECT_EXT.test(path)) return "projects";
+  if (ARCHIVE_EXT.test(path)) return "projects";
   if (LUT_EXT.test(path)) return "luts_presets";
 
   return "other";

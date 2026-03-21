@@ -126,6 +126,16 @@ export const UNIVERSAL_FILTERS: FilterDef[] = [
     ],
   },
   {
+    id: "asset_type",
+    label: "Asset type",
+    type: "multi_select",
+    field: "asset_type",
+    options: [
+      { value: "project_file", label: "Project Files" },
+      { value: "archive", label: "Archives" },
+    ],
+  },
+  {
     id: "shared",
     label: "Shared",
     type: "checkbox",

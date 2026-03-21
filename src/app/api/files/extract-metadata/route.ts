@@ -23,6 +23,9 @@ import {
   isDocumentFile,
   isVideoFile,
   isImageFile,
+  isProjectFile,
+  isArchiveFile,
+  getProjectFileType,
 } from "@/lib/bizzi-file-types";
 
 /** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
@@ -128,8 +131,12 @@ export async function POST(request: Request) {
   const isGenericType =
     !contentType || contentType === "application/octet-stream" || contentType === "binary/octet-stream";
   const isDocument = isDocumentFile(fileName);
+  const isProject = isProjectFile(fileName);
+  const isArchive = isArchiveFile(fileName);
   const shouldProbeForVideo =
     !isDocument &&
+    !isProject &&
+    !isArchive &&
     (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName))) &&
     !!ffmpegPath;
 
@@ -137,6 +144,16 @@ export async function POST(request: Request) {
     media_type: isVideoFile(fileName) ? "video" : isImageFile(fileName) ? "photo" : "other",
     uploader_id: uid,
   };
+
+  if (isProject) {
+    const projectType = getProjectFileType(fileName);
+    updates.asset_type = "project_file";
+    if (projectType) updates.project_file_type = projectType;
+    updates.preview_supported = false;
+  } else if (isArchive && !isProject) {
+    updates.asset_type = "archive";
+    updates.preview_supported = false;
+  }
 
   try {
     if (shouldProbeForVideo) {

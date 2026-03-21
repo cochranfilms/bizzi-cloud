@@ -25,6 +25,8 @@ function parseFilters(searchParams: URLSearchParams) {
   const galleryId = searchParams.get("gallery_id") ?? searchParams.get("gallery") ?? undefined;
   const mediaType = searchParams.get("media_type") ?? undefined;
   const mediaTypes = searchParams.getAll("media_type").filter(Boolean);
+  const assetType = searchParams.get("asset_type") ?? undefined;
+  const assetTypes = searchParams.getAll("asset_type").filter(Boolean);
   const dateFrom = searchParams.get("date_from") ?? undefined;
   const dateTo = searchParams.get("date_to") ?? undefined;
   const sizeMin = searchParams.get("size_min");
@@ -97,6 +99,8 @@ function parseFilters(searchParams: URLSearchParams) {
     shared: shared === "true",
     commented: commented === "true",
     mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
+    assetType: assetType || undefined,
+    assetTypes: assetTypes.length > 0 ? assetTypes : undefined,
     sort,
     cursor,
     pageSize,
@@ -296,6 +300,14 @@ function passesPostFilters(
     const hasMatch = filters.mediaTypes.some((m) => m.toLowerCase() === mt);
     if (!hasMatch) return false;
   }
+  if (filters.assetTypes?.length) {
+    const at = String((item.asset_type as string) ?? "").toLowerCase();
+    const hasMatch = filters.assetTypes.some((a) => a.toLowerCase() === at);
+    if (!hasMatch) return false;
+  } else if (filters.assetType) {
+    const at = String((item.asset_type as string) ?? "").toLowerCase();
+    if (at !== String(filters.assetType).toLowerCase()) return false;
+  }
   return true;
 }
 
@@ -321,6 +333,7 @@ function toFileResponse(
     driveId: d.linked_drive_id,
     driveName: driveMap.get(d.linked_drive_id as string) ?? "Unknown",
     contentType: d.content_type ?? null,
+    assetType: d.asset_type ?? null,
     galleryId: d.gallery_id ?? null,
     mediaType: d.media_type ?? null,
     resolution_w: d.resolution_w ?? null,
@@ -479,6 +492,17 @@ export async function GET(request: Request) {
     }
   } else if (filters.mediaType) {
     q = q.where("media_type", "==", filters.mediaType);
+  }
+  if (filters.assetTypes?.length) {
+    if (filters.assetTypes.length === 1) {
+      q = q.where("asset_type", "==", filters.assetTypes[0]);
+    } else if (filters.assetTypes.length <= 30) {
+      q = q.where("asset_type", "in", filters.assetTypes);
+    } else {
+      q = q.where("asset_type", "in", filters.assetTypes.slice(0, 30));
+    }
+  } else if (filters.assetType) {
+    q = q.where("asset_type", "==", filters.assetType);
   }
   if (filters.usageStatus) {
     q = q.where("usage_status", "==", filters.usageStatus);

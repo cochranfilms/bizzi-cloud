@@ -102,6 +102,26 @@ function getContentType(entry: { name: string; content_type?: string | null }): 
     arw: "image/x-sony-arw",
     cr2: "image/x-canon-cr2",
     pdf: "application/pdf",
+    // NLE project files
+    prproj: "application/x-adobe-premiere-project",
+    premiereproject: "application/x-adobe-premiere-project",
+    fcpxml: "application/xml",
+    fcpbundle: "application/octet-stream",
+    fcpproject: "application/octet-stream",
+    fcpevent: "application/octet-stream",
+    drp: "application/x-davinci-resolve-project",
+    dra: "application/octet-stream",
+    drt: "application/octet-stream",
+    aep: "application/x-adobe-after-effects",
+    mogrt: "application/octet-stream",
+    otio: "application/json",
+    edl: "text/plain",
+    aaf: "application/octet-stream",
+    srt: "text/plain",
+    vtt: "text/vtt",
+    cube: "application/octet-stream",
+    cdl: "application/xml",
+    ale: "text/plain",
   };
   return mime[ext] ?? "application/octet-stream";
 }

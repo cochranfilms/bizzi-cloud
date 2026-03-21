@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Download, FileIcon, Loader2, Film, ImageIcon, FileAudio } from "lucide-react";
+import { X, Download, FileIcon, Loader2, Film, ImageIcon, FileAudio, FolderInput } from "lucide-react";
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
 import { useHearts } from "@/hooks/useHearts";
@@ -11,19 +11,24 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
+import { isProjectFile } from "@/lib/bizzi-file-types";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
-function getPreviewType(name: string, contentType?: string | null): "image" | "video" | "audio" | "pdf" | "other" {
+function getPreviewType(
+  name: string,
+  contentType?: string | null,
+  assetType?: string | null
+): "image" | "video" | "audio" | "pdf" | "project_file" | "other" {
+  if (assetType === "project_file" || isProjectFile(name)) return "project_file";
   const lower = name.toLowerCase();
   if (IMAGE_EXT.test(lower)) return "image";
   if (VIDEO_EXT.test(lower)) return "video";
   if (AUDIO_EXT.test(lower)) return "audio";
   if (PDF_EXT.test(lower)) return "pdf";
-  // Fallback: use stored MIME type (persists across rename, e.g. renamed video without .mp4)
   if (contentType) {
     const ct = contentType.toLowerCase();
     if (ct.startsWith("image/")) return "image";
@@ -50,7 +55,7 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
   const [error, setError] = useState<string | null>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
 
-  const previewType = file ? getPreviewType(file.name, file.contentType) : "other";
+  const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
   const hearts = useHearts(file?.id ?? null);
 
   useEffect(() => {
@@ -229,6 +234,8 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                 <ImageIcon className="h-4 w-4 text-bizzi-blue" />
               ) : previewType === "audio" ? (
                 <FileAudio className="h-4 w-4 text-bizzi-blue" />
+              ) : previewType === "project_file" ? (
+                <FolderInput className="h-4 w-4 text-bizzi-blue" />
               ) : (
                 <FileIcon className="h-4 w-4 text-bizzi-blue" />
               )}
@@ -316,7 +323,8 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
           )}
           {((previewType === "image" && lowResPreviewUrl) ||
             (previewType === "video" && fullUrl && !videoProcessing) ||
-            (previewType !== "image" && previewType !== "video" && fullUrl)) &&
+            previewType === "project_file" ||
+            ((previewType === "audio" || previewType === "pdf" || previewType === "other") && fullUrl)) &&
             !error && (
               <>
                 {previewType === "image" && lowResPreviewUrl && (
@@ -357,6 +365,23 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                     title={file.name}
                     className="h-[70vh] w-full rounded-lg border-0"
                   />
+                )}
+                {previewType === "project_file" && (
+                  <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">
+                    <FolderInput className="h-16 w-16" />
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                      Preview not supported for this project file
+                    </p>
+                    <p className="text-sm">Download or open locally to use this file</p>
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      disabled={downloading}
+                      className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+                    >
+                      Download
+                    </button>
+                  </div>
                 )}
                 {previewType === "other" && fullUrl && (
                   <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">

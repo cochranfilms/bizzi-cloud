@@ -101,6 +101,7 @@ export interface QuickFilterDef {
 export const QUICK_FILTERS: QuickFilterDef[] = [
   { id: "videos", label: "Videos", apply: { media_type: "video" } },
   { id: "photos", label: "Photos", apply: { media_type: "photo" } },
+  { id: "project_files", label: "Project Files", apply: { asset_type: "project_file" } },
   { id: "raw", label: "RAW", apply: { file_type: "raw" } },
   { id: "favorites", label: "Favorites", apply: { starred: true } },
   { id: "shared", label: "Shared", apply: { shared: true } },

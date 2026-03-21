@@ -26,6 +26,23 @@ function getContentType(name: string): string {
     mov: "video/quicktime",
     m4v: "video/x-m4v",
     avi: "video/x-msvideo",
+    prproj: "application/x-adobe-premiere-project",
+    premiereproject: "application/x-adobe-premiere-project",
+    fcpxml: "application/xml",
+    fcpbundle: "application/octet-stream",
+    drp: "application/x-davinci-resolve-project",
+    dra: "application/octet-stream",
+    drt: "application/octet-stream",
+    aep: "application/x-adobe-after-effects",
+    mogrt: "application/octet-stream",
+    otio: "application/json",
+    edl: "text/plain",
+    aaf: "application/octet-stream",
+    srt: "text/plain",
+    vtt: "text/vtt",
+    cube: "application/octet-stream",
+    cdl: "application/xml",
+    ale: "text/plain",
   };
   return mime[ext] ?? "application/octet-stream";
 }

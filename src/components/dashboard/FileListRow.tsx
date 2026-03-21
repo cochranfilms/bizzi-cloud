@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Check, FileIcon, Film } from "lucide-react";
+import { Check, FileIcon, Film, FolderInput } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
@@ -21,6 +21,7 @@ import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { isProjectFile } from "@/lib/bizzi-file-types";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -41,7 +42,12 @@ function formatDate(iso: string | null): string {
   });
 }
 
-function getFileType(name: string, contentType?: string | null): string {
+function getFileType(
+  name: string,
+  contentType?: string | null,
+  assetType?: string | null
+): string {
+  if (assetType === "project_file" || isProjectFile(name)) return "Project File";
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (GALLERY_VIDEO_EXT.test(name.toLowerCase()) || contentType?.startsWith("video/")) return ext || "Video";
   if (GALLERY_IMAGE_EXT.test(name) || contentType?.startsWith("image/")) return ext || "Image";
@@ -120,6 +126,7 @@ export default function FileListRow({
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isImage = isImageFile(file.name);
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
+  const isProject = file.assetType === "project_file" || isProjectFile(file.name);
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
     enabled: !!file.objectKey && isPdf,
   });
@@ -196,6 +203,8 @@ export default function FileListRow({
                 <div className="flex h-full w-full items-center justify-center">
                   {hasThumbnail ? (
                     <Film className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+                  ) : isProject ? (
+                    <FolderInput className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                   ) : (
                     <FileIcon className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                   )}
@@ -208,7 +217,7 @@ export default function FileListRow({
           </div>
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {getFileType(file.name, file.contentType)}
+          {getFileType(file.name, file.contentType, file.assetType)}
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
           {formatBytes(file.size)}

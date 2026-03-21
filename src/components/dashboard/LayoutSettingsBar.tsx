@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   LayoutGrid,
   List,
@@ -9,6 +10,8 @@ import {
   RectangleVertical,
   Eye,
   EyeOff,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import type { ViewMode, CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
@@ -61,6 +64,7 @@ export default function LayoutSettingsBar({
   showViewMode = true,
   className = "",
 }: LayoutSettingsBarProps) {
+  const [expanded, setExpanded] = useState(false);
   const {
     viewMode,
     cardSize,
@@ -75,8 +79,25 @@ export default function LayoutSettingsBar({
   } = useLayoutSettings();
 
   return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+          expanded
+            ? "bg-bizzi-blue text-white dark:bg-bizzi-cyan dark:text-neutral-950"
+            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200/60 dark:bg-neutral-800/80 dark:text-neutral-400 dark:hover:bg-neutral-700/60 ring-1 ring-neutral-200/60 dark:ring-neutral-700/60"
+        }`}
+        aria-expanded={expanded}
+        aria-label={expanded ? "Collapse layout settings" : "Show layout settings"}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        <span>Layout</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
     <div
-      className={`flex flex-wrap items-center gap-x-6 gap-y-2 py-2 ${className}`}
+      className="flex flex-wrap items-center gap-x-6 gap-y-2 py-2"
       role="toolbar"
       aria-label="Layout settings"
     >
@@ -135,6 +156,8 @@ export default function LayoutSettingsBar({
           {showCardInfo ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
       </div>
+    </div>
+      )}
     </div>
   );
 }

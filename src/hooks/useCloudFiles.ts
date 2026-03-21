@@ -64,6 +64,8 @@ export interface RecentFile {
   driveName: string;
   /** MIME type from upload - persists across rename, used for video thumbnail detection */
   contentType?: string | null;
+  /** Finer-grained classification: project_file, archive, etc. */
+  assetType?: string | null;
   /** When set, file is in trash */
   deletedAt?: string | null;
   /** When set, file is in Gallery Media and belongs to this gallery (enables stable folder grouping) */
@@ -207,6 +209,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
           contentType: data.content_type ?? null,
+          assetType: data.asset_type ?? null,
           galleryId: data.gallery_id ?? null,
           proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
         };
@@ -295,6 +298,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
             galleryId: data.gallery_id ?? null,
             proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
           };
@@ -338,6 +342,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
             galleryId: data.gallery_id ?? null,
             proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
           };
@@ -394,6 +399,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: drive?.name ?? "Storage",
             contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
             galleryId: data.gallery_id ?? null,
             proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
           });
@@ -442,6 +448,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
               driveId: data.linked_drive_id,
               driveName: drive?.name ?? "Unknown drive",
               contentType: data.content_type ?? null,
+              assetType: data.asset_type ?? null,
               galleryId: data.gallery_id ?? null,
               proxyStatus: data.proxy_status ?? null,
             };
@@ -494,6 +501,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             driveId: data.linked_drive_id,
             driveName: driveMap.get(data.linked_drive_id) ?? "Unknown drive",
             contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
             galleryId: data.gallery_id ?? null,
           });
         });
@@ -557,6 +565,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           driveId: data.linked_drive_id,
           driveName: drive?.name ?? "Unknown drive",
           contentType: data.content_type ?? null,
+          assetType: data.asset_type ?? null,
           deletedAt: deletedAt ?? undefined,
           galleryId: data.gallery_id ?? null,
         };

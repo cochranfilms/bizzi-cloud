@@ -32,11 +32,31 @@ export const DOCUMENT_EXTENSIONS = [
   "zip", "xmp", "ale", "edl", "aaf", "omf",
 ] as const;
 
+/**
+ * NLE project and interchange file extensions — never probe as video.
+ * Final Cut Pro, Premiere Pro, DaVinci Resolve, After Effects, interchange, sidecar, archives.
+ */
+export const PROJECT_EXTENSIONS = [
+  "fcpbundle", "fcpproject", "fcpevent", "fcpxml",
+  "prproj", "premiereproject", "aep", "mogrt",
+  "drp", "dra", "drt",
+  "otio", "xml", "edl", "aaf",
+  "srt", "vtt", "cube", "cdl", "ale",
+  "json", "txt", "csv",
+  "zip", "tar", "gz", "7z",
+  "stl", "ass", "ssa", "lrc", "xmp", "omf",
+] as const;
+
+/** Archive extensions (subset of project/interchange; used for category mapping). */
+export const ARCHIVE_EXTENSIONS = ["zip", "tar", "gz", "7z"] as const;
+
 const joinExt = (arr: readonly string[]) => [...new Set(arr)].join("|");
 
 export const VIDEO_EXT = new RegExp(`\\.(${joinExt(VIDEO_EXTENSIONS as unknown as string[])})$`, "i");
 export const IMAGE_EXT = new RegExp(`\\.(${joinExt(IMAGE_EXTENSIONS as unknown as string[])})$`, "i");
 export const DOCUMENT_EXT = new RegExp(`\\.(${joinExt(DOCUMENT_EXTENSIONS as unknown as string[])})$`, "i");
+export const PROJECT_EXT = new RegExp(`\\.(${joinExt(PROJECT_EXTENSIONS as unknown as string[])})$`, "i");
+export const ARCHIVE_EXT = new RegExp(`\\.(${joinExt(ARCHIVE_EXTENSIONS as unknown as string[])})$`, "i");
 
 export function isVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
@@ -48,4 +68,39 @@ export function isImageFile(name: string): boolean {
 
 export function isDocumentFile(name: string): boolean {
   return DOCUMENT_EXT.test(name.toLowerCase());
+}
+
+export function isProjectFile(name: string): boolean {
+  return PROJECT_EXT.test(name.toLowerCase());
+}
+
+export function isArchiveFile(name: string): boolean {
+  return ARCHIVE_EXT.test(name.toLowerCase());
+}
+
+export type ProjectFileType =
+  | "final_cut_pro"
+  | "premiere_pro"
+  | "davinci_resolve"
+  | "after_effects"
+  | "interchange"
+  | "archive"
+  | "unknown_project";
+
+export function getProjectFileType(name: string): ProjectFileType | null {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const fcp = ["fcpbundle", "fcpproject", "fcpevent", "fcpxml"];
+  const premiere = ["prproj", "premiereproject"];
+  const resolve = ["drp", "dra", "drt"];
+  const ae = ["aep", "mogrt"];
+  const interchange = ["xml", "fcpxml", "edl", "aaf", "otio", "srt", "vtt", "cube", "cdl", "ale"];
+  const archive = ["zip", "tar", "gz", "7z"];
+  if (fcp.includes(ext)) return "final_cut_pro";
+  if (premiere.includes(ext)) return "premiere_pro";
+  if (resolve.includes(ext)) return "davinci_resolve";
+  if (ae.includes(ext)) return "after_effects";
+  if (archive.includes(ext)) return "archive";
+  if (interchange.includes(ext)) return "interchange";
+  if (PROJECT_EXT.test(name.toLowerCase())) return "unknown_project";
+  return null;
 }
