@@ -7,6 +7,7 @@ import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
+import SupportHelpButton from "./SupportHelpButton";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 
 const RightPanelContext = createContext<{
@@ -40,6 +41,7 @@ export default function DashboardShell({
         <TopNavbar />
         <PendingInvitesBanner />
         <BackgroundUploadIndicator />
+        <SupportHelpButton />
 
         {/* Mobile right panel overlay */}
         {rightPanelOpen && (

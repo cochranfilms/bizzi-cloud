@@ -336,10 +336,10 @@ export default function EnterpriseSettingsPage() {
             <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
               Your profile handle is used for branded gallery URLs (e.g. bizzicloud.io/yourhandle/gallery-name).
               Same handle across personal and enterprise when using the same email. Set it in{" "}
-              <Link href="/dashboard/settings" className="text-[var(--enterprise-primary)] hover:underline">
-                Dashboard Settings
+              <Link href="/enterprise/galleries" className="text-[var(--enterprise-primary)] hover:underline">
+                Galleries
               </Link>
-              .
+              {" "}→ Gallery Settings.
             </p>
           </section>
 

@@ -28,10 +28,13 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const authService = getAdminAuth();
 
-  const profilesSnap = await db.collection("profiles").limit(10000).get();
-  const orgsSnap = await db.collection("organizations").limit(1000).get();
+  const [profilesSnap, orgsSnap, filesSnap] = await Promise.all([
+    db.collection("profiles").limit(10000).get(),
+    db.collection("organizations").limit(1000).get(),
+    db.collection("backup_files").limit(5000).get(),
+  ]);
 
-  let totalBytes = 0;
+  let totalBytesFromProfiles = 0;
   const profileStorage: Array<{ id: string; bytes: number }> = [];
 
   for (const d of profilesSnap.docs) {
@@ -39,7 +42,7 @@ export async function GET(request: Request) {
     const used = typeof data.storage_used_bytes === "number" ? data.storage_used_bytes : 0;
     const orgId = data.organization_id;
     if (!orgId) {
-      totalBytes += used;
+      totalBytesFromProfiles += used;
       profileStorage.push({ id: d.id, bytes: used });
     }
   }
@@ -47,11 +50,53 @@ export async function GET(request: Request) {
   for (const d of orgsSnap.docs) {
     const data = d.data();
     const used = typeof data.storage_used_bytes === "number" ? data.storage_used_bytes : 0;
-    totalBytes += used;
+    totalBytesFromProfiles += used;
+  }
+
+  // Compute total from backup_files as source of truth (profiles may have stale/missing storage_used_bytes)
+  let totalBytesFromFiles = 0;
+  for (const doc of filesSnap.docs) {
+    const data = doc.data();
+    if (data.deleted_at) continue;
+    totalBytesFromFiles += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  }
+
+  // Use backup_files total when it's larger (more accurate) or when profile total is 0
+  const totalBytes = totalBytesFromProfiles > 0 && totalBytesFromProfiles >= totalBytesFromFiles
+    ? totalBytesFromProfiles
+    : totalBytesFromFiles;
+
+  // Update profile storage for largest accounts when profile bytes are stale (use actual file sums)
+  if (totalBytesFromProfiles === 0 && totalBytesFromFiles > 0) {
+    const bytesByUser = new Map<string, number>();
+    const bytesByOrg = new Map<string, number>();
+    for (const doc of filesSnap.docs) {
+      const data = doc.data();
+      if (data.deleted_at) continue;
+      const size = typeof data.size_bytes === "number" ? data.size_bytes : 0;
+      const orgId = data.organization_id;
+      if (orgId) {
+        bytesByOrg.set(orgId, (bytesByOrg.get(orgId) ?? 0) + size);
+      } else {
+        const uid = data.userId;
+        if (uid) bytesByUser.set(uid, (bytesByUser.get(uid) ?? 0) + size);
+      }
+    }
+    profileStorage.length = 0;
+    for (const [id, bytes] of bytesByUser) {
+      profileStorage.push({ id, bytes });
+    }
+    // Add orgs as pseudo-accounts (id = orgId, lookup by org doc for name)
+    const orgBytes = Array.from(bytesByOrg.entries())
+      .map(([id, bytes]) => ({ id, bytes }))
+      .sort((a, b) => b.bytes - a.bytes);
+    for (const { id, bytes } of orgBytes.slice(0, limit)) {
+      profileStorage.push({ id, bytes });
+    }
+    profileStorage.sort((a, b) => b.bytes - a.bytes);
   }
 
   const byCategory = new Map<string, number>();
-  const filesSnap = await db.collection("backup_files").limit(5000).get();
   let sampledBytes = 0;
   for (const doc of filesSnap.docs) {
     const data = doc.data();
@@ -77,22 +122,44 @@ export async function GET(request: Request) {
   byCategoryArray.sort((a, b) => b.bytes - a.bytes);
 
   const sorted = profileStorage.sort((a, b) => b.bytes - a.bytes).slice(0, limit);
-  const uids = sorted.map((p) => p.id);
   const authRecords = new Map<string, { email?: string; displayName?: string }>();
-  for (let i = 0; i < uids.length; i += 100) {
-    const batch = uids.slice(i, i + 100);
+
+  const idsToTryAsUsers = sorted.map((p) => p.id);
+  for (let i = 0; i < idsToTryAsUsers.length; i += 100) {
+    const batch = idsToTryAsUsers.slice(i, i + 100);
     try {
       const result = await authService.getUsers(batch.map((uid) => ({ uid })));
       for (const r of result.users) {
-        authRecords.set(r.uid, { email: r.email, displayName: r.displayName ?? undefined });
+        authRecords.set(r.uid, { email: r.email ?? undefined, displayName: r.displayName ?? undefined });
+      }
+    } catch (_) {}
+  }
+
+  const orgIds = new Set<string>();
+  for (const p of sorted) {
+    if (authRecords.has(p.id)) continue;
+    try {
+      const orgSnap = await db.collection("organizations").doc(p.id).get();
+      if (orgSnap.exists) {
+        orgIds.add(p.id);
+        const data = orgSnap.data();
+        authRecords.set(p.id, {
+          displayName: (data?.name as string) ?? `Organization ${p.id.slice(0, 8)}`,
+          email: (data?.owner_email as string) ?? "",
+        });
       }
     } catch (_) {}
   }
 
   const fileCounts = new Map<string, number>();
-  for (const uid of uids) {
-    const snap = await db.collection("backup_files").where("userId", "==", uid).where("deleted_at", "==", null).count().get();
-    fileCounts.set(uid, snap.data().count);
+  for (const p of sorted) {
+    if (orgIds.has(p.id)) {
+      const snap = await db.collection("backup_files").where("organization_id", "==", p.id).where("deleted_at", "==", null).count().get();
+      fileCounts.set(p.id, snap.data().count);
+    } else {
+      const snap = await db.collection("backup_files").where("userId", "==", p.id).where("deleted_at", "==", null).count().get();
+      fileCounts.set(p.id, snap.data().count);
+    }
   }
 
   const largestAccounts = sorted.map((p) => ({

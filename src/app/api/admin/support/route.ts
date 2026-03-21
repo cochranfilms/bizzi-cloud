@@ -1,9 +1,17 @@
 /**
  * GET /api/admin/support
  * Returns support tickets from support_tickets collection.
- * Returns empty until support ticket system is implemented.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import type { Timestamp } from "firebase-admin/firestore";
+
+function toIso(val: unknown): string {
+  if (typeof val === "string") return val;
+  if (val && typeof val === "object" && "toDate" in val && typeof (val as Timestamp).toDate === "function") {
+    return (val as Timestamp).toDate().toISOString();
+  }
+  return new Date().toISOString();
+}
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 
@@ -35,12 +43,13 @@ export async function GET(request: Request) {
       id: d.id,
       priority: data.priority ?? "medium",
       subject: data.subject ?? "",
+      message: data.message ?? "",
       issueType: data.issueType ?? "other",
       affectedUserId: data.affectedUserId ?? "",
       affectedUserEmail: data.affectedUserEmail ?? "",
       status: data.status ?? "open",
-      createdAt: data.createdAt ?? new Date().toISOString(),
-      updatedAt: data.updatedAt ?? new Date().toISOString(),
+      createdAt: toIso(data.createdAt),
+      updatedAt: toIso(data.updatedAt),
     };
   });
 

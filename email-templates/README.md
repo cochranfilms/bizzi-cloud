@@ -20,6 +20,7 @@ Source of truth for EmailJS templates. Copy content into EmailJS dashboard when 
 - **transfer-notification.html** — Sent when a user creates a transfer and enters a client email. Variables: `to_email`, `sender_name`, `sender_photo_url`, `file_names_html`, `transfer_title`, `transfer_url`, `logo_url`. In EmailJS, set **To** to `{{to_email}}` and **Subject** to e.g. `{{sender_name}} sent you {{transfer_title}}`.
 - **subscription-welcome.html** — Sent when a consumer purchases a subscription (first-time, not plan change). Variables: `to_email`, `greeting_line`, `intro_paragraph`, `plan_name`, `storage_line`, `seats_line`, `addons_block`, `amount`, `cta_url`, `cta_text`, `footer_paragraph`, `logo_url`. In EmailJS, set **To** to `{{to_email}}` and **Subject** to e.g. `Welcome to BizziCloud — Your subscription is ready`.
 - **gallery-invite.html** — Sent when a photographer creates an invite-only gallery with invited emails. Variables: `to_email`, `sender_name`, `sender_photo_url`, `gallery_title`, `gallery_url`, `event_date_line`, `logo_url`. In EmailJS, set **To** to `{{to_email}}` and **Subject** to: `{{sender_name}} invited you to view {{gallery_title}}`.
+- **support-ticket.html** — Sent when a user submits a support ticket from the dashboard. Variables: `subject`, `message`, `user_email`, `user_name`, `user_id`, `priority`, `issue_type`, `created_at`, `logo_url`. In EmailJS, set **To** to your support inbox (e.g. support@bizzicloud.io) and **Subject** to: `[BizziCloud Support] {{subject}}`.
 
 ## Logo
 

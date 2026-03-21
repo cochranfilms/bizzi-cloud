@@ -19,6 +19,7 @@ import {
   Calendar,
   Eye,
   AlertCircle,
+  Settings,
 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useGalleries } from "@/hooks/useGalleries";
@@ -26,6 +27,7 @@ import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
 import CreateGalleryModal from "./CreateGalleryModal";
 import DeleteGalleryModal from "./DeleteGalleryModal";
+import GallerySettingsModal from "@/components/gallery/GallerySettingsModal";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -186,6 +188,7 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
   const { galleries, loading, error, createGallery, deleteGallery } = useGalleries();
   const { bumpStorageVersion } = useBackup();
   const [showCreate, setShowCreate] = useState(false);
+  const [showGallerySettings, setShowGallerySettings] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -269,14 +272,24 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
         <h2 className="text-lg font-medium text-neutral-900 dark:text-white">
           Client galleries
         </h2>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-        >
-          <Plus className="h-4 w-4" />
-          New gallery
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowGallerySettings(true)}
+            className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <Settings className="h-4 w-4" />
+            Gallery Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+          >
+            <Plus className="h-4 w-4" />
+            New gallery
+          </button>
+        </div>
       </div>
 
       {galleries.length === 0 ? (
@@ -311,6 +324,12 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
           onCreate={handleCreate}
         />
       )}
+
+      <GallerySettingsModal
+        open={showGallerySettings}
+        onClose={() => setShowGallerySettings(false)}
+        isEnterprise={resolvedBasePath.startsWith("/enterprise")}
+      />
 
       {deleteTarget && (
         <DeleteGalleryModal

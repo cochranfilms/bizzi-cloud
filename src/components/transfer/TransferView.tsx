@@ -424,6 +424,21 @@ export default function TransferView({ slug }: TransferViewProps) {
           </p>
         </div>
 
+        {transfer.permission !== "view" &&
+          transfer.files.some((f) => f.objectKey ?? f.backupFileId) && (
+          <div className="mb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={handleDownloadAll}
+              disabled={bulkDownloading}
+              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-6 py-3 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
+            >
+              <Download className="h-4 w-4" />
+              {bulkDownloading ? "Downloading…" : "Download ALL"}
+            </button>
+          </div>
+        )}
+
         <div className="space-y-2">
           {transfer.files.map((file) => (
             <TransferFileRow
@@ -438,21 +453,6 @@ export default function TransferView({ slug }: TransferViewProps) {
             />
           ))}
         </div>
-
-        {transfer.permission !== "view" &&
-          transfer.files.some((f) => f.objectKey ?? f.backupFileId) && (
-          <div className="mt-6 flex justify-center">
-            <button
-              type="button"
-              onClick={handleDownloadAll}
-              disabled={bulkDownloading}
-              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-6 py-3 text-sm font-medium text-neutral-700 transition-colors hover:border-bizzi-blue hover:bg-bizzi-blue/10 hover:text-bizzi-blue disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-bizzi-cyan dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-            >
-              <Download className="h-4 w-4" />
-              {bulkDownloading ? "Downloading…" : "Download ALL"}
-            </button>
-          </div>
-        )}
 
         <TransferPreviewModal
           slug={slug}

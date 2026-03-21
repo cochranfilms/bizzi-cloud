@@ -2,7 +2,9 @@
  * POST /api/galleries/[id]/send-invite
  * Sends the gallery invite email and in-app notification to a single invited email.
  * Requires the email to already be in the gallery's invited_emails list.
+ * Records the email in invite_sent_to so the UI can show "Invited" status.
  */
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   sendGalleryInviteEmailsToInvitees,
@@ -103,6 +105,17 @@ export async function POST(
   } catch (err) {
     console.error("[galleries/send-invite] Notification error:", err);
     // Don't fail the request - email was sent, notification is best-effort
+  }
+
+  // Record that this email has been sent an invite (for "Invited" status in UI)
+  try {
+    await db.collection("galleries").doc(galleryId).update({
+      invite_sent_to: FieldValue.arrayUnion(email),
+      updated_at: new Date(),
+    });
+  } catch (err) {
+    console.error("[galleries/send-invite] Failed to update invite_sent_to:", err);
+    // Don't fail - invite was sent successfully
   }
 
   return NextResponse.json({ ok: true });

@@ -1,26 +1,71 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import SideDrawer from "../shared/SideDrawer";
 import { formatDateTime } from "@/admin/utils/formatDateTime";
+import { useAuth } from "@/context/AuthContext";
 import type { SupportTicket } from "@/admin/types/adminSupport.types";
 
 interface SupportTicketDrawerProps {
   ticket: SupportTicket | null;
   isOpen: boolean;
   onClose: () => void;
+  onUpdated?: () => void;
 }
 
 export default function SupportTicketDrawer({
   ticket,
   isOpen,
   onClose,
+  onUpdated,
 }: SupportTicketDrawerProps) {
+  const { user } = useAuth();
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateStatus = async (status: "in_progress" | "resolved") => {
+    if (!ticket || !user) return;
+    setUpdating(true);
+    setError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/admin/support/${ticket.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Update failed");
+      }
+      onUpdated?.();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   if (!ticket) return null;
 
   return (
     <SideDrawer isOpen={isOpen} onClose={onClose} title={ticket.subject} width="md">
       <div className="space-y-6">
+        {ticket.message && (
+          <div>
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              Message
+            </h4>
+            <p className="whitespace-pre-wrap rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
+              {ticket.message}
+            </p>
+          </div>
+        )}
         <div>
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
             Ticket details
@@ -66,16 +111,23 @@ export default function SupportTicketDrawer({
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
             Actions
           </h4>
+          {error && (
+            <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded-lg bg-bizzi-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-bizzi-cyan dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+              onClick={() => void updateStatus("in_progress")}
+              disabled={updating || ticket.status === "in_progress"}
+              className="rounded-lg bg-bizzi-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50 dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
             >
               Mark in progress
             </button>
             <button
               type="button"
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              onClick={() => void updateStatus("resolved")}
+              disabled={updating || ticket.status === "resolved"}
+              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               Resolve
             </button>

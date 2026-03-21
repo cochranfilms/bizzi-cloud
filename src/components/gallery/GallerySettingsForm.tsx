@@ -110,6 +110,7 @@ interface GallerySettingsFormProps {
     expiration_date?: string | null;
     access_mode?: string;
     invited_emails?: string[];
+    invite_sent_to?: string[];
     layout?: string;
     branding?: Record<string, unknown>;
     download_settings?: Record<string, unknown>;
@@ -758,51 +759,65 @@ export default function GallerySettingsForm({
                     Invited list
                   </span>
                   <ul className="space-y-2">
-                    {(initialData.invited_emails ?? []).map((email) => (
-                      <li
-                        key={email}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"
-                      >
-                        <span className="truncate text-sm text-neutral-800 dark:text-neutral-200">
-                          {email}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!user) return;
-                            setSendingInviteEmail(email);
-                            try {
-                              const token = await user.getIdToken();
-                              const res = await fetch(`/api/galleries/${galleryId}/send-invite`, {
-                                method: "POST",
-                                headers: {
-                                  "Content-Type": "application/json",
-                                  Authorization: `Bearer ${token}`,
-                                },
-                                body: JSON.stringify({ email }),
-                              });
-                              if (!res.ok) {
-                                const data = await res.json();
-                                throw new Error(data.error ?? "Failed to send invite");
-                              }
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "Failed to send invite");
-                            } finally {
-                              setSendingInviteEmail(null);
-                            }
-                          }}
-                          disabled={sendingInviteEmail !== null}
-                          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-bizzi-blue px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                    {(initialData.invited_emails ?? []).map((email) => {
+                      const inviteSentTo = new Set(
+                        (initialData.invite_sent_to ?? []).map((e) => e.toLowerCase())
+                      );
+                      const hasBeenInvited = inviteSentTo.has(email.toLowerCase());
+                      return (
+                        <li
+                          key={email}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"
                         >
-                          {sendingInviteEmail === email ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span className="truncate text-sm text-neutral-800 dark:text-neutral-200">
+                            {email}
+                          </span>
+                          {hasBeenInvited ? (
+                            <span className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-100 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                              <Check className="h-3.5 w-3.5" />
+                              Invited
+                            </span>
                           ) : (
-                            <Mail className="h-3.5 w-3.5" />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!user) return;
+                                setSendingInviteEmail(email);
+                                try {
+                                  const token = await user.getIdToken();
+                                  const res = await fetch(`/api/galleries/${galleryId}/send-invite`, {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ email }),
+                                  });
+                                  if (!res.ok) {
+                                    const data = await res.json();
+                                    throw new Error(data.error ?? "Failed to send invite");
+                                  }
+                                  onRefetch?.();
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : "Failed to send invite");
+                                } finally {
+                                  setSendingInviteEmail(null);
+                                }
+                              }}
+                              disabled={sendingInviteEmail !== null}
+                              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-bizzi-blue px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                            >
+                              {sendingInviteEmail === email ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Mail className="h-3.5 w-3.5" />
+                              )}
+                              {sendingInviteEmail === email ? "Sending…" : "Send Invite"}
+                            </button>
                           )}
-                          {sendingInviteEmail === email ? "Sending…" : "Send Invite"}
-                        </button>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}

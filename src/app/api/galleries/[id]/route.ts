@@ -111,10 +111,18 @@ export async function PATCH(
   if (body.expiration_date !== undefined) updates.expiration_date = body.expiration_date ?? null;
   if (body.access_mode !== undefined) updates.access_mode = body.access_mode;
   if (Array.isArray(body.invited_emails)) {
-    updates.invited_emails = body.invited_emails
+    const newInvited = body.invited_emails
       .filter((e): e is string => typeof e === "string")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
+    updates.invited_emails = newInvited;
+    // Sync invite_sent_to: keep only emails still in invited_emails
+    const currentSentTo = (data.invite_sent_to ?? []) as string[];
+    const newInvitedSet = new Set(newInvited.map((e) => e.toLowerCase()));
+    const keepSentTo = currentSentTo.filter((e) => newInvitedSet.has(e.toLowerCase()));
+    if (JSON.stringify([...keepSentTo].sort()) !== JSON.stringify([...currentSentTo].sort())) {
+      updates.invite_sent_to = keepSentTo;
+    }
   }
   if (body.layout !== undefined) updates.layout = body.layout;
   if (body.branding !== undefined) {

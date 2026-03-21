@@ -49,6 +49,7 @@ export default function ShareModal({
 
   const hasValidShareName = shareName.trim().length > 0;
   const lastFetchedForRef = useRef<string | null>(null);
+  const prevOpenRef = useRef(false);
 
   const shareUrl =
     shareToken && typeof window !== "undefined"
@@ -123,21 +124,28 @@ export default function ShareModal({
   );
 
   useEffect(() => {
+    const justOpened = open && !prevOpenRef.current;
+    prevOpenRef.current = open;
+
     if (open) {
-      setShareName(folderName);
+      if (justOpened) {
+        setShareName(folderName.trim() || "");
+      }
       setNameError(null);
       if (initialShareToken) {
         setShareToken(initialShareToken);
         setAccessLevel(initialAccessLevel);
         setPermission(initialPermission);
         setInvitedEmails(initialInvitedEmails);
-        if (linkedDriveId) {
-          fetchShareVersion(initialShareToken).then(setShareVersion);
-        } else if (lastFetchedForRef.current !== initialShareToken) {
-          lastFetchedForRef.current = initialShareToken;
-          fetchShareDetails(initialShareToken);
+        if (justOpened) {
+          if (linkedDriveId) {
+            fetchShareVersion(initialShareToken).then(setShareVersion);
+          } else if (lastFetchedForRef.current !== initialShareToken) {
+            lastFetchedForRef.current = initialShareToken;
+            fetchShareDetails(initialShareToken);
+          }
         }
-      } else if (linkedDriveId) {
+      } else if (linkedDriveId && justOpened) {
         lastFetchedForRef.current = null;
         fetchExistingShare();
       }
@@ -145,7 +153,7 @@ export default function ShareModal({
       lastFetchedForRef.current = null;
       setShareToken(initialShareToken ?? null);
       setShareVersion(1);
-      setShareName(folderName);
+      setShareName(folderName.trim() || "");
       setError(null);
       setNameError(null);
       setCopied(false);

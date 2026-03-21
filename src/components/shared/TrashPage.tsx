@@ -12,7 +12,6 @@ import { rectsIntersect, formatBytes, formatDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 
-const TRASH_DND_TYPE = "application/x-bizzi-trash-delete";
 const DRAG_THRESHOLD_PX = 5;
 
 export type TrashPageVariant = "dashboard" | "enterprise";
@@ -38,8 +37,6 @@ function DeletedFolderCard({
   onSelect,
   onRestore,
   onPermanentDelete,
-  draggable,
-  onDragStart,
   accent,
 }: {
   folder: DeletedDrive;
@@ -47,18 +44,14 @@ function DeletedFolderCard({
   onSelect?: () => void;
   onRestore: () => void;
   onPermanentDelete: () => void;
-  draggable?: boolean;
-  onDragStart?: (e: React.DragEvent) => void;
   accent: TrashPageVariant;
 }) {
   const a = ACCENT[accent];
   return (
     <div
-      draggable={draggable}
-      onDragStart={onDragStart}
       className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
         selected ? a.card : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+      }`}
     >
       {onSelect && (
         <button
@@ -122,8 +115,6 @@ function DeletedFileCard({
   onSelect,
   onRestore,
   onPermanentDelete,
-  draggable,
-  onDragStart,
   accent,
 }: {
   file: RecentFile;
@@ -131,18 +122,14 @@ function DeletedFileCard({
   onSelect?: () => void;
   onRestore: () => void;
   onPermanentDelete: () => void;
-  draggable?: boolean;
-  onDragStart?: (e: React.DragEvent) => void;
   accent: TrashPageVariant;
 }) {
   const a = ACCENT[accent];
   return (
     <div
-      draggable={draggable}
-      onDragStart={onDragStart}
       className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
         selected ? a.card : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+      }`}
     >
       {onSelect && (
         <button
@@ -526,43 +513,20 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     clearSelection();
   }, [hasSelection, selectedFileIds, selectedFolderIds, doBulkPermanentDelete, clearSelection]);
 
-  const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      if (!hasSelection) return;
-      e.dataTransfer.setData(
-        TRASH_DND_TYPE,
-        JSON.stringify({
-          fileIds: Array.from(selectedFileIds),
-          folderIds: Array.from(selectedFolderIds),
-        })
-      );
-      e.dataTransfer.effectAllowed = "move";
-    },
-    [hasSelection, selectedFileIds, selectedFolderIds]
-  );
-
-  const handleDropZoneDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const raw = e.dataTransfer.getData(TRASH_DND_TYPE);
-      if (!raw) return;
-      try {
-        const { fileIds, folderIds } = JSON.parse(raw) as {
-          fileIds: string[];
-          folderIds: string[];
-        };
-        doBulkPermanentDelete(fileIds, folderIds);
-      } catch {
-        // Ignore invalid drop data
-      }
-    },
-    [doBulkPermanentDelete]
-  );
-
-  const handleDropZoneDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }, []);
+  const handleDeleteAll = useCallback(async () => {
+    if (deletedFiles.length === 0 && deletedDrives.length === 0) return;
+    const total = deletedFiles.length + deletedDrives.length;
+    const ok = await confirm({
+      message: `Permanently delete all ${total} item${total === 1 ? "" : "s"}? This cannot be undone.`,
+      destructive: true,
+    });
+    if (!ok) return;
+    await doBulkPermanentDelete(
+      deletedFiles.map((f) => f.id),
+      deletedDrives.map((d) => d.id)
+    );
+    clearSelection();
+  }, [deletedFiles, deletedDrives, doBulkPermanentDelete, clearSelection, confirm]);
 
   const hasItems = deletedFiles.length > 0 || deletedDrives.length > 0;
 
@@ -630,16 +594,20 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
           </div>
         )}
 
-        {hasSelection && hasItems && (
-          <div
-            onDrop={handleDropZoneDrop}
-            onDragOver={handleDropZoneDragOver}
-            className="mb-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-red-200 bg-red-50/50 py-8 dark:border-red-800 dark:bg-red-950/20"
-          >
-            <Trash2 className="mb-2 h-10 w-10 text-red-500 dark:text-red-400" />
-            <p className="text-sm font-medium text-red-700 dark:text-red-300">
-              Drag selected items here to permanently delete
-            </p>
+        {hasItems && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+            <span className="text-sm text-neutral-600 dark:text-neutral-400">
+              {deletedFiles.length + deletedDrives.length} item{(deletedFiles.length + deletedDrives.length) === 1 ? "" : "s"} in trash
+            </span>
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={deletingBulk}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete All
+            </button>
           </div>
         )}
 
@@ -668,9 +636,6 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                       data-selectable-item
                       data-item-type="folder"
                       data-item-key={folder.id}
-                      draggable={hasSelection && selectedFolderIds.has(folder.id)}
-                      onDragStart={handleDragStart}
-                      className={hasSelection && selectedFolderIds.has(folder.id) ? "cursor-grab active:cursor-grabbing" : undefined}
                     >
                       <DeletedFolderCard
                         folder={folder}
@@ -680,8 +645,6 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                         onPermanentDelete={() =>
                           handlePermanentDeleteDrive(folder)
                         }
-                        draggable={false}
-                        onDragStart={undefined}
                         accent={variant}
                       />
                     </div>
@@ -701,9 +664,6 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                       data-selectable-item
                       data-item-type="file"
                       data-item-id={file.id}
-                      draggable={hasSelection && selectedFileIds.has(file.id)}
-                      onDragStart={handleDragStart}
-                      className={hasSelection && selectedFileIds.has(file.id) ? "cursor-grab active:cursor-grabbing" : undefined}
                     >
                       <DeletedFileCard
                         file={file}
@@ -713,8 +673,6 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                         onPermanentDelete={() =>
                           handlePermanentDeleteFile(file)
                         }
-                        draggable={false}
-                        onDragStart={undefined}
                         accent={variant}
                       />
                     </div>

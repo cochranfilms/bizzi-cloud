@@ -14,7 +14,13 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
 
-  const profilesSnap = await db.collection("profiles").get();
+  const [profilesSnap, orgsSnap, filesSnap, supportOpenSnap] = await Promise.all([
+    db.collection("profiles").get(),
+    db.collection("organizations").get(),
+    db.collection("backup_files").limit(10000).get(),
+    db.collection("support_tickets").where("status", "in", ["open", "in_progress"]).count().get(),
+  ]);
+
   const profiles = profilesSnap.docs.map((d) => {
     const data = d.data();
     return { id: d.id, ...data } as { id: string; plan_id?: string; storage_used_bytes?: number };
@@ -26,19 +32,31 @@ export async function GET(request: Request) {
   );
   const freeUsers = totalUsers - payingProfiles.length;
 
-  let totalStorageBytes = 0;
+  let totalStorageFromProfiles = 0;
   for (const p of profiles) {
-    totalStorageBytes += typeof p.storage_used_bytes === "number" ? p.storage_used_bytes : 0;
+    totalStorageFromProfiles += typeof p.storage_used_bytes === "number" ? p.storage_used_bytes : 0;
   }
 
-  // Add org storage (organizations have their own storage_used_bytes)
-  const orgsSnap = await db.collection("organizations").get();
   for (const doc of orgsSnap.docs) {
     const data = doc.data();
     const used =
       typeof data.storage_used_bytes === "number" ? data.storage_used_bytes : 0;
-    totalStorageBytes += used;
+    totalStorageFromProfiles += used;
   }
+
+  let totalStorageFromFiles = 0;
+  for (const doc of filesSnap.docs) {
+    const data = doc.data();
+    if (data.deleted_at) continue;
+    totalStorageFromFiles += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  }
+
+  const totalStorageBytes =
+    totalStorageFromProfiles > 0 && totalStorageFromProfiles >= totalStorageFromFiles
+      ? totalStorageFromProfiles
+      : totalStorageFromFiles;
+
+  const supportTicketsOpen = supportOpenSnap.data().count;
 
   const avgStoragePerUserBytes =
     totalUsers > 0 ? Math.floor(totalStorageBytes / totalUsers) : 0;
@@ -133,7 +151,7 @@ export async function GET(request: Request) {
     mrr: Math.round(mrr * 100) / 100,
     estimatedInfraCost,
     grossMarginPercent,
-    supportTicketsOpen: 0,
+    supportTicketsOpen,
     criticalAlertsCount: 0,
     lastSyncTimestamp: new Date().toISOString(),
     subscriptionsByPlan,

@@ -18,6 +18,7 @@ interface GalleryData {
   expiration_date?: string | null;
   access_mode: string;
   invited_emails: string[];
+  invite_sent_to?: string[];
   layout: string;
   cover_asset_id?: string | null;
   share_image_asset_id?: string | null;

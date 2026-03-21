@@ -114,6 +114,26 @@ function getGalleryInviteConfig(): {
   };
 }
 
+function getSupportTicketConfig(): {
+  serviceId: string;
+  templateSupport: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateSupport = process.env.EMAILJS_TEMPLATE_ID_SUPPORT;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateSupport || !publicKey) return null;
+  return {
+    serviceId,
+    templateSupport,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
 /** Default logo URL for emails (Bizzi Byte logo) */
 export function getEmailLogoUrl(): string {
   const base =
@@ -544,6 +564,49 @@ export async function sendGalleryInviteEmailsToInvitees(
   ).catch((err) => {
     console.error("[EmailJS] Gallery invite email batch error:", err);
   });
+}
+
+export interface SupportTicketEmailParams {
+  subject: string;
+  message: string;
+  user_email: string;
+  user_name: string;
+  user_id: string;
+  priority: string;
+  issue_type: string;
+  created_at: string;
+}
+
+/**
+ * Send support ticket notification email to the configured support inbox.
+ * Requires EMAILJS_TEMPLATE_ID_SUPPORT. In EmailJS dashboard, set To to your support email.
+ * Template params: subject, message, user_email, user_name, user_id, priority, issue_type, created_at, logo_url
+ */
+export async function sendSupportTicketEmail(
+  params: SupportTicketEmailParams
+): Promise<void> {
+  const config = getSupportTicketConfig();
+  if (!config) {
+    console.warn(
+      "[EmailJS] Support ticket email skipped: EMAILJS_TEMPLATE_ID_SUPPORT not set"
+    );
+    return;
+  }
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateSupport,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
 }
 
 function escapeHtml(s: string): string {

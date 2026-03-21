@@ -10,6 +10,7 @@ import RightPanel from "@/components/dashboard/RightPanel";
 import EnterpriseStorageBadge from "./EnterpriseStorageBadge";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
 import BackgroundUploadIndicator from "@/components/dashboard/BackgroundUploadIndicator";
+import SupportHelpButton from "@/components/dashboard/SupportHelpButton";
 import { getThemeVariables } from "@/lib/enterprise-themes";
 
 export default function EnterpriseShell({
@@ -33,6 +34,7 @@ export default function EnterpriseShell({
       <EnterpriseNavbar />
       <PendingInvitesBanner />
       <BackgroundUploadIndicator />
+      <SupportHelpButton />
 
       {/* Mobile right panel overlay */}
       {rightPanelOpen && (

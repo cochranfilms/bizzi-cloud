@@ -1,16 +1,18 @@
 "use client";
 
-import { Plus, Upload, FolderPlus, Folder, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
+import { Plus, Upload, FolderPlus, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
 import AppearanceSettingsMenu from "./AppearanceSettingsMenu";
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
 import GalleryPickerModal from "./GalleryPickerModal";
+import ShareModal from "./ShareModal";
 import { useBackup } from "@/context/BackupContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import { useAuth } from "@/context/AuthContext";
 
 interface TopBarProps {
   title?: string;
@@ -22,6 +24,12 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
   const [fileUploading, setFileUploading] = useState(false);
   const [folderUploading, setFolderUploading] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [createSharedFolderOpen, setCreateSharedFolderOpen] = useState(false);
+  const [shareModalData, setShareModalData] = useState<{
+    folderName: string;
+    linkedDriveId: string;
+    initialShareToken: string;
+  } | null>(null);
   const newDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
@@ -44,6 +52,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     bumpStorageVersion,
   } = useBackup();
   const { org } = useEnterprise();
+  const { user } = useAuth();
   const [galleryPickerFiles, setGalleryPickerFiles] = useState<File[] | null>(null);
   const uppyUpload = useUppyUpload();
   const isRawFolder = creatorRawDriveId && currentDriveId === creatorRawDriveId;
@@ -115,6 +124,11 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
     } finally {
       setFolderUploading(false);
     }
+  };
+
+  const handleSharedFolderClick = () => {
+    setNewDropdownOpen(false);
+    setCreateSharedFolderOpen(true);
   };
 
   const showSyncProgress =
@@ -201,6 +215,14 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
                     Folder Upload
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={handleSharedFolderClick}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  <Share2 className="h-4 w-4 flex-shrink-0" />
+                  Shared Folder
+                </button>
               </div>
             )}
             <input
@@ -252,6 +274,53 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           setCreateFolderOpen(false);
         }}
       />
+
+      <CreateFolderModal
+        open={createSharedFolderOpen}
+        onClose={() => setCreateSharedFolderOpen(false)}
+        title="Create shared folder"
+        defaultName="New shared folder"
+        submitLabel="Create"
+        onCreateEmpty={async (folderName) => {
+          if (!user) return;
+          const drive = await createFolder(folderName.trim() || "New shared folder");
+          const token = await user.getIdToken();
+          const res = await fetch("/api/shares", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              linked_drive_id: drive.id,
+              folder_name: folderName.trim() || drive.name,
+              permission: "view",
+              access_level: "private",
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error ?? "Failed to create share");
+          }
+          const data = (await res.json()) as { token: string };
+          setCreateSharedFolderOpen(false);
+          setShareModalData({
+            folderName: folderName.trim() || drive.name,
+            linkedDriveId: drive.id,
+            initialShareToken: data.token,
+          });
+        }}
+      />
+
+      {shareModalData && (
+        <ShareModal
+          open={!!shareModalData}
+          onClose={() => setShareModalData(null)}
+          folderName={shareModalData.folderName}
+          linkedDriveId={shareModalData.linkedDriveId}
+          initialShareToken={shareModalData.initialShareToken}
+        />
+      )}
 
       <GalleryPickerModal
         open={galleryPickerFiles !== null && galleryPickerFiles.length > 0}

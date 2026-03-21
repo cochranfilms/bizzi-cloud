@@ -50,19 +50,18 @@ export function useGalleryBulkDownload({
 
       setIsLoading(true);
       setError(null);
-      let token: string | null = null;
       const baseUrl =
         typeof window !== "undefined" ? window.location.origin : "";
       try {
-        token = user ? (await user.getIdToken(true)) ?? null : null;
+        const token = user ? (await user.getIdToken(true)) ?? null : null;
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        // Bulk zip returns "No response" on Vercel—use individual downloads for all files
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+        // Single file: download directly without zip
+        if (items.length === 1) {
+          const [item] = items;
           const res = await fetch(
             `${baseUrl}/api/galleries/${galleryId}/download`,
             {
@@ -85,20 +84,18 @@ export function useGalleryBulkDownload({
             throw new Error(json.message ?? json.error ?? "Download failed");
           }
           const url = json.url;
-          if (!url) continue;
-          const fullUrl = url!.startsWith("/") ? `${baseUrl}${url}` : url;
+          if (!url) throw new Error("No download URL returned");
+          const fullUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
           const a = document.createElement("a");
           a.href = fullUrl;
           a.download = item.name;
           a.rel = "noopener noreferrer";
           a.click();
-          if (i < items.length - 1) {
-            await new Promise((r) => setTimeout(r, 300));
-          }
+          onComplete?.();
+          return;
         }
-        onComplete?.();
-        return;
 
+        // Multiple files: try bulk zip first (same workflow as transfers)
         let lastErr: unknown;
         for (let attempt = 1; attempt <= BULK_ZIP_RETRIES; attempt++) {
           try {
@@ -120,8 +117,7 @@ export function useGalleryBulkDownload({
                 error?: string;
                 message?: string;
               };
-              const msg = data?.message ?? data?.error ?? `Failed to start download (${res.status})`;
-              console.error("[useGalleryBulkDownload] Bulk zip error:", res.status, data);
+              const msg = data?.message ?? data?.error ?? "Failed to start download";
               const err = new Error(msg);
               (err as Error & { status?: number }).status = res.status;
               throw err;
@@ -131,7 +127,7 @@ export function useGalleryBulkDownload({
 
             const streamSaver = (await import("streamsaver")).default;
             const fileStream = streamSaver.createWriteStream("download.zip");
-            await resBody!.pipeTo(fileStream);
+            await resBody.pipeTo(fileStream);
             onComplete?.();
             return;
           } catch (e) {
@@ -143,8 +139,8 @@ export function useGalleryBulkDownload({
           }
         }
 
-        const is500 = lastErr instanceof Error && (lastErr as Error & { status?: number }).status === 500;
-        if (isNetworkError(lastErr!) || is500) {
+        // Fallback: individual downloads on network/500 errors (same as transfers)
+        if (isNetworkError(lastErr!) || (lastErr instanceof Error && (lastErr as Error & { status?: number }).status === 500)) {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const res = await fetch(
@@ -165,11 +161,10 @@ export function useGalleryBulkDownload({
               error?: string;
               message?: string;
             };
-            if (!res.ok)
-              throw new Error(json.message ?? json.error ?? "Download failed");
+            if (!res.ok) throw new Error(json.message ?? json.error ?? "Download failed");
             const url = json.url;
             if (!url) continue;
-            const fullUrl = url!.startsWith("/") ? `${baseUrl}${url!}` : url!;
+            const fullUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
             const a = document.createElement("a");
             a.href = fullUrl;
             a.download = item.name;
@@ -184,57 +179,6 @@ export function useGalleryBulkDownload({
         }
         throw lastErr;
       } catch (err) {
-        if (
-          token &&
-          isNetworkError(err) &&
-          items.length > 1
-        ) {
-          try {
-            for (let i = 0; i < items.length; i++) {
-              const item = items[i];
-              const res = await fetch(
-                `${baseUrl}/api/galleries/${galleryId}/download`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({
-                    object_key: item.object_key,
-                    name: item.name,
-                    password: password ?? undefined,
-                    download_context: downloadContext,
-                  }),
-                }
-              );
-              const json = (await res.json().catch(() => ({}))) as {
-                url?: string;
-                error?: string;
-                message?: string;
-              };
-              if (!res.ok)
-                throw new Error(
-                  json.message ?? json.error ?? "Download failed"
-                );
-              const url = json.url;
-              if (!url) continue;
-              const fullUrl = (url ?? "").startsWith("/") ? `${baseUrl}${url}` : (url ?? "");
-              const a = document.createElement("a");
-              a.href = fullUrl;
-              a.download = item.name;
-              a.rel = "noopener noreferrer";
-              a.click();
-              if (i < items.length - 1) {
-                await new Promise((r) => setTimeout(r, 150));
-              }
-            }
-            onComplete?.();
-            return;
-          } catch {
-            /* ignore fallback failure */
-          }
-        }
         const msg = isNotReadableError(err)
           ? "The download was interrupted. This can happen with large files or unstable connections. Try again or download fewer files at once."
           : isNetworkError(err)

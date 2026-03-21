@@ -7,6 +7,7 @@ export interface SupportTicket {
   id: string;
   priority: "low" | "medium" | "high" | "urgent";
   subject: string;
+  message?: string;
   issueType: "billing" | "upload" | "storage" | "account" | "preview" | "other";
   affectedUserId: string;
   affectedUserEmail: string;

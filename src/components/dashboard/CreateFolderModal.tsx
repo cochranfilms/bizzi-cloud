@@ -13,6 +13,12 @@ interface CreateFolderModalProps {
   onCreateAndMove?: (folderName: string) => Promise<void>;
   /** When provided, just creates an empty folder */
   onCreateEmpty?: (folderName: string) => Promise<void>;
+  /** Optional override for modal title */
+  title?: string;
+  /** Optional override for default folder name */
+  defaultName?: string;
+  /** Optional override for submit button label */
+  submitLabel?: string;
 }
 
 export default function CreateFolderModal({
@@ -22,8 +28,11 @@ export default function CreateFolderModal({
   selectedFolderKeys = [],
   onCreateAndMove,
   onCreateEmpty,
+  title: titleOverride,
+  defaultName = "New folder",
+  submitLabel: submitLabelOverride,
 }: CreateFolderModalProps) {
-  const [name, setName] = useState("New folder");
+  const [name, setName] = useState(defaultName);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,10 +41,10 @@ export default function CreateFolderModal({
 
   useEffect(() => {
     if (open) {
-      setName("New folder");
+      setName(defaultName);
       setError(null);
     }
-  }, [open]);
+  }, [open, defaultName]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -77,7 +86,7 @@ export default function CreateFolderModal({
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 id="create-folder-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
-            {hasSelection ? "Create folder and move items" : "Create new folder"}
+            {titleOverride ?? (hasSelection ? "Create folder and move items" : "Create new folder")}
           </h3>
           <button
             type="button"
@@ -107,7 +116,7 @@ export default function CreateFolderModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              placeholder="New folder"
+              placeholder={defaultName}
               autoFocus
               disabled={loading}
             />
@@ -125,7 +134,7 @@ export default function CreateFolderModal({
               disabled={loading || !name.trim()}
               className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
             >
-              {loading ? "Creating…" : hasSelection ? "Create & move" : "Create"}
+              {loading ? "Creating…" : (submitLabelOverride ?? (hasSelection ? "Create & move" : "Create"))}
             </button>
           </div>
         </form>

@@ -63,6 +63,7 @@ export default function SupportPage() {
         ticket={selectedTicket}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        onUpdated={() => void refresh()}
       />
     </div>
   );

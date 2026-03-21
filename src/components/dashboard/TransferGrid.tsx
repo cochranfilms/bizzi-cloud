@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Send, Lock, ExternalLink, BarChart2, Trash2, Pencil } from "lucide-react";
+import { Send, Lock, ExternalLink, BarChart2, Trash2, Pencil, Link2, Check } from "lucide-react";
 import { useTransfers } from "@/context/TransferContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import EditTransferModal from "@/components/dashboard/EditTransferModal";
@@ -28,6 +28,7 @@ export default function TransferGrid() {
   const { transfers, deleteTransfer, updateTransferPermission } = useTransfers();
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
   const { confirm } = useConfirm();
 
@@ -51,6 +52,13 @@ export default function TransferGrid() {
     },
     [deleteTransfer, confirm]
   );
+
+  const handleCopyLink = useCallback((slug: string) => {
+    const url = typeof window !== "undefined" ? `${window.location.origin}/t/${slug}` : `/t/${slug}`;
+    navigator.clipboard.writeText(url);
+    setCopiedSlug(slug);
+    setTimeout(() => setCopiedSlug(null), 2000);
+  }, []);
 
   const handlePermissionChange = useCallback(
     async (slug: string, permission: "view" | "downloadable") => {
@@ -185,6 +193,28 @@ export default function TransferGrid() {
                           <ExternalLink className="h-4 w-4" />
                           View
                         </a>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCopyLink(t.slug);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-bizzi-blue dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-bizzi-cyan"
+                          aria-label="Copy link"
+                        >
+                          {copiedSlug === t.slug ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="h-4 w-4" />
+                              Copy Link
+                            </>
+                          )}
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {
