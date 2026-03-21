@@ -37,6 +37,10 @@ export function formatNotificationMessage(
       const galleryTitle = metadata?.galleryTitle ?? "a gallery";
       return `${actor} invited you to view ${galleryTitle}`;
     }
+    case "org_seat_invite": {
+      const orgName = metadata?.orgName ?? "an organization";
+      return `${actor} invited you to join ${orgName}`;
+    }
     default:
       return "New activity";
   }

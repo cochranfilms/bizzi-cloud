@@ -5,6 +5,8 @@ import { X, Download, FileIcon, Loader2, Film, ImageIcon, FileAudio } from "luci
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
 import { useHearts } from "@/hooks/useHearts";
+import { recordRecentOpen } from "@/hooks/useRecentOpens";
+import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -50,6 +52,13 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
 
   const previewType = file ? getPreviewType(file.name, file.contentType) : "other";
   const hearts = useHearts(file?.id ?? null);
+
+  useEffect(() => {
+    if (file?.id) {
+      recordRecentOpen("file", file.id, getAuthToken);
+    }
+  }, [file?.id]);
+
   const lowResPreviewUrl = useThumbnail(
     file?.objectKey,
     file?.name ?? "",

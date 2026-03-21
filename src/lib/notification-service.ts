@@ -19,6 +19,9 @@ export interface CreateNotificationInput {
     transferName?: string;
     galleryId?: string;
     galleryTitle?: string;
+    orgId?: string;
+    orgName?: string;
+    inviteToken?: string;
   };
 }
 
@@ -248,6 +251,53 @@ export async function createTransferNotification(params: {
       transferSlug,
       transferName,
       fileCount: fileCount > 1 ? fileCount : undefined,
+    },
+  });
+}
+
+/**
+ * Create in-app notification when an organization admin invites a user by email.
+ * If the invitee has a Firebase account, they receive an in-app notification in addition to the email.
+ */
+export async function createOrgSeatInviteNotification(params: {
+  inviteeEmail: string;
+  invitedByUserId: string;
+  actorDisplayName: string;
+  orgId: string;
+  orgName: string;
+  inviteToken: string;
+}): Promise<void> {
+  const { inviteeEmail, invitedByUserId, actorDisplayName, orgId, orgName, inviteToken } =
+    params;
+
+  const emailTrimmed = inviteeEmail?.trim?.();
+  if (!emailTrimmed) return;
+
+  let recipientUid: string | null = null;
+  try {
+    const userRecord = await getAdminAuth().getUserByEmail(emailTrimmed.toLowerCase());
+    if (userRecord?.uid && userRecord.uid !== invitedByUserId) {
+      recipientUid = userRecord.uid;
+    }
+  } catch {
+    // User not found by email – no in-app notification, email only
+    return;
+  }
+
+  if (!recipientUid) return;
+
+  await createNotification({
+    recipientUserId: recipientUid,
+    actorUserId: invitedByUserId,
+    type: "org_seat_invite",
+    fileId: null,
+    commentId: null,
+    shareId: null,
+    metadata: {
+      actorDisplayName,
+      orgId,
+      orgName,
+      inviteToken,
     },
   });
 }

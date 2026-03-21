@@ -28,8 +28,9 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
-import LayoutSettingsBar from "./LayoutSettingsBar";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
+import { recordRecentOpen } from "@/hooks/useRecentOpens";
+import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -367,6 +368,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const openDrive = useCallback(
     (driveId: string, name: string) => {
+      recordRecentOpen("folder", driveId, getAuthToken);
       setCurrentFolderDriveId(driveId);
       router.push(`${filesHref}?drive=${driveId}`);
     },
@@ -720,7 +722,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
-      <LayoutSettingsBar showViewMode={true} className="mb-6 border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60" />
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
@@ -729,7 +730,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="flex flex-wrap justify-center gap-4 max-w-4xl mx-auto">
+          <div className="flex justify-center w-full max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-max max-w-full">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -778,6 +780,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 </div>
               );
             })}
+            </div>
           </div>
         ) : (
           <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">

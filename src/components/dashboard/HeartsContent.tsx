@@ -1,0 +1,117 @@
+"use client";
+
+import { useState } from "react";
+import FileCard from "./FileCard";
+import FileListRow from "./FileListRow";
+import FilePreviewModal from "./FilePreviewModal";
+import { useHeartedFiles } from "@/hooks/useHeartedFiles";
+import { useLayoutSettings } from "@/context/LayoutSettingsContext";
+import { useCloudFiles } from "@/hooks/useCloudFiles";
+import type { RecentFile } from "@/hooks/useCloudFiles";
+
+export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: string }) {
+  const { files, loading, hasMore, loadMore, refresh } = useHeartedFiles();
+  const { viewMode, cardSize, aspectRatio, showCardInfo } = useLayoutSettings();
+  const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const { deleteFile } = useCloudFiles();
+
+  if (loading && files.length === 0) {
+    return (
+      <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (files.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Files you heart will appear here for quick access.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {viewMode === "list" ? (
+        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((file) => (
+                <FileListRow
+                  key={file.id}
+                  file={file}
+                  onClick={() => setPreviewFile(file)}
+                  onDelete={async () => {
+                    await deleteFile(file.id);
+                    refresh();
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div
+          className={`grid gap-4 ${
+            viewMode === "thumbnail"
+              ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+              : cardSize === "small"
+                ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+                : cardSize === "large"
+                  ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                  : "sm:grid-cols-3 md:grid-cols-4"
+          }`}
+        >
+          {files.map((file) => (
+            <FileCard
+              key={file.id}
+              file={file}
+              onClick={() => setPreviewFile(file)}
+              onDelete={async () => {
+                await deleteFile(file.id);
+                refresh();
+              }}
+              layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+              layoutAspectRatio={aspectRatio}
+              showCardInfo={showCardInfo}
+            />
+          ))}
+        </div>
+      )}
+      {hasMore && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            Load more
+          </button>
+        </div>
+      )}
+      {previewFile && (
+        <FilePreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+    </>
+  );
+}

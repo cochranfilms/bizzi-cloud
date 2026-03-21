@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Star,
+  Heart,
   Clock,
   FolderKanban,
   Activity,
@@ -13,7 +13,7 @@ import StorageBadge from "./StorageBadge";
 import SyncDriveButton from "./SyncDriveButton";
 
 const quickAccessItems = (basePath: string) => [
-  { href: `${basePath}/starred`, label: "Starred", icon: Star },
+  { href: `${basePath}/hearts`, label: "Hearts", icon: Heart },
   { href: `${basePath}/recent`, label: "Recent", icon: Clock },
   { href: `${basePath}/projects`, label: "Projects", icon: FolderKanban },
 ];

@@ -1,0 +1,163 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import FileCard from "./FileCard";
+import FileListRow from "./FileListRow";
+import FilePreviewModal from "./FilePreviewModal";
+import FolderCard from "./FolderCard";
+import FolderListRow from "./FolderListRow";
+import type { FolderItem } from "./FolderCard";
+import { useRecentOpens, type RecentOpenItem } from "@/hooks/useRecentOpens";
+import { useLayoutSettings } from "@/context/LayoutSettingsContext";
+import { useCloudFiles } from "@/hooks/useCloudFiles";
+import type { RecentFile } from "@/hooks/useCloudFiles";
+
+function toRecentFile(item: RecentOpenItem): RecentFile | null {
+  if (item.type !== "file" || !item.driveId) return null;
+  return {
+    id: item.id,
+    name: item.name,
+    path: item.path ?? "",
+    objectKey: item.objectKey ?? "",
+    size: item.size ?? 0,
+    modifiedAt: item.modifiedAt ?? null,
+    driveId: item.driveId,
+    driveName: item.driveName ?? "Unknown",
+    contentType: item.contentType ?? null,
+    galleryId: item.galleryId ?? null,
+  };
+}
+
+function toFolderItem(item: RecentOpenItem): FolderItem | null {
+  if (item.type !== "folder" || !item.driveId) return null;
+  return {
+    name: item.name,
+    type: "folder",
+    key: `drive-${item.id}`,
+    items: 0,
+    driveId: item.driveId,
+  };
+}
+
+export default function RecentContent({ basePath = "/dashboard" }: { basePath?: string }) {
+  const router = useRouter();
+  const { items, loading, refresh } = useRecentOpens();
+  const { viewMode, cardSize, aspectRatio, showCardInfo } = useLayoutSettings();
+  const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const { deleteFile } = useCloudFiles();
+
+  const files = items.filter((i) => i.type === "file").map(toRecentFile).filter(Boolean) as RecentFile[];
+  const folders = items.filter((i) => i.type === "folder").map(toFolderItem).filter(Boolean) as FolderItem[];
+  const filesHref = `${basePath}/files`;
+
+  if (loading && items.length === 0) {
+    return (
+      <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Recently opened files and folders will appear here (last 7 days).
+        </p>
+      </div>
+    );
+  }
+
+  const openFolder = (driveId: string) => {
+    router.push(`${filesHref}?drive=${driveId}`);
+  };
+
+  return (
+    <>
+      {viewMode === "list" ? (
+        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+              </tr>
+            </thead>
+            <tbody>
+              {folders.map((item) => (
+                <FolderListRow
+                  key={item.key}
+                  item={item}
+                  onClick={() => item.driveId && openFolder(item.driveId)}
+                />
+              ))}
+              {files.map((file) => (
+                <FileListRow
+                  key={file.id}
+                  file={file}
+                  onClick={() => setPreviewFile(file)}
+                  onDelete={async () => {
+                    await deleteFile(file.id);
+                    refresh();
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div
+          className={`grid gap-4 ${
+            viewMode === "thumbnail"
+              ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+              : cardSize === "small"
+                ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+                : cardSize === "large"
+                  ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                  : "sm:grid-cols-3 md:grid-cols-4"
+          }`}
+        >
+          {folders.map((item) => (
+            <FolderCard
+              key={item.key}
+              item={item}
+              onClick={() => item.driveId && openFolder(item.driveId)}
+              layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+              layoutAspectRatio={aspectRatio}
+              showCardInfo={showCardInfo}
+            />
+          ))}
+          {files.map((file) => (
+            <FileCard
+              key={file.id}
+              file={file}
+              onClick={() => setPreviewFile(file)}
+              onDelete={async () => {
+                await deleteFile(file.id);
+                refresh();
+              }}
+              layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+              layoutAspectRatio={aspectRatio}
+              showCardInfo={showCardInfo}
+            />
+          ))}
+        </div>
+      )}
+      {previewFile && (
+        <FilePreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+    </>
+  );
+}

@@ -10,7 +10,8 @@ export type NotificationType =
   | "file_shared"
   | "file_reply_created"
   | "transfer_sent"
-  | "gallery_invite";
+  | "gallery_invite"
+  | "org_seat_invite";
 
 export interface Notification {
   id: string;
@@ -33,6 +34,9 @@ export interface Notification {
     transferName?: string;
     galleryId?: string;
     galleryTitle?: string;
+    orgId?: string;
+    orgName?: string;
+    inviteToken?: string;
   } | null;
 }
 

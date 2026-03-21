@@ -1,6 +1,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashInviteToken } from "@/lib/invite-token";
 import { sendOrgSeatInviteEmail } from "@/lib/emailjs";
+import { createOrgSeatInviteNotification } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
@@ -141,10 +142,18 @@ export async function POST(request: Request) {
     "https://www.bizzicloud.io";
   const inviteLink = `${baseUrl}/invite/join?token=${inviteToken}`;
 
+  const orgName = (org?.name as string) ?? "Organization";
+  const profileData = profileSnap.data();
+  const actorDisplayName =
+    (profileData?.display_name as string)?.trim() ??
+    (profileData?.displayName as string)?.trim() ??
+    inviterEmail?.split("@")[0] ??
+    "An organization admin";
+
   try {
     await sendOrgSeatInviteEmail({
       to_email: email,
-      org_name: (org?.name as string) ?? "Organization",
+      org_name: orgName,
       invite_url: inviteLink,
     });
   } catch (err) {
@@ -157,6 +166,18 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  // In-app notification for invitees who already have a BizziCloud account
+  createOrgSeatInviteNotification({
+    inviteeEmail: email,
+    invitedByUserId: uid,
+    actorDisplayName,
+    orgId,
+    orgName,
+    inviteToken,
+  }).catch((err) => {
+    console.error("[enterprise/invite] In-app notification failed:", err);
+  });
 
   return NextResponse.json({
     success: true,

@@ -7,6 +7,7 @@ import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
 import GalleryPickerModal from "./GalleryPickerModal";
 import ShareModal from "./ShareModal";
+import LayoutSettingsBar from "./LayoutSettingsBar";
 import { useBackup } from "@/context/BackupContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -15,9 +16,11 @@ import { useAuth } from "@/context/AuthContext";
 
 interface TopBarProps {
   title?: string;
+  /** When true, shows View/Size/Ratio/Scale/Info controls in the top bar (left of New button) */
+  showLayoutSettings?: boolean;
 }
 
-export default function TopBar({ title = "All files" }: TopBarProps) {
+export default function TopBar({ title = "All files", showLayoutSettings = false }: TopBarProps) {
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
@@ -140,6 +143,10 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
           {title}
         </h1>
 
+      <div className="flex flex-1 flex-wrap items-center justify-end gap-4 sm:justify-end">
+        {showLayoutSettings && (
+          <LayoutSettingsBar showViewMode={true} className="py-0" />
+        )}
       <div className="flex flex-wrap items-center gap-2">
         {showCreateTransfer ? (
             <button
@@ -235,6 +242,7 @@ export default function TopBar({ title = "All files" }: TopBarProps) {
             </div>
           </div>
         )}
+      </div>
       </div>
       </div>
 

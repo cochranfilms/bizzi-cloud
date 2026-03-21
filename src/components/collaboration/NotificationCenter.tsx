@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquare, Heart, Share2, FileText, Images } from "lucide-react";
+import { MessageSquare, Heart, Share2, FileText, Images, Users } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   markNotificationRead,
@@ -31,6 +31,8 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
       return <Share2 className="h-4 w-4 flex-shrink-0" />;
     case "gallery_invite":
       return <Images className="h-4 w-4 flex-shrink-0" />;
+    case "org_seat_invite":
+      return <Users className="h-4 w-4 flex-shrink-0" />;
     default:
       return <FileText className="h-4 w-4 flex-shrink-0" />;
   }
@@ -56,7 +58,9 @@ function NotificationLink({
           ? `/t/${n.metadata.transferSlug}`
           : n.type === "gallery_invite" && n.metadata?.galleryId
             ? `/g/${n.metadata.galleryId}`
-            : "/dashboard";
+            : n.type === "org_seat_invite" && n.metadata?.inviteToken
+              ? `/invite/join?token=${encodeURIComponent(n.metadata.inviteToken)}`
+              : "/dashboard";
 
   return (
     <Link

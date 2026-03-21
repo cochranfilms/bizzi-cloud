@@ -19,6 +19,7 @@ import {
   HardDrive,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
+import NotificationBell from "@/components/collaboration/NotificationBell";
 import { useSubscription } from "@/hooks/useSubscription";
 
 interface DesktopTopNavbarProps {
@@ -148,7 +149,8 @@ export default function DesktopTopNavbar({
         />
       </div>
 
-      <div className="flex flex-shrink-0 items-center">
+      <div className="flex flex-shrink-0 items-center gap-1">
+        <NotificationBell />
         <UserMenu compact basePath="/desktop/app" />
       </div>
 

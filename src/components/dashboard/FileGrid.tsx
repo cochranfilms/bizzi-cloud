@@ -22,6 +22,9 @@ import {
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useGalleries } from "@/hooks/useGalleries";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
+import { useHeartedFiles } from "@/hooks/useHeartedFiles";
+import { recordRecentOpen } from "@/hooks/useRecentOpens";
+import { getAuthToken } from "@/lib/auth-token";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -40,7 +43,6 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
-import LayoutSettingsBar from "./LayoutSettingsBar";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 function BulkActionBar({
@@ -161,7 +163,7 @@ export default function FileGrid() {
           ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
           : "sm:grid-cols-3 md:grid-cols-4";
   const listColSpan = 10;
-  const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
+  const [activeTab, setActiveTab] = useState<"recents" | "hearts">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [currentDrivePath, setCurrentDrivePath] = useState<string>("");
@@ -184,6 +186,7 @@ export default function FileGrid() {
   } = useCloudFiles();
   const { galleries } = useGalleries();
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
+  const { files: heartedFiles, loading: heartedLoading, hasMore: heartedHasMore, loadMore: loadMoreHearted, refresh: refreshHearted } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
   const { hasEditor, hasGallerySuite } = useSubscription();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
@@ -312,6 +315,7 @@ export default function FileGrid() {
 
   const openDrive = useCallback(
     (id: string, name: string) => {
+      recordRecentOpen("folder", id, getAuthToken);
       setCurrentFolderDriveId(id);
       setCurrentDrive({ id, name });
       setCurrentDrivePath("");
@@ -1094,7 +1098,7 @@ export default function FileGrid() {
             document.body
           )}
         <SectionTitle className="mb-4">
-          {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Starred"}
+          {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Hearts"}
         </SectionTitle>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-4">
           <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
@@ -1111,14 +1115,14 @@ export default function FileGrid() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("starred")}
+              onClick={() => setActiveTab("hearts")}
               className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === "starred"
+                activeTab === "hearts"
                   ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
                   : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
               }`}
             >
-              Starred
+              Hearts
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -1146,7 +1150,6 @@ export default function FileGrid() {
             )}
           </div>
         </div>
-        <LayoutSettingsBar showViewMode={true} className="mb-5 border-b border-neutral-200/60 pb-3 dark:border-neutral-800/60" />
 
         {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
         {currentDrive ? (
@@ -1503,10 +1506,79 @@ export default function FileGrid() {
               </div>
             )}
           </>
-        ) : (
-          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Starred files coming soon. Use Recents to see your synced drives and recent files.
+        ) : heartedLoading && heartedFiles.length === 0 ? (
+          <div className="py-12">
+            <LoadingSpinner label={LOADING_COPY.files} centered />
           </div>
+        ) : heartedFiles.length === 0 ? (
+          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            Files you heart will appear here for quick access.
+          </div>
+        ) : (
+          <>
+            {viewMode === "list" ? (
+              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                      <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {heartedFiles.map((file) => (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        onClick={() => setPreviewFile(file)}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          refreshHearted();
+                        }}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div data-selectable-grid className={`relative grid gap-4 ${gridColsClass}`}>
+                {heartedFiles.map((file) => (
+                  <FileCard
+                    key={file.id}
+                    file={file}
+                    onClick={() => setPreviewFile(file)}
+                    onDelete={async () => {
+                      await deleteFile(file.id);
+                      refreshHearted();
+                    }}
+                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                    layoutAspectRatio={aspectRatio}
+                    thumbnailScale={thumbnailScale}
+                    showCardInfo={showCardInfo}
+                  />
+                ))}
+              </div>
+            )}
+            {heartedHasMore && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={loadMoreHearted}
+                  className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                >
+                  Load more
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
         </div>
