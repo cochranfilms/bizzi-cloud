@@ -424,12 +424,22 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
       setLinkedDrives(drives);
 
-      // Enterprise users may have joined before we created drives on accept-invite.
-      // Backfill default drives (Storage, RAW, Gallery Media) when none exist.
+      // Enterprise users may have joined before we created drives on accept-invite,
+      // or org may have been updated with new power-ups (e.g. Full Frame) after they joined.
+      // Backfill default drives when: none exist, or org has power-ups we're missing.
+      const orgAddonIds = Array.isArray(org?.addon_ids) ? org.addon_ids : [];
+      const hasGalleryAddon = orgAddonIds.includes("gallery") || orgAddonIds.includes("fullframe");
+      const hasEditorAddon = orgAddonIds.includes("editor") || orgAddonIds.includes("fullframe");
+      const hasGalleryMedia = drives.some((d) => d.name === "Gallery Media");
+      const hasRaw = drives.some((d) => d.is_creator_raw);
+      const needsEnsure =
+        drives.length === 0 ||
+        (hasGalleryAddon && !hasGalleryMedia) ||
+        (hasEditorAddon && !hasRaw);
       if (
         isEnterpriseContext &&
         org?.id &&
-        drives.length === 0 &&
+        needsEnsure &&
         !ensureDrivesAttemptedRef.current
       ) {
         ensureDrivesAttemptedRef.current = true;
@@ -1128,6 +1138,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   const getOrCreateGalleryDrive = useCallback(async (): Promise<LinkedDrive> => {
     if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
     const db = getFirebaseFirestore();
+    const orgId = isEnterpriseContext && org?.id ? org.id : null;
     const existing = await getDocs(
       query(
         collection(db, "linked_drives"),
@@ -1135,7 +1146,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         orderBy("createdAt", "desc")
       )
     );
-    const galleryDrive = existing.docs.find((d) => d.data().name === "Gallery Media");
+    const galleryDrive = existing.docs.find((d) => {
+      const data = d.data();
+      if (data.name !== "Gallery Media") return false;
+      const oid = data.organization_id ?? null;
+      if (isEnterpriseContext && orgId) return oid === orgId;
+      return !oid;
+    });
     if (galleryDrive) {
       const d = galleryDrive;
       const data = d.data();
@@ -1155,7 +1172,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       name: "Gallery Media",
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: new Date(),
-      organization_id: null,
+      ...(orgId ? { organization_id: orgId } : { organization_id: null }),
     });
     const drive: LinkedDrive = {
       id: docRef.id,
@@ -1165,12 +1182,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       permission_handle_id: `gallery-media-${Date.now()}`,
       last_synced_at: null,
       created_at: new Date().toISOString(),
-      organization_id: null,
+      organization_id: orgId ?? null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     setStorageVersion((v) => v + 1);
     return drive;
-  }, [user]);
+  }, [user, isEnterpriseContext, org]);
 
   const createFolder = useCallback(
     async (name: string, options?: { creatorSection?: boolean }): Promise<LinkedDrive> => {

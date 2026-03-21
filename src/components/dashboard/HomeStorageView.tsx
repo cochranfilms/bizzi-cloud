@@ -306,30 +306,42 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     }
   }, [fetchRecentUploads, storageVersion, linkedDrives]);
 
-  // Ensure Storage, RAW, and Gallery Media folders exist for subscribed (paid) users on personal dashboard.
-  // Only create RAW if user has Editor/Full Frame power-up; only create Gallery Media if user has Gallery Suite/Full Frame.
+  // Ensure Storage, RAW, and Gallery Media folders exist for subscribed (paid) users.
+  // Personal: create Storage/RAW/Gallery Media based on plan and power-ups.
+  // Enterprise: create Gallery Media when org has Gallery Suite/Full Frame and it's missing
+  // (Storage/RAW are created by ensure-drives API).
   useEffect(() => {
     if (
-      basePath !== "/dashboard" ||
       loading ||
       subscriptionLoading ||
-      planId === "free" ||
-      !getOrCreateStorageDrive ||
-      !getOrCreateCreatorRawDrive ||
-      !getOrCreateGalleryDrive
+      !getOrCreateGalleryDrive ||
+      (!getOrCreateStorageDrive && basePath === "/dashboard") ||
+      (!getOrCreateCreatorRawDrive && basePath === "/dashboard")
     )
       return;
     const hasStorage = driveFolders.some((d) => d.name === "Storage");
     const hasRaw = driveFolders.some((d) => d.isCreatorRaw);
     const hasGalleryMedia = driveFolders.some((d) => d.name === "Gallery Media");
-    const needsRaw = !hasRaw && hasEditor;
     const needsGalleryMedia = !hasGalleryMedia && hasGallerySuite;
-    if (hasStorage && !needsRaw && !needsGalleryMedia) return;
+
+    if (basePath === "/enterprise") {
+      // Enterprise: only ensure Gallery Media when org has power-up
+      if (!needsGalleryMedia) return;
+    } else {
+      // Personal: full logic; skip for free plan
+      if (planId === "free") return;
+      const needsRaw = !hasRaw && hasEditor;
+      if (hasStorage && !needsRaw && !needsGalleryMedia) return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
-        if (!hasStorage) await getOrCreateStorageDrive();
-        if (!cancelled && needsRaw) await getOrCreateCreatorRawDrive();
+        if (basePath === "/dashboard") {
+          if (!hasStorage && getOrCreateStorageDrive) await getOrCreateStorageDrive();
+          if (!cancelled && !hasRaw && hasEditor && getOrCreateCreatorRawDrive)
+            await getOrCreateCreatorRawDrive();
+        }
         if (!cancelled && needsGalleryMedia) await getOrCreateGalleryDrive();
         if (!cancelled) refetch();
       } catch (e) {
@@ -717,7 +729,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          <div className="flex flex-wrap justify-center gap-4 max-w-4xl mx-auto">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
