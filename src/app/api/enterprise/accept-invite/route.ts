@@ -46,14 +46,6 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
 
-  const profileSnap = await db.collection("profiles").doc(uid).get();
-  if (profileSnap.data()?.organization_id) {
-    return NextResponse.json(
-      { error: "You already belong to an organization" },
-      { status: 400 }
-    );
-  }
-
   let orgId: string;
   let pendingDocs: QueryDocumentSnapshot[];
 
@@ -116,6 +108,37 @@ export async function POST(request: Request) {
     );
   }
 
+  const pendingSeatData = pendingDocs[0].data();
+  const isOrgOwnerInvite = pendingSeatData.role === "admin";
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const currentOrgId = profileSnap.data()?.organization_id as string | undefined;
+
+  if (currentOrgId) {
+    if (currentOrgId === orgId) {
+      return NextResponse.json(
+        { error: "You already belong to this organization" },
+        { status: 400 }
+      );
+    }
+    if (isOrgOwnerInvite) {
+      const oldSeatId = `${currentOrgId}_${uid}`;
+      const oldSeatSnap = await db.collection("organization_seats").doc(oldSeatId).get();
+      if (oldSeatSnap.exists) {
+        const batch = db.batch();
+        batch.delete(oldSeatSnap.ref);
+        batch.set(profileSnap.ref, { organization_id: null, organization_role: null }, { merge: true });
+        await batch.commit();
+      } else {
+        await profileSnap.ref.update({ organization_id: null, organization_role: null });
+      }
+    } else {
+      return NextResponse.json(
+        { error: "You already belong to another organization. You can only be in one organization at a time." },
+        { status: 400 }
+      );
+    }
+  }
+
   const seatId = `${orgId}_${uid}`;
   const now = FieldValue.serverTimestamp();
 
@@ -125,7 +148,6 @@ export async function POST(request: Request) {
     batch.delete(docSnap.ref);
   }
 
-  const pendingSeatData = pendingDocs[0].data();
   const acceptedRole =
     (pendingSeatData.role === "admin" ? "admin" : "member") as "admin" | "member";
   const seatRef = db.collection("organization_seats").doc(seatId);

@@ -12,6 +12,7 @@ interface InviteInfo {
   organization_id: string;
   org_name: string;
   email: string;
+  role?: string;
 }
 
 function InviteJoinContent() {
@@ -144,23 +145,33 @@ function InviteJoinContent() {
 
         <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-white mb-2">
-            Join {invite.org_name}
+            {invite.role === "admin"
+              ? `Activate ${invite.org_name}`
+              : `Join ${invite.org_name}`}
           </h1>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6">
-            You&apos;ve been invited to join as a member.
+            {invite.role === "admin"
+              ? "Your payment was received. Activate your organization account to access your dashboard."
+              : "You've been invited to join as a member."}
           </p>
 
           {!user ? (
             <div className="space-y-4">
               <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                Create an account with <strong>{invite.email}</strong> to accept this invite.
+                {invite.role === "admin"
+                  ? (
+                    <>Create an account with <strong>{invite.email}</strong> to activate your organization.</>
+                  )
+                  : (
+                    <>Create an account with <strong>{invite.email}</strong> to accept this invite.</>
+                  )}
               </p>
               <div className="flex flex-col gap-2">
                 <Link
                   href={signUpUrl}
                   className="block w-full rounded-lg bg-bizzi-blue px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
                 >
-                  Sign up to join
+                  {invite.role === "admin" ? "Sign up to activate" : "Sign up to join"}
                 </Link>
                 <Link
                   href={signInUrl}
@@ -184,7 +195,13 @@ function InviteJoinContent() {
                 disabled={accepting}
                 className="w-full rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {accepting ? "Accepting…" : "Accept invite"}
+                {accepting
+                  ? invite.role === "admin"
+                    ? "Activating…"
+                    : "Accepting…"
+                  : invite.role === "admin"
+                    ? "Activate account"
+                    : "Accept invite"}
               </button>
             </div>
           ) : (

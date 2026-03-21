@@ -39,5 +39,6 @@ export async function GET(request: Request) {
     organization_id: orgId,
     org_name: orgName,
     email: seat.email ?? "",
+    role: (seat.role as string) ?? "member",
   });
 }
