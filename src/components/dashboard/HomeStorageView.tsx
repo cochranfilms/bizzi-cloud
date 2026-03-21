@@ -730,8 +730,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Loading…
           </div>
         ) : baseFolderItems.length > 0 ? (
-          <div className="flex justify-center w-full max-w-4xl mx-auto">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-max max-w-full">
+          <div
+            className="flex justify-center w-full max-w-4xl mx-auto"
+            style={{ ["--folder-count" as string]: baseFolderItems.length }}
+          >
+            <div className="grid grid-cols-1 gap-4 max-w-full sm:grid-cols-[repeat(var(--folder-count),minmax(260px,320px))]">
             {baseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -756,8 +759,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                    layoutSize="medium"
-                    layoutAspectRatio="landscape"
+                    layoutSize="large"
+                    layoutAspectRatio="square"
                     showCardInfo={true}
                     onDelete={
                       drive && !item.preventDelete
