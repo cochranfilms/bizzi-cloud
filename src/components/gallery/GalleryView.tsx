@@ -806,7 +806,7 @@ function GalleryAssetCard({
 }
 
 export default function GalleryView({ galleryId }: { galleryId: string }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<{
     gallery: GalleryData;
     assets: GalleryAsset[];
@@ -886,9 +886,26 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     [galleryId, user]
   );
 
+  // Wait for auth to finish before first fetch so signed-in invitees get auto-access
   useEffect(() => {
+    if (authLoading) return;
     fetchGallery();
-  }, [fetchGallery]);
+  }, [fetchGallery, authLoading]);
+
+  // Retry once when user becomes available after invite_required (handles late auth load)
+  const hasRetriedWithAuth = useRef(false);
+  useEffect(() => {
+    if (
+      !authLoading &&
+      user &&
+      errorCode === "invite_required" &&
+      !hasRetriedWithAuth.current
+    ) {
+      hasRetriedWithAuth.current = true;
+      setLoading(true);
+      fetchGallery();
+    }
+  }, [authLoading, user, errorCode, fetchGallery]);
 
   const fetchDownloadStatus = useCallback(async () => {
     if (!data) return;
