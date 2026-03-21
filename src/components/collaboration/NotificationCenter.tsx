@@ -47,8 +47,8 @@ function NotificationLink({
 }) {
   const href = n.fileId
     ? n.commentId
-      ? `/dashboard?file=${n.fileId}#comment-${n.commentId}`
-      : `/dashboard?file=${n.fileId}`
+      ? `${shareBasePath}?file=${n.fileId}#comment-${n.commentId}`
+      : `${shareBasePath}?file=${n.fileId}`
     : n.type === "transfer_sent" && n.metadata?.transferSlug
       ? `/t/${n.metadata.transferSlug}`
       : n.type === "gallery_invite" && n.metadata?.galleryId

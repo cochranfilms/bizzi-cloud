@@ -133,20 +133,6 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
             <Shield className="h-4 w-4" />
             Admin dashboard
           </Link>
-          <Link
-            href="/privacy"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-          >
-            Privacy Policy
-          </Link>
-          <Link
-            href="/terms"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-          >
-            Terms of Service
-          </Link>
           <button
             type="button"
             onClick={() => {
@@ -187,6 +173,20 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
               <Palette className="h-4 w-4" />
               Customize dashboard
             </button>
+            <Link
+              href="/privacy"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              href="/terms"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            >
+              Terms of Service
+            </Link>
           </div>
           <button
             type="button"

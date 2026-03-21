@@ -72,10 +72,11 @@ function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
 
+// Scaled so largest never exceeds former medium; large = former medium
 const FILE_SIZE_CLASSES = {
-  small: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
-  medium: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
-  large: { padding: "p-8", icon: "h-20 w-20", iconInner: "h-10 w-10", text: "text-base" },
+  small: { padding: "p-3", icon: "h-8 w-8", iconInner: "h-4 w-4", text: "text-xs" },
+  medium: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
+  large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
 } as const;
 
 const FILE_ASPECT_CLASSES = {

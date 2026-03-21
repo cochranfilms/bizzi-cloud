@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
@@ -28,7 +28,9 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
+import LayoutSettingsBar from "./LayoutSettingsBar";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -141,6 +143,7 @@ interface HomeStorageViewProps {
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     driveFolders,
     loading,
@@ -265,6 +268,36 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   useEffect(() => {
     loadPinnedFiles();
   }, [loadPinnedFiles]);
+
+  // Open file preview when navigating from notification (e.g. /dashboard?file=xxx)
+  const fileIdFromUrl = searchParams.get("file");
+  useEffect(() => {
+    if (!fileIdFromUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        if (!token || cancelled) return;
+        const res = await fetch(`/api/files/${encodeURIComponent(fileIdFromUrl)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as RecentFile;
+        if (!cancelled && data?.id) setPreviewFile(data);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("file");
+        const target = url.pathname + url.search + url.hash;
+        if (target !== window.location.pathname + window.location.search + window.location.hash) {
+          router.replace(target, { scroll: false });
+        }
+      } catch (e) {
+        console.error("Failed to load shared file from URL:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileIdFromUrl, router]);
 
   // Load recent uploads (Storage files from past 72h) on mount and when storage changes
   useEffect(() => {
@@ -675,6 +708,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
+      <LayoutSettingsBar showViewMode={true} className="mb-6 border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60" />
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
@@ -822,10 +856,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               viewMode === "thumbnail"
                 ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
-                  ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                  ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
                   : cardSize === "large"
-                    ? "sm:grid-cols-1 md:grid-cols-2"
-                    : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                    ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                    : "sm:grid-cols-3 md:grid-cols-4"
             }`}
           >
             {pinnedFolderItems.map((item) => {
@@ -980,10 +1014,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               viewMode === "thumbnail"
                 ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
-                  ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                  ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
                   : cardSize === "large"
-                    ? "sm:grid-cols-1 md:grid-cols-2"
-                    : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                    ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                    : "sm:grid-cols-3 md:grid-cols-4"
             }`}
           >
             {driveFolderItems.map((item) => {
@@ -1092,10 +1126,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   viewMode === "thumbnail"
                     ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                     : cardSize === "small"
-                      ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+                      ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
                       : cardSize === "large"
-                        ? "sm:grid-cols-1 md:grid-cols-2"
-                        : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                        ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+                        : "sm:grid-cols-3 md:grid-cols-4"
                 }`}
               >
                 {recentUploads.map((file) => (

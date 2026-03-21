@@ -43,8 +43,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: galleryId } = await params;
-  if (!galleryId)
+  const run = async (): Promise<Response> => {
+    const { id: galleryId } = await params;
+    if (!galleryId)
     return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   if (!isB2Configured()) {
@@ -92,16 +93,16 @@ export async function POST(
 
   const g = gallerySnap.data()!;
   const access = await verifyGalleryDownloadAccess(
-    {
-      photographer_id: g.photographer_id,
-      access_mode: g.access_mode ?? "public",
-      password_hash: g.password_hash,
-      pin_hash: g.pin_hash,
-      invited_emails: g.invited_emails ?? [],
-      expiration_date: g.expiration_date,
-    },
-    { authHeader, password: password ?? null, clientEmail }
-  );
+      {
+        photographer_id: g.photographer_id,
+        access_mode: g.access_mode ?? "public",
+        password_hash: g.password_hash,
+        pin_hash: g.pin_hash,
+        invited_emails: g.invited_emails ?? [],
+        expiration_date: g.expiration_date,
+      },
+      { authHeader, password: password ?? null, clientEmail }
+    );
 
   if (!access.allowed) {
     return NextResponse.json(
@@ -261,17 +262,20 @@ export async function POST(
     }
   }
 
-  const names = uniqueZipNames(items.map((i) => i.name));
-  try {
+    const names = uniqueZipNames(items.map((i) => i.name));
     return streamZipFromB2(
       items.map((item, i) => ({ object_key: item.object_key, name: names[i]! }))
     );
-  } catch (err) {
-    console.error("[download-bulk-zip] streamZipFromB2 error:", err);
+  };
+  return run().catch((err: unknown) => {
+    console.error("[download-bulk-zip] Unexpected error:", err);
     return NextResponse.json(
-      { error: "zip_error", message: err instanceof Error ? err.message : "Failed to create download" },
+      {
+        error: "server_error",
+        message: err instanceof Error ? err.message : "An unexpected error occurred",
+      },
       { status: 500 }
     );
-  }
+  });
 }
 } // SWC workaround: Next.js 15 parser expects one extra closing brace

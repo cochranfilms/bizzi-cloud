@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, ImageIcon, Images, LayoutGrid, List, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -40,6 +40,7 @@ import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
+import LayoutSettingsBar from "./LayoutSettingsBar";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 function BulkActionBar({
@@ -150,14 +151,15 @@ export default function FileGrid() {
     thumbnailScale,
     showCardInfo,
   } = useLayoutSettings();
+  // Grid columns: large capped at former medium density
   const gridColsClass =
     viewMode === "thumbnail"
       ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
       : cardSize === "small"
-        ? "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+        ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
         : cardSize === "large"
-          ? "sm:grid-cols-1 md:grid-cols-2"
-          : "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3";
+          ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+          : "sm:grid-cols-3 md:grid-cols-4";
   const listColSpan = 10;
   const [activeTab, setActiveTab] = useState<"recents" | "starred">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -1094,7 +1096,7 @@ export default function FileGrid() {
         <SectionTitle className="mb-4">
           {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Starred"}
         </SectionTitle>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-4">
           <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
             <button
               type="button"
@@ -1142,46 +1144,9 @@ export default function FileGrid() {
                 Select
               </button>
             )}
-            <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              className={`rounded p-2 ${
-                viewMode === "grid"
-                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              }`}
-              aria-label="Grid view"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              className={`rounded p-2 ${
-                viewMode === "list"
-                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              }`}
-              aria-label="List view"
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("thumbnail")}
-              className={`rounded p-2 ${
-                viewMode === "thumbnail"
-                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              }`}
-              aria-label="Thumbnail view"
-            >
-              <ImageIcon className="h-4 w-4" />
-            </button>
-            </div>
           </div>
         </div>
+        <LayoutSettingsBar showViewMode={true} className="mb-5 border-b border-neutral-200/60 pb-3 dark:border-neutral-800/60" />
 
         {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
         {currentDrive ? (

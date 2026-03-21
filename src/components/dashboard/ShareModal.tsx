@@ -134,10 +134,10 @@ export default function ShareModal({
       setNameError(null);
       if (initialShareToken) {
         setShareToken(initialShareToken);
-        setAccessLevel(initialAccessLevel);
-        setPermission(initialPermission);
-        setInvitedEmails(initialInvitedEmails);
         if (justOpened) {
+          setAccessLevel(initialAccessLevel);
+          setPermission(initialPermission);
+          setInvitedEmails(initialInvitedEmails);
           if (linkedDriveId) {
             fetchShareVersion(initialShareToken).then(setShareVersion);
           } else if (lastFetchedForRef.current !== initialShareToken) {
