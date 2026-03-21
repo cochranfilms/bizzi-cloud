@@ -31,6 +31,7 @@ export default function VideoScrubThumbnail({
   objectFit = "object-cover",
 }: VideoScrubThumbnailProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamLoadFailed, setStreamLoadFailed] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
@@ -43,7 +44,10 @@ export default function VideoScrubThumbnail({
       setIsFetching(true);
       fetchStreamUrl()
         .then((url) => {
-          if (url) setStreamUrl(url);
+          if (url) {
+            setStreamUrl(url);
+            setStreamLoadFailed(false);
+          }
         })
         .finally(() => setIsFetching(false));
     }
@@ -77,7 +81,7 @@ export default function VideoScrubThumbnail({
     [streamUrl]
   );
 
-  const showVideo = isHovering && streamUrl;
+  const showVideo = isHovering && streamUrl && !streamLoadFailed;
   const showThumbnail = !showVideo && (thumbnailUrl || isLoading);
 
   return (
@@ -96,6 +100,7 @@ export default function VideoScrubThumbnail({
           playsInline
           preload="metadata"
           className={`h-full w-full bg-neutral-100 dark:bg-neutral-700 ${objectFit}`}
+          onError={() => setStreamLoadFailed(true)}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             if (v.duration && v.duration > 0) {

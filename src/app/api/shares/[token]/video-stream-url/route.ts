@@ -4,7 +4,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
 
-const STREAM_EXPIRY_SEC = 600;
+const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to share previews
 
 export async function POST(
   request: Request,

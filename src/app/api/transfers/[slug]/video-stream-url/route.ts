@@ -5,7 +5,7 @@ import { verifySecret } from "@/lib/gallery-access";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
-const STREAM_EXPIRY_SEC = 600;
+const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to transfer previews
 
 export async function POST(
   request: Request,

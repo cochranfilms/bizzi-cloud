@@ -10,7 +10,7 @@ import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
-const STREAM_EXPIRY_SEC = 600;
+const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to gallery videos
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 

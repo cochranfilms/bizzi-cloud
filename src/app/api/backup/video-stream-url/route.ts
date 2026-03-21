@@ -9,7 +9,7 @@ const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
-const STREAM_EXPIRY_SEC = 600; // 10 minutes
+const STREAM_EXPIRY_SEC = 3600; // 1 hour — aligned with preview-url; 10min caused Access Denied when users paused/returned
 
 export async function POST(request: Request) {
   if (!isB2Configured()) {

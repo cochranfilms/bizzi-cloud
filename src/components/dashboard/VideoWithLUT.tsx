@@ -438,6 +438,20 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
+  const handleVideoError = useCallback(() => {
+    setError((prev) =>
+      prev ?? "Video failed to load. The preview link may have expired — try closing and reopening."
+    );
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    setError(null); // Clear previous load error when source changes
+    video.addEventListener("error", handleVideoError);
+    return () => video.removeEventListener("error", handleVideoError);
+  }, [videoSrc, handleVideoError]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;

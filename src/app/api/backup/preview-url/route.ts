@@ -58,6 +58,11 @@ export async function POST(request: Request) {
 
   const result = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
   if (!result.allowed) {
+    console.warn("[preview-url] Access denied", {
+      status: result.status,
+      objectKeyPrefix: objectKey.slice(0, 60),
+      uidPrefix: uid.slice(0, 8),
+    });
     return NextResponse.json(
       { error: result.message ?? "Access denied" },
       { status: result.status ?? 403 }
@@ -70,7 +75,9 @@ export async function POST(request: Request) {
     const url = await getDownloadUrl(effectiveKey, 3600);
     return NextResponse.json({ url });
   } catch (err) {
-    console.error("Preview URL error:", err);
+    console.error("[preview-url] B2/CDN error:", err instanceof Error ? err.message : err, {
+      objectKeyPrefix: objectKey?.slice?.(0, 60),
+    });
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to create preview URL" },
       { status: 500 }
