@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Save, Check, Loader2, Image as ImageIcon, CreditCard, Film } from "lucide-react";
+import { Save, Check, Loader2, Image as ImageIcon, CreditCard, Film, Mail } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
@@ -190,6 +190,7 @@ export default function GallerySettingsForm({
       "medium"
   );
   const [password, setPassword] = useState("");
+  const [sendingInviteEmail, setSendingInviteEmail] = useState<string | null>(null);
 
   const [businessName, setBusinessName] = useState(
     (initialData.branding?.business_name as string) ?? ""
@@ -457,6 +458,7 @@ export default function GallerySettingsForm({
       setSaved(true);
       setPassword("");
       versionRef.current += 1;
+      onRefetch?.();
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -734,17 +736,76 @@ export default function GallerySettingsForm({
             </div>
           )}
           {accessMode === "invite_only" && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Invited emails (comma separated)
-              </label>
-              <input
-                type="text"
-                value={invitedEmails}
-                onChange={(e) => setInvitedEmails(e.target.value)}
-                placeholder="client@example.com, other@example.com"
-                className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Invited emails (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={invitedEmails}
+                  onChange={(e) => setInvitedEmails(e.target.value)}
+                  placeholder="client@example.com, other@example.com"
+                  className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Save to add emails to the list, then use Send Invite to email each person.
+                </p>
+              </div>
+              {(initialData.invited_emails ?? []).length > 0 && (
+                <div>
+                  <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    Invited list
+                  </span>
+                  <ul className="space-y-2">
+                    {(initialData.invited_emails ?? []).map((email) => (
+                      <li
+                        key={email}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"
+                      >
+                        <span className="truncate text-sm text-neutral-800 dark:text-neutral-200">
+                          {email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!user) return;
+                            setSendingInviteEmail(email);
+                            try {
+                              const token = await user.getIdToken();
+                              const res = await fetch(`/api/galleries/${galleryId}/send-invite`, {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${token}`,
+                                },
+                                body: JSON.stringify({ email }),
+                              });
+                              if (!res.ok) {
+                                const data = await res.json();
+                                throw new Error(data.error ?? "Failed to send invite");
+                              }
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "Failed to send invite");
+                            } finally {
+                              setSendingInviteEmail(null);
+                            }
+                          }}
+                          disabled={sendingInviteEmail !== null}
+                          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-bizzi-blue px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                        >
+                          {sendingInviteEmail === email ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Mail className="h-3.5 w-3.5" />
+                          )}
+                          {sendingInviteEmail === email ? "Sending…" : "Send Invite"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
