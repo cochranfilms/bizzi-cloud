@@ -45,17 +45,18 @@ function NotificationLink({
   onClick: () => void;
   shareBasePath: string;
 }) {
-  const href = n.fileId
-    ? n.commentId
-      ? `${shareBasePath}?file=${n.fileId}#comment-${n.commentId}`
-      : `${shareBasePath}?file=${n.fileId}`
-    : n.type === "transfer_sent" && n.metadata?.transferSlug
-      ? `/t/${n.metadata.transferSlug}`
-      : n.type === "gallery_invite" && n.metadata?.galleryId
-        ? `/g/${n.metadata.galleryId}`
-        : n.shareId
-          ? `${shareBasePath}/shared/${n.shareId}`
-          : "/dashboard";
+  const href =
+    n.shareId
+      ? `${shareBasePath}/shared/${n.shareId}`
+      : n.fileId
+        ? n.commentId
+          ? `${shareBasePath}?file=${n.fileId}#comment-${n.commentId}`
+          : `${shareBasePath}?file=${n.fileId}`
+        : n.type === "transfer_sent" && n.metadata?.transferSlug
+          ? `/t/${n.metadata.transferSlug}`
+          : n.type === "gallery_invite" && n.metadata?.galleryId
+            ? `/g/${n.metadata.galleryId}`
+            : "/dashboard";
 
   return (
     <Link
