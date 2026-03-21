@@ -263,12 +263,14 @@ export default function FileGrid() {
         ? { ...af, label: galleryTitleById.get(af.value) ?? af.label }
         : af
     );
-    // Don't show drive filter chip when inside a folder - user already knows where they are
-    if (currentDrive) {
+    // Don't show drive filter chip when inside a folder - user already knows where they are.
+    // Check URL drive param too to avoid flash before currentDrive is set (e.g. /files?drive=xxx).
+    const driveFromUrl = searchParams.get("drive");
+    if (currentDrive || driveFromUrl) {
       list = list.filter((af) => af.id !== "drive");
     }
     return list;
-  }, [activeFilters, galleryTitleById, currentDrive]);
+  }, [activeFilters, galleryTitleById, currentDrive, searchParams]);
 
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
     d.name === "Storage" || d.isCreatorRaw === true || d.name === "Gallery Media";
@@ -435,6 +437,17 @@ export default function FileGrid() {
       loadDriveFiles(currentDrive.id, { silent: true });
     }
   }, [storageVersion, currentDrive, loadDriveFiles]);
+
+  // Refresh when Uppy upload completes (global drop or + New) so files appear without manual refresh
+  useEffect(() => {
+    const handler = () => {
+      if (currentDrive) {
+        loadDriveFiles(currentDrive.id, { silent: true });
+      }
+    };
+    window.addEventListener("storage-upload-complete", handler);
+    return () => window.removeEventListener("storage-upload-complete", handler);
+  }, [currentDrive, loadDriveFiles]);
 
   // Real-time subscription: mount uploads appear in web app without refresh
   useEffect(() => {

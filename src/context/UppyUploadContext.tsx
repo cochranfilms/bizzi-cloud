@@ -78,6 +78,9 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
 
   const handleUploadComplete = useCallback(async () => {
     bumpStorageVersion();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("storage-upload-complete"));
+    }
     await onUploadComplete?.();
   }, [bumpStorageVersion, onUploadComplete]);
 
