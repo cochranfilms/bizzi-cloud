@@ -5,7 +5,7 @@
   Sent TO: Your support email (set in EmailJS dashboard)
   Subject (set in dashboard): [BizziCloud Support] {{subject}}
 
-  Variables: subject, message, user_email, user_name, user_id, priority, issue_type, created_at, logo_url
+  Variables: subject, message, user_email, user_name, user_id, priority, issue_type, created_at, created_at_formatted, logo_url
 -->
 <head>
   <meta charset="UTF-8">
@@ -15,10 +15,14 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
     .logo { margin-bottom: 24px; }
     .logo img { height: 48px; }
-    h1 { font-size: 1.25rem; margin-bottom: 16px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 13px; color: #64748b; }
-    .meta strong { color: #334155; }
-    .ticket-box { background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0; white-space: pre-wrap; }
+    h1 { font-size: 1.25rem; margin-bottom: 20px; }
+    .meta-card { background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+    .meta-row { margin-bottom: 12px; font-size: 13px; }
+    .meta-row:last-child { margin-bottom: 0; }
+    .meta-label { color: #64748b; font-weight: 600; width: 90px; display: inline-block; }
+    .meta-value { color: #334155; }
+    .message-label { font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+    .ticket-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 8px 0 24px; white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
     .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
   </style>
 </head>
@@ -28,15 +32,30 @@
   </div>
   <h1>Support ticket: {{subject}}</h1>
 
-  <div class="meta">
-    <span><strong>From:</strong> {{user_name}} &lt;{{user_email}}&gt;</span>
-    <span><strong>Priority:</strong> {{priority}}</span>
-    <span><strong>Type:</strong> {{issue_type}}</span>
-    <span><strong>User ID:</strong> {{user_id}}</span>
-    <span><strong>Submitted:</strong> {{created_at}}</span>
+  <div class="meta-card">
+    <div class="meta-row">
+      <span class="meta-label">From:</span>
+      <span class="meta-value">{{user_name}} &lt;{{user_email}}&gt;</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Priority:</span>
+      <span class="meta-value">{{priority}}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Type:</span>
+      <span class="meta-value">{{issue_type}}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">User ID:</span>
+      <span class="meta-value">{{user_id}}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Submitted:</span>
+      <span class="meta-value">{{created_at_formatted}}</span>
+    </div>
   </div>
 
-  <p><strong>Message:</strong></p>
+  <div class="message-label">Message:</div>
   <div class="ticket-box">{{message}}</div>
 
   <div class="footer">

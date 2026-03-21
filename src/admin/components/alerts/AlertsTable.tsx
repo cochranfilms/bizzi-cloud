@@ -58,19 +58,35 @@ export default function AlertsTable({
     {
       id: "action",
       header: "Action",
-      cell: (r) =>
-        r.recommendedAction ? (
-          <span className="text-sm text-neutral-500">{r.recommendedAction}</span>
-        ) : r.targetUserId ? (
-          <Link
-            href={`/admin/users?highlight=${r.targetUserId}`}
-            className="text-sm text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-          >
-            View user
-          </Link>
-        ) : (
-          "—"
-        ),
+      cell: (r) => {
+        const ticketId = (r.metadata as { ticketId?: string })?.ticketId;
+        if (ticketId) {
+          return (
+            <Link
+              href={`/admin/support?ticket=${ticketId}`}
+              className="text-sm text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+              onClick={(e) => e.stopPropagation()}
+            >
+              View ticket
+            </Link>
+          );
+        }
+        if (r.recommendedAction) {
+          return <span className="text-sm text-neutral-500">{r.recommendedAction}</span>;
+        }
+        if (r.targetUserId) {
+          return (
+            <Link
+              href={`/admin/users?highlight=${r.targetUserId}`}
+              className="text-sm text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+              onClick={(e) => e.stopPropagation()}
+            >
+              View user
+            </Link>
+          );
+        }
+        return "—";
+      },
     },
   ];
 

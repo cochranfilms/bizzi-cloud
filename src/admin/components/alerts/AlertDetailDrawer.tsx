@@ -65,12 +65,20 @@ export default function AlertDetailDrawer({
           </dl>
         </div>
 
-        {(alert.targetUserId || alert.targetFileId) && (
+        {(alert.targetUserId || alert.targetFileId || (alert.metadata as { ticketId?: string })?.ticketId) && (
           <div className="border-t border-neutral-200 pt-4 dark:border-neutral-700">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
               Quick actions
             </h4>
             <div className="flex flex-wrap gap-2">
+              {(alert.metadata as { ticketId?: string })?.ticketId && (
+                <Link
+                  href={`/admin/support?ticket=${(alert.metadata as { ticketId: string }).ticketId}`}
+                  className="rounded-lg bg-bizzi-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-bizzi-cyan dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+                >
+                  View ticket
+                </Link>
+              )}
               {alert.targetUserId && (
                 <Link
                   href={`/admin/users?highlight=${alert.targetUserId}`}

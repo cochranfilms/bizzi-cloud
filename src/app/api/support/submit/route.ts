@@ -55,7 +55,12 @@ export async function POST(request: Request) {
     const userName = authUser.displayName ?? userEmail.split("@")[0] ?? "User";
 
     const db = getAdminFirestore();
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const createdAtFormatted = nowDate.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
 
     const docRef = await db.collection("support_tickets").add({
       subject,
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
         priority,
         issue_type: issueType,
         created_at: now,
+        created_at_formatted: createdAtFormatted,
       });
     } catch (err) {
       console.error("[support/submit] EmailJS failed:", err);

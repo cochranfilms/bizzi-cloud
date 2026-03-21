@@ -714,6 +714,7 @@ export interface SupportTicketEmailParams {
   priority: string;
   issue_type: string;
   created_at: string;
+  created_at_formatted?: string;
 }
 
 /**

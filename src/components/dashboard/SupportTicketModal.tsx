@@ -72,10 +72,6 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
       setSuccess(true);
       setSubject("");
       setMessage("");
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit ticket");
     } finally {
@@ -114,9 +110,16 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
 
         {success ? (
           <div className="px-6 py-8 text-center">
-            <p className="text-green-600 dark:text-green-400">
+            <p className="mb-6 text-green-600 dark:text-green-400">
               ✓ Ticket submitted successfully. We&apos;ll get back to you soon.
             </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+            >
+              Close
+            </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 p-6">

@@ -28,6 +28,7 @@ export async function GET(request: Request) {
     targetUserId?: string;
     suggestedCause?: string;
     recommendedAction?: string;
+    metadata?: Record<string, unknown>;
   }> = [];
 
   const profilesSnap = await db.collection("profiles").get();
@@ -106,6 +107,45 @@ export async function GET(request: Request) {
           });
         }
       }
+    }
+  } catch (_) {}
+
+  // Support tickets (open or in_progress)
+  try {
+    const ticketsSnap = await db
+      .collection("support_tickets")
+      .where("status", "in", ["open", "in_progress"])
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .get();
+
+    for (const d of ticketsSnap.docs) {
+      const data = d.data();
+      const subject = (data.subject as string) ?? "";
+      const issueType = (data.issueType as string) ?? "other";
+      const priority = (data.priority as string) ?? "medium";
+      const affectedUserId = (data.affectedUserId as string) ?? "";
+      const createdAt = data.createdAt;
+      const timestamp =
+        typeof createdAt === "string"
+          ? createdAt
+          : createdAt && typeof createdAt === "object" && "toDate" in createdAt
+            ? (createdAt as { toDate: () => Date }).toDate().toISOString()
+            : now;
+
+      const severity: "critical" | "warning" | "info" =
+        priority === "urgent" ? "critical" : priority === "high" ? "warning" : "info";
+
+      alerts.push({
+        id: `support-${d.id}`,
+        severity,
+        title: `[${issueType}] ${subject}`,
+        source: "Support",
+        timestamp,
+        targetUserId: affectedUserId || undefined,
+        recommendedAction: "View and respond in Support",
+        metadata: { ticketId: d.id, subject, issueType, priority },
+      });
     }
   } catch (_) {}
 
