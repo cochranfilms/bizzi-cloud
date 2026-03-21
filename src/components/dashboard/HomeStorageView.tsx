@@ -760,7 +760,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                     layoutSize="large"
-                    layoutAspectRatio="square"
+                    layoutAspectRatio="video"
                     showCardInfo={true}
                     onDelete={
                       drive && !item.preventDelete

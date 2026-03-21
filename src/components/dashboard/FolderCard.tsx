@@ -56,8 +56,8 @@ interface FolderCardProps {
   onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
   /** Layout: card size (small/medium/large) */
   layoutSize?: CardSize;
-  /** Layout: aspect ratio of the card */
-  layoutAspectRatio?: AspectRatio;
+  /** Layout: aspect ratio of the card (video = 16:9) */
+  layoutAspectRatio?: AspectRatio | "video";
   /** Layout: whether to show metadata (item count) */
   showCardInfo?: boolean;
 }
@@ -69,11 +69,12 @@ const SIZE_CLASSES = {
   large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
 } as const;
 
-const ASPECT_CLASSES = {
+const ASPECT_CLASSES: Record<string, string> = {
   landscape: "aspect-[4/3]",
   square: "aspect-square",
   portrait: "aspect-[3/4]",
-} as const;
+  video: "aspect-video", // 16:9
+};
 
 export default function FolderCard({
   item,
@@ -144,7 +145,7 @@ export default function FolderCard({
 
   const isSystemFolder = item.isSystemFolder === true;
   const sizeClasses = SIZE_CLASSES[layoutSize];
-  const aspectClass = ASPECT_CLASSES[layoutAspectRatio];
+  const aspectClass = ASPECT_CLASSES[layoutAspectRatio ?? "landscape"] ?? "aspect-video";
 
   return (
     <>
@@ -322,6 +323,7 @@ export default function FolderCard({
               ]}
               ariaLabel="Folder actions"
               alignRight
+              triggerOnDark={isSystemFolder}
             />
           )}
         </div>

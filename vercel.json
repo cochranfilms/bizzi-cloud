@@ -23,6 +23,10 @@
       "schedule": "30 5 * * *"
     },
     {
+      "path": "/api/cron/cold-storage-cleanup",
+      "schedule": "45 5 * * *"
+    },
+    {
       "path": "/api/cron/proxy-generation",
       "schedule": "*/5 * * * *"
     }

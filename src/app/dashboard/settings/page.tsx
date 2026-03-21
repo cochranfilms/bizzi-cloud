@@ -32,6 +32,7 @@ import {
   STORAGE_ADDON_LABELS,
   type StorageAddonId,
 } from "@/lib/pricing-data";
+import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -750,6 +751,7 @@ function SubscriptionSection() {
         <CreditCard className="h-5 w-5 text-bizzi-blue" />
         Subscription
       </h2>
+      <ColdStorageAlertBanner />
       {showConfirmationBanner && (
         <div
           className={`mb-4 flex items-start gap-3 rounded-lg border p-4 ${

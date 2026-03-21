@@ -1,0 +1,88 @@
+/**
+ * Cron: Permanently delete cold storage files past their expiration date.
+ * Deletes B2 objects and cold_storage_files documents.
+ *
+ * Schedule: daily (e.g. 5:45 UTC). Requires CRON_SECRET.
+ */
+import { getAdminFirestore } from "@/lib/firebase-admin";
+import {
+  isB2Configured,
+  deleteObjectWithRetry,
+  getVideoThumbnailCacheKey,
+  getProxyObjectKey,
+} from "@/lib/b2";
+import { NextResponse } from "next/server";
+import { Timestamp } from "firebase-admin/firestore";
+
+const CRON_SECRET = process.env.CRON_SECRET;
+const BATCH_SIZE = 100;
+const MAX_PER_RUN = 500;
+
+export async function POST(request: Request) {
+  if (CRON_SECRET) {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+    if (token !== CRON_SECRET) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  const db = getAdminFirestore();
+  const now = Timestamp.now();
+
+  const snap = await db
+    .collection("cold_storage_files")
+    .where("cold_storage_expires_at", "<=", now)
+    .limit(MAX_PER_RUN)
+    .get();
+
+  if (snap.empty) {
+    return NextResponse.json({
+      processed: 0,
+      message: "No cold storage files past expiration",
+    });
+  }
+
+  let deletedCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+    const batch = snap.docs.slice(i, i + BATCH_SIZE);
+    for (const doc of batch) {
+      const data = doc.data();
+      const objectKey = (data.object_key as string) ?? "";
+      const docId = doc.id;
+
+      if (objectKey && isB2Configured()) {
+        try {
+          const refsSnap = await db
+            .collection("backup_files")
+            .where("object_key", "==", objectKey)
+            .limit(1)
+            .get();
+          const coldRefs = await db
+            .collection("cold_storage_files")
+            .where("object_key", "==", objectKey)
+            .get();
+          const otherColdRefs = coldRefs.docs.filter((d) => d.id !== docId);
+          if (refsSnap.empty && otherColdRefs.length === 0) {
+            await deleteObjectWithRetry(objectKey);
+            await deleteObjectWithRetry(getProxyObjectKey(objectKey)).catch(() => {});
+            await deleteObjectWithRetry(getVideoThumbnailCacheKey(objectKey)).catch(() => {});
+          }
+        } catch (err) {
+          console.error("[cold-storage-cleanup] B2 delete failed:", objectKey, err);
+          errorCount++;
+        }
+      }
+      await doc.ref.delete();
+      deletedCount++;
+    }
+  }
+
+  return NextResponse.json({
+    processed: deletedCount,
+    errors: errorCount,
+    message: `Deleted ${deletedCount} cold storage file(s)`,
+  });
+}

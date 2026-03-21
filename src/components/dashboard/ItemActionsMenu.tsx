@@ -16,12 +16,15 @@ interface ItemActionsMenuProps {
   ariaLabel?: string;
   /** Optional: align menu to the right edge of the trigger */
   alignRight?: boolean;
+  /** When true, use light trigger background for visibility on dark cards (e.g. main folders) */
+  triggerOnDark?: boolean;
 }
 
 export default function ItemActionsMenu({
   actions,
   ariaLabel = "Actions",
   alignRight = false,
+  triggerOnDark = false,
 }: ItemActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,12 +48,22 @@ export default function ItemActionsMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="rounded-lg p-2 text-neutral-500 transition-opacity hover:bg-neutral-100 hover:opacity-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+        className={
+          triggerOnDark
+            ? "rounded-lg p-2 bg-white/90 text-neutral-700 transition-opacity hover:bg-white dark:bg-white/95 dark:text-neutral-800 dark:hover:bg-white"
+            : "rounded-lg p-2 text-neutral-500 transition-opacity hover:bg-neutral-100 hover:opacity-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+        }
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-haspopup="true"
       >
-        <MoreVertical className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+        <MoreVertical
+          className={
+            triggerOnDark
+              ? "h-4 w-4 text-neutral-700 dark:text-neutral-800"
+              : "h-4 w-4 text-neutral-500 dark:text-neutral-400"
+          }
+        />
       </button>
       {open && (
         <div

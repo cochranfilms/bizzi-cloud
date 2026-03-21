@@ -4,6 +4,7 @@ import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import { sendSignupLinkEmail, sendSubscriptionWelcomeEmail } from "@/lib/emailjs";
 import { buildSubscriptionWelcomeParamsFromInvoice } from "@/lib/subscription-welcome-params";
+import { hasColdStorage, restoreColdStorageToHot } from "@/lib/cold-storage-restore";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -149,6 +150,17 @@ export async function POST(request: Request) {
         }
       }
 
+      // Restore cold storage to hot if user has cold storage (automated restore on payment)
+      const hadColdStorage = await hasColdStorage({ userId });
+      if (hadColdStorage) {
+        try {
+          const result = await restoreColdStorageToHot({ type: "consumer", userId });
+          console.log("[Stripe webhook] checkout.session.completed: restored cold storage for user", userId, "files:", result.restored);
+        } catch (err) {
+          console.error("[Stripe webhook] Failed to restore cold storage for user", userId, err);
+        }
+      }
+
       await db.collection("profiles").doc(userId).set(
         {
           userId,
@@ -284,7 +296,21 @@ export async function POST(request: Request) {
       }
 
       if (!orgId || !inviteToken) {
-        // Consumer subscription — send subscription welcome email (only on first payment)
+        // Consumer subscription — restore cold storage if applicable, then send welcome email
+        const consumerUserId = subscription.metadata?.userId as string | undefined;
+        if (consumerUserId) {
+          const consumerHadColdStorage = await hasColdStorage({ userId: consumerUserId });
+          if (consumerHadColdStorage) {
+            try {
+              const result = await restoreColdStorageToHot({ type: "consumer", userId: consumerUserId });
+              console.log("[Stripe webhook] invoice.paid: restored consumer cold storage for user", consumerUserId, "files:", result.restored);
+            } catch (err) {
+              console.error("[Stripe webhook] Failed to restore consumer cold storage for user", consumerUserId, err);
+            }
+          }
+        }
+
+        // Send subscription welcome email (only on first payment)
         if (billingReason !== "subscription_create") {
           return NextResponse.json({ received: true });
         }
@@ -327,6 +353,21 @@ export async function POST(request: Request) {
       const orgData = orgSnap.data();
       if (!orgSnap.exists || !orgData) {
         return NextResponse.json({ received: true });
+      }
+
+      // Restore cold storage to hot if org has cold storage (automated restore on payment)
+      const orgHadColdStorage = await hasColdStorage({ orgId });
+      if (orgHadColdStorage) {
+        try {
+          const result = await restoreColdStorageToHot({
+            type: "org",
+            orgId,
+            stripeSubscriptionId: subscriptionId,
+          });
+          console.log("[Stripe webhook] invoice.paid: restored cold storage for org", orgId, "files:", result.restored);
+        } catch (err) {
+          console.error("[Stripe webhook] Failed to restore cold storage for org", orgId, err);
+        }
       }
 
       const orgName = (orgData.name as string) ?? "Organization";

@@ -1,19 +1,15 @@
 /**
- * Cron: Permanently delete organizations past their removal deadline.
- * Runs after the 14-day grace period. Deletes org data, B2 objects, clears profiles.
+ * Cron: Migrate organizations past their removal deadline to cold storage.
+ * Runs after the grace period. Moves files to cold_storage_files (keeps B2 objects).
+ * Soft-deletes org (status: cold_storage) for restore capability.
  *
  * Schedule: daily (e.g. 5:30 UTC). Requires CRON_SECRET.
  */
 import { getAdminFirestore, getAdminStorage } from "@/lib/firebase-admin";
-import {
-  isB2Configured,
-  deleteObjectWithRetry,
-  getVideoThumbnailCacheKey,
-  getProxyObjectKey,
-} from "@/lib/b2";
 import { getStripeInstance } from "@/lib/stripe";
+import { getRetentionDays } from "@/lib/cold-storage-retention";
 import { NextResponse } from "next/server";
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const BATCH_SIZE = 100;
@@ -44,7 +40,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const results: { orgId: string; status: string; error?: string }[] = [];
+  const results: { orgId: string; status: string; error?: string; files?: number }[] = [];
 
   for (const orgDoc of orgsSnap.docs) {
     const orgId = orgDoc.id;
@@ -65,81 +61,106 @@ export async function POST(request: Request) {
         }
       }
 
-      // 2. Get backup_files for this org
-      const filesSnap = await db
-        .collection("backup_files")
+      const orgName = (orgData.name as string) ?? "Organization";
+
+      // 2. Build seat mapping: userId -> { email, role }
+      const seatsSnap = await db
+        .collection("organization_seats")
         .where("organization_id", "==", orgId)
-        .limit(5000) // Process in batches if needed
         .get();
-
-      if (isB2Configured()) {
-        for (const fileDoc of filesSnap.docs) {
-          const data = fileDoc.data();
-          const objectKey = (data?.object_key as string) ?? "";
-          if (!objectKey) {
-            await fileDoc.ref.delete();
-            continue;
-          }
-          const refsSnap = await db
-            .collection("backup_files")
-            .where("object_key", "==", objectKey)
-            .get();
-          const otherRefs = refsSnap.docs.filter((d) => d.id !== fileDoc.id);
-          if (otherRefs.length > 0) continue;
-          try {
-            await deleteObjectWithRetry(objectKey);
-            const proxyKey = getProxyObjectKey(objectKey);
-            const thumbKey = getVideoThumbnailCacheKey(objectKey);
-            await Promise.all([
-              deleteObjectWithRetry(proxyKey).catch(() => {}),
-              deleteObjectWithRetry(thumbKey).catch(() => {}),
-            ]);
-          } catch (err) {
-            console.error("[org-removal-cleanup] B2 delete failed:", objectKey, err);
-          }
-          await fileDoc.ref.delete();
-        }
-      } else {
-        for (const fileDoc of filesSnap.docs) {
-          await fileDoc.ref.delete();
+      const ownerSeat = seatsSnap.docs.find((d) => d.data().role === "admin");
+      const ownerEmail = (ownerSeat?.data()?.email as string)?.trim()?.toLowerCase() ?? "";
+      const userIdToEmail = new Map<string, string>();
+      const userIdToRole = new Map<string, string>();
+      for (const d of seatsSnap.docs) {
+        const data = d.data();
+        const uid = (data.user_id as string)?.trim();
+        const email = (data.email as string)?.trim()?.toLowerCase();
+        const role = (data.role as string) ?? "member";
+        if (uid && email) {
+          userIdToEmail.set(uid, email);
+          userIdToRole.set(uid, role);
         }
       }
 
-      // 3. Delete remaining backup_files (if batch was exhausted, run again)
-      let filesRemaining = true;
-      while (filesRemaining) {
-        const more = await db
-          .collection("backup_files")
-          .where("organization_id", "==", orgId)
-          .limit(BATCH_SIZE)
-          .get();
-        if (more.empty) {
-          filesRemaining = false;
-          break;
-        }
-        for (const d of more.docs) {
-          const objectKey = (d.data()?.object_key as string) ?? "";
-          if (objectKey && isB2Configured()) {
-            try {
-              await deleteObjectWithRetry(objectKey);
-              await deleteObjectWithRetry(getProxyObjectKey(objectKey)).catch(() => {});
-              await deleteObjectWithRetry(getVideoThumbnailCacheKey(objectKey)).catch(() => {});
-            } catch {
-              // Continue
-            }
-          }
-          await d.ref.delete();
-        }
-      }
-
-      // 4. Get linked_drives for org
+      // 3. Build drive mapping: driveId -> name
       const drivesSnap = await db
         .collection("linked_drives")
         .where("organization_id", "==", orgId)
         .get();
-      const driveIds = drivesSnap.docs.map((d) => d.id);
+      const driveIdToName = new Map<string, string>();
+      for (const d of drivesSnap.docs) {
+        driveIdToName.set(d.id, (d.data().name as string) ?? "Drive");
+      }
 
-      // 5. Delete backup_snapshots for those drives
+      // 4. Migrate backup_files to cold_storage_files (do NOT delete B2 objects)
+      const retentionDays = getRetentionDays("enterprise", "org_removal");
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + retentionDays);
+
+      let filesRemaining = true;
+      let migratedCount = 0;
+      while (filesRemaining) {
+        const filesSnap = await db
+          .collection("backup_files")
+          .where("organization_id", "==", orgId)
+          .limit(BATCH_SIZE)
+          .get();
+
+        if (filesSnap.empty) {
+          filesRemaining = false;
+          break;
+        }
+
+        const batch = db.batch();
+        for (const fileDoc of filesSnap.docs) {
+          const data = fileDoc.data();
+          const objectKey = (data.object_key as string) ?? "";
+          if (!objectKey) {
+            batch.delete(fileDoc.ref);
+            continue;
+          }
+
+          const fileUserId = (data.userId ?? data.user_id) as string;
+          const email = userIdToEmail.get(fileUserId) ?? "";
+          const role = userIdToRole.get(fileUserId) ?? "member";
+          const driveId = data.linked_drive_id as string;
+          const driveName = driveIdToName.get(driveId) ?? "Drive";
+
+          const isOwner = role === "admin" || email === ownerEmail;
+          const coldStorageFolder = isOwner
+            ? ownerEmail || email
+            : `${ownerEmail}/${email}`.replace(/\/+$/, "");
+
+          const coldRef = db.collection("cold_storage_files").doc();
+          batch.set(coldRef, {
+            org_id: orgId,
+            org_name: orgName,
+            cold_storage_folder: coldStorageFolder || email,
+            owner_email: ownerEmail || email,
+            member_email: isOwner ? null : email,
+            object_key: objectKey,
+            relative_path: (data.relative_path as string) ?? "",
+            drive_name: driveName,
+            size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : 0,
+            user_id: fileUserId,
+            linked_drive_id: driveId,
+            cold_storage_started_at: Timestamp.now(),
+            cold_storage_expires_at: Timestamp.fromDate(expiresAt),
+            plan_tier: "enterprise",
+            source_type: "org_removal",
+            content_type: data.content_type ?? null,
+            modified_at: data.modified_at ?? null,
+            created_at: data.created_at ?? new Date().toISOString(),
+          });
+          batch.delete(fileDoc.ref);
+          migratedCount++;
+        }
+        await batch.commit();
+      }
+
+      // 5. Delete backup_snapshots for org drives
+      const driveIds = drivesSnap.docs.map((d) => d.id);
       for (const driveId of driveIds) {
         const snapSnap = await db
           .collection("backup_snapshots")
@@ -168,10 +189,6 @@ export async function POST(request: Request) {
       }
 
       // 8. Delete organization_seats
-      const seatsSnap = await db
-        .collection("organization_seats")
-        .where("organization_id", "==", orgId)
-        .get();
       for (const s of seatsSnap.docs) {
         await s.ref.delete();
       }
@@ -197,10 +214,17 @@ export async function POST(request: Request) {
         console.error("[org-removal-cleanup] Storage delete failed for", orgId, err);
       }
 
-      // 11. Delete org document
-      await orgDoc.ref.delete();
+      // 11. Soft-delete org: set status cold_storage, keep stripe_customer_id for restore
+      await orgDoc.ref.update({
+        status: "cold_storage",
+        stripe_subscription_id: FieldValue.delete(),
+        removal_completed_at: Timestamp.now(),
+        removal_requested_at: FieldValue.delete(),
+        removal_deadline: FieldValue.delete(),
+        removal_requested_by: FieldValue.delete(),
+      });
 
-      results.push({ orgId, status: "deleted" });
+      results.push({ orgId, status: "migrated", files: migratedCount });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[org-removal-cleanup] Failed for org", orgId, err);

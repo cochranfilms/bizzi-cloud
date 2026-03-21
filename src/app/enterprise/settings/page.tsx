@@ -10,6 +10,7 @@ import Image from "next/image";
 import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive, CreditCard, Zap } from "lucide-react";
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
+import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
@@ -298,6 +299,7 @@ export default function EnterpriseSettingsPage() {
               <CreditCard className="h-5 w-5 text-[var(--enterprise-primary)]" />
               Subscription
             </h2>
+            <ColdStorageAlertBanner />
             {org.storage_quota_bytes > 0 && (
               <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-800/50">
                 <p className="text-sm font-medium text-neutral-900 dark:text-white">
