@@ -26,14 +26,14 @@ export async function verifyBackupFileAccess(
 
   // Proxy key: user has access if they own an original whose proxy matches
   if (objectKey.startsWith("proxies/") && objectKey.endsWith(".mp4")) {
+    const BATCH = 500;
     let lastDoc: QueryDocumentSnapshot | null = null;
     for (let i = 0; i < 20; i++) {
-      // Paginate up to ~10k files (20 * 500)
       let q = db
         .collection("backup_files")
         .where("userId", "==", uid)
         .where("deleted_at", "==", null)
-        .limit(2000)
+        .limit(BATCH)
         .orderBy(FieldPath.documentId());
       if (lastDoc) q = q.startAfter(lastDoc);
       const snap = await q.get();
@@ -41,7 +41,7 @@ export async function verifyBackupFileAccess(
         const orig = doc.data().object_key as string | undefined;
         if (orig && getProxyObjectKey(orig) === objectKey) return true;
       }
-      if (snap.docs.length < 500) break;
+      if (snap.docs.length < BATCH) break;
       lastDoc = snap.docs[snap.docs.length - 1];
     }
   }

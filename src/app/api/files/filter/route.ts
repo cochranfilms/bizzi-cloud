@@ -9,6 +9,7 @@ import type {
 } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -57,7 +58,7 @@ function parseFilters(searchParams: URLSearchParams) {
   const cursor = searchParams.get("cursor") ?? undefined;
   const pageSize = Math.min(
     parseInt(searchParams.get("page_size") ?? String(PAGE_SIZE), 10) || PAGE_SIZE,
-    100
+    50
   );
   return {
     driveId,
@@ -344,6 +345,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
+  const rl = checkRateLimit(`files-filter:${uid}`, 120, 60_000); // 120 req/min per user
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests", retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
+  }
+
   try {
   const url = new URL(request.url);
   const db = getAdminFirestore();
@@ -357,6 +366,7 @@ export async function GET(request: Request) {
     const sharesSnap = await db
       .collection("folder_shares")
       .where("owner_id", "==", uid)
+      .limit(500)
       .get();
     const sharedFileIds = new Set<string>();
     for (const d of sharesSnap.docs) {
@@ -369,12 +379,28 @@ export async function GET(request: Request) {
   }
 
   if (filters.commented) {
-    const commentsSnap = await db.collection("file_comments").limit(2000).get();
+    // Scope to user's files only — avoid loading all comments globally (fails at scale)
+    const userFileIdsSnap = await db
+      .collection("backup_files")
+      .where("userId", "==", uid)
+      .where("deleted_at", "==", null)
+      .limit(1000)
+      .get();
+    const userFileIds = userFileIdsSnap.docs.map((d) => d.id);
     const commentedFileIds = new Set<string>();
-    commentsSnap.docs.forEach((d) => {
-      const fileId = d.data().fileId as string | undefined;
-      if (fileId) commentedFileIds.add(fileId);
-    });
+    const IN_BATCH = 30; // Firestore "in" limit
+    for (let i = 0; i < userFileIds.length; i += IN_BATCH) {
+      const batch = userFileIds.slice(i, i + IN_BATCH);
+      const commentsSnap = await db
+        .collection("file_comments")
+        .where("fileId", "in", batch)
+        .limit(100)
+        .get();
+      commentsSnap.docs.forEach((d) => {
+        const fileId = d.data().fileId as string | undefined;
+        if (fileId) commentedFileIds.add(fileId);
+      });
+    }
     filtersWithIds.commentedFileIds = commentedFileIds;
   }
 

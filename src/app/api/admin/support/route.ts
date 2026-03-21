@@ -12,8 +12,8 @@ export async function GET(request: Request) {
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(request.url);
-  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "25", 10)));
+  const page = Math.min(50, Math.max(1, parseInt(searchParams.get("page") ?? "1", 10)));
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "25", 10)));
   const status = searchParams.get("status") ?? "";
   const priority = searchParams.get("priority") ?? "";
 
@@ -44,9 +44,10 @@ export async function GET(request: Request) {
     };
   });
 
+  // Approximate breakdown (capped for scale) — use separate count queries for exact at scale
   const breakdown: Record<string, number> = {};
-  const allSnap = await db.collection("support_tickets").get();
-  for (const d of allSnap.docs) {
+  const breakdownSnap = await db.collection("support_tickets").limit(2000).get();
+  for (const d of breakdownSnap.docs) {
     const type = (d.data().issueType ?? "other") as string;
     breakdown[type] = (breakdown[type] ?? 0) + 1;
   }

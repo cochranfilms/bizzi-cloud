@@ -1,6 +1,8 @@
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
 import { slugify, ensureUniqueSlug } from "@/lib/gallery-slug";
+import { sendGalleryInviteEmailsToInvitees } from "@/lib/emailjs";
+import { createGalleryInviteNotifications } from "@/lib/notification-service";
 import {
   DEFAULT_BRANDING,
   DEFAULT_DOWNLOAD_SETTINGS,
@@ -220,6 +222,46 @@ export async function POST(request: Request) {
   const galleryData = { ...baseGalleryData, ...videoSettings };
 
   const ref = await db.collection("galleries").add(galleryData);
+
+  // Send invite emails when access is invite_only and there are invited emails
+  const invitedList = Array.isArray(invited_emails)
+    ? invited_emails
+        .filter((e): e is string => typeof e === "string")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+  if (
+    access_mode === "invite_only" &&
+    invitedList.length > 0
+  ) {
+    let photographerDisplayName = "A photographer";
+    try {
+      const authUser = await getAdminAuth().getUser(uid);
+      photographerDisplayName =
+        authUser.displayName || authUser.email || photographerDisplayName;
+    } catch {
+      // keep fallback
+    }
+    sendGalleryInviteEmailsToInvitees({
+      invitedEmails: invitedList,
+      photographerUserId: uid,
+      photographerDisplayName,
+      galleryTitle: title.trim(),
+      galleryId: ref.id,
+      eventDate: event_date ?? null,
+    }).catch((err) => {
+      console.error("[galleries] Gallery invite email error:", err);
+    });
+    createGalleryInviteNotifications({
+      photographerUserId: uid,
+      photographerDisplayName,
+      galleryId: ref.id,
+      galleryTitle: title.trim(),
+      invitedEmails: invitedList,
+    }).catch((err) => {
+      console.error("[galleries] Gallery invite notification error:", err);
+    });
+  }
 
   return NextResponse.json({
     id: ref.id,

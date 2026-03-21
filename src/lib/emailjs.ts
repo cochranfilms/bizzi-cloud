@@ -1,10 +1,11 @@
 /**
- * EmailJS server-side helpers for enterprise invite flow, file sharing, and transfers.
+ * EmailJS server-side helpers for enterprise invite flow, file sharing, transfers, and gallery invites.
  * Enterprise: EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID_INVOICE, EMAILJS_TEMPLATE_ID_SIGNUP,
  *   EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
  * Share emails: EMAILJS_TEMPLATE_ID_SHARE (optional; when set, share notifications send email)
  * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
  * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
+ * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -88,6 +89,26 @@ function getSubscriptionWelcomeConfig(): {
   return {
     serviceId,
     templateSubscriptionWelcome,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getGalleryInviteConfig(): {
+  serviceId: string;
+  templateGalleryInvite: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateGalleryInvite = process.env.EMAILJS_TEMPLATE_ID_GALLERY_INVITE;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateGalleryInvite || !publicKey) return null;
+  return {
+    serviceId,
+    templateGalleryInvite,
     publicKey,
     privateKey: privateKey ?? undefined,
   };
@@ -431,6 +452,98 @@ export async function sendSubscriptionWelcomeEmail(
       privateKey: config.privateKey,
     }
   );
+}
+
+export interface GalleryInviteEmailParams {
+  to_email: string;
+  sender_name: string;
+  sender_photo_url: string;
+  gallery_title: string;
+  gallery_url: string;
+  /** Formatted event date (e.g. "October 15, 2024") or empty string */
+  event_date_line: string;
+}
+
+/**
+ * Send a single gallery invite email.
+ * Template params: to_email, sender_name, sender_photo_url, gallery_title, gallery_url, event_date_line, logo_url
+ */
+export async function sendGalleryInviteEmail(
+  params: GalleryInviteEmailParams
+): Promise<void> {
+  const config = getGalleryInviteConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateGalleryInvite,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+export interface SendGalleryInviteEmailsParams {
+  invitedEmails: string[];
+  photographerUserId: string;
+  photographerDisplayName: string;
+  galleryTitle: string;
+  galleryId: string;
+  eventDate?: string | null;
+}
+
+/**
+ * Send gallery invite emails to all invited recipients when a photographer creates an invite-only gallery.
+ * Requires EMAILJS_TEMPLATE_ID_GALLERY_INVITE. If not set, does nothing (no-op).
+ * Runs asynchronously; errors are logged but do not throw.
+ */
+export async function sendGalleryInviteEmailsToInvitees(
+  params: SendGalleryInviteEmailsParams
+): Promise<void> {
+  if (!getGalleryInviteConfig() || params.invitedEmails.length === 0) return;
+
+  let senderPhotoUrl: string;
+  try {
+    const authUser = await getAdminAuth().getUser(params.photographerUserId);
+    senderPhotoUrl =
+      (authUser.photoURL as string) ??
+      getAvatarPlaceholder(params.photographerDisplayName);
+  } catch {
+    senderPhotoUrl = getAvatarPlaceholder(params.photographerDisplayName);
+  }
+
+  const baseUrl = getShareBaseUrl();
+  const galleryUrl = `${baseUrl}/g/${params.galleryId}`;
+  const eventDateLine = params.eventDate
+    ? new Date(params.eventDate).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "";
+
+  const sendParams: Omit<GalleryInviteEmailParams, "to_email"> = {
+    sender_name: params.photographerDisplayName,
+    sender_photo_url: senderPhotoUrl,
+    gallery_title: params.galleryTitle,
+    gallery_url: galleryUrl,
+    event_date_line: eventDateLine,
+  };
+
+  await Promise.allSettled(
+    params.invitedEmails.map((toEmail) =>
+      sendGalleryInviteEmail({ ...sendParams, to_email: toEmail })
+    )
+  ).catch((err) => {
+    console.error("[EmailJS] Gallery invite email batch error:", err);
+  });
 }
 
 function escapeHtml(s: string): string {

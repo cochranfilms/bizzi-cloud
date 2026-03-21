@@ -2,6 +2,7 @@ import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -44,6 +45,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "object_key is required" },
       { status: 400 }
+    );
+  }
+
+  const rl = checkRateLimit(`preview-url:${uid}`, 300, 60_000); // 300 req/min per user
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429 }
     );
   }
 

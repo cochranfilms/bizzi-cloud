@@ -9,7 +9,8 @@ export type NotificationType =
   | "file_hearted"
   | "file_shared"
   | "file_reply_created"
-  | "transfer_sent";
+  | "transfer_sent"
+  | "gallery_invite";
 
 export interface Notification {
   id: string;
@@ -30,6 +31,8 @@ export interface Notification {
     parentCommentId?: string;
     transferSlug?: string;
     transferName?: string;
+    galleryId?: string;
+    galleryTitle?: string;
   } | null;
 }
 

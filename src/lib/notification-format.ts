@@ -33,6 +33,10 @@ export function formatNotificationMessage(
         return `${actor} sent you a transfer with ${fileCount} files`;
       }
       return `${actor} sent you a transfer`;
+    case "gallery_invite": {
+      const galleryTitle = metadata?.galleryTitle ?? "a gallery";
+      return `${actor} invited you to view ${galleryTitle}`;
+    }
     default:
       return "New activity";
   }

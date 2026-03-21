@@ -17,6 +17,8 @@ export interface CreateNotificationInput {
     parentCommentId?: string;
     transferSlug?: string;
     transferName?: string;
+    galleryId?: string;
+    galleryTitle?: string;
   };
 }
 
@@ -147,6 +149,60 @@ export async function createShareNotifications(params: {
     });
   }
   await batch.commit();
+}
+
+/**
+ * Create in-app notifications when a photographer creates an invite-only gallery.
+ * For each invited email that matches a Firebase user, creates a notification.
+ * Invitees without accounts receive the email only (no in-app notification).
+ */
+export async function createGalleryInviteNotifications(params: {
+  photographerUserId: string;
+  photographerDisplayName: string;
+  galleryId: string;
+  galleryTitle: string;
+  invitedEmails: string[];
+}): Promise<void> {
+  const {
+    photographerUserId,
+    photographerDisplayName,
+    galleryId,
+    galleryTitle,
+    invitedEmails,
+  } = params;
+
+  const emailLower = invitedEmails.map((e) => e?.toLowerCase?.() ?? "").filter(Boolean);
+  if (emailLower.length === 0) return;
+
+  const recipientUids: string[] = [];
+  const auth = getAdminAuth();
+  for (const inviteEmail of emailLower) {
+    try {
+      const userRecord = await auth.getUserByEmail(inviteEmail);
+      if (userRecord?.uid && userRecord.uid !== photographerUserId) {
+        recipientUids.push(userRecord.uid);
+      }
+    } catch {
+      // User not found by email – no in-app notification, email only
+    }
+  }
+  if (recipientUids.length === 0) return;
+
+  for (const uid of recipientUids) {
+    await createNotification({
+      recipientUserId: uid,
+      actorUserId: photographerUserId,
+      type: "gallery_invite",
+      fileId: null,
+      commentId: null,
+      shareId: null,
+      metadata: {
+        actorDisplayName: photographerDisplayName,
+        galleryId,
+        galleryTitle,
+      },
+    });
+  }
 }
 
 /**

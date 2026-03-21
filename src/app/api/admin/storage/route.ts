@@ -28,8 +28,8 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const authService = getAdminAuth();
 
-  const profilesSnap = await db.collection("profiles").get();
-  const orgsSnap = await db.collection("organizations").get();
+  const profilesSnap = await db.collection("profiles").limit(10000).get();
+  const orgsSnap = await db.collection("organizations").limit(1000).get();
 
   let totalBytes = 0;
   const profileStorage: Array<{ id: string; bytes: number }> = [];
