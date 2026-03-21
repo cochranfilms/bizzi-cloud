@@ -257,15 +257,18 @@ export default function FileGrid() {
     () => new Map(galleries.map((g) => [g.id, g.title])),
     [galleries]
   );
-  const activeFiltersWithLabels = useMemo(
-    () =>
-      activeFilters.map((af) =>
-        af.id === "gallery" && typeof af.value === "string"
-          ? { ...af, label: galleryTitleById.get(af.value) ?? af.label }
-          : af
-      ),
-    [activeFilters, galleryTitleById]
-  );
+  const activeFiltersWithLabels = useMemo(() => {
+    let list = activeFilters.map((af) =>
+      af.id === "gallery" && typeof af.value === "string"
+        ? { ...af, label: galleryTitleById.get(af.value) ?? af.label }
+        : af
+    );
+    // Don't show drive filter chip when inside a folder - user already knows where they are
+    if (currentDrive) {
+      list = list.filter((af) => af.id !== "drive");
+    }
+    return list;
+  }, [activeFilters, galleryTitleById, currentDrive]);
 
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
     d.name === "Storage" || d.isCreatorRaw === true || d.name === "Gallery Media";

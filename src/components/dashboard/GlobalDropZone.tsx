@@ -58,11 +58,16 @@ export default function GlobalDropZone() {
           pathname === "/enterprise/files" ||
           pathname === "/desktop/app/files";
 
-        const driveId =
-          currentDriveId &&
-          linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
+        // Home: always Storage drive root. All files: current drive + folder (or Storage if none).
+        const storageDrive = linkedDrives.find((d) => d.name === "Storage" || d.name === "Uploads");
+        const effectiveDriveId =
+          storageDrive?.id ?? (await getOrCreateStorageDrive()).id;
+        const driveId = isFilesView
+          ? currentDriveId &&
+            linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
             ? currentDriveId
-            : (await getOrCreateStorageDrive()).id;
+            : effectiveDriveId
+          : effectiveDriveId;
 
         const pathPrefix = isFilesView ? (currentDrivePath ?? "") : "";
         const workspaceId =

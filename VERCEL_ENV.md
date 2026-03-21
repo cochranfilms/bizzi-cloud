@@ -34,7 +34,9 @@ After adding B2 env vars, run once to allow your app origin to upload to B2:
 npm run b2:cors
 ```
 
-Uses `.env.local` or env vars. Edit `scripts/set-b2-cors.mjs` to add custom domains (e.g. preview URLs).
+Requires `B2_ENDPOINT` (e.g. `https://s3.us-east-005.backblazeb2.com`). Uses `.env.local` or env vars. Edit `scripts/set-b2-cors.mjs` to add custom domains (e.g. preview URLs).
+
+**If uploads fail with "No Access-Control-Allow-Origin" CORS error:** Re-run `npm run b2:cors` with B2 env vars set. The script configures both B2 Native and S3-compatible CORS.
 
 ## Required for API auth (Backblaze uploads)
 

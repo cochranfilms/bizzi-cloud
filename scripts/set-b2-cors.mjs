@@ -107,7 +107,7 @@ async function main() {
     throw new Error(`b2_update_bucket failed: ${updateRes.status} ${err}`);
   }
 
-  console.log("CORS configured successfully on bucket:", B2_BUCKET_NAME);
+  console.log("CORS configured on bucket:", B2_BUCKET_NAME);
   console.log("Allowed origins:", ALLOWED_ORIGINS.join(", "));
   console.log("For preview deployments, add https://<preview>.vercel.app to the script and run again.");
 }
