@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Organization Removal Notice – BizziCloud</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .alert-box { background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 24px 0; }
+    .alert-box p { margin: 4px 0; }
+    .steps { margin: 16px 0; padding-left: 24px; }
+    .steps li { margin: 8px 0; }
+    .cta { display: inline-block; background: #0ea5e9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+    .deadline { font-weight: 700; color: #b45309; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="BizziCloud" />
+  </div>
+  <h1>Organization Removal Notice – {{org_name}}</h1>
+  <p>Hello,</p>
+  <p>Your organization <strong>{{org_name}}</strong> has been scheduled for removal from BizziCloud. You and your team have <strong>{{grace_days}} days</strong> to save any files and data you need.</p>
+  <div class="alert-box">
+    <p><strong>Deadline: <span class="deadline">{{deadline_date}}</span></strong></p>
+    <p>After this date, the organization and all associated data (files, backups, storage) will be permanently deleted and cannot be recovered.</p>
+  </div>
+  <p><strong>What you should do now:</strong></p>
+  <ol class="steps">
+    <li>Log in to BizziCloud and download or transfer any files you need to keep.</li>
+    <li>Notify your team members so they can save their work.</li>
+    <li>Export any galleries, transfers, or shared content you want to preserve.</li>
+    <li>If you believe this was done in error, contact our support team immediately.</li>
+  </ol>
+  <p>Your subscription has been set to cancel at the end of the current billing period. You and all seat members will retain full access until <strong>{{deadline_date}}</strong>.</p>
+  <p>
+    <a href="{{support_url}}" class="cta">Contact Support</a>
+  </p>
+  <p>If you have questions or need help with data export, please reach out before the deadline.</p>
+  <div class="footer">
+    <p>BizziCloud · Enterprise Storage &amp; Collaboration</p>
+  </div>
+</body>
+</html>

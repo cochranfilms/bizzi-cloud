@@ -18,7 +18,7 @@ function InviteJoinContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token")?.trim();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,6 +95,15 @@ function InviteJoinContent() {
     );
   }
 
+  // Wait for auth to be ready before showing user-specific UI to avoid showing wrong branch
+  if (invite && authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4">
+        <p className="text-neutral-500 dark:text-neutral-400">Checking your account...</p>
+      </div>
+    );
+  }
+
   if (error && !invite) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4">
@@ -113,9 +122,9 @@ function InviteJoinContent() {
 
   if (!invite) return null;
 
-  const userEmail = user?.email?.toLowerCase() ?? "";
-  const inviteEmail = invite.email?.toLowerCase() ?? "";
-  const emailMatches = userEmail === inviteEmail;
+  const userEmail = user?.email?.trim().toLowerCase() ?? "";
+  const inviteEmail = (invite.email ?? "").trim().toLowerCase();
+  const emailMatches = userEmail.length > 0 && inviteEmail.length > 0 && userEmail === inviteEmail;
 
   const signUpUrl = `/invite/signup?token=${encodeURIComponent(token ?? "")}&email=${encodeURIComponent(invite.email)}`;
   const signInUrl = `/login?redirect=${encodeURIComponent(`/invite/join?token=${token}`)}`;

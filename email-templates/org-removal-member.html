@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Organization Removal Alert – BizziCloud</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .alert-box { background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 24px 0; }
+    .alert-box p { margin: 4px 0; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="BizziCloud" />
+  </div>
+  <h1>{{org_name}} – Removal Notice</h1>
+  <p>Hello,</p>
+  <p>The organization <strong>{{org_name}}</strong> that you belong to is being removed from BizziCloud. You have <strong>{{grace_days}} days</strong> to save any files you need.</p>
+  <div class="alert-box">
+    <p><strong>Deadline: {{deadline_date}}</strong></p>
+    <p>After this date, all organization data will be permanently deleted.</p>
+  </div>
+  <p>Please log in and download or transfer any files you want to keep before the deadline. Contact your organization admin or our support team if you have questions.</p>
+  <p><a href="{{support_url}}">Contact Support</a></p>
+  <div class="footer">
+    <p>BizziCloud · Enterprise Storage &amp; Collaboration</p>
+  </div>
+</body>
+</html>

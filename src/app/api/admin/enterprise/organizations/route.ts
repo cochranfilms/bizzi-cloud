@@ -38,6 +38,7 @@ export async function GET(request: Request) {
     const adminSeat = seats.find((s) => s.role === "admin");
     const ownerEmail = adminSeat?.email ?? null;
 
+    const removalDeadline = data.removal_deadline?.toDate?.();
     return {
       id: orgId,
       name: data.name ?? "Unnamed",
@@ -51,6 +52,8 @@ export async function GET(request: Request) {
       created_at: data.created_at?.toDate?.()?.toISOString() ?? null,
       stripe_subscription_id: data.stripe_subscription_id ?? null,
       stripe_invoice_id: data.stripe_invoice_id ?? null,
+      removal_requested_at: data.removal_requested_at?.toDate?.()?.toISOString() ?? null,
+      removal_deadline: removalDeadline?.toISOString() ?? null,
     };
   });
 

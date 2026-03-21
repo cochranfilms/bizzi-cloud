@@ -134,6 +134,29 @@ function getSupportTicketConfig(): {
   };
 }
 
+function getOrgRemovalConfig(): {
+  serviceId: string;
+  templateOwner: string;
+  templateMember: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateOwner = process.env.EMAILJS_TEMPLATE_ID_ORG_REMOVAL_OWNER;
+  const templateMember = process.env.EMAILJS_TEMPLATE_ID_ORG_REMOVAL_MEMBER;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateOwner || !templateMember || !publicKey) return null;
+  return {
+    serviceId,
+    templateOwner,
+    templateMember,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
 /** Default logo URL for emails (Bizzi Byte logo) */
 export function getEmailLogoUrl(): string {
   const base =
@@ -211,6 +234,68 @@ export async function sendSignupLinkEmail(
   await emailjs.send(
     config.serviceId,
     config.templateSignup,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+export interface OrgRemovalOwnerEmailParams {
+  to_email: string;
+  org_name: string;
+  deadline_date: string;
+  support_url: string;
+  grace_days: string;
+}
+
+export interface OrgRemovalMemberEmailParams {
+  to_email: string;
+  org_name: string;
+  deadline_date: string;
+  support_url: string;
+  grace_days: string;
+}
+
+/** Send org removal notice to organization owner (detailed). */
+export async function sendOrgRemovalOwnerEmail(
+  params: OrgRemovalOwnerEmailParams
+): Promise<void> {
+  const config = getOrgRemovalConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateOwner,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+/** Send org removal notice to seat members (short alert). */
+export async function sendOrgRemovalMemberEmail(
+  params: OrgRemovalMemberEmailParams
+): Promise<void> {
+  const config = getOrgRemovalConfig();
+  if (!config) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateMember,
     templateParams,
     {
       publicKey: config.publicKey,

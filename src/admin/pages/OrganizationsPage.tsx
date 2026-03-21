@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
-import { Building2, Loader2, Users, Send } from "lucide-react";
+import { Building2, Loader2, Users, Send, Trash2 } from "lucide-react";
 const MIN_STORAGE_TB = 20;
 import { powerUpAddons } from "@/lib/pricing-data";
 
@@ -20,6 +20,8 @@ export interface OrgListItem {
   created_at: string | null;
   stripe_subscription_id: string | null;
   stripe_invoice_id: string | null;
+  removal_requested_at: string | null;
+  removal_deadline: string | null;
 }
 
 export default function OrganizationsPage() {
@@ -43,6 +45,9 @@ export default function OrganizationsPage() {
   } | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [removeModalOrg, setRemoveModalOrg] = useState<OrgListItem | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +132,27 @@ export default function OrganizationsPage() {
       setResendError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       setResendingId(null);
+    }
+  };
+
+  const handleRemoveOrganization = async () => {
+    if (!removeModalOrg) return;
+    setRemoveError(null);
+    setRemovingId(removeModalOrg.id);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/admin/enterprise/organizations/${removeModalOrg.id}/remove`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove organization");
+      setRemoveModalOrg(null);
+      fetchOrganizations();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -249,21 +275,42 @@ export default function OrganizationsPage() {
                         : "—"}
                     </td>
                     <td className="px-6 py-3">
-                      {org.seats_pending > 0 && (org.stripe_subscription_id || org.stripe_invoice_id) && (
-                        <button
-                          type="button"
-                          onClick={() => handleResendSignupLink(org.id)}
-                          disabled={resendingId === org.id}
-                          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                        >
-                          {resendingId === org.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Send className="h-3.5 w-3.5" />
-                          )}
-                          Resend sign-up link
-                        </button>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {org.removal_requested_at ? (
+                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                            Removal pending (deadline: {org.removal_deadline ? new Date(org.removal_deadline).toLocaleDateString() : "—"})
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRemoveModalOrg(org)}
+                            disabled={removingId === org.id}
+                            className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                          >
+                            {removingId === org.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            Remove organization
+                          </button>
+                        )}
+                        {org.seats_pending > 0 && (org.stripe_subscription_id || org.stripe_invoice_id) && !org.removal_requested_at && (
+                          <button
+                            type="button"
+                            onClick={() => handleResendSignupLink(org.id)}
+                            disabled={resendingId === org.id}
+                            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                          >
+                            {resendingId === org.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Send className="h-3.5 w-3.5" />
+                            )}
+                            Resend sign-up link
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -464,6 +511,47 @@ export default function OrganizationsPage() {
       {resendError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30">
           <p className="text-sm text-red-800 dark:text-red-200">{resendError}</p>
+        </div>
+      )}
+
+      {removeError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30">
+          <p className="text-sm text-red-800 dark:text-red-200">{removeError}</p>
+        </div>
+      )}
+
+      {removeModalOrg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !removingId && setRemoveModalOrg(null)}>
+          <div
+            className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              Remove {removeModalOrg.name}?
+            </h3>
+            <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+              All members will receive an email. They have 14 days to save their files. After 14 days,
+              the organization and its data will be permanently deleted.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveModalOrg(null)}
+                disabled={!!removingId}
+                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveOrganization}
+                disabled={!!removingId}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              >
+                {removingId ? "Removing…" : "Remove organization"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

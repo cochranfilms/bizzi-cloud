@@ -116,10 +116,33 @@ export async function getOrCreateStripePrice(
 
 /**
  * Get or create Stripe price for an addon. Caches in Firestore.
+ * Validates cached/env price amounts match ADDON_PRICING; recreates if outdated.
  */
 export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<string> {
+  const pricing = ADDON_PRICING[addonId];
+  if (!pricing) throw new Error(`Unknown addon: ${addonId}`);
+
+  const expectedCents = pricing.monthly;
+  const stripe = getStripeInstance();
+
+  /** Validate a price ID: returns true if amount matches, false if stale or invalid */
+  async function isPriceValid(priceId: string): Promise<boolean> {
+    try {
+      const price = await stripe.prices.retrieve(priceId);
+      return price.unit_amount === expectedCents && price.currency === "usd";
+    } catch {
+      return false;
+    }
+  }
+
+  // Check env var first; validate amount and recreate if stale
   const envPrice = getEnvAddonFallback(addonId);
-  if (envPrice) return envPrice;
+  if (envPrice) {
+    if (await isPriceValid(envPrice)) return envPrice;
+    console.warn(
+      `[Stripe] STRIPE_PRICE_${addonId.toUpperCase()} has wrong amount; creating new price at $${(expectedCents / 100).toFixed(2)}`
+    );
+  }
 
   const docId = `addon_${addonId}`;
   const db = getAdminFirestore();
@@ -128,13 +151,8 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
 
   if (snap.exists) {
     const priceId = snap.data()?.price_id as string | undefined;
-    if (priceId) return priceId;
+    if (priceId && (await isPriceValid(priceId))) return priceId;
   }
-
-  const pricing = ADDON_PRICING[addonId];
-  if (!pricing) throw new Error(`Unknown addon: ${addonId}`);
-
-  const stripe = getStripeInstance();
 
   try {
     const product = await stripe.products.create({
@@ -144,7 +162,7 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
 
     const price = await stripe.prices.create({
       product: product.id,
-      unit_amount: pricing.monthly,
+      unit_amount: expectedCents,
       currency: "usd",
       recurring: { interval: "month" },
       metadata: { addon_id: addonId },
@@ -154,6 +172,7 @@ export async function getOrCreateStripeAddonPrice(addonId: AddonId): Promise<str
       price_id: price.id,
       product_id: product.id,
       addon_id: addonId,
+      unit_amount_cents: expectedCents,
       updated_at: new Date().toISOString(),
     });
 
