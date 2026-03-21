@@ -291,7 +291,7 @@ export default function ShareModal({
         setLoading(false);
       }
     }
-  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken, shareName]);
+  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken, shareName, linkedDriveId, referencedFileIds]);
 
   const removeEmail = useCallback(
     async (email: string) => {

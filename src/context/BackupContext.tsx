@@ -365,6 +365,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     quotaBytes: number | null;
     isOrganizationUser: boolean;
   } | null>(null);
+  const ensureDrivesAttemptedRef = useRef(false);
   const fileUploadAbortRef = useRef<Map<string, AbortController>>(new Map());
   const fileUploadMultipartRef = useRef<
     Map<string, { objectKey: string; uploadId: string }>
@@ -422,6 +423,60 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         });
       }
       setLinkedDrives(drives);
+
+      // Enterprise users may have joined before we created drives on accept-invite.
+      // Backfill default drives (Storage, RAW, Gallery Media) when none exist.
+      if (
+        isEnterpriseContext &&
+        org?.id &&
+        drives.length === 0 &&
+        !ensureDrivesAttemptedRef.current
+      ) {
+        ensureDrivesAttemptedRef.current = true;
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch("/api/enterprise/ensure-drives", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            // Refetch to pick up newly created drives
+            const q2 = query(
+              collection(db, "linked_drives"),
+              where("userId", "==", user.uid),
+              orderBy("createdAt", "desc")
+            );
+            const snap2 = await getDocs(q2);
+            const drives2: LinkedDrive[] = [];
+            for (const d of snap2.docs) {
+              const data = d.data();
+              if (data.deleted_at) continue;
+              const oid = data.organization_id ?? null;
+              if (oid !== org.id) continue;
+              let name = data.name as string;
+              if (name === "Uploads") {
+                await updateDoc(doc(db, "linked_drives", d.id), { name: "Storage" });
+                name = "Storage";
+              }
+              drives2.push({
+                id: d.id,
+                user_id: data.userId,
+                name,
+                mount_path: data.mount_path ?? null,
+                permission_handle_id: data.permission_handle_id ?? null,
+                last_synced_at: data.last_synced_at ?? null,
+                created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+                organization_id: data.organization_id ?? null,
+                creator_section: data.creator_section ?? false,
+                is_creator_raw: data.is_creator_raw ?? false,
+              });
+            }
+            setLinkedDrives(drives2);
+          }
+        } catch {
+          ensureDrivesAttemptedRef.current = false; // Allow retry on next mount
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setLinkedDrives([]);
@@ -433,6 +488,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchDrives();
   }, [fetchDrives]);
+
+  useEffect(() => {
+    ensureDrivesAttemptedRef.current = false;
+  }, [org?.id]);
 
   const linkDrive = useCallback(
     async (

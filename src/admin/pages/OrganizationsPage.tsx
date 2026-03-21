@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import PageHeader from "../components/shared/PageHeader";
 import { Building2, Loader2, Users, Send, Trash2 } from "lucide-react";
@@ -156,7 +156,7 @@ export default function OrganizationsPage() {
     }
   };
 
-  const fetchOrganizations = async () => {
+  const fetchOrganizations = useCallback(async () => {
     if (!user) {
       setOrgsLoading(false);
       return;
@@ -176,11 +176,11 @@ export default function OrganizationsPage() {
     } finally {
       setOrgsLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchOrganizations();
-  }, [user]);
+  }, [fetchOrganizations]);
 
   const formatStorage = (bytes: number) => {
     if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`;

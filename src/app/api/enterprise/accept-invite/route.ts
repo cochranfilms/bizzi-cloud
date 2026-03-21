@@ -1,5 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { findPendingSeatByToken } from "@/lib/invite-lookup";
+import { ensureDefaultDrivesForOrgUser } from "@/lib/ensure-default-drives";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
@@ -178,6 +179,18 @@ export async function POST(request: Request) {
   );
 
   await batch.commit();
+
+  // Create default drives (Storage, RAW, Gallery Media) for enterprise user based on org add-ons
+  const orgSnap = await db.collection("organizations").doc(orgId).get();
+  const orgAddonIds = Array.isArray(orgSnap.data()?.addon_ids)
+    ? (orgSnap.data()?.addon_ids as string[])
+    : [];
+  try {
+    await ensureDefaultDrivesForOrgUser(uid, orgId, orgAddonIds);
+  } catch (err) {
+    console.error("[accept-invite] Failed to create default drives:", err);
+    // Don't fail the request - user can create drives manually
+  }
 
   return NextResponse.json({
     success: true,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Check, FileIcon, Film } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -183,10 +184,13 @@ export default function FileListRow({
                   className="h-full w-full"
                 />
               ) : (thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
-                <img
+                <Image
                   src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
                   alt=""
+                  width={40}
+                  height={40}
                   className="h-full w-full object-cover"
+                  unoptimized
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">

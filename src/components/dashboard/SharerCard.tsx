@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { File, Folder } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
@@ -83,10 +84,13 @@ export default function SharerCard({
       <div className="flex items-center gap-4 border-b border-neutral-200 px-4 py-4 dark:border-neutral-700">
         <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan">
           {photoUrl ? (
-            <img
+            <Image
               src={photoUrl}
               alt=""
+              width={48}
+              height={48}
               className="h-full w-full object-cover"
+              unoptimized
             />
           ) : (
             <span className="text-sm font-medium">{initials}</span>

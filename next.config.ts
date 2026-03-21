@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["sharp", "ffmpeg-static", "@napi-rs/canvas", "pdfjs-dist"],
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "*.googleusercontent.com", pathname: "/**" },
+      { protocol: "https", hostname: "*.google.com", pathname: "/**" },
+      { protocol: "https", hostname: "*.firebasestorage.googleapis.com", pathname: "/**" },
+      { protocol: "https", hostname: "*.gravatar.com", pathname: "/**" },
+      { protocol: "https", hostname: "*.facebook.com", pathname: "/**" },
+      { protocol: "https", hostname: "*.githubusercontent.com", pathname: "/**" },
+    ],
+  },
   async headers() {
     return [
       {
