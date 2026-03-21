@@ -577,19 +577,24 @@ export default function OrganizationsPage() {
                     type="checkbox"
                     checked={addonIds.includes(addon.id)}
                     onChange={(e) => {
+                      const checked = e.target.checked;
                       if (addon.id === "fullframe") {
-                        setAddonIds(e.target.checked ? ["fullframe"] : []);
+                        setAddonIds(checked ? ["fullframe"] : []);
                       } else {
                         const hasFullframe = addonIds.includes("fullframe");
-                        if (hasFullframe) return;
-                        setAddonIds((prev) =>
-                          e.target.checked
-                            ? [...prev, addon.id]
-                            : prev.filter((id) => id !== addon.id)
-                        );
+                        if (hasFullframe) {
+                          // Switching from Full Frame to this addon — allow by unchecking Full Frame first
+                          setAddonIds(checked ? [addon.id] : []);
+                        } else {
+                          setAddonIds((prev) =>
+                            checked
+                              ? [...prev, addon.id]
+                              : prev.filter((id) => id !== addon.id)
+                          );
+                        }
                       }
                     }}
-                    disabled={creating || (addon.id !== "fullframe" && addonIds.includes("fullframe"))}
+                    disabled={creating}
                     className="rounded border-neutral-300 text-[var(--enterprise-primary)] focus:ring-[var(--enterprise-primary)]"
                   />
                   <span className="text-sm text-neutral-700 dark:text-neutral-300">
@@ -766,19 +771,23 @@ export default function OrganizationsPage() {
                           type="checkbox"
                           checked={editAddonIds.includes(addon.id)}
                           onChange={(e) => {
+                            const checked = e.target.checked;
                             if (addon.id === "fullframe") {
-                              setEditAddonIds(e.target.checked ? ["fullframe"] : []);
+                              setEditAddonIds(checked ? ["fullframe"] : []);
                             } else {
                               const hasFullframe = editAddonIds.includes("fullframe");
-                              if (hasFullframe) return;
-                              setEditAddonIds((prev) =>
-                                e.target.checked
-                                  ? [...prev, addon.id]
-                                  : prev.filter((id) => id !== addon.id)
-                              );
+                              if (hasFullframe) {
+                                setEditAddonIds(checked ? [addon.id] : []);
+                              } else {
+                                setEditAddonIds((prev) =>
+                                  checked
+                                    ? [...prev, addon.id]
+                                    : prev.filter((id) => id !== addon.id)
+                                );
+                              }
                             }
                           }}
-                          disabled={editLoading || (addon.id !== "fullframe" && editAddonIds.includes("fullframe"))}
+                          disabled={editLoading}
                           className="rounded border-neutral-300 text-[var(--enterprise-primary)] focus:ring-[var(--enterprise-primary)]"
                         />
                         <span className="text-sm text-neutral-700 dark:text-neutral-300">
