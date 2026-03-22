@@ -5,6 +5,8 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -109,6 +111,20 @@ export async function POST(request: Request) {
   const driveData = driveSnap.data();
   const organizationId = driveData?.organization_id ?? null;
 
+  let workspaceIdResolved: string | null = null;
+  let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
+  if (organizationId) {
+    workspaceIdResolved = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveIdStr!);
+    if (!workspaceIdResolved) {
+      return NextResponse.json({ error: "Could not resolve workspace for org upload" }, { status: 400 });
+    }
+    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    if (!canWrite) {
+      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+    }
+    visibilityScope = "private_org";
+  }
+
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
   // Create minimal snapshot (required by backup_files schema)
@@ -134,6 +150,9 @@ export async function POST(request: Request) {
     modified_at: now,
     deleted_at: null,
     organization_id: organizationId,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    owner_user_id: uid,
   });
 
   // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)

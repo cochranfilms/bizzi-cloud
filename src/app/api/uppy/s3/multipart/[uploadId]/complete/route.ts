@@ -7,6 +7,8 @@
 import { completeMultipartUpload, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
 import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
@@ -125,6 +127,23 @@ export async function POST(
     updatedAt: new Date().toISOString(),
   });
 
+  const organizationId = data.workspaceId ?? data.organization_id ?? null;
+  let workspaceIdResolved: string | null = null;
+  let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
+  if (organizationId) {
+    const workspaceIdFromSession = data.workspace_id ?? null;
+    workspaceIdResolved =
+      workspaceIdFromSession ?? (await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId));
+    if (!workspaceIdResolved) {
+      return NextResponse.json({ error: "Could not resolve workspace for org upload" }, { status: 400 });
+    }
+    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    if (!canWrite) {
+      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+    }
+    visibilityScope = "private_org";
+  }
+
   const snapshotRef = await db.collection("backup_snapshots").add({
     linked_drive_id: driveId,
     userId: uid,
@@ -145,7 +164,10 @@ export async function POST(
     content_type: contentType,
     modified_at: lastModified,
     deleted_at: null,
-    organization_id: data.workspaceId ?? data.organization_id ?? null,
+    organization_id: organizationId,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    owner_user_id: uid,
   });
 
   await db.doc(`linked_drives/${driveId}`).update({

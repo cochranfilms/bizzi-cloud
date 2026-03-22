@@ -29,12 +29,20 @@ if (!B2_ACCESS_KEY_ID || !B2_SECRET_ACCESS_KEY || !B2_BUCKET_NAME) {
   process.exit(1);
 }
 
-const ALLOWED_ORIGINS = [
+const BASE_ORIGINS = [
   "https://www.bizzicloud.io",
   "https://bizzicloud.io",
+  "http://bizzicloud.io",
+  "http://www.bizzicloud.io",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ];
+// Append extra origins from env (e.g. Vercel preview: B2_CORS_EXTRA_ORIGINS=https://bizzi-cloud-xxx.vercel.app)
+const EXTRA = (process.env.B2_CORS_EXTRA_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+const ALLOWED_ORIGINS = [...new Set([...BASE_ORIGINS, ...EXTRA])];
 
 // B2 Native API CORS rules. S3 ops: s3_put, s3_get, s3_head (from existing bucket rules)
 const corsRules = [
@@ -109,7 +117,11 @@ async function main() {
 
   console.log("CORS configured on bucket:", B2_BUCKET_NAME);
   console.log("Allowed origins:", ALLOWED_ORIGINS.join(", "));
-  console.log("For preview deployments, add https://<preview>.vercel.app to the script and run again.");
+  if (EXTRA.length > 0) {
+    console.log("(Including B2_CORS_EXTRA_ORIGINS)");
+  } else {
+    console.log("For Vercel preview deployments, run: B2_CORS_EXTRA_ORIGINS=https://<your-preview>.vercel.app npm run b2:cors");
+  }
 }
 
 main().catch((err) => {

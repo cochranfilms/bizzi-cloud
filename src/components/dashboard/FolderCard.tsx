@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { CardSize, AspectRatio } from "@/context/LayoutSettingsContext";
+import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import { useCallback, useState } from "react";
@@ -68,13 +69,6 @@ const SIZE_CLASSES = {
   medium: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
   large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
 } as const;
-
-const ASPECT_CLASSES: Record<string, string> = {
-  landscape: "aspect-[4/3]",
-  square: "aspect-square",
-  portrait: "aspect-[3/4]",
-  video: "aspect-video", // 16:9
-};
 
 export default function FolderCard({
   item,
@@ -145,7 +139,7 @@ export default function FolderCard({
 
   const isSystemFolder = item.isSystemFolder === true;
   const sizeClasses = SIZE_CLASSES[layoutSize];
-  const aspectClass = ASPECT_CLASSES[layoutAspectRatio ?? "landscape"] ?? "aspect-video";
+  const aspectClass = getCardAspectClass(layoutAspectRatio ?? "landscape");
 
   return (
     <>

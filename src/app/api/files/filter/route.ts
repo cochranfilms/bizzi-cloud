@@ -10,6 +10,7 @@ import type {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getAccessibleWorkspaceIds, isOrgAdmin } from "@/lib/workspace-access";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import { NextResponse } from "next/server";
 
@@ -314,12 +315,13 @@ function passesPostFilters(
 /** Map Firestore doc to API response shape */
 function toFileResponse(
   doc: QueryDocumentSnapshot,
-  driveMap: Map<string, string>
+  driveMap: Map<string, string>,
+  options?: { includeAdminFields?: boolean }
 ): Record<string, unknown> {
   const d = doc.data();
   const path = (d.relative_path as string) ?? "";
   const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
-  return {
+  const base: Record<string, unknown> = {
     id: doc.id,
     name,
     path,
@@ -347,6 +349,12 @@ function toFileResponse(
     usage_status: d.usage_status ?? null,
     proxyStatus: d.proxy_status ?? null,
   };
+  if (options?.includeAdminFields) {
+    base.owner_user_id = d.owner_user_id ?? d.userId ?? null;
+    base.workspace_id = d.workspace_id ?? null;
+    base.visibility_scope = d.visibility_scope ?? null;
+  }
+  return base;
 }
 
 export async function GET(request: Request) {
@@ -463,17 +471,160 @@ export async function GET(request: Request) {
       }
     }
   });
-  const driveIds = new Set(driveMap.keys());
+  let driveIds = new Set(driveMap.keys());
 
-  let q: Query = db
-    .collection("backup_files")
-    .where("userId", "==", uid)
-    .where("deleted_at", "==", null);
+  // Enterprise: get accessible workspace IDs (workspace-based visibility)
+  let accessibleWorkspaceIds: string[] = [];
+  if (orgFilter != null) {
+    accessibleWorkspaceIds = await getAccessibleWorkspaceIds(uid, orgFilter);
+    // Include drives from workspaces user can access (for driveMap when files are in other members' drives)
+    if (accessibleWorkspaceIds.length > 0) {
+      const workspaceDocs = await Promise.all(
+        accessibleWorkspaceIds.slice(0, 30).map((wid) =>
+          db.collection("workspaces").doc(wid).get()
+        )
+      );
+      const extraDriveIds = new Set<string>();
+      for (const wsDoc of workspaceDocs) {
+        const did = wsDoc.data()?.drive_id as string | undefined;
+        if (did) extraDriveIds.add(did);
+      }
+      for (const did of extraDriveIds) {
+        if (!driveMap.has(did)) {
+          const dSnap = await db.collection("linked_drives").doc(did).get();
+          if (dSnap.exists && !dSnap.data()?.deleted_at) {
+            driveMap.set(did, (dSnap.data()?.name as string) ?? "Drive");
+            driveIds.add(did);
+          }
+        }
+      }
+    }
+  }
+
+  let q: Query;
 
   if (orgFilter != null) {
-    q = q.where("organization_id", "==", orgFilter);
+    // Enterprise: workspace-based query (admin sees all; members see accessible workspaces only)
+    const IN_LIMIT = 30; // Firestore "in" limit
+    if (accessibleWorkspaceIds.length === 0) {
+      // No accessible workspaces: could be new member or pre-migration org. Fall back to legacy userId for backward compat.
+      const anyWorkspaces = await db
+        .collection("workspaces")
+        .where("organization_id", "==", orgFilter)
+        .limit(1)
+        .get();
+      if (anyWorkspaces.empty) {
+        // Pre-migration: no workspaces exist yet, use legacy owner-based query
+        q = db
+          .collection("backup_files")
+          .where("userId", "==", uid)
+          .where("organization_id", "==", orgFilter)
+          .where("deleted_at", "==", null);
+      } else {
+        // New member with no accessible workspaces - return empty
+        return NextResponse.json({
+          files: [],
+          totalCount: 0,
+          hasMore: false,
+          cursor: null,
+        });
+      }
+    } else if (accessibleWorkspaceIds.length <= IN_LIMIT) {
+      q = db
+        .collection("backup_files")
+        .where("organization_id", "==", orgFilter)
+        .where("workspace_id", "in", accessibleWorkspaceIds)
+        .where("deleted_at", "==", null);
+    } else {
+      // Batch queries and merge (Phase 1: rare; most orgs have few workspaces)
+      const batches = [];
+      for (let i = 0; i < accessibleWorkspaceIds.length; i += IN_LIMIT) {
+        const batch = accessibleWorkspaceIds.slice(i, i + IN_LIMIT);
+        batches.push(
+          db
+            .collection("backup_files")
+            .where("organization_id", "==", orgFilter)
+            .where("workspace_id", "in", batch)
+            .where("deleted_at", "==", null)
+            .limit(MAX_FETCH_FOR_POST_FILTER * 2)
+            .get()
+        );
+      }
+      const results = await Promise.all(batches);
+      const allDocs = results.flatMap((s) => s.docs);
+      const orderField =
+        filters.sort === "newest" || filters.sort === "oldest"
+          ? "modified_at"
+          : filters.sort === "largest" || filters.sort === "smallest"
+            ? "size_bytes"
+            : "relative_path";
+      const orderDir =
+        filters.sort === "oldest" || filters.sort === "smallest" || filters.sort === "name_asc"
+          ? "asc"
+          : "desc";
+      allDocs.sort((a, b) => {
+        const va = a.data()[orderField];
+        const vb = b.data()[orderField];
+        if (va == null && vb == null) return 0;
+        if (va == null) return orderDir === "asc" ? -1 : 1;
+        if (vb == null) return orderDir === "asc" ? 1 : -1;
+        const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+        return orderDir === "asc" ? cmp : -cmp;
+      });
+      const driveFilter = (d: { data: () => Record<string, unknown> }) =>
+        driveIds.has((d.data().linked_drive_id as string) ?? "");
+      let filteredDocs = allDocs.filter(driveFilter);
+      const batchNeedsPostFilter =
+        !!filters.resolution ||
+        !!filters.codec ||
+        !!filters.search ||
+        !!filters.tags ||
+        !!filters.aspectRatio ||
+        !!filters.fileType ||
+        (filters.fileTypes?.length ?? 0) > 0 ||
+        !!filters.frameRate ||
+        !!filters.duration ||
+        !!filters.container ||
+        !!filters.audio ||
+        !!filters.audioChannels ||
+        !!filters.colorProfile ||
+        !!filters.bitDepth ||
+        !!filters.orientation ||
+        !!filters.rawFormat ||
+        !!filters.cameraModel ||
+        !!filters.lens ||
+        !!filters.editedStatus ||
+        !!filters.shared ||
+        !!filters.commented;
+      if (batchNeedsPostFilter) {
+        filteredDocs = filteredDocs.filter((doc) => {
+          const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
+          return passesPostFilters(item, filtersWithIds);
+        });
+      }
+      const page = filteredDocs.slice(0, filters.pageSize);
+      const lastDoc = page[page.length - 1];
+      const hasMore = filteredDocs.length > filters.pageSize;
+      const includeAdminFieldsBatch = await isOrgAdmin(uid, orgFilter);
+      const files = page.map((d) =>
+        toFileResponse(d as import("firebase-admin/firestore").QueryDocumentSnapshot, driveMap, {
+          includeAdminFields: includeAdminFieldsBatch,
+        })
+      );
+      return NextResponse.json({
+        files,
+        totalCount: filteredDocs.length,
+        hasMore,
+        cursor: hasMore && lastDoc ? lastDoc.id : null,
+      });
+    }
   } else {
-    q = q.where("organization_id", "==", null);
+    // Personal: owner-based query (unchanged)
+    q = db
+      .collection("backup_files")
+      .where("userId", "==", uid)
+      .where("deleted_at", "==", null)
+      .where("organization_id", "==", null);
   }
 
   if (filters.driveId && driveIds.has(filters.driveId)) {
@@ -589,7 +740,8 @@ export async function GET(request: Request) {
   const lastDoc = page[page.length - 1];
   const hasMore = filteredDocs.length > filters.pageSize;
 
-  const files = page.map((d) => toFileResponse(d, driveMap));
+  const includeAdminFields = orgFilter != null && (await isOrgAdmin(uid, orgFilter));
+  const files = page.map((d) => toFileResponse(d, driveMap, { includeAdminFields }));
 
   return NextResponse.json({
     files,

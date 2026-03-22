@@ -44,6 +44,14 @@ Deleting one scope must not automatically delete other valid scopes.
 - status: pending | active
 - Seat removal: admin can remove members; user can leave via POST /api/enterprise/leave
 
+**Seat removal rule:** Revokes access only. Does not cold store or delete organization workspace files. Org files remain under org control; workspace membership is updated (removed user loses access).
+
+### Lifecycle Scopes
+
+- **Personal lifecycle:** account, personal workspace, personal drives/files. Subscription failure or account deletion flows affect personal scope.
+- **Organization billing failure lifecycle:** organization, org workspaces, org drives/files. Payment failure or org removal triggers cold storage for the entire org.
+- **Seat removal lifecycle:** access revocation only, no storage destruction. Removing a seat member updates workspace membership (reassigns `created_by` and `member_user_ids`) but does not migrate files to cold storage or transfer org workspace files.
+
 ## Deletion Types
 
 1. **Delete Personal Workspace** - Affects personal only. Preserves identity, org memberships, org access.

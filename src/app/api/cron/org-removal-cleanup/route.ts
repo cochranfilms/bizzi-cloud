@@ -61,13 +61,17 @@ export async function POST(request: Request) {
         }
       }
 
-      // 2. Build org snapshot (seats, drives) before migration deletes them
+      // 2. Build org snapshot (seats, drives, workspaces) before migration deletes them
       const seatsSnap = await db
         .collection("organization_seats")
         .where("organization_id", "==", orgId)
         .get();
       const drivesSnap = await db
         .collection("linked_drives")
+        .where("organization_id", "==", orgId)
+        .get();
+      const workspacesSnap = await db
+        .collection("workspaces")
         .where("organization_id", "==", orgId)
         .get();
 
@@ -87,8 +91,28 @@ export async function POST(request: Request) {
         drives: drivesSnap.docs.map((d) => {
           const data = d.data();
           return {
+            id: d.id,
             name: data.name,
             userId: data.userId ?? data.user_id,
+          };
+        }),
+        workspaces: workspacesSnap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            organization_id: data.organization_id,
+            drive_id: data.drive_id,
+            drive_type: data.drive_type ?? null,
+            name: data.name,
+            workspace_type: data.workspace_type,
+            created_by: data.created_by,
+            member_user_ids: data.member_user_ids ?? [],
+            team_id: data.team_id ?? null,
+            project_id: data.project_id ?? null,
+            gallery_id: data.gallery_id ?? null,
+            is_system_workspace: data.is_system_workspace ?? false,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
           };
         }),
       };

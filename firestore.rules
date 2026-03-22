@@ -103,5 +103,18 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+    match /workspaces/{workspaceId} {
+      allow read: if request.auth != null
+        && resource.data.organization_id is string
+        && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid));
+      allow create: if request.auth != null
+        && request.resource.data.organization_id is string
+        && exists(/databases/$(database)/documents/organization_seats/$(request.resource.data.organization_id + '_' + request.auth.uid));
+      allow update, delete: if request.auth != null
+        && resource.data.organization_id is string
+        && (resource.data.created_by == request.auth.uid
+          || (exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
+    }
   }
 }

@@ -1,10 +1,10 @@
-import type { Firestore } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
 
 /**
  * Verifies that a user has access to a backup file by ID.
  * Used for comments, hearts, and collaboration features.
- * Checks: ownership, org membership, share access (invited_emails).
+ * Checks: ownership, org admin, workspace membership, share access (invited_emails).
  */
 export async function canAccessBackupFileById(
   uid: string,
@@ -26,6 +26,12 @@ export async function canAccessBackupFileById(
   if (orgId) {
     const seatSnap = await db.collection("organization_seats").doc(`${orgId}_${uid}`).get();
     if (seatSnap.exists && seatSnap.data()?.role === "admin") return true;
+  }
+
+  // Workspace-based access: file in org workspace user can access
+  const workspaceId = fileData?.workspace_id as string | undefined;
+  if (workspaceId && orgId) {
+    if (await userCanAccessWorkspace(uid, workspaceId)) return true;
   }
 
   // Share access: folder_shares where this file is shared and user is invited

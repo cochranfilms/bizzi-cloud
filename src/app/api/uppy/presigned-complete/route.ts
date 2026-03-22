@@ -7,6 +7,8 @@ import { isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { isVideoFile } from "@/lib/bizzi-file-types";
+import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -23,7 +25,10 @@ export async function POST(request: Request) {
     sizeBytes: number;
     contentType?: string;
     lastModified?: number | null;
+    /** Org ID for enterprise context */
     workspaceId?: string | null;
+    /** Workspace doc ID for org uploads (required when workspaceId/org present); resolves to My Private if omitted */
+    workspace_id?: string | null;
     galleryId?: string | null;
   };
   try {
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
     contentType = "application/octet-stream",
     lastModified,
     workspaceId = null,
+    workspace_id: workspaceIdFromBody = null,
     galleryId = null,
   } = body;
 
@@ -72,6 +78,26 @@ export async function POST(request: Request) {
       : new Date().toISOString();
 
   const db = getAdminFirestore();
+  const organizationId = workspaceId ?? null;
+
+  // Org context: resolve workspace_id, validate write access
+  let workspaceIdResolved: string | null = null;
+  let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
+  if (organizationId) {
+    workspaceIdResolved = workspaceIdFromBody ?? (await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId));
+    if (!workspaceIdResolved) {
+      return NextResponse.json(
+        { error: "Could not resolve workspace for org upload" },
+        { status: 400 }
+      );
+    }
+    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    if (!canWrite) {
+      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+    }
+    visibilityScope = "private_org";
+  }
+
   const snapshotRef = await db.collection("backup_snapshots").add({
     linked_drive_id: driveId,
     userId: uid,
@@ -91,8 +117,11 @@ export async function POST(request: Request) {
     content_type: contentType,
     modified_at: modifiedAt,
     deleted_at: null,
-    organization_id: workspaceId ?? null,
+    organization_id: organizationId,
     gallery_id: galleryId ?? null,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    owner_user_id: uid,
   });
 
   await db.doc(`linked_drives/${driveId}`).update({

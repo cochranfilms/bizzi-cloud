@@ -7,6 +7,7 @@
  * Safe if Stripe webhook fires twice—second run sees drives and skips creation.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { ensureDefaultWorkspacesForOrgUser } from "@/lib/ensure-default-workspaces";
 
 function hasEditorAddon(addonIds: string[]): boolean {
   return addonIds.includes("editor") || addonIds.includes("fullframe");
@@ -108,7 +109,7 @@ export async function ensureDefaultDrivesForUser(uid: string): Promise<void> {
 }
 
 /**
- * Ensure default drives (Storage, RAW, Gallery Media) for an enterprise org member.
+ * Ensure default drives (Storage, RAW, Gallery Media) and their system workspaces for an enterprise org member.
  * Call when a user accepts an invite to join an organization.
  * Creates org-scoped drives (organization_id = orgId) based on org addon_ids.
  */
@@ -186,4 +187,7 @@ export async function ensureDefaultDrivesForOrgUser(
   if (writeCount > 0) {
     await batch.commit();
   }
+
+  // Create system workspaces (My Private per drive) for workspace-based visibility
+  await ensureDefaultWorkspacesForOrgUser(uid, orgId);
 }

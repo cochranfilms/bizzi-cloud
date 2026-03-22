@@ -36,7 +36,13 @@ npm run b2:cors
 
 Requires `B2_ENDPOINT` (e.g. `https://s3.us-east-005.backblazeb2.com`). Uses `.env.local` or env vars. Edit `scripts/set-b2-cors.mjs` to add custom domains (e.g. preview URLs).
 
-**If uploads fail with "No Access-Control-Allow-Origin" CORS error:** Re-run `npm run b2:cors` with B2 env vars set. The script configures both B2 Native and S3-compatible CORS.
+**If uploads fail with "ERR_ACCESS_DENIED" or CORS error (especially on Vercel preview deployments):** Your app origin must be in B2's CORS allowlist. For preview URLs, run:
+
+```bash
+B2_CORS_EXTRA_ORIGINS=https://your-preview-url.vercel.app npm run b2:cors
+```
+
+Use the exact origin from your browser (e.g. `https://bizzi-cloud-abc123-yourteam.vercel.app`). The script adds this to the allowed origins.
 
 ## Required for API auth (Backblaze uploads)
 

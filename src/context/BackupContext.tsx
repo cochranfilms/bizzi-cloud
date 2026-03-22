@@ -98,6 +98,33 @@ interface BackupContextValue {
 /** Video extensions that trigger proxy generation (720p H.264). */
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
+/** Fetch workspace fields for org drive uploads. Returns {} for personal. */
+async function getWorkspaceFieldsForOrgDrive(
+  drive: LinkedDrive,
+  idToken: string | null | undefined,
+  userId: string
+): Promise<Record<string, unknown>> {
+  const orgId = drive.organization_id ?? null;
+  if (!orgId || !idToken) return {};
+  try {
+    const res = await fetch(
+      `/api/workspaces/default-for-drive?drive_id=${encodeURIComponent(drive.id)}&organization_id=${encodeURIComponent(orgId)}`,
+      { headers: { Authorization: `Bearer ${idToken}` } }
+    );
+    if (!res.ok) return {};
+    const data = await res.json();
+    const wid = data.workspace_id as string | undefined;
+    if (!wid) return {};
+    return {
+      workspace_id: wid,
+      visibility_scope: "private_org",
+      owner_user_id: userId,
+    };
+  } catch {
+    return {};
+  }
+}
+
 /** B2 minimum part size 5MB; use 8MB for throughput. Must match server. */
 const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
 const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
@@ -817,6 +844,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               progressState.inFlight.delete(index);
               progressState.completedBytes += file.size;
 
+              const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, uid);
               const fileRef = await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
                 linked_drive_id: drive.id,
@@ -830,6 +858,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   : new Date().toISOString(),
                 deleted_at: null,
                 organization_id: drive.organization_id ?? null,
+                ...workspaceFields,
               });
               if (idToken) {
                 fetch("/api/files/extract-metadata", {
@@ -1380,6 +1409,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               completed_at: new Date(),
             });
             const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+            const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, user.uid);
             const fileRef = await addDoc(collection(db, "backup_files"), {
               backup_snapshot_id: snapshotRef.id,
               linked_drive_id: drive.id,
@@ -1393,6 +1423,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 : new Date().toISOString(),
               deleted_at: null,
               organization_id: drive.organization_id ?? null,
+              ...workspaceFields,
             });
             options?.onFileComplete?.({
               name: file.name,
@@ -1624,6 +1655,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
           const safeName = uniqueNames[fileIndex] ?? file.name;
           const relativePath = `${galleryId}/${safeName}`;
+          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, token ?? null, user.uid);
           const fileRef = await addDoc(collection(db, "backup_files"), {
             backup_snapshot_id: snapshotRef.id,
             linked_drive_id: drive.id,
@@ -1634,8 +1667,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             content_type: file.type || "application/octet-stream",
             modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
             deleted_at: null,
-            organization_id: null,
+            organization_id: drive.organization_id ?? null,
             gallery_id: galleryId,
+            ...workspaceFields,
           });
           getFirebaseAuth()
             .currentUser?.getIdToken(true)
@@ -1822,6 +1856,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           bytes_synced: file.size,
           completed_at: new Date(),
         });
+        const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, user.uid);
         const fileRef = await addDoc(collection(db, "backup_files"), {
           backup_snapshot_id: snapshotRef.id,
           linked_drive_id: drive.id,
@@ -1835,6 +1870,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 : new Date().toISOString(),
           deleted_at: null,
           organization_id: drive.organization_id ?? null,
+          ...workspaceFields,
         });
         if (idToken) {
           fetch("/api/files/extract-metadata", {

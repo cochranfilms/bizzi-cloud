@@ -42,8 +42,9 @@ import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
-import SectionTitle from "./SectionTitle";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
+import FolderView from "./FolderView";
+import AllFilesView from "./AllFilesView";
 
 function BulkActionBar({
   selectedFileCount,
@@ -847,6 +848,8 @@ export default function FileGrid() {
     loadDriveFiles,
   ]);
 
+  const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
+
   const totalFileCount = hasFilters ? (() => {
     const base = currentDrive ? displayedFiles.length : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
     return base;
@@ -860,9 +863,8 @@ export default function FileGrid() {
       data-selectable-grid
       onMouseDown={handleMouseDown}
     >
-      {/* Filter section — matches Home: SectionTitle bar + content below */}
-      <section className="shrink-0 border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <SectionTitle className="mb-4">Search & filters</SectionTitle>
+      {/* Filter section — compact, no section title bar */}
+      <section className="shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
         <div className="space-y-3">
           <FileFiltersToolbar
             searchValue={(filterState.search as string) ?? ""}
@@ -876,6 +878,7 @@ export default function FileGrid() {
             onViewModeChange={setViewMode}
             hasActiveFilters={hasFilters}
           />
+          {(hasFilters || !currentDrive) && (
           <ActiveFilterBar
             activeFilters={activeFiltersWithLabels}
             resultCount={filesToShow.length}
@@ -885,6 +888,7 @@ export default function FileGrid() {
             onSaveView={undefined}
             isLoading={hasFilters && filtersLoading}
           />
+          )}
         </div>
       </section>
 
@@ -899,9 +903,13 @@ export default function FileGrid() {
           insideFolder={!!currentDrive}
         />
 
-      {/* Scrollable content — matches Home layout: sections with SectionTitle bars only */}
-      <div className="min-h-0 flex-1 overflow-auto space-y-0" data-scroll-container>
-      {/* Breadcrumb when inside a drive */}
+      {/* Scrollable content — distinct layout per view: FolderView vs AllFilesView */}
+      <div
+        className="min-h-0 flex-1 overflow-auto space-y-0"
+        data-scroll-container
+        data-view-type={currentDrive ? "folder" : "all-files"}
+      >
+      <FilesViewWrapper>
       {currentDrive && (
         <div className="flex items-center gap-2 py-4 text-sm">
           <button
@@ -934,10 +942,10 @@ export default function FileGrid() {
         </div>
       )}
 
-      {/* Pinned shortcuts (only at root) - matches Home: SectionTitle bar + content below */}
+      {/* Pinned shortcuts (only at root) - compact section */}
       {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0 || pinnedFilesLoading) && (
-        <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-          <SectionTitle className="mb-4">Pinned</SectionTitle>
+        <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Pinned</h3>
           {pinnedFilesLoading ? (
             <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Loading…
@@ -1094,8 +1102,8 @@ export default function FileGrid() {
         </section>
       )}
 
-      {/* Recents / Starred / Drive content — matches Home: SectionTitle bar + content below */}
-      <section className="relative border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
+      {/* Recents / Starred / Drive content — main section */}
+      <section className="relative border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
         {typeof document !== "undefined" &&
           dragState?.isActive &&
           (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
@@ -1112,34 +1120,36 @@ export default function FileGrid() {
             />,
             document.body
           )}
-        <SectionTitle className="mb-4">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
           {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Hearts"}
-        </SectionTitle>
+        </h2>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
-            <button
-              type="button"
-              onClick={() => setActiveTab("recents")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === "recents"
-                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
-                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-              }`}
-            >
-              Recents
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("hearts")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === "hearts"
-                  ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
-                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-              }`}
-            >
-              Hearts
-            </button>
-          </div>
+          {!currentDrive && (
+            <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
+              <button
+                type="button"
+                onClick={() => setActiveTab("recents")}
+                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "recents"
+                    ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                    : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                }`}
+              >
+                Recents
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("hearts")}
+                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "hearts"
+                    ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                    : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                }`}
+              >
+                Hearts
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             {(hasFilters ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
               <button
@@ -1324,7 +1334,7 @@ export default function FileGrid() {
           <>
             {showFolders && folderItems.length > 0 && (
               <>
-                <SectionTitle as="h3" className="mb-4">Your synced drives</SectionTitle>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Your synced drives</h3>
                 {viewMode === "list" ? (
                   <div className="mb-8 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                     <table className="w-full text-left text-sm">
@@ -1437,7 +1447,7 @@ export default function FileGrid() {
             )}
             {filesToShow.length > 0 && (
               <>
-                <SectionTitle as="h3" className="mb-4">Recently synced files</SectionTitle>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Recently synced files</h3>
                 {viewMode === "list" ? (
                   <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                     <table className="w-full text-left text-sm">
@@ -1596,6 +1606,7 @@ export default function FileGrid() {
           </>
         )}
       </section>
+      </FilesViewWrapper>
         </div>
 
         {selectedFileIds.size + selectedFolderKeys.size > 0 && (

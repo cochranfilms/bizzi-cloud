@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
+import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useSubscription } from "@/hooks/useSubscription";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
@@ -79,12 +80,6 @@ const FILE_SIZE_CLASSES = {
   large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
 } as const;
 
-const FILE_ASPECT_CLASSES = {
-  landscape: "aspect-video",
-  square: "aspect-square",
-  portrait: "aspect-[3/4]",
-} as const;
-
 export default function FileCard({
   file,
   onClick,
@@ -131,7 +126,7 @@ export default function FileCard({
   const { confirm } = useConfirm();
   const hearts = useHearts(file.id);
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
-  const aspectClass = FILE_ASPECT_CLASSES[layoutAspectRatio];
+  const aspectClass = getCardAspectClass(layoutAspectRatio);
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
   // Videos respect thumbnailScale like images: Fill = object-cover (Frame.io style, no black bars), Fit = object-contain.
   const videoObjectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
@@ -149,7 +144,7 @@ export default function FileCard({
     <div
       ref={cardRef}
       title={!showCardInfo ? file.name : undefined}
-      className={`group relative flex min-w-0 flex-col rounded-xl border transition-colors ${sizeClasses.padding} ${
+      className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${aspectClass} ${sizeClasses.padding} ${
         hasLargePreview ? "items-stretch" : "items-center"
       } ${
         selected
@@ -249,8 +244,8 @@ export default function FileCard({
         </div>
       )}
       <div
-        className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
-          hasLargePreview ? `mb-3 w-full min-w-0 ${aspectClass}` : sizeClasses.icon
+        className={`relative flex items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
+          hasLargePreview ? "mb-2 w-full min-w-0 min-h-0 flex-1" : "shrink-0 " + sizeClasses.icon
         }`}
       >
         {isVideo && file.objectKey ? (
@@ -283,7 +278,7 @@ export default function FileCard({
         )}
       </div>
       {showCardInfo && (
-        <>
+        <div className="shrink-0 min-w-0">
           <h3 className={`mb-1 truncate w-full text-center font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
             {file.name}
           </h3>
@@ -333,7 +328,7 @@ export default function FileCard({
               showCount
             />
           </div>
-        </>
+        </div>
       )}
 
       <ShareModal

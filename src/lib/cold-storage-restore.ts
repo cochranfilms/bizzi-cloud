@@ -58,6 +58,12 @@ export interface ColdStorageFileDoc {
   size_bytes: number;
   user_id: string;
   linked_drive_id?: string;
+  workspace_id?: string | null;
+  visibility_scope?: string;
+  owner_user_id?: string | null;
+  team_id?: string | null;
+  project_id?: string | null;
+  gallery_id?: string | null;
   cold_storage_started_at: { toDate: () => Date };
   cold_storage_expires_at: { toDate: () => Date };
   plan_tier?: string;
@@ -158,8 +164,34 @@ async function restoreOrgColdStorage(
     .collection("cold_storage_org_snapshots")
     .doc(orgId)
     .get();
+  type SnapshotDrive = {
+    id?: string;
+    name: string;
+    userId?: string;
+    user_id?: string;
+  };
+  type SnapshotWorkspace = {
+    id: string;
+    organization_id?: string;
+    drive_id?: string;
+    drive_type?: string | null;
+    name: string;
+    workspace_type: string;
+    created_by?: string;
+    member_user_ids?: string[];
+    team_id?: string | null;
+    project_id?: string | null;
+    gallery_id?: string | null;
+    is_system_workspace?: boolean;
+    created_at?: string;
+    updated_at?: string;
+  };
   const snapshotData = snapshotSnap.data() as
-    | { drives?: Array<{ name: string; userId?: string; user_id?: string }>; seats?: Array<{ user_id: string; email: string; role: string }> }
+    | {
+        drives?: SnapshotDrive[];
+        seats?: Array<{ user_id: string; email: string; role: string }>;
+        workspaces?: SnapshotWorkspace[];
+      }
     | undefined;
 
   const driveMap = new Map<string, { userId: string; driveName: string }>();
@@ -191,6 +223,52 @@ async function restoreOrgColdStorage(
       organization_id: orgId,
     });
     driveIdByKey.set(key, ref.id);
+  }
+
+  // Build old drive id -> new drive id for workspace mapping
+  const oldDriveIdToNew = new Map<string, string>();
+  if (snapshotData?.drives?.length) {
+    for (const d of snapshotData.drives) {
+      const uid = (d.userId ?? d.user_id ?? "") as string;
+      const name = (d.name ?? "Drive") as string;
+      if (d.id && uid && name) {
+        const newId = driveIdByKey.get(driveKey(uid, name));
+        if (newId) oldDriveIdToNew.set(d.id, newId);
+      }
+    }
+  }
+  for (const f of files) {
+    if (f.linked_drive_id) {
+      const dkey = driveKey(f.user_id, f.drive_name);
+      const newId = driveIdByKey.get(dkey);
+      if (newId) oldDriveIdToNew.set(f.linked_drive_id, newId);
+    }
+  }
+
+  // Recreate workspaces from snapshot before creating backup_files
+  const oldWorkspaceIdToNew = new Map<string, string>();
+  const nowIso = now.toISOString();
+  if (snapshotData?.workspaces?.length) {
+    for (const ws of snapshotData.workspaces) {
+      const newDriveId = ws.drive_id ? oldDriveIdToNew.get(ws.drive_id) : undefined;
+      if (!newDriveId && ws.drive_id) continue; // Skip if drive mapping missing
+      const ref = await db.collection("workspaces").add({
+        organization_id: orgId,
+        drive_id: newDriveId ?? null,
+        drive_type: ws.drive_type ?? null,
+        name: ws.name ?? "Workspace",
+        workspace_type: ws.workspace_type ?? "private",
+        created_by: ws.created_by ?? null,
+        member_user_ids: ws.member_user_ids ?? [],
+        team_id: ws.team_id ?? null,
+        project_id: ws.project_id ?? null,
+        gallery_id: ws.gallery_id ?? null,
+        is_system_workspace: ws.is_system_workspace ?? false,
+        created_at: ws.created_at ?? nowIso,
+        updated_at: ws.updated_at ?? nowIso,
+      });
+      if (ws.id) oldWorkspaceIdToNew.set(ws.id, ref.id);
+    }
   }
 
   // Idempotency: skip creating backup_files that already exist
@@ -228,6 +306,10 @@ async function restoreOrgColdStorage(
         completed_at: now.toISOString(),
       });
 
+      const restoredWorkspaceId = f.workspace_id
+        ? oldWorkspaceIdToNew.get(f.workspace_id) ?? null
+        : null;
+
       const fileRef = db.collection("backup_files").doc();
       batch.set(fileRef, {
         backup_snapshot_id: snapshotRef.id,
@@ -240,7 +322,12 @@ async function restoreOrgColdStorage(
         modified_at: f.modified_at ?? null,
         deleted_at: null,
         organization_id: orgId,
-        gallery_id: null,
+        workspace_id: restoredWorkspaceId,
+        visibility_scope: f.visibility_scope ?? "private_org",
+        owner_user_id: f.owner_user_id ?? f.user_id ?? null,
+        team_id: f.team_id ?? null,
+        project_id: f.project_id ?? null,
+        gallery_id: f.gallery_id ?? null,
         created_at: now.toISOString(),
       });
 
@@ -415,6 +502,11 @@ async function restoreConsumerColdStorage(
         modified_at: f.modified_at ?? null,
         deleted_at: null,
         organization_id: null,
+        workspace_id: null,
+        visibility_scope: "personal",
+        owner_user_id: userId,
+        team_id: null,
+        project_id: null,
         gallery_id: null,
         created_at: now.toISOString(),
         is_starred: f.is_starred ?? false,

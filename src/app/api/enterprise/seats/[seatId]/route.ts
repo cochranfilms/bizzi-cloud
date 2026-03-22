@@ -245,52 +245,33 @@ export async function DELETE(
 
   const seatData = seatSnap.data()!;
   const removedUserId = seatData.user_id as string | undefined;
-  const removedUserEmail = (seatData.email as string | undefined)?.trim() || "unknown";
 
-  // Transfer removed member's files to organization owner
-  if (removedUserId && removedUserId.length > 0) {
-    const filesSnap = await db
-      .collection("backup_files")
-      .where("userId", "==", removedUserId)
+  // Seat removal: revoke access only. Do NOT cold store or transfer org workspace files.
+  // Update workspace membership so removed user loses access.
+  if (removedUserId) {
+    const workspacesSnap = await db
+      .collection("workspaces")
+      .where("organization_id", "==", orgId)
       .get();
 
-    const filesToTransfer = filesSnap.docs.filter((d) => !d.data().deleted_at);
-    if (filesToTransfer.length > 0) {
-      const driveIds = [...new Set(filesToTransfer.map((d) => d.data().linked_drive_id as string))];
-      const drivesSnap = await Promise.all(
-        driveIds.map((id) => db.collection("linked_drives").doc(id).get())
-      );
-      const driveNameById = new Map<string, string>();
-      drivesSnap.forEach((snap, i) => {
-        if (snap.exists) {
-          const name = snap.data()?.name ?? "Drive";
-          driveNameById.set(driveIds[i], name);
-        }
-      });
+    for (const wsDoc of workspacesSnap.docs) {
+      const data = wsDoc.data();
+      const createdBy = data.created_by as string | undefined;
+      const memberIds = (data.member_user_ids as string[] | undefined) ?? [];
+      const needsUpdate =
+        createdBy === removedUserId || memberIds.includes(removedUserId);
 
-      const newDriveRef = await db.collection("linked_drives").add({
-        userId: adminUid,
-        name: removedUserEmail,
-        permission_handle_id: `transferred-${Date.now()}`,
-        createdAt: new Date(),
-      });
-      const newDriveId = newDriveRef.id;
-
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < filesToTransfer.length; i += BATCH_SIZE) {
-        const chunk = filesToTransfer.slice(i, i + BATCH_SIZE);
-        const batch = db.batch();
-        for (const doc of chunk) {
-          const data = doc.data();
-          const driveName = driveNameById.get(data.linked_drive_id as string) ?? "Drive";
-          const newRelativePath = `${driveName}/${(data.relative_path as string) ?? ""}`.replace(/\/+/g, "/");
-          batch.update(doc.ref, {
-            userId: adminUid,
-            linked_drive_id: newDriveId,
-            relative_path: newRelativePath,
-          });
+      if (needsUpdate) {
+        const updates: Record<string, unknown> = {};
+        if (createdBy === removedUserId) {
+          updates.created_by = adminUid;
         }
-        await batch.commit();
+        let newMembers = memberIds.filter((id) => id !== removedUserId);
+        if (createdBy === removedUserId && !newMembers.includes(adminUid)) {
+          newMembers = [...newMembers, adminUid];
+        }
+        updates.member_user_ids = newMembers;
+        await wsDoc.ref.update(updates);
       }
     }
   }

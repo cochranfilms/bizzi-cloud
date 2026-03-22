@@ -26,6 +26,7 @@ export interface BackupSnapshot {
 }
 
 import type { FileMetadataFields } from "./file-metadata";
+import type { VisibilityScope } from "./workspace";
 
 export interface BackupFile extends Partial<FileMetadataFields> {
   id: string;
@@ -41,6 +42,16 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   organization_id?: string | null;
   /** When set, file is in Gallery Media and belongs to this gallery (stable across renames) */
   gallery_id?: string | null;
+  /** Workspace this file belongs to (org files only) */
+  workspace_id?: string | null;
+  /** Denormalized visibility for queries */
+  visibility_scope?: VisibilityScope | null;
+  /** Uploader/owner (alias for userId for clarity) */
+  owner_user_id?: string | null;
+  /** Future: team scope */
+  team_id?: string | null;
+  /** Future: project scope */
+  project_id?: string | null;
 }
 
 export interface SyncProgress {
