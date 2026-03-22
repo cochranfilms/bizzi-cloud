@@ -23,13 +23,12 @@ export default function TrustedByTeams() {
           {[...TEAM_VIDEOS, ...TEAM_VIDEOS].map((src, i) => (
             <div
               key={`${src}-${i}`}
-              className="flex-shrink-0 w-[min(500px,85vw)] aspect-video overflow-hidden"
+              className="flex-shrink-0 w-[min(720px,95vw)] aspect-video overflow-hidden"
             >
               <video
                 src={src}
                 className="w-full h-full object-cover"
                 muted
-                loop
                 playsInline
                 autoPlay
                 preload="auto"
