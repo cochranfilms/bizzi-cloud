@@ -20,7 +20,7 @@ export default function TrustedByTeams() {
       <div className="relative">
         {/* Apple-style: no gap, slides touch edge-to-edge */}
         <div className="flex animate-teams-scroll">
-          {[...TEAM_VIDEOS, ...TEAM_VIDEOS].map((src, i) => (
+          {[...TEAM_VIDEOS, ...TEAM_VIDEOS, ...TEAM_VIDEOS].map((src, i) => (
             <div
               key={`${src}-${i}`}
               className="flex-shrink-0 w-[min(720px,95vw)] aspect-video overflow-hidden"

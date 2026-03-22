@@ -133,8 +133,16 @@
   .animate-logo-scroll {
     animation: logo-scroll 30s linear infinite;
   }
+  @keyframes teams-scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-33.333%);
+    }
+  }
   .animate-teams-scroll {
-    animation: logo-scroll 42s linear infinite;
+    animation: teams-scroll 55s linear infinite;
   }
   /* Mobile modal scroll: prevent body scroll when modal open */
   .modal-open {
