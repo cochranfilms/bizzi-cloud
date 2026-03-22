@@ -3,6 +3,7 @@
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardContent from "@/components/dashboard/DashboardContent";
 import { EnterpriseLocationSelector } from "@/components/dashboard/EnterpriseLocationSelector";
+import { EnterpriseDrivePicker } from "@/components/dashboard/EnterpriseDrivePicker";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useSearchParams } from "next/navigation";
 
@@ -22,11 +23,7 @@ export default function EnterpriseFilesPage() {
             onSelectWorkspace={(id) => setSelectedWorkspaceId(id)}
           />
         ) : (
-          <div className="flex items-center gap-2 py-1">
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              Organization Files — Choose a drive to get started
-            </p>
-          </div>
+          <EnterpriseDrivePicker />
         )}
       </div>
       <main className="flex-1 overflow-auto p-6">

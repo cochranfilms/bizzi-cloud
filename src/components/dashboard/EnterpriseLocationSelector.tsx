@@ -185,56 +185,56 @@ export function EnterpriseLocationSelector({
   ];
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      {/* Current Drive */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-          Current drive
-        </span>
-        <div className="flex flex-wrap gap-1 rounded-lg border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
-          {systemDrives.map((d) => {
-            const isActive = d.id === driveId;
-            const Icon =
-              d.isCreatorRaw || d.name === "RAW"
-                ? Film
-                : d.name === "Gallery Media"
-                  ? Images
-                  : FolderOpen;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => handleDriveClick(d.id, d.name)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {d.name === "RAW" || d.isCreatorRaw ? "RAW" : d.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Scope + Destination */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    <div className={className}>
+      {/* Single line: Current drive | Access scope | Destination */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Current drive */}
         <div className="flex items-center gap-2">
-          <LayoutGrid className="h-4 w-4 text-neutral-500" />
-          <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
+          <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400 shrink-0">
+            Current drive
+          </span>
+          <div className="flex gap-1 rounded-lg border border-neutral-200 bg-white p-1 dark:border-neutral-700 dark:bg-neutral-900">
+            {systemDrives.map((d) => {
+              const isActive = d.id === driveId;
+              const Icon =
+                d.isCreatorRaw || d.name === "RAW"
+                  ? Film
+                  : d.name === "Gallery Media"
+                    ? Images
+                    : FolderOpen;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => handleDriveClick(d.id, d.name)}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {d.name === "RAW" || d.isCreatorRaw ? "RAW" : d.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Access scope - always clickable; empty state when 0 */}
+        <div className="flex items-center gap-2 border-l border-neutral-200 pl-4 dark:border-neutral-700">
+          <LayoutGrid className="h-4 w-4 shrink-0 text-neutral-500" />
+          <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400 shrink-0">
             Access scope
           </span>
           <div className="flex gap-0.5 rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
             {scopeTabs.map((tab) => {
-              const disabled = tab.count === 0;
-              const active = scope === tab.id && !disabled;
+              const active = scope === tab.id;
+              const hasOptions = tab.count > 0;
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  disabled={disabled}
                   onClick={() => {
                     setScope(tab.id);
                     const list =
@@ -248,13 +248,20 @@ export function EnterpriseLocationSelector({
                     const first = list[0];
                     if (first) onSelectWorkspace(first.id);
                   }}
-                  className={`rounded px-2.5 py-1 text-xs font-medium ${
-                    disabled
-                      ? "cursor-not-allowed text-neutral-400 dark:text-neutral-600"
-                      : active
-                        ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
-                        : "text-neutral-600 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+                      : hasOptions
+                        ? "text-neutral-600 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                        : "text-neutral-400 hover:bg-neutral-50 dark:text-neutral-500 dark:hover:bg-neutral-800"
                   }`}
+                  title={
+                    !hasOptions && tab.id === "shared"
+                      ? "No shared workspace for this drive yet. Your org admin can set up Shared Library, Shared RAW, or Shared Gallery."
+                      : !hasOptions && (tab.id === "project" || tab.id === "team")
+                        ? "No project or team workspaces"
+                        : undefined
+                  }
                 >
                   {tab.label}
                   {tab.count === 0 && " (0)"}
@@ -264,7 +271,8 @@ export function EnterpriseLocationSelector({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* Destination */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 border-l border-neutral-200 pl-4 dark:border-neutral-700">
           <span className="shrink-0 text-sm text-neutral-500">Destination</span>
           {loading ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900">
@@ -279,7 +287,7 @@ export function EnterpriseLocationSelector({
                   : scope === "team"
                     ? "No team workspaces available"
                     : scope === "shared"
-                      ? "No shared workspace available for this drive yet"
+                      ? "No shared workspace for this drive yet. Your org admin can set up Shared Library, Shared RAW, or Shared Gallery."
                       : "No private workspace"}
               </span>
             </div>
