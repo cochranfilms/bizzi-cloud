@@ -6,7 +6,7 @@ interface UserActivitySnapshotCardProps {
   totalUsers: number;
   activeToday: number;
   activeMonth: number;
-  newSignups: number;
+  newSignups?: number | null;
   uploadsToday: number;
 }
 
@@ -17,11 +17,12 @@ export default function UserActivitySnapshotCard({
   newSignups,
   uploadsToday,
 }: UserActivitySnapshotCardProps) {
+  const newPart = newSignups != null ? ` · +${newSignups} new` : "";
   return (
     <SummaryCard
       label="User Activity"
       value={`${activeToday.toLocaleString()} active today`}
-      subtitle={`${totalUsers.toLocaleString()} total · ${activeMonth} this month · +${newSignups} new · ${uploadsToday.toLocaleString()} uploads`}
+      subtitle={`${totalUsers.toLocaleString()} total · ${activeMonth} this month${newPart} · ${uploadsToday.toLocaleString()} uploads`}
     />
   );
 }

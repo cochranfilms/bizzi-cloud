@@ -53,34 +53,16 @@ export default function TopAccountsTable({ accounts }: TopAccountsTableProps) {
         r.revenueMonth > 0 ? formatCurrency(r.revenueMonth) : "—",
     },
     {
-      id: "risk",
-      header: "Risk",
-      cell: (r) =>
-        r.riskScore != null ? (
-          <span
-            className={
-              r.riskScore > 50
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-neutral-600 dark:text-neutral-400"
-            }
-          >
-            {r.riskScore}
-          </span>
-        ) : (
-          "—"
-        ),
-    },
-    {
       id: "lastActive",
       header: "Last Active",
-      cell: (r) => formatRelativeTime(r.lastActive),
+      cell: (r) => (r.lastActive ? formatRelativeTime(r.lastActive) : "—"),
     },
   ];
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:shadow-neutral-900/50">
       <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
-        Top accounts by storage, revenue & risk
+        Top accounts by storage & revenue
       </h3>
       <DataTable
         columns={columns}

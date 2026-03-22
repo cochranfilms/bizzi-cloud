@@ -4,6 +4,7 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStripeInstance } from "@/lib/stripe";
+import { isB2Configured, listBucketStats } from "@/lib/b2";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 
@@ -60,6 +61,28 @@ export async function GET(request: Request) {
       status: "critical",
       lastCheck: now,
     });
+  }
+
+  if (isB2Configured()) {
+    try {
+      const start = Date.now();
+      await listBucketStats("content/", 10);
+      const latencyMs = Date.now() - start;
+      checks.push({
+        id: "storage",
+        name: "Backblaze B2",
+        status: latencyMs < 5000 ? "healthy" : "warning",
+        lastCheck: now,
+        latencyMs,
+      });
+    } catch (err) {
+      checks.push({
+        id: "storage",
+        name: "Backblaze B2",
+        status: "critical",
+        lastCheck: now,
+      });
+    }
   }
 
   checks.push({

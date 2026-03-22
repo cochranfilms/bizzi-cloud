@@ -5,11 +5,40 @@
  *   When drive_id is null, returns empty (drive-first).
  * mode=admin: For Admin Explorer - all accessible workspaces, includes created_by for private.
  */
-import { verifyIdToken } from "@/lib/firebase-admin";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { verifyIdToken, getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import { getAccessibleWorkspaceIds, getWorkspacesForNormalUpload } from "@/lib/workspace-access";
-import { FieldPath } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+
+/** Resolve owner UID to display name: org seat > profile > Firebase Auth > fallback */
+async function resolveOwnerDisplayName(
+  db: Awaited<ReturnType<typeof getAdminFirestore>>,
+  auth: Awaited<ReturnType<typeof getAdminAuth>>,
+  orgId: string,
+  ownerId: string
+): Promise<string> {
+  const seatDoc = await db.collection("organization_seats").doc(`${orgId}_${ownerId}`).get();
+  if (seatDoc.exists) {
+    const d = seatDoc.data();
+    const displayName = (d?.display_name as string)?.trim();
+    const email = (d?.email as string)?.trim();
+    if (displayName) return displayName;
+    if (email) return email;
+  }
+  const profileSnap = await db.collection("profiles").doc(ownerId).get();
+  if (profileSnap.exists) {
+    const d = profileSnap.data();
+    const name = (d?.display_name ?? d?.displayName) as string;
+    if (name?.trim()) return name.trim();
+  }
+  try {
+    const userRecord = await auth.getUser(ownerId);
+    if (userRecord.displayName?.trim()) return userRecord.displayName.trim();
+    if (userRecord.email) return userRecord.email;
+  } catch {
+    // Auth lookup failed
+  }
+  return "Unknown member";
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -133,24 +162,19 @@ export async function GET(request: Request) {
     );
 
   const ownerIds = [...new Set(workspaces.map((w) => (w as { created_by?: string }).created_by).filter(Boolean))] as string[];
+  const auth = getAdminAuth();
   const ownerNames = new Map<string, string>();
-  for (let i = 0; i < ownerIds.length; i += 30) {
-    const batch = ownerIds.slice(i, i + 30);
-    const profilesSnap = await db
-      .collection("profiles")
-      .where(FieldPath.documentId(), "in", batch)
-      .get();
-    for (const p of profilesSnap.docs) {
-      const data = p.data();
-      const name = (data?.display_name ?? data?.displayName ?? p.id.slice(0, 8)) as string;
-      ownerNames.set(p.id, name);
-    }
-  }
+  await Promise.all(
+    ownerIds.map(async (id) => {
+      const name = await resolveOwnerDisplayName(db, auth, organizationId, id);
+      ownerNames.set(id, name);
+    })
+  );
 
   workspaces = workspaces.map((w) => {
     const createdBy = (w as { created_by?: string }).created_by;
     if (createdBy) {
-      return { ...w, owner_display_name: ownerNames.get(createdBy) ?? null };
+      return { ...w, owner_display_name: ownerNames.get(createdBy) ?? "Unknown member" };
     }
     return w;
   });

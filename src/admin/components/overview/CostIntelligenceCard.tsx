@@ -5,20 +5,21 @@ import { useAdminFormatCurrency } from "@/context/AdminDisplayContext";
 
 interface CostIntelligenceCardProps {
   mrr: number;
-  infraCost: number;
-  grossMarginPercent: number;
+  infraCost?: number | null;
+  grossMarginPercent?: number | null;
   costTrendVsRevenue?: "ok" | "warning" | "critical";
 }
 
 export default function CostIntelligenceCard({
   mrr,
-  infraCost,
+  infraCost = 0,
   grossMarginPercent,
   costTrendVsRevenue = "ok",
 }: CostIntelligenceCardProps) {
   const formatCurrency = useAdminFormatCurrency();
-  const profit = mrr - infraCost;
-  const isHealthy = grossMarginPercent >= 60;
+  const hasCostData = infraCost != null && infraCost > 0 && grossMarginPercent != null;
+  const profit = hasCostData ? mrr - infraCost : null;
+  const isHealthy = grossMarginPercent != null && grossMarginPercent >= 60;
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:shadow-neutral-900/50">
@@ -33,23 +34,25 @@ export default function CostIntelligenceCard({
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-neutral-500">Infra cost</span>
-          <span>{formatCurrency(infraCost)}</span>
+          <span>{hasCostData ? formatCurrency(infraCost) : "—"}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-neutral-500">Gross margin</span>
           <span
             className={
-              isHealthy
-                ? "font-medium text-emerald-600 dark:text-emerald-400"
-                : "font-medium text-amber-600 dark:text-amber-400"
+              hasCostData
+                ? isHealthy
+                  ? "font-medium text-emerald-600 dark:text-emerald-400"
+                  : "font-medium text-amber-600 dark:text-amber-400"
+                : "text-neutral-400"
             }
           >
-            {grossMarginPercent}%
+            {hasCostData ? `${grossMarginPercent}%` : "—"}
           </span>
         </div>
         <div className="flex justify-between border-t border-neutral-200 pt-2 text-sm dark:border-neutral-700">
           <span className="text-neutral-500">Estimated profit</span>
-          <span className="font-medium">{formatCurrency(profit)}</span>
+          <span className="font-medium">{profit != null ? formatCurrency(profit) : "—"}</span>
         </div>
       </div>
       {costTrendVsRevenue !== "ok" && (

@@ -27,24 +27,23 @@ export interface TopAccount {
   plan: string;
   storageUsedBytes: number;
   revenueMonth: number;
-  riskScore?: number;
-  lastActive: string;
+  lastActive: string | null;
 }
 
 export interface OverviewMetrics {
   totalUsers: number;
   activeUsersToday: number;
   activeUsersMonth: number;
-  newSignups: number;
-  churnedUsers: number;
+  newSignups: number | null;
+  churnedUsers: number | null;
   totalStorageBytes: number;
   totalStorageAvailableBytes: number | null;
   avgStoragePerUserBytes: number;
   uploadsToday: number;
-  downloadTrafficBytesToday: number;
+  downloadTrafficBytesToday: number | null;
   mrr: number;
-  estimatedInfraCost: number;
-  grossMarginPercent: number;
+  estimatedInfraCost: number | null;
+  grossMarginPercent: number | null;
   supportTicketsOpen: number;
   criticalAlertsCount: number;
   lastSyncTimestamp: string;

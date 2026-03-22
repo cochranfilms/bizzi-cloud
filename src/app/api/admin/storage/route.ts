@@ -1,10 +1,12 @@
 /**
  * GET /api/admin/storage
  * Returns real storage metrics from Firestore (profiles, organizations, backup_files).
+ * Uses aggregation for total bytes (no capped sampling).
  */
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
+import { AggregateField } from "firebase-admin/firestore";
 import { getCategoryFromFile } from "@/lib/analytics/category-map";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -28,10 +30,19 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const authService = getAdminAuth();
 
-  const [profilesSnap, orgsSnap, filesSnap] = await Promise.all([
+  const [profilesSnap, orgsSnap, filesSnap, aggSnap] = await Promise.all([
     db.collection("profiles").limit(10000).get(),
     db.collection("organizations").limit(1000).get(),
     db.collection("backup_files").limit(5000).get(),
+    (async () => {
+      try {
+        const q = db.collection("backup_files").where("deleted_at", "==", null);
+        const agg = q.aggregate({ totalBytes: AggregateField.sum("size_bytes") });
+        return await agg.get();
+      } catch {
+        return null;
+      }
+    })(),
   ]);
 
   let totalBytesFromProfiles = 0;
@@ -53,18 +64,15 @@ export async function GET(request: Request) {
     totalBytesFromProfiles += used;
   }
 
-  // Compute total from backup_files as source of truth (profiles may have stale/missing storage_used_bytes)
   let totalBytesFromFiles = 0;
-  for (const doc of filesSnap.docs) {
-    const data = doc.data();
-    if (data.deleted_at) continue;
-    totalBytesFromFiles += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  if (aggSnap) {
+    totalBytesFromFiles = Number(aggSnap.data().totalBytes ?? 0);
   }
 
-  // Use backup_files total when it's larger (more accurate) or when profile total is 0
-  const totalBytes = totalBytesFromProfiles > 0 && totalBytesFromProfiles >= totalBytesFromFiles
-    ? totalBytesFromProfiles
-    : totalBytesFromFiles;
+  const totalBytes =
+    totalBytesFromProfiles > 0 && totalBytesFromProfiles >= totalBytesFromFiles
+      ? totalBytesFromProfiles
+      : totalBytesFromFiles;
 
   // Update profile storage for largest accounts when profile bytes are stale (use actual file sums)
   if (totalBytesFromProfiles === 0 && totalBytesFromFiles > 0) {

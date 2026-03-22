@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useRouter } from "next/navigation";
-import { Shield, LayoutGrid, FolderOpen, User, Loader2 } from "lucide-react";
+import { LayoutGrid, FolderOpen, User, Loader2, Plus, ExternalLink } from "lucide-react";
 import { getDisplayLabel } from "@/lib/workspace-display-labels";
 
 type DriveFilter = "all" | "storage" | "raw" | "gallery";
@@ -28,6 +29,7 @@ export default function AdminWorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [driveFilter, setDriveFilter] = useState<DriveFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [ensuringShared, setEnsuringShared] = useState(false);
 
   useEffect(() => {
     if (!org || role !== "admin") {
@@ -35,37 +37,57 @@ export default function AdminWorkspacesPage() {
     }
   }, [org, role, router]);
 
+  const fetchWorkspaces = useCallback(async () => {
+    if (!org?.id || !user) return;
+    setLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const params = new URLSearchParams({
+        organization_id: org.id,
+        mode: "admin",
+      });
+      const res = await fetch(`/api/workspaces/list?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = res.ok ? (await res.json()) as { workspaces?: WorkspaceRow[] } : { workspaces: [] };
+      setWorkspaces(data.workspaces ?? []);
+    } catch {
+      setWorkspaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [org?.id, user]);
+
   useEffect(() => {
     if (!org?.id || !user) {
       setWorkspaces([]);
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      try {
-        const token = await user.getIdToken();
-        if (cancelled) return;
-        const params = new URLSearchParams({
-          organization_id: org.id,
-          mode: "admin",
-        });
-        const res = await fetch(`/api/workspaces/list?${params}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = res.ok ? (await res.json()) as { workspaces?: WorkspaceRow[] } : { workspaces: [] };
-        if (!cancelled) setWorkspaces(data.workspaces ?? []);
-      } catch {
-        if (!cancelled) setWorkspaces([]);
-      } finally {
-        if (!cancelled) setLoading(false);
+    fetchWorkspaces();
+  }, [fetchWorkspaces, org?.id, user]);
+
+  const handleEnsureSharedWorkspaces = async () => {
+    if (!org?.id || !user) return;
+    setEnsuringShared(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/enterprise/ensure-shared-workspaces", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        await fetchWorkspaces();
+      } else {
+        const err = (await res.json()) as { error?: string };
+        alert(err.error ?? "Failed to set up shared workspaces");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [org?.id, user]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to set up shared workspaces");
+    } finally {
+      setEnsuringShared(false);
+    }
+  };
 
   if (!org || role !== "admin") {
     return (
@@ -111,9 +133,9 @@ export default function AdminWorkspacesPage() {
     return (
       <li
         key={w.id}
-        className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2 dark:border-neutral-800"
+        className="flex items-center justify-between gap-4 rounded-lg border border-neutral-100 px-3 py-2 dark:border-neutral-800"
       >
-        <span className="font-medium">{displayName}</span>
+        <span className="min-w-0 flex-1 font-medium">{displayName}</span>
         <div className="flex shrink-0 items-center gap-3 text-xs text-neutral-500">
           <span>{driveLabel}</span>
           <span className="rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
@@ -121,6 +143,15 @@ export default function AdminWorkspacesPage() {
           </span>
           {w.owner_display_name && (
             <span className="text-neutral-600 dark:text-neutral-400">{w.owner_display_name}</span>
+          )}
+          {w.drive_id && (
+            <Link
+              href={`/enterprise/files?drive=${encodeURIComponent(w.drive_id)}&workspace=${encodeURIComponent(w.id)}`}
+              className="flex items-center gap-1 text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+            >
+              View files
+              <ExternalLink className="h-3 w-3" />
+            </Link>
           )}
         </div>
       </li>
@@ -143,7 +174,20 @@ export default function AdminWorkspacesPage() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleEnsureSharedWorkspaces}
+            disabled={ensuringShared}
+            className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            {ensuringShared ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            Set up shared workspaces
+          </button>
           <select
             value={driveFilter}
             onChange={(e) => setDriveFilter(e.target.value as DriveFilter)}

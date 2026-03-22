@@ -6,7 +6,6 @@ import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import { getStripeInstance } from "@/lib/stripe";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
-import type { PlanId } from "@/lib/plan-constants";
 import { computeSubscriptionMrr } from "@/lib/stripe-mrr";
 
 export async function GET(request: Request) {
@@ -70,6 +69,28 @@ export async function GET(request: Request) {
     } catch (_) {}
   }
 
+  const lastActiveByUser = new Map<string, string>();
+  try {
+    const activitySnap = await db
+      .collection("activity_logs")
+      .orderBy("created_at", "desc")
+      .limit(3000)
+      .get();
+    for (const d of activitySnap.docs) {
+      const uid = (d.data().actor_user_id as string) || "";
+      if (uid && !lastActiveByUser.has(uid)) {
+        const ts = d.data().created_at;
+        const iso =
+          ts && typeof ts === "object" && "toDate" in ts
+            ? (ts as { toDate: () => Date }).toDate().toISOString()
+            : typeof ts === "string"
+              ? ts
+              : null;
+        if (iso) lastActiveByUser.set(uid, iso);
+      }
+    }
+  } catch (_) {}
+
   const accounts = profiles.map((p) => ({
     id: p.id,
     plan: p.plan_id,
@@ -91,8 +112,7 @@ export async function GET(request: Request) {
     plan: a.plan,
     storageUsedBytes: a.storageUsedBytes,
     revenueMonth: Math.round(a.revenueMonth * 100) / 100,
-    riskScore: 0,
-    lastActive: new Date().toISOString(),
+    lastActive: lastActiveByUser.get(a.id) ?? null,
   }));
 
   return NextResponse.json({ accounts: topAccounts });

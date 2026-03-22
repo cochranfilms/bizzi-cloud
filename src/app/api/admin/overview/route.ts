@@ -1,12 +1,25 @@
 /**
  * GET /api/admin/overview
- * Returns real platform metrics from Firestore + Stripe.
+ * Returns real platform metrics from Firestore + Stripe + B2.
+ * No placeholder data: all metrics from real sources.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStripeInstance } from "@/lib/stripe";
+import { isB2Configured, listBucketStats } from "@/lib/b2";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import type { PlanId } from "@/lib/plan-constants";
+import { AggregateField, Timestamp } from "firebase-admin/firestore";
+
+/** B2 Pay-as-you-go: $6/TB/month. First 10GB free. */
+const B2_STORAGE_USD_PER_TB = 6;
+const B2_FREE_BYTES = 10 * 1024 * 1024 * 1024;
+
+function estimateB2StorageCost(totalBytes: number): number {
+  const billableBytes = Math.max(0, totalBytes - B2_FREE_BYTES);
+  const billableTB = billableBytes / (1024 ** 4);
+  return Math.round(billableTB * B2_STORAGE_USD_PER_TB * 100) / 100;
+}
 
 export async function GET(request: Request) {
   const auth = await requireAdminAuth(request);
@@ -14,11 +27,29 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
 
-  const [profilesSnap, orgsSnap, filesSnap, supportOpenSnap] = await Promise.all([
+  const [
+    profilesSnap,
+    orgsSnap,
+    supportOpenSnap,
+    uploadSessionsTodaySnap,
+    pastDueSubsSnap,
+  ] = await Promise.all([
     db.collection("profiles").get(),
     db.collection("organizations").get(),
-    db.collection("backup_files").limit(10000).get(),
     db.collection("support_tickets").where("status", "in", ["open", "in_progress"]).count().get(),
+    db
+      .collection("upload_sessions")
+      .where("createdAt", ">=", new Date().toISOString().slice(0, 10))
+      .get(),
+    (async () => {
+      try {
+        const stripe = getStripeInstance();
+        const subs = await stripe.subscriptions.list({ status: "past_due", limit: 100 });
+        return subs.data.length;
+      } catch {
+        return 0;
+      }
+    })(),
   ]);
 
   const profiles = profilesSnap.docs.map((d) => {
@@ -44,19 +75,71 @@ export async function GET(request: Request) {
     totalStorageFromProfiles += used;
   }
 
-  let totalStorageFromFiles = 0;
-  for (const doc of filesSnap.docs) {
-    const data = doc.data();
-    if (data.deleted_at) continue;
-    totalStorageFromFiles += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  let totalStorageBytes = totalStorageFromProfiles;
+  try {
+    const q = db.collection("backup_files").where("deleted_at", "==", null);
+    const agg = q.aggregate({ totalBytes: AggregateField.sum("size_bytes") });
+    const aggSnap = await agg.get();
+    const filesSum = Number(aggSnap.data().totalBytes ?? 0);
+    if (filesSum > 0) {
+      totalStorageBytes =
+        totalStorageFromProfiles > 0 && totalStorageFromProfiles >= filesSum
+          ? totalStorageFromProfiles
+          : filesSum;
+    }
+  } catch (err) {
+    console.warn("[admin/overview] Storage aggregation failed, using profile+org total:", err);
   }
 
-  const totalStorageBytes =
-    totalStorageFromProfiles > 0 && totalStorageFromProfiles >= totalStorageFromFiles
-      ? totalStorageFromProfiles
-      : totalStorageFromFiles;
-
   const supportTicketsOpen = supportOpenSnap.data().count;
+
+  let criticalAlertsCount = pastDueSubsSnap;
+  for (const d of profilesSnap.docs) {
+    const data = d.data();
+    const used = typeof data.storage_used_bytes === "number" ? data.storage_used_bytes : 0;
+    const quota = typeof data.storage_quota_bytes === "number" ? data.storage_quota_bytes : 2 * 1024 ** 3;
+    if (quota > 0 && used >= quota * 0.95) criticalAlertsCount++;
+  }
+
+  const uploadsToday = uploadSessionsTodaySnap.docs.filter(
+    (d) => (d.data().status as string) === "completed"
+  ).length;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const monthAgo = new Date();
+  monthAgo.setDate(monthAgo.getDate() - 30);
+  const cutoff24h = Timestamp.fromDate(yesterday);
+  const cutoff30d = Timestamp.fromDate(monthAgo);
+
+  let activeUsersToday = 0;
+  let activeUsersMonth = 0;
+  try {
+    const [todaySnap, monthSnap] = await Promise.all([
+      db
+        .collection("activity_logs")
+        .where("created_at", ">=", cutoff24h)
+        .get(),
+      db
+        .collection("activity_logs")
+        .where("created_at", ">=", cutoff30d)
+        .get(),
+    ]);
+    const todayIds = new Set<string>();
+    const monthIds = new Set<string>();
+    for (const d of todaySnap.docs) {
+      const uid = (d.data().actor_user_id as string) || "";
+      if (uid) todayIds.add(uid);
+    }
+    for (const d of monthSnap.docs) {
+      const uid = (d.data().actor_user_id as string) || "";
+      if (uid) monthIds.add(uid);
+    }
+    activeUsersToday = todayIds.size;
+    activeUsersMonth = monthIds.size;
+  } catch (err) {
+    console.warn("[admin/overview] Activity aggregation failed:", err);
+  }
 
   const avgStoragePerUserBytes =
     totalUsers > 0 ? Math.floor(totalStorageBytes / totalUsers) : 0;
@@ -133,26 +216,37 @@ export async function GET(request: Request) {
     console.error("[admin/overview] Stripe error:", err);
   }
 
-  const estimatedInfraCost = Math.round(mrr * 0.29);
-  const grossMarginPercent =
-    mrr > 0 ? Math.round(((mrr - estimatedInfraCost) / mrr) * 100) : 0;
+  let estimatedInfraCost: number | null = null;
+  let grossMarginPercent: number | null = null;
+
+  if (isB2Configured()) {
+    try {
+      const bucketStats = await listBucketStats(undefined, 50_000);
+      estimatedInfraCost = estimateB2StorageCost(bucketStats.totalBytes);
+      if (mrr > 0 && estimatedInfraCost !== null) {
+        grossMarginPercent = Math.round(((mrr - estimatedInfraCost) / mrr) * 100);
+      }
+    } catch (err) {
+      console.warn("[admin/overview] B2 bucket stats failed:", err);
+    }
+  }
 
   return NextResponse.json({
     totalUsers,
-    activeUsersToday: totalUsers,
-    activeUsersMonth: totalUsers,
-    newSignups: 0,
-    churnedUsers: 0,
+    activeUsersToday,
+    activeUsersMonth,
+    newSignups: null,
+    churnedUsers: null,
     totalStorageBytes,
     totalStorageAvailableBytes: null,
     avgStoragePerUserBytes,
-    uploadsToday: 0,
-    downloadTrafficBytesToday: 0,
+    uploadsToday,
+    downloadTrafficBytesToday: null,
     mrr: Math.round(mrr * 100) / 100,
     estimatedInfraCost,
     grossMarginPercent,
     supportTicketsOpen,
-    criticalAlertsCount: 0,
+    criticalAlertsCount,
     lastSyncTimestamp: new Date().toISOString(),
     subscriptionsByPlan,
     payingUsers: payingProfiles.length,

@@ -18,6 +18,7 @@ interface OverviewChartsGridProps {
 
 export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridProps) {
   const formatCurrency = useAdminFormatCurrency();
+  const hasTrend = revenueTrend.length > 0;
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:shadow-neutral-900/50">
@@ -25,6 +26,12 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
           Revenue vs cost (30 days)
         </h3>
         <div className="h-64">
+          {!hasTrend && (
+            <div className="flex h-full items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+              Connect Stripe Reporting for historical revenue and cost trend
+            </div>
+          )}
+          {hasTrend && (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={revenueTrend}>
               <defs>
@@ -69,6 +76,7 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
               />
             </AreaChart>
           </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -77,6 +85,12 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
           MRR trend (30 days)
         </h3>
         <div className="h-64">
+          {!hasTrend && (
+            <div className="flex h-full items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+              Connect Stripe Reporting for historical MRR trend
+            </div>
+          )}
+          {hasTrend && (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={revenueTrend}>
               <defs>
@@ -109,6 +123,7 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
               />
             </AreaChart>
           </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

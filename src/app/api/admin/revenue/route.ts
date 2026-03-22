@@ -71,13 +71,6 @@ export async function GET(request: Request) {
 
   const arr = mrr * 12;
   const arpu = payingUsers > 0 ? Math.round((mrr / payingUsers) * 100) / 100 : 0;
-  const estimatedCost = Math.round(mrr * 0.29 * 100) / 100;
-  const profitPerUser =
-    payingUsers > 0
-      ? Math.round(((mrr - mrr * 0.29) / payingUsers) * 100) / 100
-      : 0;
-  const costPerUser =
-    payingUsers > 0 ? Math.round((estimatedCost / payingUsers) * 100) / 100 : 0;
 
   const planLabels: Record<string, string> = {
     solo: "Bizzi Creator",
@@ -93,20 +86,6 @@ export async function GET(request: Request) {
     users: data.users,
   }));
 
-  const trend: Array<{ date: string; mrr: number; revenue: number; cost: number }> = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const dayMrr = mrr;
-    trend.push({
-      date: dateStr,
-      mrr: Math.round(dayMrr * 100) / 100,
-      revenue: Math.round(dayMrr * 100) / 100,
-      cost: Math.round(dayMrr * 0.29 * 100) / 100,
-    });
-  }
-
   return NextResponse.json({
     summary: {
       mrr: Math.round(mrr * 100) / 100,
@@ -114,13 +93,13 @@ export async function GET(request: Request) {
       payingUsers,
       freeUsers,
       conversionRate,
-      failedPayments: 0,
-      refundCount: 0,
+      failedPayments: null,
+      refundCount: null,
       arpu,
-      costPerUser,
-      profitPerUser,
+      costPerUser: null,
+      profitPerUser: null,
     },
     byPlan: byPlanArray,
-    trend,
+    trend: [],
   });
 }

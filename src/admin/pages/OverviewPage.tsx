@@ -13,7 +13,6 @@ import CostIntelligenceCard from "../components/overview/CostIntelligenceCard";
 import TopAccountsTable from "../components/overview/TopAccountsTable";
 import OverviewChartsGrid from "../components/overview/OverviewChartsGrid";
 import { useAdminOverview } from "../hooks/useAdminOverview";
-import { calculateMetricDelta } from "../utils/calculateMetricDelta";
 
 export default function OverviewPage() {
   const {
@@ -55,12 +54,6 @@ export default function OverviewPage() {
     );
   }
 
-  const revenueDelta = metrics
-    ? calculateMetricDelta(metrics.mrr, metrics.mrr * 0.95)
-    : undefined;
-  const activeUsersDelta = metrics
-    ? calculateMetricDelta(metrics.activeUsersToday, metrics.activeUsersToday - 20)
-    : undefined;
   const storagePercent =
     metrics && metrics.totalStorageAvailableBytes
       ? (metrics.totalStorageBytes / (metrics.totalStorageBytes + metrics.totalStorageAvailableBytes)) * 100
@@ -87,11 +80,9 @@ export default function OverviewPage() {
       <ExecutiveSummaryGrid
         platformHealth={systemStatus}
         revenue={metrics?.mrr ?? 0}
-        revenueDelta={revenueDelta}
         storageUsedBytes={metrics?.totalStorageBytes ?? 0}
         storagePercent={storagePercent ?? undefined}
         activeUsersToday={metrics?.activeUsersToday ?? 0}
-        activeUsersDelta={activeUsersDelta}
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -102,13 +93,13 @@ export default function OverviewPage() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <RevenueSnapshotCard
           mrr={metrics?.mrr ?? 0}
-          grossMarginPercent={metrics?.grossMarginPercent ?? 0}
-          infraCost={metrics?.estimatedInfraCost ?? 0}
+          grossMarginPercent={metrics?.grossMarginPercent}
+          infraCost={metrics?.estimatedInfraCost}
         />
         <CostIntelligenceCard
           mrr={metrics?.mrr ?? 0}
-          infraCost={metrics?.estimatedInfraCost ?? 0}
-          grossMarginPercent={metrics?.grossMarginPercent ?? 0}
+          infraCost={metrics?.estimatedInfraCost}
+          grossMarginPercent={metrics?.grossMarginPercent}
         />
         <StorageSnapshotCard
           totalUsedBytes={metrics?.totalStorageBytes ?? 0}
@@ -119,7 +110,7 @@ export default function OverviewPage() {
           totalUsers={metrics?.totalUsers ?? 0}
           activeToday={metrics?.activeUsersToday ?? 0}
           activeMonth={metrics?.activeUsersMonth ?? 0}
-          newSignups={metrics?.newSignups ?? 0}
+          newSignups={metrics?.newSignups}
           uploadsToday={metrics?.uploadsToday ?? 0}
         />
       </div>
