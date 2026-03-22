@@ -11,6 +11,17 @@
       ]
     },
     {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "workspace_id", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "workspaces",
       "queryScope": "COLLECTION",
       "fields": [

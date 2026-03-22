@@ -9,6 +9,9 @@ interface CurrentFolderContextValue {
   setCurrentDrivePath: (path: string) => void;
   selectedWorkspaceId: string | null;
   setSelectedWorkspaceId: (id: string | null) => void;
+  /** When viewing a workspace on a different drive (e.g. Shared Library), use this drive for file queries */
+  effectiveDriveIdForFiles: string | null;
+  setEffectiveDriveIdForFiles: (id: string | null) => void;
 }
 
 const CurrentFolderContext = createContext<CurrentFolderContextValue | null>(null);
@@ -17,6 +20,7 @@ export function CurrentFolderProvider({ children }: { children: React.ReactNode 
   const [currentDriveId, setCurrentDriveId] = useState<string | null>(null);
   const [currentDrivePath, setCurrentDrivePath] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [effectiveDriveIdForFiles, setEffectiveDriveIdForFiles] = useState<string | null>(null);
   const setCurrentDrive = useCallback((id: string | null) => {
     setCurrentDriveId(id);
   }, []);
@@ -27,6 +31,8 @@ export function CurrentFolderProvider({ children }: { children: React.ReactNode 
     setCurrentDrivePath,
     selectedWorkspaceId,
     setSelectedWorkspaceId,
+    effectiveDriveIdForFiles,
+    setEffectiveDriveIdForFiles,
   };
   return (
     <CurrentFolderContext.Provider value={value}>
@@ -45,6 +51,8 @@ export function useCurrentFolder() {
       setCurrentDrivePath: () => {},
       selectedWorkspaceId: null,
       setSelectedWorkspaceId: () => {},
+      effectiveDriveIdForFiles: null,
+      setEffectiveDriveIdForFiles: () => {},
     }
   );
 }

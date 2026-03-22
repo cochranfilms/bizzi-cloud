@@ -48,7 +48,7 @@ export function EnterpriseLocationSelector({
 }: EnterpriseLocationSelectorProps) {
   const { org } = useEnterprise();
   const { user } = useAuth();
-  const { setCurrentDrive } = useCurrentFolder();
+  const { setCurrentDrive, setEffectiveDriveIdForFiles } = useCurrentFolder();
   const { linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useSubscription();
   const router = useRouter();
@@ -145,6 +145,17 @@ export function EnterpriseLocationSelector({
       setScope(s);
     }
   }, [selectedWorkspaceId, workspaces]);
+
+  // When selected workspace lives on a different drive (e.g. Shared Library on org shared drive),
+  // set effective drive for file queries so we show files from the correct drive
+  useEffect(() => {
+    const sel = workspaces.find((w) => w.id === selectedWorkspaceId);
+    if (sel?.drive_id && sel.drive_id !== driveId) {
+      setEffectiveDriveIdForFiles(sel.drive_id);
+    } else {
+      setEffectiveDriveIdForFiles(null);
+    }
+  }, [selectedWorkspaceId, workspaces, driveId, setEffectiveDriveIdForFiles]);
 
   const privateWorkspaces = workspaces.filter((w) => w.workspace_type === "private");
   const sharedWorkspaces = workspaces.filter((w) => w.workspace_type === "org_shared");

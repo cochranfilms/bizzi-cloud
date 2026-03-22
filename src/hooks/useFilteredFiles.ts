@@ -27,6 +27,8 @@ function filterStateKey(state: FilterState): string {
 export interface UseFilteredFilesOptions {
   /** Scope to a specific drive when viewing inside a drive */
   driveId?: string | null;
+  /** When viewing a workspace on a different drive (e.g. Shared Library), use this drive for file queries */
+  effectiveDriveId?: string | null;
   /** When set, treat "drive" param as navigation (not a filter) when it matches this ID - e.g. Storage, RAW, Gallery Media */
   driveIdAsNavigation?: string | null;
   /** Use standard useCloudFiles when no filters (default true) */
@@ -51,6 +53,8 @@ export interface UseFilteredFilesResult {
   activeFilters: ActiveFilter[];
   /** Whether any filters are active */
   hasFilters: boolean;
+  /** Whether using filtered/scoped view (filters or effective drive for workspace) */
+  useFilteredScoped: boolean;
 }
 
 /** Map API response file to RecentFile */
@@ -84,8 +88,9 @@ export function useFilteredFiles(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { driveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
+  const { driveId, effectiveDriveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
   const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
+  const driveIdForApi = effectiveDriveId ?? driveId;
 
   const [filterState, setFilterState] = useState<FilterState>(() =>
     filtersFromSearchParams(searchParams)
@@ -106,7 +111,11 @@ export function useFilteredFiles(
   const effectiveFilterStateRef = useRef(effectiveFilterState);
   effectiveFilterStateRef.current = effectiveFilterState;
   const hasFilters = hasActiveFilters(effectiveFilterState);
-  const filterKey = useMemo(() => filterStateKey(effectiveFilterState), [effectiveFilterState]);
+  const useFilteredScoped = hasFilters || !!effectiveDriveId;
+  const filterKey = useMemo(
+    () => `${filterStateKey(effectiveFilterState)}|effective=${effectiveDriveId ?? ""}`,
+    [effectiveFilterState, effectiveDriveId]
+  );
 
   const updateUrl = useCallback(
     (state: FilterState) => {
@@ -162,7 +171,7 @@ export function useFilteredFiles(
     try {
       const token = await user.getIdToken(true);
       const params = filterStateToSearchParams(state);
-      if (driveId) params.set("drive_id", driveId);
+      if (driveIdForApi) params.set("drive_id", driveIdForApi);
       if (isEnterprise && org?.id) {
         params.set("context", "enterprise");
         params.set("organization_id", org.id);
@@ -189,7 +198,7 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, driveId, isEnterprise, org?.id]);
+  }, [user, driveIdForApi, isEnterprise, org?.id]);
 
   const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 
@@ -203,11 +212,11 @@ export function useFilteredFiles(
   }, [searchQueryString]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (hasFilters) {
+    if (useFilteredScoped) {
       const t = setTimeout(fetchFiltered, FILTER_DEBOUNCE_MS);
       return () => clearTimeout(t);
     }
-  }, [hasFilters, filterKey, fetchFiltered]);
+  }, [useFilteredScoped, filterKey, fetchFiltered]);
 
   /** Replace URL with only drive= when opening Storage/RAW/Gallery Media (clears stale filters) */
   const clearFiltersAndKeepDrive = useCallback(
@@ -222,9 +231,9 @@ export function useFilteredFiles(
   const activeFilters = getActiveFilters(effectiveFilterState);
 
   return {
-    files: hasFilters ? files : [],
-    loading: hasFilters ? loading : false,
-    totalCount: hasFilters ? totalCount : 0,
+    files: useFilteredScoped ? files : [],
+    loading: useFilteredScoped ? loading : false,
+    totalCount: useFilteredScoped ? totalCount : 0,
     setFilter,
     removeFilterById,
     clearFilters,
@@ -232,5 +241,6 @@ export function useFilteredFiles(
     filterState,
     activeFilters,
     hasFilters,
+    useFilteredScoped,
   };
 }

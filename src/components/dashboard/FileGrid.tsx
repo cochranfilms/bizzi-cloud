@@ -189,7 +189,7 @@ export default function FileGrid() {
   const { files: heartedFiles, loading: heartedLoading, hasMore: heartedHasMore, loadMore: loadMoreHearted, refresh: refreshHearted } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
   const { hasEditor, hasGallerySuite } = useSubscription();
-  const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath } = useCurrentFolder();
+  const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath, effectiveDriveIdForFiles } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [dragState, setDragState] = useState<{
@@ -232,6 +232,7 @@ export default function FileGrid() {
     loading: filtersLoading,
     totalCount,
     hasFilters,
+    useFilteredScoped,
     filterState,
     setFilter,
     removeFilterById,
@@ -240,6 +241,7 @@ export default function FileGrid() {
     activeFilters,
   } = useFilteredFiles({
     driveId: currentDrive?.id ?? null,
+    effectiveDriveId: effectiveDriveIdForFiles,
     driveIdAsNavigation: isBizziCloudBaseDrive(currentDrive?.name ?? "")
       ? currentDrive?.id ?? null
       : null,
@@ -421,7 +423,7 @@ export default function FileGrid() {
 
   /** Stale-while-revalidate: keep showing previous files during filter load to avoid blinking */
   const fallbackFiles = currentDrive ? displayedFiles : recentFiles;
-  const filesToShow = hasFilters
+  const filesToShow = useFilteredScoped
     ? filtersLoading && filteredFiles.length === 0
       ? fallbackFiles
       : filteredFiles
@@ -429,7 +431,7 @@ export default function FileGrid() {
       ? displayedFiles
       : recentFiles;
 
-  const showFolders = !hasFilters;
+  const showFolders = !useFilteredScoped;
 
   // Refresh drive files when storage changes (e.g. after upload) so UI updates in real time.
   // Use silent: true to avoid loading flash - keep current content visible during background refetch.
@@ -851,11 +853,11 @@ export default function FileGrid() {
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
-  const totalFileCount = hasFilters ? (() => {
+  const totalFileCount = useFilteredScoped ? (() => {
     const base = currentDrive ? displayedFiles.length : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
     return base;
   })() : (currentDrive ? displayedFiles.length : recentFiles.length);
-  const displayTotalCount = hasFilters ? totalCount : totalFileCount;
+  const displayTotalCount = useFilteredScoped ? totalCount : totalFileCount;
 
   return (
     <div
@@ -879,15 +881,15 @@ export default function FileGrid() {
             onViewModeChange={setViewMode}
             hasActiveFilters={hasFilters}
           />
-          {(hasFilters || !currentDrive) && (
+          {(useFilteredScoped || !currentDrive) && (
           <ActiveFilterBar
             activeFilters={activeFiltersWithLabels}
             resultCount={filesToShow.length}
-            totalCount={hasFilters ? totalCount : displayTotalCount}
+            totalCount={useFilteredScoped ? totalCount : displayTotalCount}
             onRemove={removeFilterById}
             onClearAll={clearFilters}
             onSaveView={undefined}
-            isLoading={hasFilters && filtersLoading}
+            isLoading={useFilteredScoped && filtersLoading}
           />
           )}
         </div>
@@ -1152,11 +1154,11 @@ export default function FileGrid() {
             </div>
           )}
           <div className="flex items-center gap-2">
-            {(hasFilters ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
+            {(useFilteredScoped ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
-                  if (hasFilters) {
+                  if (useFilteredScoped) {
                     setSelectedFileIds(new Set(filesToShow.map((f) => f.id)));
                     setSelectedFolderKeys(new Set());
                   } else if (currentDrive) {
@@ -1183,11 +1185,11 @@ export default function FileGrid() {
             <div className="py-12">
               <LoadingSpinner label={LOADING_COPY.files} centered />
             </div>
-          ) : hasFilters && filesToShow.length === 0 && !filtersLoading ? (
+          ) : useFilteredScoped && filesToShow.length === 0 && !filtersLoading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No files match your filters. Try adjusting or clearing filters.
           </div>
-        ) : hasFilters || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
+        ) : useFilteredScoped || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
             viewMode === "list" ? (
               <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
@@ -1206,7 +1208,7 @@ export default function FileGrid() {
                     </tr>
                   </thead>
                   <tbody data-selectable-grid>
-                    {hasFilters && filtersLoading && (
+                    {useFilteredScoped && filtersLoading && (
                       <tr>
                         <td colSpan={listColSpan} className="px-4 py-8 text-center text-neutral-500 dark:text-neutral-400">
                           <span className="inline-flex items-center gap-2">
@@ -1253,7 +1255,7 @@ export default function FileGrid() {
               data-selectable-grid
               className={`relative grid gap-4 ${gridColsClass}`}
             >
-              {hasFilters && filtersLoading && (
+              {useFilteredScoped && filtersLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
                   <span className="inline-flex items-center gap-2">
                     <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
@@ -1488,7 +1490,7 @@ export default function FileGrid() {
                   data-selectable-grid
                   className={`relative grid gap-4 ${gridColsClass}`}
                 >
-                  {hasFilters && filtersLoading && (
+                  {useFilteredScoped && filtersLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
                       <span className="inline-flex items-center gap-2">
                         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
@@ -1526,7 +1528,7 @@ export default function FileGrid() {
                 )}
               </>
             )}
-            {!loading && !hasFilters && folderItems.length === 0 && filesToShow.length === 0 && (
+            {!loading && !useFilteredScoped && folderItems.length === 0 && filesToShow.length === 0 && (
               <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No files yet. Click Sync in the Backup section to sync a drive.
               </div>
