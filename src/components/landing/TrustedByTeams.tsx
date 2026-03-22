@@ -1,12 +1,12 @@
 "use client";
 
 const TEAM_VIDEOS = [
-  "/Darren Print #1.mp4",
-  "/Cody Print #2.mp4",
-  "/James Choi #3.mp4",
-  "/Kathryn Book #4.mp4",
-  "/VIDEO #1 Frost.mp4",
-  "/Video #7.mp4",
+  "/Darren.mp4",
+  "/Cody.mp4",
+  "/James-Choi.mp4",
+  "/Kathryn-Book.mp4",
+  "/Frost.mp4",
+  "/Video.mp4",
 ];
 
 export default function TrustedByTeams() {
@@ -26,7 +26,7 @@ export default function TrustedByTeams() {
               className="flex-shrink-0 w-[min(500px,85vw)] aspect-video overflow-hidden"
             >
               <video
-                src={encodeURI(src)}
+                src={src}
                 className="w-full h-full object-cover"
                 muted
                 loop
