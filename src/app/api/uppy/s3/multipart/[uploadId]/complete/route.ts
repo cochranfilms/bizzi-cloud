@@ -7,9 +7,10 @@
 import { completeMultipartUpload, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
-import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
+import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
+import { logActivityEvent } from "@/lib/activity-log";
 import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
 
@@ -127,21 +128,27 @@ export async function POST(
     updatedAt: new Date().toISOString(),
   });
 
-  const organizationId = data.workspaceId ?? data.organization_id ?? null;
+  const workspaceIdFromSession = data.workspace_id ?? data.workspaceId ?? null;
+  let organizationId: string | null = null;
   let workspaceIdResolved: string | null = null;
   let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
-  if (organizationId) {
-    const workspaceIdFromSession = data.workspace_id ?? null;
-    workspaceIdResolved =
-      workspaceIdFromSession ?? (await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId));
-    if (!workspaceIdResolved) {
-      return NextResponse.json({ error: "Could not resolve workspace for org upload" }, { status: 400 });
+
+  if (workspaceIdFromSession) {
+    const wsSnap = await db.collection("workspaces").doc(workspaceIdFromSession).get();
+    if (!wsSnap.exists) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
     }
-    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    const wsData = wsSnap.data();
+    organizationId = (wsData?.organization_id as string) ?? null;
+    if (!organizationId) {
+      return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
+    }
+    const canWrite = await userCanWriteWorkspace(uid, workspaceIdFromSession);
     if (!canWrite) {
       return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
     }
-    visibilityScope = "private_org";
+    workspaceIdResolved = workspaceIdFromSession;
+    visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
   }
 
   const snapshotRef = await db.collection("backup_snapshots").add({
@@ -214,6 +221,26 @@ export async function POST(
       console.error("[uppy complete] Gallery assets add failed:", err);
     }
   }
+
+  logActivityEvent({
+    event_type: "file_uploaded",
+    actor_user_id: uid,
+    scope_type: organizationId ? "organization" : "personal_account",
+    organization_id: organizationId,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    linked_drive_id: driveId,
+    file_id: fileRef.id,
+    target_type: "file",
+    target_name: relativePath.split("/").pop() ?? relativePath,
+    file_path: relativePath,
+    metadata: {
+      file_size: fileSize,
+      mime_type: contentType,
+      upload_source: galleryId ? "gallery" : "web",
+      upload_session_id: uploadId,
+    },
+  }).catch(() => {});
 
   return NextResponse.json({
     location: objectKey,

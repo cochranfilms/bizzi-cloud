@@ -1,3 +1,4 @@
+import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
 import { createShareNotifications } from "@/lib/notification-service";
@@ -358,6 +359,17 @@ export async function DELETE(
   // Virtual shares (referenced_file_ids): only this doc is deleted; originals stay.
   // Standard shares (linked_drive_id): only this doc is deleted; drive and files stay.
   await shareRef.delete();
+
+  const shareData = share as { linked_drive_id?: string; backup_file_id?: string; folder_name?: string };
+  logActivityEvent({
+    event_type: "share_link_removed",
+    actor_user_id: uid,
+    scope_type: "personal_account",
+    linked_drive_id: shareData.linked_drive_id ?? null,
+    file_id: shareData.backup_file_id ?? null,
+    target_name: shareData.folder_name ?? null,
+    metadata: { share_token: shareToken },
+  }).catch(() => {});
 
   return NextResponse.json({ ok: true });
 }

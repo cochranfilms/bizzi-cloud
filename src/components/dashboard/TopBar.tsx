@@ -37,7 +37,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const pathname = usePathname();
   const showCreateTransfer =
     pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers" || pathname === "/desktop/app/transfers";
-  const { currentDriveId } = useCurrentFolder();
+  const { currentDriveId, selectedWorkspaceId } = useCurrentFolder();
   const {
     linkedDrives,
     uploadFiles,
@@ -87,13 +87,50 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
       fileInputRef.current?.click();
       return;
     }
-    const driveId =
+    let driveId =
       currentDriveId && linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
         ? currentDriveId
         : (await getOrCreateStorageDrive()).id;
-    const workspaceId =
-      (pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id ? org.id : null;
-    uppyUpload?.openPanel(driveId, "", workspaceId);
+
+    let workspaceId: string | null = null;
+
+    if ((pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id) {
+      try {
+        const token = await user?.getIdToken();
+        if (!token) return;
+        const params = new URLSearchParams({
+          drive_id: driveId,
+          organization_id: org.id,
+        });
+        if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+        const res = await fetch(
+          `/api/workspaces/default-for-drive?${params}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? "Could not resolve workspace");
+        }
+        const data = (await res.json()) as {
+          workspace_id: string;
+          drive_id: string;
+          workspace_name?: string;
+          scope_label?: string;
+        };
+        workspaceId = data.workspace_id;
+        driveId = data.drive_id ?? driveId;
+        uppyUpload?.openPanel(driveId, "", workspaceId, {
+          workspaceName: data.workspace_name ?? null,
+          scopeLabel: data.scope_label ?? null,
+        });
+        return;
+      } catch (err) {
+        console.error("Workspace resolve failed:", err);
+        return;
+      }
+    }
+
+    uppyUpload?.openPanel(driveId, "");
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -7,7 +7,11 @@
  * Safe if Stripe webhook fires twice—second run sees drives and skips creation.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { ensureDefaultWorkspacesForOrgUser } from "@/lib/ensure-default-workspaces";
+import type { OrgSharedDriveIds } from "@/lib/ensure-default-workspaces";
+import {
+  ensureDefaultWorkspacesForOrgUser,
+  ensureSharedWorkspacesForOrg,
+} from "@/lib/ensure-default-workspaces";
 
 function hasEditorAddon(addonIds: string[]): boolean {
   return addonIds.includes("editor") || addonIds.includes("fullframe");
@@ -190,4 +194,97 @@ export async function ensureDefaultDrivesForOrgUser(
 
   // Create system workspaces (My Private per drive) for workspace-based visibility
   await ensureDefaultWorkspacesForOrgUser(uid, orgId);
+
+  // Create org-level shared drives and shared workspaces (Shared Library, Shared RAW, Shared Gallery)
+  const sharedDriveIds = await ensureOrgSharedDrives(orgId, uid);
+  await ensureSharedWorkspacesForOrg(orgId, sharedDriveIds);
+}
+
+/**
+ * Create org-level shared drives (one per org). Idempotent.
+ * Returns drive IDs for Shared Storage, Shared RAW, Shared Gallery.
+ */
+export async function ensureOrgSharedDrives(
+  orgId: string,
+  createdByUserId: string
+): Promise<OrgSharedDriveIds> {
+  const db = getAdminFirestore();
+  const drivesRef = db.collection("linked_drives");
+
+  const existingSnap = await drivesRef
+    .where("organization_id", "==", orgId)
+    .where("is_org_shared", "==", true)
+    .get();
+
+  const byName = new Map<string, string>();
+  for (const d of existingSnap.docs) {
+    const name = (d.data().name as string) ?? "";
+    if (name && !d.data().deleted_at) byName.set(name, d.id);
+  }
+
+  const now = new Date();
+  const result: OrgSharedDriveIds = {
+    storageDriveId: "",
+    rawDriveId: "",
+    galleryDriveId: "",
+  };
+
+  const batch = db.batch();
+
+  if (!byName.has("Shared Storage")) {
+    const ref = drivesRef.doc();
+    batch.set(ref, {
+      userId: createdByUserId,
+      name: "Shared Storage",
+      permission_handle_id: `org-shared-storage-${Date.now()}`,
+      createdAt: now,
+      organization_id: orgId,
+      is_org_shared: true,
+    });
+    result.storageDriveId = ref.id;
+  } else {
+    result.storageDriveId = byName.get("Shared Storage")!;
+  }
+
+  if (!byName.has("Shared RAW")) {
+    const ref = drivesRef.doc();
+    batch.set(ref, {
+      userId: createdByUserId,
+      name: "Shared RAW",
+      permission_handle_id: `org-shared-raw-${Date.now()}`,
+      createdAt: now,
+      organization_id: orgId,
+      is_org_shared: true,
+      creator_section: true,
+      is_creator_raw: true,
+    });
+    result.rawDriveId = ref.id;
+  } else {
+    result.rawDriveId = byName.get("Shared RAW")!;
+  }
+
+  if (!byName.has("Shared Gallery")) {
+    const ref = drivesRef.doc();
+    batch.set(ref, {
+      userId: createdByUserId,
+      name: "Shared Gallery",
+      permission_handle_id: `org-shared-gallery-${Date.now()}`,
+      createdAt: now,
+      organization_id: orgId,
+      is_org_shared: true,
+    });
+    result.galleryDriveId = ref.id;
+  } else {
+    result.galleryDriveId = byName.get("Shared Gallery")!;
+  }
+
+  if (
+    !byName.has("Shared Storage") ||
+    !byName.has("Shared RAW") ||
+    !byName.has("Shared Gallery")
+  ) {
+    await batch.commit();
+  }
+
+  return result;
 }

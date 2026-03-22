@@ -1,4 +1,5 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
 import { createShareNotifications } from "@/lib/notification-service";
@@ -449,6 +450,21 @@ export async function POST(request: Request) {
       ]);
     }
 
+    logActivityEvent({
+      event_type: "share_link_created",
+      actor_user_id: uid,
+      scope_type: "personal_account",
+      file_id: uniqueIds[0] ?? null,
+      target_name: folderNameTrimmed,
+      metadata: {
+        share_token: shareToken,
+        file_count: uniqueIds.length,
+        permission: shareData.permission,
+        access_level: shareData.access_level,
+        is_virtual: true,
+      },
+    }).catch(() => {});
+
     return NextResponse.json({
       token: shareToken,
       share_url: `/s/${shareToken}`,
@@ -545,6 +561,21 @@ export async function POST(request: Request) {
   };
 
   await db.collection("folder_shares").doc(shareToken).set(shareData);
+
+  logActivityEvent({
+    event_type: "share_link_created",
+    actor_user_id: uid,
+    scope_type: "personal_account",
+    linked_drive_id: linkedDriveId,
+    file_id: backupFileIdToStore,
+    target_name: folderNameTrimmed,
+    metadata: {
+      share_token: shareToken,
+      permission: shareData.permission,
+      access_level: shareData.access_level,
+      is_virtual: false,
+    },
+  }).catch(() => {});
 
   if (shareData.invited_emails.length > 0) {
     const profileSnap = await db.collection("profiles").doc(uid).get();

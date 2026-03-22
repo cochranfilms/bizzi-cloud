@@ -105,6 +105,7 @@ export async function POST(request: Request) {
   await db.collection("upload_sessions").add({
     userId: uid,
     workspaceId: workspaceId ?? null,
+    workspace_id: workspaceId ?? null,
     driveId,
     objectKey,
     uploadId,

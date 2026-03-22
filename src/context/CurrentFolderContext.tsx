@@ -7,6 +7,8 @@ interface CurrentFolderContextValue {
   currentDrivePath: string;
   setCurrentDrive: (id: string | null) => void;
   setCurrentDrivePath: (path: string) => void;
+  selectedWorkspaceId: string | null;
+  setSelectedWorkspaceId: (id: string | null) => void;
 }
 
 const CurrentFolderContext = createContext<CurrentFolderContextValue | null>(null);
@@ -14,10 +16,18 @@ const CurrentFolderContext = createContext<CurrentFolderContextValue | null>(nul
 export function CurrentFolderProvider({ children }: { children: React.ReactNode }) {
   const [currentDriveId, setCurrentDriveId] = useState<string | null>(null);
   const [currentDrivePath, setCurrentDrivePath] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const setCurrentDrive = useCallback((id: string | null) => {
     setCurrentDriveId(id);
   }, []);
-  const value = { currentDriveId, currentDrivePath, setCurrentDrive, setCurrentDrivePath };
+  const value = {
+    currentDriveId,
+    currentDrivePath,
+    setCurrentDrive,
+    setCurrentDrivePath,
+    selectedWorkspaceId,
+    setSelectedWorkspaceId,
+  };
   return (
     <CurrentFolderContext.Provider value={value}>
       {children}
@@ -27,5 +37,14 @@ export function CurrentFolderProvider({ children }: { children: React.ReactNode 
 
 export function useCurrentFolder() {
   const ctx = useContext(CurrentFolderContext);
-  return ctx ?? { currentDriveId: null, currentDrivePath: "", setCurrentDrive: () => {}, setCurrentDrivePath: () => {} };
+  return (
+    ctx ?? {
+      currentDriveId: null,
+      currentDrivePath: "",
+      setCurrentDrive: () => {},
+      setCurrentDrivePath: () => {},
+      selectedWorkspaceId: null,
+      setSelectedWorkspaceId: () => {},
+    }
+  );
 }

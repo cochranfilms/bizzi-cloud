@@ -128,3 +128,55 @@ export async function getOrCreateMyPrivateWorkspaceId(
 
   return ref.id;
 }
+
+export interface OrgSharedDriveIds {
+  storageDriveId: string;
+  rawDriveId: string;
+  galleryDriveId: string;
+}
+
+/**
+ * Create Shared Library, Shared RAW, Shared Gallery workspaces linked to org shared drives.
+ * Idempotent. Call after ensureOrgSharedDrives.
+ */
+export async function ensureSharedWorkspacesForOrg(
+  orgId: string,
+  sharedDriveIds: OrgSharedDriveIds
+): Promise<void> {
+  const db = getAdminFirestore();
+  const workspacesRef = db.collection("workspaces");
+  const now = new Date().toISOString();
+
+  const toCreate: Array<{ driveId: string; name: string; driveType: "storage" | "raw" | "gallery" }> = [
+    { driveId: sharedDriveIds.storageDriveId, name: "Shared Library", driveType: "storage" },
+    { driveId: sharedDriveIds.rawDriveId, name: "Shared RAW", driveType: "raw" },
+    { driveId: sharedDriveIds.galleryDriveId, name: "Shared Gallery", driveType: "gallery" },
+  ];
+
+  for (const { driveId, name, driveType } of toCreate) {
+    const existing = await workspacesRef
+      .where("organization_id", "==", orgId)
+      .where("drive_id", "==", driveId)
+      .where("workspace_type", "==", "org_shared")
+      .limit(1)
+      .get();
+
+    if (!existing.empty) continue;
+
+    await workspacesRef.add({
+      organization_id: orgId,
+      drive_id: driveId,
+      drive_type: driveType,
+      name,
+      workspace_type: "org_shared",
+      created_by: null,
+      member_user_ids: [],
+      team_id: null,
+      project_id: null,
+      gallery_id: null,
+      is_system_workspace: true,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+}

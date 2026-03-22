@@ -46,6 +46,33 @@ export async function GET(request: Request) {
     ids.map((id) => db.collection("workspaces").doc(id).get())
   );
 
+  let orgSharedDriveId: string | null = null;
+  if (driveId) {
+    const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+    const driveData = driveSnap.data();
+    const currentDriveType =
+      driveData?.is_creator_raw === true
+        ? "raw"
+        : (driveData?.name ?? "").toLowerCase().includes("gallery")
+          ? "gallery"
+          : "storage";
+
+    const sharedDrivesSnap = await db
+      .collection("linked_drives")
+      .where("organization_id", "==", organizationId)
+      .where("is_org_shared", "==", true)
+      .get();
+    const sharedByName: Record<string, string> = {};
+    for (const d of sharedDrivesSnap.docs) {
+      const name = (d.data().name ?? "").toLowerCase();
+      if (name.includes("storage")) sharedByName.storage = d.id;
+      else if (name.includes("raw")) sharedByName.raw = d.id;
+      else if (name.includes("gallery")) sharedByName.gallery = d.id;
+    }
+    orgSharedDriveId =
+      sharedByName[currentDriveType as keyof typeof sharedByName] ?? null;
+  }
+
   const workspaces = snaps
     .filter((s) => s.exists)
     .map((s) => {
@@ -58,7 +85,12 @@ export async function GET(request: Request) {
         drive_type: d.drive_type ?? null,
       };
     })
-    .filter((w) => !driveId || w.drive_id === driveId);
+    .filter(
+      (w) =>
+        !driveId ||
+        w.drive_id === driveId ||
+        (orgSharedDriveId !== null && w.drive_id === orgSharedDriveId)
+    );
 
   return NextResponse.json({ workspaces });
 }

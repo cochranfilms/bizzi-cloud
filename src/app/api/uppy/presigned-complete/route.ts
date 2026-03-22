@@ -7,8 +7,9 @@ import { isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { isVideoFile } from "@/lib/bizzi-file-types";
-import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
-import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import { logActivityEvent } from "@/lib/activity-log";
+import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
+import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -25,10 +26,9 @@ export async function POST(request: Request) {
     sizeBytes: number;
     contentType?: string;
     lastModified?: number | null;
-    /** Org ID for enterprise context */
-    workspaceId?: string | null;
-    /** Workspace doc ID for org uploads (required when workspaceId/org present); resolves to My Private if omitted */
+    /** Workspace doc ID for org uploads (required for org; client resolves before upload) */
     workspace_id?: string | null;
+    workspaceId?: string | null;
     galleryId?: string | null;
   };
   try {
@@ -43,10 +43,12 @@ export async function POST(request: Request) {
     sizeBytes,
     contentType = "application/octet-stream",
     lastModified,
-    workspaceId = null,
-    workspace_id: workspaceIdFromBody = null,
+    workspace_id: workspaceIdParam = null,
+    workspaceId: workspaceIdLegacy = null,
     galleryId = null,
   } = body;
+
+  const workspaceIdFromBody = workspaceIdParam ?? workspaceIdLegacy;
 
   if (!driveId || !relativePath || typeof sizeBytes !== "number" || sizeBytes <= 0) {
     return NextResponse.json(
@@ -78,24 +80,26 @@ export async function POST(request: Request) {
       : new Date().toISOString();
 
   const db = getAdminFirestore();
-  const organizationId = workspaceId ?? null;
-
-  // Org context: resolve workspace_id, validate write access
+  let organizationId: string | null = null;
   let workspaceIdResolved: string | null = null;
   let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
-  if (organizationId) {
-    workspaceIdResolved = workspaceIdFromBody ?? (await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId));
-    if (!workspaceIdResolved) {
-      return NextResponse.json(
-        { error: "Could not resolve workspace for org upload" },
-        { status: 400 }
-      );
+
+  if (workspaceIdFromBody) {
+    const wsSnap = await db.collection("workspaces").doc(workspaceIdFromBody).get();
+    if (!wsSnap.exists) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
     }
-    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    const wsData = wsSnap.data();
+    organizationId = (wsData?.organization_id as string) ?? null;
+    if (!organizationId) {
+      return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
+    }
+    const canWrite = await userCanWriteWorkspace(uid, workspaceIdFromBody);
     if (!canWrite) {
       return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
     }
-    visibilityScope = "private_org";
+    workspaceIdResolved = workspaceIdFromBody;
+    visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
   }
 
   const snapshotRef = await db.collection("backup_snapshots").add({
@@ -165,6 +169,25 @@ export async function POST(request: Request) {
       console.error("[presigned-complete] Gallery assets add failed:", err);
     }
   }
+
+  logActivityEvent({
+    event_type: "file_uploaded",
+    actor_user_id: uid,
+    scope_type: organizationId ? "organization" : "personal_account",
+    organization_id: organizationId,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    linked_drive_id: driveId,
+    file_id: fileRef.id,
+    target_type: "file",
+    target_name: safePath.split("/").pop() ?? safePath,
+    file_path: safePath,
+    metadata: {
+      file_size: sizeBytes,
+      mime_type: contentType,
+      upload_source: galleryId ? "gallery" : "web",
+    },
+  }).catch(() => {});
 
   return NextResponse.json({ ok: true, objectKey });
 }

@@ -26,6 +26,8 @@ interface UppyUploadModalProps {
   driveId: string;
   pathPrefix?: string;
   workspaceId?: string | null;
+  workspaceName?: string | null;
+  scopeLabel?: string | null;
   galleryId?: string | null;
   initialFiles?: File[] | null;
   onUploadComplete?: () => void;
@@ -37,6 +39,8 @@ export default function UppyUploadModal({
   driveId,
   pathPrefix = "",
   workspaceId = null,
+  workspaceName = null,
+  scopeLabel = null,
   galleryId = null,
   initialFiles = null,
   onUploadComplete,
@@ -284,11 +288,17 @@ export default function UppyUploadModal({
               {headerLabel}
             </p>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {hasFiles
-                ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
+              {[
+                workspaceName && `Uploading to: ${workspaceName}`,
+                scopeLabel && `Visibility: ${scopeLabel}`,
+                hasFiles &&
+                  `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
                     fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
-                  }`
-                : "Drop files or click to browse"}
+                  }`,
+                !hasFiles && "Drop files or click to browse",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
           </div>
         </div>

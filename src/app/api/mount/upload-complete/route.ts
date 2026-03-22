@@ -6,7 +6,9 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
-import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
+import { userCanWriteWorkspace } from "@/lib/workspace-access";
+import { logActivityEvent } from "@/lib/activity-log";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -26,6 +28,7 @@ export async function POST(request: Request) {
     size_bytes: sizeBytes,
     content_type: contentType,
     user_id: userIdFromBody,
+    workspace_id: workspaceIdFromBody,
   } = body;
 
   let uid: string;
@@ -109,19 +112,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Drive not found" }, { status: 404 });
   }
   const driveData = driveSnap.data();
-  const organizationId = driveData?.organization_id ?? null;
+  const driveOrgId = driveData?.organization_id ?? null;
 
+  let organizationId: string | null = null;
   let workspaceIdResolved: string | null = null;
   let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
-  if (organizationId) {
-    workspaceIdResolved = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveIdStr!);
-    if (!workspaceIdResolved) {
-      return NextResponse.json({ error: "Could not resolve workspace for org upload" }, { status: 400 });
+
+  if (workspaceIdFromBody) {
+    const wsSnap = await db.collection("workspaces").doc(workspaceIdFromBody).get();
+    if (!wsSnap.exists) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
     }
-    const canWrite = await userCanAccessWorkspace(uid, workspaceIdResolved);
+    const wsData = wsSnap.data();
+    organizationId = (wsData?.organization_id as string) ?? null;
+    if (!organizationId) {
+      return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
+    }
+    const canWrite = await userCanWriteWorkspace(uid, workspaceIdFromBody);
     if (!canWrite) {
       return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
     }
+    workspaceIdResolved = workspaceIdFromBody;
+    visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
+  } else if (driveOrgId) {
+    workspaceIdResolved = await getOrCreateMyPrivateWorkspaceId(uid, driveOrgId, driveIdStr!);
+    if (!workspaceIdResolved) {
+      return NextResponse.json({ error: "Could not resolve workspace for org upload" }, { status: 400 });
+    }
+    const canWrite = await userCanWriteWorkspace(uid, workspaceIdResolved);
+    if (!canWrite) {
+      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+    }
+    organizationId = driveOrgId;
     visibilityScope = "private_org";
   }
 
@@ -157,6 +179,24 @@ export async function POST(request: Request) {
 
   // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)
   const base = new URL(request.url).origin;
+  logActivityEvent({
+    event_type: "file_uploaded",
+    actor_user_id: uid,
+    scope_type: organizationId ? "organization" : "personal_account",
+    organization_id: organizationId,
+    workspace_id: workspaceIdResolved,
+    visibility_scope: visibilityScope,
+    linked_drive_id: driveIdStr,
+    file_id: fileRef.id,
+    target_type: "file",
+    target_name: safePath.split("/").pop() ?? safePath,
+    file_path: safePath,
+    metadata: {
+      file_size: size,
+      upload_source: "mount",
+    },
+  }).catch(() => {});
+
   const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (token) fetchHeaders.Authorization = `Bearer ${token}`;
   const extractUrl = new URL("/api/files/extract-metadata", request.url);

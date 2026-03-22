@@ -37,6 +37,7 @@ import {
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePathname } from "next/navigation";
 import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceededModal";
@@ -102,22 +103,31 @@ const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 async function getWorkspaceFieldsForOrgDrive(
   drive: LinkedDrive,
   idToken: string | null | undefined,
-  userId: string
+  userId: string,
+  selectedWorkspaceId?: string | null
 ): Promise<Record<string, unknown>> {
   const orgId = drive.organization_id ?? null;
   if (!orgId || !idToken) return {};
   try {
-    const res = await fetch(
-      `/api/workspaces/default-for-drive?drive_id=${encodeURIComponent(drive.id)}&organization_id=${encodeURIComponent(orgId)}`,
-      { headers: { Authorization: `Bearer ${idToken}` } }
-    );
+    const params = new URLSearchParams({
+      drive_id: drive.id,
+      organization_id: orgId,
+    });
+    if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+    const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
     if (!res.ok) return {};
-    const data = await res.json();
-    const wid = data.workspace_id as string | undefined;
+    const data = (await res.json()) as {
+      workspace_id?: string;
+      visibility_scope?: string;
+      drive_id?: string;
+    };
+    const wid = data.workspace_id;
     if (!wid) return {};
     return {
       workspace_id: wid,
-      visibility_scope: "private_org",
+      visibility_scope: data.visibility_scope ?? "private_org",
       owner_user_id: userId,
     };
   } catch {
@@ -375,6 +385,7 @@ function useIsEnterpriseContext(): boolean {
 export function BackupProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { org } = useEnterprise();
+  const { selectedWorkspaceId } = useCurrentFolder();
   const isEnterpriseContext = useIsEnterpriseContext();
   const [linkedDrives, setLinkedDrives] = useState<LinkedDrive[]>([]);
   const [loading, setLoading] = useState(true);
@@ -844,7 +855,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               progressState.inFlight.delete(index);
               progressState.completedBytes += file.size;
 
-              const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, uid);
+              const workspaceFields = await getWorkspaceFieldsForOrgDrive(
+                drive,
+                idToken ?? null,
+                uid,
+                selectedWorkspaceId
+              );
               const fileRef = await addDoc(collection(db, "backup_files"), {
                 backup_snapshot_id: snapshotId,
                 linked_drive_id: drive.id,
@@ -1016,7 +1032,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         setAbortController(null);
       }
     },
-    [user, requestPermission, getStoredHandleByDrive, fetchDrives]
+    [user, requestPermission, getStoredHandleByDrive, fetchDrives, selectedWorkspaceId]
   );
 
   const cancelSync = useCallback(() => {
@@ -1353,10 +1369,37 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const drive = targetDriveId
+        let drive = targetDriveId
           ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateStorageDrive())
           : await getOrCreateStorageDrive();
         const db = getFirebaseFirestore();
+
+        let resolvedWorkspaceId: string | null = null;
+        if (isEnterpriseContext && org?.id) {
+          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+          if (idToken) {
+            try {
+              const params = new URLSearchParams({
+                drive_id: drive.id,
+                organization_id: org.id,
+              });
+              if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+              const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
+                headers: { Authorization: `Bearer ${idToken}` },
+              });
+              if (res.ok) {
+                const data = (await res.json()) as { workspace_id: string; drive_id?: string };
+                resolvedWorkspaceId = data.workspace_id;
+                if (data.drive_id && data.drive_id !== drive.id) {
+                  const altDrive = linkedDrives.find((d) => d.id === data.drive_id);
+                  if (altDrive) drive = altDrive;
+                }
+              }
+            } catch {
+              // Proceed with current drive; workspace may fall back to My Private
+            }
+          }
+        }
 
         // Gallery Media drive: always use a subfolder so files aren't mixed at root.
         // (Per-gallery subfolders come from uploadFilesToGallery on the gallery page.)
@@ -1409,7 +1452,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               completed_at: new Date(),
             });
             const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
-            const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, user.uid);
+            const workspaceFields = await getWorkspaceFieldsForOrgDrive(
+              drive,
+              idToken ?? null,
+              user.uid,
+              resolvedWorkspaceId ?? selectedWorkspaceId
+            );
             const fileRef = await addDoc(collection(db, "backup_files"), {
               backup_snapshot_id: snapshotRef.id,
               linked_drive_id: drive.id,
@@ -1488,7 +1536,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             file,
             driveId: drive.id,
             relativePath: relPath,
-            workspaceId: isEnterpriseContext && org?.id ? org.id : undefined,
+            workspaceId: resolvedWorkspaceId ?? undefined,
             organizationId: drive.organization_id ?? null,
           };
           try {
@@ -1532,7 +1580,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [user, getOrCreateStorageDrive, linkedDrives, isEnterpriseContext, org?.id]
+    [user, getOrCreateStorageDrive, linkedDrives, isEnterpriseContext, org?.id, selectedWorkspaceId]
   );
 
   const uploadFilesToGallery = useCallback(
@@ -1656,7 +1704,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const safeName = uniqueNames[fileIndex] ?? file.name;
           const relativePath = `${galleryId}/${safeName}`;
           const token = await getFirebaseAuth().currentUser?.getIdToken(true);
-          const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, token ?? null, user.uid);
+          const workspaceFields = await getWorkspaceFieldsForOrgDrive(
+            drive,
+            token ?? null,
+            user.uid,
+            selectedWorkspaceId
+          );
           const fileRef = await addDoc(collection(db, "backup_files"), {
             backup_snapshot_id: snapshotRef.id,
             linked_drive_id: drive.id,
@@ -1755,7 +1808,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         // Non-fatal
       }
     },
-    [user, getOrCreateGalleryDrive]
+    [user, getOrCreateGalleryDrive, selectedWorkspaceId]
   );
 
   const uploadSingleFile = useCallback(
@@ -1856,7 +1909,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           bytes_synced: file.size,
           completed_at: new Date(),
         });
-        const workspaceFields = await getWorkspaceFieldsForOrgDrive(drive, idToken ?? null, user.uid);
+        const workspaceFields = await getWorkspaceFieldsForOrgDrive(
+          drive,
+          idToken ?? null,
+          user.uid,
+          selectedWorkspaceId
+        );
         const fileRef = await addDoc(collection(db, "backup_files"), {
           backup_snapshot_id: snapshotRef.id,
           linked_drive_id: drive.id,
@@ -1927,7 +1985,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         setSyncProgress(null);
       }
     },
-    [user, getOrCreateStorageDrive, linkedDrives]
+    [user, getOrCreateStorageDrive, linkedDrives, selectedWorkspaceId]
   );
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);

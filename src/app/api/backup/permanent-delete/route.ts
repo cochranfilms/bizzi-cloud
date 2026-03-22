@@ -14,6 +14,7 @@ import {
   getVideoThumbnailCacheKey,
   getProxyObjectKey,
 } from "@/lib/b2";
+import { logActivityEvent } from "@/lib/activity-log";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -123,6 +124,17 @@ export async function POST(request: Request) {
   if (driveId) {
     await db.collection("linked_drives").doc(driveId).delete();
   }
+
+  logActivityEvent({
+    event_type: "file_deleted",
+    actor_user_id: uid,
+    scope_type: "personal_account",
+    linked_drive_id: driveId ?? null,
+    metadata: {
+      deleted_count: allIds.length,
+      drive_deleted: !!driveId,
+    },
+  }).catch(() => {});
 
   return NextResponse.json({
     ok: true,

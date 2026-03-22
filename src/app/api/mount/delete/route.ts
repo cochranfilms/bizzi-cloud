@@ -4,6 +4,7 @@
  * Used by WebDAV DELETE when user deletes from Finder.
  */
 import { FieldValue } from "firebase-admin/firestore";
+import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
   // Delete file (exact match) or folder (prefix match)
   const pathPrefix = `${safePath}/`;
   let deleted = 0;
+  let firstDeletedRel: string | null = null;
 
   for (const did of driveIds) {
     const [snapUserId, snapUserIdSnake] = await Promise.all([
@@ -103,6 +105,7 @@ export async function POST(request: Request) {
         const isInFolder = rel.startsWith(pathPrefix);
         if (isFile || isInFolder) {
           docsToDelete.set(d.id, d);
+          if (firstDeletedRel === null) firstDeletedRel = rel;
         }
       }
     }
@@ -116,5 +119,20 @@ export async function POST(request: Request) {
   if (deleted === 0) {
     return NextResponse.json({ error: "File or folder not found" }, { status: 404 });
   }
+
+  const targetName = safePath.split("/").pop() ?? safePath;
+  const isFile = firstDeletedRel === safePath;
+
+  logActivityEvent({
+    event_type: isFile ? "file_deleted" : "folder_deleted",
+    actor_user_id: uid,
+    scope_type: "personal_account",
+    linked_drive_id: driveIds[0] ?? driveId,
+    target_type: isFile ? "file" : "folder",
+    target_name: targetName,
+    file_path: safePath,
+    metadata: { deleted_count: deleted },
+  }).catch(() => {});
+
   return NextResponse.json({ ok: true, deleted });
 }

@@ -12,6 +12,14 @@ export async function isOrgAdmin(uid: string, organizationId: string): Promise<b
   return seatSnap.exists && (seatSnap.data()?.role === "admin");
 }
 
+/** Check if user can write to a workspace (upload, create, update, delete). */
+export async function userCanWriteWorkspace(
+  uid: string,
+  workspaceId: string
+): Promise<boolean> {
+  return userCanAccessWorkspace(uid, workspaceId);
+}
+
 /** Check if user can access a workspace (read). */
 export async function userCanAccessWorkspace(
   uid: string,

@@ -7,6 +7,7 @@ import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
+import { useAuth } from "@/context/AuthContext";
 
 /**
  * Global drag-and-drop zone for file uploads. Shows "Drop File to Upload" overlay
@@ -16,8 +17,9 @@ import { useUppyUpload } from "@/context/UppyUploadContext";
 export default function GlobalDropZone() {
   const pathname = usePathname();
   const { linkedDrives, getOrCreateStorageDrive } = useBackup();
-  const { currentDriveId, currentDrivePath } = useCurrentFolder();
+  const { currentDriveId, currentDrivePath, selectedWorkspaceId } = useCurrentFolder();
   const { org } = useEnterprise();
+  const { user } = useAuth();
   const openPanel = useUppyUpload()?.openPanel;
 
   const [isDragging, setIsDragging] = useState(false);
@@ -70,12 +72,43 @@ export default function GlobalDropZone() {
           : effectiveDriveId;
 
         const pathPrefix = isFilesView ? (currentDrivePath ?? "") : "";
-        const workspaceId =
-          (pathname?.startsWith("/enterprise") || pathname?.startsWith("/desktop")) && org?.id
-            ? org.id
-            : null;
+        let workspaceId: string | null = null;
+        let finalDriveId = driveId;
 
-        openPanel(driveId, pathPrefix, workspaceId, {
+        if ((pathname?.startsWith("/enterprise") || pathname?.startsWith("/desktop")) && org?.id && user) {
+          try {
+            const token = await user.getIdToken();
+            if (!token) throw new Error("Not authenticated");
+            const params = new URLSearchParams({
+              drive_id: finalDriveId,
+              organization_id: org.id,
+            });
+            if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+            const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error("Could not resolve workspace");
+            const data = (await res.json()) as {
+              workspace_id: string;
+              drive_id: string;
+              workspace_name?: string;
+              scope_label?: string;
+            };
+            workspaceId = data.workspace_id;
+            finalDriveId = data.drive_id ?? finalDriveId;
+            openPanel(finalDriveId, pathPrefix, workspaceId, {
+              initialFiles: fileList,
+              workspaceName: data.workspace_name ?? null,
+              scopeLabel: data.scope_label ?? null,
+            });
+            return;
+          } catch (err) {
+            console.error("Workspace resolve failed:", err);
+            return;
+          }
+        }
+
+        openPanel(finalDriveId, pathPrefix, workspaceId, {
           initialFiles: fileList,
         });
       } catch (err) {
@@ -87,10 +120,12 @@ export default function GlobalDropZone() {
       openPanel,
       currentDriveId,
       currentDrivePath,
+      selectedWorkspaceId,
       linkedDrives,
       getOrCreateStorageDrive,
       pathname,
       org?.id,
+      user,
     ]
   );
 

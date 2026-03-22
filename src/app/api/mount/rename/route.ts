@@ -3,6 +3,7 @@
  * Renames a file or folder in the mounted drive by updating backup_files.relative_path.
  * Used by WebDAV MOVE for renames in Finder/NLE.
  */
+import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -117,5 +118,19 @@ export async function POST(request: Request) {
   if (updated === 0) {
     return NextResponse.json({ error: "File or folder not found" }, { status: 404 });
   }
+
+  const targetName = safeOld.split("/").pop() ?? safeOld;
+  logActivityEvent({
+    event_type: updated === 1 ? "file_renamed" : "folder_renamed",
+    actor_user_id: uid,
+    scope_type: "personal_account",
+    linked_drive_id: driveIds[0] ?? driveId,
+    target_type: updated === 1 ? "file" : "folder",
+    target_name: targetName,
+    old_path: safeOld,
+    new_path: safeNew,
+    metadata: { updated_count: updated },
+  }).catch(() => {});
+
   return NextResponse.json({ ok: true, updated });
 }
