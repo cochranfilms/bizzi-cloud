@@ -18,6 +18,7 @@ import {
   Film,
   Images,
   Shield,
+  LayoutGrid,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
@@ -48,6 +49,7 @@ const navItems: Array<{
   { href: "/enterprise/seats", label: "Seats", icon: Users },
   { href: "/enterprise/settings", label: "Settings", icon: Settings },
   { href: "/enterprise/admin", label: "Admin", icon: Shield, adminOnly: true },
+  { href: "/enterprise/admin/workspaces", label: "Workspaces", icon: LayoutGrid, adminOnly: true },
 ];
 
 export default function EnterpriseNavbar() {

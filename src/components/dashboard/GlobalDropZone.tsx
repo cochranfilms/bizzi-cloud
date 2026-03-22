@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Upload } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
  */
 export default function GlobalDropZone() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { linkedDrives, getOrCreateStorageDrive } = useBackup();
   const { currentDriveId, currentDrivePath, selectedWorkspaceId } = useCurrentFolder();
   const { org } = useEnterprise();
@@ -38,7 +39,13 @@ export default function GlobalDropZone() {
       !pathname?.includes("/transfers")
     : false;
 
-  const shouldShowOverlay = isActiveRoute && !isGalleryMediaDrive;
+  const isEnterpriseFilesNoDrive =
+    pathname === "/enterprise/files" &&
+    !searchParams?.get("drive") &&
+    !searchParams?.get("drive_id");
+
+  const shouldShowOverlay =
+    isActiveRoute && !isGalleryMediaDrive && !isEnterpriseFilesNoDrive;
 
   const handleDrop = useCallback(
     async (e: DragEvent) => {
@@ -91,6 +98,7 @@ export default function GlobalDropZone() {
             const data = (await res.json()) as {
               workspace_id: string;
               drive_id: string;
+              drive_name?: string;
               workspace_name?: string;
               scope_label?: string;
             };
@@ -100,6 +108,7 @@ export default function GlobalDropZone() {
               initialFiles: fileList,
               workspaceName: data.workspace_name ?? null,
               scopeLabel: data.scope_label ?? null,
+              driveName: data.drive_name ?? null,
             });
             return;
           } catch (err) {

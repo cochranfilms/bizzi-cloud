@@ -2,7 +2,7 @@
 
 import { Plus, Upload, FolderPlus, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
 import GalleryPickerModal from "./GalleryPickerModal";
@@ -35,6 +35,11 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const newDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isEnterpriseFilesNoDrive =
+    pathname === "/enterprise/files" &&
+    !searchParams?.get("drive") &&
+    !searchParams?.get("drive_id");
   const showCreateTransfer =
     pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers" || pathname === "/desktop/app/transfers";
   const { currentDriveId, selectedWorkspaceId } = useCurrentFolder();
@@ -83,6 +88,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
 
   const handleFileUploadClick = async () => {
     setNewDropdownOpen(false);
+    if (isEnterpriseFilesNoDrive) return;
     if (isGalleryMediaDrive) {
       fileInputRef.current?.click();
       return;
@@ -114,6 +120,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         const data = (await res.json()) as {
           workspace_id: string;
           drive_id: string;
+          drive_name?: string;
           workspace_name?: string;
           scope_label?: string;
         };
@@ -122,6 +129,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         uppyUpload?.openPanel(driveId, "", workspaceId, {
           workspaceName: data.workspace_name ?? null,
           scopeLabel: data.scope_label ?? null,
+          driveName: data.drive_name ?? null,
         });
         return;
       } catch (err) {
@@ -239,7 +247,8 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                 <button
                   type="button"
                   onClick={handleFileUploadClick}
-                  disabled={fileUploading}
+                  disabled={fileUploading || isEnterpriseFilesNoDrive}
+                  title={isEnterpriseFilesNoDrive ? "Select a drive first" : undefined}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   <Upload className="h-4 w-4 flex-shrink-0" />
@@ -249,9 +258,15 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                   <button
                     type="button"
                     onClick={handleFolderUploadClick}
-                    disabled={folderUploading || !fsAccessSupported}
+                    disabled={folderUploading || !fsAccessSupported || isEnterpriseFilesNoDrive}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                    title={!fsAccessSupported ? "Folder upload requires Chrome or Edge" : undefined}
+                    title={
+                      isEnterpriseFilesNoDrive
+                        ? "Select a drive first"
+                        : !fsAccessSupported
+                          ? "Folder upload requires Chrome or Edge"
+                          : undefined
+                    }
                   >
                     <FolderPlus className="h-4 w-4 flex-shrink-0" />
                     Folder Upload

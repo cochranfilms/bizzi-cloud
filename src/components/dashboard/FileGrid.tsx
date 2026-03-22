@@ -482,16 +482,17 @@ export default function FileGrid() {
   }, [loadPinnedFiles]);
 
   // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
-  // Only open if drive is in visible set (respects power-up gating)
+  // Also when drive in URL differs from current (e.g. switching drives in EnterpriseLocationSelector)
   useEffect(() => {
     const driveId = searchParams.get("drive");
-    if (driveId && !currentDrive) {
-      const folder = visibleDriveFolders.find((d) => d.id === driveId);
-      if (folder) {
-        openDrive(driveId, folder.name);
-        if (isBizziCloudBaseDrive(folder.name)) {
-          clearFiltersAndKeepDrive(driveId);
-        }
+    if (!driveId) return;
+    const folder = visibleDriveFolders.find((d) => d.id === driveId);
+    if (!folder) return;
+    const shouldOpen = !currentDrive || currentDrive.id !== driveId;
+    if (shouldOpen) {
+      openDrive(driveId, folder.name);
+      if (isBizziCloudBaseDrive(folder.name)) {
+        clearFiltersAndKeepDrive(driveId);
       }
     }
   }, [searchParams, currentDrive, visibleDriveFolders, openDrive, clearFiltersAndKeepDrive]);

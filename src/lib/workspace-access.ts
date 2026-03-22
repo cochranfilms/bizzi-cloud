@@ -139,3 +139,80 @@ export async function getAccessibleWorkspaceIds(
 
   return accessible;
 }
+
+/**
+ * Returns workspace IDs for normal upload flow (members and admins alike).
+ * Excludes other members' private workspaces - those belong in Admin Explorer only.
+ * Used when mode=normal in workspaces/list.
+ */
+export async function getWorkspacesForNormalUpload(
+  uid: string,
+  organizationId: string,
+  driveId: string
+): Promise<string[]> {
+  const db = getAdminFirestore();
+
+  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  if (!driveSnap.exists) return [];
+
+  const driveData = driveSnap.data();
+  if (driveData?.organization_id !== organizationId) return [];
+  if (driveData?.deleted_at) return [];
+
+  const currentDriveType: "storage" | "raw" | "gallery" =
+    driveData?.is_creator_raw === true
+      ? "raw"
+      : (driveData?.name ?? "").toLowerCase().includes("gallery")
+        ? "gallery"
+        : "storage";
+
+  let orgSharedDriveId: string | null = null;
+  const sharedDrivesSnap = await db
+    .collection("linked_drives")
+    .where("organization_id", "==", organizationId)
+    .where("is_org_shared", "==", true)
+    .get();
+  const sharedByName: Record<string, string> = {};
+  for (const d of sharedDrivesSnap.docs) {
+    const name = (d.data().name ?? "").toLowerCase();
+    if (name.includes("storage")) sharedByName.storage = d.id;
+    else if (name.includes("raw")) sharedByName.raw = d.id;
+    else if (name.includes("gallery")) sharedByName.gallery = d.id;
+  }
+  orgSharedDriveId = sharedByName[currentDriveType] ?? null;
+
+  const driveIds = [driveId];
+  if (orgSharedDriveId) driveIds.push(orgSharedDriveId);
+
+  const snap = await db
+    .collection("workspaces")
+    .where("organization_id", "==", organizationId)
+    .get();
+
+  const ids: string[] = [];
+  for (const doc of snap.docs) {
+    const ws = doc.data() as Workspace;
+    if (!driveIds.includes(ws.drive_id ?? "")) continue;
+
+    const type: WorkspaceType = ws.workspace_type ?? "private";
+
+    switch (type) {
+      case "private":
+        if (ws.created_by === uid) ids.push(doc.id);
+        break;
+      case "org_shared":
+        ids.push(doc.id);
+        break;
+      case "team":
+      case "project":
+        if (Array.isArray(ws.member_user_ids) && ws.member_user_ids.includes(uid)) {
+          ids.push(doc.id);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return ids;
+}

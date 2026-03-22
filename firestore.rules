@@ -98,6 +98,15 @@ service cloud.firestore {
     match /audit_logs/{docId} {
       allow read, write: if false;
     }
+    match /activity_logs/{docId} {
+      allow read: if request.auth != null
+        && ((resource.data.actor_user_id == request.auth.uid
+              && resource.data.scope_type == 'personal_account')
+            || (resource.data.organization_id is string
+                && resource.data.scope_type == 'organization'
+                && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))));
+      allow write: if false;
+    }
     match /user_recent_opens/{docId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;

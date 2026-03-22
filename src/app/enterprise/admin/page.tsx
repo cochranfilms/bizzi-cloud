@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useRouter } from "next/navigation";
@@ -64,19 +65,28 @@ export default function EnterpriseAdminPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-            <Shield className="h-6 w-6 text-amber-600 dark:text-amber-500" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
+              <Shield className="h-6 w-6 text-amber-600 dark:text-amber-500" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">
+                Organization Admin
+              </h1>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                View all org files by drive, workspace, or uploader
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">
-              Organization Admin
-            </h1>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              View all org files by drive, workspace, or uploader
-            </p>
-          </div>
+          <Link
+            href="/enterprise/admin/workspaces"
+            className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <LayoutGrid className="h-4 w-4" />
+            Workspace Manager
+          </Link>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-700 dark:bg-neutral-900">
           <span className="text-sm text-neutral-500">Group by:</span>

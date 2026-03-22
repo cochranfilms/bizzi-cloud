@@ -14,6 +14,8 @@ export interface OpenPanelOptions {
   workspaceName?: string | null;
   /** Visibility scope label (e.g. "Shared Library", "Private") */
   scopeLabel?: string | null;
+  /** Display name for drive (e.g. "Gallery Media", "RAW") */
+  driveName?: string | null;
 }
 
 interface UppyUploadContextValue {
@@ -44,6 +46,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>(null);
+  const [driveName, setDriveName] = useState<string | null>(null);
   const [galleryId, setGalleryId] = useState<string | null>(null);
   const [initialFiles, setInitialFiles] = useState<File[] | null>(null);
   const [onUploadComplete, setOnUploadComplete] = useState<
@@ -59,6 +62,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       setWorkspaceId(ws);
       setWorkspaceName(options?.workspaceName ?? null);
       setScopeLabel(options?.scopeLabel ?? null);
+      setDriveName(options?.driveName ?? null);
       setGalleryId(options?.galleryId ?? null);
       setInitialFiles(options?.initialFiles ?? null);
       setOnUploadComplete(options?.onUploadComplete ?? null);
@@ -74,6 +78,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setWorkspaceId(null);
     setWorkspaceName(null);
     setScopeLabel(null);
+    setDriveName(null);
     setGalleryId(null);
     setInitialFiles(null);
     setOnUploadComplete(null);
@@ -99,6 +104,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           workspaceId={workspaceId}
           workspaceName={workspaceName}
           scopeLabel={scopeLabel}
+          driveName={driveName}
           galleryId={galleryId}
           initialFiles={initialFiles}
           onUploadComplete={handleUploadComplete}

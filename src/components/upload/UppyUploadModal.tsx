@@ -28,6 +28,7 @@ interface UppyUploadModalProps {
   workspaceId?: string | null;
   workspaceName?: string | null;
   scopeLabel?: string | null;
+  driveName?: string | null;
   galleryId?: string | null;
   initialFiles?: File[] | null;
   onUploadComplete?: () => void;
@@ -41,6 +42,7 @@ export default function UppyUploadModal({
   workspaceId = null,
   workspaceName = null,
   scopeLabel = null,
+  driveName = null,
   galleryId = null,
   initialFiles = null,
   onUploadComplete,
@@ -288,18 +290,31 @@ export default function UppyUploadModal({
               {headerLabel}
             </p>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {[
-                workspaceName && `Uploading to: ${workspaceName}`,
-                scopeLabel && `Visibility: ${scopeLabel}`,
-                hasFiles &&
-                  `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
+              {hasFiles
+                ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
                     fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
-                  }`,
-                !hasFiles && "Drop files or click to browse",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+                  }`
+                : "Drop files or click to browse"}
             </p>
+            {(workspaceName || scopeLabel || driveName) && (
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                {driveName && (
+                  <span className="text-neutral-600 dark:text-neutral-300">
+                    Drive: <strong>{driveName}</strong>
+                  </span>
+                )}
+                {workspaceName && (
+                  <span className="text-neutral-600 dark:text-neutral-300">
+                    Destination: <strong>{workspaceName}</strong>
+                  </span>
+                )}
+                {scopeLabel && (
+                  <span className="text-neutral-600 dark:text-neutral-300">
+                    Visibility: <strong>{scopeLabel}</strong>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">

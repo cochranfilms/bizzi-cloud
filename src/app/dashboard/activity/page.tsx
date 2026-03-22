@@ -1,13 +1,12 @@
 import TopBar from "@/components/dashboard/TopBar";
+import ActivityContent from "@/components/dashboard/ActivityContent";
 
 export default function ActivityPage() {
   return (
     <>
       <TopBar title="Activity" />
       <main className="flex-1 overflow-auto p-6">
-        <p className="text-neutral-500 dark:text-neutral-400">
-          View recent activity and changes.
-        </p>
+        <ActivityContent scope="personal" />
       </main>
     </>
   );
