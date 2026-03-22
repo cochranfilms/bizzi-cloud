@@ -133,6 +133,9 @@
   .animate-logo-scroll {
     animation: logo-scroll 30s linear infinite;
   }
+  .animate-teams-scroll {
+    animation: logo-scroll 42s linear infinite;
+  }
   /* Mobile modal scroll: prevent body scroll when modal open */
   .modal-open {
     overflow: hidden;
