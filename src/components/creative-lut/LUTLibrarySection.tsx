@@ -95,6 +95,8 @@ export default function LUTLibrarySection({
     saveConfig({ selected_lut_id: id });
   };
 
+  const DIRECT_UPLOAD_THRESHOLD = 4 * 1024 * 1024; // 4 MB — Vercel body limit
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !id || !canAdd) return;
@@ -112,17 +114,58 @@ export default function LUTLibrarySection({
     try {
       const token = await getAuthToken();
       if (!token) throw new Error("Not authenticated");
-      const formData = new FormData();
-      formData.append("lut", file);
-      formData.append("name", file.name.replace(/\.cube$/i, ""));
-      const res = await fetch(apiBase, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to upload");
+
+      if (file.size > DIRECT_UPLOAD_THRESHOLD) {
+        // Direct upload to Firebase Storage (bypasses Vercel 4.5 MB limit)
+        const name = file.name.replace(/\.cube$/i, "");
+        const urlRes = await fetch(`${apiBase}/upload-url`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name }),
+        });
+        if (!urlRes.ok) {
+          const data = await urlRes.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to get upload URL");
+        }
+        const { upload_url, entry_id, storage_path } = (await urlRes.json()) as {
+          upload_url: string;
+          entry_id: string;
+          storage_path: string;
+        };
+        const putRes = await fetch(upload_url, {
+          method: "PUT",
+          headers: { "Content-Type": "text/plain" },
+          body: file,
+        });
+        if (!putRes.ok) throw new Error("Upload failed");
+        const confirmRes = await fetch(apiBase, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ entry_id, storage_path, name }),
+        });
+        if (!confirmRes.ok) {
+          const data = await confirmRes.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to add LUT");
+        }
+      } else {
+        const formData = new FormData();
+        formData.append("lut", file);
+        formData.append("name", file.name.replace(/\.cube$/i, ""));
+        const res = await fetch(apiBase, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to upload");
+        }
       }
       await onRefetch();
       if (inputRef.current) inputRef.current.value = "";

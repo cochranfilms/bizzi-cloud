@@ -98,7 +98,9 @@ export async function GET(
   });
 }
 
-/** POST */
+const VERCEL_BODY_LIMIT = 4 * 1024 * 1024; // 4 MB — stay under Vercel's 4.5 MB limit
+
+/** POST: multipart (small files) or JSON confirm (direct upload for large files) */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -110,8 +112,81 @@ export async function POST(
   if (auth instanceof NextResponse) return auth;
 
   const contentType = request.headers.get("content-type") ?? "";
+
+  // Direct upload confirm: JSON with entry_id, storage_path, name (for files > 4 MB)
+  if (contentType.includes("application/json")) {
+    let body: { entry_id?: string; storage_path?: string; name?: string };
+    try {
+      body = (await request.json()) as { entry_id?: string; storage_path?: string; name?: string };
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+    const entryId = body.entry_id;
+    const storagePath = body.storage_path;
+    if (!entryId || !storagePath || typeof storagePath !== "string") {
+      return NextResponse.json({ error: "entry_id and storage_path required" }, { status: 400 });
+    }
+    const expectedPrefix = STORAGE_PREFIX(driveId);
+    if (!storagePath.startsWith(expectedPrefix) || !storagePath.endsWith(".cube")) {
+      return NextResponse.json({ error: "Invalid storage_path" }, { status: 400 });
+    }
+    const storage = getAdminStorage();
+    const [exists] = await storage.bucket().file(storagePath).exists();
+    if (!exists) {
+      return NextResponse.json({ error: "Upload not found. Upload the file to the signed URL first." }, { status: 400 });
+    }
+    const db = getAdminFirestore();
+    const snap = await db.collection("linked_drives").doc(driveId).get();
+    if (!snap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+    const data = snap.data()!;
+    const library: CreativeLUTLibraryEntry[] = (data.creative_lut_library ?? []) as CreativeLUTLibraryEntry[];
+    const customCount = library.filter((e) => e.mode === "custom").length;
+    if (customCount >= MAX_LUTS_PER_SCOPE) {
+      return NextResponse.json(
+        { error: `Maximum ${MAX_LUTS_PER_SCOPE} LUTs installed. Remove one to add another.` },
+        { status: 400 }
+      );
+    }
+    const [signedUrl] = await storage.bucket().file(storagePath).getSignedUrl({
+      action: "read",
+      expires: "03-01-2500",
+    });
+    const fileName = storagePath.split("/").pop() ?? "custom.cube";
+    const name = (body.name && typeof body.name === "string") ? body.name : fileName.replace(/\.cube$/i, "") || "Custom LUT";
+    const newEntry: CreativeLUTLibraryEntry = {
+      id: entryId,
+      mode: "custom",
+      name,
+      file_type: "cube",
+      file_name: fileName,
+      storage_path: storagePath,
+      signed_url: signedUrl,
+      builtin_lut_id: null,
+      input_profile: null,
+      output_profile: null,
+      uploaded_by: auth.uid,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const updatedLibrary = [...library, newEntry];
+    const config = (data.creative_lut_config ?? {}) as CreativeLUTConfig;
+    await db.collection("linked_drives").doc(driveId).update({
+      creative_lut_config: {
+        enabled: config.enabled ?? true,
+        selected_lut_id: config.selected_lut_id ?? newEntry.id,
+        intensity: config.intensity ?? 1,
+        applies_to: "creator_raw_video",
+        updated_at: new Date().toISOString(),
+        updated_by: auth.uid,
+      },
+      creative_lut_library: updatedLibrary,
+    });
+    return NextResponse.json({ entry: newEntry });
+  }
+
+  // Multipart form upload (small files < 4 MB)
   if (!contentType.includes("multipart/form-data")) {
-    return NextResponse.json({ error: "Request must be multipart/form-data" }, { status: 400 });
+    return NextResponse.json({ error: "Request must be multipart/form-data or application/json" }, { status: 400 });
   }
 
   let formData: FormData;
@@ -132,6 +207,12 @@ export async function POST(
   }
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json({ error: "LUT file must be under 20 MB" }, { status: 400 });
+  }
+  if (file.size > VERCEL_BODY_LIMIT) {
+    return NextResponse.json(
+      { error: "Files over 4 MB must use direct upload. Please try again." },
+      { status: 400 }
+    );
   }
 
   const text = await file.text();
