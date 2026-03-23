@@ -12,7 +12,7 @@ import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creativ
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
-const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const STORAGE_PREFIX = (galleryId: string) => `galleries/${galleryId}/lut`;
 
 async function requireGalleryOwner(
@@ -176,7 +176,7 @@ export async function POST(
   }
 
   if (file.size > MAX_SIZE_BYTES) {
-    return NextResponse.json({ error: "LUT file must be under 2 MB" }, { status: 400 });
+    return NextResponse.json({ error: "LUT file must be under 20 MB" }, { status: 400 });
   }
 
   const text = await file.text();

@@ -12,7 +12,7 @@ import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creativ
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
-const MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const STORAGE_PREFIX = (driveId: string) => `drives/${driveId}/lut`;
 
 async function requireDriveOwner(
@@ -131,7 +131,7 @@ export async function POST(
     return NextResponse.json({ error: "Only .cube LUT files are supported" }, { status: 400 });
   }
   if (file.size > MAX_SIZE_BYTES) {
-    return NextResponse.json({ error: "LUT file must be under 2 MB" }, { status: 400 });
+    return NextResponse.json({ error: "LUT file must be under 20 MB" }, { status: 400 });
   }
 
   const text = await file.text();

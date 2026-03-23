@@ -304,16 +304,37 @@ function SaveFavoritesModal({
   );
 }
 
-function buildGalleryLUTOptions(library?: Array<{ id: string; name?: string; signed_url?: string | null }>) {
-  const opts: Array<{ id: string; name: string; source: string }> = [
-    { id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709" },
-  ];
+function buildGalleryLUTOptions(
+  library?: Array<{ id: string; name?: string; signed_url?: string | null }>,
+  includeBuiltin = false,
+  password?: string
+): Array<{ id: string; name: string; source: string }> {
+  const opts: Array<{ id: string; name: string; source: string }> = [];
+  if (includeBuiltin) opts.push({ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709" });
   if (library) {
     for (const e of library) {
-      if (e.signed_url) opts.push({ id: e.id, name: e.name ?? "Custom LUT", source: e.signed_url });
+      if (e.signed_url) {
+        const source =
+          password
+            ? e.signed_url.includes("?")
+              ? `${e.signed_url}&password=${encodeURIComponent(password)}`
+              : `${e.signed_url}?password=${encodeURIComponent(password)}`
+            : e.signed_url;
+        opts.push({ id: e.id, name: e.name ?? "Custom LUT", source });
+      }
     }
   }
   return opts;
+}
+
+function getLutSourceFromSelection(
+  selectedId: string | null,
+  options: Array<{ id: string; name: string; source: string }>,
+  fallback: string | null
+): string | null {
+  if (!selectedId) return fallback;
+  const opt = options.find((o) => o.id === selectedId);
+  return opt?.source ?? fallback;
 }
 
 function PreviewModal({
@@ -329,6 +350,9 @@ function PreviewModal({
   watermark,
   lut,
   creativeLutLibrary,
+  lutOptions = [],
+  selectedLutId,
+  onLutSelect,
   lutPreviewEnabled = true,
   onLutPreviewToggle,
   allowComments = true,
@@ -345,6 +369,9 @@ function PreviewModal({
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
   lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   creativeLutLibrary?: Array<{ id: string; name?: string; signed_url?: string | null }>;
+  lutOptions?: Array<{ id: string; name: string; source: string }>;
+  selectedLutId?: string | null;
+  onLutSelect?: (id: string) => void;
   lutPreviewEnabled?: boolean;
   onLutPreviewToggle?: () => void;
   allowComments?: boolean;
@@ -409,16 +436,24 @@ function PreviewModal({
     }
   };
 
-  const lutSource = lut?.lut_source ?? lut?.storage_url;
-  const lutOptions = isVideo && lut?.enabled ? buildGalleryLUTOptions(creativeLutLibrary) : [];
+  const modalLutOptions =
+    lutOptions.length > 0
+      ? lutOptions
+      : lut?.enabled
+        ? buildGalleryLUTOptions(creativeLutLibrary, isVideo, password)
+        : [];
+  const lutSource =
+    lut?.enabled && selectedLutId
+      ? getLutSourceFromSelection(selectedLutId, modalLutOptions, lut?.lut_source ?? lut?.storage_url ?? null)
+      : lut?.lut_source ?? lut?.storage_url;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
       onClick={onClose}
     >
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        {lut?.enabled && lutSource && isImage(asset.name) && onLutPreviewToggle && (
+      <div className="absolute right-4 top-4 z-10 flex flex-wrap items-center gap-2">
+        {lut?.enabled && (lutSource || modalLutOptions.length > 0) && onLutPreviewToggle && (
           <button
             type="button"
             role="switch"
@@ -437,6 +472,24 @@ function PreviewModal({
             />
             Creative {lutPreviewEnabled ? "On" : "Off"}
           </button>
+        )}
+        {lut?.enabled && modalLutOptions.length > 0 && lutPreviewEnabled && (
+          <select
+            value={selectedLutId ?? ""}
+            onChange={(e) => {
+              e.stopPropagation();
+              const id = e.target.value;
+              if (id) onLutSelect?.(id);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded-lg border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-white backdrop-blur-sm"
+          >
+            {modalLutOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
         )}
         <button
           type="button"
@@ -877,6 +930,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
+  const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<{
     used: number;
     limit: number;
@@ -938,6 +992,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       fetchGallery();
     }
   }, [authLoading, user, errorCode, fetchGallery]);
+
+  useEffect(() => {
+    if (!data) return;
+    const cfg = data.gallery.creative_lut_config;
+    const lib = data.gallery.creative_lut_library ?? [];
+    const opts = buildGalleryLUTOptions(lib, data.gallery.gallery_type === "video");
+    const defaultId = (cfg?.selected_lut_id && opts.some((o) => o.id === cfg.selected_lut_id))
+      ? cfg.selected_lut_id
+      : opts[0]?.id ?? null;
+    setSelectedLutId(defaultId);
+  }, [data]);
 
   const fetchDownloadStatus = useCallback(async () => {
     if (!data) return;
@@ -1441,6 +1506,25 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   }
 
   const { gallery, assets, collections } = data;
+
+  const galleryLutOptions = buildGalleryLUTOptions(
+    gallery.creative_lut_library,
+    gallery.gallery_type === "video",
+    password || undefined
+  );
+  const effectiveLutSource =
+    gallery.lut?.enabled && selectedLutId
+      ? getLutSourceFromSelection(
+          selectedLutId,
+          galleryLutOptions,
+          gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null
+        )
+      : gallery.lut?.lut_source ?? gallery.lut?.storage_url;
+  const effectiveLut =
+    gallery.lut?.enabled && (effectiveLutSource || galleryLutOptions.length > 0)
+      ? { ...gallery.lut, lut_source: effectiveLutSource ?? undefined, storage_url: effectiveLutSource ?? undefined }
+      : gallery.lut;
+
   const filteredAssets =
     selectedCollectionId === null
       ? assets
@@ -1984,8 +2068,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {gallery.lut?.enabled && (gallery.lut?.lut_source ?? gallery.lut?.storage_url) && (
-          <div className="mb-4 flex justify-center">
+        {effectiveLut?.enabled && (effectiveLutSource || galleryLutOptions.length > 0) && (
+          <div className="mb-4 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
               role="switch"
@@ -2007,6 +2091,26 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               />
               Creative Preview {lutPreviewEnabled ? "On" : "Off"}
             </button>
+            {galleryLutOptions.length > 0 && lutPreviewEnabled && (
+              <select
+                value={selectedLutId ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) setSelectedLutId(id);
+                }}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                  isDarkBg
+                    ? "border-white/20 bg-white/10 text-white"
+                    : "border-neutral-300 bg-white text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
+                }`}
+              >
+                {galleryLutOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 
@@ -2066,7 +2170,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
                 watermark={gallery.watermark}
-                lut={gallery.lut}
+                lut={effectiveLut}
                 lutPreviewEnabled={lutPreviewEnabled}
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
                 isVideoGallery={gallery.gallery_type === "video"}
@@ -2153,8 +2257,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           galleryId={galleryId}
           getAuthToken={user ? getAuthToken : undefined}
           watermark={gallery.watermark}
-          lut={gallery.lut}
+          lut={effectiveLut}
           creativeLutLibrary={gallery.creative_lut_library}
+          lutOptions={galleryLutOptions}
+          selectedLutId={selectedLutId}
+          onLutSelect={(id) => setSelectedLutId(id)}
           lutPreviewEnabled={lutPreviewEnabled}
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
           allowComments={gallery.allow_comments !== false}

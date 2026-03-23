@@ -103,8 +103,8 @@ export default function LUTLibrarySection({
       setError("Only .cube LUT files are supported.");
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setError("LUT file must be under 2 MB.");
+    if (file.size > 20 * 1024 * 1024) {
+      setError("LUT file must be under 20 MB.");
       return;
     }
     setUploading(true);

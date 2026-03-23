@@ -4,7 +4,7 @@
  * Access: public, password, or invite_only.
  */
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminFirestore, getAdminStorage } from "@/lib/firebase-admin";
+import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
@@ -96,25 +96,13 @@ export async function GET(
   const rawLibrary = (g.creative_lut_library ?? []) as Array<{ id: string; name?: string; mode?: string; storage_path?: string | null; signed_url?: string | null }>;
   const legacyLut = g.lut ?? null;
 
-  // Refresh signed URLs for library entries (view is public, so we need fresh URLs)
-  const refreshSignedUrl = async (storagePath: string): Promise<string> => {
-    const storage = getAdminStorage();
-    const blob = storage.bucket().file(storagePath);
-    const [url] = await blob.getSignedUrl({ action: "read", expires: "03-01-2500" });
-    return url;
-  };
-  const creativeLibrary = await Promise.all(
-    rawLibrary.map(async (e) => {
-      if (e.mode === "custom" && e.storage_path) {
-        try {
-          return { ...e, signed_url: await refreshSignedUrl(e.storage_path) };
-        } catch {
-          return e;
-        }
-      }
-      return e;
-    })
-  );
+  // Use same-origin proxy URLs for custom LUTs (avoids CORS). Client appends &password= when needed.
+  const creativeLibrary = rawLibrary.map((e) => {
+    if (e.mode === "custom" && e.storage_path && e.id) {
+      return { ...e, signed_url: `/api/galleries/${id}/lut-file?entry_id=${e.id}` };
+    }
+    return e;
+  });
 
   let lut: { enabled: boolean; lut_source: string | null; storage_url?: string | null } | null = null;
   const config = creativeConfig ?? {};
