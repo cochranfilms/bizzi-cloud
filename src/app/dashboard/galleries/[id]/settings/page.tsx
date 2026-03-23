@@ -33,6 +33,7 @@ interface GalleryData {
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  gallery_type?: "photo" | "video";
 }
 
 export default function GallerySettingsPage() {

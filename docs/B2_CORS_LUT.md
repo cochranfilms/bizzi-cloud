@@ -1,6 +1,16 @@
-# Enable Rec 709 LUT Preview
+# CORS and LUT Preview
 
-The LUT preview applies a Rec 709 color correction to S-Log3 / Sony RAW video. It uses WebGL to sample the video, which requires the video to be served with CORS headers.
+Creative LUT preview applies color correction (e.g. Sony Rec 709 for S-Log3) to RAW images and videos. It uses WebGL to sample the media, which **requires CORS headers** on the source.
+
+## Where LUT is used
+
+- **Photo galleries** – image previews with LUT
+- **Video galleries** – video previews with LUT
+- **Creator RAW** – RAW video preview in the Creator tab
+
+## Why CORS matters
+
+WebGL reads video/image pixels for LUT processing. Same-origin policy blocks texture reads from cross-origin media. If the media URL is served from a different origin (e.g. B2 signed URL, Mux, proxy) without CORS, the LUT preview may show a black screen while the original plays fine.
 
 ## Setup
 
@@ -11,4 +21,14 @@ The LUT preview applies a Rec 709 color correction to S-Log3 / Sony RAW video. I
 3. Select **S3-compatible API** (or **Both**) when applying the rule.
 4. Save.
 
-Without CORS, the video will play normally but the LUT preview may show a black screen. With CORS configured, the LUT will apply correctly.
+## Video delivery
+
+For video LUT preview to work:
+
+- **Direct B2 / signed URLs** – B2 bucket must allow CORS from your app origin
+- **Proxy URLs** (e.g. `/api/backup/video-stream-url`, `/api/galleries/.../video-stream-url`) – ensure the proxy response includes CORS headers when serving from B2
+- **Mux / HLS** – Mux streams typically include CORS; verify your Mux asset allows your origin if you see black LUT preview
+
+## Fallback
+
+Without CORS, media plays normally but the LUT overlay may not render (black or fallback to original). Users can still download original files and view without LUT.

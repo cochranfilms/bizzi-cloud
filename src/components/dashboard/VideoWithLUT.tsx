@@ -3,147 +3,37 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 import Hls from "hls.js";
+import {
+  createVideoLUTContext,
+  createLUTTexture,
+  renderVideoFrameWithLUT,
+  LUT_SIZE,
+  type VideoLUTContext,
+} from "@/lib/creative-lut/video-lut-engine";
+import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
 
-const LUT_SIZE = 33;
-const LUT_URL = "/CINECOLOR_S-LOG3.cube";
-
-/**
- * Parse a .cube file and return raw RGBA data for a 2D texture (size*size x size).
- * CUBE format: LUT_3D_SIZE N, then N³ lines of "R G B" (R varies fastest).
- */
-async function parseCubeFile(text: string): Promise<Float32Array> {
-  const lines = text.trim().split(/\r?\n/);
-  let size = 0;
-  const values: number[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("TITLE") || trimmed.startsWith("#")) continue;
-    const parts = trimmed.split(/\s+/);
-    if (parts[0] === "LUT_3D_SIZE" && parts[1]) {
-      size = parseInt(parts[1], 10);
-      continue;
-    }
-    if (parts.length >= 3) {
-      const r = parseFloat(parts[0]);
-      const g = parseFloat(parts[1]);
-      const b = parseFloat(parts[2]);
-      if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
-        values.push(r, g, b, 1);
-      }
-    }
-  }
-
-  if (size === 0) size = Math.round(Math.cbrt(values.length / 4)) || 33;
-  return new Float32Array(values);
+export interface LUTOption {
+  id: string;
+  name: string;
+  /** Source for loading: builtin id (e.g. sony_rec709) or signed URL for custom LUT */
+  source: string;
+  isBuiltin?: boolean;
 }
-
-/**
- * Create a 2D texture from 3D LUT data. Layout: (size*size) x size, RGB per texel.
- */
-function createLUTTexture(
-  gl: WebGL2RenderingContext,
-  data: Float32Array,
-  size: number
-): WebGLTexture {
-  const texture = gl.createTexture();
-  if (!texture) throw new Error("Failed to create LUT texture");
-
-  const total = size * size * size;
-  const pixels = new Uint8Array(total * 4);
-  for (let i = 0; i < total; i++) {
-    pixels[i * 4] = Math.round((data[i * 4] ?? 0) * 255);
-    pixels[i * 4 + 1] = Math.round((data[i * 4 + 1] ?? 0) * 255);
-    pixels[i * 4 + 2] = Math.round((data[i * 4 + 2] ?? 0) * 255);
-    pixels[i * 4 + 3] = 255;
-  }
-
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA8,
-    size * size,
-    size,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    pixels
-  );
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-
-  return texture;
-}
-
-const VERTEX_SHADER = `#version 300 es
-in vec2 a_position;
-in vec2 a_texCoord;
-out vec2 v_texCoord;
-void main() {
-  gl_Position = vec4(a_position, 0.0, 1.0);
-  v_texCoord = a_texCoord;
-}
-`;
-
-const FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-uniform sampler2D u_video;
-uniform sampler2D u_lut;
-uniform float u_lutSize;
-uniform float u_lutEnabled;
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-vec4 sampleLUT(vec3 rgb) {
-  float size = u_lutSize;
-  float size2 = size * size;
-  float margin = 0.5 / size;
-  vec3 scaled = margin + rgb * (1.0 - 1.0 / size);
-  vec3 f = scaled * (size - 1.0);
-  vec3 i0 = floor(f);
-  vec3 i1 = min(i0 + 1.0, size - 1.0);
-  vec3 t = fract(f);
-
-  vec4 c000 = texelFetch(u_lut, ivec2(i0.r + i0.g * size, i0.b), 0);
-  vec4 c100 = texelFetch(u_lut, ivec2(i1.r + i0.g * size, i0.b), 0);
-  vec4 c010 = texelFetch(u_lut, ivec2(i0.r + i1.g * size, i0.b), 0);
-  vec4 c110 = texelFetch(u_lut, ivec2(i1.r + i1.g * size, i0.b), 0);
-  vec4 c001 = texelFetch(u_lut, ivec2(i0.r + i0.g * size, i1.b), 0);
-  vec4 c101 = texelFetch(u_lut, ivec2(i1.r + i0.g * size, i1.b), 0);
-  vec4 c011 = texelFetch(u_lut, ivec2(i0.r + i1.g * size, i1.b), 0);
-  vec4 c111 = texelFetch(u_lut, ivec2(i1.r + i1.g * size, i1.b), 0);
-
-  vec4 c00 = mix(c000, c100, t.r);
-  vec4 c01 = mix(c010, c110, t.r);
-  vec4 c10 = mix(c001, c101, t.r);
-  vec4 c11 = mix(c011, c111, t.r);
-  vec4 c0 = mix(c00, c01, t.g);
-  vec4 c1 = mix(c10, c11, t.g);
-  return mix(c0, c1, t.b);
-}
-
-void main() {
-  vec4 v = texture(u_video, v_texCoord);
-  if (u_lutEnabled > 0.5) {
-    fragColor = vec4(sampleLUT(v.rgb).rgb, v.a);
-  } else {
-    fragColor = v;
-  }
-}
-`;
 
 interface VideoWithLUTProps {
   src: string;
   streamUrl?: string | null;
   className?: string;
-  /** When false, LUT toggle is hidden and video plays without Rec 709. Default: false. */
+  /** When false, LUT controls are hidden and video plays without LUT. Default: false. */
   showLUTOption?: boolean;
-  /** Called when LUT is toggled on/off. Use to bake LUT into download when enabled. */
+  /** URL (signed) or builtin LUT id (e.g. sony_rec709). When null and showLUTOption, defaults to sony_rec709. */
+  lutSource?: string | null;
+  /** Available LUTs for dropdown. Builtin + custom from library. */
+  lutOptions?: LUTOption[];
+  /** Called when LUT is toggled on/off. */
   onLutChange?: (enabled: boolean) => void;
+  /** Called when user selects a different LUT from dropdown. */
+  onLutSelect?: (lutId: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -153,14 +43,28 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoWithLUT({ src, streamUrl, className, showLUTOption = false, onLutChange }: VideoWithLUTProps) {
+export default function VideoWithLUT({
+  src,
+  streamUrl,
+  className,
+  showLUTOption = false,
+  lutSource = null,
+  lutOptions = [],
+  onLutChange,
+  onLutSelect,
+}: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const videoSrc = streamUrl ?? src;
+
+  const effectiveLutSource = lutSource ?? (showLUTOption ? "sony_rec709" : null);
+
   const [lutEnabled, setLutEnabled] = useState(false);
+  const [selectedLutId, setSelectedLutId] = useState<string | null>(effectiveLutSource);
   const [lutReady, setLutReady] = useState(false);
+  const [lutError, setLutError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -168,22 +72,18 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const glRef = useRef<{
-    gl: WebGL2RenderingContext;
-    program: WebGLProgram;
-    lutTexture: WebGLTexture;
-    videoTexture: WebGLTexture;
-  } | null>(null);
+  const glRef = useRef<VideoLUTContext | null>(null);
 
-  const loadLUT = useCallback(async () => {
-    const res = await fetch(LUT_URL);
-    if (!res.ok) throw new Error("Failed to load LUT");
-    const text = await res.text();
-    return parseCubeFile(text);
-  }, []);
+  const options = lutOptions.length > 0 ? lutOptions : [{ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709", isBuiltin: true }];
+  const currentOption = options.find((o) => o.id === (selectedLutId ?? effectiveLutSource ?? "sony_rec709"));
+  const currentLutSource = lutEnabled && currentOption ? currentOption.source : null;
 
   useEffect(() => {
-    if (!lutEnabled) return;
+    setSelectedLutId(effectiveLutSource);
+  }, [effectiveLutSource]);
+
+  useEffect(() => {
+    if (!lutEnabled || !currentLutSource) return;
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -194,50 +94,35 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       return;
     }
 
-    const compileShader = (source: string, type: number): WebGLShader => {
-      const shader = gl.createShader(type)!;
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        throw new Error(gl.getShaderInfoLog(shader) ?? "Shader compile failed");
-      }
-      return shader;
-    };
-
-    const vs = compileShader(VERTEX_SHADER, gl.VERTEX_SHADER);
-    const fs = compileShader(FRAGMENT_SHADER, gl.FRAGMENT_SHADER);
-    const program = gl.createProgram()!;
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(program) ?? "Program link failed");
-    }
-
-    const videoTexture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    loadLUT()
+    let cancelled = false;
+    getOrLoadLUT(currentLutSource)
       .then((data) => {
-        const lutTexture = createLUTTexture(gl, data, LUT_SIZE);
-        glRef.current = { gl, program, lutTexture, videoTexture };
+        if (cancelled) return;
+        const size = Math.round(Math.cbrt(data.length / 4)) || LUT_SIZE;
+        const lutTexture = createLUTTexture(gl, data, size);
+        glRef.current = createVideoLUTContext(gl, lutTexture);
         setLutReady(true);
+        setLutError(null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "LUT load failed"));
+      .catch((e) => {
+        if (!cancelled) {
+          setLutError(e instanceof Error ? e.message : "LUT load failed");
+          setLutReady(false);
+        }
+      });
 
     return () => {
-      gl.deleteTexture(videoTexture);
-      glRef.current = null;
-      gl.deleteShader(vs);
-      gl.deleteShader(fs);
-      gl.deleteProgram(program);
+      cancelled = true;
+      const ctx = glRef.current;
+      if (ctx) {
+        ctx.gl.deleteTexture(ctx.videoTexture);
+        ctx.gl.deleteTexture(ctx.lutTexture);
+        ctx.gl.deleteProgram(ctx.program);
+        glRef.current = null;
+      }
       setLutReady(false);
     };
-  }, [loadLUT, lutEnabled]);
+  }, [lutEnabled, currentLutSource]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -245,8 +130,6 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     const container = containerRef.current;
     const ctx = glRef.current;
     if (!canvas || !video || !container || !ctx || !lutReady) return;
-
-    const { gl, program, lutTexture, videoTexture } = ctx;
 
     const dpr = window.devicePixelRatio || 1;
 
@@ -257,7 +140,6 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
       const vh = video.videoHeight;
       if (!containerRect || vw <= 0 || vh <= 0) return;
 
-      // object-fit: contain - compute actual displayed content rect (handles 9:16 vs 16:9)
       const scale = Math.min(videoRect.width / vw, videoRect.height / vh);
       const contentW = vw * scale;
       const contentH = vh * scale;
@@ -296,50 +178,9 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
         rafId = requestAnimationFrame(render);
         return;
       }
-
       if (cancelled) return;
 
-      gl.viewport(0, 0, w, h);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-
-      gl.useProgram(program);
-
-      const posLoc = gl.getAttribLocation(program, "a_position");
-      const texLoc = gl.getAttribLocation(program, "a_texCoord");
-      const posBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-        gl.STATIC_DRAW
-      );
-      gl.enableVertexAttribArray(posLoc);
-      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-      const texBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]),
-        gl.STATIC_DRAW
-      );
-      gl.enableVertexAttribArray(texLoc);
-      gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
-
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, lutTexture);
-
-      gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
-      gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
-      gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
-      gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
-
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      renderVideoFrameWithLUT(ctx, video, w, h, lutEnabled);
 
       if (!cancelled) rafId = requestAnimationFrame(render);
     };
@@ -368,7 +209,16 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     });
   }, [onLutChange]);
 
-  // Sync video state (play, pause, time, duration, volume)
+  const handleLUTSelect = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      if (!id) return;
+      setSelectedLutId(id);
+      onLutSelect?.(id);
+    },
+    [onLutSelect]
+  );
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -440,14 +290,15 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
 
   const handleVideoError = useCallback(() => {
     setError((prev) =>
-      prev ?? "Video failed to load. The preview link may have expired — try closing and reopening."
+      prev ??
+        "Video failed to load. The preview link may have expired — try closing and reopening."
     );
   }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
-    setError(null); // Clear previous load error when source changes
+    setError(null);
     video.addEventListener("error", handleVideoError);
     return () => video.removeEventListener("error", handleVideoError);
   }, [videoSrc, handleVideoError]);
@@ -470,11 +321,15 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
     }
     if (isHls && video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = videoSrc;
-      return () => { video.src = ""; };
+      return () => {
+        video.src = "";
+      };
     }
     if (!isHls) {
       video.src = videoSrc;
-      return () => { video.src = ""; };
+      return () => {
+        video.src = "";
+      };
     }
   }, [videoSrc]);
 
@@ -501,6 +356,7 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
         aspectRatio: "16 / 9",
       };
 
+
   return (
     <div className="flex w-full flex-col items-center gap-4">
       <div
@@ -523,91 +379,111 @@ export default function VideoWithLUT({ src, streamUrl, className, showLUTOption 
             className="absolute left-0 top-0 transition-opacity duration-200"
             style={{
               pointerEvents: "none",
-              opacity: lutReady ? 1 : 0,
+              opacity: lutReady && !lutError ? 1 : 0,
             }}
           />
         )}
         <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
+          <div
+            className="h-1.5 cursor-pointer rounded-full bg-white/20 backdrop-blur-sm"
+            onClick={handleProgressClick}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={currentTime}
+          >
             <div
-              className="h-1.5 cursor-pointer rounded-full bg-white/20 backdrop-blur-sm"
-              onClick={handleProgressClick}
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={currentTime}
-            >
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-bizzi-blue to-bizzi-cyan shadow-lg shadow-bizzi-blue/30 transition-[width]"
-                style={{
-                  width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={togglePlayPause}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-bizzi-blue/30 hover:text-white"
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? (
-                  <Pause className="h-5 w-5" fill="currentColor" />
-                ) : (
-                  <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
-                )}
-              </button>
-              <span className="min-w-[4.5rem] text-sm font-medium text-white/95 tabular-nums">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-              <button
-                type="button"
-                onClick={toggleMute}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
-                aria-label={isMuted ? "Unmute" : "Mute"}
-              >
-                {isMuted ? (
-                  <VolumeX className="h-4 w-4" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
-                aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              >
-                <Maximize className="h-4 w-4" />
-              </button>
-            </div>
+              className="h-full rounded-full bg-gradient-to-r from-bizzi-blue to-bizzi-cyan shadow-lg shadow-bizzi-blue/30 transition-[width]"
+              style={{
+                width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+              }}
+            />
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePlayPause}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-bizzi-blue/30 hover:text-white"
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? (
+                <Pause className="h-5 w-5" fill="currentColor" />
+              ) : (
+                <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
+              )}
+            </button>
+            <span className="min-w-[4.5rem] text-sm font-medium text-white/95 tabular-nums">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
+              aria-label={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? (
+                <VolumeX className="h-4 w-4" />
+              ) : (
+                <Volume2 className="h-4 w-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
+              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
+              <Maximize className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
       {showLUTOption && (
-        <div className="flex w-full items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60">
-          <button
-            type="button"
-            onClick={handleLUTToggle}
-            className={`flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
-              lutEnabled
-                ? "bg-gradient-to-r from-bizzi-blue to-bizzi-cyan text-white shadow-lg shadow-bizzi-blue/20"
-                : "bg-neutral-200 text-neutral-600 ring-1 ring-neutral-300 transition-colors hover:bg-neutral-300 hover:ring-neutral-400 dark:bg-neutral-700/50 dark:text-neutral-300 dark:ring-neutral-600/50 dark:hover:bg-neutral-600/60 dark:hover:ring-neutral-500"
-            }`}
-            title="S-Log3 → Rec 709. If preview is black, add CORS to your B2 bucket."
-          >
-            <span
-              className={`inline-block h-3 w-3 rounded-full border-2 transition-colors ${
+        <div className="flex w-full flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60">
+          <div className="flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={handleLUTToggle}
+              className={`flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 lutEnabled
-                  ? "border-white bg-white"
-                  : "border-neutral-400 bg-transparent dark:border-neutral-500"
+                  ? "bg-gradient-to-r from-bizzi-blue to-bizzi-cyan text-white shadow-lg shadow-bizzi-blue/20"
+                  : "bg-neutral-200 text-neutral-600 ring-1 ring-neutral-300 transition-colors hover:bg-neutral-300 hover:ring-neutral-400 dark:bg-neutral-700/50 dark:text-neutral-300 dark:ring-neutral-600/50 dark:hover:bg-neutral-600/60 dark:hover:ring-neutral-500"
               }`}
-            />
-            Rec 709 LUT
-          </button>
+              title="WebGL texture read requires video origin CORS. If preview is black, add CORS to your B2 bucket."
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full border-2 transition-colors ${
+                  lutEnabled
+                    ? "border-white bg-white"
+                    : "border-neutral-400 bg-transparent dark:border-neutral-500"
+                }`}
+              />
+              Creative LUT {lutEnabled ? "On" : "Off"}
+            </button>
+            {lutEnabled && options.length > 0 && (
+              <select
+                value={selectedLutId ?? effectiveLutSource ?? options[0]?.id ?? "sony_rec709"}
+                onChange={handleLUTSelect}
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              >
+                {options.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {lutError && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              LUT preview unavailable. Playing original video.
+            </p>
+          )}
           <span className="text-xs text-neutral-500 dark:text-neutral-400">
             <span className={lutEnabled ? "font-medium text-bizzi-blue dark:text-bizzi-cyan" : ""}>
               {lutEnabled ? "On" : "Off"}
             </span>
-            {" · "}For S-Log3 / Sony RAW
+            {" · "}For S-Log3 / Sony RAW. Preview only; originals unchanged.
           </span>
         </div>
       )}

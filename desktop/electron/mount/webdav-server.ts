@@ -36,6 +36,8 @@ export interface MountMetadataEntry {
 export interface WebDAVServerOptions {
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
+  /** Optional range cache; when provided, handleGet checks cache before API fetch. */
+  prefetchCache?: import("./prefetch-cache").PrefetchCache;
   /** Called when a file is successfully uploaded via PUT. Used for notification. */
   onUploadComplete?: (fileName: string) => void;
   /** Predictive prefetch: called after folder is listed (driveId, folderPath, entries). */
@@ -439,8 +441,25 @@ export class WebDAVServer {
         rangeEnd = m[2] ? parseInt(m[2], 10) : null;
       }
     }
+    const effectiveRangeEnd = rangeEnd ?? entry.size_bytes - 1;
+
     const relativePath = parentPath ? `${parentPath}/${fileName}` : fileName;
     this.options.onFileRead?.(driveId, relativePath, rangeStart, rangeEnd);
+
+    // Check prefetch cache before API
+    const cached = await this.options.prefetchCache?.get(entry.object_key, rangeStart, effectiveRangeEnd);
+    if (cached && cached.length > 0) {
+      const resHeaders: Record<string, string> = {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(cached.length),
+      };
+      if (entry.etag) resHeaders.ETag = entry.etag;
+      if (entry.modified_at) resHeaders["Last-Modified"] = new Date(entry.modified_at).toUTCString();
+      resHeaders["Content-Range"] = `bytes ${rangeStart}-${rangeStart + cached.length - 1}/${entry.size_bytes}`;
+      res.writeHead(206, resHeaders);
+      res.end(cached);
+      return;
+    }
 
     const rangeUrl = `${this.options.apiBaseUrl}/api/mount/range?object_key=${encodeURIComponent(entry.object_key)}`;
     const headers: Record<string, string> = {

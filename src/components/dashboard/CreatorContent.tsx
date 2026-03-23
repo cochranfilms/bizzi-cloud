@@ -14,6 +14,8 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
+import { useAuth } from "@/context/AuthContext";
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -23,6 +25,8 @@ export default function CreatorContent() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
+  const [lutConfig, setLutConfig] = useState<CreativeLUTConfig | null>(null);
+  const [lutLibrary, setLutLibrary] = useState<CreativeLUTLibraryEntry[]>([]);
   const {
     driveFolders,
     loading,
@@ -37,6 +41,7 @@ export default function CreatorContent() {
     creatorRawDriveId,
     getOrCreateCreatorRawDrive,
   } = useBackup();
+  const { user } = useAuth();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const { confirm } = useConfirm();
 
@@ -76,6 +81,26 @@ export default function CreatorContent() {
   useEffect(() => {
     getOrCreateCreatorRawDrive().catch(console.error);
   }, [getOrCreateCreatorRawDrive]);
+
+  // Fetch LUT config for Creator RAW drive
+  useEffect(() => {
+    if (!creatorRawDriveId || !user) return;
+    let cancelled = false;
+    user.getIdToken().then((token) => {
+      if (cancelled) return;
+      return fetch(`/api/drives/${creatorRawDriveId}/lut`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }).then((res) => {
+      if (!res || cancelled) return res?.json?.();
+      return res.json();
+    }).then((data) => {
+      if (cancelled || !data) return;
+      setLutConfig(data.creative_lut_config ?? null);
+      setLutLibrary(data.creative_lut_library ?? []);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [creatorRawDriveId, user]);
 
   // Refresh drive files when storage changes (e.g. after upload). Use silent to avoid loading flash.
   useEffect(() => {
@@ -225,7 +250,8 @@ export default function CreatorContent() {
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        showLUTForVideo={previewFile?.driveId === creatorRawDriveId}
+        lutConfig={previewFile?.driveId === creatorRawDriveId ? lutConfig : null}
+        lutLibrary={previewFile?.driveId === creatorRawDriveId ? lutLibrary : null}
       />
     </div>
   );

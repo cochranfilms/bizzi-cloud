@@ -70,12 +70,16 @@ export interface GalleryWatermarkSettings {
   scale?: number;               // 0.5–2 relative size
 }
 
-/** Creative LUT settings – applied to preview only, not stored files */
+/** @deprecated Use creative_lut_config + creative_lut_library */
 export interface GalleryLUTSettings {
   enabled: boolean;
-  object_key?: string | null;   // B2 key, e.g. galleries/{id}/lut.cube
-  storage_url?: string | null;   // Signed URL if using Firebase Storage
+  object_key?: string | null;
+  storage_url?: string | null;
 }
+
+/** Creative LUT library model – up to 5 custom LUTs per gallery */
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "./creative-lut";
+export type { CreativeLUTConfig, CreativeLUTLibraryEntry };
 
 /** Gallery type: photo for photographers, video for videographers */
 export type GalleryType = "photo" | "video";
@@ -166,8 +170,11 @@ export interface Gallery {
   watermark: GalleryWatermarkSettings;
   /** Source format: raw = LUT preview applies; jpg = images as delivered */
   source_format?: "raw" | "jpg" | null;
-  /** Creative LUT for visual preview only */
+  /** @deprecated Use creative_lut_config + creative_lut_library */
   lut?: GalleryLUTSettings | null;
+  /** Creative LUT config and library (preview only, originals unchanged) */
+  creative_lut_config?: CreativeLUTConfig | null;
+  creative_lut_library?: CreativeLUTLibraryEntry[];
   /** Analytics counters */
   view_count: number;
   unique_visitor_count: number;
@@ -302,6 +309,8 @@ export interface CreateGalleryInput {
   download_settings?: Partial<GalleryDownloadSettings>;
   watermark?: Partial<GalleryWatermarkSettings>;
   lut?: Partial<GalleryLUTSettings> | null;
+  creative_lut_config?: CreativeLUTConfig | null;
+  creative_lut_library?: CreativeLUTLibraryEntry[];
   /** Video gallery specific */
   delivery_mode?: VideoDeliveryMode | null;
   download_policy?: VideoDownloadPolicy | null;
@@ -342,6 +351,8 @@ export interface GalleryPublicPayload {
     download_settings: GalleryDownloadSettings;
     watermark: GalleryWatermarkSettings;
     lut?: { enabled: boolean; storage_url?: string | null } | null;
+    creative_lut_config?: CreativeLUTConfig | null;
+    creative_lut_library?: CreativeLUTLibraryEntry[];
     cover_asset_id?: string | null;
     /** Video gallery specific */
     featured_video_asset_id?: string | null;

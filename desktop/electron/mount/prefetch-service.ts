@@ -1,5 +1,6 @@
 /**
  * Predictive Prefetch Service - Makes the mount feel like the fastest SSD.
+ * Fetches from API/range layer into PrefetchCache — never reads through the mount.
  *
  * Strategies:
  * 1. Folder opened → Pre-cache first 30s of every clip (thumbnail + proxy preview)
@@ -7,9 +8,8 @@
  * 3. Grading session (large reads) → Pre-fetch full original + next 2 originals
  * 4. Idle 10+ min → Pre-warm cache for entire project's media
  */
-import * as fs from "fs";
-import * as path from "path";
 import type { MountMetadataEntry } from "./webdav-server";
+import type { PrefetchCache } from "./prefetch-cache";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|heic|tiff|tif|arw|cr2|dng)$/i;
@@ -33,30 +33,36 @@ function isMediaFile(name: string): boolean {
 }
 
 export interface PrefetchServiceOptions {
-  mountPoint: string;
+  apiBaseUrl: string;
+  getAuthToken: () => Promise<string | null>;
+  prefetchCache: PrefetchCache;
   onActivity?: () => void;
 }
 
 interface QueuedPrefetch {
-  driveId: string;
-  relativePath: string;
+  objectKey: string;
+  sizeBytes: number;
   bytesToRead: number; // 0 = full file
   priority: "high" | "normal" | "low";
 }
 
 export class PrefetchService {
-  private mountPoint: string;
+  private apiBaseUrl: string;
+  private getAuthToken: () => Promise<string | null>;
+  private prefetchCache: PrefetchCache;
   private onActivity?: () => void;
   private queue: QueuedPrefetch[] = [];
   private inFlight = 0;
   private lastActivityAt = 0;
   private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
   private lastProjectFolder: { driveId: string; path: string; entries: MountMetadataEntry[] } | null = null;
-  /** Avoid re-prefetch loop: once prefetched, skip until unmount (fixes NLE export → repeated downloads) */
+  /** Avoid re-prefetch loop: once prefetched, skip until unmount */
   private prefetchedKeys = new Set<string>();
 
   constructor(options: PrefetchServiceOptions) {
-    this.mountPoint = options.mountPoint;
+    this.apiBaseUrl = options.apiBaseUrl;
+    this.getAuthToken = options.getAuthToken;
+    this.prefetchCache = options.prefetchCache;
     this.onActivity = options.onActivity;
   }
 
@@ -68,11 +74,10 @@ export class PrefetchService {
   /** Called when user lists a folder (PROPFIND). Pre-cache first 30s of every clip. */
   onFolderListed(driveId: string | null, folderPath: string, entries: MountMetadataEntry[]): void {
     this.recordActivity();
-    if (!driveId) return; // root or top-level, no path
+    if (!driveId) return;
 
     const videoFiles = entries
       .filter((e) => e.type === "file" && isVideoFile(e.name))
-      // Prioritize proxies for NLE editing (proxy-first per performance guide)
       .sort((a, b) => {
         const aIsProxy = a.name.toLowerCase().endsWith("_proxy.mp4");
         const bIsProxy = b.name.toLowerCase().endsWith("_proxy.mp4");
@@ -82,19 +87,16 @@ export class PrefetchService {
       });
     if (videoFiles.length === 0) return;
 
-    // Store for idle prefetch and "next clips" heuristic
     this.lastProjectFolder = { driveId, path: folderPath, entries };
 
-    // Strategy 1: Pre-cache first 30s of every clip when folder is opened
-    const relPath = folderPath ? `${folderPath}/` : "";
     const now = Date.now();
     for (const e of videoFiles) {
-      // Skip recently-uploaded files - NLE just wrote them; prefetch causes download loop
       const mod = e.modified_at ? new Date(e.modified_at).getTime() : 0;
       if (mod && now - mod < RECENT_UPLOAD_MS) continue;
+      if (!e.object_key) continue;
       this.enqueue({
-        driveId,
-        relativePath: `${relPath}${e.name}`,
+        objectKey: e.object_key,
+        sizeBytes: e.size_bytes,
         bytesToRead: PREFETCH_HEAD_BYTES,
         priority: "low",
       });
@@ -109,59 +111,74 @@ export class PrefetchService {
     const parentPath = relativePath.includes("/") ? relativePath.slice(0, relativePath.lastIndexOf("/")) : "";
     const isVideo = isVideoFile(fileName);
 
-    // Strategy 3: Grading session - NLE accessing beyond first 30s of original
     const isGradingRead = isVideo && rangeStart >= PREFETCH_HEAD_BYTES;
     if (isGradingRead) {
-      // Pre-fetch full file + next 2 originals in folder
-      this.enqueue({ driveId, relativePath, bytesToRead: 0, priority: "high" });
-      const siblings = this.getSiblings(driveId, parentPath, fileName);
-      for (let i = 0; i < GRADING_NEXT_FILES && i < siblings.length; i++) {
+      const currentEntry = this.getEntryForPath(driveId, parentPath, fileName);
+      if (currentEntry?.object_key) {
         this.enqueue({
-          driveId,
-          relativePath: siblings[i],
+          objectKey: currentEntry.object_key,
+          sizeBytes: currentEntry.size_bytes,
           bytesToRead: 0,
           priority: "high",
         });
       }
+      const siblingEntries = this.getSiblingEntries(driveId, parentPath, fileName);
+      for (let i = 0; i < GRADING_NEXT_FILES && i < siblingEntries.length; i++) {
+        const e = siblingEntries[i];
+        if (e.object_key) {
+          this.enqueue({
+            objectKey: e.object_key,
+            sizeBytes: e.size_bytes,
+            bytesToRead: 0,
+            priority: "high",
+          });
+        }
+      }
       return;
     }
 
-    // Strategy 2: Clip clicked → prefetch next 3 clips in sequence
     if (isVideo) {
-      const nextPaths = this.getNextFilesInSequence(driveId, parentPath, fileName, NEXT_CLIPS_COUNT);
-      for (const p of nextPaths) {
-        this.enqueue({
-          driveId,
-          relativePath: p,
-          bytesToRead: PREFETCH_HEAD_BYTES,
-          priority: "normal",
-        });
+      const nextEntries = this.getSiblingEntries(driveId, parentPath, fileName).slice(0, NEXT_CLIPS_COUNT);
+      for (const e of nextEntries) {
+        if (e.object_key) {
+          this.enqueue({
+            objectKey: e.object_key,
+            sizeBytes: e.size_bytes,
+            bytesToRead: PREFETCH_HEAD_BYTES,
+            priority: "normal",
+          });
+        }
       }
     }
   }
 
-  private getSiblings(driveId: string, parentPath: string, currentFileName: string): string[] {
+  private getEntryForPath(driveId: string, parentPath: string, fileName: string): MountMetadataEntry | null {
+    const folder = this.lastProjectFolder;
+    if (!folder || folder.driveId !== driveId || folder.path !== parentPath) return null;
+    const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
+    return folder.entries.find(
+      (e) => e.type === "file" && ((e.path && e.path === fullPath) || (!e.path && e.name === fileName))
+    ) ?? null;
+  }
+
+  private getSiblingEntries(driveId: string, parentPath: string, currentFileName: string): MountMetadataEntry[] {
     const folder = this.lastProjectFolder;
     if (!folder || folder.driveId !== driveId || folder.path !== parentPath) return [];
 
     const currentPath = parentPath ? `${parentPath}/${currentFileName}` : currentFileName;
     const files = folder.entries
       .filter((e) => e.type === "file" && isVideoFile(e.name))
-      .map((e) => e.path || (parentPath ? `${parentPath}/${e.name}` : e.name))
-      .sort();
-    const idx = files.indexOf(currentPath);
+      .map((e) => ({ path: e.path || (parentPath ? `${parentPath}/${e.name}` : e.name), entry: e }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+    const idx = files.findIndex((f) => f.path === currentPath);
     if (idx < 0) return [];
-    return files.slice(idx + 1);
-  }
-
-  private getNextFilesInSequence(driveId: string, parentPath: string, currentFileName: string, count: number): string[] {
-    return this.getSiblings(driveId, parentPath, currentFileName).slice(0, count);
+    return files.slice(idx + 1).map((f) => f.entry);
   }
 
   private enqueue(item: QueuedPrefetch): void {
-    const key = `${item.driveId}:${item.relativePath}:${item.bytesToRead}`;
+    const key = `${item.objectKey}:${item.bytesToRead}`;
     if (this.prefetchedKeys.has(key)) return;
-    if (this.queue.some((q) => `${q.driveId}:${q.relativePath}:${q.bytesToRead}` === key)) return;
+    if (this.queue.some((q) => `${q.objectKey}:${q.bytesToRead}` === key)) return;
     this.queue.push(item);
     this.queue.sort((a, b) => {
       const p = { high: 0, normal: 1, low: 2 };
@@ -182,31 +199,31 @@ export class PrefetchService {
   }
 
   private async prefetchOne(item: QueuedPrefetch): Promise<void> {
-    const key = `${item.driveId}:${item.relativePath}:${item.bytesToRead}`;
-    const fullPath = path.join(this.mountPoint, item.driveId, item.relativePath);
+    const key = `${item.objectKey}:${item.bytesToRead}`;
+    const toRead = item.bytesToRead === 0 ? item.sizeBytes : Math.min(item.bytesToRead, item.sizeBytes);
+    if (toRead <= 0) return;
+
+    const token = await this.getAuthToken();
+    if (!token) return;
+
+    const rangeStart = 0;
+    const rangeEnd = toRead - 1;
+    const rangeUrl = `${this.apiBaseUrl}/api/mount/range?object_key=${encodeURIComponent(item.objectKey)}`;
+
     try {
-      const stat = await fs.promises.stat(fullPath).catch(() => null);
-      if (!stat || !stat.isFile()) return;
-
-      const size = stat.size;
-      const toRead = item.bytesToRead === 0 ? size : Math.min(item.bytesToRead, size);
-      if (toRead <= 0) return;
-
-      const buf = Buffer.alloc(Math.min(toRead, 4 * 1024 * 1024)); // 4MB chunks
-      const fd = await fs.promises.open(fullPath, "r");
-      try {
-        let offset = 0;
-        while (offset < toRead) {
-          const len = Math.min(buf.length, toRead - offset);
-          await fd.read(buf, 0, len, offset);
-          offset += len;
-        }
-      } finally {
-        await fd.close();
-      }
+      const res = await fetch(rangeUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Range: `bytes=${rangeStart}-${rangeEnd}`,
+        },
+      });
+      if (!res.ok) return;
+      const arrBuf = await res.arrayBuffer();
+      const data = Buffer.from(arrBuf);
+      await this.prefetchCache.put(item.objectKey, rangeStart, rangeEnd, data);
       this.prefetchedKeys.add(key);
     } catch {
-      // Ignore; file may not exist or mount may be busy
+      // Ignore; network or cache error
     }
   }
 
@@ -220,24 +237,24 @@ export class PrefetchService {
     const mediaFiles = folder.entries.filter((e) => {
       if (e.type !== "file" || !isMediaFile(e.name)) return false;
       const mod = e.modified_at ? new Date(e.modified_at).getTime() : 0;
-      if (mod && now - mod < RECENT_UPLOAD_MS) return false; // skip recent uploads
+      if (mod && now - mod < RECENT_UPLOAD_MS) return false;
       return true;
     });
     const relPrefix = folder.path ? `${folder.path}/` : "";
     for (const e of mediaFiles) {
+      if (!e.object_key) continue;
       this.enqueue({
-        driveId: folder.driveId,
-        relativePath: `${relPrefix}${e.name}`,
+        objectKey: e.object_key,
+        sizeBytes: e.size_bytes,
         bytesToRead: isVideoFile(e.name) ? PREFETCH_HEAD_BYTES : 0,
         priority: "low",
       });
     }
-    this.lastProjectFolder = null; // avoid re-queuing same folder every interval
+    this.lastProjectFolder = null;
   }
 
   /** Start idle check timer. Call when mount is active. */
-  start(mountPoint: string): void {
-    this.mountPoint = mountPoint;
+  start(): void {
     this.lastActivityAt = Date.now();
     this.stop();
     this.idleCheckTimer = setInterval(() => this.runIdlePrefetch(), CHECK_IDLE_INTERVAL_MS);

@@ -13,6 +13,7 @@ import * as path from "path";
 import { spawn } from "child_process";
 import { Notification } from "electron";
 import { desktopLog } from "../logger";
+import { PrefetchCache } from "./prefetch-cache";
 import { PrefetchService } from "./prefetch-service";
 import { WebDAVServer } from "./webdav-server";
 
@@ -267,33 +268,31 @@ export class MountService {
     if (this._isMounted && token) this.currentToken = token;
   }
 
-  /** Trigger a directory read to force rclone to re-PROPFIND. Call after conform so NLE sees originals immediately. */
+  /** Trigger a directory read to force rclone to re-PROPFIND. Call after conform so NLE sees originals immediately.
+   * Spawns a child process to avoid main-process reentrancy (reading through the mount from the process that hosts WebDAV). */
   async refreshFolder(driveSlug: string): Promise<void> {
     await this.reconcileMountState();
     if (!this._isMounted || !this.mountPoint) return;
     const slug = ["Storage", "RAW", "Gallery Media"].includes(driveSlug) ? driveSlug : "Storage";
     const rootPath = path.join(this.mountPoint, slug);
-    const touchDirectory = async (dirPath: string): Promise<fs.Dirent[]> => {
-      try {
-        await fs.promises.stat(dirPath);
-      } catch {
-        return [];
-      }
-      return fs.promises.readdir(dirPath, { withFileTypes: true }).catch(() => []);
-    };
+    const scriptPath = path.join(__dirname, "refresh-folder-script.js");
 
     try {
-      const rootEntries = await touchDirectory(rootPath);
-      for (const entry of rootEntries.slice(0, 50)) {
-        const childPath = path.join(rootPath, entry.name);
-        await fs.promises.stat(childPath).catch(() => null);
-        if (entry.isDirectory()) {
-          await touchDirectory(childPath);
-        }
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      await touchDirectory(rootPath);
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(process.execPath, [scriptPath, rootPath], {
+          stdio: "ignore",
+          detached: true,
+        });
+        proc.unref();
+        proc.on("error", reject);
+        proc.on("close", (code) => {
+          if (code !== 0 && code !== null) {
+            desktopLog.warn("[mount] refresh folder script exited", { code, rootPath });
+          }
+          resolve();
+        });
+        setTimeout(resolve, 5000); // Don't wait forever if child hangs
+      });
       desktopLog.info("[mount] refreshed folder", { driveSlug: slug, rootPath });
     } catch (err) {
       desktopLog.warn("[mount] refresh folder failed", { driveSlug: slug, rootPath, err });
@@ -420,12 +419,26 @@ export class MountService {
     // WebDAV uses getAuthToken() per request so token refresh works without remounting
     const getAuthToken = async () => this.currentToken ?? (await options.getAuthToken());
 
-    const prefetch = new PrefetchService({ mountPoint: "" });
+    // Prefetch disabled by default - it can stress macFUSE and trigger fuse_kern_chan crashes.
+    // Set BIZZI_ENABLE_PREFETCH=true to enable.
+    const prefetchDisabled = process.env.BIZZI_ENABLE_PREFETCH !== "true";
+    const prefetchCacheDir = path.join(options.cacheBaseDir, "prefetch-cache");
+    const prefetchCache = new PrefetchCache(prefetchCacheDir);
+    await prefetchCache.init();
+
+    const prefetch = prefetchDisabled
+      ? null
+      : new PrefetchService({
+          apiBaseUrl: options.apiBaseUrl || PRODUCTION_URL,
+          getAuthToken,
+          prefetchCache,
+        });
     this.prefetch = prefetch;
 
     this.webdav = new WebDAVServer({
       apiBaseUrl: options.apiBaseUrl || PRODUCTION_URL,
       getAuthToken,
+      prefetchCache,
       onUploadComplete: (fileName) => {
         try {
           new Notification({
@@ -436,9 +449,13 @@ export class MountService {
           // Notification may fail if app not focused or on some systems
         }
       },
-      onFolderListed: (driveId, folderPath, entries) => prefetch.onFolderListed(driveId, folderPath, entries),
-      onFileRead: (driveId, relativePath, rangeStart, rangeEnd) =>
-        prefetch.onFileRead(driveId, relativePath, rangeStart, rangeEnd),
+      onFolderListed: prefetch
+        ? (driveId, folderPath, entries) => prefetch.onFolderListed(driveId, folderPath, entries)
+        : undefined,
+      onFileRead: prefetch
+        ? (driveId, relativePath, rangeStart, rangeEnd) =>
+            prefetch.onFileRead(driveId, relativePath, rangeStart, rangeEnd)
+        : undefined,
     });
 
     const port = await this.webdav.start();
@@ -450,10 +467,8 @@ export class MountService {
     if (process.platform === "darwin") {
       const volumesPath = "/Volumes/BizziCloud";
       try {
-        const volsDir = "/Volumes";
-        await fs.promises.access(volsDir, fs.constants.W_OK);
-
         // Try to clean up a stale/orphaned mount from a previous session.
+        // Use actual operations instead of access() - macOS FDA sometimes works for these when access() fails.
         await this.bestEffortUnmountPath(volumesPath);
         await sleep(500); // Brief wait for FS to settle
 
@@ -478,34 +493,51 @@ export class MountService {
             "Unmount Bizzi Cloud first: click the eject icon next to it in Finder, or run in Terminal: diskutil unmount /Volumes/BizziCloud"
           );
         }
-        // Fall back to a path on local disk. cacheBaseDir (Application Support) may be on iCloud/FUSE;
-        // use fallbackMountDir (Caches) which is always local to avoid "mount point is itself on a macFUSE volume".
-        const fallbackBase = options.fallbackMountDir ?? path.join(options.cacheBaseDir, "Mount");
-        this.mountPoint = fallbackBase;
-        await fs.promises.mkdir(this.mountPoint, { recursive: true });
-        desktopLog.warn("Using fallback mount path (not in /Volumes)", this.mountPoint, err);
+        // Permission denied on /Volumes: use fallback path without symlink.
+        // Use cacheBaseDir/Mount (not tmpdir) - more stable; tmpdir triggered fuse_kern_chan crashes.
+        if (isPermissionError(err)) {
+          const fallbackBase = path.join(options.cacheBaseDir, "Mount");
+          this.mountPoint = fallbackBase;
+          await fs.promises.mkdir(this.mountPoint, { recursive: true });
+          desktopLog.warn(
+            "Using fallback mount (Full Disk Access not granted or not taking effect). Mount at:",
+            this.mountPoint,
+            "- No symlink at /Volumes to avoid Finder freezes."
+          );
+          // Do NOT create symlink - it triggered fuse_kern_chan crashes. User accesses via this path.
+        } else if (process.env.BIZZI_ALLOW_FALLBACK_MOUNT !== "true") {
+          throw new Error(
+            "Cannot mount at /Volumes/BizziCloud. Add Full Disk Access (System Settings → Privacy & Security) or set BIZZI_ALLOW_FALLBACK_MOUNT=true."
+          );
+        } else {
+          const fallbackBase = options.fallbackMountDir ?? path.join(options.cacheBaseDir, "Mount");
+          this.mountPoint = fallbackBase;
+          await fs.promises.mkdir(this.mountPoint, { recursive: true });
+          desktopLog.warn("Using fallback mount path (BIZZI_ALLOW_FALLBACK_MOUNT=true)", this.mountPoint, err);
 
-        // Create symlink at /Volumes/BizziCloud so NLEs can see it (may fail without Full Disk Access)
-        try {
-          const existing = await fs.promises.lstat(volumesPath).catch(() => null);
-          if (existing) {
-            if (existing.isSymbolicLink()) {
-              await fs.promises.unlink(volumesPath);
-            } else if (existing.isDirectory()) {
-              const entries = await fs.promises.readdir(volumesPath).catch(() => []);
-              if (entries.length === 0) {
-                await fs.promises.rmdir(volumesPath);
-              } else {
-                throw new Error("Path exists and is not empty");
+          if (process.env.BIZZI_DISABLE_SYMLINK_FALLBACK !== "true") {
+            try {
+              const existing = await fs.promises.lstat(volumesPath).catch(() => null);
+              if (existing) {
+                if (existing.isSymbolicLink()) {
+                  await fs.promises.unlink(volumesPath);
+                } else if (existing.isDirectory()) {
+                  const entries = await fs.promises.readdir(volumesPath).catch(() => []);
+                  if (entries.length === 0) {
+                    await fs.promises.rmdir(volumesPath);
+                  } else {
+                    throw new Error("Path exists and is not empty");
+                  }
+                } else {
+                  await fs.promises.unlink(volumesPath);
+                }
               }
-            } else {
-              await fs.promises.unlink(volumesPath);
+              await fs.promises.symlink(this.mountPoint, volumesPath);
+              this.symlinkForFallback = volumesPath;
+            } catch {
+              // Symlink failed (likely same permission issue)
             }
           }
-          await fs.promises.symlink(this.mountPoint, volumesPath);
-          this.symlinkForFallback = volumesPath;
-        } catch {
-          // Symlink failed (likely same permission issue); mount still works at fallback path
         }
       }
     } else {
@@ -533,6 +565,9 @@ export class MountService {
     await fs.promises.mkdir(cacheDir, { recursive: true });
     const vfsCacheMaxBytes = options.streamCacheMaxBytes ?? DEFAULT_STREAM_CACHE_MAX_BYTES;
 
+    const isDev = process.defaultApp || process.env.NODE_ENV === "development";
+    const isFallbackMount = this.mountPoint !== "/Volumes/BizziCloud";
+
     const args = [
       "mount",
       ":webdav:",
@@ -541,16 +576,24 @@ export class MountService {
       "--webdav-bearer-token", token,
       "--webdav-vendor", "other",
       "--timeout", "2h", // Video exports can take 30+ min; rclone default 5m aborts long PUTs
-      "--dir-cache-time", "1s", // Near-instant so conform switch is visible immediately
+      "--daemon-timeout", "599s", // Avoid spurious unmounts (WebDAV stability)
+      "--dir-cache-time", "30s",
       "--vfs-cache-mode", "full",
-      "--vfs-read-chunk-size", "32M",
-      "--vfs-read-ahead", "64M", // Predictive: prefetch ahead during sequential reads (video scrubbing, etc.)
+      "--vfs-read-chunk-size", "8M", // Smaller chunks to reduce macFUSE load (was 32M)
+      "--vfs-read-ahead", "8M", // Reduced to minimize fuse_kern_chan assertion risk
       "--vfs-cache-max-size", String(vfsCacheMaxBytes),
       "--cache-dir", cacheDir,
-      "--daemon",
-      "--log-file", logFile,
-      "--allow-non-empty", // Fallback mount path can have leftover files from previous sessions
     ];
+
+    if (isDev) {
+      args.push("-v"); // Foreground + verbose for debugging
+    } else {
+      args.push("--daemon", "--log-file", logFile);
+    }
+
+    if (isFallbackMount) {
+      args.push("--allow-non-empty"); // Fallback path can have leftover files from previous sessions
+    }
     if (process.platform === "darwin") {
       args.push("--volname", "Bizzi Cloud");
       // volicon is not supported by all macFUSE versions; omit to avoid mount failure
@@ -660,7 +703,7 @@ export class MountService {
             }
             mountReady();
             // Start predictive prefetch (folder open, clip click, grading, idle)
-            this.prefetch?.start(this.mountPoint);
+            this.prefetch?.start();
             return;
           }
           if (rcloneExitedWithError || settled) return;

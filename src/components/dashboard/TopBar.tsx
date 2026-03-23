@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Upload, FolderPlus, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X } from "lucide-react";
+import { Plus, Upload, FolderPlus, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
@@ -18,9 +19,11 @@ interface TopBarProps {
   title?: string;
   /** When true, shows View/Size/Ratio/Scale/Info controls in the top bar (left of New button) */
   showLayoutSettings?: boolean;
+  /** Optional link to settings (e.g. /dashboard/creator/settings) - shows gear icon next to title */
+  settingsHref?: string;
 }
 
-export default function TopBar({ title = "All files", showLayoutSettings = false }: TopBarProps) {
+export default function TopBar({ title = "All files", showLayoutSettings = false, settingsHref }: TopBarProps) {
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
@@ -184,9 +187,20 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   return (
     <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
       <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 px-4 py-3 md:px-6">
-        <h1 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate min-w-0">
-          {title}
-        </h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate min-w-0">
+            {title}
+          </h1>
+          {settingsHref && (
+            <Link
+              href={settingsHref}
+              className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+              aria-label="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
+        </div>
 
       <div className="flex flex-1 flex-wrap items-center justify-end gap-4 sm:justify-end">
         {showLayoutSettings && (

@@ -35,11 +35,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc --project tsconfig.electron.json",
-    "build:electron": "tsc -p tsconfig.electron.json",
-    "electron:dev": "tsc -p tsconfig.electron.json && concurrently \"vite\" \"electron .\"",
-    "electron": "vite build && tsc -p tsconfig.electron.json && electron .",
-    "dist": "npm run build && node scripts/download-rclone.js && node scripts/prepare-file-provider.js && electron-builder",
+    "build": "vite build && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json && cp electron/mount/refresh-folder-script.js dist-electron/mount/",
+    "electron:dev": "npm run build:electron && concurrently \"vite\" \"electron .\"",
+    "electron": "vite build && npm run build:electron && electron .",
+    "dist": "npm run build && node scripts/download-rclone.js && node scripts/prepare-file-provider.js && node scripts/fix-native-deps.js && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -25,6 +25,7 @@ import { getCoverObjectPosition } from "@/lib/cover-position";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import type { HeroHeightPreset } from "@/lib/cover-constants";
 import ImageWithLUT from "./ImageWithLUT";
+import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 
 interface GalleryData {
@@ -65,7 +66,9 @@ interface GalleryData {
     position?: string | null;
     opacity?: number | null;
   };
-  lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
+  creative_lut_config?: { enabled?: boolean; selected_lut_id?: string | null } | null;
+  creative_lut_library?: Array<{ id: string; name?: string; signed_url?: string | null }>;
   cover_asset_id?: string | null;
   cover_position?: string | null;
   cover_focal_x?: number | null;
@@ -301,6 +304,18 @@ function SaveFavoritesModal({
   );
 }
 
+function buildGalleryLUTOptions(library?: Array<{ id: string; name?: string; signed_url?: string | null }>) {
+  const opts: Array<{ id: string; name: string; source: string }> = [
+    { id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709" },
+  ];
+  if (library) {
+    for (const e of library) {
+      if (e.signed_url) opts.push({ id: e.id, name: e.name ?? "Custom LUT", source: e.signed_url });
+    }
+  }
+  return opts;
+}
+
 function PreviewModal({
   asset,
   previewImageUrl,
@@ -313,6 +328,7 @@ function PreviewModal({
   getAuthToken,
   watermark,
   lut,
+  creativeLutLibrary,
   lutPreviewEnabled = true,
   onLutPreviewToggle,
   allowComments = true,
@@ -327,7 +343,8 @@ function PreviewModal({
   galleryId: string;
   getAuthToken?: () => Promise<string | null>;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
-  lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
+  creativeLutLibrary?: Array<{ id: string; name?: string; signed_url?: string | null }>;
   lutPreviewEnabled?: boolean;
   onLutPreviewToggle?: () => void;
   allowComments?: boolean;
@@ -392,13 +409,16 @@ function PreviewModal({
     }
   };
 
+  const lutSource = lut?.lut_source ?? lut?.storage_url;
+  const lutOptions = isVideo && lut?.enabled ? buildGalleryLUTOptions(creativeLutLibrary) : [];
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
       onClick={onClose}
     >
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        {lut?.enabled && lut?.storage_url && isImage(asset.name) && onLutPreviewToggle && (
+        {lut?.enabled && lutSource && isImage(asset.name) && onLutPreviewToggle && (
           <button
             type="button"
             role="switch"
@@ -440,12 +460,23 @@ function PreviewModal({
                 <p className="text-amber-400">{videoError}</p>
               )}
               {videoStreamUrl && !videoError && (
-                <video
-                  src={videoStreamUrl}
-                  controls
-                  playsInline
-                  className="max-h-[70vh] max-w-full rounded-lg bg-black"
-                />
+                lut?.enabled && lutSource ? (
+                  <VideoWithLUT
+                    src={videoStreamUrl}
+                    streamUrl={videoStreamUrl}
+                    className="max-h-[70vh] max-w-full rounded-lg bg-black"
+                    showLUTOption
+                    lutSource={lutSource}
+                    lutOptions={lutOptions.length > 0 ? lutOptions : undefined}
+                  />
+                ) : (
+                  <video
+                    src={videoStreamUrl}
+                    controls
+                    playsInline
+                    className="max-h-[70vh] max-w-full rounded-lg bg-black"
+                  />
+                )
               )}
               {!videoStreamUrl && !videoLoading && !videoError && (
                 <p className="text-white/80">Video unavailable</p>
@@ -453,10 +484,10 @@ function PreviewModal({
             </div>
           ) : previewImageUrl ? (
             <>
-              {lut?.enabled && lut?.storage_url && isImage(asset.name) && lutPreviewEnabled ? (
+              {lut?.enabled && lutSource && isImage(asset.name) && lutPreviewEnabled ? (
                 <ImageWithLUT
                   imageUrl={previewImageUrl}
-                  lutUrl={lut.storage_url}
+                  lutUrl={lutSource}
                   lutEnabled={true}
                   className="max-h-[70vh] max-w-full"
                 />
@@ -583,12 +614,13 @@ function GalleryAssetCard({
   downloading: boolean;
   masonryLayout?: boolean;
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
-  lut?: { enabled?: boolean; storage_url?: string | null } | null;
+  lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   lutPreviewEnabled?: boolean;
   isFeaturedVideo?: boolean;
   /** When true, all videos autoplay muted (not just featured) */
   isVideoGallery?: boolean;
 }) {
+  const lutSource = lut?.lut_source ?? lut?.storage_url;
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
@@ -736,11 +768,11 @@ function GalleryAssetCard({
             />
           </div>
         ) : thumbUrl ? (
-          lut?.enabled && lut?.storage_url && lutPreviewEnabled ? (
+          lut?.enabled && lutSource && lutPreviewEnabled ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
                 imageUrl={thumbUrl}
-                lutUrl={lut.storage_url}
+                lutUrl={lutSource}
                 lutEnabled={true}
                 objectFit="cover"
                 className={`w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}
@@ -1952,7 +1984,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {gallery.lut?.enabled && gallery.lut?.storage_url && (
+        {gallery.lut?.enabled && (gallery.lut?.lut_source ?? gallery.lut?.storage_url) && (
           <div className="mb-4 flex justify-center">
             <button
               type="button"
@@ -2122,6 +2154,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           getAuthToken={user ? getAuthToken : undefined}
           watermark={gallery.watermark}
           lut={gallery.lut}
+          creativeLutLibrary={gallery.creative_lut_library}
           lutPreviewEnabled={lutPreviewEnabled}
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
           allowComments={gallery.allow_comments !== false}

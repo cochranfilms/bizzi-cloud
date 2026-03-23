@@ -10,8 +10,9 @@ import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
-import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
+import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
 import { isProjectFile } from "@/lib/bizzi-file-types";
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -42,11 +43,37 @@ function getPreviewType(
 interface FilePreviewModalProps {
   file: RecentFile | null;
   onClose: () => void;
-  /** When true, show Rec 709 LUT toggle for videos (RAW folder only). Default: false. */
+  /** @deprecated Use lutConfig + lutLibrary for Creator RAW. When true, show Sony Rec 709 LUT toggle. */
   showLUTForVideo?: boolean;
+  /** LUT config for Creator RAW drive. When provided with lutLibrary, enables full LUT dropdown. */
+  lutConfig?: CreativeLUTConfig | null;
+  /** LUT library for Creator RAW drive. Entries with signed_url become dropdown options. */
+  lutLibrary?: CreativeLUTLibraryEntry[] | null;
 }
 
-export default function FilePreviewModal({ file, onClose, showLUTForVideo = false }: FilePreviewModalProps) {
+function buildLUTOptions(
+  library: CreativeLUTLibraryEntry[],
+  includeBuiltin: boolean
+): LUTOption[] {
+  const opts: LUTOption[] = [];
+  if (includeBuiltin) {
+    opts.push({ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709", isBuiltin: true });
+  }
+  for (const e of library) {
+    if (e.signed_url) {
+      opts.push({ id: e.id, name: e.name, source: e.signed_url, isBuiltin: false });
+    }
+  }
+  return opts;
+}
+
+export default function FilePreviewModal({
+  file,
+  onClose,
+  showLUTForVideo = false,
+  lutConfig = null,
+  lutLibrary = null,
+}: FilePreviewModalProps) {
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoProcessing, setVideoProcessing] = useState(false);
@@ -213,6 +240,19 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
     }
   }, [file?.objectKey, file?.name]);
 
+  const lutOptions: LUTOption[] =
+    lutConfig && lutLibrary
+      ? buildLUTOptions(lutLibrary, true)
+      : showLUTForVideo
+        ? [{ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709", isBuiltin: true }]
+        : [];
+  const lutSource =
+    lutConfig?.selected_lut_id &&
+    lutOptions.some((o) => o.id === lutConfig.selected_lut_id)
+      ? lutOptions.find((o) => o.id === lutConfig.selected_lut_id)!.source
+      : lutOptions[0]?.source ?? null;
+  const showLUT = lutOptions.length > 0;
+
   if (!file) return null;
 
   return (
@@ -350,7 +390,9 @@ export default function FilePreviewModal({ file, onClose, showLUTForVideo = fals
                     src={fullUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg"
-                    showLUTOption={showLUTForVideo}
+                    showLUTOption={showLUT}
+                    lutSource={lutSource}
+                    lutOptions={lutOptions}
                     onLutChange={setLutEnabled}
                   />
                 )}

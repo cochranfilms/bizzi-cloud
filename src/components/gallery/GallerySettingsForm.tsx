@@ -6,6 +6,8 @@ import { Save, Check, Loader2, Image as ImageIcon, CreditCard, Film, Mail } from
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
+import LUTLibrarySection from "@/components/creative-lut/LUTLibrarySection";
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
@@ -236,16 +238,8 @@ export default function GallerySettingsForm({
   const [watermarkError, setWatermarkError] = useState<string | null>(null);
   const watermarkInputRef = useRef<HTMLInputElement>(null);
 
-  const [lutEnabled, setLutEnabled] = useState(
-    (initialData.lut?.enabled as boolean) ?? false
-  );
-  const [lutStorageUrl, setLutStorageUrl] = useState<string | null>(
-    (initialData.lut?.storage_url as string) ?? null
-  );
-  const [lutFile, setLutFile] = useState<File | null>(null);
-  const [uploadingLut, setUploadingLut] = useState(false);
-  const [lutError, setLutError] = useState<string | null>(null);
-  const lutInputRef = useRef<HTMLInputElement>(null);
+  const [lutConfig, setLutConfig] = useState<CreativeLUTConfig | null>(null);
+  const [lutLibrary, setLutLibrary] = useState<CreativeLUTLibraryEntry[]>([]);
 
   useEffect(() => {
     if (!watermarkFile) {
@@ -377,6 +371,26 @@ export default function GallerySettingsForm({
     if (isVideoGallery) fetchVideoAssets();
   }, [isVideoGallery, fetchVideoAssets]);
 
+  const fetchLUT = useCallback(async () => {
+    if (!user || !galleryId) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${galleryId}/lut`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setLutConfig(data.creative_lut_config ?? null);
+      setLutLibrary(data.creative_lut_library ?? []);
+    } catch {
+      // ignore
+    }
+  }, [user, galleryId]);
+
+  useEffect(() => {
+    fetchLUT();
+  }, [fetchLUT]);
+
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -426,10 +440,6 @@ export default function GallerySettingsForm({
           position: watermarkPosition,
           opacity: watermarkOpacity,
           image_url: watermarkImageUrl ?? undefined,
-        },
-        lut: {
-          enabled: lutEnabled,
-          storage_url: lutStorageUrl ?? undefined,
         },
         invoice_url: invoiceUrl.trim() || null,
         invoice_label: invoiceLabel.trim() || null,
@@ -1246,143 +1256,15 @@ export default function GallerySettingsForm({
       </section>
 
       {/* Creative LUT */}
-      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
-          Creative LUT
-        </h2>
-        <div className="space-y-4">
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={lutEnabled}
-              onChange={(e) => setLutEnabled(e.target.checked)}
-              className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
-            />
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              Enable LUT preview
-            </span>
-          </label>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            This applies a visual preview style only. Your original files remain unchanged.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={lutInputRef}
-              type="file"
-              accept=".cube"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const ext = file.name.split(".").pop()?.toLowerCase();
-                if (ext !== "cube") {
-                  setLutError("Only .cube LUT files are supported.");
-                  return;
-                }
-                if (file.size > 2 * 1024 * 1024) {
-                  setLutError("LUT file must be under 2 MB.");
-                  return;
-                }
-                setLutError(null);
-                setLutFile(file);
-              }}
-              aria-label="Upload LUT"
-            />
-            <button
-              type="button"
-              onClick={() => lutInputRef.current?.click()}
-              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-            >
-              {lutStorageUrl ? "Replace LUT" : "Upload LUT"}
-            </button>
-            {lutStorageUrl && (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!user) return;
-                  setUploadingLut(true);
-                  setLutError(null);
-                  try {
-                    const token = await user.getIdToken();
-                    const res = await fetch(`/api/galleries/${galleryId}/lut`, {
-                      method: "DELETE",
-                      headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (!res.ok) {
-                      const data = await res.json().catch(() => ({}));
-                      throw new Error(data.error ?? "Failed to remove LUT");
-                    }
-                    setLutStorageUrl(null);
-                    setLutFile(null);
-                  } catch (err) {
-                    setLutError(err instanceof Error ? err.message : "Failed to remove LUT");
-                  } finally {
-                    setUploadingLut(false);
-                  }
-                }}
-                disabled={uploadingLut}
-                className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/20"
-              >
-                {uploadingLut ? (
-                  <Loader2 className="inline h-4 w-4 animate-spin" />
-                ) : (
-                  "Remove LUT"
-                )}
-              </button>
-            )}
-            {lutFile && (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!user || !lutFile) return;
-                  setUploadingLut(true);
-                  setLutError(null);
-                  try {
-                    const token = await user.getIdToken();
-                    const formData = new FormData();
-                    formData.append("lut", lutFile);
-                    const res = await fetch(`/api/galleries/${galleryId}/lut`, {
-                      method: "POST",
-                      headers: { Authorization: `Bearer ${token}` },
-                      body: formData,
-                    });
-                    if (!res.ok) {
-                      const data = await res.json().catch(() => ({}));
-                      throw new Error(data.error ?? "Failed to upload LUT");
-                    }
-                    const data = await res.json();
-                    setLutStorageUrl(data.storage_url ?? null);
-                    setLutFile(null);
-                  } catch (err) {
-                    setLutError(err instanceof Error ? err.message : "Failed to upload LUT");
-                  } finally {
-                    setUploadingLut(false);
-                  }
-                }}
-                disabled={uploadingLut}
-                className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {uploadingLut ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Uploading…
-                  </>
-                ) : (
-                  "Upload"
-                )}
-              </button>
-            )}
-          </div>
-          {lutError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{lutError}</p>
-          )}
-          {lutStorageUrl && !lutFile && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              LUT file is attached. Use Replace to change it, or Remove to clear.
-            </p>
-          )}
-        </div>
-      </section>
+      <LUTLibrarySection
+        galleryId={galleryId}
+        scope={isVideoGallery ? "video_gallery" : "photo_gallery"}
+        config={lutConfig}
+        library={lutLibrary}
+        onRefetch={fetchLUT}
+        getAuthToken={() => user?.getIdToken() ?? Promise.resolve(null)}
+        includeBuiltin={isVideoGallery}
+      />
 
       <div className="flex justify-end">
         <button

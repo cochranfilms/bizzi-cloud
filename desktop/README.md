@@ -13,6 +13,7 @@ Desktop app for mounting Bizzi Cloud as a local drive for NLE editing (Premiere 
 
 - Node.js 18+
 - **[rclone](https://rclone.org/downloads/)** — Install from rclone.org (macOS: **do not** use `brew install rclone`—the Homebrew build does not support mount)
+- **[macFUSE](https://osxfuse.github.io/)** — For Mount Drive on macOS. Use **5.1.3 or newer**; earlier versions (e.g. 5.1.2) have caused Finder hangs and kernel panics on recent macOS. See [macfuse/issues#1129](https://github.com/macfuse/macfuse/issues/1129) and [macfuse/issues#982](https://github.com/macfuse/macfuse/issues/982).
 
 ## Configuration
 
@@ -69,6 +70,26 @@ iconutil -c icns desktop/resources/icon.iconset -o desktop/resources/icon.icns
 ## API Base URL
 
 Defaults to **https://www.bizzicloud.io** (production). Change in Settings if using a different backend.
+
+## Debug Options (Mount Crashes)
+
+If Finder or the app crash when the mount is active:
+
+1. **Full Disk Access required** — The app now blocks mounting when `/Volumes` is inaccessible (EACCES). Add Bizzi Cloud to Full Disk Access in System Settings → Privacy & Security. The fallback path was disabled because it triggered `fuse_kern_chan` assertion crashes and Finder freezes.
+
+2. **BIZZI_ENABLE_PREFETCH=true** — Prefetch is off by default (reduces macFUSE load). Enable for faster folder opens.
+   ```bash
+   BIZZI_DISABLE_PREFETCH=true /Applications/Bizzi\ Cloud.app/Contents/MacOS/Bizzi\ Cloud
+   ```
+
+3. **BIZZI_DISABLE_SYMLINK_FALLBACK=true** — When using BIZZI_ALLOW_FALLBACK_MOUNT, skip creating the symlink at /Volumes/BizziCloud.
+   ```bash
+   BIZZI_DISABLE_SYMLINK_FALLBACK=true /Applications/Bizzi\ Cloud.app/Contents/MacOS/Bizzi\ Cloud
+   ```
+
+4. **BIZZI_ALLOW_FALLBACK_MOUNT=true** — Re-enable the fallback mount path when /Volumes is inaccessible. Use with caution; it has caused system freezes in some configurations.
+
+5. **Debug mode** — When running with `NODE_ENV=development` or unpackaged (`npm run electron:dev`), rclone runs in foreground with verbose logging. Check `desktop.log` and the terminal for mount diagnostics.
 
 ## Architecture
 

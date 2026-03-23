@@ -1,9 +1,9 @@
 /**
- * Gallery LUT Library API
- * GET: return creative_lut_config + creative_lut_library (with fresh signed URLs)
- * POST: add LUT (.cube), max 5 custom
- * PATCH: update config (enabled, selected_lut_id, intensity)
- * DELETE: remove entry by { entry_id }
+ * Creator RAW drive LUT Library API
+ * GET: return creative_lut_config + creative_lut_library (only for is_creator_raw drives)
+ * POST: add LUT
+ * PATCH: update config
+ * DELETE: remove entry
  */
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
 import { validateCubeStructure } from "@/lib/creative-lut/parse-cube";
@@ -12,23 +12,18 @@ import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creativ
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
-const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
-const STORAGE_PREFIX = (galleryId: string) => `galleries/${galleryId}/lut`;
+const MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const STORAGE_PREFIX = (driveId: string) => `drives/${driveId}/lut`;
 
-async function requireGalleryOwner(
+async function requireDriveOwner(
   request: Request,
-  galleryId: string
+  driveId: string
 ): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
-
   if (!token) {
-    return NextResponse.json(
-      { error: "Missing or invalid Authorization" },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Missing or invalid Authorization" }, { status: 401 });
   }
-
   let uid: string;
   try {
     const decoded = await verifyIdToken(token);
@@ -36,88 +31,52 @@ async function requireGalleryOwner(
   } catch {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
-
   const db = getAdminFirestore();
-  const gallerySnap = await db.collection("galleries").doc(galleryId).get();
-  if (!gallerySnap.exists) {
-    return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  if (!driveSnap.exists) {
+    return NextResponse.json({ error: "Drive not found" }, { status: 404 });
   }
-
-  const galleryData = gallerySnap.data()!;
-  if (galleryData.photographer_id !== uid) {
+  const drive = driveSnap.data()!;
+  if (drive.userId !== uid) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
-
+  if (!drive.is_creator_raw) {
+    return NextResponse.json({ error: "LUT management is only for Creator RAW drives" }, { status: 400 });
+  }
   return { uid };
-}
-
-function getAppliesTo(galleryType: string): "photo_gallery" | "video_gallery" {
-  return galleryType === "video" ? "video_gallery" : "photo_gallery";
 }
 
 async function refreshSignedUrl(storagePath: string): Promise<string> {
   const storage = getAdminStorage();
-  const blob = storage.bucket().file(storagePath);
-  const [url] = await blob.getSignedUrl({
+  const [url] = await storage.bucket().file(storagePath).getSignedUrl({
     action: "read",
     expires: "03-01-2500",
   });
   return url;
 }
 
-/** GET: return config + library with fresh signed URLs */
+/** GET */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: galleryId } = await params;
-  if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
+  const { id: driveId } = await params;
+  if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireGalleryOwner(request, galleryId);
+  const auth = await requireDriveOwner(request, driveId);
   if (auth instanceof NextResponse) return auth;
 
   const db = getAdminFirestore();
-  const snap = await db.collection("galleries").doc(galleryId).get();
-  if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const snap = await db.collection("linked_drives").doc(driveId).get();
+  if (!snap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
 
   const data = snap.data()!;
-  const galleryType = data.gallery_type === "video" ? "video" : "photo";
-  const appliesTo = getAppliesTo(galleryType);
-
   let config: CreativeLUTConfig = (data.creative_lut_config ?? {}) as CreativeLUTConfig;
   let library: CreativeLUTLibraryEntry[] = (data.creative_lut_library ?? []) as CreativeLUTLibraryEntry[];
 
-  const legacyLut = data.lut;
-  if (legacyLut?.enabled && legacyLut?.storage_url && library.length === 0) {
-    const entryId = randomUUID();
-    library = [
-      {
-        id: entryId,
-        mode: "custom",
-        name: "Imported LUT",
-        file_type: "cube",
-        file_name: "lut.cube",
-        storage_path: `galleries/${galleryId}/lut.cube`,
-        signed_url: legacyLut.storage_url,
-        builtin_lut_id: null,
-        input_profile: null,
-        output_profile: null,
-        uploaded_by: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-    config = {
-      enabled: true,
-      selected_lut_id: entryId,
-      intensity: 1,
-      applies_to: appliesTo,
-      updated_at: new Date().toISOString(),
-      updated_by: auth.uid,
-    };
+  if (!config.applies_to) {
+    config = { ...config, applies_to: "creator_raw_video" };
   }
-
-  if (!config.applies_to) config.applies_to = appliesTo;
 
   const libraryWithUrls = await Promise.all(
     library.map(async (entry) => {
@@ -139,15 +98,15 @@ export async function GET(
   });
 }
 
-/** POST: add LUT */
+/** POST */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: galleryId } = await params;
-  if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
+  const { id: driveId } = await params;
+  if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireGalleryOwner(request, galleryId);
+  const auth = await requireDriveOwner(request, driveId);
   if (auth instanceof NextResponse) return auth;
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -169,12 +128,8 @@ export async function POST(
 
   const ext = file.name.split(".").pop()?.toLowerCase();
   if (ext !== "cube") {
-    return NextResponse.json(
-      { error: "Invalid file type. Only .cube LUT files are supported." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Only .cube LUT files are supported" }, { status: 400 });
   }
-
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json({ error: "LUT file must be under 2 MB" }, { status: 400 });
   }
@@ -186,8 +141,8 @@ export async function POST(
   }
 
   const db = getAdminFirestore();
-  const snap = await db.collection("galleries").doc(galleryId).get();
-  if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const snap = await db.collection("linked_drives").doc(driveId).get();
+  if (!snap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
 
   const data = snap.data()!;
   const library: CreativeLUTLibraryEntry[] = (data.creative_lut_library ?? []) as CreativeLUTLibraryEntry[];
@@ -199,19 +154,15 @@ export async function POST(
     );
   }
 
-  const galleryType = data.gallery_type === "video" ? "video" : "photo";
-  const appliesTo = getAppliesTo(galleryType);
-
   const entryId = randomUUID();
-  const storagePath = `${STORAGE_PREFIX(galleryId)}/${entryId}.cube`;
+  const storagePath = `${STORAGE_PREFIX(driveId)}/${entryId}.cube`;
 
   const storage = getAdminStorage();
-  const blob = storage.bucket().file(storagePath);
-  await blob.save(Buffer.from(text), {
+  await storage.bucket().file(storagePath).save(Buffer.from(text), {
     metadata: { contentType: "text/plain" },
   });
 
-  const [signedUrl] = await blob.getSignedUrl({
+  const [signedUrl] = await storage.bucket().file(storagePath).getSignedUrl({
     action: "read",
     expires: "03-01-2500",
   });
@@ -236,33 +187,31 @@ export async function POST(
 
   const updatedLibrary = [...library, newEntry];
   const config = (data.creative_lut_config ?? {}) as CreativeLUTConfig;
-  const selectedId = config.selected_lut_id ?? newEntry.id;
 
-  await db.collection("galleries").doc(galleryId).update({
+  await db.collection("linked_drives").doc(driveId).update({
     creative_lut_config: {
       enabled: config.enabled ?? true,
-      selected_lut_id: selectedId,
+      selected_lut_id: config.selected_lut_id ?? newEntry.id,
       intensity: config.intensity ?? 1,
-      applies_to: appliesTo,
+      applies_to: "creator_raw_video",
       updated_at: new Date().toISOString(),
       updated_by: auth.uid,
     },
     creative_lut_library: updatedLibrary,
-    updated_at: new Date(),
   });
 
   return NextResponse.json({ entry: newEntry });
 }
 
-/** PATCH: update config */
+/** PATCH */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: galleryId } = await params;
-  if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
+  const { id: driveId } = await params;
+  if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireGalleryOwner(request, galleryId);
+  const auth = await requireDriveOwner(request, driveId);
   if (auth instanceof NextResponse) return auth;
 
   let body: Record<string, unknown>;
@@ -273,31 +222,27 @@ export async function PATCH(
   }
 
   const db = getAdminFirestore();
-  const snap = await db.collection("galleries").doc(galleryId).get();
-  if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const snap = await db.collection("linked_drives").doc(driveId).get();
+  if (!snap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
 
   const data = snap.data()!;
-  const galleryType = data.gallery_type === "video" ? "video" : "photo";
-  const appliesTo = getAppliesTo(galleryType);
-
   const config = (data.creative_lut_config ?? {}) as CreativeLUTConfig;
   const library = (data.creative_lut_library ?? []) as CreativeLUTLibraryEntry[];
 
-  const patchSelectedLutId =
+  const selectedLutId =
     body.selected_lut_id !== undefined
       ? (typeof body.selected_lut_id === "string" ? body.selected_lut_id : null)
       : config.selected_lut_id;
   const updates: Partial<CreativeLUTConfig> = {
     enabled: typeof body.enabled === "boolean" ? body.enabled : (config.enabled ?? false),
-    selected_lut_id: patchSelectedLutId,
+    selected_lut_id: selectedLutId,
     intensity: typeof body.intensity === "number" ? body.intensity : (config.intensity ?? 1),
-    applies_to: appliesTo,
+    applies_to: "creator_raw_video",
     updated_at: new Date().toISOString(),
     updated_by: auth.uid,
   };
 
   let updatedLibrary = library;
-
   if (body.entry_id && body.name && typeof body.name === "string") {
     updatedLibrary = library.map((e) =>
       e.id === body.entry_id ? { ...e, name: body.name as string, updated_at: new Date().toISOString() } : e
@@ -307,27 +252,26 @@ export async function PATCH(
   if (updates.selected_lut_id) {
     const exists = updatedLibrary.some((e) => e.id === updates.selected_lut_id) ||
       updates.selected_lut_id === "sony_rec709";
-    if (!exists) updates.selected_lut_id = updatedLibrary[0]?.id ?? null;
+    if (!exists) updates.selected_lut_id = "sony_rec709";
   }
 
-  await db.collection("galleries").doc(galleryId).update({
+  await db.collection("linked_drives").doc(driveId).update({
     creative_lut_config: { ...config, ...updates },
     creative_lut_library: updatedLibrary,
-    updated_at: new Date(),
   });
 
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE: remove entry */
+/** DELETE */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: galleryId } = await params;
-  if (!galleryId) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
+  const { id: driveId } = await params;
+  if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireGalleryOwner(request, galleryId);
+  const auth = await requireDriveOwner(request, driveId);
   if (auth instanceof NextResponse) return auth;
 
   let body: { entry_id?: string };
@@ -338,13 +282,11 @@ export async function DELETE(
   }
 
   const entryId = body.entry_id;
-  if (!entryId) {
-    return NextResponse.json({ error: "entry_id required" }, { status: 400 });
-  }
+  if (!entryId) return NextResponse.json({ error: "entry_id required" }, { status: 400 });
 
   const db = getAdminFirestore();
-  const snap = await db.collection("galleries").doc(galleryId).get();
-  if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const snap = await db.collection("linked_drives").doc(driveId).get();
+  if (!snap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
 
   const data = snap.data()!;
   const library = (data.creative_lut_library ?? []) as CreativeLUTLibraryEntry[];
@@ -355,8 +297,7 @@ export async function DELETE(
 
   if (entry.storage_path) {
     try {
-      const storage = getAdminStorage();
-      await storage.bucket().file(entry.storage_path).delete();
+      await getAdminStorage().bucket().file(entry.storage_path).delete();
     } catch {
       // ignore
     }
@@ -365,10 +306,10 @@ export async function DELETE(
   const updatedLibrary = library.filter((e) => e.id !== entryId);
   let selectedId = config.selected_lut_id;
   if (selectedId === entryId) {
-    selectedId = updatedLibrary[0]?.id ?? null;
+    selectedId = updatedLibrary[0]?.id ?? "sony_rec709";
   }
 
-  await db.collection("galleries").doc(galleryId).update({
+  await db.collection("linked_drives").doc(driveId).update({
     creative_lut_config: {
       ...config,
       selected_lut_id: selectedId,
@@ -376,7 +317,6 @@ export async function DELETE(
       updated_by: auth.uid,
     },
     creative_lut_library: updatedLibrary,
-    updated_at: new Date(),
   });
 
   return NextResponse.json({ ok: true });

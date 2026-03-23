@@ -4,7 +4,7 @@
  * Access: public, password, or invite_only.
  */
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getAdminFirestore, getAdminStorage } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
@@ -91,8 +91,48 @@ export async function GET(
     };
   });
 
-  const lut = g.lut ?? null;
   const galleryType = g.gallery_type === "video" ? "video" : "photo";
+  const creativeConfig = g.creative_lut_config ?? null;
+  const rawLibrary = (g.creative_lut_library ?? []) as Array<{ id: string; name?: string; mode?: string; storage_path?: string | null; signed_url?: string | null }>;
+  const legacyLut = g.lut ?? null;
+
+  // Refresh signed URLs for library entries (view is public, so we need fresh URLs)
+  const refreshSignedUrl = async (storagePath: string): Promise<string> => {
+    const storage = getAdminStorage();
+    const blob = storage.bucket().file(storagePath);
+    const [url] = await blob.getSignedUrl({ action: "read", expires: "03-01-2500" });
+    return url;
+  };
+  const creativeLibrary = await Promise.all(
+    rawLibrary.map(async (e) => {
+      if (e.mode === "custom" && e.storage_path) {
+        try {
+          return { ...e, signed_url: await refreshSignedUrl(e.storage_path) };
+        } catch {
+          return e;
+        }
+      }
+      return e;
+    })
+  );
+
+  let lut: { enabled: boolean; lut_source: string | null; storage_url?: string | null } | null = null;
+  const config = creativeConfig ?? {};
+  const enabled = config.enabled ?? legacyLut?.enabled ?? false;
+  const selectedId = config.selected_lut_id ?? null;
+
+  if (enabled) {
+    let lutSource: string | null = null;
+    if (selectedId === "sony_rec709") {
+      lutSource = "sony_rec709";
+    } else if (selectedId) {
+      const entry = creativeLibrary.find((e) => e.id === selectedId);
+      lutSource = entry?.signed_url ?? null;
+    }
+    if (!lutSource && legacyLut?.storage_url) lutSource = legacyLut.storage_url;
+    lut = { enabled: true, lut_source: lutSource, storage_url: lutSource };
+  }
+
   return NextResponse.json({
     gallery: {
       id: gallerySnap.id,
@@ -105,9 +145,9 @@ export async function GET(
       branding: g.branding ?? {},
       download_settings: g.download_settings ?? {},
       watermark: g.watermark ?? {},
-      lut: lut
-        ? { enabled: lut.enabled ?? false, storage_url: lut.storage_url ?? null }
-        : null,
+      lut,
+      creative_lut_config: creativeConfig,
+      creative_lut_library: creativeLibrary,
       cover_asset_id: g.cover_asset_id ?? null,
       share_image_asset_id: g.share_image_asset_id ?? null,
       cover_position: g.cover_position ?? "center",
