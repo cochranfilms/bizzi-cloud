@@ -44,6 +44,20 @@ B2_CORS_EXTRA_ORIGINS=https://your-preview-url.vercel.app npm run b2:cors
 
 Use the exact origin from your browser (e.g. `https://bizzi-cloud-abc123-yourteam.vercel.app`). The script adds this to the allowed origins.
 
+### Firebase Storage CORS (required for LUT direct uploads > 4 MB)
+
+LUT files over 4 MB bypass Vercel's body limit by uploading directly to Firebase Storage. The bucket must allow CORS from your app origin. Run once (requires gcloud CLI and `gcloud auth login`):
+
+```bash
+npm run firebase:cors
+```
+
+The script reads the bucket from `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` in `.env.local`, or defaults to `bizzi-cloud.firebasestorage.app`. If you get a 404, check Firebase Console > Storage for your actual bucket name, then run:
+
+```bash
+FIREBASE_STORAGE_BUCKET=your-actual-bucket-name npm run firebase:cors
+```
+
 ## Required for API auth (Backblaze uploads)
 
 | Variable | Description | Where to get it |

@@ -1,4 +1,16 @@
-# CORS and LUT Preview
+# CORS and LUT
+
+## LUT direct upload (Firebase Storage)
+
+LUT files over 4 MB upload directly from the browser to Firebase Storage (bypassing Vercel's 4.5 MB limit). The Firebase Storage bucket must allow CORS from your app origin. Run:
+
+```bash
+npm run firebase:cors
+```
+
+Requires gcloud CLI authenticated. See `VERCEL_ENV.md` for details.
+
+## LUT preview (WebGL / media CORS)
 
 Creative LUT preview applies color correction (e.g. Sony Rec 709 for S-Log3) to RAW images and videos. It uses WebGL to sample the media, which **requires CORS headers** on the source.
 
