@@ -101,8 +101,8 @@ export default function LUTLibrarySection({
     const file = e.target.files?.[0];
     if (!file || !id || !canAdd) return;
     const ext = file.name.split(".").pop()?.toLowerCase();
-    if (ext !== "cube") {
-      setError("Only .cube LUT files are supported.");
+    if (ext !== "cube" && ext !== "3dl") {
+      setError("Only .cube or .3dl LUT files are supported for upload.");
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -117,14 +117,14 @@ export default function LUTLibrarySection({
 
       if (file.size > DIRECT_UPLOAD_THRESHOLD) {
         // Direct upload to Firebase Storage (bypasses Vercel 4.5 MB limit)
-        const name = file.name.replace(/\.cube$/i, "");
+        const name = file.name.replace(/\.(cube|3dl)$/i, "");
         const urlRes = await fetch(`${apiBase}/upload-url`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name, extension: ext === "3dl" ? "3dl" : "cube" }),
         });
         if (!urlRes.ok) {
           const data = await urlRes.json().catch(() => ({}));
@@ -156,7 +156,7 @@ export default function LUTLibrarySection({
       } else {
         const formData = new FormData();
         formData.append("lut", file);
-        formData.append("name", file.name.replace(/\.cube$/i, ""));
+        formData.append("name", file.name.replace(/\.(cube|3dl)$/i, ""));
         const res = await fetch(apiBase, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
@@ -249,7 +249,7 @@ export default function LUTLibrarySection({
           <input
             ref={inputRef}
             type="file"
-            accept=".cube"
+            accept=".cube,.3dl"
             className="hidden"
             onChange={handleUpload}
             aria-label="Upload LUT"

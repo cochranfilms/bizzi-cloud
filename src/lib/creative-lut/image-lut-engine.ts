@@ -2,8 +2,6 @@
  * Shared WebGL engine for applying 3D LUT to images.
  */
 
-const LUT_SIZE = 33;
-
 const VERTEX_SHADER = `#version 300 es
 in vec2 a_position;
 in vec2 a_texCoord;
@@ -98,11 +96,13 @@ export interface ImageLUTContext {
   program: WebGLProgram;
   imageTexture: WebGLTexture;
   lutTexture: WebGLTexture;
+  lutSize: number;
 }
 
 export function createImageLUTContext(
   gl: WebGL2RenderingContext,
-  lutTexture: WebGLTexture
+  lutTexture: WebGLTexture,
+  lutSize: number
 ): ImageLUTContext {
   const compileShader = (source: string, type: number): WebGLShader => {
     const shader = gl.createShader(type)!;
@@ -131,7 +131,7 @@ export function createImageLUTContext(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  return { gl, program, imageTexture, lutTexture };
+  return { gl, program, imageTexture, lutTexture, lutSize };
 }
 
 export function renderImageWithLUT(
@@ -179,6 +179,6 @@ export function renderImageWithLUT(
 
   gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
   gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
-  gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), ctx.lutSize);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }

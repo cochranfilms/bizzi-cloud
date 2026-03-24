@@ -27,6 +27,12 @@ import type { HeroHeightPreset } from "@/lib/cover-constants";
 import ImageWithLUT from "./ImageWithLUT";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
+import LoopingVideoPreview from "@/components/LoopingVideoPreview";
+import {
+  buildGalleryLUTOptions,
+  GALLERY_LUT_ORIGINAL_ID,
+  resolveGalleryClientLutSource,
+} from "@/lib/gallery-client-lut";
 
 interface GalleryData {
   id: string;
@@ -304,39 +310,6 @@ function SaveFavoritesModal({
   );
 }
 
-function buildGalleryLUTOptions(
-  library?: Array<{ id: string; name?: string; signed_url?: string | null }>,
-  includeBuiltin = false,
-  password?: string
-): Array<{ id: string; name: string; source: string }> {
-  const opts: Array<{ id: string; name: string; source: string }> = [];
-  if (includeBuiltin) opts.push({ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709" });
-  if (library) {
-    for (const e of library) {
-      if (e.signed_url) {
-        const source =
-          password
-            ? e.signed_url.includes("?")
-              ? `${e.signed_url}&password=${encodeURIComponent(password)}`
-              : `${e.signed_url}?password=${encodeURIComponent(password)}`
-            : e.signed_url;
-        opts.push({ id: e.id, name: e.name ?? "Custom LUT", source });
-      }
-    }
-  }
-  return opts;
-}
-
-function getLutSourceFromSelection(
-  selectedId: string | null,
-  options: Array<{ id: string; name: string; source: string }>,
-  fallback: string | null
-): string | null {
-  if (!selectedId) return fallback;
-  const opt = options.find((o) => o.id === selectedId);
-  return opt?.source ?? fallback;
-}
-
 function PreviewModal({
   asset,
   previewImageUrl,
@@ -356,6 +329,7 @@ function PreviewModal({
   lutPreviewEnabled = true,
   onLutPreviewToggle,
   allowComments = true,
+  previewLutSource,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -375,6 +349,7 @@ function PreviewModal({
   lutPreviewEnabled?: boolean;
   onLutPreviewToggle?: () => void;
   allowComments?: boolean;
+  previewLutSource: string | null;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -442,10 +417,6 @@ function PreviewModal({
       : lut?.enabled
         ? buildGalleryLUTOptions(creativeLutLibrary, isVideo, password)
         : [];
-  const lutSource =
-    lut?.enabled && selectedLutId
-      ? getLutSourceFromSelection(selectedLutId, modalLutOptions, lut?.lut_source ?? lut?.storage_url ?? null)
-      : lut?.lut_source ?? lut?.storage_url;
 
   return (
     <div
@@ -453,7 +424,7 @@ function PreviewModal({
       onClick={onClose}
     >
       <div className="absolute right-4 top-4 z-10 flex flex-wrap items-center gap-2">
-        {lut?.enabled && (lutSource || modalLutOptions.length > 0) && onLutPreviewToggle && (
+        {lut?.enabled && onLutPreviewToggle && (
           <button
             type="button"
             role="switch"
@@ -473,7 +444,7 @@ function PreviewModal({
             Creative {lutPreviewEnabled ? "On" : "Off"}
           </button>
         )}
-        {lut?.enabled && modalLutOptions.length > 0 && lutPreviewEnabled && (
+        {lut?.enabled && modalLutOptions.length > 1 && lutPreviewEnabled && (
           <select
             value={selectedLutId ?? ""}
             onChange={(e) => {
@@ -513,14 +484,14 @@ function PreviewModal({
                 <p className="text-amber-400">{videoError}</p>
               )}
               {videoStreamUrl && !videoError && (
-                lut?.enabled && lutSource ? (
+                lut?.enabled ? (
                   <VideoWithLUT
                     src={videoStreamUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg bg-black"
-                    showLUTOption
-                    lutSource={lutSource}
-                    lutOptions={lutOptions.length > 0 ? lutOptions : undefined}
+                    showLUTOption={false}
+                    lutSource={previewLutSource}
+                    creativePreviewOn={lutPreviewEnabled}
                   />
                 ) : (
                   <video
@@ -537,12 +508,13 @@ function PreviewModal({
             </div>
           ) : previewImageUrl ? (
             <>
-              {lut?.enabled && lutSource && isImage(asset.name) && lutPreviewEnabled ? (
+              {lut?.enabled && previewLutSource && isImage(asset.name) && lutPreviewEnabled ? (
                 <ImageWithLUT
                   imageUrl={previewImageUrl}
-                  lutUrl={lutSource}
+                  lutUrl={previewLutSource}
                   lutEnabled={true}
                   className="max-h-[70vh] max-w-full"
+                  objectFit="contain"
                 />
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -652,6 +624,7 @@ function GalleryAssetCard({
   watermark,
   lut,
   lutPreviewEnabled = true,
+  previewLutSource = null,
   isFeaturedVideo = false,
   isVideoGallery = false,
 }: {
@@ -669,14 +642,14 @@ function GalleryAssetCard({
   watermark?: { enabled?: boolean; image_url?: string | null; position?: string | null; opacity?: number | null };
   lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   lutPreviewEnabled?: boolean;
+  /** Resolved client preview LUT (null = Original). */
+  previewLutSource?: string | null;
   isFeaturedVideo?: boolean;
   /** When true, all videos autoplay muted (not just featured) */
   isVideoGallery?: boolean;
 }) {
-  const lutSource = lut?.lut_source ?? lut?.storage_url;
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
-  const [muxAnimatedPreviewUrl, setMuxAnimatedPreviewUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
   const shouldAutoplayVideo = isVid && (isFeaturedVideo || isVideoGallery);
@@ -707,12 +680,9 @@ function GalleryAssetCard({
     }
   }, [galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
-  // Fetch Mux animated preview + stream for autoplay tiles (featured or all videos in video gallery)
+  // Fetch stream for 5s loop preview tiles (featured or all videos in video gallery)
   useEffect(() => {
-    if (!shouldAutoplayVideo) {
-      setMuxAnimatedPreviewUrl(null);
-      return;
-    }
+    if (!shouldAutoplayVideo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -731,16 +701,8 @@ function GalleryAssetCard({
           { headers }
         );
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as {
-          streamUrl?: string;
-          animatedMuxPreviewUrl?: string;
-        };
+        const json = (await res.json()) as { streamUrl?: string };
         if (cancelled) return;
-        if (typeof json.animatedMuxPreviewUrl === "string" && json.animatedMuxPreviewUrl) {
-          setMuxAnimatedPreviewUrl(json.animatedMuxPreviewUrl);
-        } else {
-          setMuxAnimatedPreviewUrl(null);
-        }
         if (json.streamUrl) {
           const url = json.streamUrl as string;
           setVideoStreamUrl(url.startsWith("/") ? `${window.location.origin}${url}` : url);
@@ -748,14 +710,12 @@ function GalleryAssetCard({
           setVideoStreamUrl(null);
         }
       } catch {
-        setMuxAnimatedPreviewUrl(null);
         setVideoStreamUrl(null);
       }
     })();
     return () => {
       cancelled = true;
       setVideoStreamUrl(null);
-      setMuxAnimatedPreviewUrl(null);
     };
   }, [shouldAutoplayVideo, galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
@@ -819,26 +779,29 @@ function GalleryAssetCard({
       <div
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
-        {muxAnimatedPreviewUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={muxAnimatedPreviewUrl}
-            alt=""
-            className={`block w-full object-cover ${
-              useNaturalAspect ? "h-auto" : "h-full"
-            }`}
-          />
-        ) : shouldAutoplayVideo && videoStreamUrl ? (
-          <video
-            src={videoStreamUrl}
-            autoPlay
-            muted
-            loop
-            playsInline
-            className={`block w-full object-cover ${
-              useNaturalAspect ? "h-auto" : "h-full"
-            }`}
-          />
+        {shouldAutoplayVideo && videoStreamUrl ? (
+          lut?.enabled && previewLutSource && lutPreviewEnabled ? (
+            <VideoWithLUT
+              src={videoStreamUrl}
+              streamUrl={videoStreamUrl}
+              showLUTOption={false}
+              lutSource={previewLutSource}
+              creativePreviewOn={lutPreviewEnabled}
+              compactPreview
+              segmentLoopSeconds={5}
+              className={`block w-full object-cover ${
+                useNaturalAspect ? "h-auto" : "h-full"
+              }`}
+            />
+          ) : (
+            <LoopingVideoPreview
+              src={videoStreamUrl}
+              loopSeconds={5}
+              className={`block w-full object-cover ${
+                useNaturalAspect ? "h-auto" : "h-full"
+              }`}
+            />
+          )
         ) : isVid ? (
           <div className={`block w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}>
             <VideoScrubThumbnail
@@ -849,11 +812,11 @@ function GalleryAssetCard({
             />
           </div>
         ) : thumbUrl ? (
-          lut?.enabled && lutSource && lutPreviewEnabled ? (
+          lut?.enabled && previewLutSource && lutPreviewEnabled ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
                 imageUrl={thumbUrl}
-                lutUrl={lutSource}
+                lutUrl={previewLutSource}
                 lutEnabled={true}
                 objectFit="cover"
                 className={`w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}
@@ -955,7 +918,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
-  const [featuredMuxAnimatedUrl, setFeaturedMuxAnimatedUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
@@ -1026,12 +988,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     if (!data) return;
     const cfg = data.gallery.creative_lut_config;
     const lib = data.gallery.creative_lut_library ?? [];
-    const opts = buildGalleryLUTOptions(lib, data.gallery.gallery_type === "video");
-    const defaultId = (cfg?.selected_lut_id && opts.some((o) => o.id === cfg.selected_lut_id))
-      ? cfg.selected_lut_id
-      : opts[0]?.id ?? null;
+    const opts = buildGalleryLUTOptions(
+      lib,
+      data.gallery.gallery_type === "video",
+      password || undefined
+    );
+    const defaultId =
+      cfg?.selected_lut_id && opts.some((o) => o.id === cfg.selected_lut_id)
+        ? cfg.selected_lut_id
+        : GALLERY_LUT_ORIGINAL_ID;
     setSelectedLutId(defaultId);
-  }, [data]);
+  }, [data, password]);
 
   const fetchDownloadStatus = useCallback(async () => {
     if (!data) return;
@@ -1177,7 +1144,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   useEffect(() => {
     if (!featuredVideoAsset || !data) {
       setFeaturedVideoStreamUrl(null);
-      setFeaturedMuxAnimatedUrl(null);
       return () => {};
     }
     let cancelled = false;
@@ -1198,30 +1164,20 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           { headers }
         );
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as {
-          streamUrl?: string;
-          animatedMuxPreviewUrl?: string;
-        };
+        const json = (await res.json()) as { streamUrl?: string };
         if (cancelled) return;
-        if (typeof json.animatedMuxPreviewUrl === "string" && json.animatedMuxPreviewUrl) {
-          setFeaturedMuxAnimatedUrl(json.animatedMuxPreviewUrl);
-        } else {
-          setFeaturedMuxAnimatedUrl(null);
-        }
         if (json.streamUrl) {
           setFeaturedVideoStreamUrl(json.streamUrl);
         } else {
           setFeaturedVideoStreamUrl(null);
         }
       } catch {
-        setFeaturedMuxAnimatedUrl(null);
         setFeaturedVideoStreamUrl(null);
       }
     })();
     return () => {
       cancelled = true;
       setFeaturedVideoStreamUrl(null);
-      setFeaturedMuxAnimatedUrl(null);
     };
   }, [featuredVideoAsset, galleryId, password, user, data]);
 
@@ -1556,18 +1512,15 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     gallery.gallery_type === "video",
     password || undefined
   );
-  const effectiveLutSource =
-    gallery.lut?.enabled && selectedLutId
-      ? getLutSourceFromSelection(
-          selectedLutId,
-          galleryLutOptions,
-          gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null
-        )
-      : gallery.lut?.lut_source ?? gallery.lut?.storage_url;
-  const effectiveLut =
-    gallery.lut?.enabled && (effectiveLutSource || galleryLutOptions.length > 0)
-      ? { ...gallery.lut, lut_source: effectiveLutSource ?? undefined, storage_url: effectiveLutSource ?? undefined }
-      : gallery.lut;
+  const clientLutSource = resolveGalleryClientLutSource({
+    lutEnabled: !!gallery.lut?.enabled,
+    lutPreviewEnabled,
+    selectedLutId,
+    options: galleryLutOptions,
+    ownerDefaultSource: gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null,
+  });
+  /** Pass-through for watermark / flags; never use for download. Preview URL is clientLutSource. */
+  const effectiveLut = gallery.lut?.enabled ? gallery.lut : null;
 
   const filteredAssets =
     selectedCollectionId === null
@@ -1587,11 +1540,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const prePageMusicUrl = gallery.branding.pre_page_music_url;
   const prePageInstructions = gallery.branding.pre_page_instructions;
-  const heroHasMediaBackdrop = !!(
-    bannerUrl ||
-    featuredVideoStreamUrl ||
-    featuredMuxAnimatedUrl
-  );
+  const heroHasMediaBackdrop = !!(bannerUrl || featuredVideoStreamUrl);
 
   // Gallery Pre Page – cover experience before entering the gallery
   if (!hasEnteredGallery) {
@@ -1645,21 +1594,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 className="pointer-events-none absolute inset-0 z-0"
                 aria-hidden
               >
-                {featuredMuxAnimatedUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={featuredMuxAnimatedUrl}
-                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                    className="h-full w-full object-cover"
-                    style={{ objectPosition: coverObjectPosition }}
-                  />
-                ) : featuredVideoStreamUrl ? (
-                  <video
+                {featuredVideoStreamUrl ? (
+                  <LoopingVideoPreview
                     src={featuredVideoStreamUrl}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
+                    loopSeconds={5}
                     className="h-full w-full object-cover"
                     style={{ objectPosition: coverObjectPosition }}
                   />
@@ -1882,21 +1820,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             })(),
           }}
         >
-          {featuredMuxAnimatedUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={featuredMuxAnimatedUrl}
-              alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-              className="h-full w-full object-cover"
-              style={{ objectPosition: coverObjectPosition }}
-            />
-          ) : featuredVideoStreamUrl ? (
-            <video
+          {featuredVideoStreamUrl ? (
+            <LoopingVideoPreview
               src={featuredVideoStreamUrl}
-              autoPlay
-              muted
-              loop
-              playsInline
+              loopSeconds={5}
               className="h-full w-full object-cover"
               style={{ objectPosition: coverObjectPosition }}
             />
@@ -2133,7 +2060,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {effectiveLut?.enabled && (effectiveLutSource || galleryLutOptions.length > 0) && (
+        {gallery.lut?.enabled && (
           <div className="mb-4 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
@@ -2156,12 +2083,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               />
               Creative Preview {lutPreviewEnabled ? "On" : "Off"}
             </button>
-            {galleryLutOptions.length > 0 && lutPreviewEnabled && (
+            {galleryLutOptions.length > 1 && lutPreviewEnabled && (
               <select
-                value={selectedLutId ?? ""}
+                value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
                 onChange={(e) => {
-                  const id = e.target.value;
-                  if (id) setSelectedLutId(id);
+                  setSelectedLutId(e.target.value);
                 }}
                 className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
                   isDarkBg
@@ -2237,6 +2163,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 watermark={gallery.watermark}
                 lut={effectiveLut}
                 lutPreviewEnabled={lutPreviewEnabled}
+                previewLutSource={clientLutSource}
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
                 isVideoGallery={gallery.gallery_type === "video"}
               />
@@ -2330,6 +2257,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           lutPreviewEnabled={lutPreviewEnabled}
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
           allowComments={gallery.allow_comments !== false}
+          previewLutSource={clientLutSource}
         />
       )}
     </div>

@@ -55,11 +55,10 @@ export default function ImageWithLUT({
 
     let cancelled = false;
     getOrLoadLUT(lutUrl)
-      .then((data) => {
+      .then(({ data, size }) => {
         if (cancelled) return;
-        const size = Math.round(Math.cbrt(data.length / 4)) || 33;
         const lutTexture = createLUTTexture(gl, data, size);
-        glContextRef.current = createImageLUTContext(gl, lutTexture);
+        glContextRef.current = createImageLUTContext(gl, lutTexture, size);
         setLutReady(true);
         setLutError(null);
       })
@@ -136,6 +135,8 @@ export default function ImageWithLUT({
   }, [render]);
 
   const shouldUseLUT = lutEnabled && lutUrl && lutReady && webglAvailable !== false && !lutError;
+  const objectFitClass =
+    objectFit === "cover" ? "object-cover" : "object-contain";
 
   if (!lutEnabled || !lutUrl || webglAvailable === false || lutError) {
     return (
@@ -145,7 +146,7 @@ export default function ImageWithLUT({
           ref={imgRef}
           src={imageUrl}
           alt={alt}
-          className={`block max-h-full max-w-full object-${objectFit}`}
+          className={`block max-h-full max-w-full ${objectFitClass}`}
           onLoad={onImageLoad}
         />
       </div>
@@ -159,14 +160,14 @@ export default function ImageWithLUT({
         ref={imgRef}
         src={imageUrl}
         alt={alt}
-        className={`block max-h-full max-w-full object-${objectFit}`}
+        className={`block max-h-full max-w-full ${objectFitClass}`}
         onLoad={onImageLoad}
         style={{ visibility: shouldUseLUT ? "hidden" : "visible" }}
       />
       {shouldUseLUT && (
         <canvas
           ref={canvasRef}
-          className="pointer-events-none absolute inset-0 block h-full w-full object-contain"
+          className={`pointer-events-none absolute inset-0 block h-full w-full ${objectFitClass}`}
         />
       )}
     </div>

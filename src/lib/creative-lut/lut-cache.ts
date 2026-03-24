@@ -4,10 +4,12 @@
  */
 
 import { getBuiltinLUTUrl } from "./builtin-registry";
-import { parseCubeFile } from "./parse-cube";
+import { parseLutFileText } from "./parse-lut";
 
 const MAX_CACHE_ENTRIES = 5;
-const cache = new Map<string, { data: Float32Array; size: number }>();
+export type LoadedLUT = { data: Float32Array; size: number };
+
+const cache = new Map<string, LoadedLUT>();
 const accessOrder: string[] = [];
 
 function resolveUrl(key: string): string {
@@ -23,9 +25,7 @@ function evictLRU(): void {
   }
 }
 
-export async function getOrLoadLUT(
-  urlOrBuiltinId: string
-): Promise<Float32Array> {
+export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
   const resolved = resolveUrl(urlOrBuiltinId);
 
   const cached = cache.get(resolved);
@@ -35,20 +35,20 @@ export async function getOrLoadLUT(
       accessOrder.splice(idx, 1);
     }
     accessOrder.push(resolved);
-    return cached.data;
+    return cached;
   }
 
   const res = await fetch(resolved);
   if (!res.ok) throw new Error(`Failed to load LUT: ${res.status}`);
   const text = await res.text();
-  const data = parseCubeFile(text);
-  const size = Math.round(Math.cbrt(data.length / 4)) || 33;
+  const { data, size } = parseLutFileText(text);
 
   evictLRU();
-  cache.set(resolved, { data, size });
+  const entry = { data, size };
+  cache.set(resolved, entry);
   accessOrder.push(resolved);
 
-  return data;
+  return entry;
 }
 
 export function clearLutCache(): void {

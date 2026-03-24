@@ -1,12 +1,12 @@
 /**
  * Gallery LUT Library API
  * GET: return creative_lut_config + creative_lut_library (with fresh signed URLs)
- * POST: add LUT (.cube), max 5 custom
+ * POST: add LUT (.cube or .3dl), max 5 custom
  * PATCH: update config (enabled, selected_lut_id, intensity)
  * DELETE: remove entry by { entry_id }
  */
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
-import { validateCubeStructure } from "@/lib/creative-lut/parse-cube";
+import { validateLutFileForUpload } from "@/lib/creative-lut/parse-lut";
 import { MAX_LUTS_PER_SCOPE } from "@/types/creative-lut";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { NextResponse } from "next/server";
@@ -167,13 +167,23 @@ export async function POST(
       return NextResponse.json({ error: "entry_id and storage_path required" }, { status: 400 });
     }
     const expectedPrefix = STORAGE_PREFIX(galleryId);
-    if (!storagePath.startsWith(expectedPrefix) || !storagePath.endsWith(".cube")) {
+    if (
+      !storagePath.startsWith(expectedPrefix) ||
+      (!storagePath.endsWith(".cube") && !storagePath.endsWith(".3dl"))
+    ) {
       return NextResponse.json({ error: "Invalid storage_path" }, { status: 400 });
     }
     const storage = getAdminStorage();
-    const [exists] = await storage.bucket().file(storagePath).exists();
+    const fileRef = storage.bucket().file(storagePath);
+    const [exists] = await fileRef.exists();
     if (!exists) {
       return NextResponse.json({ error: "Upload not found. Upload the file to the signed URL first." }, { status: 400 });
+    }
+    const [buf] = await fileRef.download();
+    const lutText = buf.toString("utf8");
+    const lutValidation = validateLutFileForUpload(lutText);
+    if (!lutValidation.valid) {
+      return NextResponse.json({ error: lutValidation.error }, { status: 400 });
     }
     const db = getAdminFirestore();
     const snap = await db.collection("galleries").doc(galleryId).get();
@@ -189,18 +199,21 @@ export async function POST(
         { status: 400 }
       );
     }
-    const blob = storage.bucket().file(storagePath);
-    const [signedUrl] = await blob.getSignedUrl({
+    const [signedUrl] = await fileRef.getSignedUrl({
       action: "read",
       expires: "03-01-2500",
     });
     const fileName = storagePath.split("/").pop() ?? "custom.cube";
-    const name = (body.name && typeof body.name === "string") ? body.name : fileName.replace(/\.cube$/i, "") || "Custom LUT";
+    const lutExt = storagePath.endsWith(".3dl") ? "3dl" : "cube";
+    const name =
+      body.name && typeof body.name === "string"
+        ? body.name
+        : fileName.replace(/\.(cube|3dl)$/i, "") || "Custom LUT";
     const newEntry: CreativeLUTLibraryEntry = {
       id: entryId,
       mode: "custom",
       name,
-      file_type: "cube",
+      file_type: lutExt,
       file_name: fileName,
       storage_path: storagePath,
       signed_url: signedUrl,
@@ -247,9 +260,9 @@ export async function POST(
   }
 
   const ext = file.name.split(".").pop()?.toLowerCase();
-  if (ext !== "cube") {
+  if (ext !== "cube" && ext !== "3dl") {
     return NextResponse.json(
-      { error: "Invalid file type. Only .cube LUT files are supported." },
+      { error: "Invalid file type. Only .cube or .3dl LUT files are supported." },
       { status: 400 }
     );
   }
@@ -265,7 +278,7 @@ export async function POST(
   }
 
   const text = await file.text();
-  const validation = validateCubeStructure(text);
+  const validation = validateLutFileForUpload(text);
   if (!validation.valid) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
@@ -287,7 +300,7 @@ export async function POST(
   }
 
   const entryId = randomUUID();
-  const storagePath = `${STORAGE_PREFIX(galleryId)}/${entryId}.cube`;
+  const storagePath = `${STORAGE_PREFIX(galleryId)}/${entryId}.${ext}`;
 
   const storage = getAdminStorage();
   const blob = storage.bucket().file(storagePath);
@@ -300,13 +313,14 @@ export async function POST(
     expires: "03-01-2500",
   });
 
-  const name = (formData.get("name") as string) || file.name.replace(/\.cube$/i, "") || "Custom LUT";
+  const name =
+    (formData.get("name") as string) || file.name.replace(/\.(cube|3dl)$/i, "") || "Custom LUT";
 
   const newEntry: CreativeLUTLibraryEntry = {
     id: entryId,
     mode: "custom",
     name,
-    file_type: "cube",
+    file_type: ext === "3dl" ? "3dl" : "cube",
     file_name: file.name,
     storage_path: storagePath,
     signed_url: signedUrl,

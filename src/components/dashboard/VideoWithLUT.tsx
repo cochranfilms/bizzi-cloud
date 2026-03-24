@@ -7,7 +7,6 @@ import {
   createVideoLUTContext,
   createLUTTexture,
   renderVideoFrameWithLUT,
-  LUT_SIZE,
   type VideoLUTContext,
 } from "@/lib/creative-lut/video-lut-engine";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
@@ -34,6 +33,12 @@ interface VideoWithLUTProps {
   onLutChange?: (enabled: boolean) => void;
   /** Called when user selects a different LUT from dropdown. */
   onLutSelect?: (lutId: string) => void;
+  /** When set, overrides internal LUT on/off (e.g. gallery “Creative preview” toggle). */
+  creativePreviewOn?: boolean;
+  /** Hide transport bar; use for grid tiles. */
+  compactPreview?: boolean;
+  /** Loop first N seconds (muted tile previews). */
+  segmentLoopSeconds?: number | null;
 }
 
 function formatTime(seconds: number): string {
@@ -52,6 +57,9 @@ export default function VideoWithLUT({
   lutOptions = [],
   onLutChange,
   onLutSelect,
+  creativePreviewOn,
+  compactPreview = false,
+  segmentLoopSeconds = null,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -59,10 +67,11 @@ export default function VideoWithLUT({
   const hlsRef = useRef<Hls | null>(null);
   const videoSrc = streamUrl ?? src;
 
-  const effectiveLutSource = lutSource ?? (showLUTOption ? "sony_rec709" : null);
+  const defaultSony = "sony_rec709";
+  const effectiveLutSource = lutSource ?? (showLUTOption ? defaultSony : null);
 
-  const [lutEnabled, setLutEnabled] = useState(false);
-  const [selectedLutId, setSelectedLutId] = useState<string | null>(effectiveLutSource);
+  const [lutEnabled, setLutEnabled] = useState(true);
+  const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
   const [lutReady, setLutReady] = useState(false);
   const [lutError, setLutError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,16 +83,37 @@ export default function VideoWithLUT({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const glRef = useRef<VideoLUTContext | null>(null);
 
-  const options = lutOptions.length > 0 ? lutOptions : [{ id: "sony_rec709", name: "Sony Rec 709", source: "sony_rec709", isBuiltin: true }];
-  const currentOption = options.find((o) => o.id === (selectedLutId ?? effectiveLutSource ?? "sony_rec709"));
-  const currentLutSource = lutEnabled && currentOption ? currentOption.source : null;
+  const options =
+    lutOptions.length > 0
+      ? lutOptions
+      : [{ id: defaultSony, name: "Sony Rec 709", source: defaultSony, isBuiltin: true }];
+
+  const previewOn =
+    creativePreviewOn !== undefined ? creativePreviewOn : lutEnabled;
+
+  const currentLutSource: string | null = !previewOn
+    ? null
+    : lutOptions.length > 0
+      ? (() => {
+          const id = selectedLutId ?? options[0]?.id;
+          const opt = options.find((o) => o.id === id);
+          return opt?.source && opt.source.length > 0 ? opt.source : null;
+        })()
+      : effectiveLutSource ?? null;
 
   useEffect(() => {
-    setSelectedLutId(effectiveLutSource);
-  }, [effectiveLutSource]);
+    if (lutOptions.length === 0) {
+      setSelectedLutId(null);
+      return;
+    }
+    setSelectedLutId((prev) => {
+      if (prev && lutOptions.some((o) => o.id === prev)) return prev;
+      return lutOptions[0]?.id ?? null;
+    });
+  }, [lutOptions]);
 
   useEffect(() => {
-    if (!lutEnabled || !currentLutSource) return;
+    if (!previewOn || !currentLutSource) return;
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -96,11 +126,10 @@ export default function VideoWithLUT({
 
     let cancelled = false;
     getOrLoadLUT(currentLutSource)
-      .then((data) => {
+      .then(({ data, size }) => {
         if (cancelled) return;
-        const size = Math.round(Math.cbrt(data.length / 4)) || LUT_SIZE;
         const lutTexture = createLUTTexture(gl, data, size);
-        glRef.current = createVideoLUTContext(gl, lutTexture);
+        glRef.current = createVideoLUTContext(gl, lutTexture, size);
         setLutReady(true);
         setLutError(null);
       })
@@ -122,7 +151,7 @@ export default function VideoWithLUT({
       }
       setLutReady(false);
     };
-  }, [lutEnabled, currentLutSource]);
+  }, [previewOn, currentLutSource]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -180,7 +209,7 @@ export default function VideoWithLUT({
       }
       if (cancelled) return;
 
-      renderVideoFrameWithLUT(ctx, video, w, h, lutEnabled);
+      renderVideoFrameWithLUT(ctx, video, w, h, !!currentLutSource && previewOn);
 
       if (!cancelled) rafId = requestAnimationFrame(render);
     };
@@ -199,7 +228,7 @@ export default function VideoWithLUT({
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       video.removeEventListener("loadeddata", render);
     };
-  }, [lutEnabled, lutReady]);
+  }, [previewOn, lutReady, currentLutSource]);
 
   const handleLUTToggle = useCallback(() => {
     setLutEnabled((v) => {
@@ -333,6 +362,22 @@ export default function VideoWithLUT({
     }
   }, [videoSrc]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !segmentLoopSeconds || segmentLoopSeconds <= 0) return;
+    const sec = segmentLoopSeconds;
+    const onTimeUpdate = () => {
+      const dur = video.duration;
+      if (!dur || !Number.isFinite(dur)) return;
+      const end = Math.min(sec, dur);
+      if (video.currentTime >= end - 0.06) {
+        video.currentTime = 0;
+      }
+    };
+    video.addEventListener("timeupdate", onTimeUpdate);
+    return () => video.removeEventListener("timeupdate", onTimeUpdate);
+  }, [segmentLoopSeconds, videoSrc]);
+
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg bg-red-100 p-4 text-red-700 dark:bg-red-900/20 dark:text-red-400">
@@ -349,19 +394,31 @@ export default function VideoWithLUT({
     );
   }
 
-  const containerStyle: React.CSSProperties = isFullscreen
-    ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
-    : {
-        maxHeight: "70vh",
-        aspectRatio: "16 / 9",
-      };
+  const containerStyle: React.CSSProperties = compactPreview
+    ? { width: "100%", height: "100%", minHeight: 0 }
+    : isFullscreen
+      ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
+      : {
+          maxHeight: "70vh",
+          aspectRatio: "16 / 9",
+        };
 
 
   return (
-    <div className="flex w-full flex-col items-center gap-4">
+    <div
+      className={
+        compactPreview
+          ? "h-full w-full min-h-0"
+          : "flex w-full flex-col items-center gap-4"
+      }
+    >
       <div
         ref={containerRef}
-        className="video-fullscreen-container relative w-full max-w-full overflow-hidden rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50"
+        className={`video-fullscreen-container relative w-full max-w-full overflow-hidden bg-neutral-200 dark:bg-black ${
+          compactPreview
+            ? "rounded-lg"
+            : "rounded-xl shadow-xl ring-1 ring-neutral-200 dark:ring-neutral-700/50"
+        }`}
         style={containerStyle}
       >
         <video
@@ -371,9 +428,15 @@ export default function VideoWithLUT({
           controls={false}
           preload="metadata"
           playsInline
-          className={`max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : "max-h-[70vh]"}`}
+          muted={compactPreview ? true : undefined}
+          autoPlay={compactPreview ? true : undefined}
+          className={
+            compactPreview
+              ? `h-full w-full object-cover ${className ?? ""}`
+              : `max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : "max-h-[70vh]"}`
+          }
         />
-        {lutEnabled && (
+        {previewOn && currentLutSource && (
           <canvas
             ref={canvasRef}
             className="absolute left-0 top-0 transition-opacity duration-200"
@@ -383,6 +446,7 @@ export default function VideoWithLUT({
             }}
           />
         )}
+        {!compactPreview && (
         <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
           <div
             className="h-1.5 cursor-pointer rounded-full bg-white/20 backdrop-blur-sm"
@@ -437,6 +501,7 @@ export default function VideoWithLUT({
             </button>
           </div>
         </div>
+        )}
       </div>
       {showLUTOption && (
         <div className="flex w-full flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60">
@@ -462,7 +527,7 @@ export default function VideoWithLUT({
             </button>
             {lutEnabled && options.length > 0 && (
               <select
-                value={selectedLutId ?? effectiveLutSource ?? options[0]?.id ?? "sony_rec709"}
+                value={selectedLutId ?? options[0]?.id ?? defaultSony}
                 onChange={handleLUTSelect}
                 className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
               >

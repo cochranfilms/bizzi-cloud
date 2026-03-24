@@ -6,8 +6,6 @@
 
 import { createLUTTexture } from "./image-lut-engine";
 
-export const LUT_SIZE = 33;
-
 export { createLUTTexture };
 
 const VERTEX_SHADER = `#version 300 es
@@ -71,11 +69,13 @@ export interface VideoLUTContext {
   program: WebGLProgram;
   lutTexture: WebGLTexture;
   videoTexture: WebGLTexture;
+  lutSize: number;
 }
 
 export function createVideoLUTContext(
   gl: WebGL2RenderingContext,
-  lutTexture: WebGLTexture
+  lutTexture: WebGLTexture,
+  lutSize: number
 ): VideoLUTContext {
   const compileShader = (source: string, type: number): WebGLShader => {
     const shader = gl.createShader(type)!;
@@ -104,7 +104,7 @@ export function createVideoLUTContext(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  return { gl, program, lutTexture, videoTexture };
+  return { gl, program, lutTexture, videoTexture, lutSize };
 }
 
 export function renderVideoFrameWithLUT(
@@ -153,7 +153,7 @@ export function renderVideoFrameWithLUT(
 
   gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
   gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
-  gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), LUT_SIZE);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), ctx.lutSize);
   gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }

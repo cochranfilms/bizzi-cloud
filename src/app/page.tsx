@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
+import LandingVideoHero from "@/components/landing/LandingVideoHero";
 import TrustedByBrands from "@/components/landing/TrustedByBrands";
 import KeyFeaturesPills from "@/components/landing/KeyFeaturesPills";
 import HowItWorks from "@/components/landing/HowItWorks";
@@ -21,6 +22,7 @@ export default function Home() {
         <CheckoutCancelledBanner />
       </Suspense>
       <main>
+        <LandingVideoHero />
         <Hero />
         <TrustedByBrands />
         <KeyFeaturesPills />

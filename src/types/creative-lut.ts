@@ -21,7 +21,7 @@ export interface CreativeLUTLibraryEntry {
   id: string;
   mode: "builtin" | "custom";
   name: string;
-  file_type: "cube";
+  file_type: "cube" | "3dl";
   file_name: string | null;
   storage_path: string | null;
   signed_url: string | null;

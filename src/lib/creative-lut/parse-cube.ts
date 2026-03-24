@@ -8,7 +8,7 @@ export interface ParseCubeResult {
   size: number;
 }
 
-export function parseCubeFile(text: string): Float32Array {
+export function parseCubeFile(text: string): ParseCubeResult {
   const lines = text.trim().split(/\r?\n/);
   let size = 0;
   const values: number[] = [];
@@ -33,7 +33,7 @@ export function parseCubeFile(text: string): Float32Array {
   }
 
   if (size === 0) size = Math.round(Math.cbrt(values.length / 4)) || 33;
-  return new Float32Array(values);
+  return { data: new Float32Array(values), size };
 }
 
 /**

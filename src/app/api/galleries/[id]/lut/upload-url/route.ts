@@ -45,9 +45,9 @@ export async function POST(
   const auth = await requireGalleryOwner(request, galleryId);
   if (auth instanceof NextResponse) return auth;
 
-  let body: { name?: string };
+  let body: { name?: string; extension?: string };
   try {
-    body = (await request.json().catch(() => ({}))) as { name?: string };
+    body = (await request.json().catch(() => ({}))) as { name?: string; extension?: string };
   } catch {
     body = {};
   }
@@ -66,8 +66,10 @@ export async function POST(
     );
   }
 
+  const ext =
+    body.extension === "3dl" ? "3dl" : body.extension === "cube" ? "cube" : "cube";
   const entryId = randomUUID();
-  const storagePath = `${STORAGE_PREFIX(galleryId)}/${entryId}.cube`;
+  const storagePath = `${STORAGE_PREFIX(galleryId)}/${entryId}.${ext}`;
 
   const storage = getAdminStorage();
   const file = storage.bucket().file(storagePath);
