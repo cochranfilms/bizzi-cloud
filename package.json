@@ -15,7 +15,10 @@
     "lint": "node node_modules/next/dist/bin/next lint",
     "b2:cors": "node scripts/set-b2-cors.mjs",
     "firebase:cors": "bash scripts/set-firebase-storage-cors.sh",
-    "download:ffmpeg-braw": "node scripts/download-ffmpeg-braw.js"
+    "download:ffmpeg-braw": "node scripts/download-ffmpeg-braw.js",
+    "k6:smoke": "k6 run -e K6_EXECUTOR=constant-vus -e K6_VUS=5 -e K6_DURATION=45s k6/bizzi-api.js",
+    "k6:ramp": "k6 run k6/bizzi-api.js",
+    "k6:arrival": "k6 run -e K6_EXECUTOR=ramping-arrival-rate k6/bizzi-api.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1003.0",
@@ -47,6 +50,7 @@
     "stripe": "^20.4.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/archiver": "^7.0.0",
     "@types/node": "^20",
     "@types/react": "^19",

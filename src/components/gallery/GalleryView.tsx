@@ -676,6 +676,7 @@ function GalleryAssetCard({
   const lutSource = lut?.lut_source ?? lut?.storage_url;
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
+  const [muxAnimatedPreviewUrl, setMuxAnimatedPreviewUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
   const shouldAutoplayVideo = isVid && (isFeaturedVideo || isVideoGallery);
@@ -706,9 +707,12 @@ function GalleryAssetCard({
     }
   }, [galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
-  // Fetch stream URL for autoplay thumbnail (featured or all videos in video gallery)
+  // Fetch Mux animated preview + stream for autoplay tiles (featured or all videos in video gallery)
   useEffect(() => {
-    if (!shouldAutoplayVideo) return;
+    if (!shouldAutoplayVideo) {
+      setMuxAnimatedPreviewUrl(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -727,16 +731,31 @@ function GalleryAssetCard({
           { headers }
         );
         if (!res.ok || cancelled) return;
-        const json = await res.json();
-        if (cancelled || !json.streamUrl) return;
-        setVideoStreamUrl(json.streamUrl);
+        const json = (await res.json()) as {
+          streamUrl?: string;
+          animatedMuxPreviewUrl?: string;
+        };
+        if (cancelled) return;
+        if (typeof json.animatedMuxPreviewUrl === "string" && json.animatedMuxPreviewUrl) {
+          setMuxAnimatedPreviewUrl(json.animatedMuxPreviewUrl);
+        } else {
+          setMuxAnimatedPreviewUrl(null);
+        }
+        if (json.streamUrl) {
+          const url = json.streamUrl as string;
+          setVideoStreamUrl(url.startsWith("/") ? `${window.location.origin}${url}` : url);
+        } else {
+          setVideoStreamUrl(null);
+        }
       } catch {
-        // fallback to thumbnail
+        setMuxAnimatedPreviewUrl(null);
+        setVideoStreamUrl(null);
       }
     })();
     return () => {
       cancelled = true;
       setVideoStreamUrl(null);
+      setMuxAnimatedPreviewUrl(null);
     };
   }, [shouldAutoplayVideo, galleryId, asset.object_key, asset.name, password, getAuthToken]);
 
@@ -800,7 +819,16 @@ function GalleryAssetCard({
       <div
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
-        {shouldAutoplayVideo && videoStreamUrl ? (
+        {muxAnimatedPreviewUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={muxAnimatedPreviewUrl}
+            alt=""
+            className={`block w-full object-cover ${
+              useNaturalAspect ? "h-auto" : "h-full"
+            }`}
+          />
+        ) : shouldAutoplayVideo && videoStreamUrl ? (
           <video
             src={videoStreamUrl}
             autoPlay
@@ -927,6 +955,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
+  const [featuredMuxAnimatedUrl, setFeaturedMuxAnimatedUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
@@ -1148,6 +1177,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   useEffect(() => {
     if (!featuredVideoAsset || !data) {
       setFeaturedVideoStreamUrl(null);
+      setFeaturedMuxAnimatedUrl(null);
       return () => {};
     }
     let cancelled = false;
@@ -1168,16 +1198,30 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           { headers }
         );
         if (!res.ok || cancelled) return;
-        const json = await res.json();
-        if (cancelled || !json.streamUrl) return;
-        setFeaturedVideoStreamUrl(json.streamUrl);
+        const json = (await res.json()) as {
+          streamUrl?: string;
+          animatedMuxPreviewUrl?: string;
+        };
+        if (cancelled) return;
+        if (typeof json.animatedMuxPreviewUrl === "string" && json.animatedMuxPreviewUrl) {
+          setFeaturedMuxAnimatedUrl(json.animatedMuxPreviewUrl);
+        } else {
+          setFeaturedMuxAnimatedUrl(null);
+        }
+        if (json.streamUrl) {
+          setFeaturedVideoStreamUrl(json.streamUrl);
+        } else {
+          setFeaturedVideoStreamUrl(null);
+        }
       } catch {
-        // ignore
+        setFeaturedMuxAnimatedUrl(null);
+        setFeaturedVideoStreamUrl(null);
       }
     })();
     return () => {
       cancelled = true;
       setFeaturedVideoStreamUrl(null);
+      setFeaturedMuxAnimatedUrl(null);
     };
   }, [featuredVideoAsset, galleryId, password, user, data]);
 
@@ -1543,6 +1587,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const prePageMusicUrl = gallery.branding.pre_page_music_url;
   const prePageInstructions = gallery.branding.pre_page_instructions;
+  const heroHasMediaBackdrop = !!(
+    bannerUrl ||
+    featuredVideoStreamUrl ||
+    featuredMuxAnimatedUrl
+  );
 
   // Gallery Pre Page – cover experience before entering the gallery
   if (!hasEnteredGallery) {
@@ -1553,14 +1602,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       >
         <header
           className={`absolute left-0 right-0 top-0 z-20 border-b border-transparent ${
-            bannerUrl || featuredVideoStreamUrl ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
+            heroHasMediaBackdrop ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
           }`}
           style={{ ["--accent" as string]: accent }}
         >
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
             <Link
               href="/"
-              className={`flex items-center gap-2 ${bannerUrl || featuredVideoStreamUrl ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
+              className={`flex items-center gap-2 ${heroHasMediaBackdrop ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
             >
               <Image
                 src="/logo.png"
@@ -1579,7 +1628,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 type="button"
                 onClick={() => setMusicPlaying((p) => !p)}
                 className={`rounded-full p-2 transition-colors ${
-                  bannerUrl || featuredVideoStreamUrl ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
+                  heroHasMediaBackdrop ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
                 }`}
                 title={musicPlaying ? "Pause music" : "Play music"}
               >
@@ -1590,13 +1639,21 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         </header>
 
         <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6">
-          {(bannerUrl || featuredVideoStreamUrl) ? (
+          {heroHasMediaBackdrop ? (
             <>
               <div
                 className="pointer-events-none absolute inset-0 z-0"
                 aria-hidden
               >
-                {featuredVideoStreamUrl ? (
+                {featuredMuxAnimatedUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={featuredMuxAnimatedUrl}
+                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: coverObjectPosition }}
+                  />
+                ) : featuredVideoStreamUrl ? (
                   <video
                     src={featuredVideoStreamUrl}
                     autoPlay
@@ -1811,7 +1868,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         </div>
       </header>
 
-      {(bannerUrl || featuredVideoStreamUrl) && (
+      {heroHasMediaBackdrop && (
         <div
           className="relative w-full overflow-hidden"
           style={{
@@ -1825,7 +1882,15 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             })(),
           }}
         >
-          {featuredVideoStreamUrl ? (
+          {featuredMuxAnimatedUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={featuredMuxAnimatedUrl}
+              alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+              className="h-full w-full object-cover"
+              style={{ objectPosition: coverObjectPosition }}
+            />
+          ) : featuredVideoStreamUrl ? (
             <video
               src={featuredVideoStreamUrl}
               autoPlay

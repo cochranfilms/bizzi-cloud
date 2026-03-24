@@ -98,7 +98,13 @@ export async function GET(
       const status = storedStatus === "ready" ? "ready" : await getMuxAssetStatus(muxAssetId);
       if (status === "ready") {
         const streamUrl = `https://stream.mux.com/${muxPlaybackId}.m3u8?max_resolution=720p`;
-        return NextResponse.json({ streamUrl, isHls: true });
+        /** Mux caps animated GIF/WebP at 640px; this is the highest-quality animated preview they serve. */
+        const animatedMuxPreviewUrl = `https://image.mux.com/${muxPlaybackId}/animated.gif?width=640&fps=15`;
+        return NextResponse.json({
+          streamUrl,
+          isHls: true,
+          animatedMuxPreviewUrl,
+        });
       }
       const proxyKey = getProxyObjectKey(objectKey);
       const proxyExists = await objectExists(proxyKey);
