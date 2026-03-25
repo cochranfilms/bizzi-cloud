@@ -62,6 +62,8 @@ export default function ImmersiveFilePreviewShell({
   const closeBtn = isGallery
     ? "text-white/90 hover:bg-white/15"
     : "text-neutral-700 hover:bg-neutral-900/10 dark:text-white/90 dark:hover:bg-white/10";
+  const asideDivider =
+    isGallery ? "border-white/10 dark:border-white/10" : "border-neutral-200/50 dark:border-white/10";
 
   const hasBelow = !!belowFold;
   /** Explicit stage height so nested video/image h-full resolves; keeps comments on-screen */
@@ -69,10 +71,11 @@ export default function ImmersiveFilePreviewShell({
     ? "min-h-[min(200px,40dvh)] h-[min(46dvh,calc(100dvh-15.5rem))] max-h-[min(46dvh,calc(100dvh-15.5rem))] sm:h-[min(48dvh,calc(100dvh-16rem))] sm:max-h-[min(48dvh,calc(100dvh-16rem))] lg:h-[min(50dvh,calc(100dvh-15rem))] lg:max-h-[min(50dvh,calc(100dvh-15rem))]"
     : "min-h-[min(200px,40dvh)] h-[min(68dvh,calc(100dvh-8rem))] max-h-[min(68dvh,calc(100dvh-8rem))] sm:h-[min(70dvh,calc(100dvh-8.5rem))] sm:max-h-[min(70dvh,calc(100dvh-8.5rem))]";
 
+  /** No flex-1 on media column — it was eating full width so content sat in a left “pane” instead of viewport-centered with the LUT column. */
   const mediaColumnClass =
     sideControls != null
-      ? "flex w-full min-w-0 flex-1 flex-col items-center lg:max-w-[min(100%,calc(100vw-20rem))]"
-      : "flex w-full min-w-0 flex-1 flex-col items-center";
+      ? "flex w-full min-w-0 max-w-[min(72rem,calc(100vw-2rem))] flex-col items-center lg:max-w-[min(60rem,calc(100vw-20rem))]"
+      : "flex w-full min-w-0 max-w-[min(80rem,calc(100vw-2rem))] flex-col items-center";
 
   return (
     <div
@@ -84,7 +87,7 @@ export default function ImmersiveFilePreviewShell({
     >
       <button
         type="button"
-        className="fixed inset-0 bg-neutral-950/55 backdrop-blur-2xl backdrop-saturate-150 dark:bg-black/70"
+        className="fixed inset-0 bg-neutral-950/60 backdrop-blur-[28px] backdrop-saturate-125 dark:bg-black/72"
         aria-label="Close preview"
         onClick={onClose}
       />
@@ -119,9 +122,7 @@ export default function ImmersiveFilePreviewShell({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-5 lg:gap-6">
-          <div
-            className={`flex min-h-0 flex-1 flex-col items-stretch justify-center gap-5 lg:flex-row lg:items-center lg:justify-center lg:gap-8 ${hasBelow ? "lg:min-h-0" : ""}`}
-          >
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 lg:flex-row lg:items-center lg:justify-center lg:gap-8">
             <div className={`${mediaColumnClass} flex min-h-0 flex-col items-center justify-center`}>
               <div
                 className={`flex w-full shrink-0 flex-col items-center justify-center ${stageH}`}
@@ -130,17 +131,21 @@ export default function ImmersiveFilePreviewShell({
                   {media}
                 </div>
               </div>
-              {mediaFooter ? <div className="mt-2 w-full shrink-0">{mediaFooter}</div> : null}
+              {mediaFooter ? (
+                <div className="mt-2 w-full shrink-0 text-center">{mediaFooter}</div>
+              ) : null}
             </div>
             {sideControls ? (
-              <aside className="relative z-20 w-full shrink-0 lg:max-w-[18rem] lg:self-center xl:w-80">
+              <aside
+                className={`relative isolate w-full shrink-0 border-t pt-5 lg:w-80 lg:max-w-[min(20rem,calc(100vw-2rem))] lg:border-t-0 lg:pt-0 xl:w-80 ${asideDivider}`}
+              >
                 {sideControls}
               </aside>
             ) : null}
           </div>
 
           {belowFold ? (
-            <div className="relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 border-t border-neutral-200/30 pt-6 dark:border-white/10 sm:mt-4 sm:pt-8">
+            <div className="relative z-30 mx-auto mt-2 w-full max-w-3xl shrink-0 border-t border-neutral-200/30 bg-transparent pt-6 dark:border-white/10 sm:mt-4 sm:pt-8">
               {belowFold}
             </div>
           ) : null}

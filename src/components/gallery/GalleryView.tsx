@@ -43,6 +43,7 @@ import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-heade
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 interface GalleryData {
   id: string;
@@ -448,7 +449,9 @@ function PreviewModal({
 
   const lutSideControls =
     lut?.enabled &&
-    (onLutPreviewToggle || (modalLutOptions.length > 1 && onLutSelect) || onLutGradeMixChange) ? (
+    (onLutPreviewToggle ||
+      (modalLutOptions.length > 1 && onLutSelect) ||
+      (!isVideo && onLutGradeMixChange)) ? (
       <div className="flex flex-col gap-4 rounded-xl border border-white/12 bg-black/35 px-4 py-4 text-white shadow-lg backdrop-blur-xl">
         <p className="text-xs font-medium uppercase tracking-wide text-white/55">Color look</p>
         <p className="text-[13px] leading-snug text-white/70">
@@ -479,7 +482,7 @@ function PreviewModal({
             </span>
           </button>
         ) : null}
-        {lutPreviewEnabled && previewLutSource && onLutGradeMixChange ? (
+        {!isVideo && lutPreviewEnabled && previewLutSource && onLutGradeMixChange ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-[11px] font-medium text-white/85">
               <span>Mix</span>
@@ -1657,9 +1660,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   if (loading && !data) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
-        <ImageIcon className="mb-4 h-16 w-16 animate-pulse text-neutral-300 dark:text-neutral-600" />
-        <p className="text-neutral-500 dark:text-neutral-400">Loading gallery…</p>
+      <div className="min-h-[100dvh] bg-neutral-50 dark:bg-neutral-950">
+        <DashboardRouteFade
+          ready={false}
+          srOnlyMessage="Loading gallery"
+          placeholderClassName="min-h-[100dvh] rounded-none from-neutral-200/50 via-neutral-100/40 to-transparent dark:from-neutral-800/55 dark:via-neutral-900/35 dark:to-transparent"
+        >
+          {null}
+        </DashboardRouteFade>
       </div>
     );
   }
@@ -1799,10 +1807,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const heroHasMediaBackdrop = !!(bannerUrl || featuredVideoStreamUrl);
 
   return (
-    <div
-      className="min-h-screen animate-gallery-enter transition-colors"
-      style={{ backgroundColor: bgTheme.background }}
-    >
+    <DashboardRouteFade ready srOnlyMessage="">
+      <div
+        className="min-h-screen transition-colors duration-300"
+        style={{ backgroundColor: bgTheme.background }}
+      >
       <header
         className={`z-30 ${
           heroHasMediaBackdrop
@@ -2352,37 +2361,39 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     </select>
                   </div>
                 )}
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <label
-                      htmlFor="gallery-lut-mix"
-                      className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
-                        isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
+                {gallery.gallery_type !== "video" ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <label
+                        htmlFor="gallery-lut-mix"
+                        className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                          isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
+                        }`}
+                      >
+                        Mix
+                      </label>
+                      <span
+                        className={`text-[11px] font-medium tabular-nums ${
+                          isDarkBg ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"
+                        }`}
+                      >
+                        {lutGradeMix}
+                      </span>
+                    </div>
+                    <input
+                      id="gallery-lut-mix"
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={lutGradeMix}
+                      disabled={!lutPreviewEnabled || !clientLutSource}
+                      onChange={(e) => setLutGradeMix(Number(e.target.value))}
+                      className={`h-2 w-full cursor-pointer appearance-none rounded-full accent-bizzi-blue disabled:cursor-not-allowed disabled:opacity-45 dark:accent-bizzi-cyan ${
+                        isDarkBg ? "bg-white/15" : "bg-neutral-200/90 dark:bg-neutral-700"
                       }`}
-                    >
-                      Mix
-                    </label>
-                    <span
-                      className={`text-[11px] font-medium tabular-nums ${
-                        isDarkBg ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"
-                      }`}
-                    >
-                      {lutGradeMix}
-                    </span>
+                    />
                   </div>
-                  <input
-                    id="gallery-lut-mix"
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={lutGradeMix}
-                    disabled={!lutPreviewEnabled || !clientLutSource}
-                    onChange={(e) => setLutGradeMix(Number(e.target.value))}
-                    className={`h-2 w-full cursor-pointer appearance-none rounded-full accent-bizzi-blue disabled:cursor-not-allowed disabled:opacity-45 dark:accent-bizzi-cyan ${
-                      isDarkBg ? "bg-white/15" : "bg-neutral-200/90 dark:bg-neutral-700"
-                    }`}
-                  />
-                </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2447,7 +2458,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 lut={effectiveLut}
                 lutPreviewEnabled={lutPreviewEnabled}
                 previewLutSource={clientLutSource}
-                lutGradeMixPercent={lutGradeMix}
+                lutGradeMixPercent={
+                  gallery.gallery_type === "video" ? 100 : lutGradeMix
+                }
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
                 isVideoGallery={gallery.gallery_type === "video"}
               />
@@ -2545,9 +2558,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           allowComments={gallery.allow_comments !== false}
           previewLutSource={clientLutSource}
           lutGradeMixPercent={lutGradeMix}
-          onLutGradeMixChange={setLutGradeMix}
+          onLutGradeMixChange={
+            isVideo(previewAsset.name) ? undefined : setLutGradeMix
+          }
         />
       )}
     </div>
+    </DashboardRouteFade>
   );
 }
