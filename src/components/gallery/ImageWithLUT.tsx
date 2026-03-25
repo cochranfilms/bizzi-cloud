@@ -53,6 +53,8 @@ export default function ImageWithLUT({
   const transitionRafRef = useRef<number | null>(null);
   const crossfadeRef = useRef(0);
   const loggedFirstDrawRef = useRef<string | null>(null);
+  /** Latest draw fn for LUT crossfade ticks (avoids effect deps on requestDraw). */
+  const requestDrawRef = useRef<() => void>(() => {});
 
   const [lutReady, setLutReady] = useState(false);
   const [lutError, setLutError] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export default function ImageWithLUT({
             if (cancelled || !glContextRef.current) return;
             const t = Math.min(1, (performance.now() - start) / LUT_CROSSFADE_MS);
             crossfadeRef.current = easeOutQuad(t);
-            requestDraw();
+            requestDrawRef.current();
             if (t < 1) {
               transitionRafRef.current = requestAnimationFrame(tick);
             } else {
@@ -134,7 +136,7 @@ export default function ImageWithLUT({
               swapPrimarySecondaryLut(ctx);
               crossfadeRef.current = 0;
               displayedLutUrlRef.current = lutUrl;
-              requestDraw();
+              requestDrawRef.current();
               lutDebug("LUT crossfade complete", { lutUrl: lutUrl.slice(0, 80) });
             }
           };
@@ -162,18 +164,6 @@ export default function ImageWithLUT({
       }
     };
   }, [lutEnabled, lutUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (transitionRafRef.current != null) {
-        cancelAnimationFrame(transitionRafRef.current);
-      }
-      if (glContextRef.current) {
-        disposeImageLUTContext(glContextRef.current);
-        glContextRef.current = null;
-      }
-    };
-  }, []);
 
   const requestDraw = useCallback(() => {
     requestAnimationFrame(() => {
@@ -229,6 +219,20 @@ export default function ImageWithLUT({
       }
     });
   }, [lutReady, lutEnabled, imageLoaded, lutUrl, imageUrl, objectFit, gradeMix]);
+
+  requestDrawRef.current = requestDraw;
+
+  useEffect(() => {
+    return () => {
+      if (transitionRafRef.current != null) {
+        cancelAnimationFrame(transitionRafRef.current);
+      }
+      if (glContextRef.current) {
+        disposeImageLUTContext(glContextRef.current);
+        glContextRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const img = imgRef.current;

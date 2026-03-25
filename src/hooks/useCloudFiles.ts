@@ -56,7 +56,7 @@ function isTeamSharedDrive(d: LinkedDrive | undefined): boolean {
 }
 
 /** Bulk ops / share: list all files visible on this drive via client rules (org drives stay per-uploader). */
-function useFullDriveFileListing(d: LinkedDrive | undefined, uid: string): boolean {
+function shouldQueryDriveWideFiles(d: LinkedDrive | undefined, uid: string): boolean {
   if (!d) return false;
   if (d.organization_id) return false;
   if (isTeamSharedDrive(d)) return true;
@@ -839,7 +839,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       for (const driveId of folderDriveIds) {
         const folderDrive = linkedDrives.find((d) => d.id === driveId);
         const snap = await getDocs(
-          useFullDriveFileListing(folderDrive, user.uid)
+          shouldQueryDriveWideFiles(folderDrive, user.uid)
             ? query(
                 collection(db, "backup_files"),
                 where("linked_drive_id", "==", driveId),
@@ -865,7 +865,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const db = getFirebaseFirestore();
       const sourceDrive = linkedDrives.find((d) => d.id === sourceDriveId);
       const filesSnap = await getDocs(
-        useFullDriveFileListing(sourceDrive, user.uid)
+        shouldQueryDriveWideFiles(sourceDrive, user.uid)
           ? query(
               collection(db, "backup_files"),
               where("linked_drive_id", "==", sourceDriveId),
@@ -904,7 +904,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       } else {
         const linkedDriveMeta = linkedDrives.find((d) => d.id === drive.id);
         const filesSnap = await getDocs(
-          useFullDriveFileListing(linkedDriveMeta, user.uid)
+          shouldQueryDriveWideFiles(linkedDriveMeta, user.uid)
             ? query(
                 collection(db, "backup_files"),
                 where("linked_drive_id", "==", drive.id),
