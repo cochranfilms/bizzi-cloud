@@ -206,11 +206,20 @@ export async function POST(request: Request) {
       if (meta.height) updates.height = meta.height;
       if (meta.width) updates.resolution_w = meta.width;
       if (meta.height) updates.resolution_h = meta.height;
-      const w = meta.width ?? 0;
-      const h = meta.height ?? 0;
-      if (w && h) {
-        if (w === h) updates.orientation = "square";
-        else if (w > h) updates.orientation = "landscape";
+      const w0 = meta.width ?? 0;
+      const h0 = meta.height ?? 0;
+      const exifO = meta.orientation ?? 1;
+      updates.exif_orientation = exifO;
+      /** Display aspect (e.g. portrait ARW stored with landscape pixels + EXIF 6/8). */
+      let dw = w0;
+      let dh = h0;
+      if (exifO >= 5 && exifO <= 8 && w0 > 0 && h0 > 0) {
+        dw = h0;
+        dh = w0;
+      }
+      if (dw && dh) {
+        if (dw === dh) updates.orientation = "square";
+        else if (dw > dh) updates.orientation = "landscape";
         else updates.orientation = "portrait";
       }
       const rawExt = getExtension(fileName);

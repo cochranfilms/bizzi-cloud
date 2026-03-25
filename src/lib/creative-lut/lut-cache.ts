@@ -4,6 +4,12 @@
  */
 
 import { getBuiltinLUTUrl } from "./builtin-registry";
+import {
+  BIZZI_TEST_INVERT_LUT_ID,
+  lutDebug,
+  makeInvertDiagnosticLut,
+  summarizeLutData,
+} from "./lut-debug";
 import { parseLutFileText } from "./parse-lut";
 
 const MAX_CACHE_ENTRIES = 5;
@@ -26,6 +32,13 @@ function evictLRU(): void {
 }
 
 export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
+  if (urlOrBuiltinId === BIZZI_TEST_INVERT_LUT_ID) {
+    lutDebug("parse: built-in invert diagnostic LUT (no fetch)");
+    const entry = makeInvertDiagnosticLut(32);
+    lutDebug("parsed lattice", summarizeLutData(entry.data, entry.size));
+    return entry;
+  }
+
   const resolved = resolveUrl(urlOrBuiltinId);
 
   const cached = cache.get(resolved);
@@ -60,6 +73,10 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
         : undefined;
   }
   const { data, size } = parseLutFileText(text, formatHint);
+  lutDebug("parsed LUT file", {
+    ...summarizeLutData(data, size),
+    formatHint: formatHint ?? "auto",
+  });
 
   evictLRU();
   const entry = { data, size };

@@ -7,6 +7,7 @@ import {
   renderImageWithLUT,
   type ImageLUTContext,
 } from "@/lib/creative-lut/image-lut-engine";
+import { lutDebug } from "@/lib/creative-lut/lut-debug";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
 
 interface ImageWithLUTProps {
@@ -43,6 +44,7 @@ export default function ImageWithLUT({
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glContextRef = useRef<ImageLUTContext | null>(null);
+  const loggedFirstDrawRef = useRef<string | null>(null);
   const [lutReady, setLutReady] = useState(false);
   const [lutError, setLutError] = useState<string | null>(null);
   const [webglAvailable, setWebglAvailable] = useState<boolean | null>(null);
@@ -50,6 +52,7 @@ export default function ImageWithLUT({
 
   useEffect(() => {
     setImageLoaded(false);
+    loggedFirstDrawRef.current = null;
   }, [imageUrl]);
 
   useEffect(() => {
@@ -57,12 +60,14 @@ export default function ImageWithLUT({
     const img = imgRef.current;
     if (!canvas || !img || !lutEnabled || !lutUrl) return;
 
-    const gl = canvas.getContext("webgl2", { alpha: true });
+    const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: false });
     if (!gl) {
+      lutDebug("WebGL2 unsupported");
       setWebglAvailable(false);
       return;
     }
     setWebglAvailable(true);
+    lutDebug("WebGL2 context OK, loading LUT", { lutUrl: lutUrl.slice(0, 120) });
 
     let cancelled = false;
     getOrLoadLUT(lutUrl)
@@ -72,10 +77,13 @@ export default function ImageWithLUT({
         glContextRef.current = createImageLUTContext(gl, lutTexture, size);
         setLutReady(true);
         setLutError(null);
+        lutDebug("LUT GPU upload complete", { size });
       })
       .catch((e) => {
         if (!cancelled) {
-          setLutError(e instanceof Error ? e.message : "LUT load failed");
+          const msg = e instanceof Error ? e.message : "LUT load failed";
+          lutDebug("LUT load failed", msg);
+          setLutError(msg);
           setLutReady(false);
         }
       });
@@ -117,7 +125,17 @@ export default function ImageWithLUT({
     }
 
     renderImageWithLUT(ctx, img, w, h);
-  }, [lutReady, lutEnabled, imageLoaded, lutUrl]);
+    const drawKey = `${lutUrl}:${imageUrl}:${w}x${h}`;
+    if (loggedFirstDrawRef.current !== drawKey) {
+      loggedFirstDrawRef.current = drawKey;
+      lutDebug("first canvas draw after LUT / layout", {
+        w,
+        h,
+        naturalW: img.naturalWidth,
+        naturalH: img.naturalHeight,
+      });
+    }
+  }, [lutReady, lutEnabled, imageLoaded, lutUrl, imageUrl]);
 
   useEffect(() => {
     const img = imgRef.current;
@@ -145,7 +163,13 @@ export default function ImageWithLUT({
     requestAnimationFrame(render);
   }, [render]);
 
-  const shouldUseLUT = lutEnabled && lutUrl && lutReady && webglAvailable !== false && !lutError;
+  /**
+   * Canvas must mount whenever we attempt LUT (not only after lutReady), otherwise
+   * the WebGL effect never sees canvasRef and getOrLoadLUT never runs — preview stays ungraded.
+   */
+  const canvasLayerActive =
+    lutEnabled && !!lutUrl && webglAvailable !== false && !lutError;
+  const lutDrawn = canvasLayerActive && lutReady;
   const objectFitClass =
     objectFit === "cover" ? "object-cover" : "object-contain";
   const isFill = variant === "fill";
@@ -191,12 +215,13 @@ export default function ImageWithLUT({
         crossOrigin={lutEnabled && lutUrl ? "anonymous" : undefined}
         className={imgClass}
         onLoad={onImageLoad}
-        style={{ ...imageStyle, visibility: shouldUseLUT ? "hidden" : "visible" }}
+        style={{ ...imageStyle, visibility: lutDrawn ? "hidden" : "visible" }}
       />
-      {shouldUseLUT && (
+      {canvasLayerActive && (
         <canvas
           ref={canvasRef}
           className={`pointer-events-none absolute inset-0 block h-full w-full ${objectFitClass}`}
+          style={{ opacity: lutDrawn ? 1 : 0 }}
         />
       )}
     </div>

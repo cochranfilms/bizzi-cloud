@@ -125,8 +125,8 @@ async function alignEmbeddedPreviewToRawOrientation(
 }
 
 /**
- * Clockwise degrees for sharp().rotate(angle). Uses RAW container dimensions when present:
- * portrait RAWs often store landscape pixel dimensions with orientation 6/8 — pick 90 vs 270 accordingly.
+ * Degrees for sharp().rotate(angle). Uses RAW container dimensions when present
+ * (landscape pixel storage + EXIF 6/8 is common for portrait captures).
  */
 function exifOrientationToRotationAngle(
   orientation: number,
@@ -259,7 +259,8 @@ export async function rawToThumbnail(
 
   try {
     const { fit = "inside", isCover = false } = options ?? {};
-    const pipeline = sharp(preview).rotate(); // Apply EXIF orientation (fixes rotated thumbnails)
+    /** extractRawPreview already bakes orientation; a second .rotate() here doubled EXIF and skewed Sony ARW. */
+    const pipeline = sharp(preview);
     if (isCover) {
       return await pipeline
         .resize({ width: maxSize, withoutEnlargement: true })

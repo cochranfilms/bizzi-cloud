@@ -2,6 +2,8 @@
  * Client-side helpers for gallery creative LUT selection (preview only).
  */
 
+import { BIZZI_TEST_INVERT_LUT_ID } from "@/lib/creative-lut/lut-debug";
+
 export const GALLERY_LUT_ORIGINAL_ID = "__bizzi_original__";
 
 export type GalleryLutOption = { id: string; name: string; source: string };
@@ -27,6 +29,19 @@ export function buildGalleryLUTOptions(
           : e.signed_url;
         opts.push({ id: e.id, name: e.name ?? "Custom LUT", source });
       }
+    }
+  }
+  if (typeof window !== "undefined") {
+    try {
+      if (window.localStorage?.getItem("bizziDebugLut") === "1") {
+        opts.push({
+          id: BIZZI_TEST_INVERT_LUT_ID,
+          name: "Debug: invert (pipeline test)",
+          source: BIZZI_TEST_INVERT_LUT_ID,
+        });
+      }
+    } catch {
+      /* ignore */
     }
   }
   return opts;
