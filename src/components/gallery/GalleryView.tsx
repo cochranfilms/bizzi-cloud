@@ -13,7 +13,6 @@ import {
   Film,
   Image as ImageIcon,
   ChevronLeft,
-  X,
   MessageCircle,
   Music2,
   ExternalLink,
@@ -43,6 +42,7 @@ import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
+import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 
 interface GalleryData {
   id: string;
@@ -440,32 +440,29 @@ function PreviewModal({
         ? buildGalleryLUTOptions(creativeLutLibrary, isVideo, password)
         : [];
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-      onClick={onClose}
-    >
-      <div className="absolute right-4 top-4 z-10 flex flex-wrap items-center gap-2">
-        {lut?.enabled && onLutPreviewToggle && (
+  const lutSideControls =
+    lut?.enabled &&
+    (onLutPreviewToggle || (modalLutOptions.length > 1 && onLutSelect) || onLutGradeMixChange) ? (
+      <div className="flex flex-col gap-4 rounded-xl border border-white/12 bg-black/35 px-4 py-4 text-white shadow-lg backdrop-blur-xl">
+        <p className="text-xs font-medium uppercase tracking-wide text-white/55">Color look</p>
+        <p className="text-[13px] leading-snug text-white/70">
+          Preview a grade on this file. Originals are never modified.
+        </p>
+        {onLutPreviewToggle ? (
           <button
             type="button"
             role="switch"
             aria-checked={lutPreviewEnabled}
             aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
-            onClick={(e) => {
-              e.stopPropagation();
-              onLutPreviewToggle();
-            }}
-            className={`flex items-center gap-3 rounded-xl border border-white/25 bg-black/35 px-3 py-2 text-sm text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/45 ${
-              lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/50" : ""
+            onClick={onLutPreviewToggle}
+            className={`flex w-full items-center justify-between gap-3 rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-left transition-colors ${
+              lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/45" : ""
             }`}
           >
-            <span className="max-w-[9rem] text-left text-xs font-medium leading-snug text-white/95 sm:max-w-[11rem]">
-              Color grade preview
-            </span>
+            <span className="text-sm font-medium text-white/95">Preview color grade</span>
             <span
               className={`relative inline-flex h-7 w-11 shrink-0 items-center rounded-full transition-colors ${
-                lutPreviewEnabled ? "bg-bizzi-cyan" : "bg-white/25"
+                lutPreviewEnabled ? "bg-bizzi-cyan" : "bg-white/20"
               }`}
             >
               <span
@@ -475,199 +472,188 @@ function PreviewModal({
               />
             </span>
           </button>
-        )}
-        {lut?.enabled &&
-          lutPreviewEnabled &&
-          previewLutSource &&
-          onLutGradeMixChange && (
-            <div
-              className="flex min-w-[11rem] max-w-[14rem] flex-col gap-1 rounded-xl border border-white/25 bg-black/35 px-3 py-2 shadow-lg backdrop-blur-md"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-white/90">
-                <span>Mix</span>
-                <span className="tabular-nums text-white/75">{lutGradeMixPercent}</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={lutGradeMixPercent}
-                onChange={(e) => onLutGradeMixChange(Number(e.target.value))}
-                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-bizzi-cyan"
-              />
+        ) : null}
+        {lutPreviewEnabled && previewLutSource && onLutGradeMixChange ? (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[11px] font-medium text-white/85">
+              <span>Mix</span>
+              <span className="tabular-nums text-white/70">{lutGradeMixPercent}</span>
             </div>
-          )}
-        {lut?.enabled && modalLutOptions.length > 1 && (
-          <select
-            value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
-            disabled={!lutPreviewEnabled}
-            onChange={(e) => {
-              e.stopPropagation();
-              const id = e.target.value;
-              if (id) onLutSelect?.(id);
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className={`min-w-[10rem] rounded-xl border bg-black/35 px-3 py-2 text-sm text-white shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/40 ${
-              lutPreviewEnabled
-                ? "cursor-pointer border-white/30"
-                : "cursor-not-allowed border-white/10 opacity-45"
-            }`}
-          >
-            {modalLutOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-        >
-          <X className="h-6 w-6" />
-        </button>
-      </div>
-      <div
-        className="relative flex max-h-[90vh] max-w-4xl flex-col gap-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative flex flex-1 items-center justify-center">
-          {isVideo ? (
-            <div className="flex max-h-[70vh] max-w-full flex-col items-center justify-center gap-4">
-              {videoLoading && (
-                <p className="text-white/80">Loading video…</p>
-              )}
-              {videoError && (
-                <p className="text-amber-400">{videoError}</p>
-              )}
-              {videoStreamUrl && !videoError && (
-                lut?.enabled ? (
-                  <VideoWithLUT
-                    key={asset.id}
-                    src={videoStreamUrl}
-                    streamUrl={videoStreamUrl}
-                    className="max-h-[70vh] max-w-full rounded-lg bg-black"
-                    showLUTOption={false}
-                    lutSource={previewLutSource}
-                    creativePreviewOn={lutPreviewEnabled}
-                  />
-                ) : (
-                  <video
-                    src={videoStreamUrl}
-                    controls
-                    playsInline
-                    className="max-h-[70vh] max-w-full rounded-lg bg-black"
-                  />
-                )
-              )}
-              {!videoStreamUrl && !videoLoading && !videoError && (
-                <p className="text-white/80">Video unavailable</p>
-              )}
-            </div>
-          ) : previewRawUnavailableProp ? (
-            <div className="max-h-[70vh] max-w-lg overflow-auto rounded-lg bg-white/5 p-4">
-              <RawPreviewPlaceholder fileName={asset.name} />
-            </div>
-          ) : previewImageUrl ? (
-            <>
-              {lut?.enabled &&
-              previewLutSource &&
-              isImage(asset.name) &&
-              lutPreviewEnabled ? (
-                <ImageWithLUT
-                  key={asset.id}
-                  imageUrl={previewImageUrl}
-                  lutUrl={previewLutSource}
-                  lutEnabled={true}
-                  className="max-h-[70vh] max-w-full"
-                  objectFit="contain"
-                  gradeMixPercent={lutGradeMixPercent}
-                />
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={previewImageUrl}
-                  alt=""
-                  className="max-h-[70vh] max-w-full object-contain"
-                />
-              )}
-              {watermark?.enabled && watermark?.image_url && (
-                <WatermarkOverlay
-                  imageUrl={watermark.image_url}
-                  position={watermark.position ?? undefined}
-                  opacity={watermark.opacity ?? 50}
-                  className="!max-h-[18%] !max-w-[28%]"
-                />
-              )}
-            </>
-          ) : (
-            <div className="flex h-64 w-64 items-center justify-center">
-              <ImageIcon className="h-16 w-16 animate-pulse text-white/50" />
-            </div>
-          )}
-        </div>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-white/20 bg-black/40 p-4">
-          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
-            <MessageCircle className="h-4 w-4" />
-            Comments
-          </h3>
-          <div className="mb-4 space-y-2">
-            {comments.length === 0 ? (
-              <p className="text-sm text-white/60">No comments yet.</p>
-            ) : (
-              comments.map((c) => (
-                <div key={c.id} className="rounded bg-white/10 px-3 py-2 text-sm text-white">
-                  <p className="font-medium text-white/90">{c.client_name || "Anonymous"}</p>
-                  <p>{c.body}</p>
-                  <p className="mt-1 text-xs text-white/50">
-                    {c.created_at
-                      ? new Date(c.created_at).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : ""}
-                  </p>
-                </div>
-              ))
-            )}
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={lutGradeMixPercent}
+              onChange={(e) => onLutGradeMixChange(Number(e.target.value))}
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-bizzi-cyan"
+            />
           </div>
-          <form onSubmit={handleCommentSubmit} className="space-y-2">
-            <input
-              type="text"
-              value={commentName}
-              onChange={(e) => setCommentName(e.target.value)}
-              placeholder="Your name"
-              className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50"
-            />
-            <input
-              type="email"
-              value={commentEmail}
-              onChange={(e) => setCommentEmail(e.target.value)}
-              placeholder="Email (optional)"
-              className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50"
-            />
-            <textarea
-              value={commentBody}
-              onChange={(e) => setCommentBody(e.target.value)}
-              placeholder="Add a comment..."
-              rows={2}
-              className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50"
-            />
-            <button
-              type="submit"
-              disabled={submitting || !commentBody.trim()}
-              className="rounded bg-bizzi-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        ) : null}
+        {modalLutOptions.length > 1 ? (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-medium text-white/75">Look</span>
+            <select
+              value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
+              disabled={!lutPreviewEnabled}
+              onChange={(e) => {
+                const id = e.target.value;
+                if (id) onLutSelect?.(id);
+              }}
+              className={`w-full rounded-lg border bg-white/10 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/40 ${
+                lutPreviewEnabled
+                  ? "cursor-pointer border-white/25"
+                  : "cursor-not-allowed border-white/10 opacity-45"
+              }`}
             >
-              {submitting ? "Posting…" : "Post comment"}
-            </button>
-          </form>
-        </div>
+              {modalLutOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
+    ) : null;
+
+  const mediaCore = isVideo ? (
+    <div className="flex w-full max-w-full flex-col items-center justify-center gap-4">
+      {videoLoading && <p className="text-sm text-white/80">Loading video…</p>}
+      {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
+      {videoStreamUrl && !videoError ? (
+        lut?.enabled ? (
+          <VideoWithLUT
+            key={asset.id}
+            src={videoStreamUrl}
+            streamUrl={videoStreamUrl}
+            className="max-h-[min(85vh,920px)] max-w-full"
+            showLUTOption={false}
+            lutSource={previewLutSource}
+            creativePreviewOn={lutPreviewEnabled}
+            frameless
+          />
+        ) : (
+          <video
+            src={videoStreamUrl}
+            controls
+            playsInline
+            className="max-h-[min(85vh,920px)] max-w-full rounded-lg bg-black object-contain"
+          />
+        )
+      ) : null}
+      {!videoStreamUrl && !videoLoading && !videoError ? (
+        <p className="text-sm text-white/80">Video unavailable</p>
+      ) : null}
     </div>
+  ) : previewRawUnavailableProp ? (
+    <div className="w-full max-w-lg rounded-lg bg-white/[0.06] px-4 py-6">
+      <RawPreviewPlaceholder fileName={asset.name} />
+    </div>
+  ) : previewImageUrl ? (
+    <div className="relative inline-block max-w-full">
+      {lut?.enabled && previewLutSource && isImage(asset.name) && lutPreviewEnabled ? (
+        <ImageWithLUT
+          key={asset.id}
+          imageUrl={previewImageUrl}
+          lutUrl={previewLutSource}
+          lutEnabled={true}
+          className="max-h-[min(85vh,920px)] max-w-full"
+          objectFit="contain"
+          gradeMixPercent={lutGradeMixPercent}
+        />
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={previewImageUrl}
+          alt=""
+          className="max-h-[min(85vh,920px)] max-w-full object-contain"
+        />
+      )}
+      {watermark?.enabled && watermark?.image_url && (
+        <WatermarkOverlay
+          imageUrl={watermark.image_url}
+          position={watermark.position ?? undefined}
+          opacity={watermark.opacity ?? 50}
+          className="!max-h-[18%] !max-w-[28%]"
+        />
+      )}
+    </div>
+  ) : (
+    <div className="flex h-64 w-64 items-center justify-center">
+      <ImageIcon className="h-16 w-16 animate-pulse text-white/50" />
+    </div>
+  );
+
+  return (
+    <ImmersiveFilePreviewShell
+      variant="gallery"
+      onClose={onClose}
+      title={asset.name}
+      media={mediaCore}
+      sideControls={lutSideControls}
+      belowFold={
+        allowComments ? (
+          <div className="space-y-5 text-white/95">
+            <h3 className="flex items-center gap-2 text-sm font-medium text-white/90">
+              <MessageCircle className="h-4 w-4 shrink-0 opacity-80" />
+              Comments
+            </h3>
+            <div className="space-y-2">
+              {comments.length === 0 ? (
+                <p className="text-sm text-white/60">No comments yet.</p>
+              ) : (
+                comments.map((c) => (
+                  <div key={c.id} className="rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm">
+                    <p className="font-medium text-white/90">{c.client_name || "Anonymous"}</p>
+                    <p className="text-white/85">{c.body}</p>
+                    <p className="mt-1 text-xs text-white/45">
+                      {c.created_at
+                        ? new Date(c.created_at).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleCommentSubmit} className="space-y-2.5">
+              <input
+                type="text"
+                value={commentName}
+                onChange={(e) => setCommentName(e.target.value)}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+              />
+              <input
+                type="email"
+                value={commentEmail}
+                onChange={(e) => setCommentEmail(e.target.value)}
+                placeholder="Email (optional)"
+                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+              />
+              <textarea
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder="Add a comment..."
+                rows={3}
+                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+              />
+              <button
+                type="submit"
+                disabled={submitting || !commentBody.trim()}
+                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+              >
+                {submitting ? "Posting…" : "Post comment"}
+              </button>
+            </form>
+          </div>
+        ) : null
+      }
+    />
   );
 }
 

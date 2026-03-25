@@ -30,9 +30,7 @@ export default function Hero() {
         </h1>
 
         <p className="text-base sm:text-lg md:text-xl text-neutral-700 max-w-2xl mx-auto leading-relaxed mb-8 sm:mb-10 text-pretty">
-          Bizzi Cloud is cloud storage built for photographers, filmmakers, and
-          creative teams who need more than generic file storage — a secure,
-          organized home for every asset, tuned for post-production and delivery.
+          High-performance storage, engineered for post-production workflows.
         </p>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-4">

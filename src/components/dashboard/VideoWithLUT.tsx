@@ -41,6 +41,10 @@ interface VideoWithLUTProps {
   compactPreview?: boolean;
   /** Loop first N seconds (muted tile previews). */
   segmentLoopSeconds?: number | null;
+  /** Immersive viewer: no heavy frame / ring around the video */
+  frameless?: boolean;
+  /** With showLUTOption, place LUT toolbar beside the video on large screens */
+  sideBySideLut?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -63,6 +67,8 @@ export default function VideoWithLUT({
   creativePreviewOn,
   compactPreview = false,
   segmentLoopSeconds = null,
+  frameless = false,
+  sideBySideLut = false,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -401,27 +407,36 @@ export default function VideoWithLUT({
     ? { width: "100%", height: "100%", minHeight: 0 }
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
-      : {
-          maxHeight: "70vh",
-          aspectRatio: "16 / 9",
-        };
+      : frameless
+        ? {
+            maxHeight: "min(85vh, 920px)",
+            width: "100%",
+            minHeight: 0,
+          }
+        : {
+            maxHeight: "70vh",
+            aspectRatio: "16 / 9",
+          };
 
+  const outerClass = compactPreview
+    ? "h-full w-full min-h-0"
+    : sideBySideLut && showLUTOption
+      ? "flex w-full max-w-full flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center lg:gap-5"
+      : "flex w-full flex-col items-center gap-4";
+
+  const videoShellClass = frameless
+    ? compactPreview
+      ? "rounded-lg bg-black"
+      : "rounded-lg bg-black"
+    : compactPreview
+      ? "rounded-lg bg-neutral-200 dark:bg-black"
+      : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
 
   return (
-    <div
-      className={
-        compactPreview
-          ? "h-full w-full min-h-0"
-          : "flex w-full flex-col items-center gap-4"
-      }
-    >
+    <div className={outerClass}>
       <div
         ref={containerRef}
-        className={`video-fullscreen-container relative w-full max-w-full overflow-hidden bg-neutral-200 dark:bg-black ${
-          compactPreview
-            ? "rounded-lg"
-            : "rounded-xl shadow-xl ring-1 ring-neutral-200 dark:ring-neutral-700/50"
-        }`}
+        className={`video-fullscreen-container relative w-full max-w-full overflow-hidden ${videoShellClass}`}
         style={containerStyle}
       >
         <video
@@ -437,7 +452,7 @@ export default function VideoWithLUT({
           className={
             compactPreview
               ? `h-full w-full object-cover ${className ?? ""}`
-              : `max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : "max-h-[70vh]"}`
+              : `max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : frameless ? "max-h-[min(85vh,920px)]" : "max-h-[70vh]"}`
           }
         />
         {previewOn && currentLutSource && (
@@ -508,7 +523,13 @@ export default function VideoWithLUT({
         )}
       </div>
       {showLUTOption && (
-        <div className="flex w-full flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60">
+        <div
+          className={`flex w-full flex-col gap-3 rounded-xl px-4 py-3 ${
+            sideBySideLut
+              ? "border border-white/15 bg-black/40 backdrop-blur-xl dark:border-white/15 dark:bg-black/45 lg:max-w-sm lg:shrink-0"
+              : "border border-neutral-200 bg-neutral-100 backdrop-blur-sm dark:border-neutral-700/60 dark:bg-neutral-800/60"
+          }`}
+        >
           <div className="flex items-center justify-between gap-4">
             <button
               type="button"

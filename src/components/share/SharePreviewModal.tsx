@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { X, Download, FileIcon, Loader2, Film } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Download, FileIcon, Loader2, Film } from "lucide-react";
 import { useShareThumbnail } from "@/hooks/useShareThumbnail";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
+import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -154,14 +155,6 @@ export default function SharePreviewModal({
     return () => clearInterval(interval);
   }, [shareToken, file?.object_key, previewType, videoProcessing, fullUrl, getAuthToken]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
-
   const handleDownload = useCallback(async () => {
     if (!file?.object_key) return;
     setDownloading(true);
@@ -198,154 +191,132 @@ export default function SharePreviewModal({
 
   if (!file) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-sm dark:bg-black/70"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
+  const headerActions =
+    canDownload ? (
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={downloading}
+        className="touch-target-sm rounded-lg p-2 text-neutral-600 transition-colors hover:bg-neutral-900/10 hover:text-bizzi-blue disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-white/10 dark:hover:text-bizzi-cyan"
+        aria-label="Download full resolution"
       >
-        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900">
-          <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={file.name}>
-            {file.name}
-          </h2>
-          <div className="flex items-center gap-2">
-            {canDownload && (
-              <button
-                type="button"
-                onClick={handleDownload}
-                disabled={downloading}
-                className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
-                aria-label="Download full resolution"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-white"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+        <Download className="h-4 w-4" />
+      </button>
+    ) : null;
 
-        <div className="flex min-h-[40vh] flex-1 items-center justify-center overflow-auto bg-neutral-50 p-6 dark:bg-neutral-950">
-          {loading && !(previewType === "image" && lowResPreviewUrl) && (
-            <div
-              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50"
-              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
-            >
-              <div className="flex flex-col items-center gap-3 text-neutral-500 dark:text-neutral-400">
-                <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
-                <p className="text-sm">Loading preview…</p>
-              </div>
-            </div>
-          )}
-          {previewType === "video" && videoProcessing && !error && (
-            <div
-              className="flex w-full max-w-full items-center justify-center rounded-xl ring-2 ring-neutral-200 shadow-xl dark:ring-neutral-700/50"
-              style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
-            >
-              <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-200 bg-neutral-100 px-12 py-14 dark:border-neutral-700/50 dark:bg-neutral-800/50">
-                <div className="relative">
-                  <Film className="h-16 w-16 text-bizzi-blue/60" />
-                  <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
-                </div>
-                <div className="space-y-2 text-center">
-                  <p className="text-base font-medium text-neutral-900 dark:text-white">Generating preview</p>
-                  <p className="max-w-xs text-sm text-neutral-500 dark:text-neutral-400">
-                    Your video is being prepared for streaming. Check back in a moment.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          {error && (
-            <div className="flex flex-col items-center gap-3 text-red-600 dark:text-red-400">
-              <FileIcon className="h-12 w-12" />
-              <p className="text-sm">{error}</p>
-              {canDownload && (
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
-                >
-                  Download
-                </button>
-              )}
-            </div>
-          )}
-          {((previewType === "image" && lowResPreviewUrl) ||
-            (previewType === "video" && fullUrl && !videoProcessing) ||
-            (previewType !== "image" &&
-              previewType !== "video" &&
-              fullUrl)) &&
-            !error && (
-              <>
-                {previewType === "image" && lowResPreviewUrl && (
-                  <div className="flex flex-col items-center gap-2">
-                    <div
-                      className="relative flex w-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-neutral-200 dark:bg-black"
-                      style={{ aspectRatio: "16 / 9", maxHeight: "70vh" }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from share thumbnail API */}
-                      <img
-                        src={lowResPreviewUrl}
-                        alt={file.name}
-                        className="max-h-full max-w-full rounded-lg object-contain"
-                      />
-                    </div>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Low-resolution preview · Use Download for full quality
-                    </p>
-                  </div>
-                )}
-                {previewType === "video" && fullUrl && (
-                  <VideoWithLUT
-                    src={fullUrl}
-                    streamUrl={videoStreamUrl}
-                    className="max-h-[70vh] max-w-full rounded-lg"
-                    showLUTOption={false}
-                  />
-                )}
-                {previewType === "audio" && fullUrl && (
-                  <div className="w-full max-w-md">
-                    <audio src={fullUrl} controls className="w-full" />
-                  </div>
-                )}
-                {previewType === "pdf" && fullUrl && (
-                  <iframe
-                    src={fullUrl}
-                    title={file.name}
-                    className="h-[70vh] w-full rounded-lg border-0"
-                  />
-                )}
-                {previewType === "other" && fullUrl && (
-                  <div className="flex flex-col items-center gap-4 text-neutral-500 dark:text-neutral-400">
-                    <FileIcon className="h-16 w-16" />
-                    <p className="text-sm">Preview not available for this file type</p>
-                    {canDownload && (
-                      <button
-                        type="button"
-                        onClick={handleDownload}
-                        disabled={downloading}
-                        className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
-                      >
-                        Download
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+  let mediaBody: ReactNode = null;
+  let mediaFooter: ReactNode = null;
+
+  if (loading && !(previewType === "image" && lowResPreviewUrl)) {
+    mediaBody = (
+      <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-4 py-10">
+        <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
+        <p className="text-sm text-neutral-600 dark:text-neutral-300">Loading preview…</p>
+      </div>
+    );
+  } else if (previewType === "video" && videoProcessing && !error) {
+    mediaBody = (
+      <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-6 py-12">
+        <div className="relative">
+          <Film className="h-16 w-16 text-bizzi-blue/60" />
+          <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
+        </div>
+        <div className="max-w-sm space-y-2 text-center">
+          <p className="text-base font-medium text-neutral-900 dark:text-white">Generating preview</p>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Your video is being prepared for streaming. Check back in a moment.
+          </p>
         </div>
       </div>
-    </div>
+    );
+  } else if (error) {
+    mediaBody = (
+      <div className="flex min-h-[12rem] flex-col items-center justify-center gap-3 text-red-600 dark:text-red-400">
+        <FileIcon className="h-12 w-12" />
+        <p className="text-sm">{error}</p>
+        {canDownload ? (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+          >
+            Download
+          </button>
+        ) : null}
+      </div>
+    );
+  } else if (
+    (previewType === "image" && lowResPreviewUrl) ||
+    (previewType === "video" && fullUrl && !videoProcessing) ||
+    (previewType !== "image" && previewType !== "video" && fullUrl)
+  ) {
+    if (previewType === "image" && lowResPreviewUrl) {
+      mediaBody = (
+        /* eslint-disable-next-line @next/next/no-img-element -- Blob URL from share thumbnail API */
+        <img
+          src={lowResPreviewUrl}
+          alt={file.name}
+          className="max-h-[min(85vh,920px)] max-w-full rounded-lg object-contain shadow-lg shadow-black/15"
+        />
+      );
+      mediaFooter = (
+        <p className="mt-3 text-center text-xs text-neutral-600 dark:text-neutral-400">
+          Low-resolution preview · Use Download for full quality
+        </p>
+      );
+    } else if (previewType === "video" && fullUrl) {
+      mediaBody = (
+        <VideoWithLUT
+          src={fullUrl}
+          streamUrl={videoStreamUrl}
+          className="max-h-[min(85vh,920px)] max-w-full"
+          showLUTOption={false}
+          frameless
+        />
+      );
+    } else if (previewType === "audio" && fullUrl) {
+      mediaBody = (
+        <div className="w-full max-w-md rounded-xl border border-neutral-200/60 bg-white/80 p-4 shadow-md backdrop-blur-sm dark:border-white/10 dark:bg-neutral-900/60">
+          <audio src={fullUrl} controls className="w-full" />
+        </div>
+      );
+    } else if (previewType === "pdf" && fullUrl) {
+      mediaBody = (
+        <iframe
+          src={fullUrl}
+          title={file.name}
+          className="h-[min(85vh,920px)] w-full max-w-4xl rounded-lg border-0 bg-white shadow-lg"
+        />
+      );
+    } else if (previewType === "other" && fullUrl) {
+      mediaBody = (
+        <div className="flex max-w-md flex-col items-center gap-4 px-4 text-center text-neutral-600 dark:text-neutral-300">
+          <FileIcon className="h-16 w-16" />
+          <p className="text-sm">Preview not available for this file type</p>
+          {canDownload ? (
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+            >
+              Download
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <ImmersiveFilePreviewShell
+      variant="app"
+      onClose={onClose}
+      title={file.name}
+      headerActions={headerActions}
+      media={mediaBody}
+      mediaFooter={mediaFooter}
+    />
   );
 }
