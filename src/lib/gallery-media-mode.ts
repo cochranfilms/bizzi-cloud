@@ -11,9 +11,10 @@ export function normalizeGalleryMediaMode(g: {
   media_mode?: string | null;
   source_format?: string | null;
 }): MediaMode {
+  // source_format first: legacy docs may have media_mode "final" while still on RAW workflow
+  if (g.source_format === "raw") return "raw";
   if (g.media_mode === "raw") return "raw";
   if (g.media_mode === "final") return "final";
-  if (g.source_format === "raw") return "raw";
   return "final";
 }
 
@@ -22,9 +23,9 @@ export function resolveMediaModeFromCreateBody(body: {
   media_mode?: string | null;
   source_format?: string | null;
 }): MediaMode {
+  if (body.source_format === "raw") return "raw";
   const mm = typeof body.media_mode === "string" ? body.media_mode.toLowerCase() : "";
   if (mm === "raw" || mm === "final") return mm as MediaMode;
-  if (body.source_format === "raw") return "raw";
   return "final";
 }
 

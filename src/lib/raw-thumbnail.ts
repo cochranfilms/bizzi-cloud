@@ -78,21 +78,87 @@ async function trySharpDecodeRawBuffer(rawBuffer: Buffer): Promise<Buffer | null
   }
 }
 
+/**
+ * Bake EXIF orientation into pixels and strip tags. Fixes sideways ARW/JPEG previews
+ * when embedded preview has correct EXIF; also normalizes output for downstream sharp.
+ */
+async function bakeEmbeddedJpegOrientation(buffer: Buffer): Promise<Buffer | null> {
+  try {
+    const meta = await sharp(buffer).metadata();
+    if (!meta.width || !meta.height) return null;
+    return await sharp(buffer).rotate().jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * If embedded JPEG had no usable EXIF orientation but the container RAW does (Sony ARW),
+ * rotate the baked preview using the RAW file's EXIF Orientation. Skips when embedded
+ * already had orientation EXIF (bakeEmbeddedJpegOrientation handled it).
+ */
+async function alignEmbeddedPreviewToRawOrientation(
+  previewBuffer: Buffer,
+  rawBuffer: Buffer,
+  embeddedHadExifOrientation: boolean
+): Promise<Buffer> {
+  if (embeddedHadExifOrientation) return previewBuffer;
+  let rawOrient: number | undefined;
+  try {
+    rawOrient = (await sharp(rawBuffer).metadata()).orientation;
+  } catch {
+    return previewBuffer;
+  }
+  if (!rawOrient || rawOrient <= 1) return previewBuffer;
+  const angle = exifOrientationToRotationAngle(rawOrient);
+  if (angle === undefined) return previewBuffer;
+  try {
+    return await sharp(previewBuffer).rotate(angle).jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    return previewBuffer;
+  }
+}
+
+/** Degrees clockwise to normalize EXIF orientation to upright (when metadata says how to rotate). */
+function exifOrientationToRotationAngle(orientation: number): number | undefined {
+  switch (orientation) {
+    case 2:
+    case 4:
+    case 5:
+    case 7:
+      return undefined;
+    case 3:
+      return 180;
+    case 6:
+      return 90;
+    case 8:
+      return 270;
+    default:
+      return undefined;
+  }
+}
+
 export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Promise<Buffer | null> {
-  // 1. Pure JS fallback - works on Vercel, no Perl needed
+  // 1. Full-file decode when libvips/libraw supports it — best orientation and color
+  const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
+  if (sharpJpeg) return sharpJpeg;
+
+  // 2. Embedded JPEG (camera preview) — bake orientation; align from RAW EXIF if needed
   const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
   if (embedded) {
     try {
       const meta = await sharp(embedded).metadata();
-      if (meta.width && meta.height) return embedded;
+      if (meta.width && meta.height) {
+        const embOrient = meta.orientation;
+        const embeddedHadExifOrientation = !!(embOrient && embOrient > 1);
+        const baked = await bakeEmbeddedJpegOrientation(embedded);
+        if (!baked) return embedded;
+        return await alignEmbeddedPreviewToRawOrientation(baked, rawBuffer, embeddedHadExifOrientation);
+      }
     } catch {
-      // Truncated JPEG (e.g. wrong EOI) or noise matched as SOI — try other paths
+      // Truncated JPEG or noise matched as SOI — try exiftool
     }
   }
-
-  // 2. libvips / sharp (may decode ARW, DNG, etc. depending on build)
-  const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
-  if (sharpJpeg) return sharpJpeg;
 
   // 3. exiftool (requires Perl - fails on Vercel, works locally)
   try {

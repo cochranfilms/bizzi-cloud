@@ -33,6 +33,7 @@ import {
   GALLERY_LUT_ORIGINAL_ID,
   resolveGalleryClientLutSource,
 } from "@/lib/gallery-client-lut";
+import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
@@ -79,6 +80,8 @@ interface GalleryData {
   lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   creative_lut_config?: { enabled?: boolean; selected_lut_id?: string | null } | null;
   creative_lut_library?: Array<{ id: string; name?: string; signed_url?: string | null }>;
+  /** Legacy; normalized into media_mode on the server — kept for client-side mode checks */
+  source_format?: "raw" | "jpg" | null;
   cover_asset_id?: string | null;
   cover_position?: string | null;
   cover_focal_x?: number | null;
@@ -451,16 +454,20 @@ function PreviewModal({
             Creative {lutPreviewEnabled ? "On" : "Off"}
           </button>
         )}
-        {lut?.enabled && modalLutOptions.length > 1 && lutPreviewEnabled && (
+        {lut?.enabled && modalLutOptions.length > 1 && (
           <select
             value={selectedLutId ?? ""}
+            disabled={!lutPreviewEnabled}
             onChange={(e) => {
               e.stopPropagation();
               const id = e.target.value;
               if (id) onLutSelect?.(id);
             }}
             onClick={(e) => e.stopPropagation()}
-            className="rounded-lg border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-white backdrop-blur-sm"
+            aria-hidden={!lutPreviewEnabled}
+            className={`rounded-lg border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-white backdrop-blur-sm ${
+              !lutPreviewEnabled ? "pointer-events-none invisible" : ""
+            }`}
           >
             {modalLutOptions.map((o) => (
               <option key={o.id} value={o.id}>
@@ -493,6 +500,7 @@ function PreviewModal({
               {videoStreamUrl && !videoError && (
                 lut?.enabled ? (
                   <VideoWithLUT
+                    key={`${asset.id}-${previewLutSource ?? "orig"}`}
                     src={videoStreamUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg bg-black"
@@ -524,6 +532,7 @@ function PreviewModal({
               isImage(asset.name) &&
               lutPreviewEnabled ? (
                 <ImageWithLUT
+                  key={`${asset.id}-${previewLutSource}`}
                   imageUrl={previewImageUrl}
                   lutUrl={previewLutSource}
                   lutEnabled={true}
@@ -806,6 +815,7 @@ function GalleryAssetCard({
         {shouldAutoplayVideo && videoStreamUrl ? (
           lut?.enabled && previewLutSource && lutPreviewEnabled ? (
             <VideoWithLUT
+              key={`${asset.id}-${previewLutSource ?? "orig"}`}
               src={videoStreamUrl}
               streamUrl={videoStreamUrl}
               showLUTOption={false}
@@ -840,7 +850,8 @@ function GalleryAssetCard({
         ) : thumbUrl ? (
           lut?.enabled && previewLutSource && lutPreviewEnabled && !rawThumbUnavailable ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
-              <ImageWithLUT
+                <ImageWithLUT
+                key={`${asset.id}-${previewLutSource ?? "orig"}`}
                 imageUrl={thumbUrl}
                 lutUrl={previewLutSource}
                 lutEnabled={true}
@@ -1545,7 +1556,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const { gallery, assets, collections } = data;
 
-  const mediaMode = gallery.media_mode ?? "final";
+  const mediaMode = normalizeGalleryMediaMode({
+    media_mode: gallery.media_mode ?? null,
+    source_format: gallery.source_format ?? null,
+  });
   const lutWorkflowActive = mediaMode === "raw";
 
   const galleryLutOptions = buildGalleryLUTOptions(
@@ -2110,7 +2124,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         )}
 
         {lutWorkflowActive && gallery.lut?.enabled && (
-          <div className="mb-4 flex flex-wrap items-center justify-center gap-3">
+          <div className="mb-4 flex min-h-[2.75rem] flex-wrap items-center justify-center gap-3">
             <button
               type="button"
               role="switch"
@@ -2132,17 +2146,18 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               />
               Creative Preview {lutPreviewEnabled ? "On" : "Off"}
             </button>
-            {galleryLutOptions.length > 1 && lutPreviewEnabled && (
+            {galleryLutOptions.length > 1 && (
               <select
                 value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
+                disabled={!lutPreviewEnabled}
                 onChange={(e) => {
                   setSelectedLutId(e.target.value);
                 }}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                className={`min-w-[10rem] rounded-lg border px-3 py-1.5 text-xs font-medium ${
                   isDarkBg
                     ? "border-white/20 bg-white/10 text-white"
                     : "border-neutral-300 bg-white text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
-                }`}
+                } ${!lutPreviewEnabled ? "pointer-events-none invisible" : ""}`}
               >
                 {galleryLutOptions.map((o) => (
                   <option key={o.id} value={o.id}>

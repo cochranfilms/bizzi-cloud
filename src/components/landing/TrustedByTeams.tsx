@@ -8,7 +8,6 @@ const TOP_ROW = [
   { src: "/Video.mp4", title: "Video" },
 ] as const;
 
-/** Same clips as the former marquee; one copy only (scroll does not loop) */
 const MARQUEE_VIDEOS = [
   "/Darren.mp4",
   "/Cody.mp4",
@@ -40,7 +39,7 @@ export default function TrustedByTeams() {
         </h2>
       </div>
 
-      <div className="relative w-full">
+      <div className="relative w-full bg-black">
         <div className="grid w-full grid-cols-2 gap-0">
           {TOP_ROW.map(({ src, title }) => (
             <div
@@ -57,26 +56,25 @@ export default function TrustedByTeams() {
           ))}
         </div>
 
-        <div
-          className="relative overflow-hidden bg-white/60"
-          aria-label="Customer stories"
-        >
+        <div className="relative overflow-hidden" aria-label="Customer stories">
           <div
             className={
               reduceMotion
-                ? "flex w-full flex-wrap justify-center gap-2 py-3"
-                : "flex w-max animate-teams-marquee-once py-3"
+                ? "flex w-full flex-wrap justify-center gap-2"
+                : "flex w-max animate-teams-marquee"
             }
           >
-            {MARQUEE_VIDEOS.map((src) => (
-              <div key={src} className={marqueeCardClassName()}>
-                <LoopingVideoPreview
-                  src={src}
-                  mode="playOnce"
-                  className="absolute inset-0 h-full w-full object-contain"
-                />
-              </div>
-            ))}
+            {(reduceMotion ? MARQUEE_VIDEOS : [...MARQUEE_VIDEOS, ...MARQUEE_VIDEOS]).map(
+              (src, i) => (
+                <div key={`${src}-${i}`} className={marqueeCardClassName()}>
+                  <LoopingVideoPreview
+                    src={src}
+                    mode="fullLoop"
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                </div>
+              ),
+            )}
           </div>
         </div>
       </div>

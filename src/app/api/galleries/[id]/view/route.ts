@@ -131,6 +131,7 @@ export async function GET(
       id: gallerySnap.id,
       gallery_type: galleryType,
       media_mode: mediaMode,
+      source_format: (g.source_format as string | null | undefined) ?? null,
       title: g.title,
       slug: g.slug,
       description: g.description ?? null,
