@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Upload } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
-import { GALLERY_UPLOAD_EXT_SET } from "@/lib/gallery-file-types";
+import {
+  GALLERY_UPLOAD_EXT_SET,
+  isGalleryImage,
+  isGalleryVideo,
+} from "@/lib/gallery-file-types";
 import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
 
 interface GalleryUploadZoneProps {
@@ -14,6 +18,8 @@ interface GalleryUploadZoneProps {
   disabled?: boolean;
   /** From gallery profile — drives upload hints */
   mediaMode?: "final" | "raw";
+  /** Restrict drop/browse to images vs videos (matches gallery_type) */
+  galleryType?: "photo" | "video";
 }
 
 export default function GalleryUploadZone({
@@ -21,6 +27,7 @@ export default function GalleryUploadZone({
   onUploadComplete,
   disabled,
   mediaMode = "final",
+  galleryType = "photo",
 }: GalleryUploadZoneProps) {
   const { getOrCreateGalleryDrive } = useBackup();
   const openPanel = useUppyUpload()?.openPanel;
@@ -75,7 +82,9 @@ export default function GalleryUploadZone({
     if (!files?.length) return;
     const accepted = Array.from(files).filter((f) => {
       const ext = f.name.toLowerCase().split(".").pop();
-      return ext ? GALLERY_UPLOAD_EXT_SET.has(ext) : false;
+      if (!ext || !GALLERY_UPLOAD_EXT_SET.has(ext)) return false;
+      if (galleryType === "photo") return isGalleryImage(f.name) && !isGalleryVideo(f.name);
+      return isGalleryVideo(f.name);
     });
     if (accepted.length === 0) return;
     maybeWarnAboutFiles(accepted);
@@ -105,6 +114,15 @@ export default function GalleryUploadZone({
     mediaMode === "raw"
       ? "Original camera files and source media; previews may use LUT on supported RAW when available."
       : "Edited, delivery ready photos and videos — best for client viewing.";
+
+  const primaryLine =
+    galleryType === "video"
+      ? "Drop videos here, or click to browse"
+      : "Drop photos here, or click to browse";
+  const formatsLine =
+    galleryType === "video"
+      ? "MP4, MOV, WebM, M4V, AVI, MKV, and other supported video formats"
+      : "JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.)";
 
   return (
     <div className="space-y-4">
@@ -138,10 +156,10 @@ export default function GalleryUploadZone({
         <div className="p-8 text-center">
           <Upload className="mx-auto mb-3 h-12 w-12 text-neutral-400" />
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            Drop photos and videos here, or click to browse
+            {primaryLine}
           </p>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.), MP4, MOV, WebM
+            {formatsLine}
           </p>
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-500">{blurb}</p>
         </div>

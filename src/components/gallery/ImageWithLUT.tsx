@@ -172,6 +172,7 @@ export default function ImageWithLUT({
           ref={imgRef}
           src={imageUrl}
           alt={alt}
+          crossOrigin={lutEnabled && lutUrl ? "anonymous" : undefined}
           className={imgClass}
           style={imageStyle}
           onLoad={onImageLoad}
@@ -187,6 +188,7 @@ export default function ImageWithLUT({
         ref={imgRef}
         src={imageUrl}
         alt={alt}
+        crossOrigin={lutEnabled && lutUrl ? "anonymous" : undefined}
         className={imgClass}
         onLoad={onImageLoad}
         style={{ ...imageStyle, visibility: shouldUseLUT ? "hidden" : "visible" }}

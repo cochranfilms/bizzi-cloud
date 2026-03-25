@@ -35,7 +35,12 @@ export function parse3dlFile(text: string): ParseCubeResult {
     if (/^domain_max\b/i.test(trimmed)) continue;
     if (/^lut_3d_input_range\b/i.test(trimmed)) continue;
     if (/^lut_3d_output_range\b/i.test(trimmed)) continue;
-    if (/^lut_3d_size\b/i.test(trimmed)) continue;
+    const lut3dSize = trimmed.match(/^lut_3d_size\s+(\d+)/i);
+    if (lut3dSize) {
+      const n = parseInt(lut3dSize[1], 10);
+      if (n >= LUT_GRID_MIN && n <= LUT_GRID_MAX) meshSize = n;
+      continue;
+    }
 
     const meshMatch = trimmed.match(/^Mesh\s+(\d+)\s+(\d+)\s+(\d+)\s*$/i);
     if (meshMatch) {
@@ -46,6 +51,15 @@ export function parse3dlFile(text: string): ParseCubeResult {
         meshSize = a;
       }
       continue;
+    }
+
+    const loneGrid = trimmed.match(/^(\d+)\s*$/);
+    if (loneGrid && meshSize === 0) {
+      const n = parseInt(loneGrid[1], 10);
+      if (n >= LUT_GRID_MIN && n <= LUT_GRID_MAX) {
+        meshSize = n;
+        continue;
+      }
     }
 
     const parts = trimmed.split(/\s+/).filter(Boolean);

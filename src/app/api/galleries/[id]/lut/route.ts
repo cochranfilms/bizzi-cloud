@@ -181,7 +181,10 @@ export async function POST(
     }
     const [buf] = await fileRef.download();
     const lutText = buf.toString("utf8");
-    const lutValidation = validateLutFileForUpload(lutText);
+    const lutValidation = validateLutFileForUpload(
+      lutText,
+      storagePath.endsWith(".3dl") ? "3dl" : "cube"
+    );
     if (!lutValidation.valid) {
       return NextResponse.json({ error: lutValidation.error }, { status: 400 });
     }
@@ -278,7 +281,7 @@ export async function POST(
   }
 
   const text = await file.text();
-  const validation = validateLutFileForUpload(text);
+  const validation = validateLutFileForUpload(text, ext === "3dl" ? "3dl" : "cube");
   if (!validation.valid) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }

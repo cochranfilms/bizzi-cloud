@@ -12,8 +12,16 @@ export { parseCubeFile, parse3dlFile };
 
 /**
  * Client + server: load LUT text into normalized Float32 RGBA lattice + cube size.
+ * @param formatHint Use the file extension when present (`.3dl` vs `.cube`) so minimal
+ *        `.3dl` exports without `3DMESH` / `Mesh` headers still parse correctly.
  */
-export function parseLutFileText(text: string): ParseLutResult {
+export function parseLutFileText(text: string, formatHint?: "cube" | "3dl"): ParseLutResult {
+  if (formatHint === "3dl") {
+    return parse3dlFile(text);
+  }
+  if (formatHint === "cube") {
+    return parseCubeFile(text);
+  }
   /** Prefer .3dl parser when markers exist — some exporters include LUT_3D_SIZE-like noise; order matters. */
   const looks3dl =
     /\b3DMESH\b/i.test(text) || /\bMesh\s+\d+\s+\d+\s+\d+\b/i.test(text);
@@ -29,9 +37,12 @@ export function parseLutFileText(text: string): ParseLutResult {
 /**
  * Server-side validation before persisting an uploaded LUT.
  */
-export function validateLutFileForUpload(text: string): { valid: true } | { valid: false; error: string } {
+export function validateLutFileForUpload(
+  text: string,
+  formatHint?: "cube" | "3dl"
+): { valid: true } | { valid: false; error: string } {
   try {
-    const { data, size } = parseLutFileText(text);
+    const { data, size } = parseLutFileText(text, formatHint);
     if (size < LUT_GRID_MIN || size > LUT_GRID_MAX) {
       return {
         valid: false,

@@ -1,9 +1,14 @@
 /**
  * POST /api/galleries/[id]/assets – add assets to gallery
- * Body: { backup_file_ids: string[] } or { asset_ids: string[] } for existing backup_files
+ * Body: { backup_file_ids: string[], asset_origin?: 'linked' | 'gallery_storage' }
+ *
+ * - asset_origin linked: "From files" — cannot reference files in Gallery Media drive; deleting the asset later does not delete B2/backup_files.
+ * - asset_origin gallery_storage: direct gallery upload (or omit + backup_file.gallery_id matches) — delete removes storage when last reference.
  */
+import type { DocumentData } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import type { GalleryAssetOrigin } from "@/types/gallery";
 import { NextResponse } from "next/server";
 
 function getMediaType(name: string): "image" | "video" {
@@ -33,6 +38,8 @@ export async function POST(
 
   const body = await request.json().catch(() => ({}));
   const backupFileIds = body.backup_file_ids ?? body.asset_ids ?? [];
+  const assetOriginBody = body.asset_origin as string | undefined;
+
   if (!Array.isArray(backupFileIds) || backupFileIds.length === 0) {
     return NextResponse.json(
       { error: "backup_file_ids array is required" },
@@ -47,7 +54,31 @@ export async function POST(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const galleryType = (gallerySnap.data()!.gallery_type === "video" ? "video" : "photo") as "photo" | "video";
+  const galleryType = (gallerySnap.data()!.gallery_type === "video" ? "video" : "photo") as
+    | "photo"
+    | "video";
+
+  type FileRow = { id: string; data: DocumentData };
+  const fileRows: FileRow[] = [];
+  for (const backupFileId of backupFileIds) {
+    if (typeof backupFileId !== "string") continue;
+    const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
+    if (!fileSnap.exists) continue;
+    fileRows.push({ id: backupFileId, data: fileSnap.data()! });
+  }
+
+  const driveIdSet = new Set<string>();
+  for (const { data: fileData } of fileRows) {
+    const did = fileData.linked_drive_id as string | undefined;
+    if (did) driveIdSet.add(did);
+  }
+  const driveNameById = new Map<string, string>();
+  await Promise.all(
+    [...driveIdSet].map(async (did) => {
+      const d = await db.collection("linked_drives").doc(did).get();
+      driveNameById.set(did, (d.data()?.name as string) ?? "");
+    })
+  );
 
   const existingSnap = await db
     .collection("gallery_assets")
@@ -62,11 +93,7 @@ export async function POST(
   let nextOrder = maxOrder + 1;
   const added: { id: string; backup_file_id: string; name: string }[] = [];
 
-  for (const backupFileId of backupFileIds) {
-    if (typeof backupFileId !== "string") continue;
-    const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
-    if (!fileSnap.exists) continue;
-    const fileData = fileSnap.data()!;
+  for (const { id: backupFileId, data: fileData } of fileRows) {
     if (fileData.userId !== uid || fileData.deleted_at) continue;
 
     const path = (fileData.relative_path ?? "") as string;
@@ -75,9 +102,34 @@ export async function POST(
     const sizeBytes = (fileData.size_bytes ?? 0) as number;
     const mediaType = getMediaType(name);
 
-    // Enforce gallery type: photo galleries = images only, video galleries = videos only
     if (galleryType === "photo" && mediaType === "video") continue;
     if (galleryType === "video" && mediaType === "image") continue;
+
+    const driveId = fileData.linked_drive_id as string | undefined;
+    const driveName = driveId ? driveNameById.get(driveId) ?? "" : "";
+
+    const resolveOrigin = (): GalleryAssetOrigin => {
+      if (assetOriginBody === "linked") return "linked";
+      if (assetOriginBody === "gallery_storage") return "gallery_storage";
+      return (fileData.gallery_id as string | null | undefined) === galleryId
+        ? "gallery_storage"
+        : "linked";
+    };
+
+    const origin = resolveOrigin();
+
+    if (origin === "linked" && driveName === "Gallery Media") {
+      continue;
+    }
+
+    if (assetOriginBody === "gallery_storage") {
+      const taggedForGallery =
+        (fileData.gallery_id as string | null | undefined) === galleryId;
+      const inGalleryMediaDrive = driveName === "Gallery Media";
+      if (!taggedForGallery && !inGalleryMediaDrive) {
+        continue;
+      }
+    }
 
     const assetRef = db.collection("gallery_assets").doc();
     const now = new Date();
@@ -88,6 +140,7 @@ export async function POST(
       name,
       size_bytes: sizeBytes,
       media_type: mediaType,
+      asset_origin: origin,
       sort_order: nextOrder++,
       collection_id: null,
       is_visible: true,

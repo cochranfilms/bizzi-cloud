@@ -18,6 +18,7 @@ import {
   Heart,
   ImagePlus,
   Star,
+  Trash2,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -93,7 +94,7 @@ function AddFileButton({
   );
 }
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { isGalleryFile, isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
+import { isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
@@ -142,7 +143,35 @@ export default function GalleryDetailPage() {
   const [copied, setCopied] = useState(false);
   const [settingCover, setSettingCover] = useState<string | null>(null);
   const [settingFeatured, setSettingFeatured] = useState<string | null>(null);
+  const [removingAssetId, setRemovingAssetId] = useState<string | null>(null);
   const isVideoGallery = gallery?.gallery_type === "video";
+
+  const handleRemoveAsset = async (assetId: string, fileName: string) => {
+    if (!user || !id) return;
+    const confirmed = window.confirm(
+      `Remove "${fileName}" from this gallery? Files you added via "From files" stay in your library (only the gallery link is removed). Files you uploaded directly to this gallery are deleted from storage as well. This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setRemovingAssetId(assetId);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${id}/assets/${assetId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Failed to remove asset");
+      }
+      await fetchAssets();
+      await fetchGallery();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to remove asset");
+    } finally {
+      setRemovingAssetId(null);
+    }
+  };
 
   const handleSetFeaturedVideo = async (assetId: string) => {
     if (!user || !id || gallery?.version == null || !isVideoGallery) return;
@@ -250,7 +279,10 @@ export default function GalleryDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ backup_file_ids: Array.from(selectedIds) }),
+        body: JSON.stringify({
+          backup_file_ids: Array.from(selectedIds),
+          asset_origin: "linked",
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -281,6 +313,18 @@ export default function GalleryDetailPage() {
       ? `${typeof window !== "undefined" ? window.location.origin : ""}/${encodeURIComponent(gallery.owner_handle)}/${encodeURIComponent(gallery.slug)}`
       : null;
   const galleryUrl = brandedUrl ?? (typeof window !== "undefined" ? `${window.location.origin}/g/${id}` : `/g/${id}`);
+
+  const filesEligibleForFromFiles = recentFiles.filter((f) => {
+    if (f.driveName === "Gallery Media") return false;
+    if (isVideoGallery) {
+      if (!isGalleryVideo(f.name)) return false;
+      if (f.contentType?.startsWith("image/")) return false;
+      return true;
+    }
+    if (!isGalleryImage(f.name)) return false;
+    if (f.contentType?.startsWith("video/")) return false;
+    return true;
+  });
 
   const copyLink = () => {
     navigator.clipboard.writeText(galleryUrl);
@@ -389,6 +433,7 @@ export default function GalleryDetailPage() {
                 galleryId={id}
                 galleryTitle={gallery?.title}
                 mediaMode={gallery?.media_mode ?? "final"}
+                galleryType={isVideoGallery ? "video" : "photo"}
                 onUploadComplete={() => {
                   fetchAssets();
                   fetchGallery();
@@ -417,6 +462,7 @@ export default function GalleryDetailPage() {
                   const isFeatured = gallery.featured_video_asset_id === a.id;
                   const settingThis = settingCover === a.id;
                   const settingFeaturedThis = settingFeatured === a.id;
+                  const removingThis = removingAssetId === a.id;
                   return (
                     <div
                       key={a.id}
@@ -439,12 +485,12 @@ export default function GalleryDetailPage() {
                           Featured
                         </div>
                       )}
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-2 rounded-lg bg-black/40 p-2 opacity-0 transition-opacity group-hover:opacity-100">
                         {isImage && (
                           <button
                             type="button"
                             onClick={() => handleSetCover(a.id)}
-                            disabled={settingThis || isCover}
+                            disabled={settingThis || isCover || removingThis}
                             className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
                           >
                             {settingThis ? (
@@ -459,7 +505,7 @@ export default function GalleryDetailPage() {
                           <button
                             type="button"
                             onClick={() => handleSetFeaturedVideo(a.id)}
-                            disabled={settingFeaturedThis || isFeatured}
+                            disabled={settingFeaturedThis || isFeatured || removingThis}
                             className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
                           >
                             {settingFeaturedThis ? (
@@ -474,7 +520,7 @@ export default function GalleryDetailPage() {
                           <button
                             type="button"
                             onClick={() => handleSetCover(a.id)}
-                            disabled={settingThis || isCover}
+                            disabled={settingThis || isCover || removingThis}
                             className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-medium text-neutral-800 shadow hover:bg-white disabled:opacity-50"
                           >
                             {settingThis ? (
@@ -485,6 +531,19 @@ export default function GalleryDetailPage() {
                             {settingThis ? "Setting…" : "Set as cover"}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAsset(a.id, a.name)}
+                          disabled={removingThis}
+                          className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {removingThis ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          {removingThis ? "Removing…" : "Remove"}
+                        </button>
                       </div>
                     </div>
                   );
@@ -518,17 +577,11 @@ export default function GalleryDetailPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
                 {isVideoGallery
-                  ? "Select from your recent video files. Supported: MP4, MOV, WebM, M4V, AVI, MKV."
-                  : "Select from your recent image files. Supported: JPEG, PNG, GIF, RAW (ARW, CR2, NEF, DNG, etc.)."}
+                  ? "Choose from your recent video files (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
+                  : "Choose from your recent photos (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."}
               </p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                {recentFiles
-                  .filter((f) =>
-                    isGalleryFile(f.name) &&
-                    (isVideoGallery ? isGalleryVideo(f.name) : isGalleryImage(f.name))
-                  )
-                  .slice(0, 50)
-                  .map((f) => (
+                {filesEligibleForFromFiles.slice(0, 50).map((f) => (
                     <AddFileButton
                       key={f.id}
                       file={f}
@@ -537,10 +590,7 @@ export default function GalleryDetailPage() {
                     />
                   ))}
               </div>
-              {recentFiles.filter((f) =>
-                isGalleryFile(f.name) &&
-                (isVideoGallery ? isGalleryVideo(f.name) : isGalleryImage(f.name))
-              ).length === 0 && (
+              {filesEligibleForFromFiles.length === 0 && (
                 <p className="py-8 text-center text-sm text-neutral-500">
                   {isVideoGallery
                     ? "No video files in recent uploads. Upload some videos first."

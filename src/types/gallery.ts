@@ -212,11 +212,16 @@ export interface Gallery {
   updated_at: string;
 }
 
+/** How the row was created — affects delete behavior (linked = remove from gallery only). */
+export type GalleryAssetOrigin = "linked" | "gallery_storage";
+
 /** Gallery asset – links backup_file to gallery (Firestore: gallery_assets) */
 export interface GalleryAsset {
   id: string;
   gallery_id: string;
   backup_file_id: string;        // Reference to backup_files
+  /** linked = added via "From files" (delete only removes gallery row); gallery_storage = uploaded into gallery / Gallery Media */
+  asset_origin?: GalleryAssetOrigin;
   object_key: string;
   name: string;
   size_bytes: number;

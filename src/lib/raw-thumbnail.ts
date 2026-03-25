@@ -120,8 +120,8 @@ async function alignEmbeddedPreviewToRawOrientation(
 }
 
 /**
- * Clockwise degrees for sharp().rotate(angle) to normalize EXIF orientation.
- * Swapped 6 vs 8 vs earlier build — Sony ARW embedded previews commonly need 270° not 90° for tag 6.
+ * Clockwise degrees for sharp().rotate(angle) to match EXIF orientation tag semantics
+ * (same as sharp/libvips auto-rotate: 6 = 90° CW, 8 = 270° CW, 3 = 180°).
  */
 function exifOrientationToRotationAngle(orientation: number): number | undefined {
   switch (orientation) {
@@ -133,9 +133,9 @@ function exifOrientationToRotationAngle(orientation: number): number | undefined
     case 3:
       return 180;
     case 6:
-      return 270;
-    case 8:
       return 90;
+    case 8:
+      return 270;
     default:
       return undefined;
   }

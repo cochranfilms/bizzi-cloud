@@ -140,7 +140,10 @@ export async function POST(
       return NextResponse.json({ error: "Upload not found. Upload the file to the signed URL first." }, { status: 400 });
     }
     const [buf] = await fileRef.download();
-    const lutValidation = validateLutFileForUpload(buf.toString("utf8"));
+    const lutValidation = validateLutFileForUpload(
+      buf.toString("utf8"),
+      storagePath.endsWith(".3dl") ? "3dl" : "cube"
+    );
     if (!lutValidation.valid) {
       return NextResponse.json({ error: lutValidation.error }, { status: 400 });
     }
@@ -229,7 +232,7 @@ export async function POST(
   }
 
   const text = await file.text();
-  const validation = validateLutFileForUpload(text);
+  const validation = validateLutFileForUpload(text, ext === "3dl" ? "3dl" : "cube");
   if (!validation.valid) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }

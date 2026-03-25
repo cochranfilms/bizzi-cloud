@@ -41,7 +41,9 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
   const res = await fetch(resolved);
   if (!res.ok) throw new Error(`Failed to load LUT: ${res.status}`);
   const text = await res.text();
-  const { data, size } = parseLutFileText(text);
+  const pathOnly = resolved.split(/[?#]/)[0]?.toLowerCase() ?? "";
+  const formatHint = pathOnly.endsWith(".3dl") ? ("3dl" as const) : pathOnly.endsWith(".cube") ? ("cube" as const) : undefined;
+  const { data, size } = parseLutFileText(text, formatHint);
 
   evictLRU();
   const entry = { data, size };

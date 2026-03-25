@@ -1,8 +1,11 @@
 /**
  * PATCH /api/galleries/[id]/assets/[assetId]
  * Update gallery asset (photographer only) – e.g. proofing_status
+ *
+ * DELETE — remove asset from gallery; deletes backup_files row and B2 objects when no other gallery asset references that file.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { deleteGalleryAssetAndStorage } from "@/lib/delete-gallery-asset";
 import { NextResponse } from "next/server";
 
 const VALID_PROOFING_STATUSES = ["pending", "selected", "editing", "delivered"] as const;
@@ -62,4 +65,44 @@ export async function PATCH(
 
   await assetRef.update(updates);
   return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string; assetId: string }> }
+) {
+  const authHeader = request.headers.get("Authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  if (!token) {
+    return NextResponse.json({ error: "Missing Authorization" }, { status: 401 });
+  }
+
+  let uid: string;
+  try {
+    const decoded = await verifyIdToken(token);
+    uid = decoded.uid;
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  const { id: galleryId, assetId } = await params;
+  if (!galleryId || !assetId) {
+    return NextResponse.json({ error: "Gallery ID and asset ID required" }, { status: 400 });
+  }
+
+  const result = await deleteGalleryAssetAndStorage({
+    galleryId,
+    assetId,
+    ownerUid: uid,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    backup_file_deleted: result.backup_file_deleted,
+    b2_deleted: result.b2_deleted,
+  });
 }

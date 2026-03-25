@@ -1751,7 +1751,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ backup_file_ids: [fileRef.id] }),
+                body: JSON.stringify({
+                  backup_file_ids: [fileRef.id],
+                  asset_origin: "gallery_storage",
+                }),
               })
             )
             .catch((err) => console.error("Add gallery asset failed:", err));

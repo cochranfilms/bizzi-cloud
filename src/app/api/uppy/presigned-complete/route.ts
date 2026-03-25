@@ -160,7 +160,10 @@ export async function POST(request: Request) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ backup_file_ids: [fileRef.id] }),
+        body: JSON.stringify({
+          backup_file_ids: [fileRef.id],
+          asset_origin: "gallery_storage",
+        }),
       });
       if (!assetsRes.ok) {
         console.error("[presigned-complete] Failed to add to gallery:", await assetsRes.text());
