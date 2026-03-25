@@ -21,6 +21,10 @@ import {
   Trash2,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
+import {
+  computeGalleryAssetGridLutPreview,
+  type ViewGalleryLike,
+} from "@/lib/gallery-dashboard-lut-preview";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
@@ -136,6 +140,8 @@ export default function GalleryDetailPage() {
 
   const [gallery, setGallery] = useState<GalleryData | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
+  /** From GET /view — includes merged lut + proxied creative_lut_library (for dashboard LUT tiles). */
+  const [viewGalleryLut, setViewGalleryLut] = useState<ViewGalleryLike | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -251,8 +257,10 @@ export default function GalleryDetailPage() {
       if (!res.ok) return;
       const data = await res.json();
       setAssets(data.assets ?? []);
+      setViewGalleryLut(data.gallery ?? null);
     } catch {
       setAssets([]);
+      setViewGalleryLut(null);
     }
   }, [user, id]);
 
@@ -331,6 +339,8 @@ export default function GalleryDetailPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const { previewLutSource, lutWorkflowActive } = computeGalleryAssetGridLutPreview(viewGalleryLut);
 
   return (
     <>
@@ -474,6 +484,8 @@ export default function GalleryDetailPage() {
                         name={a.name}
                         mediaType={a.media_type}
                         className="w-full rounded-lg"
+                        lutWorkflowActive={lutWorkflowActive}
+                        previewLutSource={previewLutSource}
                       />
                       {isCover && (
                         <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">

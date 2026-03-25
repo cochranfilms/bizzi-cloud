@@ -1,9 +1,11 @@
 "use client";
 
 import { Film, Image as ImageIcon } from "lucide-react";
+import ImageWithLUT from "@/components/gallery/ImageWithLUT";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
+import { isRawFile } from "@/lib/gallery-file-types";
 
 interface GalleryAssetThumbnailProps {
   galleryId: string;
@@ -13,6 +15,13 @@ interface GalleryAssetThumbnailProps {
   className?: string;
   /** Use for lazy loading - skip fetch when false. Default: useInView (load when in viewport). */
   enabled?: boolean;
+  /**
+   * When set with previewLutSource, RAW photo tiles use WebGL LUT (dashboard asset grid).
+   * Public gallery uses GalleryView; owner grid used plain &lt;img&gt; until this existed.
+   */
+  lutWorkflowActive?: boolean;
+  /** Resolved LUT URL or builtin id — from computeGalleryAssetGridLutPreview + view API library */
+  previewLutSource?: string | null;
 }
 
 export default function GalleryAssetThumbnail({
@@ -22,15 +31,23 @@ export default function GalleryAssetThumbnail({
   mediaType,
   className = "",
   enabled,
+  lutWorkflowActive = false,
+  previewLutSource = null,
 }: GalleryAssetThumbnailProps) {
   const [containerRef, isInView] = useInView<HTMLDivElement>();
   const shouldLoad = enabled ?? isInView;
+  const applyLutGrid =
+    !!lutWorkflowActive &&
+    !!previewLutSource &&
+    mediaType === "image" &&
+    isRawFile(name);
   const { url: thumbUrl, rawPreviewUnavailable } = useGalleryThumbnail(
     galleryId,
     objectKey,
     name,
     {
       enabled: !!objectKey && shouldLoad,
+      size: applyLutGrid ? "medium" : "thumb",
     }
   );
 
@@ -42,14 +59,26 @@ export default function GalleryAssetThumbnail({
       {rawPreviewUnavailable && mediaType === "image" ? (
         <RawPreviewPlaceholder fileName={name} className="min-h-full" />
       ) : thumbUrl ? (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */}
-          <img
-            src={thumbUrl}
-            alt=""
-            className="h-full w-full object-cover"
+        applyLutGrid ? (
+          <ImageWithLUT
+            key={`${objectKey}-${previewLutSource}`}
+            imageUrl={thumbUrl}
+            lutUrl={previewLutSource}
+            lutEnabled={true}
+            objectFit="cover"
+            tileLayout="grid"
+            className="h-full w-full"
           />
-        </>
+        ) : (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */}
+            <img
+              src={thumbUrl}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          </>
+        )
       ) : (
         <>
           {mediaType === "video" ? (
