@@ -41,8 +41,24 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
   const res = await fetch(resolved);
   if (!res.ok) throw new Error(`Failed to load LUT: ${res.status}`);
   const text = await res.text();
-  const pathOnly = resolved.split(/[?#]/)[0]?.toLowerCase() ?? "";
-  const formatHint = pathOnly.endsWith(".3dl") ? ("3dl" as const) : pathOnly.endsWith(".cube") ? ("cube" as const) : undefined;
+
+  let formatHint: "cube" | "3dl" | undefined;
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const u = new URL(resolved, base);
+    const q = u.searchParams.get("lut_format");
+    if (q === "3dl" || q === "cube") formatHint = q;
+  } catch {
+    /* ignore */
+  }
+  if (!formatHint) {
+    const pathOnly = resolved.split(/[?#]/)[0]?.toLowerCase() ?? "";
+    formatHint = pathOnly.endsWith(".3dl")
+      ? "3dl"
+      : pathOnly.endsWith(".cube")
+        ? "cube"
+        : undefined;
+  }
   const { data, size } = parseLutFileText(text, formatHint);
 
   evictLRU();

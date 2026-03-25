@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { MAX_LUTS_PER_SCOPE, LUT_HELPER_COPY } from "@/types/creative-lut";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
@@ -38,6 +38,11 @@ export default function LUTLibrarySection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setEnabled(config?.enabled ?? false);
+    setSelectedId(config?.selected_lut_id ?? null);
+  }, [config?.enabled, config?.selected_lut_id]);
 
   const id = galleryId ?? driveId;
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";

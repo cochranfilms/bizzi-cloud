@@ -1041,6 +1041,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     if (!data) return;
     const cfg = data.gallery.creative_lut_config;
     const lib = data.gallery.creative_lut_library ?? [];
+    const mediaMode = normalizeGalleryMediaMode({
+      media_mode: data.gallery.media_mode ?? null,
+      source_format: data.gallery.source_format ?? null,
+    });
+    const lutWorkflowActive = mediaMode === "raw";
+    /** Match photographer “Enable LUT preview” on load so preview isn’t stuck off (clientLutSource requires this). */
+    setLutPreviewEnabled(lutWorkflowActive && !!(cfg?.enabled ?? false));
+
     const opts = buildGalleryLUTOptions(
       lib,
       data.gallery.gallery_type === "video",

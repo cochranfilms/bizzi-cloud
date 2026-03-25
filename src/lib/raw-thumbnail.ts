@@ -104,13 +104,18 @@ async function alignEmbeddedPreviewToRawOrientation(
 ): Promise<Buffer> {
   if (embeddedHadExifOrientation) return previewBuffer;
   let rawOrient: number | undefined;
+  let rw: number | undefined;
+  let rh: number | undefined;
   try {
-    rawOrient = (await sharp(rawBuffer).metadata()).orientation;
+    const meta = await sharp(rawBuffer).metadata();
+    rawOrient = meta.orientation;
+    rw = meta.width;
+    rh = meta.height;
   } catch {
     return previewBuffer;
   }
   if (!rawOrient || rawOrient <= 1) return previewBuffer;
-  const angle = exifOrientationToRotationAngle(rawOrient);
+  const angle = exifOrientationToRotationAngle(rawOrient, rw, rh);
   if (angle === undefined) return previewBuffer;
   try {
     return await sharp(previewBuffer).rotate(angle).jpeg({ quality: 90 }).toBuffer();
@@ -120,10 +125,16 @@ async function alignEmbeddedPreviewToRawOrientation(
 }
 
 /**
- * Clockwise degrees for sharp().rotate(angle) to match EXIF orientation tag semantics
- * (same as sharp/libvips auto-rotate: 6 = 90° CW, 8 = 270° CW, 3 = 180°).
+ * Clockwise degrees for sharp().rotate(angle). Uses RAW container dimensions when present:
+ * portrait RAWs often store landscape pixel dimensions with orientation 6/8 — pick 90 vs 270 accordingly.
  */
-function exifOrientationToRotationAngle(orientation: number): number | undefined {
+function exifOrientationToRotationAngle(
+  orientation: number,
+  width?: number,
+  height?: number
+): number | undefined {
+  const hasDims = typeof width === "number" && typeof height === "number" && width > 0 && height > 0;
+  const landscape = hasDims ? width >= height : true;
   switch (orientation) {
     case 2:
     case 4:
@@ -133,9 +144,9 @@ function exifOrientationToRotationAngle(orientation: number): number | undefined
     case 3:
       return 180;
     case 6:
-      return 90;
+      return landscape ? 90 : 270;
     case 8:
-      return 270;
+      return landscape ? 270 : 90;
     default:
       return undefined;
   }
@@ -157,7 +168,7 @@ async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): 
 
     // When RAW orientation disagrees with embedded preview EXIF, trust RAW (Sony ARW previews often lie).
     if (rawO > 1 && rawO !== embO) {
-      const angle = exifOrientationToRotationAngle(rawO);
+      const angle = exifOrientationToRotationAngle(rawO, rawMeta.width, rawMeta.height);
       if (angle !== undefined) {
         return await sharp(embedded).rotate(angle).jpeg({ quality: 90 }).toBuffer();
       }

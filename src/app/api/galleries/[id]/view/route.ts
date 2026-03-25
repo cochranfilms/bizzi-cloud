@@ -98,7 +98,14 @@ export async function GET(
     source_format: g.source_format as string | null | undefined,
   });
   const creativeConfig = g.creative_lut_config ?? null;
-  const rawLibrary = (g.creative_lut_library ?? []) as Array<{ id: string; name?: string; mode?: string; storage_path?: string | null; signed_url?: string | null }>;
+  const rawLibrary = (g.creative_lut_library ?? []) as Array<{
+    id: string;
+    name?: string;
+    mode?: string;
+    file_type?: string;
+    storage_path?: string | null;
+    signed_url?: string | null;
+  }>;
   const legacyLut = g.lut ?? null;
 
   // Use same-origin proxy URLs for custom LUTs (avoids CORS). Client appends &password= when needed.
@@ -109,7 +116,11 @@ export async function GET(
       e.mode !== "builtin" &&
       (e.mode === "custom" || e.mode == null);
     if (isCustomStored) {
-      return { ...e, signed_url: `/api/galleries/${id}/lut-file?entry_id=${e.id}` };
+      const lutFormat = e.file_type === "3dl" ? "3dl" : "cube";
+      return {
+        ...e,
+        signed_url: `/api/galleries/${id}/lut-file?entry_id=${encodeURIComponent(e.id)}&lut_format=${lutFormat}`,
+      };
     }
     return e;
   });

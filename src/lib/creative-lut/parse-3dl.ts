@@ -77,16 +77,18 @@ export function parse3dlFile(text: string): ParseCubeResult {
     throw new Error("No RGB triplets found in .3dl file");
   }
 
-  // Resolve / some exporters: first row is "N N N" grid size (not a color sample)
+  const approxEqual = (a: number, b: number, eps = 1e-2) => Math.abs(a - b) < eps;
+
+  // Resolve / many exporters: first row is "N N N" grid size (not a color sample), often as N³+1 lines total (e.g. 32³+1 = 32769).
   if (meshSize === 0 && triplets.length > 0) {
     const [fr, fg, fb] = triplets[0];
     const n = Math.round(fr);
     if (
-      fr === fg &&
-      fg === fb &&
+      approxEqual(fr, fg) &&
+      approxEqual(fg, fb) &&
       n >= LUT_GRID_MIN &&
       n <= LUT_GRID_MAX &&
-      n === fr &&
+      approxEqual(fr, n) &&
       triplets.length === n * n * n + 1
     ) {
       triplets.shift();
@@ -95,22 +97,36 @@ export function parse3dlFile(text: string): ParseCubeResult {
   }
 
   if (meshSize === 0) {
-    const n = Math.round(Math.cbrt(triplets.length)) || 0;
-    if (n < LUT_GRID_MIN || n * n * n !== triplets.length) {
+    let n = Math.round(Math.cbrt(triplets.length)) || 0;
+    if (n >= LUT_GRID_MIN && n <= LUT_GRID_MAX && n * n * n === triplets.length) {
+      meshSize = n;
+    } else {
+      n = Math.round(Math.cbrt(triplets.length - 1)) || 0;
+      if (
+        n >= LUT_GRID_MIN &&
+        n <= LUT_GRID_MAX &&
+        n * n * n + 1 === triplets.length &&
+        triplets.length > 0
+      ) {
+        const [fr, fg, fb] = triplets[0]!;
+        if (approxEqual(fr, n) && approxEqual(fg, n) && approxEqual(fb, n)) {
+          triplets.shift();
+          meshSize = n;
+        }
+      }
+    }
+    if (meshSize === 0) {
       throw new Error(
         `.3dl entry count ${triplets.length} is not a perfect cube (expected N³ for N = ${LUT_GRID_MIN}…${LUT_GRID_MAX})`
       );
     }
-    meshSize = n;
   } else {
     const expected = meshSize * meshSize * meshSize;
     /** Leading "N N N" size row after Mesh header (Resolve / many exporters). */
     if (triplets.length === expected + 1) {
       const [r, g, b] = triplets[0]!;
       const matchesN =
-        Math.abs(r - meshSize) < 1e-3 &&
-        Math.abs(g - meshSize) < 1e-3 &&
-        Math.abs(b - meshSize) < 1e-3;
+        approxEqual(r, meshSize) && approxEqual(g, meshSize) && approxEqual(b, meshSize);
       if (matchesN) {
         triplets.shift();
       }
