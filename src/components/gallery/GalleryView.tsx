@@ -23,8 +23,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 import { getCoverObjectPosition } from "@/lib/cover-position";
-import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
-import type { HeroHeightPreset } from "@/lib/cover-constants";
 import ImageWithLUT from "./ImageWithLUT";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
@@ -969,7 +967,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
-  const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(false);
   const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
@@ -979,6 +976,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     remaining: number;
   } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const scrollToGalleryContent = useCallback(() => {
+    setMusicPlaying(false);
+    document.getElementById("gallery-content")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   const fetchGallery = useCallback(
     async (pwd?: string) => {
@@ -1083,12 +1085,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   }, [data, galleryId, password, user]);
 
   useEffect(() => {
-    if (!data || !hasEnteredGallery) return;
+    if (!data) return;
     fetchDownloadStatus();
-  }, [data, hasEnteredGallery, fetchDownloadStatus]);
+  }, [data, fetchDownloadStatus]);
 
   useEffect(() => {
-    if (!data || !hasEnteredGallery) return;
+    if (!data) return;
     const clientEmail = user?.email?.toLowerCase().trim();
     if (!clientEmail) return;
     let cancelled = false;
@@ -1112,7 +1114,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [data, hasEnteredGallery, galleryId, password, user]);
+  }, [data, galleryId, password, user]);
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1284,16 +1286,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       });
     };
   }, [bannerAsset, galleryId, password, user, data]);
-
-  // Scroll to top when entering gallery, then scroll to gallery grid after transition
-  useEffect(() => {
-    if (!hasEnteredGallery) return;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    const t = setTimeout(() => {
-      document.getElementById("gallery-grid")?.scrollIntoView({ behavior: "smooth" });
-    }, 500);
-    return () => clearTimeout(t);
-  }, [hasEnteredGallery]);
 
   const toggleFavorite = useCallback((assetId: string) => {
     setSelectedFavorites((prev) => {
@@ -1473,10 +1465,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     await bulkDownload(items, "selected");
   }, [data, selectedFavorites, bulkDownload]);
 
-  useEffect(() => {
-    if (hasEnteredGallery) setMusicPlaying(false);
-  }, [hasEnteredGallery]);
-
   const prePageMusicUrlFromData = data?.gallery?.branding?.pre_page_music_url ?? null;
   useEffect(() => {
     if (!audioRef.current || !prePageMusicUrlFromData) return;
@@ -1627,281 +1615,25 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const prePageInstructions = gallery.branding.pre_page_instructions;
   const heroHasMediaBackdrop = !!(bannerUrl || featuredVideoStreamUrl);
 
-  // Gallery Pre Page – cover experience before entering the gallery
-  if (!hasEnteredGallery) {
-    return (
-      <div
-        className="min-h-screen transition-colors"
-        style={{ backgroundColor: bgTheme.background }}
-      >
-        <header
-          className={`absolute left-0 right-0 top-0 z-20 border-b border-transparent ${
-            heroHasMediaBackdrop ? "border-white/10" : isDarkBg ? "border-white/10" : "border-neutral-200"
-          }`}
-          style={{ ["--accent" as string]: accent }}
-        >
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-            <Link
-              href="/"
-              className={`flex items-center gap-2 ${heroHasMediaBackdrop ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"}`}
-            >
-              <Image
-                src="/logo.png"
-                alt="Bizzi Cloud"
-                width={24}
-                height={24}
-                className="object-contain"
-              />
-              <span className="text-base font-semibold tracking-tight">
-                {gallery.branding.business_name || "Bizzi"}
-                {gallery.branding.business_name ? "" : " Cloud"}
-              </span>
-            </Link>
-            {prePageMusicUrl && (
-              <button
-                type="button"
-                onClick={() => setMusicPlaying((p) => !p)}
-                className={`rounded-full p-2 transition-colors ${
-                  heroHasMediaBackdrop ? "text-white hover:bg-white/20" : "text-neutral-600 hover:bg-neutral-100"
-                }`}
-                title={musicPlaying ? "Pause music" : "Play music"}
-              >
-                <Music2 className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        </header>
-
-        <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6">
-          {heroHasMediaBackdrop ? (
-            <>
-              <div
-                className="pointer-events-none absolute inset-0 z-0"
-                aria-hidden
-              >
-                {featuredVideoStreamUrl ? (
-                  heroVideoLutActive ? (
-                    <VideoWithLUT
-                      key={`pre-hero-v-${clientLutSource}`}
-                      src={featuredVideoStreamUrl}
-                      streamUrl={featuredVideoStreamUrl}
-                      showLUTOption={false}
-                      lutSource={clientLutSource}
-                      creativePreviewOn
-                      compactPreview
-                      segmentLoopSeconds={5}
-                      className="h-full w-full object-cover"
-                      videoStyle={heroBackdropStyle}
-                    />
-                  ) : (
-                    <LoopingVideoPreview
-                      src={featuredVideoStreamUrl}
-                      loopSeconds={5}
-                      className="h-full w-full object-cover"
-                      style={{ objectPosition: coverObjectPosition }}
-                    />
-                  )
-                ) : heroImageLutActive ? (
-                  <ImageWithLUT
-                    key={`pre-hero-img-${clientLutSource}`}
-                    imageUrl={bannerUrl!}
-                    lutUrl={clientLutSource}
-                    lutEnabled
-                    variant="fill"
-                    objectFit="cover"
-                    className="h-full w-full"
-                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                    imageStyle={heroBackdropStyle}
-                  />
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={bannerUrl!}
-                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                    className="h-full w-full object-cover"
-                    style={{ objectPosition: coverObjectPosition }}
-                  />
-                )}
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: (() => {
-                      const o = Math.max(0, Math.min(100, gallery.cover_overlay_opacity ?? 50)) / 100;
-                      return `linear-gradient(to bottom, rgba(0,0,0,${o * 0.6}) 0%, transparent 30%, transparent 70%, rgba(0,0,0,${o * 0.9}) 100%)`;
-                    })(),
-                  }}
-                />
-              </div>
-              <div
-                className={`relative z-10 flex flex-col gap-6 text-white ${
-                  gallery.cover_title_alignment === "left"
-                    ? "items-start text-left"
-                    : gallery.cover_title_alignment === "right"
-                      ? "items-end text-right"
-                      : "items-center text-center"
-                }`}
-              >
-                {gallery.event_date && (
-                  <p className="text-xs font-medium uppercase tracking-widest text-white/90">
-                    {new Date(gallery.event_date).toLocaleDateString(undefined, {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </p>
-                )}
-                {(gallery.branding.logo_url || gallery.branding.business_name) && (
-                  <div className="flex items-center gap-2">
-                    {gallery.branding.logo_url && (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={gallery.branding.logo_url}
-                        alt=""
-                        className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
-                      />
-                    )}
-                    <span className="text-sm font-medium uppercase tracking-wider text-white/95">
-                      {gallery.branding.business_name || ""}
-                    </span>
-                  </div>
-                )}
-                <h1
-                  className="max-w-3xl text-4xl font-semibold sm:text-5xl"
-                  style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
-                >
-                  {gallery.title}
-                </h1>
-                {gallery.branding.welcome_message && (
-                  <p className="max-w-xl text-lg text-white/90">
-                    {gallery.branding.welcome_message}
-                  </p>
-                )}
-                {prePageInstructions && (
-                  <p className="max-w-md text-sm text-white/75">
-                    {prePageInstructions}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setHasEnteredGallery(true)}
-                  className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
-                  style={{ backgroundColor: accent }}
-                >
-                  View gallery
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="relative z-10 flex flex-col items-center gap-6">
-              <div
-                className={`rounded-2xl border px-8 py-12 ${
-                  isDarkBg
-                    ? "border-white/20 bg-white/5"
-                    : "border-neutral-200 bg-white/80 dark:border-neutral-700 dark:bg-neutral-900/80"
-                }`}
-              >
-                {gallery.event_date && (
-                  <p
-                    className={`mb-2 text-xs font-medium uppercase tracking-widest ${
-                      isDarkBg ? "text-white/80" : "text-neutral-500"
-                    }`}
-                  >
-                    {new Date(gallery.event_date).toLocaleDateString(undefined, {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </p>
-                )}
-                {(gallery.branding.logo_url || gallery.branding.business_name) && (
-                  <div className="mb-4 flex items-center justify-center gap-2">
-                    {gallery.branding.logo_url && (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={gallery.branding.logo_url}
-                        alt=""
-                        className="h-12 w-12 rounded-full object-cover"
-                      />
-                    )}
-                    <span
-                      className={`text-sm font-medium uppercase ${
-                        isDarkBg ? "text-white/90" : "text-neutral-600"
-                      }`}
-                    >
-                      {gallery.branding.business_name || ""}
-                    </span>
-                  </div>
-                )}
-                <h1
-                  className={`mb-4 text-4xl font-semibold sm:text-5xl ${
-                    isDarkBg ? "text-white" : "text-neutral-900"
-                  }`}
-                  style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
-                >
-                  {gallery.title}
-                </h1>
-                {gallery.branding.welcome_message && (
-                  <p
-                    className={`mx-auto mb-4 max-w-lg ${
-                      isDarkBg ? "text-white/90" : "text-neutral-600"
-                    }`}
-                  >
-                    {gallery.branding.welcome_message}
-                  </p>
-                )}
-                {prePageInstructions && (
-                  <p
-                    className={`mx-auto mb-6 max-w-md text-sm ${
-                      isDarkBg ? "text-white/75" : "text-neutral-500"
-                    }`}
-                  >
-                    {prePageInstructions}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setHasEnteredGallery(true)}
-                  className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: accent }}
-                >
-                  View gallery
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {prePageMusicUrl && (
-          <audio
-            ref={audioRef}
-            src={prePageMusicUrl}
-            loop
-            playsInline
-            className="hidden"
-          />
-        )}
-      </div>
-    );
-  }
-
-  const scrollToGallery = () => {
-    document.getElementById("gallery-grid")?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Full gallery view (after clicking "View gallery")
   return (
     <div
       className="min-h-screen animate-gallery-enter transition-colors"
       style={{ backgroundColor: bgTheme.background }}
     >
       <header
-        className={`border-b ${isDarkBg ? "border-white/10" : "border-neutral-200 dark:border-neutral-800"}`}
+        className={`z-30 ${
+          heroHasMediaBackdrop
+            ? "absolute left-0 right-0 top-0 border-b border-transparent"
+            : `relative border-b ${isDarkBg ? "border-white/10" : "border-neutral-200 dark:border-neutral-800"}`
+        }`}
         style={{ ["--accent" as string]: accent }}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <Link
             href="/"
-            className={`flex items-center gap-2 ${isDarkBg ? "text-white" : "text-neutral-900"}`}
+            className={`flex items-center gap-2 ${
+              heroHasMediaBackdrop ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"
+            }`}
           >
             <Image
               src="/logo.png"
@@ -1915,124 +1647,224 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {gallery.branding.business_name ? "" : " Cloud"}
             </span>
           </Link>
+          {prePageMusicUrl && (
+            <button
+              type="button"
+              onClick={() => setMusicPlaying((p) => !p)}
+              className={`rounded-full p-2 transition-colors ${
+                heroHasMediaBackdrop ? "text-white hover:bg-white/20" : isDarkBg ? "text-white/90 hover:bg-white/10" : "text-neutral-600 hover:bg-neutral-100"
+              }`}
+              title={musicPlaying ? "Pause music" : "Play music"}
+            >
+              <Music2 className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </header>
 
-      {heroHasMediaBackdrop && (
-        <div
-          className="relative w-full overflow-hidden"
-          style={{
-            minHeight: (() => {
-              const key: HeroHeightPreset =
-                gallery.cover_hero_height && gallery.cover_hero_height in HERO_HEIGHT_PRESETS
-                  ? (gallery.cover_hero_height as HeroHeightPreset)
-                  : "medium";
-              const preset = HERO_HEIGHT_PRESETS[key];
-              return `clamp(${preset.desktop}, 50vh, ${preset.mobile})`;
-            })(),
-          }}
-        >
-          {featuredVideoStreamUrl ? (
-            heroVideoLutActive ? (
-              <VideoWithLUT
-                key={`main-hero-v-${clientLutSource}`}
-                src={featuredVideoStreamUrl}
-                streamUrl={featuredVideoStreamUrl}
-                showLUTOption={false}
-                lutSource={clientLutSource}
-                creativePreviewOn
-                compactPreview
-                segmentLoopSeconds={5}
-                className="h-full w-full min-h-0 object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
-                videoStyle={heroBackdropStyle}
+      <section
+        id="gallery-hero"
+        className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6"
+        aria-label="Gallery cover"
+      >
+        {heroHasMediaBackdrop ? (
+          <>
+            <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+              {featuredVideoStreamUrl ? (
+                heroVideoLutActive ? (
+                  <VideoWithLUT
+                    key={`hero-v-${clientLutSource}`}
+                    src={featuredVideoStreamUrl}
+                    streamUrl={featuredVideoStreamUrl}
+                    showLUTOption={false}
+                    lutSource={clientLutSource}
+                    creativePreviewOn
+                    compactPreview
+                    segmentLoopSeconds={5}
+                    className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
+                    videoStyle={heroBackdropStyle}
+                  />
+                ) : (
+                  <LoopingVideoPreview
+                    src={featuredVideoStreamUrl}
+                    loopSeconds={5}
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: coverObjectPosition }}
+                  />
+                )
+              ) : heroImageLutActive ? (
+                <ImageWithLUT
+                  key={`hero-img-${clientLutSource}`}
+                  imageUrl={bannerUrl!}
+                  lutUrl={clientLutSource}
+                  lutEnabled
+                  variant="fill"
+                  objectFit="cover"
+                  className="h-full w-full min-h-0"
+                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                  imageStyle={heroBackdropStyle}
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={bannerUrl!}
+                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                  className="h-full w-full object-cover"
+                  style={{ objectPosition: coverObjectPosition }}
+                />
+              )}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: (() => {
+                    const o = Math.max(0, Math.min(100, gallery.cover_overlay_opacity ?? 50)) / 100;
+                    return `linear-gradient(to bottom, rgba(0,0,0,${o * 0.6}) 0%, transparent 30%, transparent 70%, rgba(0,0,0,${o * 0.9}) 100%)`;
+                  })(),
+                }}
               />
-            ) : (
-              <LoopingVideoPreview
-                src={featuredVideoStreamUrl}
-                loopSeconds={5}
-                className="h-full w-full object-cover"
-                style={{ objectPosition: coverObjectPosition }}
-              />
-            )
-          ) : bannerUrl ? (
-            heroImageLutActive ? (
-              <ImageWithLUT
-                key={`main-hero-img-${clientLutSource}`}
-                imageUrl={bannerUrl}
-                lutUrl={clientLutSource}
-                lutEnabled
-                variant="fill"
-                objectFit="cover"
-                className="h-full w-full min-h-0"
-                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                imageStyle={heroBackdropStyle}
-              />
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={bannerUrl}
-                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                className="h-full w-full object-cover"
-                style={{ objectPosition: coverObjectPosition }}
-              />
-            )
-          ) : null}
-        </div>
-      )}
-
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="mb-8 text-center">
-          {gallery.event_date && (
-            <p
-              className={`mb-1 text-xs font-medium uppercase tracking-widest ${
-                isDarkBg ? "text-white/80" : "text-neutral-500"
+            </div>
+            <div
+              className={`relative z-10 flex flex-col gap-6 text-white ${
+                gallery.cover_title_alignment === "left"
+                  ? "items-start text-left"
+                  : gallery.cover_title_alignment === "right"
+                    ? "items-end text-right"
+                    : "items-center text-center"
               }`}
             >
-              {new Date(gallery.event_date).toLocaleDateString(undefined, {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-            {(gallery.branding.logo_url || gallery.branding.business_name) && (
-              <div className="flex items-center gap-2">
-                {gallery.branding.logo_url && (
-                  <Image
-                    src={gallery.branding.logo_url}
-                    alt=""
-                    width={32}
-                    height={32}
-                    className="h-8 w-8 rounded-full object-cover"
-                    unoptimized
-                  />
-                )}
-                <span
-                  className={`text-xs font-medium uppercase tracking-wider ${
+              {gallery.event_date && (
+                <p className="text-xs font-medium uppercase tracking-widest text-white/90">
+                  {new Date(gallery.event_date).toLocaleDateString(undefined, {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </p>
+              )}
+              {(gallery.branding.logo_url || gallery.branding.business_name) && (
+                <div className="flex items-center gap-2">
+                  {gallery.branding.logo_url && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={gallery.branding.logo_url}
+                      alt=""
+                      className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
+                    />
+                  )}
+                  <span className="text-sm font-medium uppercase tracking-wider text-white/95">
+                    {gallery.branding.business_name || ""}
+                  </span>
+                </div>
+              )}
+              <h1
+                className="max-w-3xl text-4xl font-semibold sm:text-5xl"
+                style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
+              >
+                {gallery.title}
+              </h1>
+              {gallery.branding.welcome_message && (
+                <p className="max-w-xl text-lg text-white/90">{gallery.branding.welcome_message}</p>
+              )}
+              {prePageInstructions && (
+                <p className="max-w-md text-sm text-white/75">{prePageInstructions}</p>
+              )}
+              <button
+                type="button"
+                onClick={scrollToGalleryContent}
+                className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
+                style={{ backgroundColor: accent }}
+              >
+                View gallery
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="relative z-10 flex flex-col items-center gap-6">
+            <div
+              className={`rounded-2xl border px-8 py-12 ${
+                isDarkBg
+                  ? "border-white/20 bg-white/5"
+                  : "border-neutral-200 bg-white/80 dark:border-neutral-700 dark:bg-neutral-900/80"
+              }`}
+            >
+              {gallery.event_date && (
+                <p
+                  className={`mb-2 text-xs font-medium uppercase tracking-widest ${
+                    isDarkBg ? "text-white/80" : "text-neutral-500"
+                  }`}
+                >
+                  {new Date(gallery.event_date).toLocaleDateString(undefined, {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </p>
+              )}
+              {(gallery.branding.logo_url || gallery.branding.business_name) && (
+                <div className="mb-4 flex items-center justify-center gap-2">
+                  {gallery.branding.logo_url && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={gallery.branding.logo_url}
+                      alt=""
+                      className="h-12 w-12 rounded-full object-cover"
+                    />
+                  )}
+                  <span
+                    className={`text-sm font-medium uppercase ${
+                      isDarkBg ? "text-white/90" : "text-neutral-600"
+                    }`}
+                  >
+                    {gallery.branding.business_name || ""}
+                  </span>
+                </div>
+              )}
+              <h1
+                className={`mb-4 text-4xl font-semibold sm:text-5xl ${
+                  isDarkBg ? "text-white" : "text-neutral-900"
+                }`}
+                style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
+              >
+                {gallery.title}
+              </h1>
+              {gallery.branding.welcome_message && (
+                <p
+                  className={`mx-auto mb-4 max-w-lg ${
                     isDarkBg ? "text-white/90" : "text-neutral-600"
                   }`}
                 >
-                  {gallery.branding.business_name || ""}
-                </span>
-              </div>
-            )}
-            <h1
-              className={`text-3xl font-semibold sm:text-4xl ${
-                isDarkBg ? "text-white" : "text-neutral-900"
-              }`}
-              style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
-            >
-              {gallery.title}
-            </h1>
-            <button
-              type="button"
-              onClick={scrollToGallery}
-              className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: accent }}
-            >
-              View gallery
-            </button>
+                  {gallery.branding.welcome_message}
+                </p>
+              )}
+              {prePageInstructions && (
+                <p
+                  className={`mx-auto mb-6 max-w-md text-sm ${
+                    isDarkBg ? "text-white/75" : "text-neutral-500"
+                  }`}
+                >
+                  {prePageInstructions}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={scrollToGalleryContent}
+                className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: accent }}
+              >
+                View gallery
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {prePageMusicUrl && (
+        <audio ref={audioRef} src={prePageMusicUrl} loop playsInline className="hidden" />
+      )}
+
+      <main id="gallery-content" className="mx-auto max-w-6xl scroll-mt-4 px-4 py-8 sm:px-6">
+        <div className="mb-8 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             {gallery.invoice_url &&
               gallery.invoice_status !== "paid" && (
                 <a
@@ -2049,17 +1881,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             {gallery.download_settings?.allow_full_gallery_download &&
               assets.length > 0 &&
               !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
-              <button
-                type="button"
-                onClick={handleDownloadAll}
-                disabled={bulkDownloading}
-                className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ borderColor: accent, color: accent }}
-              >
-                <Download className="h-4 w-4" />
-                {bulkDownloading ? "Downloading…" : "Download all"}
-              </button>
-            )}
+                <button
+                  type="button"
+                  onClick={handleDownloadAll}
+                  disabled={bulkDownloading}
+                  className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ borderColor: accent, color: accent }}
+                >
+                  <Download className="h-4 w-4" />
+                  {bulkDownloading ? "Downloading…" : "Download all"}
+                </button>
+              )}
           </div>
           {(bulkDownloadError ?? downloadError) && (
             <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">

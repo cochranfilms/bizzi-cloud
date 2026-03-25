@@ -103,7 +103,12 @@ export async function GET(
 
   // Use same-origin proxy URLs for custom LUTs (avoids CORS). Client appends &password= when needed.
   const creativeLibrary = rawLibrary.map((e) => {
-    if (e.mode === "custom" && e.storage_path && e.id) {
+    const isCustomStored =
+      !!e.storage_path &&
+      !!e.id &&
+      e.mode !== "builtin" &&
+      (e.mode === "custom" || e.mode == null);
+    if (isCustomStored) {
       return { ...e, signed_url: `/api/galleries/${id}/lut-file?entry_id=${e.id}` };
     }
     return e;

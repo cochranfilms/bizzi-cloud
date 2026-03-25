@@ -90,6 +90,17 @@ export function parse3dlFile(text: string): ParseCubeResult {
     meshSize = n;
   } else {
     const expected = meshSize * meshSize * meshSize;
+    /** Leading "N N N" size row after Mesh header (Resolve / many exporters). */
+    if (triplets.length === expected + 1) {
+      const [r, g, b] = triplets[0]!;
+      const matchesN =
+        Math.abs(r - meshSize) < 1e-3 &&
+        Math.abs(g - meshSize) < 1e-3 &&
+        Math.abs(b - meshSize) < 1e-3;
+      if (matchesN) {
+        triplets.shift();
+      }
+    }
     if (triplets.length < expected) {
       throw new Error(
         `.3dl expected ${expected} RGB rows for size ${meshSize}, got ${triplets.length}`

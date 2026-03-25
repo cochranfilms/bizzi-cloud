@@ -20,8 +20,15 @@ export function parseCubeFile(text: string): ParseCubeResult {
     if (!trimmed || trimmed.startsWith("TITLE") || trimmed.startsWith("#"))
       continue;
     const parts = trimmed.split(/\s+/);
-    if (parts[0] === "LUT_3D_SIZE" && parts[1]) {
+    const head = parts[0];
+    if (/^LUT_3D_SIZE$/i.test(head) && parts[1]) {
       size = parseInt(parts[1], 10);
+      continue;
+    }
+    /** Skip common cube metadata lines that still look like "R G B" to parsers. */
+    if (
+      /^(DOMAIN_MIN|DOMAIN_MAX|LUT_1D_SIZE)/i.test(head)
+    ) {
       continue;
     }
     if (parts.length >= 3) {
@@ -34,7 +41,28 @@ export function parseCubeFile(text: string): ParseCubeResult {
     }
   }
 
-  if (size === 0) size = Math.round(Math.cbrt(values.length / 4)) || 33;
+  const cubes = values.length / 4;
+  if (size > 0) {
+    const expected = size * size * size;
+    if (cubes > expected) {
+      values.length = expected * 4;
+    } else if (cubes < expected) {
+      const n = Math.round(Math.cbrt(cubes));
+      if (
+        n >= LUT_GRID_MIN &&
+        n <= LUT_GRID_MAX &&
+        n * n * n === cubes
+      ) {
+        size = n;
+      }
+    }
+  } else if (cubes > 0) {
+    const n = Math.round(Math.cbrt(cubes));
+    if (n >= LUT_GRID_MIN && n <= LUT_GRID_MAX && n * n * n === cubes) {
+      size = n;
+    }
+  }
+
   return { data: new Float32Array(values), size };
 }
 

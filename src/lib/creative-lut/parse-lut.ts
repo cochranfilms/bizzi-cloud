@@ -14,11 +14,14 @@ export { parseCubeFile, parse3dlFile };
  * Client + server: load LUT text into normalized Float32 RGBA lattice + cube size.
  */
 export function parseLutFileText(text: string): ParseLutResult {
+  /** Prefer .3dl parser when markers exist — some exporters include LUT_3D_SIZE-like noise; order matters. */
+  const looks3dl =
+    /\b3DMESH\b/i.test(text) || /\bMesh\s+\d+\s+\d+\s+\d+\b/i.test(text);
+  if (looks3dl) {
+    return parse3dlFile(text);
+  }
   if (/\bLUT_3D_SIZE\b/i.test(text)) {
     return parseCubeFile(text);
-  }
-  if (/\b3DMESH\b/i.test(text) || /\bMesh\s+\d+\s+\d+\s+\d+\b/i.test(text)) {
-    return parse3dlFile(text);
   }
   return parseCubeFile(text);
 }
