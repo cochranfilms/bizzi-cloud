@@ -180,8 +180,11 @@ export default function EnterpriseNavbar() {
       )}
       <nav
         className={`fixed left-0 right-0 top-[6.25rem] z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
-          mobileOpen ? "translate-y-0" : "-translate-y-full opacity-0"
+          mobileOpen
+            ? "translate-y-0 pointer-events-auto"
+            : "-translate-y-full pointer-events-none opacity-0"
         }`}
+        aria-hidden={!mobileOpen}
       >
         <ul className="max-h-[calc(100vh-6.25rem)] overflow-y-auto p-3">
           {filteredNavItems.map((item) => {

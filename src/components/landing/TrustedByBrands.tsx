@@ -19,7 +19,7 @@ const BRAND_LOGOS = [
 
 export default function TrustedByBrands() {
   return (
-    <section className="py-12 md:py-16 overflow-hidden bg-white/60">
+    <section className="py-12 md:py-16 overflow-hidden">
       <div className="text-center mb-8">
         <h2 className="text-xl md:text-2xl font-semibold text-bizzi-navy">
           Trusted by brands

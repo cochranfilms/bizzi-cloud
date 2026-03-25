@@ -293,7 +293,7 @@ export default function PricingSection() {
   return (
     <section
       id="pricing"
-      className="scroll-mt-16 bg-neutral-50/50 px-6 py-20 md:py-28"
+      className="scroll-mt-28 px-6 py-20 md:py-28"
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-16 text-center">

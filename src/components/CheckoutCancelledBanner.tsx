@@ -20,7 +20,7 @@ export default function CheckoutCancelledBanner() {
   const ctaText = checkoutUpgrade ? "Choose a plan" : "View plans";
 
   return (
-    <div className="sticky top-14 z-40 mx-auto max-w-6xl px-6 py-3">
+    <div className="sticky top-28 z-40 mx-auto max-w-6xl px-6 py-3">
       <div className="flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/50">
         <p className="text-sm text-amber-900 dark:text-amber-100">{message}</p>
         <div className="flex shrink-0 items-center gap-2">

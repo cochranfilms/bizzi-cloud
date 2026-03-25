@@ -71,6 +71,18 @@ export default function LoopingVideoPreview({
     return undefined;
   }, [src]);
 
+  /** Muted autoplay is flaky with many decoders; reinforce after src/mode settles. */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || mode === "segment") return;
+    const kick = () => {
+      void v.play().catch(() => {});
+    };
+    if (v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) kick();
+    else v.addEventListener("canplay", kick, { once: true });
+    return () => v.removeEventListener("canplay", kick);
+  }, [src, mode]);
+
   const onTimeUpdate = useCallback(() => {
     if (mode !== "segment") return;
     const v = videoRef.current;
@@ -94,16 +106,25 @@ export default function LoopingVideoPreview({
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
       if (mode !== "playOnce") return;
       const v = e.currentTarget;
+      // Do not seek after `ended`; rewinding a few frames often blanks the layer
+      // (Chrome/WebKit) when the marquee parent uses CSS transform.
       v.pause();
-      const dur = v.duration;
-      if (Number.isFinite(dur) && dur > 0) {
-        v.currentTime = Math.max(0, dur - 0.04);
-      }
     },
     [mode],
   );
 
   const preload = mode === "segment" ? "metadata" : "auto";
+
+  /** Own compositing layer — video inside transformed ancestors often renders black otherwise. */
+  const layerStyle: React.CSSProperties =
+    mode === "segment"
+      ? {}
+      : {
+          transform: "translate3d(0, 0, 0)",
+          WebkitTransform: "translate3d(0, 0, 0)",
+        };
+
+  const mergedStyle = style ? { ...layerStyle, ...style } : layerStyle;
 
   return (
     <video
@@ -114,7 +135,7 @@ export default function LoopingVideoPreview({
       loop={mode === "fullLoop"}
       preload={preload}
       className={className}
-      style={style}
+      style={mergedStyle}
       onEnded={mode === "playOnce" ? onEnded : undefined}
     />
   );

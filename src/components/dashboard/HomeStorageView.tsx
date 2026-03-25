@@ -25,8 +25,6 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { LOADING_COPY } from "@/lib/loading-copy";
 import SectionTitle from "./SectionTitle";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
@@ -694,7 +692,21 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   ]);
 
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
-  const isLoading = loading || pinnedLoading;
+  const pinnedContentReady =
+    !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
+  const homeViewReady = !loading && !subscriptionLoading && pinnedContentReady;
+  const [homeContentEntered, setHomeContentEntered] = useState(false);
+
+  useEffect(() => {
+    if (!homeViewReady) {
+      setHomeContentEntered(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setHomeContentEntered(true));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [homeViewReady]);
 
   const showDragRect =
     dragState?.isActive &&
@@ -722,14 +734,25 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
+      {!homeViewReady && (
+        <div
+          className="min-h-[min(42vh,26rem)] w-full rounded-2xl bg-gradient-to-b from-neutral-200/40 to-transparent dark:from-neutral-800/50 dark:to-transparent"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <span className="sr-only">Loading your folders and subscription</span>
+        </div>
+      )}
+      {homeViewReady && (
+      <div
+        className={`space-y-0 transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
+          homeContentEntered ? "opacity-100" : "opacity-0"
+        }`}
+      >
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
-        {loading ? (
-          <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading…
-          </div>
-        ) : baseFolderItems.length > 0 ? (
+        {baseFolderItems.length > 0 ? (
           <div
             className="flex justify-center w-full max-w-4xl mx-auto"
             style={{ ["--folder-count" as string]: baseFolderItems.length }}
@@ -795,11 +818,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 2: Pinned */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Pinned</SectionTitle>
-        {isLoading || pinnedFilesLoading ? (
-          <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading…
-          </div>
-        ) : hasPinned ? (
+        {hasPinned ? (
           viewMode === "list" ? (
             <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
@@ -971,11 +990,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
-        {loading ? (
-          <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Loading…
-          </div>
-        ) : driveFolderItems.length > 0 ? (
+        {driveFolderItems.length > 0 ? (
           viewMode === "list" ? (
             <div className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
@@ -1097,11 +1112,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             <SectionTitle as="h3" className="mb-3 text-xs font-medium">
               Recent Uploads
             </SectionTitle>
-            {loading ? (
-              <div className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                Loading…
-              </div>
-            ) : recentUploads.length > 0 ? (
+            {recentUploads.length > 0 ? (
               viewMode === "list" ? (
                 <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                   <table className="w-full text-left text-sm">
@@ -1185,6 +1196,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </>
         )}
       </section>
+      </div>
+      )}
 
       {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar

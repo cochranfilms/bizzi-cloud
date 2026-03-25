@@ -155,39 +155,44 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           };
         });
       const driveMap = new Map(drives.map((d) => [d.id, d]));
+      const driveIds = new Set(drives.map((d) => d.id));
 
-      const folders: DriveFolder[] = [];
-      for (const drive of drives) {
-        const countSnap = await getCountFromServer(
+      // Count queries run sequentially in a loop (one round-trip per drive). Run in parallel
+      // with the recent-files query so the home dashboard resolves much faster.
+      const [folders, filesSnap] = await Promise.all([
+        Promise.all(
+          drives.map(async (drive) => {
+            const countSnap = await getCountFromServer(
+              query(
+                collection(db, "backup_files"),
+                where("userId", "==", user.uid),
+                where("linked_drive_id", "==", drive.id),
+                where("deleted_at", "==", null)
+              )
+            );
+            const filesCount = countSnap.data().count;
+            return {
+              id: drive.id,
+              name: drive.name,
+              type: "folder" as const,
+              key: `drive-${drive.id}`,
+              items: filesCount,
+              lastSyncedAt: drive.last_synced_at,
+              isCreatorRaw: drive.is_creator_raw,
+            };
+          })
+        ),
+        getDocs(
           query(
             collection(db, "backup_files"),
             where("userId", "==", user.uid),
-            where("linked_drive_id", "==", drive.id),
-            where("deleted_at", "==", null)
+            orderBy("modified_at", "desc"),
+            limit(50)
           )
-        );
-        const filesCount = countSnap.data().count;
-        folders.push({
-          id: drive.id,
-          name: drive.name,
-          type: "folder",
-          key: `drive-${drive.id}`,
-          items: filesCount,
-          lastSyncedAt: drive.last_synced_at,
-          isCreatorRaw: drive.is_creator_raw,
-        });
-      }
+        ),
+      ]);
       setDriveFolders(folders);
 
-      const driveIds = new Set(drives.map((d) => d.id));
-      const filesSnap = await getDocs(
-        query(
-          collection(db, "backup_files"),
-          where("userId", "==", user.uid),
-          orderBy("modified_at", "desc"),
-          limit(50)
-        )
-      );
       const recent: RecentFile[] = filesSnap.docs
         .filter((d) => {
           if (d.data().deleted_at) return false;

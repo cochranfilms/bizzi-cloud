@@ -2,78 +2,52 @@
 
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import CloudBackground from "@/components/landing/CloudBackground";
 
 export default function Hero() {
   const { user, loading } = useAuth();
   const isSignedIn = !!user && !loading;
 
   return (
-    <section className="relative py-14 sm:py-20 md:py-28 px-4 sm:px-6 overflow-hidden min-h-[400px] sm:min-h-[500px] flex items-center">
-      <CloudBackground />
-      <div className="relative z-10 max-w-6xl mx-auto">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          <div>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-bizzi-navy mb-4 sm:mb-6">
-              Your workflow optimized in the cloud.
-            </h1>
-            <p className="text-base sm:text-lg md:text-xl text-neutral-600 mb-6 sm:mb-8 max-w-xl leading-relaxed">
-              Bizzi Cloud is the cloud storage platform built exclusively for
-              photographers, filmmakers, and creative teams who need more than
-              generic file storage. We give creators a secure, organized home for
-              every asset they make. Built around the post-production workflows
-              and efficiency that creative work actually demands.
-            </p>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
-              <Link
-                href={isSignedIn ? "/dashboard" : "#pricing"}
-                className="inline-block px-8 py-3.5 bg-bizzi-blue text-white font-semibold rounded-full hover:bg-bizzi-cyan transition-colors shadow-lg shadow-bizzi-blue/25"
-              >
-                {isSignedIn ? "Go to Dashboard" : "Try it free for 14 days"}
-              </Link>
-              <Link
-                href="/desktop"
-                className="inline-block px-8 py-3.5 border-2 border-bizzi-navy text-bizzi-navy font-semibold rounded-full hover:bg-bizzi-navy/5 transition-colors"
-              >
-                Download for Desktop
-              </Link>
-            </div>
-          </div>
-          <div className="relative hidden lg:block">
-            <div
-              className="rounded-2xl p-8 shadow-xl border border-white/50 backdrop-blur-sm"
-              style={{
-                background:
-                  "linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(224,242,254,0.5) 100%)",
-              }}
-            >
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-bizzi-navy font-medium">
-                  <span className="w-2 h-2 rounded-full bg-bizzi-blue" />
-                  Announcements
-                </div>
-                <p className="text-neutral-600">
-                  Keep every file organized in one place.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {["Organize file", "Image", "Video", "Logo", "Design"].map(
-                    (item, i) => (
-                      <span
-                        key={item}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                          i === 0
-                            ? "bg-bizzi-blue/15 text-bizzi-blue"
-                            : "bg-neutral-100 text-neutral-600"
-                        }`}
-                      >
-                        {item}
-                      </span>
-                    )
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+    <section className="relative px-4 sm:px-6 flex flex-col items-center justify-center text-center pt-6 pb-16 sm:pb-24 md:pb-28 min-h-[min(85vh,920px)]">
+      <div className="relative z-10 max-w-3xl mx-auto w-full">
+        <div
+          className="inline-flex items-center gap-2 rounded-full border border-white/55 bg-white/35 px-3.5 py-1.5 sm:px-4 text-[11px] sm:text-xs font-semibold uppercase tracking-widest text-bizzi-navy/90 backdrop-blur-md shadow-sm mb-6 sm:mb-8"
+          role="note"
+        >
+          <svg
+            className="h-3.5 w-3.5 text-bizzi-navy/80 shrink-0"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden
+          >
+            <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6-4.7-6 4.7 2.3-7-6-4.6h7.6L12 2z" />
+          </svg>
+          Built for creative workflows
+        </div>
+
+        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-bizzi-navy mb-4 sm:mb-6 text-balance">
+          Your workflow optimized in the <em className="font-semibold italic">cloud</em>.
+        </h1>
+
+        <p className="text-base sm:text-lg md:text-xl text-neutral-700 max-w-2xl mx-auto leading-relaxed mb-8 sm:mb-10 text-pretty">
+          Bizzi Cloud is cloud storage built for photographers, filmmakers, and
+          creative teams who need more than generic file storage — a secure,
+          organized home for every asset, tuned for post-production and delivery.
+        </p>
+
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-4">
+          <Link
+            href={isSignedIn ? "/dashboard" : "#pricing"}
+            className="inline-flex items-center justify-center min-w-[200px] px-8 py-3.5 rounded-full bg-neutral-900 text-white text-sm font-semibold hover:bg-neutral-800 transition-colors shadow-lg shadow-neutral-900/15"
+          >
+            {isSignedIn ? "Go to Dashboard" : "Get started"}
+          </Link>
+          <Link
+            href="#how-it-works"
+            className="inline-flex items-center justify-center min-w-[200px] px-8 py-3.5 rounded-full bg-white/80 text-neutral-900 text-sm font-semibold border border-white/70 backdrop-blur-md hover:bg-white/95 transition-colors shadow-md shadow-neutral-900/5"
+          >
+            Learn more
+          </Link>
         </div>
       </div>
     </section>

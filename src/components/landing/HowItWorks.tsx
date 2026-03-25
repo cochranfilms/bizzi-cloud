@@ -6,13 +6,6 @@ export default function HowItWorks() {
       id="how-it-works"
       className="py-20 md:py-28 px-6 relative overflow-hidden"
     >
-      <div
-        className="absolute inset-0 -z-10"
-        style={{
-          background:
-            "linear-gradient(180deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%)",
-        }}
-      />
       <div className="max-w-6xl mx-auto relative z-10">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold text-bizzi-navy mb-4">

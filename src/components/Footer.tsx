@@ -40,7 +40,7 @@ export default function Footer() {
   };
 
   return (
-    <footer className="py-12 sm:py-16 px-4 sm:px-6 bg-white border-t border-neutral-200">
+    <footer className="py-12 sm:py-16 px-4 sm:px-6 border-t border-white/40 bg-white/35 backdrop-blur-xl">
       <div className="max-w-6xl mx-auto">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 sm:gap-12">
           <div className="sm:col-span-2">

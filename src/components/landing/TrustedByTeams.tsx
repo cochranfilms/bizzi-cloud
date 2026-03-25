@@ -17,7 +17,7 @@ const MARQUEE_VIDEOS = [
 
 /** Each bottom tile matches one top panel: half the row width, 16×9 */
 function marqueeCardClassName() {
-  return "relative aspect-video w-[50vw] max-w-none shrink-0 overflow-hidden rounded-sm bg-black";
+  return "relative isolate aspect-video w-[50vw] max-w-none shrink-0 overflow-hidden rounded-sm bg-black";
 }
 
 export default function TrustedByTeams() {
@@ -32,7 +32,7 @@ export default function TrustedByTeams() {
   }, []);
 
   return (
-    <section className="overflow-hidden bg-white/60 py-12 md:py-16">
+    <section className="overflow-hidden py-12 md:py-16">
       <div className="mb-8 text-center">
         <h2 className="text-xl font-semibold text-bizzi-navy md:text-2xl">
           Trusted by creative teams
