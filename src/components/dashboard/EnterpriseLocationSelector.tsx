@@ -85,38 +85,6 @@ export function EnterpriseLocationSelector({
         const data = res.ok ? (await res.json()) as { workspaces?: WorkspaceOption[] } : { workspaces: [] };
         if (!cancelled) {
           setWorkspaces(data.workspaces ?? []);
-          const list = data.workspaces ?? [];
-          const privateWs = list.find((w) => w.workspace_type === "private");
-          const sharedWs = list.find((w) => w.workspace_type === "org_shared");
-          const projectWs = list.find((w) => w.workspace_type === "project");
-          const teamWs = list.find((w) => w.workspace_type === "team");
-          const isValidSelection = selectedWorkspaceId && list.some((w) => w.id === selectedWorkspaceId);
-          if ((!selectedWorkspaceId || !isValidSelection) && onSelectWorkspace) {
-            const defaultId = privateWs?.id ?? sharedWs?.id ?? projectWs?.id ?? teamWs?.id ?? list[0]?.id;
-            if (defaultId) onSelectWorkspace(defaultId);
-          }
-          if (selectedWorkspaceId && list.some((w) => w.id === selectedWorkspaceId)) {
-            const sel = list.find((w) => w.id === selectedWorkspaceId);
-            if (sel) {
-              const s: Scope =
-                sel.workspace_type === "private"
-                  ? "private"
-                  : sel.workspace_type === "org_shared"
-                    ? "shared"
-                    : sel.workspace_type === "project"
-                      ? "project"
-                      : sel.workspace_type === "team"
-                        ? "team"
-                        : "private";
-              setScope(s);
-            }
-          } else if (privateWs) {
-            setScope("private");
-          } else if (sharedWs) {
-            setScope("shared");
-          } else if ((projectWs ?? teamWs)) {
-            setScope(projectWs ? "project" : "team");
-          }
         }
       } catch {
         if (!cancelled) setWorkspaces([]);
@@ -130,21 +98,41 @@ export function EnterpriseLocationSelector({
   }, [org?.id, driveId, user]);
 
   useEffect(() => {
-    const sel = workspaces.find((w) => w.id === selectedWorkspaceId);
-    if (sel) {
-      const s: Scope =
-        sel.workspace_type === "private"
-          ? "private"
-          : sel.workspace_type === "org_shared"
-            ? "shared"
-            : sel.workspace_type === "project"
-              ? "project"
-              : sel.workspace_type === "team"
-                ? "team"
-                : "private";
-      setScope(s);
+    const list = workspaces;
+    if (list.length === 0) return;
+
+    const privateWs = list.find((w) => w.workspace_type === "private");
+    const sharedWs = list.find((w) => w.workspace_type === "org_shared");
+    const projectWs = list.find((w) => w.workspace_type === "project");
+    const teamWs = list.find((w) => w.workspace_type === "team");
+    const isValidSelection = selectedWorkspaceId && list.some((w) => w.id === selectedWorkspaceId);
+    if ((!selectedWorkspaceId || !isValidSelection) && onSelectWorkspace) {
+      const defaultId = privateWs?.id ?? sharedWs?.id ?? projectWs?.id ?? teamWs?.id ?? list[0]?.id;
+      if (defaultId) onSelectWorkspace(defaultId);
     }
-  }, [selectedWorkspaceId, workspaces]);
+    if (selectedWorkspaceId && list.some((w) => w.id === selectedWorkspaceId)) {
+      const sel = list.find((w) => w.id === selectedWorkspaceId);
+      if (sel) {
+        const s: Scope =
+          sel.workspace_type === "private"
+            ? "private"
+            : sel.workspace_type === "org_shared"
+              ? "shared"
+              : sel.workspace_type === "project"
+                ? "project"
+                : sel.workspace_type === "team"
+                  ? "team"
+                  : "private";
+        setScope(s);
+      }
+    } else if (privateWs) {
+      setScope("private");
+    } else if (sharedWs) {
+      setScope("shared");
+    } else if (projectWs ?? teamWs) {
+      setScope(projectWs ? "project" : "team");
+    }
+  }, [workspaces, selectedWorkspaceId, onSelectWorkspace]);
 
   // When selected workspace lives on a different drive (e.g. Shared Library on org shared drive),
   // set effective drive for file queries so we show files from the correct drive

@@ -3,6 +3,11 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
 import { slugify, ensureUniqueSlugInTransaction } from "@/lib/gallery-slug";
 import type { UpdateGalleryInput } from "@/types/gallery";
+import {
+  isValidMediaMode,
+  legacySourceFormatFromMediaMode,
+  normalizeGalleryMediaMode,
+} from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -47,10 +52,15 @@ export async function GET(
   }
 
   const version = typeof data.version === "number" ? data.version : 1;
+  const media_mode = normalizeGalleryMediaMode({
+    media_mode: data.media_mode as string | null | undefined,
+    source_format: data.source_format as string | null | undefined,
+  });
 
   return NextResponse.json({
     id: snap.id,
     ...data,
+    media_mode,
     owner_handle,
     version,
     created_at: data.created_at?.toDate?.()?.toISOString?.(),
@@ -125,6 +135,17 @@ export async function PATCH(
     }
   }
   if (body.layout !== undefined) updates.layout = body.layout;
+  if (body.media_mode !== undefined) {
+    if (!isValidMediaMode(body.media_mode)) {
+      return { status: 400 as const, error: "Invalid media_mode" };
+    }
+    updates.media_mode = body.media_mode;
+    updates.source_format = legacySourceFormatFromMediaMode(body.media_mode);
+  } else if (body.source_format !== undefined) {
+    const sf = body.source_format === "raw" ? "raw" : "jpg";
+    updates.source_format = sf;
+    updates.media_mode = sf === "raw" ? "raw" : "final";
+  }
   if (body.branding !== undefined) {
     updates.branding = { ...data.branding, ...body.branding };
   }
@@ -181,6 +202,9 @@ export async function PATCH(
 
   if (result.status === 404) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
   if (result.status === 403) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (result.status === 400) {
+    return NextResponse.json({ error: "Invalid media_mode" }, { status: 400 });
+  }
   if (result.status === 409) {
     return NextResponse.json(
       { error: "Document was modified by another user; refetch and try again" },

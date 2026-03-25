@@ -31,7 +31,7 @@ function formatDate(iso: string | null) {
 
 function GalleryCard({ gallery }: { gallery: ClientGallery }) {
   const [cardRef, isInView] = useInView<HTMLDivElement>();
-  const thumbUrl = useGalleryThumbnail(
+  const { url: thumbUrl } = useGalleryThumbnail(
     gallery.cover_object_key ? gallery.id : undefined,
     gallery.cover_object_key ?? undefined,
     gallery.cover_name ?? "",

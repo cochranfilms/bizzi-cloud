@@ -23,8 +23,8 @@ export default function MRRChart({ data }: MRRChartProps) {
       <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
         MRR trend
       </h3>
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="h-64 min-h-[16rem] w-full min-w-[200px]">
+        <ResponsiveContainer width="100%" height="100%" minHeight={200} minWidth={200}>
           <AreaChart data={data}>
             <defs>
               <linearGradient id="mrrGrad" x1="0" y1="0" x2="0" y2="1">

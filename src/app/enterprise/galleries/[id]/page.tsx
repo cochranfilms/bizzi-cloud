@@ -102,6 +102,7 @@ function AddFileButton({
 interface GalleryData {
   id: string;
   gallery_type?: "photo" | "video";
+  media_mode?: "final" | "raw";
   title: string;
   slug: string;
   description?: string | null;
@@ -376,7 +377,8 @@ export default function EnterpriseGalleryDetailPage() {
           <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-700">
               <h2 className="font-medium text-neutral-900 dark:text-white">
-                {isVideoGallery ? "Video gallery" : "Photo gallery"} · Assets
+                {isVideoGallery ? "Video" : "Photo"} ·{" "}
+                {gallery?.media_mode === "raw" ? "RAW" : "Final"} · Assets
               </h2>
               <div className="flex items-center gap-2">
                 <button
@@ -393,6 +395,7 @@ export default function EnterpriseGalleryDetailPage() {
               <GalleryUploadZone
                 galleryId={id}
                 galleryTitle={gallery?.title}
+                mediaMode={gallery?.media_mode ?? "final"}
                 onUploadComplete={() => {
                   fetchAssets();
                   fetchGallery();

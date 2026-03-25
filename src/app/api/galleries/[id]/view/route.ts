@@ -7,6 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -92,6 +93,10 @@ export async function GET(
   });
 
   const galleryType = g.gallery_type === "video" ? "video" : "photo";
+  const mediaMode = normalizeGalleryMediaMode({
+    media_mode: g.media_mode as string | null | undefined,
+    source_format: g.source_format as string | null | undefined,
+  });
   const creativeConfig = g.creative_lut_config ?? null;
   const rawLibrary = (g.creative_lut_library ?? []) as Array<{ id: string; name?: string; mode?: string; storage_path?: string | null; signed_url?: string | null }>;
   const legacyLut = g.lut ?? null;
@@ -125,6 +130,7 @@ export async function GET(
     gallery: {
       id: gallerySnap.id,
       gallery_type: galleryType,
+      media_mode: mediaMode,
       title: g.title,
       slug: g.slug,
       description: g.description ?? null,

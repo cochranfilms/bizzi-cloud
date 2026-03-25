@@ -16,6 +16,8 @@ interface CreateGalleryModalProps {
     password?: string;
     invited_emails?: string[];
     layout?: string;
+    media_mode?: "final" | "raw";
+    /** @deprecated */
     source_format?: "raw" | "jpg";
     delivery_mode?: string;
     download_policy?: string;
@@ -41,9 +43,30 @@ const LAYOUTS = [
   { value: "cinematic", label: "Cinematic" },
 ] as const;
 
-const SOURCE_FORMATS = [
-  { value: "jpg", label: "JPG", desc: "Images as delivered" },
-  { value: "raw", label: "RAW", desc: "Creative LUT preview applies for your look" },
+const FINAL_RAW_PHOTO = [
+  {
+    value: "final" as const,
+    label: "Final Photo Gallery",
+    desc: "Use this for edited, client ready photos. Best for normal viewing, proofing, and delivery.",
+  },
+  {
+    value: "raw" as const,
+    label: "RAW Photo Gallery",
+    desc: "Use this for original camera photo files such as ARW, CR3, NEF, and DNG. Best for source review and optional LUT based preview workflows.",
+  },
+] as const;
+
+const FINAL_RAW_VIDEO = [
+  {
+    value: "final" as const,
+    label: "Final Video Gallery",
+    desc: "Use this for edited, client ready videos that are ready to watch, review, and download.",
+  },
+  {
+    value: "raw" as const,
+    label: "RAW Video Gallery",
+    desc: "Use this for source or log based footage where creative preview tools like LUT preview may be needed.",
+  },
 ] as const;
 
 const VIDEO_DELIVERY_MODES = [
@@ -143,7 +166,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
   const [password, setPassword] = useState("");
   const [invitedEmails, setInvitedEmails] = useState("");
   const [layout, setLayout] = useState<"masonry" | "justified" | "cinematic">("masonry");
-  const [sourceFormat, setSourceFormat] = useState<"raw" | "jpg">("jpg");
+  const [mediaMode, setMediaMode] = useState<"final" | "raw">("final");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Video-specific
@@ -179,8 +202,9 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
       };
       const photoExtras =
         galleryType === "photo"
-          ? { source_format: sourceFormat }
+          ? { media_mode: mediaMode }
           : {
+              media_mode: mediaMode,
               delivery_mode: deliveryMode,
               download_policy: downloadPolicy,
               allow_comments: allowComments,
@@ -386,24 +410,59 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
             {galleryType === "photo" && (
               <div>
                 <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Source format
+                  Gallery profile
                 </label>
                 <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                  RAW galleries use creative LUT preview for your look. JPG galleries show images as
-                  delivered.
+                  Final means edited, delivery ready, preview friendly media. RAW means original camera
+                  files or workflows that need special preview (LUT review, etc.).
                 </p>
                 <div className="space-y-2">
-                  {SOURCE_FORMATS.map((s) => (
+                  {FINAL_RAW_PHOTO.map((s) => (
                     <label
                       key={s.value}
                       className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
                     >
                       <input
                         type="radio"
-                        name="source_format"
+                        name="media_mode_photo"
                         value={s.value}
-                        checked={sourceFormat === s.value}
-                        onChange={() => setSourceFormat(s.value)}
+                        checked={mediaMode === s.value}
+                        onChange={() => setMediaMode(s.value)}
+                        className="mt-1"
+                      />
+                      <div>
+                        <span className="font-medium text-neutral-900 dark:text-white">
+                          {s.label}
+                        </span>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{s.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {galleryType === "video" && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Gallery profile
+                </label>
+                <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+                  Final is for deliverable exports. RAW is for source or log footage where on screen LUT
+                  preview may help during review.
+                </p>
+                <div className="space-y-2">
+                  {FINAL_RAW_VIDEO.map((s) => (
+                    <label
+                      key={s.value}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+                    >
+                      <input
+                        type="radio"
+                        name="media_mode_video"
+                        value={s.value}
+                        checked={mediaMode === s.value}
+                        onChange={() => setMediaMode(s.value)}
                         className="mt-1"
                       />
                       <div>

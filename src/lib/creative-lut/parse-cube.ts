@@ -3,6 +3,8 @@
  * CUBE format: LUT_3D_SIZE N, then N³ lines of "R G B" (R varies fastest).
  */
 
+import { LUT_GRID_MAX, LUT_GRID_MIN } from "./lut-limits";
+
 export interface ParseCubeResult {
   data: Float32Array;
   size: number;
@@ -52,7 +54,7 @@ export function validateCubeStructure(text: string): { valid: true } | { valid: 
     const parts = trimmed.split(/\s+/);
     if (parts[0] === "LUT_3D_SIZE" && parts[1]) {
       const n = parseInt(parts[1], 10);
-      if (!Number.isInteger(n) || n < 2 || n > 64) {
+      if (!Number.isInteger(n) || n < LUT_GRID_MIN || n > LUT_GRID_MAX) {
         return { valid: false, error: "Invalid LUT_3D_SIZE" };
       }
       size = n;

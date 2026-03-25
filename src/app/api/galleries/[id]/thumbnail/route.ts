@@ -18,25 +18,32 @@ import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import {
+  GALLERY_PREVIEW_STATUS_HEADER,
+  PREVIEW_STATUS_OK,
+  PREVIEW_STATUS_UNAVAILABLE,
+} from "@/lib/gallery-preview-headers";
 import { rawToThumbnail } from "@/lib/raw-thumbnail";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 const SIZES = { thumb: 256, small: 512, medium: 1024, large: 1920, preview: 1920 } as const;
 
-/** Generate a placeholder image when RAW preview extraction fails (e.g. no Perl on Vercel). */
-async function createRawPlaceholder(width: number, height?: number): Promise<Buffer> {
-  const h = height ?? width;
-  return sharp({
-    create: {
-      width,
-      height: h,
-      channels: 3,
-      background: { r: 64, g: 64, b: 64 },
-    },
-  })
-    .jpeg({ quality: 80 })
-    .toBuffer();
+let transparentPng1x1: Buffer | null = null;
+async function getTransparentPng1x1(): Promise<Buffer> {
+  if (!transparentPng1x1) {
+    transparentPng1x1 = await sharp({
+      create: {
+        width: 1,
+        height: 1,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+  }
+  return transparentPng1x1;
 }
 const COVER_SIZES = COVER_DERIVATIVE_WIDTHS;
 
@@ -116,6 +123,9 @@ export async function GET(
               headers: {
                 "Content-Type": "image/jpeg",
                 "Cache-Control": "public, max-age=86400, immutable",
+                ...(isRaw
+                  ? { [GALLERY_PREVIEW_STATUS_HEADER]: PREVIEW_STATUS_OK }
+                  : {}),
               },
             });
           }
@@ -140,10 +150,16 @@ export async function GET(
           console.warn("[gallery thumbnail] RAW preview error for", fileName, (e as Error)?.message ?? e);
         }
         if (!thumb) {
-          resized = new Uint8Array(await createRawPlaceholder(coverWidth, Math.round(coverWidth * 0.75)));
-        } else {
-          resized = new Uint8Array(thumb);
+          return new NextResponse(new Uint8Array(await getTransparentPng1x1()), {
+            status: 200,
+            headers: {
+              "Content-Type": "image/png",
+              "Cache-Control": "private, no-store",
+              [GALLERY_PREVIEW_STATUS_HEADER]: PREVIEW_STATUS_UNAVAILABLE,
+            },
+          });
         }
+        resized = new Uint8Array(thumb);
       } else {
         resized = new Uint8Array(
           await sharp(buffer)
@@ -161,6 +177,9 @@ export async function GET(
         headers: {
           "Content-Type": "image/jpeg",
           "Cache-Control": "public, max-age=86400, immutable",
+          ...(isRaw
+            ? { [GALLERY_PREVIEW_STATUS_HEADER]: PREVIEW_STATUS_OK }
+            : {}),
         },
       });
     }
@@ -181,10 +200,16 @@ export async function GET(
         console.warn("[gallery thumbnail] RAW preview error for", fileName, (e as Error)?.message ?? e);
       }
       if (!thumb) {
-        resized = new Uint8Array(await createRawPlaceholder(squareSize));
-      } else {
-        resized = new Uint8Array(thumb);
+        return new NextResponse(new Uint8Array(await getTransparentPng1x1()), {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "Cache-Control": "private, no-store",
+            [GALLERY_PREVIEW_STATUS_HEADER]: PREVIEW_STATUS_UNAVAILABLE,
+          },
+        });
       }
+      resized = new Uint8Array(thumb);
     } else {
       resized = new Uint8Array(
         await sharp(buffer)
@@ -200,6 +225,7 @@ export async function GET(
       headers: {
         "Content-Type": "image/jpeg",
         "Cache-Control": "private, max-age=3600",
+        ...(isRaw ? { [GALLERY_PREVIEW_STATUS_HEADER]: PREVIEW_STATUS_OK } : {}),
       },
     });
   } catch (err) {

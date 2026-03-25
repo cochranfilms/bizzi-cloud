@@ -78,7 +78,7 @@ export default function FileTypeDistributionChart({
         Storage by type
       </h4>
       <div className="flex min-w-0 flex-col gap-4">
-        <div className="mx-auto h-44 w-44 shrink-0 sm:h-48 sm:w-48">
+        <div className="mx-auto aspect-square h-44 w-44 min-h-[176px] min-w-[176px] shrink-0 sm:h-48 sm:w-48 sm:min-h-[192px] sm:min-w-[192px]">
           <ResponsiveContainer width="100%" height="100%" minHeight={176} minWidth={176}>
             <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <Pie

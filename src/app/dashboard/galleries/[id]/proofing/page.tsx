@@ -20,6 +20,7 @@ import { useBackup } from "@/context/BackupContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
+import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 
 interface FavoritesList {
@@ -65,10 +66,15 @@ function ProofingAssetCell({
   const objectKey = asset.object_key ?? "";
   const isImage = IMAGE_EXT.test(asset.name);
   const isVideo = VIDEO_EXT.test(asset.name);
-  const previewUrl = useGalleryThumbnail(galleryId, objectKey, asset.name, {
-    enabled: (isImage || isVideo) && isHovered,
-    size: "medium",
-  });
+  const { url: previewUrl, rawPreviewUnavailable } = useGalleryThumbnail(
+    galleryId,
+    objectKey,
+    asset.name,
+    {
+      enabled: (isImage || isVideo) && isHovered,
+      size: "medium",
+    }
+  );
 
   const clearHideTimeout = () => {
     if (hideTimeoutRef.current) {
@@ -127,7 +133,11 @@ function ProofingAssetCell({
         className="h-full w-full overflow-hidden rounded-xl border-2 border-white bg-neutral-900 shadow-2xl ring-2 ring-neutral-500/30"
         style={{ animation: "proofing-popup 0.15s ease-out" }}
       >
-        {previewUrl ? (
+        {rawPreviewUnavailable && isImage ? (
+          <div className="h-full overflow-y-auto p-1">
+            <RawPreviewPlaceholder fileName={asset.name} className="min-h-0 text-[9px]" />
+          </div>
+        ) : previewUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={previewUrl}

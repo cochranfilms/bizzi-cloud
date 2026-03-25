@@ -11,6 +11,8 @@ import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creativ
 import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
+import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 
 function CoverFocalPointEditorSection({
   galleryId,
@@ -27,7 +29,7 @@ function CoverFocalPointEditorSection({
   onChange: (x: number, y: number) => void;
   bannerSize?: "small" | "medium" | "large" | "cinematic";
 }) {
-  const imageUrl = useGalleryThumbnail(
+  const { url: imageUrl, rawPreviewUnavailable } = useGalleryThumbnail(
     galleryId,
     asset?.object_key,
     asset?.name ?? "",
@@ -38,13 +40,19 @@ function CoverFocalPointEditorSection({
       <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
         Edit crop
       </label>
-      <CoverFocalPointEditor
-        imageUrl={imageUrl}
-        focalX={focalX}
-        focalY={focalY}
-        onChange={onChange}
-        bannerSize={bannerSize ?? "medium"}
-      />
+      {rawPreviewUnavailable ? (
+        <div className="rounded-lg border border-neutral-200 dark:border-neutral-600">
+          <RawPreviewPlaceholder fileName={asset?.name ?? ""} />
+        </div>
+      ) : (
+        <CoverFocalPointEditor
+          imageUrl={imageUrl}
+          focalX={focalX}
+          focalY={focalY}
+          onChange={onChange}
+          bannerSize={bannerSize ?? "medium"}
+        />
+      )}
     </div>
   );
 }
@@ -60,10 +68,15 @@ function CoverAssetThumbnail({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const thumbUrl = useGalleryThumbnail(galleryId, asset.object_key, asset.name, {
-    enabled: true,
-    size: "thumb",
-  });
+  const { url: thumbUrl, rawPreviewUnavailable } = useGalleryThumbnail(
+    galleryId,
+    asset.object_key,
+    asset.name,
+    {
+      enabled: true,
+      size: "thumb",
+    }
+  );
 
   return (
     <button
@@ -75,7 +88,11 @@ function CoverAssetThumbnail({
           : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"
       }`}
     >
-      {thumbUrl ? (
+      {rawPreviewUnavailable ? (
+        <div className="h-full w-full overflow-hidden">
+          <RawPreviewPlaceholder fileName={asset.name} className="min-h-[80px] py-2" />
+        </div>
+      ) : thumbUrl ? (
         /* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */
         <img src={thumbUrl} alt="" className="h-full w-full object-cover" />
       ) : (
@@ -126,6 +143,9 @@ interface GallerySettingsFormProps {
     /** Video gallery */
     gallery_type?: "photo" | "video";
     featured_video_asset_id?: string | null;
+    media_mode?: "final" | "raw";
+    /** @deprecated */
+    source_format?: "raw" | "jpg";
   };
 }
 
@@ -278,6 +298,22 @@ export default function GallerySettingsForm({
   );
   const [markingPaid, setMarkingPaid] = useState(false);
 
+  const [mediaMode, setMediaMode] = useState<"final" | "raw">(() =>
+    normalizeGalleryMediaMode({
+      media_mode: initialData.media_mode,
+      source_format: initialData.source_format,
+    })
+  );
+
+  useEffect(() => {
+    setMediaMode(
+      normalizeGalleryMediaMode({
+        media_mode: initialData.media_mode,
+        source_format: initialData.source_format,
+      })
+    );
+  }, [initialData.media_mode, initialData.source_format]);
+
   const handleMarkAsPaid = useCallback(async () => {
     if (!user) return;
     const nextStatus = invoiceStatus === "paid" ? "sent" : "paid";
@@ -313,6 +349,7 @@ export default function GallerySettingsForm({
   }, [user, galleryId, invoiceStatus, onRefetch]);
 
   const isVideoGallery = initialData.gallery_type === "video";
+  const isRawGallery = mediaMode === "raw";
 
   const [coverAssets, setCoverAssets] = useState<
     { id: string; name: string; object_key: string; media_type: string }[]
@@ -445,6 +482,7 @@ export default function GallerySettingsForm({
         invoice_label: invoiceLabel.trim() || null,
         invoice_status: invoiceStatus || null,
         invoice_required_for_download: invoiceRequiredForDownload,
+        media_mode: mediaMode,
       };
       if (accessMode === "password" && password) body.password = password;
 
@@ -491,6 +529,42 @@ export default function GallerySettingsForm({
           {error}
         </div>
       )}
+
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+          Gallery profile
+        </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          {isVideoGallery ? "Video" : "Photo"} ·{" "}
+          <span className="font-medium text-neutral-700 dark:text-neutral-300">
+            {mediaMode === "raw" ? "RAW (source review)" : "Final (delivery)"}
+          </span>
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="media_mode_settings"
+              checked={mediaMode === "final"}
+              onChange={() => setMediaMode("final")}
+            />
+            <span className="text-sm text-neutral-800 dark:text-neutral-200">Final</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="media_mode_settings"
+              checked={mediaMode === "raw"}
+              onChange={() => setMediaMode("raw")}
+            />
+            <span className="text-sm text-neutral-800 dark:text-neutral-200">RAW</span>
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+          RAW enables creative LUT preview tools in this gallery. Final is optimized for clean delivery
+          and viewing.
+        </p>
+      </section>
 
       {/* Cover photo */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
@@ -1255,16 +1329,28 @@ export default function GallerySettingsForm({
         </div>
       </section>
 
-      {/* Creative LUT */}
-      <LUTLibrarySection
-        galleryId={galleryId}
-        scope={isVideoGallery ? "video_gallery" : "photo_gallery"}
-        config={lutConfig}
-        library={lutLibrary}
-        onRefetch={fetchLUT}
-        getAuthToken={() => user?.getIdToken() ?? Promise.resolve(null)}
-        includeBuiltin={isVideoGallery}
-      />
+      {/* Creative LUT — RAW galleries only */}
+      {isRawGallery ? (
+        <LUTLibrarySection
+          galleryId={galleryId}
+          scope={isVideoGallery ? "video_gallery" : "photo_gallery"}
+          config={lutConfig}
+          library={lutLibrary}
+          onRefetch={fetchLUT}
+          getAuthToken={() => user?.getIdToken() ?? Promise.resolve(null)}
+          includeBuiltin={isVideoGallery}
+        />
+      ) : (
+        <section className="rounded-xl border border-neutral-200 bg-neutral-50/80 p-6 dark:border-neutral-700 dark:bg-neutral-800/40">
+          <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+            Creative LUT
+          </h2>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            LUT preview is available in RAW galleries. Switch this gallery to RAW under Gallery profile
+            above to upload LUTs and enable on screen preview (preview only; originals unchanged).
+          </p>
+        </section>
+      )}
 
       <div className="flex justify-end">
         <button

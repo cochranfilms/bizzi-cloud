@@ -4,6 +4,7 @@
 
 import { parseCubeFile, type ParseCubeResult } from "./parse-cube";
 import { parse3dlFile } from "./parse-3dl";
+import { LUT_GRID_MAX, LUT_GRID_MIN } from "./lut-limits";
 
 export type ParseLutResult = ParseCubeResult;
 
@@ -28,8 +29,11 @@ export function parseLutFileText(text: string): ParseLutResult {
 export function validateLutFileForUpload(text: string): { valid: true } | { valid: false; error: string } {
   try {
     const { data, size } = parseLutFileText(text);
-    if (size < 2 || size > 64) {
-      return { valid: false, error: "LUT size must be between 2 and 64" };
+    if (size < LUT_GRID_MIN || size > LUT_GRID_MAX) {
+      return {
+        valid: false,
+        error: `LUT size must be between ${LUT_GRID_MIN} and ${LUT_GRID_MAX}`,
+      };
     }
     if (data.length !== size * size * size * 4) {
       return { valid: false, error: "LUT data length mismatch" };

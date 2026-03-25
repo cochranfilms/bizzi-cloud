@@ -15,8 +15,8 @@ export default function RevenueByPlanChart({ data }: RevenueByPlanChartProps) {
       <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
         Revenue by plan
       </h3>
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="h-64 min-h-[16rem] w-full min-w-[200px]">
+        <ResponsiveContainer width="100%" height="100%" minHeight={200} minWidth={200}>
           <BarChart data={data} layout="vertical" margin={{ left: 60 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-neutral-200 dark:stroke-neutral-700" />
             <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />

@@ -25,14 +25,14 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
           Revenue vs cost (30 days)
         </h3>
-        <div className="h-64">
+        <div className="h-64 min-h-[16rem] w-full min-w-[200px]">
           {!hasTrend && (
             <div className="flex h-full items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
               Connect Stripe Reporting for historical revenue and cost trend
             </div>
           )}
           {hasTrend && (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minHeight={200} minWidth={200}>
             <AreaChart data={revenueTrend}>
               <defs>
                 <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
@@ -84,14 +84,14 @@ export default function OverviewChartsGrid({ revenueTrend }: OverviewChartsGridP
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
           MRR trend (30 days)
         </h3>
-        <div className="h-64">
+        <div className="h-64 min-h-[16rem] w-full min-w-[200px]">
           {!hasTrend && (
             <div className="flex h-full items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
               Connect Stripe Reporting for historical MRR trend
             </div>
           )}
           {hasTrend && (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minHeight={200} minWidth={200}>
             <AreaChart data={revenueTrend}>
               <defs>
                 <linearGradient id="mrrGrad" x1="0" y1="0" x2="0" y2="1">

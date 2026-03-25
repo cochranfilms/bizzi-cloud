@@ -61,6 +61,7 @@ type GalleryCardProps = {
   gallery: {
     id: string;
     gallery_type: "photo" | "video";
+    media_mode?: "final" | "raw";
     title: string;
     access_mode: string;
     view_count: number;
@@ -75,13 +76,14 @@ type GalleryCardProps = {
 
 function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCardProps) {
   const [cardRef, isInView] = useInView<HTMLDivElement>();
-  const thumbUrl = useGalleryThumbnail(
+  const { url: thumbUrl, rawPreviewUnavailable } = useGalleryThumbnail(
     g.cover_object_key ? g.id : undefined,
     g.cover_object_key ?? undefined,
     g.cover_name ?? "",
     { enabled: !!g.cover_object_key && isInView, size: "cover-sm" }
   );
   const isVideo = g.gallery_type === "video";
+  const modeLabel = g.media_mode === "raw" ? "RAW" : "Final";
 
   return (
     <Link
@@ -96,7 +98,11 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
         ref={cardRef}
         className="relative flex aspect-video shrink-0 items-center justify-center overflow-hidden rounded-t-xl bg-neutral-100 dark:bg-neutral-800"
       >
-        {thumbUrl ? (
+        {rawPreviewUnavailable && !isVideo ? (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-200 px-2 text-center text-[10px] font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+            RAW preview unavailable
+          </div>
+        ) : thumbUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from gallery thumbnail API */}
             <img
@@ -119,14 +125,19 @@ function GalleryCard({ basePath, gallery: g, onDelete, deletingId }: GalleryCard
             <Images className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
           )
         )}
-        <div
-          className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-medium ${
-            isVideo
-              ? "bg-violet-600/90 text-white"
-              : "bg-amber-600/90 text-white"
-          }`}
-        >
-          {isVideo ? "Video" : "Photo"}
+        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+          <span
+            className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+              isVideo
+                ? "bg-violet-600/90 text-white"
+                : "bg-amber-600/90 text-white"
+            }`}
+          >
+            {isVideo ? "Video" : "Photo"}
+          </span>
+          <span className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+            {modeLabel}
+          </span>
         </div>
       </div>
       <div className="flex flex-1 flex-col p-4">

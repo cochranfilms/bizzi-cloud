@@ -133,16 +133,17 @@
   .animate-logo-scroll {
     animation: logo-scroll 30s linear infinite;
   }
-  @keyframes teams-scroll {
+  /* One pass: scroll strip left until the end is visible; no seamless loop */
+  @keyframes teams-marquee-once {
     0% {
       transform: translateX(0);
     }
     100% {
-      transform: translateX(-33.333%);
+      transform: translateX(min(0px, calc(100vw - 100%)));
     }
   }
-  .animate-teams-scroll {
-    animation: teams-scroll 55s linear infinite;
+  .animate-teams-marquee-once {
+    animation: teams-marquee-once 55s linear forwards;
   }
   /* Mobile modal scroll: prevent body scroll when modal open */
   .modal-open {

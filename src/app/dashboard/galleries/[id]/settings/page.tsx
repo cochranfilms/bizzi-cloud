@@ -34,6 +34,8 @@ interface GalleryData {
   watermark: Record<string, unknown>;
   lut?: { enabled?: boolean; storage_url?: string | null } | null;
   gallery_type?: "photo" | "video";
+  media_mode?: "final" | "raw";
+  source_format?: "raw" | "jpg";
 }
 
 export default function GallerySettingsPage() {

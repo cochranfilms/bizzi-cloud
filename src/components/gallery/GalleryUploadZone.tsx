@@ -5,25 +5,59 @@ import { Upload } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { GALLERY_UPLOAD_EXT_SET } from "@/lib/gallery-file-types";
+import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
   galleryTitle?: string;
   onUploadComplete?: () => void;
   disabled?: boolean;
+  /** From gallery profile — drives upload hints */
+  mediaMode?: "final" | "raw";
 }
 
 export default function GalleryUploadZone({
   galleryId,
   onUploadComplete,
   disabled,
+  mediaMode = "final",
 }: GalleryUploadZoneProps) {
   const { getOrCreateGalleryDrive } = useBackup();
   const openPanel = useUppyUpload()?.openPanel;
   const [isDragging, setIsDragging] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+
+  const maybeWarnAboutFiles = (files: File[]) => {
+    if (mediaMode === "final") {
+      const rawPhotos = files.filter((f) => classifyGalleryFilename(f.name).isRawPhoto);
+      if (rawPhotos.length > 0) {
+        setHint(
+          `This is a Final gallery: ${rawPhotos.length} file(s) look like camera RAW. They may not preview well here — use a RAW Photo Gallery for originals.`
+        );
+        window.setTimeout(() => setHint(null), 12000);
+      }
+    }
+    if (mediaMode === "raw") {
+      const nonRaw = files.filter(
+        (f) => {
+          const c = classifyGalleryFilename(f.name);
+          return c.kind === "photo" && !c.isRawPhoto;
+        }
+      );
+      if (nonRaw.length > 0) {
+        setHint(
+          `This is a RAW gallery: ${nonRaw.length} file(s) look like delivery stills (JPG/PNG, etc.). You can still upload them; previews will work normally.`
+        );
+        window.setTimeout(() => setHint(null), 10000);
+      }
+    }
+  };
 
   const handleOpenUppy = async (droppedFiles?: File[]) => {
     if (disabled || !openPanel) return;
+    if (droppedFiles?.length) {
+      maybeWarnAboutFiles(Array.from(droppedFiles));
+    }
     try {
       const drive = await getOrCreateGalleryDrive();
       const pathPrefix = galleryId;
@@ -44,6 +78,7 @@ export default function GalleryUploadZone({
       return ext ? GALLERY_UPLOAD_EXT_SET.has(ext) : false;
     });
     if (accepted.length === 0) return;
+    maybeWarnAboutFiles(accepted);
     handleOpenUppy(accepted);
   };
 
@@ -66,8 +101,21 @@ export default function GalleryUploadZone({
     handleOpenUppy();
   };
 
+  const blurb =
+    mediaMode === "raw"
+      ? "Original camera files and source media; previews may use LUT on supported RAW when available."
+      : "Edited, delivery ready photos and videos — best for client viewing.";
+
   return (
     <div className="space-y-4">
+      {hint && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          {hint}
+        </div>
+      )}
       <div
         role="button"
         tabIndex={0}
@@ -95,6 +143,7 @@ export default function GalleryUploadZone({
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.), MP4, MOV, WebM
           </p>
+          <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-500">{blurb}</p>
         </div>
       </div>
     </div>

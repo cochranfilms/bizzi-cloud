@@ -7,6 +7,8 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 export interface GalleryListItem {
   id: string;
   gallery_type: "photo" | "video";
+  /** final = delivery-ready; raw = source / LUT review */
+  media_mode?: "final" | "raw";
   title: string;
   slug: string;
   photographer_id: string;
@@ -82,6 +84,8 @@ export function useGalleries(options?: { basePath?: string }) {
       pin?: string | null;
       invited_emails?: string[];
       layout?: string;
+      media_mode?: "final" | "raw";
+      /** @deprecated use media_mode */
       source_format?: "raw" | "jpg";
       /** Video gallery specific */
       delivery_mode?: string;

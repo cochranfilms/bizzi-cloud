@@ -33,10 +33,14 @@ import {
   GALLERY_LUT_ORIGINAL_ID,
   resolveGalleryClientLutSource,
 } from "@/lib/gallery-client-lut";
+import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
+import { isRawFile } from "@/lib/gallery-file-types";
+import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 
 interface GalleryData {
   id: string;
   gallery_type?: "photo" | "video";
+  media_mode?: "final" | "raw";
   allow_comments?: boolean;
   allow_favorites?: boolean;
   download_policy?: string;
@@ -313,6 +317,7 @@ function SaveFavoritesModal({
 function PreviewModal({
   asset,
   previewImageUrl,
+  previewImageRawUnavailable: previewRawUnavailableProp = false,
   isVideo,
   comments,
   onClose,
@@ -333,6 +338,8 @@ function PreviewModal({
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
+  /** True when RAW thumbnail API could not produce a raster (show placeholder, not LUT) */
+  previewImageRawUnavailable?: boolean;
   isVideo: boolean;
   comments: { id: string; body: string; client_name?: string | null; created_at: string }[];
   onClose: () => void;
@@ -506,9 +513,16 @@ function PreviewModal({
                 <p className="text-white/80">Video unavailable</p>
               )}
             </div>
+          ) : previewRawUnavailableProp ? (
+            <div className="max-h-[70vh] max-w-lg overflow-auto rounded-lg bg-white/5 p-4">
+              <RawPreviewPlaceholder fileName={asset.name} />
+            </div>
           ) : previewImageUrl ? (
             <>
-              {lut?.enabled && previewLutSource && isImage(asset.name) && lutPreviewEnabled ? (
+              {lut?.enabled &&
+              previewLutSource &&
+              isImage(asset.name) &&
+              lutPreviewEnabled ? (
                 <ImageWithLUT
                   imageUrl={previewImageUrl}
                   lutUrl={previewLutSource}
@@ -649,6 +663,7 @@ function GalleryAssetCard({
   isVideoGallery?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [rawThumbUnavailable, setRawThumbUnavailable] = useState(false);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
@@ -740,6 +755,13 @@ function GalleryAssetCard({
           : `/api/galleries/${galleryId}/thumbnail?${params}`;
         const res = await fetch(url, { headers });
         if (!res.ok || cancelled) return;
+        if (isImg && isRawFile(asset.name) && isGalleryPreviewUnavailableResponse(res)) {
+          if (!cancelled) {
+            setRawThumbUnavailable(true);
+            setThumbUrl(null);
+          }
+          return;
+        }
         const blob = await res.blob();
         if (cancelled) return;
         const blobUrl = URL.createObjectURL(blob);
@@ -747,6 +769,7 @@ function GalleryAssetCard({
           URL.revokeObjectURL(blobUrl);
           return;
         }
+        setRawThumbUnavailable(false);
         setThumbUrl(blobUrl);
       } catch {
         // ignore
@@ -754,6 +777,7 @@ function GalleryAssetCard({
     })();
     return () => {
       cancelled = true;
+      setRawThumbUnavailable(false);
       setThumbUrl((u) => {
         if (u) URL.revokeObjectURL(u);
         return null;
@@ -811,8 +835,10 @@ function GalleryAssetCard({
               className={useNaturalAspect ? "aspect-[4/3]" : "h-full"}
             />
           </div>
+        ) : rawThumbUnavailable ? (
+          <RawPreviewPlaceholder fileName={asset.name} className="min-h-[140px]" />
         ) : thumbUrl ? (
-          lut?.enabled && previewLutSource && lutPreviewEnabled ? (
+          lut?.enabled && previewLutSource && lutPreviewEnabled && !rawThumbUnavailable ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
               <ImageWithLUT
                 imageUrl={thumbUrl}
@@ -896,6 +922,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [passwordInput, setPasswordInput] = useState("");
   const [previewAsset, setPreviewAsset] = useState<GalleryAsset | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewImageRawUnavailable, setPreviewImageRawUnavailable] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedFavorites, setSelectedFavorites] = useState<Set<string>>(() => {
@@ -1088,6 +1115,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   useEffect(() => {
     if (!previewAsset || !isImage(previewAsset.name)) {
       setPreviewImageUrl(null);
+      setPreviewImageRawUnavailable(false);
       return () => {};
     }
     let cancelled = false;
@@ -1109,11 +1137,20 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           { headers }
         );
         if (!res.ok || cancelled) return;
+        if (isRawFile(previewAsset.name) && isGalleryPreviewUnavailableResponse(res)) {
+          if (!cancelled) {
+            setPreviewImageRawUnavailable(true);
+            setPreviewImageUrl(null);
+          }
+          return;
+        }
         const blob = await res.blob();
         if (cancelled) return;
         const url = URL.createObjectURL(blob);
-        if (!cancelled) setPreviewImageUrl(url);
-        else URL.revokeObjectURL(url);
+        if (!cancelled) {
+          setPreviewImageRawUnavailable(false);
+          setPreviewImageUrl(url);
+        } else URL.revokeObjectURL(url);
       } catch {
         // ignore
       }
@@ -1124,6 +1161,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         if (u) URL.revokeObjectURL(u);
         return null;
       });
+      setPreviewImageRawUnavailable(false);
     };
   }, [previewAsset, galleryId, password, user]);
 
@@ -1507,20 +1545,23 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const { gallery, assets, collections } = data;
 
+  const mediaMode = gallery.media_mode ?? "final";
+  const lutWorkflowActive = mediaMode === "raw";
+
   const galleryLutOptions = buildGalleryLUTOptions(
     gallery.creative_lut_library,
     gallery.gallery_type === "video",
     password || undefined
   );
   const clientLutSource = resolveGalleryClientLutSource({
-    lutEnabled: !!gallery.lut?.enabled,
+    lutEnabled: lutWorkflowActive && !!gallery.lut?.enabled,
     lutPreviewEnabled,
     selectedLutId,
     options: galleryLutOptions,
     ownerDefaultSource: gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null,
   });
-  /** Pass-through for watermark / flags; never use for download. Preview URL is clientLutSource. */
-  const effectiveLut = gallery.lut?.enabled ? gallery.lut : null;
+  /** LUT preview only in RAW galleries; never use for download. Preview URL is clientLutSource. */
+  const effectiveLut = lutWorkflowActive && gallery.lut?.enabled ? gallery.lut : null;
 
   const filteredAssets =
     selectedCollectionId === null
@@ -2002,7 +2043,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               </ul>
             </div>
           )}
-          {gallery.description && (
+            {gallery.description && (
             <p
               className={`mt-4 max-w-2xl mx-auto text-sm ${
                 isDarkBg ? "text-white/80" : "text-neutral-600"
@@ -2011,6 +2052,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {gallery.description}
             </p>
           )}
+          <p
+            className={`mt-3 text-center text-xs font-medium uppercase tracking-wide ${
+              isDarkBg ? "text-white/70" : "text-neutral-500"
+            }`}
+          >
+            {gallery.gallery_type === "video" ? "Video" : "Photo"} ·{" "}
+            {mediaMode === "raw" ? "RAW" : "Final"}
+          </p>
         </div>
 
         {collections.length > 0 && (
@@ -2060,7 +2109,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {gallery.lut?.enabled && (
+        {lutWorkflowActive && gallery.lut?.enabled && (
           <div className="mb-4 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
@@ -2236,11 +2285,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         <PreviewModal
           asset={previewAsset}
           previewImageUrl={previewImageUrl}
+          previewImageRawUnavailable={previewImageRawUnavailable}
           isVideo={isVideo(previewAsset.name)}
           comments={previewComments}
           onClose={() => {
             setPreviewAsset(null);
             setPreviewComments([]);
+            setPreviewImageRawUnavailable(false);
           }}
           onAddComment={(body, email, name) =>
             handleAddComment(previewAsset.id, body, email, name)

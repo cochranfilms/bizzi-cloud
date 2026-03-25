@@ -84,6 +84,12 @@ export type { CreativeLUTConfig, CreativeLUTLibraryEntry };
 /** Gallery type: photo for photographers, video for videographers */
 export type GalleryType = "photo" | "video";
 
+/**
+ * Delivery profile: Final = edited / preview-friendly delivery; RAW = source camera or log-style review (LUT, etc.).
+ * Distinct from gallery_type (photo vs video).
+ */
+export type MediaMode = "final" | "raw";
+
 /** Video delivery mode – optimizes UI and permissions */
 export type VideoDeliveryMode =
   | "standard_client_gallery"   // Showcase, approved download
@@ -168,7 +174,11 @@ export interface Gallery {
   layout: GalleryLayout;
   download_settings: GalleryDownloadSettings;
   watermark: GalleryWatermarkSettings;
-  /** Source format: raw = LUT preview applies; jpg = images as delivered */
+  /**
+   * Delivery profile (authoritative with legacy fallback in APIs via normalizeGalleryMediaMode).
+   */
+  media_mode?: MediaMode | null;
+  /** @deprecated Prefer media_mode. Mirrored as jpg=final, raw=raw for legacy readers */
   source_format?: "raw" | "jpg" | null;
   /** @deprecated Use creative_lut_config + creative_lut_library */
   lut?: GalleryLUTSettings | null;
@@ -304,6 +314,9 @@ export interface CreateGalleryInput {
   pin?: string | null;
   invited_emails?: string[];
   layout?: GalleryLayout;
+  /** final | raw — prefer over legacy source_format */
+  media_mode?: MediaMode | null;
+  /** @deprecated Use media_mode */
   source_format?: "raw" | "jpg" | null;
   branding?: Partial<GalleryBrandingSettings>;
   download_settings?: Partial<GalleryDownloadSettings>;
@@ -342,6 +355,8 @@ export interface GalleryPublicPayload {
   gallery: {
     id: string;
     gallery_type: GalleryType;
+    /** Normalized final vs raw (legacy source_format migrated in API) */
+    media_mode: MediaMode;
     title: string;
     slug: string;
     description?: string | null;

@@ -31,8 +31,8 @@ export default function StorageCategoryGrid({ categories }: StorageCategoryGridP
       <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
         Storage by category
       </h4>
-      <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="h-48 min-h-[12rem] w-full min-w-[200px]">
+        <ResponsiveContainer width="100%" height="100%" minHeight={176} minWidth={176}>
           <PieChart>
             <Pie
               data={data}

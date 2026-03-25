@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
-import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 
 function isImageFile(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name);
@@ -10,6 +11,13 @@ function isImageFile(name: string): boolean {
 
 function isVideoFile(name: string): boolean {
   return GALLERY_VIDEO_EXT.test(name);
+}
+
+export interface GalleryThumbnailResult {
+  /** Blob URL for display, or null when unavailable / not loaded */
+  url: string | null;
+  /** True when RAW preview could not be generated (use placeholder UI) */
+  rawPreviewUnavailable: boolean;
 }
 
 /**
@@ -28,13 +36,15 @@ export function useGalleryThumbnail(
     /** When true, fetch with credentials (cookie) instead of Bearer token. For session-only clients. */
     useCredentials?: boolean;
   }
-): string | null {
+): GalleryThumbnailResult {
   const { enabled = true, size = "thumb", useCredentials = false } = options ?? {};
   const isImage = objectKey && fileName && isImageFile(fileName);
   const isVideo = objectKey && fileName && isVideoFile(fileName);
   const canFetch = isImage || isVideo;
+  const isRawImage = !!(isImage && isRawFile(fileName));
 
   const [url, setUrl] = useState<string | null>(null);
+  const [rawPreviewUnavailable, setRawPreviewUnavailable] = useState(false);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +73,14 @@ export function useGalleryThumbnail(
           credentials: useCredentials ? "include" : "same-origin",
         });
         if (!res.ok || cancelled) return;
+
+        if (isRawImage && isGalleryPreviewUnavailableResponse(res)) {
+          if (cancelled) return;
+          setRawPreviewUnavailable(true);
+          setUrl(null);
+          return;
+        }
+
         const blob = await res.blob();
         if (cancelled) return;
         const blobUrl = URL.createObjectURL(blob);
@@ -72,9 +90,12 @@ export function useGalleryThumbnail(
         }
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = blobUrl;
+        setRawPreviewUnavailable(false);
         setUrl(blobUrl);
       } catch {
-        // Ignore – component will show fallback icon
+        if (!cancelled) {
+          setRawPreviewUnavailable(false);
+        }
       }
     })();
     return () => {
@@ -84,8 +105,9 @@ export function useGalleryThumbnail(
         urlRef.current = null;
       }
       setUrl(null);
+      setRawPreviewUnavailable(false);
     };
-  }, [galleryId, objectKey, fileName, canFetch, enabled, isImage, size, useCredentials]);
+  }, [galleryId, objectKey, fileName, canFetch, enabled, isImage, isRawImage, size, useCredentials]);
 
-  return url;
+  return { url, rawPreviewUnavailable };
 }

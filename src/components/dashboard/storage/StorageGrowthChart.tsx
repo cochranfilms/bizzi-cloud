@@ -38,11 +38,12 @@ export default function StorageGrowthChart({
   }
 
   return (
-    <div className="h-48 w-full rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+    <div className="flex h-48 w-full min-h-[12rem] min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <h4 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
         Monthly upload volume
       </h4>
-      <ResponsiveContainer width="100%" height="80%" minHeight={120} minWidth={200}>
+      <div className="relative min-h-[120px] w-full min-w-[200px] flex-1">
+      <ResponsiveContainer width="100%" height="100%" minHeight={120} minWidth={200}>
         <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
           <defs>
             <linearGradient id="uploadGradient" x1="0" y1="0" x2="0" y2="1">
@@ -82,6 +83,7 @@ export default function StorageGrowthChart({
           />
         </AreaChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

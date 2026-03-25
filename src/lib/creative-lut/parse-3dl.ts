@@ -5,6 +5,7 @@
  */
 
 import type { ParseCubeResult } from "./parse-cube";
+import { LUT_GRID_MAX, LUT_GRID_MIN } from "./lut-limits";
 
 function normalizeTripletChannel(v: number, maxSample: number): number {
   if (maxSample <= 1.001) return Math.min(1, Math.max(0, v));
@@ -41,7 +42,7 @@ export function parse3dlFile(text: string): ParseCubeResult {
       const a = parseInt(meshMatch[1], 10);
       const b = parseInt(meshMatch[2], 10);
       const c = parseInt(meshMatch[3], 10);
-      if (a === b && b === c && a >= 2 && a <= 128) {
+      if (a === b && b === c && a >= LUT_GRID_MIN && a <= LUT_GRID_MAX) {
         meshSize = a;
       }
       continue;
@@ -69,8 +70,8 @@ export function parse3dlFile(text: string): ParseCubeResult {
     if (
       fr === fg &&
       fg === fb &&
-      n >= 2 &&
-      n <= 128 &&
+      n >= LUT_GRID_MIN &&
+      n <= LUT_GRID_MAX &&
       n === fr &&
       triplets.length === n * n * n + 1
     ) {
@@ -81,9 +82,9 @@ export function parse3dlFile(text: string): ParseCubeResult {
 
   if (meshSize === 0) {
     const n = Math.round(Math.cbrt(triplets.length)) || 0;
-    if (n < 2 || n * n * n !== triplets.length) {
+    if (n < LUT_GRID_MIN || n * n * n !== triplets.length) {
       throw new Error(
-        `.3dl entry count ${triplets.length} is not a perfect cube (expected N³ for N = 2…128)`
+        `.3dl entry count ${triplets.length} is not a perfect cube (expected N³ for N = ${LUT_GRID_MIN}…${LUT_GRID_MAX})`
       );
     }
     meshSize = n;
@@ -120,8 +121,11 @@ export function parse3dlFile(text: string): ParseCubeResult {
 export function validate3dlStructure(text: string): { valid: true } | { valid: false; error: string } {
   try {
     const { data, size } = parse3dlFile(text);
-    if (size < 2 || size > 64) {
-      return { valid: false, error: "LUT_3D size must be between 2 and 64" };
+    if (size < LUT_GRID_MIN || size > LUT_GRID_MAX) {
+      return {
+        valid: false,
+        error: `LUT_3D size must be between ${LUT_GRID_MIN} and ${LUT_GRID_MAX}`,
+      };
     }
     if (data.length !== size * size * size * 4) {
       return { valid: false, error: "LUT data length mismatch" };

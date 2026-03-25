@@ -56,12 +56,27 @@ function extractEmbeddedJpegFromBuffer(buffer: Buffer): Buffer | null {
  * 1. Pure JS: scan for embedded JPEG (works everywhere, including Vercel)
  * 2. exiftool: when available (local dev with Perl)
  */
+/** Try decoding RAW buffer with sharp/libvips (works for some formats when libraw is available). */
+async function trySharpDecodeRawBuffer(rawBuffer: Buffer): Promise<Buffer | null> {
+  try {
+    const meta = await sharp(rawBuffer).metadata();
+    if (!meta.width || !meta.height) return null;
+    return await sharp(rawBuffer).rotate().jpeg({ quality: 85 }).toBuffer();
+  } catch {
+    return null;
+  }
+}
+
 export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Promise<Buffer | null> {
   // 1. Pure JS fallback - works on Vercel, no Perl needed
   const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
   if (embedded) return embedded;
 
-  // 2. exiftool (requires Perl - fails on Vercel, works locally)
+  // 2. libvips / sharp (may decode ARW, DNG, etc. depending on build)
+  const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
+  if (sharpJpeg) return sharpJpeg;
+
+  // 3. exiftool (requires Perl - fails on Vercel, works locally)
   try {
     const { exiftool } = await import("exiftool-vendored");
     const ext = path.extname(fileName).toLowerCase().slice(1);

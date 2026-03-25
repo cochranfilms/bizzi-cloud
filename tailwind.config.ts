@@ -12,15 +12,6 @@ const config: Config = {
   theme: {
     extend: {
       // Bizzi tokens come from tailwind.bizzi.preset.js
-      keyframes: {
-        "landing-marquee": {
-          "0%": { transform: "translateX(0)" },
-          "100%": { transform: "translateX(-50%)" },
-        },
-      },
-      animation: {
-        "landing-marquee": "landing-marquee 48s linear infinite",
-      },
     },
   },
   plugins: [],

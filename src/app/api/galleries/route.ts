@@ -10,6 +10,11 @@ import {
   DEFAULT_VIDEO_GALLERY_SETTINGS,
 } from "@/lib/gallery-defaults";
 import type { CreateGalleryInput, GalleryAccessMode } from "@/types/gallery";
+import {
+  legacySourceFormatFromMediaMode,
+  normalizeGalleryMediaMode,
+  resolveMediaModeFromCreateBody,
+} from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 
 function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -106,9 +111,14 @@ export async function GET(request: Request) {
     const data = d.data();
     const cover = coverMap[d.id] ?? null;
     const galleryType = data.gallery_type === "video" ? "video" : "photo";
+    const mediaMode = normalizeGalleryMediaMode({
+      media_mode: data.media_mode as string | null | undefined,
+      source_format: data.source_format as string | null | undefined,
+    });
     return {
       id: d.id,
       gallery_type: galleryType,
+      media_mode: mediaMode,
       title: data.title,
       slug: data.slug,
       photographer_id: data.photographer_id,
@@ -151,6 +161,7 @@ export async function POST(request: Request) {
     invited_emails,
     layout = "masonry",
     source_format = "jpg",
+    media_mode: mediaModeBody,
     branding,
     download_settings,
     watermark,
@@ -175,6 +186,12 @@ export async function POST(request: Request) {
   } = body;
 
   const galleryType = rawGalleryType === "video" ? "video" : "photo";
+
+  const resolvedMediaMode = resolveMediaModeFromCreateBody({
+    media_mode: mediaModeBody ?? null,
+    source_format: source_format as string | null,
+  });
+  const legacySource = legacySourceFormatFromMediaMode(resolvedMediaMode);
 
   if (!title || typeof title !== "string" || title.trim().length === 0) {
     return NextResponse.json(
@@ -226,7 +243,8 @@ export async function POST(request: Request) {
       : [],
     branding: { ...DEFAULT_BRANDING, ...branding },
     layout,
-    source_format: galleryType === "photo" ? (source_format === "raw" ? "raw" : "jpg") : "jpg",
+    media_mode: resolvedMediaMode,
+    source_format: legacySource,
     download_settings: { ...DEFAULT_DOWNLOAD_SETTINGS, ...download_settings },
     watermark: { ...DEFAULT_WATERMARK, ...watermark },
     view_count: 0,
