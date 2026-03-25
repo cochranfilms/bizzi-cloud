@@ -490,7 +490,7 @@ export default function VideoWithLUT({
           />
         )}
         {!compactPreview && (
-        <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
+        <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
           <div
             className="h-1.5 cursor-pointer rounded-full bg-white/20 backdrop-blur-sm"
             onClick={handleProgressClick}

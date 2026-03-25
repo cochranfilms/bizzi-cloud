@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+
+/** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
+const OVERLAY_Z = 200;
+
+const BACKDROP_BLUR =
+  "blur(32px) saturate(1.15)";
 
 export interface ImmersiveFilePreviewShellProps {
   onClose: () => void;
-  /** Truncated in the sticky bar when provided */
+  /** Truncated in the bar when provided */
   title?: string;
   /** Extra controls in the top bar (download, hearts, etc.) */
   headerActions?: ReactNode;
@@ -22,8 +29,9 @@ export interface ImmersiveFilePreviewShellProps {
 }
 
 /**
- * Full-viewport immersive preview: blurred+darkened backdrop, scroll only when needed,
- * media sized to fit the viewport (with room for comments when present), centered side-by-side controls on large screens.
+ * Full-viewport immersive preview: portaled to document.body so backdrop-filter
+ * blurs real page content, above app chrome. Media is vertically centered in
+ * the stage area; comments sit below without overlapping.
  */
 export default function ImmersiveFilePreviewShell({
   onClose,
@@ -35,6 +43,11 @@ export default function ImmersiveFilePreviewShell({
   belowFold,
   variant = "app",
 }: ImmersiveFilePreviewShellProps) {
+  const [mountEl, setMountEl] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setMountEl(document.body);
+  }, []);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -54,8 +67,8 @@ export default function ImmersiveFilePreviewShell({
   const isGallery = variant === "gallery";
   const barBorder = isGallery ? "border-white/10" : "border-neutral-200/25 dark:border-white/10";
   const barBg = isGallery
-    ? "bg-black/25"
-    : "bg-white/70 dark:bg-black/25";
+    ? "bg-black/55"
+    : "bg-white/85 dark:bg-black/55";
   const titleClass = isGallery
     ? "text-white/95"
     : "text-neutral-900 dark:text-white/95";
@@ -66,37 +79,52 @@ export default function ImmersiveFilePreviewShell({
     isGallery ? "border-white/10 dark:border-white/10" : "border-neutral-200/50 dark:border-white/10";
 
   const hasBelow = !!belowFold;
-  /** Explicit stage height so nested video/image h-full resolves; keeps comments on-screen */
-  const stageH = hasBelow
-    ? "min-h-[min(200px,40dvh)] h-[min(46dvh,calc(100dvh-15.5rem))] max-h-[min(46dvh,calc(100dvh-15.5rem))] sm:h-[min(48dvh,calc(100dvh-16rem))] sm:max-h-[min(48dvh,calc(100dvh-16rem))] lg:h-[min(50dvh,calc(100dvh-15rem))] lg:max-h-[min(50dvh,calc(100dvh-15rem))]"
-    : "min-h-[min(200px,40dvh)] h-[min(68dvh,calc(100dvh-8rem))] max-h-[min(68dvh,calc(100dvh-8rem))] sm:h-[min(70dvh,calc(100dvh-8.5rem))] sm:max-h-[min(70dvh,calc(100dvh-8.5rem))]";
 
-  /** No flex-1 on media column — it was eating full width so content sat in a left “pane” instead of viewport-centered with the LUT column. */
   const mediaColumnClass =
     sideControls != null
       ? "flex w-full min-w-0 max-w-[min(72rem,calc(100vw-2rem))] flex-col items-center lg:max-w-[min(60rem,calc(100vw-20rem))]"
       : "flex w-full min-w-0 max-w-[min(80rem,calc(100vw-2rem))] flex-col items-center";
 
-  return (
+  /**
+   * Max height for the media slot so it stays below the chrome and above comments,
+   * without pinning to the top edge of the viewport.
+   */
+  const mediaSlotMaxH = hasBelow
+    ? "max-h-[min(56dvh,calc(100dvh-12.5rem))] sm:max-h-[min(58dvh,calc(100dvh-13rem))] lg:max-h-[min(62dvh,calc(100dvh-12rem))]"
+    : "max-h-[min(78dvh,calc(100dvh-7rem))] sm:max-h-[min(80dvh,calc(100dvh-7.5rem))]";
+
+  const belowFoldClass = isGallery
+    ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border border-white/10 bg-black/40 px-1 pt-6 shadow-[0_8px_40px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-black/45 sm:mt-4 sm:px-2 sm:pt-8"
+    : "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border border-neutral-200/40 bg-white/90 pt-6 shadow-sm dark:border-white/10 dark:bg-neutral-950/70 dark:backdrop-blur-md sm:mt-4 sm:pt-8";
+
+  const shell = (
     <div
-      className="animate-immersive-preview-enter fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain opacity-0"
-      style={{ animationFillMode: "forwards" }}
+      className="animate-immersive-preview-enter relative flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden overscroll-contain opacity-0"
+      style={{
+        animationFillMode: "forwards",
+        isolation: "isolate",
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={title ? `Preview: ${title}` : "File preview"}
     >
       <button
         type="button"
-        className="fixed inset-0 bg-neutral-950/60 backdrop-blur-[28px] backdrop-saturate-125 dark:bg-black/72"
+        className="absolute inset-0 z-0 cursor-zoom-out border-0 bg-neutral-950/78 p-0 transition-opacity hover:bg-neutral-950/82 dark:bg-black/82 dark:hover:bg-black/86"
+        style={{
+          WebkitBackdropFilter: BACKDROP_BLUR,
+          backdropFilter: BACKDROP_BLUR,
+        }}
         aria-label="Close preview"
         onClick={onClose}
       />
+
       <div
-        className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1700px] flex-1 flex-col px-3 pb-10 pt-[max(0.25rem,env(safe-area-inset-top))] sm:px-6 sm:pb-12"
+        className="relative z-10 mx-auto flex h-full min-h-0 w-full max-w-[1700px] flex-1 flex-col px-3 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-6 sm:pt-[max(0.75rem,env(safe-area-inset-top))]"
         onClick={(e) => e.stopPropagation()}
       >
         <header
-          className={`sticky top-0 z-30 -mx-3 mb-3 flex min-h-12 shrink-0 items-center gap-3 border-b px-3 py-2.5 backdrop-blur-xl sm:-mx-6 sm:mb-4 sm:px-6 ${barBorder} ${barBg}`}
+          className={`mb-2 flex min-h-12 shrink-0 items-center gap-3 border-b px-0 py-2.5 backdrop-blur-xl sm:mb-3 ${barBorder} ${barBg}`}
         >
           {title ? (
             <h2
@@ -121,13 +149,15 @@ export default function ImmersiveFilePreviewShell({
           </button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-5 lg:gap-6">
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 lg:flex-row lg:items-center lg:justify-center lg:gap-8">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-contain pb-[max(1rem,env(safe-area-inset-bottom))] lg:gap-5">
+          <div
+            className={`flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-5 sm:gap-6 lg:flex-row lg:items-center lg:justify-center lg:gap-8 ${hasBelow ? "min-h-[min(280px,45dvh)]" : "min-h-0"}`}
+          >
             <div className={`${mediaColumnClass} flex min-h-0 flex-col items-center justify-center`}>
               <div
-                className={`flex w-full shrink-0 flex-col items-center justify-center ${stageH}`}
+                className={`flex w-full min-h-0 shrink-0 flex-col items-center justify-center ${mediaSlotMaxH}`}
               >
-                <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center px-1">
+                <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center px-1 sm:px-2">
                   {media}
                 </div>
               </div>
@@ -137,20 +167,25 @@ export default function ImmersiveFilePreviewShell({
             </div>
             {sideControls ? (
               <aside
-                className={`relative isolate w-full shrink-0 border-t pt-5 lg:w-80 lg:max-w-[min(20rem,calc(100vw-2rem))] lg:border-t-0 lg:pt-0 xl:w-80 ${asideDivider}`}
+                className={`relative z-20 w-full shrink-0 border-t pt-5 lg:w-80 lg:max-w-[min(20rem,calc(100vw-2rem))] lg:border-t-0 lg:pt-0 xl:w-80 ${asideDivider}`}
               >
                 {sideControls}
               </aside>
             ) : null}
           </div>
 
-          {belowFold ? (
-            <div className="relative z-30 mx-auto mt-2 w-full max-w-3xl shrink-0 border-t border-neutral-200/30 bg-transparent pt-6 dark:border-white/10 sm:mt-4 sm:pt-8">
-              {belowFold}
-            </div>
-          ) : null}
+          {belowFold ? <div className={belowFoldClass}>{belowFold}</div> : null}
         </div>
       </div>
     </div>
+  );
+
+  if (mountEl == null) return null;
+
+  return createPortal(
+    <div className="fixed inset-0" style={{ zIndex: OVERLAY_Z }}>
+      {shell}
+    </div>,
+    mountEl
   );
 }

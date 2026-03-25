@@ -152,6 +152,46 @@ function exifOrientationToRotationAngle(
   }
 }
 
+/**
+ * Sony (and similar) RAWs often ship a full-size embedded JPEG that is still stored
+ * with landscape pixel dimensions while EXIF 5–8 implies a portrait display. If the
+ * pipeline left the buffer wider than tall, apply a single 90° correction.
+ */
+async function maybeCorrectSwapOrientedRawPreview(
+  jpegBuffer: Buffer,
+  rawBuffer: Buffer,
+  fileName: string
+): Promise<Buffer> {
+  const ext = path.extname(fileName).toLowerCase();
+  if (![".arw", ".sr2", ".srf", ".dng", ".raw"].includes(ext)) return jpegBuffer;
+
+  let rawMeta: sharp.Metadata;
+  try {
+    rawMeta = await sharp(rawBuffer).metadata();
+  } catch {
+    return jpegBuffer;
+  }
+  const o = rawMeta.orientation ?? 1;
+  if (o < 5 || o > 8) return jpegBuffer;
+
+  let imgMeta: sharp.Metadata;
+  try {
+    imgMeta = await sharp(jpegBuffer).metadata();
+  } catch {
+    return jpegBuffer;
+  }
+  const w = imgMeta.width ?? 0;
+  const h = imgMeta.height ?? 0;
+  if (w <= 0 || h <= 0) return jpegBuffer;
+  if (h > w + 2) return jpegBuffer;
+
+  try {
+    return await sharp(jpegBuffer).rotate(90).jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    return jpegBuffer;
+  }
+}
+
 async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): Promise<Buffer | null> {
   let rawMeta: Partial<sharp.Metadata> = {};
   try {
@@ -199,14 +239,14 @@ export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Pr
 
   if (embeddedFirst) {
     const fromEmb = await runEmbedded();
-    if (fromEmb) return fromEmb;
+    if (fromEmb) return maybeCorrectSwapOrientedRawPreview(fromEmb, rawBuffer, fileName);
     const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
-    if (sharpJpeg) return sharpJpeg;
+    if (sharpJpeg) return maybeCorrectSwapOrientedRawPreview(sharpJpeg, rawBuffer, fileName);
   } else {
     const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
-    if (sharpJpeg) return sharpJpeg;
+    if (sharpJpeg) return maybeCorrectSwapOrientedRawPreview(sharpJpeg, rawBuffer, fileName);
     const fromEmb = await runEmbedded();
-    if (fromEmb) return fromEmb;
+    if (fromEmb) return maybeCorrectSwapOrientedRawPreview(fromEmb, rawBuffer, fileName);
   }
 
   // 3. exiftool (requires Perl - fails on Vercel, works locally)
@@ -231,9 +271,10 @@ export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Pr
       const jpegBuffer = await fs.readFile(outputPath);
       if (jpegBuffer.length === 0) return null;
       try {
-        return await sharp(jpegBuffer).rotate().jpeg({ quality: 90 }).toBuffer();
+        const oriented = await sharp(jpegBuffer).rotate().jpeg({ quality: 90 }).toBuffer();
+        return maybeCorrectSwapOrientedRawPreview(oriented, rawBuffer, fileName);
       } catch {
-        return jpegBuffer;
+        return maybeCorrectSwapOrientedRawPreview(jpegBuffer, rawBuffer, fileName);
       }
     } finally {
       await fs.unlink(inputPath).catch(() => {});

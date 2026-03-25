@@ -1820,7 +1820,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         }`}
         style={{ ["--accent" as string]: accent }}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
           <Link
             href="/"
             className={`flex items-center gap-2 ${

@@ -311,7 +311,7 @@ export default function ImageWithLUT({
       {canvasLayerActive && (
         <canvas
           ref={canvasRef}
-          className="pointer-events-none absolute inset-0 block h-full w-full"
+          className="pointer-events-none absolute inset-0 block h-full w-full [transform:translateZ(0)]"
           style={{ opacity: lutDrawn ? 1 : 0 }}
         />
       )}
