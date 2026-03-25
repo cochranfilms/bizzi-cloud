@@ -16,22 +16,38 @@ export { parseCubeFile, parse3dlFile };
  *        `.3dl` exports without `3DMESH` / `Mesh` headers still parse correctly.
  */
 export function parseLutFileText(text: string, formatHint?: "cube" | "3dl"): ParseLutResult {
+  const body = text.replace(/^\uFEFF/, "");
   if (formatHint === "3dl") {
-    return parse3dlFile(text);
+    return parse3dlFile(body);
   }
   if (formatHint === "cube") {
-    return parseCubeFile(text);
+    return parseCubeFile(body);
   }
-  /** Prefer .3dl parser when markers exist — some exporters include LUT_3D_SIZE-like noise; order matters. */
+  /**
+   * Prefer .3dl parser when:
+   * - standard 3DMESH / Mesh headers, or
+   * - OVERLAY / Earthstone-style ramp row: one line of 32+ integer knot indices (0 … 1023) before triplets.
+   */
   const looks3dl =
-    /\b3DMESH\b/i.test(text) || /\bMesh\s+\d+\s+\d+\s+\d+\b/i.test(text);
+    /\b3DMESH\b/i.test(body) ||
+    /\bMesh\s+\d+\s+\d+\s+\d+\b/i.test(body) ||
+    /^\s*(?:\d+\s+){31,}\d+\s*$/m.test(body);
   if (looks3dl) {
-    return parse3dlFile(text);
+    return parse3dlFile(body);
   }
-  if (/\bLUT_3D_SIZE\b/i.test(text)) {
-    return parseCubeFile(text);
+  /**
+   * Minimal .3dl often has only LUT_3D_SIZE + numeric lattice (no 3DMESH, no TITLE).
+   * Routing that through the .cube parser mis-counts lines and breaks validation.
+   */
+  const hasLut3dSize = /\bLUT_3D_SIZE\b/i.test(body);
+  const hasCubeTitle = /^\s*TITLE\b/im.test(body);
+  if (hasLut3dSize && !hasCubeTitle) {
+    return parse3dlFile(body);
   }
-  return parseCubeFile(text);
+  if (hasLut3dSize) {
+    return parseCubeFile(body);
+  }
+  return parseCubeFile(body);
 }
 
 /**

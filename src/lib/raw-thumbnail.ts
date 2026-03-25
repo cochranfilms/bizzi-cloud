@@ -182,16 +182,31 @@ async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): 
   }
 }
 
-export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Promise<Buffer | null> {
-  // 1. Full-file decode when libvips/libraw supports it — best orientation and color
-  const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
-  if (sharpJpeg) return sharpJpeg;
+/** Sony-style RAWs often decode via libraw with wrong orientation; embedded preview + our EXIF path is usually better on Vercel. */
+function preferEmbeddedPreviewFirst(fileName: string): boolean {
+  const ext = path.extname(fileName).toLowerCase();
+  return ext === ".arw" || ext === ".sr2" || ext === ".srf";
+}
 
-  // 2. Embedded JPEG (camera preview)
-  const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
-  if (embedded) {
-    const processed = await processEmbeddedJpegPreview(embedded, rawBuffer);
-    if (processed) return processed;
+export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Promise<Buffer | null> {
+  const embeddedFirst = preferEmbeddedPreviewFirst(fileName);
+
+  const runEmbedded = async (): Promise<Buffer | null> => {
+    const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
+    if (!embedded) return null;
+    return processEmbeddedJpegPreview(embedded, rawBuffer);
+  };
+
+  if (embeddedFirst) {
+    const fromEmb = await runEmbedded();
+    if (fromEmb) return fromEmb;
+    const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
+    if (sharpJpeg) return sharpJpeg;
+  } else {
+    const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
+    if (sharpJpeg) return sharpJpeg;
+    const fromEmb = await runEmbedded();
+    if (fromEmb) return fromEmb;
   }
 
   // 3. exiftool (requires Perl - fails on Vercel, works locally)

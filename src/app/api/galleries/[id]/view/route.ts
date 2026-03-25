@@ -127,7 +127,17 @@ export async function GET(
 
   let lut: { enabled: boolean; lut_source: string | null; storage_url?: string | null } | null = null;
   const config = creativeConfig ?? {};
-  const enabled = config.enabled ?? legacyLut?.enabled ?? false;
+  const coerceBool = (v: unknown): boolean | undefined => {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") {
+      const l = v.trim().toLowerCase();
+      if (l === "true") return true;
+      if (l === "false") return false;
+    }
+    return undefined;
+  };
+  const enabled =
+    coerceBool(config.enabled) ?? coerceBool(legacyLut?.enabled) ?? false;
   const selectedId = config.selected_lut_id ?? null;
 
   if (enabled) {

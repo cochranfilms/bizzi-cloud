@@ -1046,8 +1046,16 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       source_format: data.gallery.source_format ?? null,
     });
     const lutWorkflowActive = mediaMode === "raw";
-    /** Match photographer “Enable LUT preview” on load so preview isn’t stuck off (clientLutSource requires this). */
-    setLutPreviewEnabled(lutWorkflowActive && !!(cfg?.enabled ?? false));
+    /**
+     * Preview defaults must match GET /view: `gallery.lut.enabled` merges legacy `lut` + `creative_lut_config`.
+     * Using only cfg.enabled left preview stuck off when config omitted enabled but the API still returned lut.enabled.
+     */
+    const lutOn = !!data.gallery.lut?.enabled;
+    const configPreview =
+      cfg != null && typeof cfg === "object" && "enabled" in cfg && typeof cfg.enabled === "boolean"
+        ? cfg.enabled
+        : null;
+    setLutPreviewEnabled(lutWorkflowActive && (configPreview !== null ? configPreview : lutOn));
 
     const opts = buildGalleryLUTOptions(
       lib,

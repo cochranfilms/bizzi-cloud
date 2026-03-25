@@ -19,7 +19,8 @@ function normalizeTripletChannel(v: number, maxSample: number): number {
  * Parse .3dl text: headers (3DMESH, Mesh N N N, DOMAIN_*, KEYWORD), comments, then N³ RGB lines.
  */
 export function parse3dlFile(text: string): ParseCubeResult {
-  const lines = text.split(/\r?\n/);
+  const body = text.replace(/^\uFEFF/, "");
+  const lines = body.split(/\r?\n/);
   let meshSize = 0;
   const triplets: [number, number, number][] = [];
 
@@ -65,6 +66,23 @@ export function parse3dlFile(text: string): ParseCubeResult {
     const parts = trimmed.split(/\s+/).filter(Boolean);
     if (parts.length < 3) continue;
 
+    /**
+     * OVERLAY / Earthstone-style .3dl: after comments, one line lists the 1D index ramp
+     * (e.g. 32 values 0 … 1023). It is not an RGB triplet; taking the first 3 numbers inserts
+     * garbage and yields N³+1 samples (e.g. 32769), which fails cube sizing.
+     */
+    if (parts.length > 3) {
+      let allNumeric = true;
+      for (const p of parts) {
+        const v = parseFloat(p);
+        if (!Number.isFinite(v)) {
+          allNumeric = false;
+          break;
+        }
+      }
+      if (allNumeric) continue;
+    }
+
     const r = parseFloat(parts[0]);
     const g = parseFloat(parts[1]);
     const b = parseFloat(parts[2]);
@@ -78,6 +96,23 @@ export function parse3dlFile(text: string): ParseCubeResult {
   }
 
   const approxEqual = (a: number, b: number, eps = 1e-2) => Math.abs(a - b) < eps;
+
+  // Some exporters append "N N N" after the lattice (N³+1 with size at end instead of start).
+  if (meshSize === 0 && triplets.length >= 4) {
+    const [lr, lg, lb] = triplets[triplets.length - 1]!;
+    const nLast = Math.round(lr);
+    if (
+      approxEqual(lr, lg) &&
+      approxEqual(lg, lb) &&
+      nLast >= LUT_GRID_MIN &&
+      nLast <= LUT_GRID_MAX &&
+      approxEqual(lr, nLast) &&
+      triplets.length === nLast * nLast * nLast + 1
+    ) {
+      triplets.pop();
+      meshSize = nLast;
+    }
+  }
 
   // Resolve / many exporters: first row is "N N N" grid size (not a color sample), often as N³+1 lines total (e.g. 32³+1 = 32769).
   if (meshSize === 0 && triplets.length > 0) {
