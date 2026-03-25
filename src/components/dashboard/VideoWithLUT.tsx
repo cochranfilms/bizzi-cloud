@@ -90,6 +90,8 @@ export default function VideoWithLUT({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** After metadata: true = use 9:16 presentation frame, false = 16:9 */
+  const [presentationTall, setPresentationTall] = useState(false);
   const glRef = useRef<VideoLUTContext | null>(null);
 
   const options =
@@ -342,6 +344,23 @@ export default function VideoWithLUT({
   }, [videoSrc, handleVideoError]);
 
   useEffect(() => {
+    setPresentationTall(false);
+  }, [videoSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onMeta = () => {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (w > 0 && h > 0) setPresentationTall(h > w);
+    };
+    video.addEventListener("loadedmetadata", onMeta);
+    if (video.readyState >= 1) onMeta();
+    return () => video.removeEventListener("loadedmetadata", onMeta);
+  }, [videoSrc]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
 
@@ -408,11 +427,7 @@ export default function VideoWithLUT({
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
       : frameless
-        ? {
-            maxHeight: "min(85vh, 920px)",
-            width: "100%",
-            minHeight: 0,
-          }
+        ? { minHeight: 0 }
         : {
             maxHeight: "70vh",
             aspectRatio: "16 / 9",
@@ -421,13 +436,20 @@ export default function VideoWithLUT({
   const outerClass = compactPreview
     ? "h-full w-full min-h-0"
     : sideBySideLut && showLUTOption
-      ? "flex w-full max-w-full flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center lg:gap-5"
-      : "flex w-full flex-col items-center gap-4";
+      ? "flex h-full max-h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4 lg:flex-row lg:items-center lg:justify-center lg:gap-5"
+      : "flex h-full max-h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4";
+
+  const immersiveAspectClass =
+    frameless && !compactPreview && !isFullscreen
+      ? presentationTall
+        ? "aspect-[9/16] h-full max-h-full w-auto max-w-full"
+        : "aspect-video h-full max-h-full w-auto max-w-full"
+      : "";
 
   const videoShellClass = frameless
     ? compactPreview
       ? "rounded-lg bg-black"
-      : "rounded-lg bg-black"
+      : `rounded-lg bg-black ${immersiveAspectClass}`
     : compactPreview
       ? "rounded-lg bg-neutral-200 dark:bg-black"
       : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
@@ -436,7 +458,9 @@ export default function VideoWithLUT({
     <div className={outerClass}>
       <div
         ref={containerRef}
-        className={`video-fullscreen-container relative w-full max-w-full overflow-hidden ${videoShellClass}`}
+        className={`video-fullscreen-container relative overflow-hidden ${videoShellClass} ${
+          frameless && !compactPreview && !isFullscreen ? "mx-auto" : "w-full max-w-full"
+        }`}
         style={containerStyle}
       >
         <video
@@ -452,7 +476,7 @@ export default function VideoWithLUT({
           className={
             compactPreview
               ? `h-full w-full object-cover ${className ?? ""}`
-              : `max-w-full w-full h-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : frameless ? "max-h-[min(85vh,920px)]" : "max-h-[70vh]"}`
+              : `max-h-full max-w-full h-full w-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : !frameless ? "max-h-[70vh]" : ""}`
           }
         />
         {previewOn && currentLutSource && (

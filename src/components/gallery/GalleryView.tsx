@@ -380,6 +380,12 @@ function PreviewModal({
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  /** Native preview video: 9:16 vs 16:9 frame from metadata */
+  const [nativeVideoTallFrame, setNativeVideoTallFrame] = useState(false);
+
+  useEffect(() => {
+    setNativeVideoTallFrame(false);
+  }, [asset.id, isVideo]);
 
   useEffect(() => {
     if (!isVideo || !asset.object_key) return;
@@ -517,7 +523,7 @@ function PreviewModal({
     ) : null;
 
   const mediaCore = isVideo ? (
-    <div className="flex w-full max-w-full flex-col items-center justify-center gap-4">
+    <div className="flex h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4">
       {videoLoading && <p className="text-sm text-white/80">Loading video…</p>}
       {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
       {videoStreamUrl && !videoError ? (
@@ -526,19 +532,33 @@ function PreviewModal({
             key={asset.id}
             src={videoStreamUrl}
             streamUrl={videoStreamUrl}
-            className="max-h-[min(85vh,920px)] max-w-full"
+            className=""
             showLUTOption={false}
             lutSource={previewLutSource}
             creativePreviewOn={lutPreviewEnabled}
             frameless
           />
         ) : (
-          <video
-            src={videoStreamUrl}
-            controls
-            playsInline
-            className="max-h-[min(85vh,920px)] max-w-full rounded-lg bg-black object-contain"
-          />
+          <div className="flex h-full w-full min-h-0 items-center justify-center">
+            <div
+              className={`mx-auto flex h-full max-h-full w-auto max-w-full overflow-hidden rounded-lg bg-black ${
+                nativeVideoTallFrame ? "aspect-[9/16]" : "aspect-video"
+              }`}
+            >
+              <video
+                src={videoStreamUrl}
+                controls
+                playsInline
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (v.videoWidth > 0 && v.videoHeight > 0) {
+                    setNativeVideoTallFrame(v.videoHeight > v.videoWidth);
+                  }
+                }}
+                className="h-full w-full object-contain"
+              />
+            </div>
+          </div>
         )
       ) : null}
       {!videoStreamUrl && !videoLoading && !videoError ? (
@@ -550,14 +570,14 @@ function PreviewModal({
       <RawPreviewPlaceholder fileName={asset.name} />
     </div>
   ) : previewImageUrl ? (
-    <div className="relative inline-block max-w-full">
+    <div className="relative flex h-full min-h-0 w-full max-w-full items-center justify-center">
       {lut?.enabled && previewLutSource && isImage(asset.name) && lutPreviewEnabled ? (
         <ImageWithLUT
           key={asset.id}
           imageUrl={previewImageUrl}
           lutUrl={previewLutSource}
           lutEnabled={true}
-          className="max-h-[min(85vh,920px)] max-w-full"
+          className="block max-h-full max-w-full"
           objectFit="contain"
           gradeMixPercent={lutGradeMixPercent}
         />
@@ -566,7 +586,7 @@ function PreviewModal({
         <img
           src={previewImageUrl}
           alt=""
-          className="max-h-[min(85vh,920px)] max-w-full object-contain"
+          className="max-h-full max-w-full object-contain"
         />
       )}
       {watermark?.enabled && watermark?.image_url && (

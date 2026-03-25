@@ -22,8 +22,8 @@ export interface ImmersiveFilePreviewShellProps {
 }
 
 /**
- * Full-viewport immersive preview: blurred+darkened backdrop, natural page scroll,
- * media as the focal point, optional side controls, secondary section below.
+ * Full-viewport immersive preview: blurred+darkened backdrop, scroll only when needed,
+ * media sized to fit the viewport (with room for comments when present), centered side-by-side controls on large screens.
  */
 export default function ImmersiveFilePreviewShell({
   onClose,
@@ -63,14 +63,20 @@ export default function ImmersiveFilePreviewShell({
     ? "text-white/90 hover:bg-white/15"
     : "text-neutral-700 hover:bg-neutral-900/10 dark:text-white/90 dark:hover:bg-white/10";
 
+  const hasBelow = !!belowFold;
+  /** Explicit stage height so nested video/image h-full resolves; keeps comments on-screen */
+  const stageH = hasBelow
+    ? "min-h-[min(200px,40dvh)] h-[min(46dvh,calc(100dvh-15.5rem))] max-h-[min(46dvh,calc(100dvh-15.5rem))] sm:h-[min(48dvh,calc(100dvh-16rem))] sm:max-h-[min(48dvh,calc(100dvh-16rem))] lg:h-[min(50dvh,calc(100dvh-15rem))] lg:max-h-[min(50dvh,calc(100dvh-15rem))]"
+    : "min-h-[min(200px,40dvh)] h-[min(68dvh,calc(100dvh-8rem))] max-h-[min(68dvh,calc(100dvh-8rem))] sm:h-[min(70dvh,calc(100dvh-8.5rem))] sm:max-h-[min(70dvh,calc(100dvh-8.5rem))]";
+
   const mediaColumnClass =
     sideControls != null
-      ? "flex w-full min-w-0 flex-1 flex-col items-center lg:max-w-[min(100%,calc(100vw-21rem))]"
+      ? "flex w-full min-w-0 flex-1 flex-col items-center lg:max-w-[min(100%,calc(100vw-20rem))]"
       : "flex w-full min-w-0 flex-1 flex-col items-center";
 
   return (
     <div
-      className="animate-immersive-preview-enter fixed inset-0 z-50 overflow-y-auto overscroll-contain opacity-0"
+      className="animate-immersive-preview-enter fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain opacity-0"
       style={{ animationFillMode: "forwards" }}
       role="dialog"
       aria-modal="true"
@@ -83,11 +89,11 @@ export default function ImmersiveFilePreviewShell({
         onClick={onClose}
       />
       <div
-        className="relative z-10 mx-auto flex min-h-full w-full max-w-[1700px] flex-col px-3 pb-16 pt-[max(3.25rem,env(safe-area-inset-top))] sm:px-6 sm:pb-20 sm:pt-16"
+        className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1700px] flex-1 flex-col px-3 pb-10 pt-[max(0.25rem,env(safe-area-inset-top))] sm:px-6 sm:pb-12"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={`sticky top-0 z-20 -mx-3 mb-4 flex min-h-12 items-center gap-3 border-b px-3 py-2.5 backdrop-blur-xl sm:-mx-6 sm:px-6 ${barBorder} ${barBg}`}
+        <header
+          className={`sticky top-0 z-30 -mx-3 mb-3 flex min-h-12 shrink-0 items-center gap-3 border-b px-3 py-2.5 backdrop-blur-xl sm:-mx-6 sm:mb-4 sm:px-6 ${barBorder} ${barBg}`}
         >
           {title ? (
             <h2
@@ -110,25 +116,35 @@ export default function ImmersiveFilePreviewShell({
           >
             <X className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
-        </div>
+        </header>
 
-        <div className="flex flex-1 flex-col items-stretch gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-8">
-          <div className={`${mediaColumnClass} lg:flex-1`}>
-            <div className="flex w-full justify-center">{media}</div>
-            {mediaFooter}
+        <div className="flex min-h-0 flex-1 flex-col gap-5 lg:gap-6">
+          <div
+            className={`flex min-h-0 flex-1 flex-col items-stretch justify-center gap-5 lg:flex-row lg:items-center lg:justify-center lg:gap-8 ${hasBelow ? "lg:min-h-0" : ""}`}
+          >
+            <div className={`${mediaColumnClass} flex min-h-0 flex-col items-center justify-center`}>
+              <div
+                className={`flex w-full shrink-0 flex-col items-center justify-center ${stageH}`}
+              >
+                <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center px-1">
+                  {media}
+                </div>
+              </div>
+              {mediaFooter ? <div className="mt-2 w-full shrink-0">{mediaFooter}</div> : null}
+            </div>
+            {sideControls ? (
+              <aside className="relative z-20 w-full shrink-0 lg:max-w-[18rem] lg:self-center xl:w-80">
+                {sideControls}
+              </aside>
+            ) : null}
           </div>
-          {sideControls ? (
-            <aside className="flex w-full shrink-0 flex-col gap-3 lg:max-w-sm lg:pt-0 xl:w-80">
-              {sideControls}
-            </aside>
+
+          {belowFold ? (
+            <div className="relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 border-t border-neutral-200/30 pt-6 dark:border-white/10 sm:mt-4 sm:pt-8">
+              {belowFold}
+            </div>
           ) : null}
         </div>
-
-        {belowFold ? (
-          <div className="mx-auto mt-10 w-full max-w-3xl border-t border-neutral-200/30 pt-8 dark:border-white/10">
-            {belowFold}
-          </div>
-        ) : null}
       </div>
     </div>
   );

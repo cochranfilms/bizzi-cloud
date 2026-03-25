@@ -241,7 +241,7 @@ export default function TransferPreviewModal({
         <img
           src={fullUrl}
           alt={file.name}
-          className="max-h-[min(85vh,920px)] max-w-full rounded-lg object-contain shadow-lg shadow-black/15"
+          className="max-h-full max-w-full rounded-lg object-contain shadow-lg shadow-black/15"
         />
       );
     } else if (previewType === "video") {
@@ -249,7 +249,7 @@ export default function TransferPreviewModal({
         <VideoWithLUT
           src={fullUrl}
           streamUrl={videoStreamUrl}
-          className="max-h-[min(85vh,920px)] max-w-full"
+          className=""
           showLUTOption={false}
           frameless
         />
@@ -265,7 +265,7 @@ export default function TransferPreviewModal({
         <iframe
           src={fullUrl}
           title={file.name}
-          className="h-[min(85vh,920px)] w-full max-w-4xl rounded-lg border-0 bg-white shadow-lg"
+          className="h-full max-h-full min-h-[200px] w-full max-w-4xl rounded-lg border-0 bg-white shadow-lg"
         />
       );
     } else {
