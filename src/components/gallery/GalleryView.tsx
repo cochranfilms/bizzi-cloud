@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Music2,
   ExternalLink,
+  Palette,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
@@ -334,7 +335,7 @@ function PreviewModal({
   lutOptions = [],
   selectedLutId,
   onLutSelect,
-  lutPreviewEnabled = true,
+  lutPreviewEnabled = false,
   onLutPreviewToggle,
   allowComments = true,
   previewLutSource,
@@ -439,24 +440,34 @@ function PreviewModal({
             type="button"
             role="switch"
             aria-checked={lutPreviewEnabled}
-            aria-label={`Creative preview ${lutPreviewEnabled ? "on" : "off"}`}
+            aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
             onClick={(e) => {
               e.stopPropagation();
               onLutPreviewToggle();
             }}
-            className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
+            className={`flex items-center gap-3 rounded-xl border border-white/25 bg-black/35 px-3 py-2 text-sm text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/45 ${
+              lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/50" : ""
+            }`}
           >
+            <span className="max-w-[9rem] text-left text-xs font-medium leading-snug text-white/95 sm:max-w-[11rem]">
+              Color grade preview
+            </span>
             <span
-              className={`inline-block h-3 w-5 shrink-0 rounded-full border-2 border-white/80 transition-colors ${
-                lutPreviewEnabled ? "bg-white/90" : "bg-transparent"
+              className={`relative inline-flex h-7 w-11 shrink-0 items-center rounded-full transition-colors ${
+                lutPreviewEnabled ? "bg-bizzi-cyan" : "bg-white/25"
               }`}
-            />
-            Creative {lutPreviewEnabled ? "On" : "Off"}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                  lutPreviewEnabled ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </span>
           </button>
         )}
         {lut?.enabled && modalLutOptions.length > 1 && (
           <select
-            value={selectedLutId ?? ""}
+            value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
             disabled={!lutPreviewEnabled}
             onChange={(e) => {
               e.stopPropagation();
@@ -464,9 +475,10 @@ function PreviewModal({
               if (id) onLutSelect?.(id);
             }}
             onClick={(e) => e.stopPropagation()}
-            aria-hidden={!lutPreviewEnabled}
-            className={`rounded-lg border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-white backdrop-blur-sm ${
-              !lutPreviewEnabled ? "pointer-events-none invisible" : ""
+            className={`min-w-[10rem] rounded-xl border bg-black/35 px-3 py-2 text-sm text-white shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/40 ${
+              lutPreviewEnabled
+                ? "cursor-pointer border-white/30"
+                : "cursor-not-allowed border-white/10 opacity-45"
             }`}
           >
             {modalLutOptions.map((o) => (
@@ -646,7 +658,7 @@ function GalleryAssetCard({
   masonryLayout,
   watermark,
   lut,
-  lutPreviewEnabled = true,
+  lutPreviewEnabled = false,
   previewLutSource = null,
   isFeaturedVideo = false,
   isVideoGallery = false,
@@ -958,7 +970,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
   const [hasEnteredGallery, setHasEnteredGallery] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
-  const [lutPreviewEnabled, setLutPreviewEnabled] = useState(true);
+  const [lutPreviewEnabled, setLutPreviewEnabled] = useState(false);
   const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<{
     used: number;
@@ -1593,6 +1605,23 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     cover_position: gallery.cover_position,
   });
 
+  const heroImageLutActive =
+    lutWorkflowActive &&
+    !!gallery.lut?.enabled &&
+    lutPreviewEnabled &&
+    !!clientLutSource &&
+    !!bannerUrl &&
+    !featuredVideoStreamUrl;
+
+  const heroVideoLutActive =
+    lutWorkflowActive &&
+    !!gallery.lut?.enabled &&
+    lutPreviewEnabled &&
+    !!clientLutSource &&
+    !!featuredVideoStreamUrl;
+
+  const heroBackdropStyle: CSSProperties = { objectPosition: coverObjectPosition };
+
   const prePageMusicUrl = gallery.branding.pre_page_music_url;
   const prePageInstructions = gallery.branding.pre_page_instructions;
   const heroHasMediaBackdrop = !!(bannerUrl || featuredVideoStreamUrl);
@@ -1650,11 +1679,38 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 aria-hidden
               >
                 {featuredVideoStreamUrl ? (
-                  <LoopingVideoPreview
-                    src={featuredVideoStreamUrl}
-                    loopSeconds={5}
-                    className="h-full w-full object-cover"
-                    style={{ objectPosition: coverObjectPosition }}
+                  heroVideoLutActive ? (
+                    <VideoWithLUT
+                      key={`pre-hero-v-${clientLutSource}`}
+                      src={featuredVideoStreamUrl}
+                      streamUrl={featuredVideoStreamUrl}
+                      showLUTOption={false}
+                      lutSource={clientLutSource}
+                      creativePreviewOn
+                      compactPreview
+                      segmentLoopSeconds={5}
+                      className="h-full w-full object-cover"
+                      videoStyle={heroBackdropStyle}
+                    />
+                  ) : (
+                    <LoopingVideoPreview
+                      src={featuredVideoStreamUrl}
+                      loopSeconds={5}
+                      className="h-full w-full object-cover"
+                      style={{ objectPosition: coverObjectPosition }}
+                    />
+                  )
+                ) : heroImageLutActive ? (
+                  <ImageWithLUT
+                    key={`pre-hero-img-${clientLutSource}`}
+                    imageUrl={bannerUrl!}
+                    lutUrl={clientLutSource}
+                    lutEnabled
+                    variant="fill"
+                    objectFit="cover"
+                    className="h-full w-full"
+                    alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                    imageStyle={heroBackdropStyle}
                   />
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -1876,20 +1932,49 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           }}
         >
           {featuredVideoStreamUrl ? (
-            <LoopingVideoPreview
-              src={featuredVideoStreamUrl}
-              loopSeconds={5}
-              className="h-full w-full object-cover"
-              style={{ objectPosition: coverObjectPosition }}
-            />
+            heroVideoLutActive ? (
+              <VideoWithLUT
+                key={`main-hero-v-${clientLutSource}`}
+                src={featuredVideoStreamUrl}
+                streamUrl={featuredVideoStreamUrl}
+                showLUTOption={false}
+                lutSource={clientLutSource}
+                creativePreviewOn
+                compactPreview
+                segmentLoopSeconds={5}
+                className="h-full w-full min-h-0 object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
+                videoStyle={heroBackdropStyle}
+              />
+            ) : (
+              <LoopingVideoPreview
+                src={featuredVideoStreamUrl}
+                loopSeconds={5}
+                className="h-full w-full object-cover"
+                style={{ objectPosition: coverObjectPosition }}
+              />
+            )
           ) : bannerUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={bannerUrl}
-              alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-              className="h-full w-full object-cover"
-              style={{ objectPosition: coverObjectPosition }}
-            />
+            heroImageLutActive ? (
+              <ImageWithLUT
+                key={`main-hero-img-${clientLutSource}`}
+                imageUrl={bannerUrl}
+                lutUrl={clientLutSource}
+                lutEnabled
+                variant="fill"
+                objectFit="cover"
+                className="h-full w-full min-h-0"
+                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                imageStyle={heroBackdropStyle}
+              />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={bannerUrl}
+                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                className="h-full w-full object-cover"
+                style={{ objectPosition: coverObjectPosition }}
+              />
+            )
           ) : null}
         </div>
       )}
@@ -2124,48 +2209,119 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         )}
 
         {lutWorkflowActive && gallery.lut?.enabled && (
-          <div className="mb-4 flex min-h-[2.75rem] flex-wrap items-center justify-center gap-3">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={lutPreviewEnabled}
-              aria-label={`Creative preview ${lutPreviewEnabled ? "on" : "off"}`}
-              onClick={() => setLutPreviewEnabled((p) => !p)}
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-                isDarkBg
-                  ? "bg-white/15 text-white/90 hover:bg-white/20"
-                  : "bg-neutral-200/80 text-neutral-700 hover:bg-neutral-300/80 dark:bg-neutral-700/80 dark:text-neutral-300 dark:hover:bg-neutral-600/80"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-6 shrink-0 rounded-full border-2 transition-colors ${
-                  lutPreviewEnabled
-                    ? "border-current bg-current"
-                    : "border-current bg-transparent"
+          <div
+            className={`mx-auto mb-7 max-w-2xl rounded-2xl border px-4 py-4 shadow-sm sm:px-5 sm:py-5 ${
+              isDarkBg
+                ? "border-white/15 bg-white/[0.07] backdrop-blur-sm"
+                : "border-neutral-200/90 bg-white/90 shadow-neutral-200/40 dark:border-neutral-600 dark:bg-neutral-900/80 dark:shadow-none"
+            }`}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  isDarkBg ? "bg-white/10 text-white" : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/15 dark:text-bizzi-cyan"
                 }`}
-              />
-              Creative Preview {lutPreviewEnabled ? "On" : "Off"}
-            </button>
-            {galleryLutOptions.length > 1 && (
-              <select
-                value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
-                disabled={!lutPreviewEnabled}
-                onChange={(e) => {
-                  setSelectedLutId(e.target.value);
-                }}
-                className={`min-w-[10rem] rounded-lg border px-3 py-1.5 text-xs font-medium ${
-                  isDarkBg
-                    ? "border-white/20 bg-white/10 text-white"
-                    : "border-neutral-300 bg-white text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
-                } ${!lutPreviewEnabled ? "pointer-events-none invisible" : ""}`}
               >
-                {galleryLutOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            )}
+                <Palette className="h-5 w-5" aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <h3
+                  className={`text-sm font-semibold tracking-tight ${
+                    isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
+                  }`}
+                >
+                  Color look preview
+                </h3>
+                <p
+                  className={`text-xs leading-relaxed ${
+                    isDarkBg ? "text-white/75" : "text-neutral-600 dark:text-neutral-400"
+                  }`}
+                >
+                  Turn this on to preview a <strong className="font-medium">color grade (LUT)</strong> your
+                  creator set up—similar to how the finished photos or video might look after editing. This is{" "}
+                  <strong className="font-medium">only a preview</strong>; your originals and downloads are
+                  unchanged.
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[12rem] sm:items-stretch">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={lutPreviewEnabled}
+                  aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
+                  onClick={() => setLutPreviewEnabled((p) => !p)}
+                  className={`group flex w-full items-center justify-between gap-3 rounded-xl border-2 px-3.5 py-2.5 text-left transition-all ${
+                    lutPreviewEnabled
+                      ? isDarkBg
+                        ? "border-bizzi-cyan/60 bg-bizzi-cyan/15 shadow-[0_0_0_1px_rgba(0,191,255,0.15)]"
+                        : "border-bizzi-blue/50 bg-bizzi-blue/[0.08] shadow-[0_0_0_1px_rgba(0,191,255,0.12)] dark:border-bizzi-cyan/50 dark:bg-bizzi-cyan/10"
+                      : isDarkBg
+                        ? "border-white/20 bg-white/5 hover:border-white/30"
+                        : "border-neutral-200 bg-neutral-50 hover:border-neutral-300 dark:border-neutral-600 dark:bg-neutral-800/60 dark:hover:border-neutral-500"
+                  }`}
+                >
+                  <span
+                    className={`text-xs font-semibold ${
+                      isDarkBg ? "text-white" : "text-neutral-800 dark:text-white"
+                    }`}
+                  >
+                    Preview color grade
+                  </span>
+                  <span
+                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                      lutPreviewEnabled
+                        ? isDarkBg
+                          ? "bg-bizzi-cyan"
+                          : "bg-bizzi-blue dark:bg-bizzi-cyan"
+                        : isDarkBg
+                          ? "bg-white/20"
+                          : "bg-neutral-300 dark:bg-neutral-600"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                        lutPreviewEnabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                </button>
+                {galleryLutOptions.length > 1 && (
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="gallery-lut-select"
+                      className={`text-[10px] font-medium uppercase tracking-wide ${
+                        isDarkBg ? "text-white/50" : "text-neutral-500 dark:text-neutral-500"
+                      }`}
+                    >
+                      Look
+                    </label>
+                    <select
+                      id="gallery-lut-select"
+                      value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
+                      disabled={!lutPreviewEnabled}
+                      onChange={(e) => {
+                        setSelectedLutId(e.target.value);
+                      }}
+                      className={`w-full rounded-xl border-2 px-3 py-2.5 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-bizzi-blue/30 dark:focus:ring-bizzi-cyan/30 ${
+                        lutPreviewEnabled
+                          ? isDarkBg
+                            ? "border-white/25 bg-white/10 text-white"
+                            : "border-neutral-300 bg-white text-neutral-900 dark:border-neutral-500 dark:bg-neutral-800 dark:text-white"
+                          : isDarkBg
+                            ? "cursor-not-allowed border-white/10 bg-white/[0.04] text-white/40 opacity-60"
+                            : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-600"
+                      }`}
+                    >
+                      {galleryLutOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

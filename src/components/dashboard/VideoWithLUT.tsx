@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, type CSSProperties } from "react";
 import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 import Hls from "hls.js";
 import {
@@ -23,6 +23,8 @@ interface VideoWithLUTProps {
   src: string;
   streamUrl?: string | null;
   className?: string;
+  /** Applied to the underlying &lt;video&gt; (e.g. objectPosition for cover crops). */
+  videoStyle?: CSSProperties;
   /** When false, LUT controls are hidden and video plays without LUT. Default: false. */
   showLUTOption?: boolean;
   /** URL (signed) or builtin LUT id (e.g. sony_rec709). When null and showLUTOption, defaults to sony_rec709. */
@@ -52,6 +54,7 @@ export default function VideoWithLUT({
   src,
   streamUrl,
   className,
+  videoStyle,
   showLUTOption = false,
   lutSource = null,
   lutOptions = [],
@@ -430,6 +433,7 @@ export default function VideoWithLUT({
           playsInline
           muted={compactPreview ? true : undefined}
           autoPlay={compactPreview ? true : undefined}
+          style={videoStyle}
           className={
             compactPreview
               ? `h-full w-full object-cover ${className ?? ""}`

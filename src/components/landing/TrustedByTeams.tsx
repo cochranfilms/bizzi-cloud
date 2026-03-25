@@ -69,7 +69,7 @@ export default function TrustedByTeams() {
                 <div key={`${src}-${i}`} className={marqueeCardClassName()}>
                   <LoopingVideoPreview
                     src={src}
-                    mode="fullLoop"
+                    mode="playOnce"
                     className="absolute inset-0 h-full w-full object-contain"
                   />
                 </div>

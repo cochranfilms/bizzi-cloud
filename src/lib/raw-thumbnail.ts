@@ -119,7 +119,10 @@ async function alignEmbeddedPreviewToRawOrientation(
   }
 }
 
-/** Degrees clockwise to normalize EXIF orientation to upright (when metadata says how to rotate). */
+/**
+ * Clockwise degrees for sharp().rotate(angle) to normalize EXIF orientation.
+ * Swapped 6 vs 8 vs earlier build — Sony ARW embedded previews commonly need 270° not 90° for tag 6.
+ */
 function exifOrientationToRotationAngle(orientation: number): number | undefined {
   switch (orientation) {
     case 2:
@@ -130,11 +133,77 @@ function exifOrientationToRotationAngle(orientation: number): number | undefined
     case 3:
       return 180;
     case 6:
-      return 90;
-    case 8:
       return 270;
+    case 8:
+      return 90;
     default:
       return undefined;
+  }
+}
+
+/**
+ * If RAW pixel dimensions suggest portrait vs landscape but preview does not (or vice versa),
+ * apply one 90° step — catches ARW previews with wrong rotation when EXIF is inconsistent.
+ */
+type RawShapeMeta = { width?: number; height?: number; orientation?: number };
+
+async function maybeFixOrientationByDimensions(
+  previewBuffer: Buffer,
+  rawMeta: RawShapeMeta
+): Promise<Buffer> {
+  if (rawMeta.orientation != null && rawMeta.orientation > 1) {
+    return previewBuffer;
+  }
+  let pMeta: sharp.Metadata;
+  try {
+    pMeta = await sharp(previewBuffer).metadata();
+  } catch {
+    return previewBuffer;
+  }
+  const rw = rawMeta.width;
+  const rh = rawMeta.height;
+  const pw = pMeta.width;
+  const ph = pMeta.height;
+  if (!rw || !rh || !pw || !ph) return previewBuffer;
+  const rawPortrait = rh > rw;
+  const previewPortrait = ph > pw;
+  if (rawPortrait === previewPortrait) return previewBuffer;
+  try {
+    return await sharp(previewBuffer).rotate(90).jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    return previewBuffer;
+  }
+}
+
+async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): Promise<Buffer | null> {
+  let rawMeta: RawShapeMeta = {};
+  try {
+    rawMeta = await sharp(rawBuffer).metadata();
+  } catch {
+    rawMeta = {};
+  }
+
+  try {
+    const embMeta = await sharp(embedded).metadata();
+    if (!embMeta.width || !embMeta.height) return null;
+    const embO = embMeta.orientation ?? 1;
+    const rawO = rawMeta.orientation ?? 1;
+
+    // When RAW orientation disagrees with embedded preview EXIF, trust RAW (Sony ARW previews often lie).
+    if (rawO > 1 && rawO !== embO) {
+      const angle = exifOrientationToRotationAngle(rawO);
+      if (angle !== undefined) {
+        const out = await sharp(embedded).rotate(angle).jpeg({ quality: 90 }).toBuffer();
+        return await maybeFixOrientationByDimensions(out, rawMeta);
+      }
+    }
+
+    const baked = await bakeEmbeddedJpegOrientation(embedded);
+    if (!baked) return null;
+    const out = await alignEmbeddedPreviewToRawOrientation(baked, rawBuffer, embO > 1);
+    return await maybeFixOrientationByDimensions(out, rawMeta);
+  } catch {
+    return null;
   }
 }
 
@@ -143,21 +212,11 @@ export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Pr
   const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);
   if (sharpJpeg) return sharpJpeg;
 
-  // 2. Embedded JPEG (camera preview) — bake orientation; align from RAW EXIF if needed
+  // 2. Embedded JPEG (camera preview)
   const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
   if (embedded) {
-    try {
-      const meta = await sharp(embedded).metadata();
-      if (meta.width && meta.height) {
-        const embOrient = meta.orientation;
-        const embeddedHadExifOrientation = !!(embOrient && embOrient > 1);
-        const baked = await bakeEmbeddedJpegOrientation(embedded);
-        if (!baked) return embedded;
-        return await alignEmbeddedPreviewToRawOrientation(baked, rawBuffer, embeddedHadExifOrientation);
-      }
-    } catch {
-      // Truncated JPEG or noise matched as SOI — try exiftool
-    }
+    const processed = await processEmbeddedJpegPreview(embedded, rawBuffer);
+    if (processed) return processed;
   }
 
   // 3. exiftool (requires Perl - fails on Vercel, works locally)
@@ -180,7 +239,12 @@ export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Pr
         }
       }
       const jpegBuffer = await fs.readFile(outputPath);
-      return jpegBuffer.length > 0 ? jpegBuffer : null;
+      if (jpegBuffer.length === 0) return null;
+      try {
+        return await sharp(jpegBuffer).rotate().jpeg({ quality: 90 }).toBuffer();
+      } catch {
+        return jpegBuffer;
+      }
     } finally {
       await fs.unlink(inputPath).catch(() => {});
       await fs.unlink(outputPath).catch(() => {});

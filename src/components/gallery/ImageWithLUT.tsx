@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, type CSSProperties } from "react";
 import {
   createLUTTexture,
   createImageLUTContext,
@@ -18,6 +18,9 @@ interface ImageWithLUTProps {
   alt?: string;
   /** "contain" (default) or "cover" for object-fit */
   objectFit?: "contain" | "cover";
+  /** default: grid tiles; fill: hero banner full-bleed */
+  variant?: "default" | "fill";
+  imageStyle?: CSSProperties;
 }
 
 export default function ImageWithLUT({
@@ -27,6 +30,8 @@ export default function ImageWithLUT({
   className = "",
   alt = "",
   objectFit = "contain",
+  variant = "default",
+  imageStyle,
 }: ImageWithLUTProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -106,7 +111,7 @@ export default function ImageWithLUT({
     }
 
     renderImageWithLUT(ctx, img, w, h);
-  }, [lutReady, lutEnabled, imageLoaded]);
+  }, [lutReady, lutEnabled, imageLoaded, lutUrl]);
 
   useEffect(() => {
     const img = imgRef.current;
@@ -137,16 +142,24 @@ export default function ImageWithLUT({
   const shouldUseLUT = lutEnabled && lutUrl && lutReady && webglAvailable !== false && !lutError;
   const objectFitClass =
     objectFit === "cover" ? "object-cover" : "object-contain";
+  const isFill = variant === "fill";
+  const containerBase = isFill
+    ? "relative block h-full w-full min-h-0 min-w-0 overflow-hidden"
+    : "relative inline-block";
+  const imgClass = isFill
+    ? `block h-full w-full ${objectFitClass}`
+    : `block max-h-full max-w-full ${objectFitClass}`;
 
   if (!lutEnabled || !lutUrl || webglAvailable === false || lutError) {
     return (
-      <div ref={containerRef} className={`relative inline-block ${className}`}>
+      <div ref={containerRef} className={`${containerBase} ${className}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
           src={imageUrl}
           alt={alt}
-          className={`block max-h-full max-w-full ${objectFitClass}`}
+          className={imgClass}
+          style={imageStyle}
           onLoad={onImageLoad}
         />
       </div>
@@ -154,15 +167,15 @@ export default function ImageWithLUT({
   }
 
   return (
-    <div ref={containerRef} className={`relative inline-block ${className}`}>
+    <div ref={containerRef} className={`${containerBase} ${className}`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
         src={imageUrl}
         alt={alt}
-        className={`block max-h-full max-w-full ${objectFitClass}`}
+        className={imgClass}
         onLoad={onImageLoad}
-        style={{ visibility: shouldUseLUT ? "hidden" : "visible" }}
+        style={{ ...imageStyle, visibility: shouldUseLUT ? "hidden" : "visible" }}
       />
       {shouldUseLUT && (
         <canvas
