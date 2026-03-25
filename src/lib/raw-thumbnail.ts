@@ -1,6 +1,6 @@
 /**
  * Extract JPEG preview from RAW files for thumbnail generation.
- * 1. Pure JS fallback: scan for embedded JPEG (FF D8 FF ... FF D9) - works on Vercel, no Perl.
+ * 1. Pure JS fallback: scan for embedded JPEG (SOI FF D8 … EOI FF D9) - works on Vercel, no Perl.
  * 2. exiftool-vendored: when available (local dev, environments with Perl).
  */
 import * as fs from "fs/promises";
@@ -9,33 +9,44 @@ import * as path from "path";
 import sharp from "sharp";
 
 /**
- * Find all embedded JPEGs in buffer (SOI FF D8 FF ... EOI FF D9).
- * Returns the largest one - RAW files often embed a tiny thumbnail first,
- * then a larger preview. Using the largest gives sharp thumbnails.
+ * Find embedded JPEG(s) in buffer (SOI FF D8 ... EOI FF D9).
+ * Uses JPEG SOI (FF D8) only — not FF D8 FF — so we never miss valid starts.
+ *
+ * Important: the first FF D9 after SOI is often wrong — EXIF/TIFF inside APP1
+ * can contain the byte pair FF D9, which would truncate the JPEG and break
+ * decoding (common with Sony ARW and other camera RAWs). We take the last FF D9
+ * in each SOI region (up to the next SOI or EOF) as the real EOI.
  */
 function extractEmbeddedJpegFromBuffer(buffer: Buffer): Buffer | null {
   const arr = new Uint8Array(buffer);
   const candidates: { start: number; end: number }[] = [];
 
   let i = 0;
-  while (i <= arr.length - 3) {
-    if (arr[i] === 0xff && arr[i + 1] === 0xd8 && arr[i + 2] === 0xff) {
-      const start = i;
-      let end = -1;
-      for (let j = start + 2; j <= arr.length - 2; j++) {
-        if (arr[j] === 0xff && arr[j + 1] === 0xd9) {
-          end = j + 1;
-          break;
-        }
-      }
-      if (end >= 0) {
-        candidates.push({ start, end });
-        i = end + 1;
-      } else {
-        i++;
-      }
-    } else {
+  while (i <= arr.length - 2) {
+    if (arr[i] !== 0xff || arr[i + 1] !== 0xd8) {
       i++;
+      continue;
+    }
+    const start = i;
+    let nextSoi = -1;
+    for (let k = start + 2; k <= arr.length - 2; k++) {
+      if (arr[k] === 0xff && arr[k + 1] === 0xd8) {
+        nextSoi = k;
+        break;
+      }
+    }
+    const scanEnd = nextSoi >= 0 ? nextSoi - 1 : arr.length - 1;
+    let end = -1;
+    for (let k = start + 2; k <= scanEnd - 1; k++) {
+      if (arr[k] === 0xff && arr[k + 1] === 0xd9) {
+        end = k + 1;
+      }
+    }
+    if (end >= start) {
+      candidates.push({ start, end });
+      i = end + 1;
+    } else {
+      i = start + 2;
     }
   }
 
@@ -48,7 +59,7 @@ function extractEmbeddedJpegFromBuffer(buffer: Buffer): Buffer | null {
   });
 
   const slice = buffer.subarray(best.start, best.end + 1);
-  return slice.length >= 100 ? Buffer.from(slice) : null;
+  return slice.length >= 64 ? Buffer.from(slice) : null;
 }
 
 /**
@@ -70,7 +81,14 @@ async function trySharpDecodeRawBuffer(rawBuffer: Buffer): Promise<Buffer | null
 export async function extractRawPreview(rawBuffer: Buffer, fileName: string): Promise<Buffer | null> {
   // 1. Pure JS fallback - works on Vercel, no Perl needed
   const embedded = extractEmbeddedJpegFromBuffer(rawBuffer);
-  if (embedded) return embedded;
+  if (embedded) {
+    try {
+      const meta = await sharp(embedded).metadata();
+      if (meta.width && meta.height) return embedded;
+    } catch {
+      // Truncated JPEG (e.g. wrong EOI) or noise matched as SOI — try other paths
+    }
+  }
 
   // 2. libvips / sharp (may decode ARW, DNG, etc. depending on build)
   const sharpJpeg = await trySharpDecodeRawBuffer(rawBuffer);

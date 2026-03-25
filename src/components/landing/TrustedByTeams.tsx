@@ -18,7 +18,7 @@ const MARQUEE_VIDEOS = [
 
 /** Each bottom tile matches one top panel: half the row width, 16×9 */
 function marqueeCardClassName() {
-  return "relative aspect-video w-[50vw] max-w-none shrink-0 overflow-hidden rounded-sm";
+  return "relative aspect-video w-[50vw] max-w-none shrink-0 overflow-hidden rounded-sm bg-black";
 }
 
 export default function TrustedByTeams() {
@@ -40,17 +40,17 @@ export default function TrustedByTeams() {
         </h2>
       </div>
 
-      <div className="relative w-full bg-black">
-        <div className="grid w-full grid-cols-2 gap-0 sm:gap-px">
+      <div className="relative w-full">
+        <div className="grid w-full grid-cols-2 gap-0">
           {TOP_ROW.map(({ src, title }) => (
             <div
               key={src}
-              className="relative aspect-video w-full overflow-hidden bg-neutral-950"
+              className="relative aspect-video w-full overflow-hidden bg-black"
             >
               <LoopingVideoPreview
                 src={src}
-                loopSeconds={5}
-                className="absolute inset-0 h-full w-full object-cover"
+                mode="fullLoop"
+                className="absolute inset-0 h-full w-full object-contain"
               />
               <span className="sr-only">{title}</span>
             </div>
@@ -58,7 +58,7 @@ export default function TrustedByTeams() {
         </div>
 
         <div
-          className="relative z-10 -mt-6 overflow-hidden border-t border-white/10 bg-neutral-950/95 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-sm sm:-mt-10"
+          className="relative overflow-hidden bg-white/60"
           aria-label="Customer stories"
         >
           <div
@@ -72,8 +72,8 @@ export default function TrustedByTeams() {
               <div key={src} className={marqueeCardClassName()}>
                 <LoopingVideoPreview
                   src={src}
-                  loopSeconds={5}
-                  className="absolute inset-0 h-full w-full object-cover"
+                  mode="playOnce"
+                  className="absolute inset-0 h-full w-full object-contain"
                 />
               </div>
             ))}

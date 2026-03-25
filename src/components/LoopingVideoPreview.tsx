@@ -5,12 +5,20 @@ import Hls from "hls.js";
 
 const DEFAULT_LOOP_SEC = 5;
 
+export type LoopingVideoPreviewMode = "segment" | "fullLoop" | "playOnce";
+
 export interface LoopingVideoPreviewProps {
   src: string;
   className?: string;
   style?: React.CSSProperties;
-  /** Seconds to loop (from t=0). Clamped to video duration when shorter. */
+  /** Seconds to loop (from t=0). Clamped to video duration when shorter. Only used when mode is "segment". */
   loopSeconds?: number;
+  /**
+   * segment — loop the first `loopSeconds` via seeks (gallery-style).
+   * fullLoop — native loop over the entire clip (no seek-to-zero stutter).
+   * playOnce — play once and stay on the last frame.
+   */
+  mode?: LoopingVideoPreviewMode;
 }
 
 /**
@@ -22,6 +30,7 @@ export default function LoopingVideoPreview({
   className = "",
   style,
   loopSeconds = DEFAULT_LOOP_SEC,
+  mode = "segment",
 }: LoopingVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -63,6 +72,7 @@ export default function LoopingVideoPreview({
   }, [src]);
 
   const onTimeUpdate = useCallback(() => {
+    if (mode !== "segment") return;
     const v = videoRef.current;
     if (!v) return;
     const dur = v.duration;
@@ -71,14 +81,29 @@ export default function LoopingVideoPreview({
     if (v.currentTime >= end - 0.05) {
       v.currentTime = 0;
     }
-  }, [loopSeconds]);
+  }, [loopSeconds, mode]);
 
   useEffect(() => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || mode !== "segment") return;
     v.addEventListener("timeupdate", onTimeUpdate);
     return () => v.removeEventListener("timeupdate", onTimeUpdate);
-  }, [onTimeUpdate, src]);
+  }, [onTimeUpdate, src, mode]);
+
+  const onEnded = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      if (mode !== "playOnce") return;
+      const v = e.currentTarget;
+      v.pause();
+      const dur = v.duration;
+      if (Number.isFinite(dur) && dur > 0) {
+        v.currentTime = Math.max(0, dur - 0.04);
+      }
+    },
+    [mode],
+  );
+
+  const preload = mode === "segment" ? "metadata" : "auto";
 
   return (
     <video
@@ -86,9 +111,11 @@ export default function LoopingVideoPreview({
       autoPlay
       muted
       playsInline
-      preload="metadata"
+      loop={mode === "fullLoop"}
+      preload={preload}
       className={className}
       style={style}
+      onEnded={mode === "playOnce" ? onEnded : undefined}
     />
   );
 }
