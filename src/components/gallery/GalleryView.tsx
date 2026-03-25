@@ -868,6 +868,7 @@ function GalleryAssetCard({
                 lutUrl={previewLutSource}
                 lutEnabled={true}
                 objectFit="cover"
+                tileLayout={useNaturalAspect ? "masonry" : "grid"}
                 className={`w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}
               />
             </div>
@@ -2210,76 +2211,78 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
         {lutWorkflowActive && gallery.lut?.enabled && (
           <div
-            className={`mx-auto mb-7 max-w-2xl rounded-2xl border px-4 py-4 shadow-sm sm:px-5 sm:py-5 ${
+            className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-5 sm:py-4 ${
               isDarkBg
-                ? "border-white/15 bg-white/[0.07] backdrop-blur-sm"
-                : "border-neutral-200/90 bg-white/90 shadow-neutral-200/40 dark:border-neutral-600 dark:bg-neutral-900/80 dark:shadow-none"
+                ? "border-white/[0.12] bg-white/[0.055] backdrop-blur-md"
+                : "border-neutral-200/70 bg-white/[0.92] dark:border-neutral-700/80 dark:bg-neutral-900/75"
             }`}
           >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
-              <div
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  isDarkBg ? "bg-white/10 text-white" : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/15 dark:text-bizzi-cyan"
-                }`}
-              >
-                <Palette className="h-5 w-5" aria-hidden />
-              </div>
-              <div className="min-w-0 flex-1 space-y-1">
-                <h3
-                  className={`text-sm font-semibold tracking-tight ${
-                    isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
+            <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+              <div className="flex min-w-0 flex-1 gap-2.5 sm:gap-3">
+                <div
+                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    isDarkBg ? "bg-white/[0.09] text-white" : "bg-bizzi-blue/[0.09] text-bizzi-blue dark:bg-bizzi-cyan/12 dark:text-bizzi-cyan"
                   }`}
                 >
-                  Color look preview
-                </h3>
-                <p
-                  className={`text-xs leading-relaxed ${
-                    isDarkBg ? "text-white/75" : "text-neutral-600 dark:text-neutral-400"
-                  }`}
-                >
-                  Turn this on to preview a <strong className="font-medium">color grade (LUT)</strong> your
-                  creator set up—similar to how the finished photos or video might look after editing. This is{" "}
-                  <strong className="font-medium">only a preview</strong>; your originals and downloads are
-                  unchanged.
-                </p>
+                  <Palette className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="min-w-0 space-y-1 sm:space-y-1.5">
+                  <h3
+                    className={`text-[0.9375rem] font-semibold leading-tight tracking-tight ${
+                      isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
+                    }`}
+                  >
+                    Color look preview
+                  </h3>
+                  <p
+                    className={`max-w-prose text-[11px] leading-snug sm:text-xs sm:leading-snug ${
+                      isDarkBg ? "text-white/[0.62]" : "text-neutral-500 dark:text-neutral-500"
+                    }`}
+                  >
+                    Turn this on to preview a <strong className="font-medium text-inherit">color grade (LUT)</strong> your
+                    creator set up—similar to how the finished photos or video might look after editing. This is{" "}
+                    <strong className="font-medium text-inherit">only a preview</strong>; your originals and downloads are
+                    unchanged.
+                  </p>
+                </div>
               </div>
-              <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[12rem] sm:items-stretch">
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[13.25rem] sm:items-stretch">
                 <button
                   type="button"
                   role="switch"
                   aria-checked={lutPreviewEnabled}
                   aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
                   onClick={() => setLutPreviewEnabled((p) => !p)}
-                  className={`group flex w-full items-center justify-between gap-3 rounded-xl border-2 px-3.5 py-2.5 text-left transition-all ${
+                  className={`group flex w-full items-center justify-between gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
                     lutPreviewEnabled
                       ? isDarkBg
-                        ? "border-bizzi-cyan/60 bg-bizzi-cyan/15 shadow-[0_0_0_1px_rgba(0,191,255,0.15)]"
-                        : "border-bizzi-blue/50 bg-bizzi-blue/[0.08] shadow-[0_0_0_1px_rgba(0,191,255,0.12)] dark:border-bizzi-cyan/50 dark:bg-bizzi-cyan/10"
+                        ? "border-bizzi-cyan/35 bg-bizzi-cyan/[0.11] hover:border-bizzi-cyan/45"
+                        : "border-bizzi-blue/35 bg-bizzi-blue/[0.06] hover:border-bizzi-blue/45 dark:border-bizzi-cyan/35 dark:bg-bizzi-cyan/10 dark:hover:border-bizzi-cyan/45"
                       : isDarkBg
-                        ? "border-white/20 bg-white/5 hover:border-white/30"
-                        : "border-neutral-200 bg-neutral-50 hover:border-neutral-300 dark:border-neutral-600 dark:bg-neutral-800/60 dark:hover:border-neutral-500"
+                        ? "border-white/[0.14] bg-white/[0.04] hover:border-white/[0.22]"
+                        : "border-neutral-200/90 bg-neutral-50/80 hover:border-neutral-300/90 dark:border-neutral-600/75 dark:bg-neutral-800/50 dark:hover:border-neutral-500/80"
                   }`}
                 >
                   <span
-                    className={`text-xs font-semibold ${
-                      isDarkBg ? "text-white" : "text-neutral-800 dark:text-white"
+                    className={`text-[11px] font-medium leading-none ${
+                      isDarkBg ? "text-white/95" : "text-neutral-800 dark:text-white/95"
                     }`}
                   >
                     Preview color grade
                   </span>
                   <span
-                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
                       lutPreviewEnabled
                         ? isDarkBg
                           ? "bg-bizzi-cyan"
                           : "bg-bizzi-blue dark:bg-bizzi-cyan"
                         : isDarkBg
-                          ? "bg-white/20"
-                          : "bg-neutral-300 dark:bg-neutral-600"
+                          ? "bg-white/18"
+                          : "bg-neutral-300/90 dark:bg-neutral-600"
                     }`}
                   >
                     <span
-                      className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm ring-1 ring-black/[0.04] transition-transform duration-200 ease-out dark:ring-white/10 ${
                         lutPreviewEnabled ? "translate-x-5" : "translate-x-0"
                       }`}
                     />
@@ -2289,8 +2292,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   <div className="flex flex-col gap-1">
                     <label
                       htmlFor="gallery-lut-select"
-                      className={`text-[10px] font-medium uppercase tracking-wide ${
-                        isDarkBg ? "text-white/50" : "text-neutral-500 dark:text-neutral-500"
+                      className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                        isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
                       }`}
                     >
                       Look
@@ -2302,15 +2305,28 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                       onChange={(e) => {
                         setSelectedLutId(e.target.value);
                       }}
-                      className={`w-full rounded-xl border-2 px-3 py-2.5 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-bizzi-blue/30 dark:focus:ring-bizzi-cyan/30 ${
+                      className={`w-full appearance-none rounded-lg border bg-[length:0.65rem] bg-[right_0.65rem_center] bg-no-repeat py-2 pl-2.5 pr-8 text-xs font-medium outline-none transition-[border-color,box-shadow] focus:border-bizzi-blue/50 focus:ring-1 focus:ring-bizzi-blue/20 dark:focus:border-bizzi-cyan/45 dark:focus:ring-bizzi-cyan/15 ${
                         lutPreviewEnabled
                           ? isDarkBg
-                            ? "border-white/25 bg-white/10 text-white"
-                            : "border-neutral-300 bg-white text-neutral-900 dark:border-neutral-500 dark:bg-neutral-800 dark:text-white"
+                            ? "border-white/[0.16] bg-white/[0.07] text-white"
+                            : "border-neutral-200/90 bg-white text-neutral-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-neutral-600/80 dark:bg-neutral-800/90 dark:text-white dark:shadow-none"
                           : isDarkBg
-                            ? "cursor-not-allowed border-white/10 bg-white/[0.04] text-white/40 opacity-60"
-                            : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-600"
+                            ? "cursor-not-allowed border-white/[0.08] bg-white/[0.03] text-white/35 opacity-70"
+                            : "cursor-not-allowed border-neutral-200/70 bg-neutral-100/90 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-600"
                       }`}
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+                          `<svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'><path stroke='${
+                            !lutPreviewEnabled
+                              ? isDarkBg
+                                ? "rgba(255,255,255,0.22)"
+                                : "rgba(156,163,175,0.85)"
+                              : isDarkBg
+                                ? "rgba(255,255,255,0.5)"
+                                : "rgba(107,114,128,0.9)"
+                          }' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/></svg>`
+                        )}")`,
+                      }}
                     >
                       {galleryLutOptions.map((o) => (
                         <option key={o.id} value={o.id}>

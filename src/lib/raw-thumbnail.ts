@@ -141,42 +141,8 @@ function exifOrientationToRotationAngle(orientation: number): number | undefined
   }
 }
 
-/**
- * If RAW pixel dimensions suggest portrait vs landscape but preview does not (or vice versa),
- * apply one 90° step — catches ARW previews with wrong rotation when EXIF is inconsistent.
- */
-type RawShapeMeta = { width?: number; height?: number; orientation?: number };
-
-async function maybeFixOrientationByDimensions(
-  previewBuffer: Buffer,
-  rawMeta: RawShapeMeta
-): Promise<Buffer> {
-  if (rawMeta.orientation != null && rawMeta.orientation > 1) {
-    return previewBuffer;
-  }
-  let pMeta: sharp.Metadata;
-  try {
-    pMeta = await sharp(previewBuffer).metadata();
-  } catch {
-    return previewBuffer;
-  }
-  const rw = rawMeta.width;
-  const rh = rawMeta.height;
-  const pw = pMeta.width;
-  const ph = pMeta.height;
-  if (!rw || !rh || !pw || !ph) return previewBuffer;
-  const rawPortrait = rh > rw;
-  const previewPortrait = ph > pw;
-  if (rawPortrait === previewPortrait) return previewBuffer;
-  try {
-    return await sharp(previewBuffer).rotate(90).jpeg({ quality: 90 }).toBuffer();
-  } catch {
-    return previewBuffer;
-  }
-}
-
 async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): Promise<Buffer | null> {
-  let rawMeta: RawShapeMeta = {};
+  let rawMeta: Partial<sharp.Metadata> = {};
   try {
     rawMeta = await sharp(rawBuffer).metadata();
   } catch {
@@ -193,15 +159,13 @@ async function processEmbeddedJpegPreview(embedded: Buffer, rawBuffer: Buffer): 
     if (rawO > 1 && rawO !== embO) {
       const angle = exifOrientationToRotationAngle(rawO);
       if (angle !== undefined) {
-        const out = await sharp(embedded).rotate(angle).jpeg({ quality: 90 }).toBuffer();
-        return await maybeFixOrientationByDimensions(out, rawMeta);
+        return await sharp(embedded).rotate(angle).jpeg({ quality: 90 }).toBuffer();
       }
     }
 
     const baked = await bakeEmbeddedJpegOrientation(embedded);
     if (!baked) return null;
-    const out = await alignEmbeddedPreviewToRawOrientation(baked, rawBuffer, embO > 1);
-    return await maybeFixOrientationByDimensions(out, rawMeta);
+    return await alignEmbeddedPreviewToRawOrientation(baked, rawBuffer, embO > 1);
   } catch {
     return null;
   }

@@ -18,8 +18,13 @@ interface ImageWithLUTProps {
   alt?: string;
   /** "contain" (default) or "cover" for object-fit */
   objectFit?: "contain" | "cover";
-  /** default: grid tiles; fill: hero banner full-bleed */
+  /** default: grid tiles / lightbox; fill: hero banner full-bleed */
   variant?: "default" | "fill";
+  /**
+   * Gallery tiles: match plain <img> sizing (block + w-full + h-auto vs h-full).
+   * Omit for lightbox / max-h constrained layouts (uses shrink-wrapped inline-block).
+   */
+  tileLayout?: "masonry" | "grid";
   imageStyle?: CSSProperties;
 }
 
@@ -31,6 +36,7 @@ export default function ImageWithLUT({
   alt = "",
   objectFit = "contain",
   variant = "default",
+  tileLayout,
   imageStyle,
 }: ImageWithLUTProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,10 +151,18 @@ export default function ImageWithLUT({
   const isFill = variant === "fill";
   const containerBase = isFill
     ? "relative block h-full w-full min-h-0 min-w-0 overflow-hidden"
-    : "relative inline-block";
+    : tileLayout === "masonry"
+      ? "relative block w-full min-h-0 min-w-0"
+      : tileLayout === "grid"
+        ? "relative block h-full w-full min-h-0 min-w-0"
+        : "relative inline-block";
   const imgClass = isFill
     ? `block h-full w-full ${objectFitClass}`
-    : `block max-h-full max-w-full ${objectFitClass}`;
+    : tileLayout === "masonry"
+      ? `block w-full h-auto ${objectFitClass}`
+      : tileLayout === "grid"
+        ? `block h-full w-full ${objectFitClass}`
+        : `block max-h-full max-w-full ${objectFitClass}`;
 
   if (!lutEnabled || !lutUrl || webglAvailable === false || lutError) {
     return (
