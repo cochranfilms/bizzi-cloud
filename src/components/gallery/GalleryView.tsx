@@ -1017,6 +1017,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const viewerLutSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Last known server prefs; updated on GET and after PATCH without replacing `data` (avoids re-hydration blink). */
+  const viewerPrefsFromServerRef = useRef<GalleryViewerLutPreferences | null>(null);
 
   const scrollToGalleryContent = useCallback(() => {
     setMusicPlaying(false);
@@ -1080,6 +1082,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   useEffect(() => {
     if (!data) return;
+    viewerPrefsFromServerRef.current = data.gallery.viewer_lut_preferences ?? null;
+  }, [data]);
+
+  useEffect(() => {
+    if (!data) return;
     const cfg = data.gallery.creative_lut_config;
     const lib = data.gallery.creative_lut_library ?? [];
     const mediaMode = normalizeGalleryMediaMode({
@@ -1087,16 +1094,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       source_format: data.gallery.source_format ?? null,
     });
     const lutWorkflowActive = mediaMode === "raw";
-    /**
-     * Preview defaults must match GET /view: `gallery.lut.enabled` merges legacy `lut` + `creative_lut_config`.
-     * Using only cfg.enabled left preview stuck off when config omitted enabled but the API still returned lut.enabled.
-     */
     const lutOn = !!data.gallery.lut?.enabled;
-    const configPreview =
-      cfg != null && typeof cfg === "object" && "enabled" in cfg && typeof cfg.enabled === "boolean"
-        ? cfg.enabled
-        : null;
-    const serverPreview = lutWorkflowActive && (configPreview !== null ? configPreview : lutOn);
+
+    if (!lutWorkflowActive || !lutOn) {
+      setLutPreviewEnabled((p) => (p ? false : p));
+      return;
+    }
 
     const opts = buildGalleryLUTOptions(
       lib,
@@ -1114,7 +1117,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         ? getGalleryViewerLutPreferencesResolved(galleryId, persisted)
         : null;
 
-    let nextPreview = serverPreview;
+    /** Opt-in only: off until saved prefs, continuity, or explicit session hints say otherwise (not creator defaults). */
+    let nextPreview = false;
     let nextId = defaultId;
     let nextMix: number | undefined;
 
@@ -1141,9 +1145,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       }
     }
 
-    setLutPreviewEnabled(nextPreview);
-    setSelectedLutId(nextId);
-    if (nextMix !== undefined) setLutGradeMix(nextMix);
+    setLutPreviewEnabled((p) => (p !== nextPreview ? nextPreview : p));
+    setSelectedLutId((p) => (p !== nextId ? nextId : p));
+    if (nextMix !== undefined) {
+      setLutGradeMix((p) => (p !== nextMix ? nextMix : p));
+    }
   }, [data, password, galleryId]);
 
   useEffect(() => {
@@ -1170,7 +1176,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       lutPreviewEnabled,
       gradeMixPercent: lutGradeMix,
     };
-    const server = data.gallery.viewer_lut_preferences;
+    const server = viewerPrefsFromServerRef.current;
     if (
       server &&
       server.selectedLutId === next.selectedLutId &&
@@ -1204,14 +1210,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           const body = (await res.json()) as { viewer_lut_preferences?: GalleryViewerLutPreferences };
           const saved = body.viewer_lut_preferences;
           if (!saved) return;
-          setData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  gallery: { ...prev.gallery, viewer_lut_preferences: saved },
-                }
-              : prev
-          );
+          viewerPrefsFromServerRef.current = saved;
           persistGalleryViewerLutContinuity(galleryId, {
             selectedLutId: saved.selectedLutId,
             lutPreviewEnabled: saved.lutPreviewEnabled,
