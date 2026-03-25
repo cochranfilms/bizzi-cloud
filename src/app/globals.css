@@ -161,3 +161,32 @@
     }
   }
 }
+
+/* Landing header: inverted top corners (tab “hanging” from viewport top), matches glass fill */
+@layer components {
+  .landing-nav-slab {
+    position: relative;
+    isolation: isolate;
+  }
+  .landing-nav-slab::before,
+  .landing-nav-slab::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 1.375rem;
+    height: 1.375rem;
+    background: transparent;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .landing-nav-slab::before {
+    left: -1.375rem;
+    border-top-right-radius: 1.375rem;
+    box-shadow: 0.6875rem -0.6875rem 0 0.6875rem rgba(255, 255, 255, 0.45);
+  }
+  .landing-nav-slab::after {
+    right: -1.375rem;
+    border-top-left-radius: 1.375rem;
+    box-shadow: -0.6875rem -0.6875rem 0 0.6875rem rgba(255, 255, 255, 0.45);
+  }
+}

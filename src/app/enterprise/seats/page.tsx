@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import TopBar from "@/components/dashboard/TopBar";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle, Shield } from "lucide-react";
@@ -36,6 +37,7 @@ export default function EnterpriseSeatsPage() {
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [updatingStorageId, setUpdatingStorageId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const hasLoadedSeatsOnceRef = useRef(false);
 
   const isAdmin = role === "admin";
 
@@ -90,8 +92,12 @@ export default function EnterpriseSeatsPage() {
   };
 
   const fetchSeats = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
+    if (!user) {
+      hasLoadedSeatsOnceRef.current = false;
+      return;
+    }
+    const showLoader = !hasLoadedSeatsOnceRef.current;
+    if (showLoader) setLoading(true);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/enterprise/seats", {
@@ -103,6 +109,7 @@ export default function EnterpriseSeatsPage() {
     } catch {
       setSeats([]);
     } finally {
+      hasLoadedSeatsOnceRef.current = true;
       setLoading(false);
     }
   }, [user]);
@@ -247,23 +254,17 @@ export default function EnterpriseSeatsPage() {
     }
   };
 
-  if (!org) {
-    return (
-      <>
-        <TopBar title="Seats" />
-        <main className="flex-1 overflow-auto p-6">
-          <p className="text-neutral-500 dark:text-neutral-400">
-            Loading organization…
-          </p>
-        </main>
-      </>
-    );
-  }
+  const seatsReady = !!org && (!loading || seats.length > 0);
 
   return (
     <>
       <TopBar title="Seat management" />
       <main className="flex-1 overflow-auto p-6">
+        <DashboardRouteFade
+          ready={seatsReady}
+          srOnlyMessage="Loading seat management"
+        >
+        {org ? (
         <div className="mx-auto max-w-2xl space-y-8">
           {!isAdmin && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/50">
@@ -373,11 +374,7 @@ export default function EnterpriseSeatsPage() {
               Members ({seats.length})
             </h2>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
-              </div>
-            ) : seats.length === 0 ? (
+            {seats.length === 0 ? (
               <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No members yet. Invite someone to get started.
               </p>
@@ -535,6 +532,8 @@ export default function EnterpriseSeatsPage() {
             </button>
           </section>
         </div>
+        ) : null}
+        </DashboardRouteFade>
       </main>
     </>
   );

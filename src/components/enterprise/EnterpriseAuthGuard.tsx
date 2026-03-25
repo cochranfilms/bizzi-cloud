@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 const ENTERPRISE_STORAGE_KEY = "bizzi-enterprise-org";
 const RETRY_DELAY_MS = 800;
@@ -56,28 +57,30 @@ export default function EnterpriseAuthGuard({
   if (!isFirebaseConfigured()) {
     return <>{children}</>;
   }
-  if (authLoading || orgLoading || retrying) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-neutral-100 dark:bg-neutral-950">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          {retrying ? "Loading organization…" : "Loading…"}
-        </p>
-      </div>
-    );
-  }
-  if (!user) {
+  if (!authLoading && !user) {
     return null;
   }
-  if (!org) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-neutral-100 dark:bg-neutral-950">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Redirecting…
-        </p>
-      </div>
-    );
-  }
-  return <>{children}</>;
+  const contentReady =
+    !!user &&
+    !authLoading &&
+    !orgLoading &&
+    !retrying &&
+    !!org;
+  return (
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950">
+      <DashboardRouteFade
+        ready={contentReady}
+        srOnlyMessage={
+          retrying
+            ? "Loading organization"
+            : !org && !authLoading && !orgLoading && !retrying
+              ? "Redirecting"
+              : "Loading enterprise workspace"
+        }
+        placeholderClassName="min-h-screen rounded-none"
+      >
+        {contentReady ? children : null}
+      </DashboardRouteFade>
+    </div>
+  );
 }

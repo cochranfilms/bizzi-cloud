@@ -11,8 +11,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { LOADING_COPY } from "@/lib/loading-copy";
+import DashboardRouteFade from "./DashboardRouteFade";
 import SectionTitle from "./SectionTitle";
 import { useAuth } from "@/context/AuthContext";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
@@ -179,12 +178,12 @@ export default function CreatorContent() {
           </div>
         </div>
 
+        <DashboardRouteFade
+          ready={currentDrive ? !driveFilesLoading : !loading}
+          srOnlyMessage={currentDrive ? "Loading files" : "Loading creator folders"}
+        >
         {currentDrive ? (
-          driveFilesLoading ? (
-            <div className="py-12">
-              <LoadingSpinner label={LOADING_COPY.files} />
-            </div>
-          ) : driveFiles.length > 0 ? (
+          driveFiles.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {driveFiles.map((file) => (
                 <div key={file.id}>
@@ -207,10 +206,6 @@ export default function CreatorContent() {
                 : "No files in this folder yet."}
             </div>
           )
-        ) : loading ? (
-          <div className="py-12">
-            <LoadingSpinner label={LOADING_COPY.default} />
-          </div>
         ) : folderItems.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {folderItems.map((item) => {
@@ -245,6 +240,7 @@ export default function CreatorContent() {
             No folders yet. The RAW folder will appear once you visit this tab.
           </div>
         )}
+        </DashboardRouteFade>
       </section>
 
       <FilePreviewModal

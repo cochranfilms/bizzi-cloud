@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useTransfers } from "@/context/TransferContext";
-import { File, Eye, Download, Lock, Loader2, Trash2 } from "lucide-react";
+import { File, Eye, Download, Lock, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useConfirm } from "@/hooks/useConfirm";
+import DashboardRouteFade from "./DashboardRouteFade";
 
 interface TransferAnalyticsProps {
   transferId: string;
@@ -53,17 +54,12 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
     setMounted(true);
   }, []);
 
-  // Render consistent placeholder until mounted (avoids hydration mismatch with localStorage)
-  if (!mounted) {
-    return (
-      <div className="mx-auto flex max-w-4xl items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-bizzi-blue" />
-      </div>
-    );
-  }
+  const totalViews = transfer?.files.reduce((a, f) => a + f.views, 0) ?? 0;
+  const totalDownloads = transfer?.files.reduce((a, f) => a + f.downloads, 0) ?? 0;
 
-  if (!transfer) {
-    return (
+  return (
+    <DashboardRouteFade ready={mounted} srOnlyMessage="Loading transfer">
+    {!transfer ? (
       <div className="mx-auto max-w-2xl text-center py-16">
         <p className="text-neutral-600 dark:text-neutral-400">
           Transfer not found.
@@ -75,13 +71,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
           Back to transfers
         </Link>
       </div>
-    );
-  }
-
-  const totalViews = transfer.files.reduce((a, f) => a + f.views, 0);
-  const totalDownloads = transfer.files.reduce((a, f) => a + f.downloads, 0);
-
-  return (
+    ) : (
     <div className="mx-auto max-w-4xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">
@@ -215,5 +205,7 @@ export default function TransferAnalytics({ transferId }: TransferAnalyticsProps
         </button>
       </div>
     </div>
+    )}
+    </DashboardRouteFade>
   );
 }

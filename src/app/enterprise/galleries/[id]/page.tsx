@@ -29,6 +29,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { isGalleryFile, isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
 
 const BASE_PATH = "/enterprise";
@@ -289,21 +290,12 @@ export default function EnterpriseGalleryDetailPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (loading || !gallery) {
-    return (
-      <>
-        <TopBar title="Gallery" />
-        <main className="flex flex-1 items-center justify-center p-6">
-          <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
-      <TopBar title={gallery.title} />
+      <TopBar title={gallery?.title ?? "Gallery"} />
       <main className="mt-4 flex-1 min-h-0 overflow-auto px-4 py-5 sm:mt-6 sm:px-6 sm:py-6">
+        <DashboardRouteFade ready={!loading && !!gallery} srOnlyMessage="Loading gallery">
+        {gallery ? (
         <div className="mx-auto max-w-6xl space-y-6">
           <Link
             href={`${BASE_PATH}/galleries`}
@@ -499,6 +491,8 @@ export default function EnterpriseGalleryDetailPage() {
             )}
           </div>
         </div>
+        ) : null}
+        </DashboardRouteFade>
       </main>
 
       {showAddModal && (

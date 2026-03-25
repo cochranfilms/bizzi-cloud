@@ -8,8 +8,7 @@ import SharerCard, { type SharerCardItem } from "./SharerCard";
 import SectionTitle from "./SectionTitle";
 import ShareModal from "./ShareModal";
 import { useShares } from "@/hooks/useShares";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { LOADING_COPY } from "@/lib/loading-copy";
+import DashboardRouteFade from "./DashboardRouteFade";
 import { useConfirm } from "@/hooks/useConfirm";
 
 export default function SharedGrid() {
@@ -232,11 +231,9 @@ export default function SharedGrid() {
         <div className="rounded-xl border border-red-200 bg-red-50 py-8 text-center dark:border-red-800 dark:bg-red-950/50">
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
-      ) : loading ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
-          <LoadingSpinner label={LOADING_COPY.shares} />
-        </div>
-      ) : isEmpty ? (
+      ) : (
+      <DashboardRouteFade ready={!loading} srOnlyMessage="Loading shares">
+      {isEmpty ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neutral-200 py-16 dark:border-neutral-700">
           <Folder className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
           <p className="mb-1 text-lg font-medium text-neutral-700 dark:text-neutral-300">
@@ -395,6 +392,8 @@ export default function SharedGrid() {
               </section>
             )}
         </div>
+      )}
+      </DashboardRouteFade>
       )}
 
       {editShare && (

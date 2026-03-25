@@ -19,6 +19,7 @@ import {
 } from "@/lib/pricing-data";
 import { PLAN_STORAGE_BYTES } from "@/lib/plan-constants";
 import { ArrowLeft, AlertTriangle, Check, Loader2 } from "lucide-react";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -384,8 +385,10 @@ export default function ChangePlanPage() {
       <>
         <TopBar title="Change Plan" />
         <main className="flex-1 overflow-auto p-6">
-          <div className="mx-auto max-w-4xl flex items-center justify-center py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+          <div className="mx-auto max-w-4xl">
+            <DashboardRouteFade ready={false} srOnlyMessage="Loading plan options">
+              {null}
+            </DashboardRouteFade>
           </div>
         </main>
       </>

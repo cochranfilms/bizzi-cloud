@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth-token";
 
@@ -23,10 +23,12 @@ export function useRecentOpens() {
   const { user } = useAuth();
   const [items, setItems] = useState<RecentOpenItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedOnceRef = useRef(false);
 
   const fetchItems = useCallback(async () => {
     if (!user) {
       setItems([]);
+      hasLoadedOnceRef.current = false;
       setLoading(false);
       return;
     }
@@ -35,7 +37,7 @@ export function useRecentOpens() {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     try {
       const res = await fetch("/api/recent-opens?limit=50", {
         headers: { Authorization: `Bearer ${token}` },
@@ -47,6 +49,7 @@ export function useRecentOpens() {
     } catch {
       setItems([]);
     } finally {
+      hasLoadedOnceRef.current = true;
       setLoading(false);
     }
   }, [user]);

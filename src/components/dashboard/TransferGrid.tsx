@@ -8,6 +8,7 @@ import { useTransfers } from "@/context/TransferContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import EditTransferModal from "@/components/dashboard/EditTransferModal";
+import DashboardRouteFade from "./DashboardRouteFade";
 import type { Transfer } from "@/types/transfer";
 
 function formatDate(iso: string) {
@@ -93,6 +94,7 @@ export default function TransferGrid() {
         });
 
   return (
+    <DashboardRouteFade ready srOnlyMessage="Loading transfers">
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
@@ -264,5 +266,6 @@ export default function TransferGrid() {
         transfer={editingTransfer}
       />
     </div>
+    </DashboardRouteFade>
   );
 }

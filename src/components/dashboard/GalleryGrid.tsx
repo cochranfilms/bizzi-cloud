@@ -26,6 +26,7 @@ import { useGalleries } from "@/hooks/useGalleries";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
 import CreateGalleryModal from "./CreateGalleryModal";
+import DashboardRouteFade from "./DashboardRouteFade";
 import DeleteGalleryModal from "./DeleteGalleryModal";
 import GallerySettingsModal from "@/components/gallery/GallerySettingsModal";
 
@@ -263,14 +264,6 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center">
-        <Images className="h-12 w-12 animate-pulse text-neutral-300 dark:text-neutral-600" />
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -280,6 +273,7 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
   }
 
   return (
+    <DashboardRouteFade ready={!loading} srOnlyMessage="Loading galleries">
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-lg font-medium text-neutral-900 dark:text-white">
@@ -353,5 +347,6 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
         />
       )}
     </div>
+    </DashboardRouteFade>
   );
 }

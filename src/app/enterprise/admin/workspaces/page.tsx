@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, FolderOpen, User, Loader2, Plus, ExternalLink } from "lucide-react";
 import { getDisplayLabel } from "@/lib/workspace-display-labels";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 type DriveFilter = "all" | "storage" | "raw" | "gallery";
 type TypeFilter = "all" | "private" | "org_shared" | "team" | "project";
@@ -27,6 +28,7 @@ export default function AdminWorkspacesPage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedWorkspacesRef = useRef(false);
   const [driveFilter, setDriveFilter] = useState<DriveFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [ensuringShared, setEnsuringShared] = useState(false);
@@ -39,7 +41,7 @@ export default function AdminWorkspacesPage() {
 
   const fetchWorkspaces = useCallback(async () => {
     if (!org?.id || !user) return;
-    setLoading(true);
+    if (!hasLoadedWorkspacesRef.current) setLoading(true);
     try {
       const token = await user.getIdToken();
       const params = new URLSearchParams({
@@ -54,6 +56,7 @@ export default function AdminWorkspacesPage() {
     } catch {
       setWorkspaces([]);
     } finally {
+      hasLoadedWorkspacesRef.current = true;
       setLoading(false);
     }
   }, [org?.id, user]);
@@ -62,6 +65,7 @@ export default function AdminWorkspacesPage() {
     if (!org?.id || !user) {
       setWorkspaces([]);
       setLoading(false);
+      hasLoadedWorkspacesRef.current = false;
       return;
     }
     fetchWorkspaces();
@@ -91,9 +95,13 @@ export default function AdminWorkspacesPage() {
 
   if (!org || role !== "admin") {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-neutral-500">Admin access required.</p>
-      </div>
+      <DashboardRouteFade
+        ready={false}
+        srOnlyMessage="Checking admin access"
+        placeholderClassName="min-h-[40vh]"
+      >
+        {null}
+      </DashboardRouteFade>
     );
   }
 
@@ -212,11 +220,8 @@ export default function AdminWorkspacesPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex min-h-[200px] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
-        </div>
-      ) : (
+      <DashboardRouteFade ready={!loading} srOnlyMessage="Loading workspaces">
+      {!loading ? (
         <div className="space-y-6">
           <p className="text-sm text-neutral-500">
             {filtered.length} workspace{filtered.length !== 1 ? "s" : ""} in organization
@@ -280,7 +285,8 @@ export default function AdminWorkspacesPage() {
             </p>
           )}
         </div>
-      )}
+      ) : null}
+      </DashboardRouteFade>
     </div>
   );
 }

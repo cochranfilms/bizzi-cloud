@@ -90,6 +90,7 @@ function EventRow({ item }: { item: ActivityLogItem }) {
 }
 
 import { useActivityLogs } from "@/hooks/useActivityLogs";
+import DashboardRouteFade from "./DashboardRouteFade";
 
 interface ActivityContentProps {
   scope?: "personal" | "organization";
@@ -99,32 +100,25 @@ export default function ActivityContent({
   scope = "personal",
 }: ActivityContentProps) {
   const { items, loading } = useActivityLogs(scope);
-
-  if (loading && items.length === 0) {
-    return (
-      <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Loading…
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="py-12 text-center">
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          {scope === "organization"
-            ? "Organization activity will appear here when files are uploaded, shared, or changed."
-            : "Your recent activity will appear here (uploads, renames, shares, and more)."}
-        </p>
-      </div>
-    );
-  }
+  const ready = !(loading && items.length === 0);
 
   return (
-    <div className="space-y-3">
-      {items.map((item) => (
-        <EventRow key={item.id} item={item} />
-      ))}
-    </div>
+    <DashboardRouteFade ready={ready} srOnlyMessage="Loading activity">
+      {items.length === 0 ? (
+        <div className="py-12 text-center">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            {scope === "organization"
+              ? "Organization activity will appear here when files are uploaded, shared, or changed."
+              : "Your recent activity will appear here (uploads, renames, shares, and more)."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <EventRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </DashboardRouteFade>
   );
 }

@@ -9,6 +9,7 @@ import { useShareVideoThumbnail } from "@/hooks/useShareVideoThumbnail";
 import { useInView } from "@/hooks/useInView";
 import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 
@@ -237,21 +238,20 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
     return user ? user.getIdToken() : null;
   }, [user]);
 
-  if (loading) {
-    return (
-      <div className={`flex flex-col items-center justify-center ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
-        <FolderOpen className="mb-4 h-16 w-16 animate-pulse text-neutral-300 dark:text-neutral-600" />
-        <p className="text-neutral-500 dark:text-neutral-400">Loading…</p>
-      </div>
-    );
-  }
+  const isExpired = error?.toLowerCase().includes("expired");
+  const isPrivateAuth = errorCode === "private_share_requires_auth";
 
-  if (error || !data) {
-    const isExpired = error?.toLowerCase().includes("expired");
-    const isPrivateAuth = errorCode === "private_share_requires_auth";
+  const canDownload = data != null && data.permission !== "view";
+  const permissionLabel = canDownload ? "Download" : "View only";
 
-    if (isPrivateAuth && !embedded) {
-      return (
+  return (
+    <DashboardRouteFade
+      ready={!loading}
+      srOnlyMessage="Loading shared folder"
+      compact={embedded}
+    >
+    {error || !data ? (
+      isPrivateAuth && !embedded ? (
         <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
           <div className="w-full max-w-sm space-y-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex flex-col items-center gap-2">
@@ -273,10 +273,7 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
             </Link>
           </div>
         </div>
-      );
-    }
-
-    return (
+      ) : (
       <div className={`flex flex-col items-center justify-center gap-4 ${embedded ? "py-16" : "min-h-[40vh] py-16"}`}>
         <FolderOpen className="h-16 w-16 text-neutral-300 dark:text-neutral-600" />
         <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">
@@ -292,13 +289,8 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
           Back to home
         </Link>
       </div>
-    );
-  }
-
-  const canDownload = data.permission !== "view";
-  const permissionLabel = canDownload ? "Download" : "View only";
-
-  return (
+      )
+    ) : (
     <div className={embedded ? "" : "space-y-6"}>
       {!embedded && (
         <div className="mb-6">
@@ -353,5 +345,7 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
         </>
       )}
     </div>
+    )}
+    </DashboardRouteFade>
   );
 }

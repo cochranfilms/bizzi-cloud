@@ -19,6 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
@@ -352,21 +353,11 @@ export default function GalleryProofingPage() {
     setTimeout(() => setCopiedIds(false), 2000);
   };
 
-  if (loading) {
-    return (
-      <>
-        <TopBar title="Proofing" />
-        <main className="flex flex-1 items-center justify-center p-6">
-          <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <TopBar title="Proofing" />
       <main className="mt-4 flex-1 min-h-0 overflow-auto px-4 py-5 sm:mt-6 sm:px-6 sm:py-6">
+        <DashboardRouteFade ready={!loading} srOnlyMessage="Loading proofing">
         <div className="mx-auto max-w-6xl space-y-6">
           <Link
             href={`/enterprise/galleries/${id}`}
@@ -623,6 +614,7 @@ export default function GalleryProofingPage() {
             </div>
           </div>
         </div>
+        </DashboardRouteFade>
       </main>
     </>
   );

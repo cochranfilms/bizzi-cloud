@@ -7,6 +7,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useRouter } from "next/navigation";
 import { Shield, FolderOpen, User, LayoutGrid } from "lucide-react";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 type GroupBy = "drive" | "workspace" | "uploader" | "none";
 
@@ -29,9 +30,13 @@ export default function EnterpriseAdminPage() {
 
   if (!org || role !== "admin") {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-neutral-500">Admin access required.</p>
-      </div>
+      <DashboardRouteFade
+        ready={false}
+        srOnlyMessage="Checking admin access"
+        placeholderClassName="min-h-[40vh]"
+      >
+        {null}
+      </DashboardRouteFade>
     );
   }
 
@@ -103,11 +108,8 @@ export default function EnterpriseAdminPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex min-h-[200px] items-center justify-center">
-          <p className="text-neutral-500">Loading files...</p>
-        </div>
-      ) : (
+      <DashboardRouteFade ready={!loading} srOnlyMessage="Loading organization files">
+      {!loading ? (
         <div className="space-y-6">
           <p className="text-sm text-neutral-500">
             {totalCount} file{totalCount !== 1 ? "s" : ""} in organization
@@ -152,7 +154,8 @@ export default function EnterpriseAdminPage() {
             </section>
           ))}
         </div>
-      )}
+      ) : null}
+      </DashboardRouteFade>
     </div>
   );
 }

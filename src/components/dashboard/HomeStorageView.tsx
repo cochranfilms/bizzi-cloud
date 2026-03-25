@@ -24,8 +24,8 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
-import { useBulkDownload } from "@/hooks/useBulkDownload";
 import SectionTitle from "./SectionTitle";
+import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken } from "@/lib/auth-token";
@@ -695,18 +695,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const pinnedContentReady =
     !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
   const homeViewReady = !loading && !subscriptionLoading && pinnedContentReady;
-  const [homeContentEntered, setHomeContentEntered] = useState(false);
-
-  useEffect(() => {
-    if (!homeViewReady) {
-      setHomeContentEntered(false);
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setHomeContentEntered(true));
-    });
-    return () => cancelAnimationFrame(id);
-  }, [homeViewReady]);
 
   const showDragRect =
     dragState?.isActive &&
@@ -734,21 +722,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       onMouseDown={handleMouseDown}
     >
       {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
-      {!homeViewReady && (
-        <div
-          className="min-h-[min(42vh,26rem)] w-full rounded-2xl bg-gradient-to-b from-neutral-200/40 to-transparent dark:from-neutral-800/50 dark:to-transparent"
-          aria-busy="true"
-          aria-live="polite"
-        >
-          <span className="sr-only">Loading your folders and subscription</span>
-        </div>
-      )}
-      {homeViewReady && (
-      <div
-        className={`space-y-0 transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
-          homeContentEntered ? "opacity-100" : "opacity-0"
-        }`}
+      <DashboardRouteFade
+        ready={homeViewReady}
+        srOnlyMessage="Loading your folders and subscription"
       >
+      <div className="space-y-0">
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
@@ -1197,7 +1175,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         )}
       </section>
       </div>
-      )}
+      </DashboardRouteFade>
 
       {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar

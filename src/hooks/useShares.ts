@@ -35,18 +35,20 @@ export function useShares(): UseSharesResult {
   const [error, setError] = useState<string | null>(null);
 
   const fetchingRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
 
   const fetchShares = useCallback(async () => {
     if (!user) {
       setOwned([]);
       setInvited([]);
+      hasLoadedOnceRef.current = false;
       setLoading(false);
       return;
     }
 
     if (fetchingRef.current) return;
     fetchingRef.current = true;
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     setError(null);
     const controller = new AbortController();
     try {
@@ -92,6 +94,7 @@ export function useShares(): UseSharesResult {
       setInvited([]);
     } finally {
       fetchingRef.current = false;
+      hasLoadedOnceRef.current = true;
       setLoading(false);
     }
   }, [user]);

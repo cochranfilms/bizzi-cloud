@@ -34,6 +34,7 @@ import {
   type StorageAddonId,
 } from "@/lib/pricing-data";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -905,12 +906,7 @@ function SubscriptionSection() {
         </div>
       )}
       <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6 dark:border-neutral-700 dark:bg-neutral-800/50">
-        {loading ? (
-          <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading…</span>
-          </div>
-        ) : (
+        <DashboardRouteFade ready={!loading} srOnlyMessage="Loading subscription" compact>
           <div className="space-y-4">
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               Current plan: <strong className="text-neutral-900 dark:text-white">{planLabel}</strong>
@@ -1037,7 +1033,7 @@ function SubscriptionSection() {
               <p className="text-sm text-red-600 dark:text-red-400">{portalError}</p>
             )}
           </div>
-        )}
+        </DashboardRouteFade>
       </div>
 
       {powerUpWarningModalOpen && (
@@ -1094,14 +1090,16 @@ function SettingsContent() {
   }, [searchParams]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <DashboardRouteFade ready srOnlyMessage="">
+      <div className="mx-auto max-w-2xl space-y-6">
           <ProfileSection />
           <AccountSection />
           <StorageSection />
           <PrivacySection />
           <CreateOrganizationSection />
           <SubscriptionSection />
-        </div>
+      </div>
+    </DashboardRouteFade>
   );
 }
 

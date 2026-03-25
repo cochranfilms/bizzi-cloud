@@ -8,34 +8,27 @@ import { useHeartedFiles } from "@/hooks/useHeartedFiles";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import DashboardRouteFade from "./DashboardRouteFade";
 
 export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: string }) {
-  const { files, loading, hasMore, loadMore, refresh } = useHeartedFiles();
+  const { files, loading, loadingMore, hasMore, loadMore, refresh } = useHeartedFiles();
   const { viewMode, cardSize, aspectRatio, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const { deleteFile } = useCloudFiles();
 
-  if (loading && files.length === 0) {
-    return (
-      <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Loading…
-      </div>
-    );
-  }
+  const ready = !(loading && files.length === 0);
 
-  if (files.length === 0) {
-    return (
+  return (
+    <>
+      <DashboardRouteFade ready={ready} srOnlyMessage="Loading hearts">
+      <>
+      {files.length === 0 ? (
       <div className="py-12 text-center">
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           Files you heart will appear here for quick access.
         </p>
       </div>
-    );
-  }
-
-  return (
-    <>
-      {viewMode === "list" ? (
+      ) : viewMode === "list" ? (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
           <table className="w-full text-left text-sm">
             <thead>
@@ -95,17 +88,20 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
           ))}
         </div>
       )}
-      {hasMore && (
+      {files.length > 0 && hasMore && (
         <div className="mt-6 flex justify-center">
           <button
             type="button"
             onClick={loadMore}
-            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            disabled={loadingMore}
+            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
-            Load more
+            {loadingMore ? "Loading…" : "Load more"}
           </button>
         </div>
       )}
+      </>
+      </DashboardRouteFade>
       {previewFile && (
         <FilePreviewModal
           file={previewFile}

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import TopBar from "@/components/dashboard/TopBar";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import LUTLibrarySection from "@/components/creative-lut/LUTLibrarySection";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
@@ -66,8 +67,10 @@ export default function CreatorSettingsPage() {
     return (
       <>
         <TopBar title="Creator settings" />
-        <main className="flex flex-1 items-center justify-center p-6">
-          <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
+        <main className="flex flex-1 overflow-auto p-6">
+          <DashboardRouteFade ready={false} srOnlyMessage="Loading creator settings">
+            {null}
+          </DashboardRouteFade>
         </main>
       </>
     );
@@ -97,24 +100,26 @@ export default function CreatorSettingsPage() {
     <>
       <TopBar title="Creator settings" />
       <main className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <Link
-            href="/dashboard/creator"
-            className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back to Creator
-          </Link>
-          <LUTLibrarySection
-            driveId={driveId}
-            scope="creator_raw_video"
-            config={config}
-            library={library}
-            onRefetch={() => fetchLUT(driveId)}
-            getAuthToken={() => user?.getIdToken() ?? Promise.resolve(null)}
-            includeBuiltin
-          />
-        </div>
+        <DashboardRouteFade ready srOnlyMessage="">
+          <div className="mx-auto max-w-2xl space-y-6">
+            <Link
+              href="/dashboard/creator"
+              className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to Creator
+            </Link>
+            <LUTLibrarySection
+              driveId={driveId}
+              scope="creator_raw_video"
+              config={config}
+              library={library}
+              onRefetch={() => fetchLUT(driveId)}
+              getAuthToken={() => user?.getIdToken() ?? Promise.resolve(null)}
+              includeBuiltin
+            />
+          </div>
+        </DashboardRouteFade>
       </main>
     </>
   );

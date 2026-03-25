@@ -40,8 +40,7 @@ import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { LOADING_COPY } from "@/lib/loading-copy";
+import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
@@ -186,9 +185,16 @@ export default function FileGrid() {
   } = useCloudFiles();
   const { galleries } = useGalleries();
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
-  const { files: heartedFiles, loading: heartedLoading, hasMore: heartedHasMore, loadMore: loadMoreHearted, refresh: refreshHearted } = useHeartedFiles();
+  const {
+    files: heartedFiles,
+    loading: heartedLoading,
+    loadingMore: heartedLoadingMore,
+    hasMore: heartedHasMore,
+    loadMore: loadMoreHearted,
+    refresh: refreshHearted,
+  } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite, loading: subscriptionLoading } = useSubscription();
   const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath, effectiveDriveIdForFiles } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -859,6 +865,13 @@ export default function FileGrid() {
   })() : (currentDrive ? displayedFiles.length : recentFiles.length);
   const displayTotalCount = useFilteredScoped ? totalCount : totalFileCount;
 
+  const recentsRootReady = !loading && !subscriptionLoading;
+  const mainGridFadeReady = currentDrive
+    ? !driveFilesLoading
+    : activeTab === "recents"
+      ? recentsRootReady
+      : !(heartedLoading && heartedFiles.length === 0);
+
   return (
     <div
       ref={gridSectionRef}
@@ -949,11 +962,12 @@ export default function FileGrid() {
       {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0 || pinnedFilesLoading) && (
         <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Pinned</h3>
-          {pinnedFilesLoading ? (
-            <div className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Loading…
-            </div>
-          ) : viewMode === "list" ? (
+          <DashboardRouteFade
+            ready={pinnedFileIds.size === 0 || !pinnedFilesLoading}
+            srOnlyMessage="Loading pinned items"
+            compact
+          >
+          {viewMode === "list" ? (
             <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -1102,10 +1116,12 @@ export default function FileGrid() {
               ))}
             </div>
           )}
+          </DashboardRouteFade>
         </section>
       )}
 
       {/* Recents / Starred / Drive content — main section */}
+      <DashboardRouteFade ready={mainGridFadeReady} srOnlyMessage="Loading files">
       <section className="relative border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
         {typeof document !== "undefined" &&
           dragState?.isActive &&
@@ -1181,11 +1197,7 @@ export default function FileGrid() {
 
         {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
         {currentDrive ? (
-          driveFilesLoading ? (
-            <div className="py-12">
-              <LoadingSpinner label={LOADING_COPY.files} centered />
-            </div>
-          ) : useFilteredScoped && filesToShow.length === 0 && !filtersLoading ? (
+          useFilteredScoped && filesToShow.length === 0 && !filtersLoading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No files match your filters. Try adjusting or clearing filters.
           </div>
@@ -1329,10 +1341,6 @@ export default function FileGrid() {
                 : "No files in this drive yet. Sync to add files."}
             </div>
           )
-        ) : loading ? (
-          <div className="py-12">
-            <LoadingSpinner label={LOADING_COPY.filesYour} centered />
-          </div>
         ) : activeTab === "recents" ? (
           <>
             {showFolders && folderItems.length > 0 && (
@@ -1534,10 +1542,6 @@ export default function FileGrid() {
               </div>
             )}
           </>
-        ) : heartedLoading && heartedFiles.length === 0 ? (
-          <div className="py-12">
-            <LoadingSpinner label={LOADING_COPY.files} centered />
-          </div>
         ) : heartedFiles.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Files you heart will appear here for quick access.
@@ -1600,15 +1604,17 @@ export default function FileGrid() {
                 <button
                   type="button"
                   onClick={loadMoreHearted}
-                  className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  disabled={heartedLoadingMore}
+                  className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
                 >
-                  Load more
+                  {heartedLoadingMore ? "Loading…" : "Load more"}
                 </button>
               </div>
             )}
           </>
         )}
       </section>
+      </DashboardRouteFade>
       </FilesViewWrapper>
         </div>
 

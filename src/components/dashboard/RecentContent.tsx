@@ -12,6 +12,7 @@ import { useRecentOpens, type RecentOpenItem } from "@/hooks/useRecentOpens";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import DashboardRouteFade from "./DashboardRouteFade";
 
 function toRecentFile(item: RecentOpenItem): RecentFile | null {
   if (item.type !== "file" || !item.driveId) return null;
@@ -51,31 +52,22 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
   const folders = items.filter((i) => i.type === "folder").map(toFolderItem).filter(Boolean) as FolderItem[];
   const filesHref = `${basePath}/files`;
 
-  if (loading && items.length === 0) {
-    return (
-      <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Loading…
-      </div>
-    );
-  }
+  const openFolder = (driveId: string) => {
+    router.push(`${filesHref}?drive=${driveId}`);
+  };
 
-  if (items.length === 0) {
-    return (
+  const ready = !(loading && items.length === 0);
+
+  return (
+    <>
+      <DashboardRouteFade ready={ready} srOnlyMessage="Loading recent items">
+      {items.length === 0 ? (
       <div className="py-12 text-center">
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           Recently opened files and folders will appear here (last 7 days).
         </p>
       </div>
-    );
-  }
-
-  const openFolder = (driveId: string) => {
-    router.push(`${filesHref}?drive=${driveId}`);
-  };
-
-  return (
-    <>
-      {viewMode === "list" ? (
+      ) : viewMode === "list" ? (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
           <table className="w-full text-left text-sm">
             <thead>
@@ -152,6 +144,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
           ))}
         </div>
       )}
+      </DashboardRouteFade>
       {previewFile && (
         <FilePreviewModal
           file={previewFile}

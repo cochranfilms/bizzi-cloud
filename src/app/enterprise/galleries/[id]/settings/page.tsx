@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import TopBar from "@/components/dashboard/TopBar";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GallerySettingsForm from "@/components/gallery/GallerySettingsForm";
 import type { CoverPosition } from "@/types/gallery";
 
@@ -75,21 +76,12 @@ export default function EnterpriseGallerySettingsPage() {
     fetchGallery().finally(() => setLoading(false));
   }, [user, id, fetchGallery]);
 
-  if (loading || !gallery) {
-    return (
-      <>
-        <TopBar title="Gallery settings" />
-        <main className="flex flex-1 items-center justify-center p-6">
-          <Loader2 className="h-10 w-10 animate-spin text-neutral-400" />
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <TopBar title="Gallery settings" />
       <main className="flex-1 overflow-auto p-6">
+        <DashboardRouteFade ready={!loading && !!gallery} srOnlyMessage="Loading gallery settings">
+        {gallery ? (
         <div className="mx-auto max-w-2xl space-y-6">
           <Link
             href={`${BASE_PATH}/galleries/${id}`}
@@ -104,6 +96,8 @@ export default function EnterpriseGallerySettingsPage() {
             onRefetch={fetchGallery}
           />
         </div>
+        ) : null}
+        </DashboardRouteFade>
       </main>
     </>
   );

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 export default function DashboardAuthGuard({
   children,
@@ -46,12 +47,16 @@ export default function DashboardAuthGuard({
   if (!isFirebaseConfigured()) {
     return <>{children}</>;
   }
-  if (loading || !user || !statusChecked) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-neutral-100 dark:bg-neutral-950">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent" />
-      </div>
-    );
-  }
-  return <>{children}</>;
+  const ready = !loading && !!user && statusChecked;
+  return (
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950">
+      <DashboardRouteFade
+        ready={ready}
+        srOnlyMessage="Loading dashboard"
+        placeholderClassName="min-h-screen rounded-none"
+      >
+        {ready ? children : null}
+      </DashboardRouteFade>
+    </div>
+  );
 }

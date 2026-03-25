@@ -366,53 +366,57 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       .map((d) => d.id);
     if (storageDriveIds.length === 0) return [];
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
-    const all: RecentFile[] = [];
-    for (const driveId of storageDriveIds) {
-      const drive = driveMap.get(driveId);
-      try {
-        const filesSnap = await getDocs(
-          query(
-            collection(db, "backup_files"),
-            where("userId", "==", user.uid),
-            where("linked_drive_id", "==", driveId),
-            where("deleted_at", "==", null),
-            orderBy("modified_at", "desc"),
-            limit(50)
-          )
-        );
-        for (const docSnap of filesSnap.docs) {
-          const data = docSnap.data();
-          const modifiedAt = data.modified_at ?? null;
-          const createdAt = data.created_at ?? null;
-          const raw = createdAt ?? modifiedAt;
-          let dateStr: string | null = null;
-          if (raw) {
-            if (typeof raw === "string") dateStr = raw;
-            else if (typeof (raw as { toDate?: () => Date }).toDate === "function")
-              dateStr = (raw as { toDate: () => Date }).toDate().toISOString();
+    const perDrive = await Promise.all(
+      storageDriveIds.map(async (driveId) => {
+        const drive = driveMap.get(driveId);
+        const batch: RecentFile[] = [];
+        try {
+          const filesSnap = await getDocs(
+            query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", driveId),
+              where("deleted_at", "==", null),
+              orderBy("modified_at", "desc"),
+              limit(50)
+            )
+          );
+          for (const docSnap of filesSnap.docs) {
+            const data = docSnap.data();
+            const modifiedAt = data.modified_at ?? null;
+            const createdAt = data.created_at ?? null;
+            const raw = createdAt ?? modifiedAt;
+            let dateStr: string | null = null;
+            if (raw) {
+              if (typeof raw === "string") dateStr = raw;
+              else if (typeof (raw as { toDate?: () => Date }).toDate === "function")
+                dateStr = (raw as { toDate: () => Date }).toDate().toISOString();
+            }
+            if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
+            const path = data.relative_path ?? "";
+            const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+            batch.push({
+              id: docSnap.id,
+              name,
+              path,
+              objectKey: data.object_key ?? "",
+              size: data.size_bytes ?? 0,
+              modifiedAt: modifiedAt ?? null,
+              driveId: data.linked_drive_id,
+              driveName: drive?.name ?? "Storage",
+              contentType: data.content_type ?? null,
+              assetType: data.asset_type ?? null,
+              galleryId: data.gallery_id ?? null,
+              proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
+            });
           }
-          if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
-          const path = data.relative_path ?? "";
-          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
-          all.push({
-            id: docSnap.id,
-            name,
-            path,
-            objectKey: data.object_key ?? "",
-            size: data.size_bytes ?? 0,
-            modifiedAt: modifiedAt ?? null,
-            driveId: data.linked_drive_id,
-            driveName: drive?.name ?? "Storage",
-            contentType: data.content_type ?? null,
-            assetType: data.asset_type ?? null,
-            galleryId: data.gallery_id ?? null,
-            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
-          });
+        } catch {
+          // Index may not exist; skip this drive
         }
-      } catch {
-        // Index may not exist; skip this drive
-      }
-    }
+        return batch;
+      })
+    );
+    const all = perDrive.flat();
     all.sort((a, b) => {
       const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
       const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;

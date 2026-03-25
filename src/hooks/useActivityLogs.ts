@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { getAuthToken } from "@/lib/auth-token";
@@ -26,10 +26,12 @@ export function useActivityLogs(scope: "personal" | "organization" = "personal")
   const { org } = useEnterprise();
   const [items, setItems] = useState<ActivityLogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadedScopeKeyRef = useRef<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     if (!user) {
       setItems([]);
+      loadedScopeKeyRef.current = null;
       setLoading(false);
       return;
     }
@@ -38,7 +40,9 @@ export function useActivityLogs(scope: "personal" | "organization" = "personal")
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const scopeKey = scope === "organization" ? `org:${org?.id ?? ""}` : "personal";
+    const showFullLoader = loadedScopeKeyRef.current !== scopeKey;
+    if (showFullLoader) setLoading(true);
     try {
       const params = new URLSearchParams({
         scope,
@@ -59,6 +63,7 @@ export function useActivityLogs(scope: "personal" | "organization" = "personal")
     } catch {
       setItems([]);
     } finally {
+      loadedScopeKeyRef.current = scopeKey;
       setLoading(false);
     }
   }, [user, scope, org?.id]);
@@ -66,6 +71,7 @@ export function useActivityLogs(scope: "personal" | "organization" = "personal")
   useEffect(() => {
     if (scope === "organization" && !org?.id) {
       setItems([]);
+      loadedScopeKeyRef.current = null;
       setLoading(false);
       return;
     }

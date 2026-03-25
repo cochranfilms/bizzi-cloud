@@ -9,8 +9,7 @@ import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCl
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { rectsIntersect, formatBytes, formatDate } from "@/lib/utils";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { LOADING_COPY } from "@/lib/loading-copy";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -613,11 +612,8 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
 
         {typeof document !== "undefined" && dragRectEl && createPortal(dragRectEl, document.body)}
 
-        {loading ? (
-          <div className="py-12">
-            <LoadingSpinner label={LOADING_COPY.default} />
-          </div>
-        ) : hasItems ? (
+        <DashboardRouteFade ready={!loading} srOnlyMessage="Loading trash">
+        {hasItems ? (
           <div
             ref={gridSectionRef}
             className={`space-y-8 ${dragState?.isActive ? "select-none" : ""}`}
@@ -687,6 +683,7 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
             contents from your drives, they will appear here.
           </div>
         )}
+        </DashboardRouteFade>
       </main>
     </>
   );

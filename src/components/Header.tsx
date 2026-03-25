@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -19,9 +20,10 @@ const pagesItems: { href: string; label: string; external?: boolean }[] = [
 ];
 
 const glassNav =
-  "rounded-full border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl";
+  "border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl rounded-t-[1.75rem] rounded-b-[999px]";
 
 export default function Header() {
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(false);
   const pagesRef = useRef<HTMLLIElement>(null);
@@ -40,11 +42,12 @@ export default function Header() {
   }, [pagesOpen]);
 
   return (
-    <header className="relative z-50 px-3 sm:px-6 pt-5 sm:pt-6 pb-2">
+    <header className="sticky top-0 z-50 w-full px-4 sm:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-3 sm:pb-4">
       <nav
-        className={`mx-auto max-w-5xl ${glassNav} px-3 py-2 sm:px-5 sm:py-2.5 relative flex items-center gap-2`}
+        className={`landing-nav-slab mx-auto max-w-5xl ${glassNav} px-3 py-2 sm:px-6 sm:py-2.5`}
         aria-label="Main"
       >
+        <div className="relative z-10 flex w-full items-center gap-2">
         <Link href="/" className="flex shrink-0 items-center gap-2 rounded-full py-1 pr-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 ring-1 ring-neutral-900/10 shadow-sm">
             <Image
@@ -67,7 +70,11 @@ export default function Header() {
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noopener noreferrer" : undefined}
-                className="text-sm font-medium text-neutral-700 hover:text-neutral-950 transition-colors whitespace-nowrap"
+                className={`text-sm transition-colors whitespace-nowrap ${
+                  link.href === "/" && pathname === "/"
+                    ? "font-semibold text-neutral-950"
+                    : "font-medium text-neutral-700 hover:text-neutral-950"
+                }`}
               >
                 {link.label}
               </Link>
@@ -155,6 +162,7 @@ export default function Header() {
               )}
             </svg>
           </button>
+        </div>
         </div>
       </nav>
 

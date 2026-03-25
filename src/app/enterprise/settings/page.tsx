@@ -11,6 +11,7 @@ import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive, CreditCard, Z
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
+import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
@@ -124,23 +125,15 @@ export default function EnterpriseSettingsPage() {
     }
   };
 
-  if (!org) {
-    return (
-      <>
-        <TopBar title="Settings" />
-        <main className="flex-1 overflow-auto p-6">
-          <p className="text-neutral-500 dark:text-neutral-400">
-            Loading organization…
-          </p>
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <TopBar title="Organization settings" />
       <main className="flex-1 overflow-auto p-6">
+        <DashboardRouteFade
+          ready={!!org}
+          srOnlyMessage="Loading organization settings"
+        >
+        {org ? (
         <div className="mx-auto max-w-2xl space-y-8">
           {!isAdmin && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/50">
@@ -377,6 +370,8 @@ export default function EnterpriseSettingsPage() {
             </Link>
           </section>
         </div>
+        ) : null}
+        </DashboardRouteFade>
       </main>
     </>
   );
