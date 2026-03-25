@@ -1,6 +1,7 @@
 /**
- * Shared LUT preview resolution for dashboard / enterprise gallery asset grids.
- * Matches public GalleryView + GET /api/galleries/[id]/view semantics.
+ * Legacy helper: resolved server “active” LUT for asset grids.
+ * Owner upload grids stay neutral (no global LUT); proofing uses
+ * `resolveProofingGridLutMirror` in `gallery-viewer-lut-state` (DB + continuity) instead.
  */
 
 import {
@@ -9,6 +10,7 @@ import {
   resolveGalleryClientLutSource,
 } from "@/lib/gallery-client-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 
 export type ViewGalleryLike = {
   gallery_type?: string;
@@ -17,6 +19,8 @@ export type ViewGalleryLike = {
   lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   creative_lut_config?: { enabled?: boolean; selected_lut_id?: string | null } | null;
   creative_lut_library?: Array<{ id: string; name?: string; signed_url?: string | null }>;
+  /** When persisted viewer prefs ship on GET /view, proofing + viewer resolve them here. */
+  viewer_lut_preferences?: GalleryViewerLutPreferences | null;
 };
 
 export function computeGalleryAssetGridLutPreview(viewGallery: ViewGalleryLike | null): {

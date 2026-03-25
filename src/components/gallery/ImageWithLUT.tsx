@@ -2,31 +2,35 @@
 
 import { useRef, useEffect, useState, useCallback, type CSSProperties } from "react";
 import {
-  createLUTTexture,
   createImageLUTContext,
+  disposeImageLUTContext,
   renderImageWithLUT,
-  type ImageLUTContext,
+  setSecondaryLut,
+  swapPrimarySecondaryLut,
 } from "@/lib/creative-lut/image-lut-engine";
+import { computeObjectFitShaderUniforms } from "@/lib/creative-lut/object-fit-shader-uniforms";
 import { lutDebug } from "@/lib/creative-lut/lut-debug";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
 
+function easeOutQuad(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+
+const LUT_CROSSFADE_MS = 280;
+
 interface ImageWithLUTProps {
   imageUrl: string;
-  /** URL (signed) or builtin LUT id (e.g. sony_rec709) */
   lutUrl: string | null;
   lutEnabled: boolean;
   className?: string;
   alt?: string;
-  /** "contain" (default) or "cover" for object-fit */
+  /** "contain" (default) or "cover" for object-fit — must match the sibling &lt;img&gt; */
   objectFit?: "contain" | "cover";
-  /** default: grid tiles / lightbox; fill: hero banner full-bleed */
   variant?: "default" | "fill";
-  /**
-   * Gallery tiles: match plain <img> sizing (block + w-full + h-auto vs h-full).
-   * Omit for lightbox / max-h constrained layouts (uses shrink-wrapped inline-block).
-   */
   tileLayout?: "masonry" | "grid";
   imageStyle?: CSSProperties;
+  /** 0–100, blend original → graded. Default 100 = full LUT. */
+  gradeMixPercent?: number;
 }
 
 export default function ImageWithLUT({
@@ -39,16 +43,23 @@ export default function ImageWithLUT({
   variant = "default",
   tileLayout,
   imageStyle,
+  gradeMixPercent = 100,
 }: ImageWithLUTProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const glContextRef = useRef<ImageLUTContext | null>(null);
+  const glContextRef = useRef<ReturnType<typeof createImageLUTContext> | null>(null);
+  const displayedLutUrlRef = useRef<string | null>(null);
+  const transitionRafRef = useRef<number | null>(null);
+  const crossfadeRef = useRef(0);
   const loggedFirstDrawRef = useRef<string | null>(null);
+
   const [lutReady, setLutReady] = useState(false);
   const [lutError, setLutError] = useState<string | null>(null);
   const [webglAvailable, setWebglAvailable] = useState<boolean | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+
+  const gradeMix = Math.min(100, Math.max(0, gradeMixPercent)) / 100;
 
   useEffect(() => {
     setImageLoaded(false);
@@ -56,9 +67,24 @@ export default function ImageWithLUT({
   }, [imageUrl]);
 
   useEffect(() => {
+    if (!lutEnabled || !lutUrl) {
+      if (transitionRafRef.current != null) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
+      }
+      crossfadeRef.current = 0;
+      if (glContextRef.current) {
+        disposeImageLUTContext(glContextRef.current);
+        glContextRef.current = null;
+      }
+      displayedLutUrlRef.current = null;
+      setLutReady(false);
+      setLutError(null);
+      return;
+    }
+
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img || !lutEnabled || !lutUrl) return;
+    if (!canvas) return;
 
     const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: false });
     if (!gl) {
@@ -67,84 +93,149 @@ export default function ImageWithLUT({
       return;
     }
     setWebglAvailable(true);
-    lutDebug("WebGL2 context OK, loading LUT", { lutUrl: lutUrl.slice(0, 120) });
+
+    if (glContextRef.current && displayedLutUrlRef.current === lutUrl) {
+      setLutReady(true);
+      setLutError(null);
+      return;
+    }
 
     let cancelled = false;
-    getOrLoadLUT(lutUrl)
-      .then(({ data, size }) => {
+
+    (async () => {
+      try {
+        const { data, size } = await getOrLoadLUT(lutUrl);
         if (cancelled) return;
-        const lutTexture = createLUTTexture(gl, data, size);
-        glContextRef.current = createImageLUTContext(gl, lutTexture, size);
-        setLutReady(true);
+
+        if (!glContextRef.current) {
+          glContextRef.current = createImageLUTContext(gl, data, size);
+          displayedLutUrlRef.current = lutUrl;
+          crossfadeRef.current = 0;
+          lutDebug("LUT GPU upload complete (primary)", { size });
+        } else if (displayedLutUrlRef.current !== lutUrl) {
+          if (transitionRafRef.current != null) {
+            cancelAnimationFrame(transitionRafRef.current);
+            transitionRafRef.current = null;
+          }
+          setSecondaryLut(glContextRef.current, data, size);
+          crossfadeRef.current = 0;
+          const ctx = glContextRef.current;
+          const start = performance.now();
+
+          const tick = () => {
+            if (cancelled || !glContextRef.current) return;
+            const t = Math.min(1, (performance.now() - start) / LUT_CROSSFADE_MS);
+            crossfadeRef.current = easeOutQuad(t);
+            requestDraw();
+            if (t < 1) {
+              transitionRafRef.current = requestAnimationFrame(tick);
+            } else {
+              transitionRafRef.current = null;
+              swapPrimarySecondaryLut(ctx);
+              crossfadeRef.current = 0;
+              displayedLutUrlRef.current = lutUrl;
+              requestDraw();
+              lutDebug("LUT crossfade complete", { lutUrl: lutUrl.slice(0, 80) });
+            }
+          };
+          transitionRafRef.current = requestAnimationFrame(tick);
+          lutDebug("LUT crossfade started");
+        }
+
         setLutError(null);
-        lutDebug("LUT GPU upload complete", { size });
-      })
-      .catch((e) => {
+        setLutReady(true);
+      } catch (e) {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : "LUT load failed";
           lutDebug("LUT load failed", msg);
           setLutError(msg);
           setLutReady(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
-      const ctx = glContextRef.current;
-      if (ctx) {
-        ctx.gl.deleteTexture(ctx.imageTexture);
-        ctx.gl.deleteTexture(ctx.lutTexture);
-        ctx.gl.deleteProgram(ctx.program);
-        glContextRef.current = null;
+      if (transitionRafRef.current != null) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
       }
-      setLutReady(false);
     };
   }, [lutEnabled, lutUrl]);
 
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    const img = imgRef.current;
-    const container = containerRef.current;
-    const ctx = glContextRef.current;
-    if (!canvas || !img || !container || !ctx || !lutReady || !lutEnabled || !imageLoaded) return;
+  useEffect(() => {
+    return () => {
+      if (transitionRafRef.current != null) {
+        cancelAnimationFrame(transitionRafRef.current);
+      }
+      if (glContextRef.current) {
+        disposeImageLUTContext(glContextRef.current);
+        glContextRef.current = null;
+      }
+    };
+  }, []);
 
-    const rect = img.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const displayedW = rect.width;
-    const displayedH = rect.height;
+  const requestDraw = useCallback(() => {
+    requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      const img = imgRef.current;
+      const ctx = glContextRef.current;
+      if (!canvas || !img || !ctx || !lutReady || !lutEnabled || !imageLoaded) return;
 
-    if (displayedW <= 0 || displayedH <= 0) return;
-    if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+      const rect = img.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const displayedW = rect.width;
+      const displayedH = rect.height;
 
-    const w = Math.max(1, Math.floor(displayedW * dpr));
-    const h = Math.max(1, Math.floor(displayedH * dpr));
+      if (displayedW <= 0 || displayedH <= 0) return;
+      if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
 
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
+      const w = Math.max(1, Math.floor(displayedW * dpr));
+      const h = Math.max(1, Math.floor(displayedH * dpr));
 
-    renderImageWithLUT(ctx, img, w, h);
-    const drawKey = `${lutUrl}:${imageUrl}:${w}x${h}`;
-    if (loggedFirstDrawRef.current !== drawKey) {
-      loggedFirstDrawRef.current = drawKey;
-      lutDebug("first canvas draw after LUT / layout", {
-        w,
-        h,
-        naturalW: img.naturalWidth,
-        naturalH: img.naturalHeight,
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+
+      const fitUniforms = computeObjectFitShaderUniforms(
+        displayedW,
+        displayedH,
+        img.naturalWidth,
+        img.naturalHeight,
+        objectFit
+      );
+
+      renderImageWithLUT(ctx, img, w, h, {
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        objectFit,
+        gradeMix,
+        lutCrossfade: crossfadeRef.current,
+        fitUniforms,
       });
-    }
-  }, [lutReady, lutEnabled, imageLoaded, lutUrl, imageUrl]);
+
+      const drawKey = `${lutUrl}:${imageUrl}:${w}x${h}:${gradeMix}:${crossfadeRef.current}`;
+      if (loggedFirstDrawRef.current !== drawKey) {
+        loggedFirstDrawRef.current = drawKey;
+        lutDebug("draw", {
+          w,
+          h,
+          naturalW: img.naturalWidth,
+          naturalH: img.naturalHeight,
+          gradeMix,
+          crossfade: crossfadeRef.current,
+        });
+      }
+    });
+  }, [lutReady, lutEnabled, imageLoaded, lutUrl, imageUrl, objectFit, gradeMix]);
 
   useEffect(() => {
     const img = imgRef.current;
     const container = containerRef.current;
     if (!img || !container) return;
 
-    const doRender = () => {
-      requestAnimationFrame(render);
-    };
+    const doRender = () => requestDraw();
 
     const ro = new ResizeObserver(doRender);
     ro.observe(container);
@@ -156,17 +247,17 @@ export default function ImageWithLUT({
       ro.disconnect();
       window.removeEventListener("resize", doRender);
     };
-  }, [imageLoaded, render]);
+  }, [imageLoaded, requestDraw]);
 
   const onImageLoad = useCallback(() => {
     setImageLoaded(true);
-    requestAnimationFrame(render);
-  }, [render]);
+    requestDraw();
+  }, [requestDraw]);
 
-  /**
-   * Canvas must mount whenever we attempt LUT (not only after lutReady), otherwise
-   * the WebGL effect never sees canvasRef and getOrLoadLUT never runs — preview stays ungraded.
-   */
+  useEffect(() => {
+    if (imageLoaded && lutReady) requestDraw();
+  }, [gradeMix, imageLoaded, lutReady, requestDraw]);
+
   const canvasLayerActive =
     lutEnabled && !!lutUrl && webglAvailable !== false && !lutError;
   const lutDrawn = canvasLayerActive && lutReady;
@@ -220,7 +311,7 @@ export default function ImageWithLUT({
       {canvasLayerActive && (
         <canvas
           ref={canvasRef}
-          className={`pointer-events-none absolute inset-0 block h-full w-full ${objectFitClass}`}
+          className="pointer-events-none absolute inset-0 block h-full w-full"
           style={{ opacity: lutDrawn ? 1 : 0 }}
         />
       )}

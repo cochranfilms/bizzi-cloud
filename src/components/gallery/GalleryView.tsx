@@ -32,6 +32,13 @@ import {
   GALLERY_LUT_ORIGINAL_ID,
   resolveGalleryClientLutSource,
 } from "@/lib/gallery-client-lut";
+import {
+  getGalleryViewerLutPreferencesResolved,
+  persistGalleryViewerLutContinuity,
+  readGalleryViewerLutContinuityHydration,
+  readGalleryViewerLutMixInitial,
+} from "@/lib/gallery-viewer-lut-state";
+import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 import { isRawFile } from "@/lib/gallery-file-types";
@@ -79,6 +86,8 @@ interface GalleryData {
   lut?: { enabled?: boolean; lut_source?: string | null; storage_url?: string | null } | null;
   creative_lut_config?: { enabled?: boolean; selected_lut_id?: string | null } | null;
   creative_lut_library?: Array<{ id: string; name?: string; signed_url?: string | null }>;
+  /** Future: DB-backed prefs — see `getGalleryViewerLutPreferencesResolved`. */
+  viewer_lut_preferences?: GalleryViewerLutPreferences | null;
   /** Legacy; normalized into media_mode on the server — kept for client-side mode checks */
   source_format?: "raw" | "jpg" | null;
   cover_asset_id?: string | null;
@@ -337,6 +346,8 @@ function PreviewModal({
   onLutPreviewToggle,
   allowComments = true,
   previewLutSource,
+  lutGradeMixPercent = 100,
+  onLutGradeMixChange,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -359,6 +370,8 @@ function PreviewModal({
   onLutPreviewToggle?: () => void;
   allowComments?: boolean;
   previewLutSource: string | null;
+  lutGradeMixPercent?: number;
+  onLutGradeMixChange?: (value: number) => void;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -463,6 +476,28 @@ function PreviewModal({
             </span>
           </button>
         )}
+        {lut?.enabled &&
+          lutPreviewEnabled &&
+          previewLutSource &&
+          onLutGradeMixChange && (
+            <div
+              className="flex min-w-[11rem] max-w-[14rem] flex-col gap-1 rounded-xl border border-white/25 bg-black/35 px-3 py-2 shadow-lg backdrop-blur-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-white/90">
+                <span>Mix</span>
+                <span className="tabular-nums text-white/75">{lutGradeMixPercent}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={lutGradeMixPercent}
+                onChange={(e) => onLutGradeMixChange(Number(e.target.value))}
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-bizzi-cyan"
+              />
+            </div>
+          )}
         {lut?.enabled && modalLutOptions.length > 1 && (
           <select
             value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
@@ -510,7 +545,7 @@ function PreviewModal({
               {videoStreamUrl && !videoError && (
                 lut?.enabled ? (
                   <VideoWithLUT
-                    key={`${asset.id}-${previewLutSource ?? "orig"}`}
+                    key={asset.id}
                     src={videoStreamUrl}
                     streamUrl={videoStreamUrl}
                     className="max-h-[70vh] max-w-full rounded-lg bg-black"
@@ -542,12 +577,13 @@ function PreviewModal({
               isImage(asset.name) &&
               lutPreviewEnabled ? (
                 <ImageWithLUT
-                  key={`${asset.id}-${previewLutSource}`}
+                  key={asset.id}
                   imageUrl={previewImageUrl}
                   lutUrl={previewLutSource}
                   lutEnabled={true}
                   className="max-h-[70vh] max-w-full"
                   objectFit="contain"
+                  gradeMixPercent={lutGradeMixPercent}
                 />
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -658,6 +694,7 @@ function GalleryAssetCard({
   lut,
   lutPreviewEnabled = false,
   previewLutSource = null,
+  lutGradeMixPercent = 100,
   isFeaturedVideo = false,
   isVideoGallery = false,
 }: {
@@ -677,6 +714,7 @@ function GalleryAssetCard({
   lutPreviewEnabled?: boolean;
   /** Resolved client preview LUT (null = Original). */
   previewLutSource?: string | null;
+  lutGradeMixPercent?: number;
   isFeaturedVideo?: boolean;
   /** When true, all videos autoplay muted (not just featured) */
   isVideoGallery?: boolean;
@@ -825,7 +863,7 @@ function GalleryAssetCard({
         {shouldAutoplayVideo && videoStreamUrl ? (
           lut?.enabled && previewLutSource && lutPreviewEnabled ? (
             <VideoWithLUT
-              key={`${asset.id}-${previewLutSource ?? "orig"}`}
+              key={asset.id}
               src={videoStreamUrl}
               streamUrl={videoStreamUrl}
               showLUTOption={false}
@@ -861,13 +899,14 @@ function GalleryAssetCard({
           lut?.enabled && previewLutSource && lutPreviewEnabled && !rawThumbUnavailable ? (
             <div className={`block w-full transition-transform group-hover:scale-105 ${useNaturalAspect ? "h-auto" : "h-full"}`}>
                 <ImageWithLUT
-                key={`${asset.id}-${previewLutSource ?? "orig"}`}
+                key={asset.id}
                 imageUrl={thumbUrl}
                 lutUrl={previewLutSource}
                 lutEnabled={true}
                 objectFit="cover"
                 tileLayout={useNaturalAspect ? "masonry" : "grid"}
                 className={`w-full ${useNaturalAspect ? "h-auto" : "h-full"}`}
+                gradeMixPercent={lutGradeMixPercent}
               />
             </div>
           ) : (
@@ -970,12 +1009,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(false);
   const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
+  const [lutGradeMix, setLutGradeMix] = useState(() => readGalleryViewerLutMixInitial(galleryId));
   const [downloadStatus, setDownloadStatus] = useState<{
     used: number;
     limit: number;
     remaining: number;
   } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const viewerLutSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToGalleryContent = useCallback(() => {
     setMusicPlaying(false);
@@ -1055,7 +1096,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       cfg != null && typeof cfg === "object" && "enabled" in cfg && typeof cfg.enabled === "boolean"
         ? cfg.enabled
         : null;
-    setLutPreviewEnabled(lutWorkflowActive && (configPreview !== null ? configPreview : lutOn));
+    const serverPreview = lutWorkflowActive && (configPreview !== null ? configPreview : lutOn);
 
     const opts = buildGalleryLUTOptions(
       lib,
@@ -1066,8 +1107,129 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       cfg?.selected_lut_id && opts.some((o) => o.id === cfg.selected_lut_id)
         ? cfg.selected_lut_id
         : GALLERY_LUT_ORIGINAL_ID;
-    setSelectedLutId(defaultId);
-  }, [data, password]);
+
+    const persisted = data.gallery.viewer_lut_preferences;
+    const resolved =
+      typeof window !== "undefined"
+        ? getGalleryViewerLutPreferencesResolved(galleryId, persisted)
+        : null;
+
+    let nextPreview = serverPreview;
+    let nextId = defaultId;
+    let nextMix: number | undefined;
+
+    if (resolved) {
+      nextPreview = lutWorkflowActive && resolved.lutPreviewEnabled;
+      if (opts.some((o) => o.id === resolved.selectedLutId)) {
+        nextId = resolved.selectedLutId;
+      }
+      nextMix = resolved.gradeMixPercent;
+    } else if (typeof window !== "undefined") {
+      try {
+        const hints = readGalleryViewerLutContinuityHydration(galleryId);
+        if (typeof hints.previewEnabled === "boolean") {
+          nextPreview = lutWorkflowActive && hints.previewEnabled;
+        }
+        if (hints.selectedLutId != null && opts.some((o) => o.id === hints.selectedLutId)) {
+          nextId = hints.selectedLutId;
+        }
+        if (hints.mixPercent !== undefined) {
+          nextMix = hints.mixPercent;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    setLutPreviewEnabled(nextPreview);
+    setSelectedLutId(nextId);
+    if (nextMix !== undefined) setLutGradeMix(nextMix);
+  }, [data, password, galleryId]);
+
+  useEffect(() => {
+    if (!data || selectedLutId === null) return;
+    persistGalleryViewerLutContinuity(galleryId, {
+      selectedLutId,
+      lutPreviewEnabled,
+      lutGradeMix,
+    });
+  }, [galleryId, data, selectedLutId, lutPreviewEnabled, lutGradeMix]);
+
+  /** Debounced save to Firestore; session continuity refreshed after successful PATCH. */
+  useEffect(() => {
+    if (!data) return;
+    const mediaMode = normalizeGalleryMediaMode({
+      media_mode: data.gallery.media_mode ?? null,
+      source_format: data.gallery.source_format ?? null,
+    });
+    if (mediaMode !== "raw" || !data.gallery.lut?.enabled) return;
+    if (selectedLutId === null) return;
+
+    const next: GalleryViewerLutPreferences = {
+      selectedLutId,
+      lutPreviewEnabled,
+      gradeMixPercent: lutGradeMix,
+    };
+    const server = data.gallery.viewer_lut_preferences;
+    if (
+      server &&
+      server.selectedLutId === next.selectedLutId &&
+      server.lutPreviewEnabled === next.lutPreviewEnabled &&
+      server.gradeMixPercent === next.gradeMixPercent
+    ) {
+      return;
+    }
+
+    if (viewerLutSaveTimerRef.current) clearTimeout(viewerLutSaveTimerRef.current);
+    viewerLutSaveTimerRef.current = setTimeout(() => {
+      viewerLutSaveTimerRef.current = null;
+      void (async () => {
+        try {
+          const url = new URL(
+            `/api/galleries/${galleryId}/viewer-lut-preferences`,
+            window.location.origin
+          );
+          if (password) url.searchParams.set("password", password);
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (user) {
+            const t = await user.getIdToken();
+            if (t) headers.Authorization = `Bearer ${t}`;
+          }
+          const res = await fetch(url.toString(), {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(next),
+          });
+          if (!res.ok) return;
+          const body = (await res.json()) as { viewer_lut_preferences?: GalleryViewerLutPreferences };
+          const saved = body.viewer_lut_preferences;
+          if (!saved) return;
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  gallery: { ...prev.gallery, viewer_lut_preferences: saved },
+                }
+              : prev
+          );
+          persistGalleryViewerLutContinuity(galleryId, {
+            selectedLutId: saved.selectedLutId,
+            lutPreviewEnabled: saved.lutPreviewEnabled,
+            lutGradeMix: saved.gradeMixPercent,
+          });
+        } catch {
+          /* ignore network errors */
+        }
+      })();
+    }, 500);
+
+    return () => {
+      if (viewerLutSaveTimerRef.current) {
+        clearTimeout(viewerLutSaveTimerRef.current);
+        viewerLutSaveTimerRef.current = null;
+      }
+    };
+  }, [data, galleryId, password, user, selectedLutId, lutPreviewEnabled, lutGradeMix]);
 
   const fetchDownloadStatus = useCallback(async () => {
     if (!data) return;
@@ -1689,7 +1851,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {featuredVideoStreamUrl ? (
                 heroVideoLutActive ? (
                   <VideoWithLUT
-                    key={`hero-v-${clientLutSource}`}
+                    key="gallery-hero-lut-video"
                     src={featuredVideoStreamUrl}
                     streamUrl={featuredVideoStreamUrl}
                     showLUTOption={false}
@@ -1710,7 +1872,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 )
               ) : heroImageLutActive ? (
                 <ImageWithLUT
-                  key={`hero-img-${clientLutSource}`}
+                  key="gallery-hero-lut"
                   imageUrl={bannerUrl!}
                   lutUrl={clientLutSource}
                   lutEnabled
@@ -1719,6 +1881,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   className="h-full w-full min-h-0"
                   alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
                   imageStyle={heroBackdropStyle}
+                  gradeMixPercent={lutGradeMix}
                 />
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -2094,7 +2257,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   </p>
                 </div>
               </div>
-              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[13.25rem] sm:items-stretch">
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[15.5rem] sm:items-stretch">
                 <button
                   type="button"
                   role="switch"
@@ -2184,6 +2347,37 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     </select>
                   </div>
                 )}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <label
+                      htmlFor="gallery-lut-mix"
+                      className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                        isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
+                      }`}
+                    >
+                      Mix
+                    </label>
+                    <span
+                      className={`text-[11px] font-medium tabular-nums ${
+                        isDarkBg ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"
+                      }`}
+                    >
+                      {lutGradeMix}
+                    </span>
+                  </div>
+                  <input
+                    id="gallery-lut-mix"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={lutGradeMix}
+                    disabled={!lutPreviewEnabled || !clientLutSource}
+                    onChange={(e) => setLutGradeMix(Number(e.target.value))}
+                    className={`h-2 w-full cursor-pointer appearance-none rounded-full accent-bizzi-blue disabled:cursor-not-allowed disabled:opacity-45 dark:accent-bizzi-cyan ${
+                      isDarkBg ? "bg-white/15" : "bg-neutral-200/90 dark:bg-neutral-700"
+                    }`}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -2248,6 +2442,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 lut={effectiveLut}
                 lutPreviewEnabled={lutPreviewEnabled}
                 previewLutSource={clientLutSource}
+                lutGradeMixPercent={lutGradeMix}
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
                 isVideoGallery={gallery.gallery_type === "video"}
               />
@@ -2344,6 +2539,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
           allowComments={gallery.allow_comments !== false}
           previewLutSource={clientLutSource}
+          lutGradeMixPercent={lutGradeMix}
+          onLutGradeMixChange={setLutGradeMix}
         />
       )}
     </div>

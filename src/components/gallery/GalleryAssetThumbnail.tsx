@@ -22,6 +22,8 @@ interface GalleryAssetThumbnailProps {
   lutWorkflowActive?: boolean;
   /** Resolved LUT URL or builtin id — from computeGalleryAssetGridLutPreview + view API library */
   previewLutSource?: string | null;
+  /** 0–100 LUT blend strength (default 100). */
+  lutGradeMixPercent?: number;
 }
 
 export default function GalleryAssetThumbnail({
@@ -33,6 +35,7 @@ export default function GalleryAssetThumbnail({
   enabled,
   lutWorkflowActive = false,
   previewLutSource = null,
+  lutGradeMixPercent = 100,
 }: GalleryAssetThumbnailProps) {
   const [containerRef, isInView] = useInView<HTMLDivElement>();
   const shouldLoad = enabled ?? isInView;
@@ -61,13 +64,14 @@ export default function GalleryAssetThumbnail({
       ) : thumbUrl ? (
         applyLutGrid ? (
           <ImageWithLUT
-            key={`${objectKey}-${previewLutSource}`}
+            key={objectKey}
             imageUrl={thumbUrl}
             lutUrl={previewLutSource}
             lutEnabled={true}
             objectFit="cover"
             tileLayout="grid"
             className="h-full w-full"
+            gradeMixPercent={lutGradeMixPercent}
           />
         ) : (
           <>

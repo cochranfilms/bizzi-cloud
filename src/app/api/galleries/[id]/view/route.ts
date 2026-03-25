@@ -8,6 +8,10 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import {
+  buildValidViewerLutIdSet,
+  normalizeStoredViewerLutPreferences,
+} from "@/lib/gallery-viewer-lut-persist-server";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -152,6 +156,14 @@ export async function GET(
     lut = { enabled: true, lut_source: lutSource, storage_url: lutSource };
   }
 
+  const viewer_lut_preferences =
+    mediaMode === "raw"
+      ? normalizeStoredViewerLutPreferences(
+          g.viewer_lut_preferences,
+          buildValidViewerLutIdSet(rawLibrary, galleryType)
+        )
+      : null;
+
   return NextResponse.json({
     gallery: {
       id: gallerySnap.id,
@@ -193,6 +205,7 @@ export async function GET(
       workflow_status: g.workflow_status ?? null,
       revision_limit_enabled: g.revision_limit_enabled ?? false,
       revision_limit_count: g.revision_limit_count ?? null,
+      viewer_lut_preferences,
     },
     collections,
     assets,

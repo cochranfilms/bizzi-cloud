@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -21,8 +21,12 @@ import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
+import ImageWithLUT from "@/components/gallery/ImageWithLUT";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
+import type { ViewGalleryLike } from "@/lib/gallery-dashboard-lut-preview";
+import { resolveProofingGridLutMirror } from "@/lib/gallery-viewer-lut-state";
+import { isRawFile } from "@/lib/gallery-file-types";
 
 interface FavoritesList {
   id: string;
@@ -56,10 +60,13 @@ const HOVER_HIDE_DELAY_MS = 350;
 function ProofingAssetCell({
   galleryId,
   asset,
+  lutMirror,
 }: {
   galleryId: string;
   asset: GalleryAsset;
+  lutMirror: ReturnType<typeof resolveProofingGridLutMirror>;
 }) {
+  const { previewLutSource, lutWorkflowActive, lutGradeMixPercent } = lutMirror;
   const [isHovered, setIsHovered] = useState(false);
   const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
   const cellRef = useRef<HTMLTableCellElement>(null);
@@ -76,6 +83,14 @@ function ProofingAssetCell({
       size: "medium",
     }
   );
+
+  const showLutPopup =
+    isImage &&
+    !!previewUrl &&
+    !rawPreviewUnavailable &&
+    lutWorkflowActive &&
+    !!previewLutSource &&
+    isRawFile(asset.name);
 
   const clearHideTimeout = () => {
     if (hideTimeoutRef.current) {
@@ -138,6 +153,16 @@ function ProofingAssetCell({
           <div className="h-full overflow-y-auto p-1">
             <RawPreviewPlaceholder fileName={asset.name} className="min-h-0 text-[9px]" />
           </div>
+        ) : showLutPopup ? (
+          <ImageWithLUT
+            imageUrl={previewUrl}
+            lutUrl={previewLutSource}
+            lutEnabled
+            className="h-full w-full"
+            objectFit="contain"
+            tileLayout="grid"
+            gradeMixPercent={lutGradeMixPercent}
+          />
         ) : previewUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
@@ -173,6 +198,10 @@ function ProofingAssetCell({
             name={asset.name}
             mediaType={asset.media_type ?? "image"}
             className="h-10 w-10"
+            enabled
+            lutWorkflowActive={lutWorkflowActive}
+            previewLutSource={previewLutSource}
+            lutGradeMixPercent={lutGradeMixPercent}
           />
         </div>
         <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
@@ -197,8 +226,19 @@ export default function GalleryProofingPage() {
   const [filter, setFilter] = useState<"all" | "favorited" | "commented">("all");
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [copiedIds, setCopiedIds] = useState(false);
+  const [lutMirrorGallery, setLutMirrorGallery] = useState<ViewGalleryLike | null>(null);
 
   const { bumpStorageVersion } = useBackup();
+
+  const lutMirror = useMemo(
+    () =>
+      resolveProofingGridLutMirror(
+        id,
+        lutMirrorGallery,
+        lutMirrorGallery?.viewer_lut_preferences
+      ),
+    [id, lutMirrorGallery]
+  );
 
   const fetchData = useCallback(async () => {
     if (!user || !id) return;
@@ -224,6 +264,7 @@ export default function GalleryProofingPage() {
       const viewData = await viewRes.json();
       setGalleryTitle(viewData.gallery?.title ?? "Gallery");
       setAssets(viewData.assets ?? []);
+      setLutMirrorGallery(viewData.gallery ?? null);
 
       if (favRes.ok) {
         const favData = await favRes.json();
@@ -594,7 +635,7 @@ export default function GalleryProofingPage() {
                       key={a.id}
                       className="border-b border-neutral-100 dark:border-neutral-800"
                     >
-                      <ProofingAssetCell galleryId={id} asset={a} />
+                      <ProofingAssetCell galleryId={id} asset={a} lutMirror={lutMirror} />
                       <td className="px-4 py-3">
                         {favoritedAssetIds.has(a.id) ? (
                           <Heart className="h-4 w-4 fill-red-500 text-red-500" />

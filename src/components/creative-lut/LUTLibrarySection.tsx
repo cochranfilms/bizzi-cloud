@@ -32,7 +32,6 @@ export default function LUTLibrarySection({
   includeBuiltin = false,
 }: LUTLibrarySectionProps) {
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
-  const [selectedId, setSelectedId] = useState<string | null>(config?.selected_lut_id ?? null);
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -41,8 +40,7 @@ export default function LUTLibrarySection({
 
   useEffect(() => {
     setEnabled(config?.enabled ?? false);
-    setSelectedId(config?.selected_lut_id ?? null);
-  }, [config?.enabled, config?.selected_lut_id]);
+  }, [config?.enabled]);
 
   const id = galleryId ?? driveId;
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
@@ -61,29 +59,25 @@ export default function LUTLibrarySection({
     if (!id) return;
     setSaving(true);
     setError(null);
-    const nextEnabled = opts.enabled ?? enabled;
-    const nextSelected = opts.selected_lut_id !== undefined ? opts.selected_lut_id : selectedId;
     try {
       const token = await getAuthToken();
       if (!token) throw new Error("Not authenticated");
+      const body: Record<string, unknown> = { intensity: 1 };
+      if (opts.enabled !== undefined) body.enabled = opts.enabled;
+      if ("selected_lut_id" in opts) body.selected_lut_id = opts.selected_lut_id;
       const res = await fetch(apiBase, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          enabled: nextEnabled,
-          selected_lut_id: nextSelected,
-          intensity: 1,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to save");
       }
-      setEnabled(nextEnabled);
-      setSelectedId(nextSelected);
+      if (opts.enabled !== undefined) setEnabled(opts.enabled);
       await onRefetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -94,10 +88,6 @@ export default function LUTLibrarySection({
 
   const handleEnabledChange = (v: boolean) => {
     saveConfig({ enabled: v });
-  };
-
-  const handleSelectChange = (id: string | null) => {
-    saveConfig({ selected_lut_id: id });
   };
 
   const DIRECT_UPLOAD_THRESHOLD = 4 * 1024 * 1024; // 4 MB — Vercel body limit
@@ -200,11 +190,11 @@ export default function LUTLibrarySection({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to remove");
       }
-      if (selectedId === entryId) {
-        const remaining = [...builtinOptions.map((b) => b.id), ...customLibrary.filter((e) => e.id !== entryId).map((e) => e.id)];
-        handleSelectChange(remaining[0] ?? null);
+      if (config?.selected_lut_id === entryId) {
+        await saveConfig({ selected_lut_id: null });
+      } else {
+        await onRefetch();
       }
-      await onRefetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove");
     } finally {
@@ -230,25 +220,10 @@ export default function LUTLibrarySection({
           </span>
         </label>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">{LUT_HELPER_COPY}</p>
-
-        {allOptions.length > 0 && (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-              Active LUT
-            </label>
-            <select
-              value={selectedId ?? ""}
-              onChange={(e) => handleSelectChange(e.target.value || null)}
-              className="w-full max-w-xs rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-            >
-              {allOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Clients choose which installed LUT to preview (and mix strength) in the gallery viewer; proofing can mirror that
+          view for RAW galleries.
+        </p>
 
         <div className="flex flex-wrap items-center gap-2">
           <input

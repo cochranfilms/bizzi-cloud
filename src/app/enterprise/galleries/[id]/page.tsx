@@ -21,10 +21,6 @@ import {
   Trash2,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
-import {
-  computeGalleryAssetGridLutPreview,
-  type ViewGalleryLike,
-} from "@/lib/gallery-dashboard-lut-preview";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
@@ -142,7 +138,6 @@ export default function EnterpriseGalleryDetailPage() {
 
   const [gallery, setGallery] = useState<GalleryData | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
-  const [viewGalleryLut, setViewGalleryLut] = useState<ViewGalleryLike | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -258,10 +253,8 @@ export default function EnterpriseGalleryDetailPage() {
       if (!res.ok) return;
       const data = await res.json();
       setAssets(data.assets ?? []);
-      setViewGalleryLut(data.gallery ?? null);
     } catch {
       setAssets([]);
-      setViewGalleryLut(null);
     }
   }, [user, id]);
 
@@ -340,8 +333,6 @@ export default function EnterpriseGalleryDetailPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const { previewLutSource, lutWorkflowActive } = computeGalleryAssetGridLutPreview(viewGalleryLut);
 
   return (
     <>
@@ -481,8 +472,6 @@ export default function EnterpriseGalleryDetailPage() {
                         name={a.name}
                         mediaType={a.media_type}
                         className="w-full rounded-lg"
-                        lutWorkflowActive={lutWorkflowActive}
-                        previewLutSource={previewLutSource}
                       />
                       {isCover && (
                         <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">
