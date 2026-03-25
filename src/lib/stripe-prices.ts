@@ -12,7 +12,13 @@ import {
   getStripePriceId as getEnvPriceId,
   getStripeAddonPriceId as getEnvAddonPriceId,
   getStripeSeatPriceId as getEnvSeatPriceId,
+  getStripePersonalTeamSeatPriceId as getEnvPersonalTeamSeatPriceId,
 } from "@/lib/plan-constants";
+import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
+import {
+  teamSeatAnnualCentsPerSeat,
+  teamSeatMonthlyCentsPerSeat,
+} from "@/lib/team-seat-pricing";
 
 const FIRESTORE_COLLECTION = "stripe_prices";
 
@@ -304,6 +310,75 @@ export async function getOrCreateStripeSeatPrice(): Promise<string> {
     return price.id;
   } catch (err) {
     console.error("[Stripe getOrCreateSeatPrice] Failed to create:", err);
+    throw err;
+  }
+}
+
+const PERSONAL_TEAM_SEAT_LABELS: Record<PersonalTeamSeatAccess, string> = {
+  none: "Team seat (base)",
+  gallery: "Team seat (Gallery)",
+  editor: "Team seat (Editor)",
+  fullframe: "Team seat (Full Frame)",
+};
+
+/**
+ * Personal team seat: recurring price per access tier and billing cycle.
+ * Metadata `personal_team_seat_access` is used by webhooks to reconcile quantities.
+ */
+export async function getOrCreatePersonalTeamSeatPrice(
+  level: PersonalTeamSeatAccess,
+  billing: BillingCycle
+): Promise<string> {
+  const envPrice = getEnvPersonalTeamSeatPriceId(level, billing);
+  if (envPrice) return envPrice;
+
+  const docId = `team_seat_${level}_${billing}`;
+  const db = getAdminFirestore();
+  const docRef = db.collection(FIRESTORE_COLLECTION).doc(docId);
+  const snap = await docRef.get();
+
+  if (snap.exists) {
+    const priceId = snap.data()?.price_id as string | undefined;
+    if (priceId) return priceId;
+  }
+
+  const amountCents =
+    billing === "monthly"
+      ? teamSeatMonthlyCentsPerSeat(level)
+      : teamSeatAnnualCentsPerSeat(level);
+  const interval = billing === "monthly" ? "month" : "year";
+  const name = PERSONAL_TEAM_SEAT_LABELS[level];
+  const stripe = getStripeInstance();
+
+  try {
+    const product = await stripe.products.create({
+      name,
+      metadata: { personal_team_seat_access: level, type: "personal_team_seat" },
+    });
+
+    const price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: amountCents,
+      currency: "usd",
+      recurring: { interval },
+      metadata: {
+        personal_team_seat_access: level,
+        type: "personal_team_seat",
+        billing,
+      },
+    });
+
+    await docRef.set({
+      price_id: price.id,
+      product_id: product.id,
+      personal_team_seat_access: level,
+      billing,
+      updated_at: new Date().toISOString(),
+    });
+
+    return price.id;
+  } catch (err) {
+    console.error("[Stripe getOrCreatePersonalTeamSeatPrice] Failed:", err);
     throw err;
   }
 }

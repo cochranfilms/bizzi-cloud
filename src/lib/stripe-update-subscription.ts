@@ -8,7 +8,17 @@ import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
   getOrCreateStripeStorageAddonPrice,
+  getOrCreatePersonalTeamSeatPrice,
 } from "@/lib/stripe-prices";
+import type { TeamSeatCounts, PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
+import {
+  clampTeamSeatCounts,
+  coerceTeamSeatCounts,
+  emptyTeamSeatCounts,
+  PERSONAL_TEAM_SEAT_ACCESS_LEVELS,
+  teamSeatCountsToMetadataStrings,
+} from "@/lib/team-seat-pricing";
+import { countAssignedSeatsForTier } from "@/lib/personal-team";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import type { StorageAddonId } from "@/lib/pricing-data";
 import { VALID_STORAGE_ADDON_IDS } from "@/lib/pricing-data";
@@ -44,10 +54,20 @@ function getStorageAddonIdFromItem(item: SubscriptionItemWithPrice): string | nu
   return typeof id === "string" && VALID_STORAGE_ADDON_IDS.includes(id as StorageAddonId) ? id : null;
 }
 
+function isTeamSeatItem(item: SubscriptionItemWithPrice): boolean {
+  const meta = item.price?.metadata;
+  if (!meta) return false;
+  if (meta.personal_team_seat_access) return true;
+  if (meta.type === "seat" || meta.type === "personal_team_seat") return true;
+  return false;
+}
+
 function isPlanItem(item: SubscriptionItemWithPrice): boolean {
   const meta = item.price?.metadata;
   if (meta?.addon_id) return false;
   if (meta?.storage_addon_plan) return false;
+  if (meta?.personal_team_seat_access || meta?.type === "seat" || meta?.type === "personal_team_seat")
+    return false;
   if (meta?.plan_id) return true;
   const interval = item.price?.recurring?.interval;
   return interval === "month" || interval === "year";
@@ -59,12 +79,14 @@ export type UpdateSubscriptionInput = {
   addonIds: AddonId[];
   billing: BillingCycle;
   storageAddonId?: string | null;
+  /** When omitted, uses profile.team_seat_counts */
+  teamSeatCounts?: Partial<TeamSeatCounts> | null;
 };
 
 export async function updateSubscriptionWithProration(
   input: UpdateSubscriptionInput
 ): Promise<NextResponse> {
-  const { uid, planId, addonIds, storageAddonId } = input;
+  const { uid, planId, addonIds, storageAddonId, teamSeatCounts: teamSeatBody } = input;
 
   if (!planId || !VALID_PLAN_IDS.includes(planId)) {
     return NextResponse.json(
@@ -109,6 +131,9 @@ export async function updateSubscriptionWithProration(
 
   for (const item of items) {
     if (item.deleted) continue;
+    if (isTeamSeatItem(item)) {
+      continue;
+    }
     if (isAddonItem(item)) {
       addonItems.push(item);
     } else if (isStorageAddonItem(item)) {
@@ -202,16 +227,76 @@ export async function updateSubscriptionWithProration(
     }
   }
 
+  const allowsTeamSeats = ["indie", "video", "production"].includes(planId);
+  let targetTeamCounts: TeamSeatCounts = emptyTeamSeatCounts();
+  if (allowsTeamSeats) {
+    const fromProfile = profile?.team_seat_counts as TeamSeatCounts | undefined;
+    targetTeamCounts = clampTeamSeatCounts(
+      coerceTeamSeatCounts(teamSeatBody ?? fromProfile ?? {})
+    );
+  }
+  for (const item of items) {
+    if (item.deleted) continue;
+    if (isTeamSeatItem(item)) {
+      itemsToUpdate.push({ id: item.id, deleted: true });
+    }
+  }
+  if (allowsTeamSeats) {
+    for (const tier of PERSONAL_TEAM_SEAT_ACCESS_LEVELS) {
+      const used = await countAssignedSeatsForTier(uid, tier);
+      if (used > targetTeamCounts[tier]) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot reduce team seats below assigned members. Remove or reassign members in Team settings first.",
+            code: "TEAM_SEATS_ASSIGNED",
+          },
+          { status: 400 }
+        );
+      }
+    }
+    const tierOrder: PersonalTeamSeatAccess[] = ["none", "gallery", "editor", "fullframe"];
+    for (const tier of tierOrder) {
+      const qty = targetTeamCounts[tier];
+      if (qty <= 0) continue;
+      try {
+        const priceId = await getOrCreatePersonalTeamSeatPrice(tier, billingToUse);
+        itemsToUpdate.push({ price: priceId, quantity: qty });
+      } catch (err) {
+        console.error("[Stripe update-subscription] Team seat price failed:", tier, err);
+        return NextResponse.json(
+          { error: "Failed to update. Please try again.", code: "TEAM_SEAT_PRICE_FAILED" },
+          { status: 500 }
+        );
+      }
+    }
+  }
+
+  const prevMeta = subscription.metadata ?? {};
+  const teamMeta = teamSeatCountsToMetadataStrings(targetTeamCounts);
+  const mergedMetadata: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(prevMeta).filter(([, v]) => typeof v === "string")
+    ) as Record<string, string>,
+    userId: uid,
+    planId,
+    addonIds: addonIds.join(","),
+    billing: billingToUse,
+    seat_count: teamMeta.seat_count,
+    team_seats_none: teamMeta.team_seats_none,
+    team_seats_gallery: teamMeta.team_seats_gallery,
+    team_seats_editor: teamMeta.team_seats_editor,
+    team_seats_fullframe: teamMeta.team_seats_fullframe,
+    ...(targetStorageAddonId ? { storageAddonId: targetStorageAddonId } : {}),
+  };
+  if (!targetStorageAddonId) {
+    delete mergedMetadata.storageAddonId;
+  }
+
   try {
     await stripe.subscriptions.update(stripeSubscriptionId, {
       items: itemsToUpdate,
-      metadata: {
-        userId: uid,
-        planId,
-        addonIds: addonIds.join(","),
-        billing: billingToUse,
-        ...(targetStorageAddonId ? { storageAddonId: targetStorageAddonId } : {}),
-      },
+      metadata: mergedMetadata,
       proration_behavior: "always_invoice",
     });
   } catch (err) {

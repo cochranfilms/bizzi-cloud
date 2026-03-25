@@ -19,10 +19,10 @@ export default function DesktopAppLayout({
   return (
     <ThemeProvider>
       <EnterpriseProvider>
-        <BackupProvider>
-          <CurrentFolderProvider>
-            <DesktopAuthGuard>
-              <SubscriptionProvider>
+        <SubscriptionProvider>
+          <BackupProvider>
+            <CurrentFolderProvider>
+              <DesktopAuthGuard>
                 <ConfirmProvider>
                   <DashboardAppearanceProvider>
                     <LayoutSettingsProvider>
@@ -33,10 +33,10 @@ export default function DesktopAppLayout({
                     </LayoutSettingsProvider>
                   </DashboardAppearanceProvider>
                 </ConfirmProvider>
-              </SubscriptionProvider>
-            </DesktopAuthGuard>
-          </CurrentFolderProvider>
-        </BackupProvider>
+              </DesktopAuthGuard>
+            </CurrentFolderProvider>
+          </BackupProvider>
+        </SubscriptionProvider>
       </EnterpriseProvider>
     </ThemeProvider>
   );

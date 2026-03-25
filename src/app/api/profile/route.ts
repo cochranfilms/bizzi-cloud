@@ -50,6 +50,11 @@ export async function GET(request: Request) {
 
   const storageAddonId =
     typeof data.storage_addon_id === "string" ? data.storage_addon_id : null;
+  const teamSeatCountsRaw = data.team_seat_counts;
+  const teamSeatCounts =
+    teamSeatCountsRaw && typeof teamSeatCountsRaw === "object" && !Array.isArray(teamSeatCountsRaw)
+      ? teamSeatCountsRaw
+      : { none: 0, gallery: 0, editor: 0, fullframe: 0 };
   return NextResponse.json({
     public_slug: handle,
     handle,
@@ -60,6 +65,15 @@ export async function GET(request: Request) {
     has_portal_access: hasPortalAccess,
     addon_ids: addonIds,
     storage_addon_id: storageAddonId,
+    team_seat_counts: teamSeatCounts,
+    personal_team_owner_id:
+      typeof data.personal_team_owner_id === "string"
+        ? data.personal_team_owner_id
+        : null,
+    personal_team_seat_access:
+      typeof data.personal_team_seat_access === "string"
+        ? data.personal_team_seat_access
+        : null,
   });
 }
 

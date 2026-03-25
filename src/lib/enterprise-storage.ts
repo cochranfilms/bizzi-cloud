@@ -9,6 +9,7 @@ import {
   DEFAULT_SEAT_STORAGE_BYTES,
 } from "./enterprise-constants";
 import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
+import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
 
 export {
@@ -18,6 +19,51 @@ export {
   DEFAULT_SEAT_STORAGE_BYTES,
 } from "./enterprise-constants";
 export type { SeatStorageTier } from "./enterprise-constants";
+
+/** Personal-account storage billed to subjectUid: own files + team uploads attributed to them. */
+async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<number> {
+  const db = getAdminFirestore();
+  const [asOwner, asTeamHost] = await Promise.all([
+    db
+      .collection("backup_files")
+      .where("userId", "==", subjectUid)
+      .where("organization_id", "==", null)
+      .get(),
+    db
+      .collection("backup_files")
+      .where("personal_team_owner_id", "==", subjectUid)
+      .where("organization_id", "==", null)
+      .get(),
+  ]);
+  let used = 0;
+  for (const snap of [asOwner, asTeamHost]) {
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (data.deleted_at) continue;
+      used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    }
+  }
+  return used;
+}
+
+/** Bytes that count toward this user's own subscription (excludes team-folder uploads). */
+async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
+  const db = getAdminFirestore();
+  const filesSnap = await db
+    .collection("backup_files")
+    .where("userId", "==", uid)
+    .where("organization_id", "==", null)
+    .get();
+  let used = 0;
+  for (const docSnap of filesSnap.docs) {
+    const data = docSnap.data();
+    if (data.deleted_at) continue;
+    if (typeof data.personal_team_owner_id === "string" && data.personal_team_owner_id)
+      continue;
+    used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  }
+  return used;
+}
 
 /**
  * Check if a user can upload additional bytes.
@@ -35,17 +81,36 @@ export async function checkUserCanUpload(
   const db = getAdminFirestore();
 
   let orgId: string | null;
+  let quotaSubjectUid = uid;
   if (driveId) {
     const driveSnap = await db.collection("linked_drives").doc(driveId).get();
     const driveData = driveSnap.data();
     const oid = driveData?.organization_id;
     orgId = typeof oid === "string" ? oid : null;
+    const driveOwner =
+      typeof driveData?.userId === "string"
+        ? (driveData.userId as string)
+        : typeof driveData?.user_id === "string"
+          ? (driveData.user_id as string)
+          : null;
+    if (!orgId && driveOwner && driveOwner !== uid) {
+      const seatRef = db
+        .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+        .doc(personalTeamSeatDocId(driveOwner, uid));
+      const seatSnap = await seatRef.get();
+      const st = seatSnap.data()?.status as string | undefined;
+      if (!seatSnap.exists || st !== "active") {
+        throw new Error("You do not have access to upload to this drive.");
+      }
+      quotaSubjectUid = driveOwner;
+      await assertStorageLifecycleAllowsAccess(quotaSubjectUid);
+    }
   } else {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     orgId = (profileSnap.data()?.organization_id as string) ?? null;
   }
 
-  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const profileSnap = await db.collection("profiles").doc(quotaSubjectUid).get();
   const profileData = profileSnap.data();
 
   let quotaBytes: number | null;
@@ -81,17 +146,7 @@ export async function checkUserCanUpload(
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
 
-    let filesQuery = db.collection("backup_files").where("userId", "==", uid);
-    filesQuery = filesQuery.where("organization_id", "==", null) as ReturnType<
-      typeof db.collection
-    >;
-    const filesSnap = await filesQuery.get();
-    usedBytes = 0;
-    for (const docSnap of filesSnap.docs) {
-      const data = docSnap.data();
-      if (data.deleted_at) continue;
-      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
-    }
+    usedBytes = await sumPersonalBackupBytesForQuota(quotaSubjectUid);
   }
 
   if (quotaBytes !== null && usedBytes + additionalBytes > quotaBytes) {
@@ -161,15 +216,13 @@ export async function getStorageStatus(
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
 
-    let filesQuery = db.collection("backup_files").where("userId", "==", uid);
-    filesQuery = filesQuery.where("organization_id", "==", null) as typeof filesQuery;
-    const filesSnap = await filesQuery.get();
-    usedBytes = 0;
-    for (const docSnap of filesSnap.docs) {
-      const data = docSnap.data();
-      if (data.deleted_at) continue;
-      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
-    }
+    const isTeamMember =
+      typeof profileData?.personal_team_owner_id === "string" &&
+      !!profileData.personal_team_owner_id;
+
+    usedBytes = isTeamMember
+      ? await sumSoloPersonalBackupBytes(uid)
+      : await sumPersonalBackupBytesForQuota(uid);
   }
 
   return {

@@ -25,7 +25,68 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import type { LinkedDrive } from "@/types/backup";
 import { usePathname } from "next/navigation";
+import type {
+  DocumentData,
+  Firestore,
+  QueryDocumentSnapshot,
+} from "firebase/firestore";
+
+function filterScopedLinkedDrives(
+  drives: LinkedDrive[],
+  opts: { isEnterpriseContext: boolean; orgId: string | null; creatorOnly: boolean }
+): LinkedDrive[] {
+  return drives
+    .filter((d) => {
+      const oid = d.organization_id ?? null;
+      if (opts.isEnterpriseContext && opts.orgId) return oid === opts.orgId;
+      return !oid;
+    })
+    .filter((d) => {
+      const creatorSection = d.creator_section === true;
+      const isCreatorRaw = d.is_creator_raw === true;
+      if (opts.creatorOnly) return creatorSection;
+      return !creatorSection || isCreatorRaw;
+    });
+}
+
+function isTeamSharedDrive(d: LinkedDrive | undefined): boolean {
+  return !!d?.personal_team_owner_id;
+}
+
+/** Bulk ops / share: list all files visible on this drive via client rules (org drives stay per-uploader). */
+function useFullDriveFileListing(d: LinkedDrive | undefined, uid: string): boolean {
+  if (!d) return false;
+  if (d.organization_id) return false;
+  if (isTeamSharedDrive(d)) return true;
+  return d.user_id === uid;
+}
+
+function personalDriveFilesCountQuery(db: Firestore, drive: LinkedDrive, uid: string) {
+  if (drive.organization_id) {
+    return query(
+      collection(db, "backup_files"),
+      where("userId", "==", uid),
+      where("linked_drive_id", "==", drive.id),
+      where("deleted_at", "==", null)
+    );
+  }
+  return query(
+    collection(db, "backup_files"),
+    where("linked_drive_id", "==", drive.id),
+    where("deleted_at", "==", null)
+  );
+}
+
+function backupModifiedMs(data: DocumentData): number {
+  const m = data.modified_at;
+  if (!m) return 0;
+  if (typeof m === "string") return new Date(m).getTime();
+  if (typeof (m as { toDate?: () => Date }).toDate === "function")
+    return (m as { toDate: () => Date }).toDate().getTime();
+  return 0;
+}
 
 export interface DriveFolder {
   id: string;
@@ -121,79 +182,77 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     try {
       if (!isBackgroundRefetch) setLoading(true);
       const db = getFirebaseFirestore();
-      // Fetch linked drives from Firestore so refetch() after delete uses fresh data
-      // (React state may not have propagated yet when refetch runs)
-      const drivesSnap = await getDocs(
-        query(
-          collection(db, "linked_drives"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        )
-      );
-      const drives = drivesSnap.docs
-        .filter((d) => {
-          const data = d.data();
-          if (data.deleted_at) return false;
-          const oid = data.organization_id ?? null;
-          if (isEnterpriseContext && orgId) return oid === orgId;
-          return !oid;
-        })
-        .filter((d) => {
-          const creatorSection = d.data().creator_section === true;
-          const isCreatorRaw = d.data().is_creator_raw === true;
-          if (creatorOnly) return creatorSection;
-          // On Home: show non-creator drives OR the RAW folder (always visible in Bizzi Cloud Folders)
-          return !creatorSection || isCreatorRaw;
-        })
-        .map((d) => {
-          const data = d.data();
-          return {
+      const scoped = filterScopedLinkedDrives(linkedDrives, {
+        isEnterpriseContext,
+        orgId,
+        creatorOnly,
+      });
+      const driveMap = new Map(
+        scoped.map((d) => [
+          d.id,
+          {
             id: d.id,
-            name: data.name ?? "Folder",
-            last_synced_at: data.last_synced_at ?? null,
-            is_creator_raw: data.is_creator_raw === true,
-          };
-        });
-      const driveMap = new Map(drives.map((d) => [d.id, d]));
-      const driveIds = new Set(drives.map((d) => d.id));
+            name: d.name,
+            last_synced_at: d.last_synced_at,
+            is_creator_raw: d.is_creator_raw === true,
+          },
+        ])
+      );
+      const driveIds = new Set(scoped.map((d) => d.id));
+      const useEnterpriseFilesQuery = isEnterpriseContext && !!orgId;
 
-      // Count queries run sequentially in a loop (one round-trip per drive). Run in parallel
-      // with the recent-files query so the home dashboard resolves much faster.
-      const [folders, filesSnap] = await Promise.all([
+      const [folders, recentDocs] = await Promise.all([
         Promise.all(
-          drives.map(async (drive) => {
+          scoped.map(async (drive) => {
             const countSnap = await getCountFromServer(
-              query(
-                collection(db, "backup_files"),
-                where("userId", "==", user.uid),
-                where("linked_drive_id", "==", drive.id),
-                where("deleted_at", "==", null)
-              )
+              personalDriveFilesCountQuery(db, drive, user.uid)
             );
-            const filesCount = countSnap.data().count;
             return {
               id: drive.id,
               name: drive.name,
               type: "folder" as const,
               key: `drive-${drive.id}`,
-              items: filesCount,
+              items: countSnap.data().count,
               lastSyncedAt: drive.last_synced_at,
-              isCreatorRaw: drive.is_creator_raw,
+              isCreatorRaw: drive.is_creator_raw === true,
             };
           })
         ),
-        getDocs(
-          query(
-            collection(db, "backup_files"),
-            where("userId", "==", user.uid),
-            orderBy("modified_at", "desc"),
-            limit(50)
-          )
-        ),
+        (async () => {
+          if (useEnterpriseFilesQuery) {
+            const filesSnap = await getDocs(
+              query(
+                collection(db, "backup_files"),
+                where("userId", "==", user.uid),
+                orderBy("modified_at", "desc"),
+                limit(50)
+              )
+            );
+            return filesSnap.docs;
+          }
+          const perDrive = await Promise.all(
+            scoped.map((drive) =>
+              getDocs(
+                query(
+                  collection(db, "backup_files"),
+                  where("linked_drive_id", "==", drive.id),
+                  where("deleted_at", "==", null),
+                  orderBy("modified_at", "desc"),
+                  limit(35)
+                )
+              )
+            )
+          );
+          const merged = perDrive.flatMap((s) => s.docs);
+          merged.sort(
+            (a, b) => backupModifiedMs(b.data()) - backupModifiedMs(a.data())
+          );
+          return merged.slice(0, 50);
+        })(),
       ]);
       setDriveFolders(folders);
 
-      const recent: RecentFile[] = filesSnap.docs
+      const recent: RecentFile[] = recentDocs
         .filter((d) => {
           if (d.data().deleted_at) return false;
           return driveIds.has(d.data().linked_drive_id);
@@ -201,24 +260,24 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         .slice(0, 24)
         .map((d) => {
           const data = d.data();
-        const path = data.relative_path ?? "";
-        const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
-        const drive = driveMap.get(data.linked_drive_id);
-        return {
-          id: d.id,
-          name,
-          path,
-          objectKey: data.object_key ?? "",
-          size: data.size_bytes ?? 0,
-          modifiedAt: data.modified_at ?? null,
-          driveId: data.linked_drive_id,
-          driveName: drive?.name ?? "Unknown drive",
-          contentType: data.content_type ?? null,
-          assetType: data.asset_type ?? null,
-          galleryId: data.gallery_id ?? null,
-          proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
-        };
-      });
+          const path = data.relative_path ?? "";
+          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+          const drive = driveMap.get(data.linked_drive_id);
+          return {
+            id: d.id,
+            name,
+            path,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: data.modified_at ?? null,
+            driveId: data.linked_drive_id,
+            driveName: drive?.name ?? "Unknown drive",
+            contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
+            galleryId: data.gallery_id ?? null,
+            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
+          };
+        });
       setRecentFiles(recent);
     } catch (err) {
       console.error("useCloudFiles:", err);
@@ -228,7 +287,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       hasInitiallyLoadedRef.current = true;
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly]);
+  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]);
 
   useEffect(() => {
     fetchCloudFiles();
@@ -243,47 +302,60 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     try {
       setLoadingAllFiles(true);
       const db = getFirebaseFirestore();
-      const drivesSnap = await getDocs(
-        query(
-          collection(db, "linked_drives"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        )
-      );
-      const drives = drivesSnap.docs
-        .filter((d) => {
-          const data = d.data();
-          if (data.deleted_at) return false;
-          const oid = data.organization_id ?? null;
-          if (isEnterpriseContext && orgId) return oid === orgId;
-          return !oid;
-        })
-        .filter((d) => {
-          const creatorSection = d.data().creator_section === true;
-          const isCreatorRaw = d.data().is_creator_raw === true;
-          if (creatorOnly) return creatorSection;
-          return !creatorSection || isCreatorRaw;
-        })
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: data.name ?? "Folder",
-            last_synced_at: data.last_synced_at ?? null,
-          };
-        });
-      const driveMap = new Map(drives.map((d) => [d.id, d]));
-      const driveIds = new Set(drives.map((d) => d.id));
+      const scoped = filterScopedLinkedDrives(linkedDrives, {
+        isEnterpriseContext,
+        orgId,
+        creatorOnly,
+      });
+      const driveMap = new Map(scoped.map((d) => [d.id, d]));
+      const driveIds = new Set(scoped.map((d) => d.id));
+      const useEnterpriseFilesQuery = isEnterpriseContext && !!orgId;
 
-      const filesSnap = await getDocs(
-        query(
-          collection(db, "backup_files"),
-          where("userId", "==", user.uid),
-          orderBy("modified_at", "desc"),
-          limit(500)
-        )
-      );
-      const all: RecentFile[] = filesSnap.docs
+      let docList: QueryDocumentSnapshot<DocumentData>[] = [];
+      if (useEnterpriseFilesQuery) {
+        const filesSnap = await getDocs(
+          query(
+            collection(db, "backup_files"),
+            where("userId", "==", user.uid),
+            orderBy("modified_at", "desc"),
+            limit(500)
+          )
+        );
+        docList = filesSnap.docs;
+      } else {
+        const perDriveLimit = Math.max(
+          40,
+          Math.ceil(500 / Math.max(1, scoped.length))
+        );
+        const perDrive = await Promise.all(
+          scoped.map((drive) => {
+            const q = drive.organization_id
+              ? query(
+                  collection(db, "backup_files"),
+                  where("userId", "==", user.uid),
+                  where("linked_drive_id", "==", drive.id),
+                  where("deleted_at", "==", null),
+                  orderBy("modified_at", "desc"),
+                  limit(perDriveLimit)
+                )
+              : query(
+                  collection(db, "backup_files"),
+                  where("linked_drive_id", "==", drive.id),
+                  where("deleted_at", "==", null),
+                  orderBy("modified_at", "desc"),
+                  limit(perDriveLimit)
+                );
+            return getDocs(q);
+          })
+        );
+        const merged = perDrive.flatMap((s) => s.docs);
+        merged.sort(
+          (a, b) => backupModifiedMs(b.data()) - backupModifiedMs(a.data())
+        );
+        docList = merged.slice(0, 500);
+      }
+
+      const all: RecentFile[] = docList
         .filter((d) => {
           if (d.data().deleted_at) return false;
           return driveIds.has(d.data().linked_drive_id);
@@ -315,7 +387,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     } finally {
       setLoadingAllFiles(false);
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly]);
+  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]);
 
   const fetchDriveFiles = useCallback(
     async (driveId: string): Promise<RecentFile[]> => {
@@ -324,12 +396,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
       const drive = driveMap.get(driveId);
       const filesSnap = await getDocs(
-        query(
-          collection(db, "backup_files"),
-          where("userId", "==", user.uid),
-          where("linked_drive_id", "==", driveId),
-          orderBy("modified_at", "desc")
-        )
+        drive && !drive.organization_id
+          ? query(
+              collection(db, "backup_files"),
+              where("linked_drive_id", "==", driveId),
+              where("deleted_at", "==", null),
+              orderBy("modified_at", "desc")
+            )
+          : query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", driveId),
+              where("deleted_at", "==", null),
+              orderBy("modified_at", "desc")
+            )
       );
       return filesSnap.docs
         .filter((d) => !d.data().deleted_at)
@@ -362,7 +442,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const db = getFirebaseFirestore();
     const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
     const storageDriveIds = linkedDrives
-      .filter((d) => d.name === "Storage" || d.name === "Uploads")
+      .filter((d) => {
+        const n = d.name.replace(/^\[Team\]\s+/, "");
+        return n === "Storage" || n === "Uploads";
+      })
       .map((d) => d.id);
     if (storageDriveIds.length === 0) return [];
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
@@ -372,14 +455,22 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const batch: RecentFile[] = [];
         try {
           const filesSnap = await getDocs(
-            query(
-              collection(db, "backup_files"),
-              where("userId", "==", user.uid),
-              where("linked_drive_id", "==", driveId),
-              where("deleted_at", "==", null),
-              orderBy("modified_at", "desc"),
-              limit(50)
-            )
+            drive && !drive.organization_id
+              ? query(
+                  collection(db, "backup_files"),
+                  where("linked_drive_id", "==", driveId),
+                  where("deleted_at", "==", null),
+                  orderBy("modified_at", "desc"),
+                  limit(50)
+                )
+              : query(
+                  collection(db, "backup_files"),
+                  where("userId", "==", user.uid),
+                  where("linked_drive_id", "==", driveId),
+                  where("deleted_at", "==", null),
+                  orderBy("modified_at", "desc"),
+                  limit(50)
+                )
           );
           for (const docSnap of filesSnap.docs) {
             const data = docSnap.data();
@@ -433,13 +524,21 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       if (!isFirebaseConfigured() || !user) return () => {};
       const db = getFirebaseFirestore();
       const drive = linkedDrives.find((d) => d.id === driveId);
-      const q = query(
-        collection(db, "backup_files"),
-        where("userId", "==", user.uid),
-        where("linked_drive_id", "==", driveId),
-        where("deleted_at", "==", null),
-        orderBy("modified_at", "desc")
-      );
+      const q =
+        drive && !drive.organization_id
+          ? query(
+              collection(db, "backup_files"),
+              where("linked_drive_id", "==", driveId),
+              where("deleted_at", "==", null),
+              orderBy("modified_at", "desc")
+            )
+          : query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", driveId),
+              where("deleted_at", "==", null),
+              orderBy("modified_at", "desc")
+            );
       return onSnapshot(q, (snap) => {
         const files: RecentFile[] = snap.docs
           .filter((d) => !d.data().deleted_at)
@@ -524,24 +623,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     async (): Promise<RecentFile[]> => {
       if (!isFirebaseConfigured() || !user) return [];
       const db = getFirebaseFirestore();
-      const drivesSnap = await getDocs(
-        query(
-          collection(db, "linked_drives"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        )
-      );
-      const drivesInContext = drivesSnap.docs.filter((d) => {
-        const data = d.data();
-        const oid = data.organization_id ?? null;
-        if (isEnterpriseContext && orgId) return oid === orgId;
-        return !oid;
+      const scoped = filterScopedLinkedDrives(linkedDrives, {
+        isEnterpriseContext,
+        orgId,
+        creatorOnly,
       });
       const driveMap = new Map(
-        drivesInContext.map((d) => {
-          const data = d.data();
-          return [d.id, { id: d.id, name: data.name ?? "Folder" }];
-        })
+        scoped.map((d) => [d.id, { id: d.id, name: d.name }])
       );
       const driveIds = new Set(driveMap.keys());
       const filesSnap = await getDocs(
@@ -578,9 +666,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           deletedAt: deletedAt ?? undefined,
           galleryId: data.gallery_id ?? null,
         };
-      });
+        });
     },
-    [user, isEnterpriseContext, orgId]
+    [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]
   );
 
   const recalculateStorage = useCallback(async () => {
@@ -749,32 +837,46 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const db = getFirebaseFirestore();
       const ids = new Set<string>(fileIds);
       for (const driveId of folderDriveIds) {
+        const folderDrive = linkedDrives.find((d) => d.id === driveId);
         const snap = await getDocs(
-          query(
-            collection(db, "backup_files"),
-            where("userId", "==", user.uid),
-            where("linked_drive_id", "==", driveId),
-            where("deleted_at", "==", null)
-          )
+          useFullDriveFileListing(folderDrive, user.uid)
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", driveId),
+                where("deleted_at", "==", null)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("userId", "==", user.uid),
+                where("linked_drive_id", "==", driveId),
+                where("deleted_at", "==", null)
+              )
         );
         snap.docs.forEach((d) => ids.add(d.id));
       }
       return Array.from(ids);
     },
-    [user]
+    [user, linkedDrives]
   );
 
   const moveFolderContentsToFolder = useCallback(
     async (sourceDriveId: string, targetDriveId: string) => {
       if (!isFirebaseConfigured() || !user) return;
       const db = getFirebaseFirestore();
+      const sourceDrive = linkedDrives.find((d) => d.id === sourceDriveId);
       const filesSnap = await getDocs(
-        query(
-          collection(db, "backup_files"),
-          where("userId", "==", user.uid),
-          where("linked_drive_id", "==", sourceDriveId),
-          where("deleted_at", "==", null)
-        )
+        useFullDriveFileListing(sourceDrive, user.uid)
+          ? query(
+              collection(db, "backup_files"),
+              where("linked_drive_id", "==", sourceDriveId),
+              where("deleted_at", "==", null)
+            )
+          : query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", sourceDriveId),
+              where("deleted_at", "==", null)
+            )
       );
       for (const d of filesSnap.docs) {
         const data = d.data();
@@ -785,7 +887,6 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           relative_path: fileName,
         });
       }
-      const sourceDrive = linkedDrives.find((d) => d.id === sourceDriveId);
       if (sourceDrive) await unlinkDrive(sourceDrive);
       await recalculateStorage();
       await fetchCloudFiles();
@@ -801,13 +902,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const linkedDrive = linkedDrives.find((d) => d.id === drive.id);
         if (linkedDrive) await unlinkDrive(linkedDrive);
       } else {
+        const linkedDriveMeta = linkedDrives.find((d) => d.id === drive.id);
         const filesSnap = await getDocs(
-          query(
-            collection(db, "backup_files"),
-            where("userId", "==", user.uid),
-            where("linked_drive_id", "==", drive.id),
-            where("deleted_at", "==", null)
-          )
+          useFullDriveFileListing(linkedDriveMeta, user.uid)
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", drive.id),
+                where("deleted_at", "==", null)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("userId", "==", user.uid),
+                where("linked_drive_id", "==", drive.id),
+                where("deleted_at", "==", null)
+              )
         );
         const BATCH_SIZE = 500;
         for (let i = 0; i < filesSnap.docs.length; i += BATCH_SIZE) {

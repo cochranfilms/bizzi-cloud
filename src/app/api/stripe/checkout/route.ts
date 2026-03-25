@@ -2,9 +2,16 @@ import { getStripeInstance } from "@/lib/stripe";
 import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
-  getOrCreateStripeSeatPrice,
   getOrCreateStripeStorageAddonPrice,
+  getOrCreatePersonalTeamSeatPrice,
 } from "@/lib/stripe-prices";
+import {
+  coerceTeamSeatCounts,
+  emptyTeamSeatCounts,
+  sumExtraTeamSeats,
+  teamSeatCountsToMetadataStrings,
+  type PersonalTeamSeatAccess,
+} from "@/lib/team-seat-pricing";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -22,6 +29,13 @@ export async function POST(request: Request) {
     addonIds?: string[];
     billing?: string;
     seatCount?: number;
+    /** Personal team seats: extra seats per access tier (optional; legacy seatCount still accepted) */
+    teamSeatCounts?: {
+      none?: number;
+      gallery?: number;
+      editor?: number;
+      fullframe?: number;
+    };
     storageAddonId?: string | null;
     email?: string;
     name?: string;
@@ -42,9 +56,20 @@ export async function POST(request: Request) {
     (id): id is AddonId => typeof id === "string" && ["gallery", "editor", "fullframe"].includes(id)
   );
   const billing = (body.billing === "annual" ? "annual" : "monthly") as BillingCycle;
-  const seatCount = typeof body.seatCount === "number" && body.seatCount >= 1
+  const seatCountLegacy = typeof body.seatCount === "number" && body.seatCount >= 1
     ? Math.min(Math.floor(body.seatCount), 10)
     : 1;
+  let teamSeatCounts = coerceTeamSeatCounts(body.teamSeatCounts);
+  if (sumExtraTeamSeats(teamSeatCounts) === 0 && seatCountLegacy > 1) {
+    teamSeatCounts = coerceTeamSeatCounts({
+      none: seatCountLegacy - 1,
+      gallery: 0,
+      editor: 0,
+      fullframe: 0,
+    });
+  }
+  const seatCount = 1 + sumExtraTeamSeats(teamSeatCounts);
+  const teamMeta = teamSeatCountsToMetadataStrings(teamSeatCounts);
   const storageAddonId = body.storageAddonId && typeof body.storageAddonId === "string"
     ? body.storageAddonId
     : null;
@@ -142,13 +167,28 @@ export async function POST(request: Request) {
   }
 
   const allowsSeats = ["indie", "video", "production"].includes(planId);
-  const extraSeats = allowsSeats ? Math.max(0, seatCount - 1) : 0;
-  if (extraSeats > 0) {
+  const countsForCheckout = allowsSeats ? teamSeatCounts : emptyTeamSeatCounts();
+  if (!allowsSeats && sumExtraTeamSeats(teamSeatCounts) > 0) {
+    return NextResponse.json(
+      { error: "This plan does not support team seats." },
+      { status: 400 }
+    );
+  }
+
+  const tierOrder: PersonalTeamSeatAccess[] = [
+    "none",
+    "gallery",
+    "editor",
+    "fullframe",
+  ];
+  for (const tier of tierOrder) {
+    const qty = countsForCheckout[tier];
+    if (qty <= 0) continue;
     try {
-      const seatPriceId = await getOrCreateStripeSeatPrice();
-      lineItems.push({ price: seatPriceId, quantity: extraSeats });
+      const priceId = await getOrCreatePersonalTeamSeatPrice(tier, billing);
+      lineItems.push({ price: priceId, quantity: qty });
     } catch (err) {
-      console.error("[Stripe checkout] Failed to get/create seat price:", err);
+      console.error("[Stripe checkout] Team seat price failed:", tier, err);
       return NextResponse.json(
         { error: "Checkout failed. Please try again." },
         { status: 500 }
@@ -170,7 +210,11 @@ export async function POST(request: Request) {
     planId,
     addonIds: addonIds.join(","),
     billing,
-    seat_count: String(seatCount),
+    seat_count: teamMeta.seat_count,
+    team_seats_none: teamMeta.team_seats_none,
+    team_seats_gallery: teamMeta.team_seats_gallery,
+    team_seats_editor: teamMeta.team_seats_editor,
+    team_seats_fullframe: teamMeta.team_seats_fullframe,
     ...(storageAddonId ? { storageAddonId } : {}),
   };
 

@@ -363,6 +363,133 @@ export async function migrateOrgToColdStorage(
   return { migrated: migratedCount };
 }
 
+export interface MigratePersonalTeamMemberResult {
+  migrated: number;
+}
+
+/**
+ * Team member leaving: move only their uploads made in the team context
+ * (personal_team_owner_id == teamOwnerUid) to cold storage. Does not touch drives.
+ */
+export async function migratePersonalTeamMemberUploadsToColdStorage(
+  memberUserId: string,
+  teamOwnerUserId: string,
+  planTier: string
+): Promise<MigratePersonalTeamMemberResult> {
+  const db = getAdminFirestore();
+  const auth = getAdminAuth();
+  const sourceType: ColdStorageSourceType = "personal_team_leave";
+  let userEmail = "";
+  try {
+    const userRecord = await auth.getUser(memberUserId);
+    userEmail = (userRecord.email ?? "").trim().toLowerCase();
+  } catch {
+    /* ignore */
+  }
+  const coldStorageFolder = userEmail || `user_${memberUserId}`;
+  const retentionDays = getRetentionDays(planTier, sourceType);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + retentionDays);
+  const now = Timestamp.now();
+
+  const drivesSnap = await db
+    .collection("linked_drives")
+    .where("userId", "==", teamOwnerUserId)
+    .where("organization_id", "==", null)
+    .get();
+  const driveIdToName = new Map<string, string>();
+  for (const d of drivesSnap.docs) {
+    driveIdToName.set(d.id, (d.data().name as string) ?? "Drive");
+  }
+
+  let migratedCount = 0;
+  let filesRemaining = true;
+
+  while (filesRemaining) {
+    const filesSnap = await db
+      .collection("backup_files")
+      .where("userId", "==", memberUserId)
+      .where("personal_team_owner_id", "==", teamOwnerUserId)
+      .limit(BATCH_SIZE)
+      .get();
+
+    if (filesSnap.empty) {
+      filesRemaining = false;
+      break;
+    }
+
+    const objectKeys = filesSnap.docs
+      .map((d) => (d.data().object_key as string) ?? "")
+      .filter(Boolean);
+    const existingColdKeys = await getExistingColdStorageObjectKeys(
+      db,
+      "consumer",
+      { userId: memberUserId, objectKeys }
+    );
+
+    const batch = db.batch();
+    for (const fileDoc of filesSnap.docs) {
+      const data = fileDoc.data();
+      const objectKey = (data.object_key as string) ?? "";
+      if (!objectKey) {
+        batch.delete(fileDoc.ref);
+        continue;
+      }
+      if (existingColdKeys.has(objectKey)) {
+        batch.delete(fileDoc.ref);
+        migratedCount++;
+        continue;
+      }
+
+      const driveId = data.linked_drive_id as string;
+      const driveName = driveIdToName.get(driveId) ?? "Drive";
+      const planTierVal = planTier ?? "solo";
+      const retentionSnapshot = {
+        plan_tier: planTierVal,
+        retention_days: retentionDays,
+        computed_at: now,
+      };
+      const coldRef = db.collection("cold_storage_files").doc();
+      batch.set(coldRef, {
+        owner_type: "consumer",
+        user_id: memberUserId,
+        org_id: null,
+        storage_scope_type: "personal_team",
+        workspace_id: null,
+        visibility_scope: "personal_team",
+        owner_user_id: memberUserId,
+        personal_team_owner_id: teamOwnerUserId,
+        team_id: teamOwnerUserId,
+        project_id: null,
+        gallery_id: data.gallery_id ?? null,
+        cold_storage_folder: coldStorageFolder,
+        object_key: objectKey,
+        relative_path: (data.relative_path as string) ?? "",
+        drive_name: driveName,
+        size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : 0,
+        linked_drive_id: driveId,
+        cold_storage_started_at: now,
+        cold_storage_expires_at: Timestamp.fromDate(expiresAt),
+        retention_days: retentionDays,
+        retention_snapshot: retentionSnapshot,
+        entered_cold_storage_at: now,
+        cold_storage_status: "active",
+        plan_tier: planTierVal,
+        source_type: sourceType,
+        content_type: data.content_type ?? null,
+        modified_at: data.modified_at ?? null,
+        created_at: data.created_at ?? new Date().toISOString(),
+        is_starred: data.is_starred ?? false,
+      });
+      batch.delete(fileDoc.ref);
+      migratedCount++;
+    }
+    await batch.commit();
+  }
+
+  return { migrated: migratedCount };
+}
+
 /**
  * Migrate consumer files to cold storage when user deletes account.
  * 30-day retention. Does NOT delete profile or Firebase Auth.

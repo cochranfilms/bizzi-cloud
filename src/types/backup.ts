@@ -12,6 +12,8 @@ export interface LinkedDrive {
   creator_section?: boolean;
   /** When true, permanent RAW drive; video-only; cannot delete/rename */
   is_creator_raw?: boolean;
+  /** Team shared drive: files uploaded from this drive attribute storage to this owner */
+  personal_team_owner_id?: string | null;
 }
 
 export interface BackupSnapshot {
@@ -50,6 +52,8 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   owner_user_id?: string | null;
   /** Future: team scope */
   team_id?: string | null;
+  /** Uploader’s team admin when file is in shared personal team storage */
+  personal_team_owner_id?: string | null;
   /** Future: project scope */
   project_id?: string | null;
 }

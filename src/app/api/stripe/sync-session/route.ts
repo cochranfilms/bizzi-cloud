@@ -5,6 +5,10 @@ import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import { restoreColdStorageToHot } from "@/lib/cold-storage-restore";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
+import {
+  resolveTeamSeatCountsForProfile,
+  teamSeatCountsToFirestore,
+} from "@/lib/team-seat-pricing";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -120,13 +124,9 @@ export async function POST(request: Request) {
 
   const addonIdsRaw = session.metadata?.addonIds ?? "";
   const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
-  const seatCountRaw = session.metadata?.seat_count;
-  const seatCount =
-    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-      ? parseInt(seatCountRaw, 10)
-      : 1;
   let storageQuotaBytes = getStorageBytesForPlan(planId);
   let storageAddonId: string | null = null;
+  let subscriptionItems: SubscriptionItemWithPrice[] | undefined;
   const subId: string | null =
     typeof session.subscription === "string"
       ? session.subscription
@@ -137,6 +137,7 @@ export async function POST(request: Request) {
         expand: ["items.data.price"],
       });
       const items = sub.items.data as SubscriptionItemWithPrice[];
+      subscriptionItems = items;
       const computed = computeStorageFromSubscription(planId, items);
       storageQuotaBytes = computed.storageQuotaBytes;
       storageAddonId = computed.storageAddonId;
@@ -145,13 +146,21 @@ export async function POST(request: Request) {
     }
   }
 
+  const sessionMeta = session.metadata as Record<string, string | undefined>;
+  const teamResolved = resolveTeamSeatCountsForProfile(
+    sessionMeta ?? {},
+    subscriptionItems
+  );
+  const teamFirestore = teamSeatCountsToFirestore(teamResolved);
+
   const db = getAdminFirestore();
   await db.collection("profiles").doc(uid).set(
     {
       userId: uid,
       plan_id: planId,
       addon_ids: addonIds,
-      seat_count: seatCount,
+      seat_count: teamFirestore.seat_count,
+      team_seat_counts: teamFirestore.team_seat_counts,
       storage_quota_bytes: storageQuotaBytes,
       storage_addon_id: storageAddonId,
       stripe_customer_id: session.customer ?? null,

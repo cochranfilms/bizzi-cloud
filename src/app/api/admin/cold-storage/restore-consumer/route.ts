@@ -103,6 +103,10 @@ export async function POST(request: Request) {
     addonIds: "",
     billing,
     seat_count: "1",
+    team_seats_none: "0",
+    team_seats_gallery: "0",
+    team_seats_editor: "0",
+    team_seats_fullframe: "0",
   };
 
   try {

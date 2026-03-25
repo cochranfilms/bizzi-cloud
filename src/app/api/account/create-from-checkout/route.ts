@@ -13,6 +13,10 @@ import {
   type PlanId,
 } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
+import {
+  resolveTeamSeatCountsForProfile,
+  teamSeatCountsToFirestore,
+} from "@/lib/team-seat-pricing";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
@@ -86,11 +90,31 @@ export async function POST(request: Request) {
   const addonIds = addonIdsRaw
     ? (addonIdsRaw as string).split(",").filter(Boolean)
     : [];
-  const seatCountRaw = metadata.seat_count;
-  const seatCount =
-    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-      ? parseInt(seatCountRaw, 10)
-      : 1;
+  const metaRecord = metadata as Record<string, string | undefined>;
+  let subscriptionItems:
+    | (Stripe.SubscriptionItem & { price: Stripe.Price })[]
+    | undefined;
+  const subIdForItems =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : (session.subscription as Stripe.Subscription | null)?.id ?? null;
+  if (subIdForItems) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(subIdForItems, {
+        expand: ["items.data.price"],
+      });
+      subscriptionItems = sub.items.data as (Stripe.SubscriptionItem & {
+        price: Stripe.Price;
+      })[];
+    } catch {
+      subscriptionItems = undefined;
+    }
+  }
+  const teamResolved = resolveTeamSeatCountsForProfile(
+    metaRecord,
+    subscriptionItems
+  );
+  const teamFirestore = teamSeatCountsToFirestore(teamResolved);
 
   const auth = getAdminAuth();
   const db = getAdminFirestore();
@@ -131,7 +155,8 @@ export async function POST(request: Request) {
       userId: uid,
       plan_id: planId,
       addon_ids: addonIds,
-      seat_count: seatCount,
+      seat_count: teamFirestore.seat_count,
+      team_seat_counts: teamFirestore.team_seat_counts,
       storage_quota_bytes: storageQuotaBytes,
       storage_used_bytes: 0,
       stripe_customer_id: session.customer ?? null,

@@ -5,7 +5,19 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     match /linked_drives/{driveId} {
-      allow read, write: if request.auth != null
+      function personalTeamCanReadOwnerDrive() {
+        return resource.data.organization_id == null
+          && resource.data.userId is string
+          && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid))
+          && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid)).data.status == 'active';
+      }
+      allow read: if request.auth != null
+        && (request.auth.uid == resource.data.userId
+          || (resource.data.organization_id is string
+            && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
+          || personalTeamCanReadOwnerDrive());
+      allow write: if request.auth != null
         && (request.auth.uid == resource.data.userId
           || (resource.data.organization_id is string
             && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
@@ -17,15 +29,45 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
     match /backup_files/{fileId} {
-      allow read, write: if request.auth != null
+      function backupPersonalTeamMemberRead() {
+        return resource.data.organization_id == null
+          && (
+            (resource.data.personal_team_owner_id is string
+              && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid))
+              && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active')
+            || (!(resource.data.personal_team_owner_id is string)
+              && resource.data.userId is string
+              && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid))
+              && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid)).data.status == 'active')
+          );
+      }
+      allow read: if request.auth != null
+        && (resource.data.userId == request.auth.uid
+          || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
+            && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid)
+          || (resource.data.organization_id is string
+            && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
+          || backupPersonalTeamMemberRead());
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId
+        && (request.resource.data.personal_team_owner_id == null
+          || (request.resource.data.personal_team_owner_id is string
+            && exists(/databases/$(database)/documents/personal_team_seats/$(request.resource.data.personal_team_owner_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/personal_team_seats/$(request.resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active'));
+      allow update, delete: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
             && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId == request.auth.uid)
           || (resource.data.organization_id is string
             && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
             && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
-      allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId;
+    }
+    match /personal_team_seats/{seatId} {
+      allow read: if request.auth != null
+        && (resource.data.member_user_id == request.auth.uid
+          || resource.data.team_owner_user_id == request.auth.uid);
+      allow write: if false;
     }
     match /pinned_items/{itemId} {
       allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;

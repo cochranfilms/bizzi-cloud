@@ -1,5 +1,6 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 
 /**
  * Verifies that a user has access to a backup file by ID.
@@ -20,6 +21,16 @@ export async function canAccessBackupFileById(
 
   // Owner
   if (fileData?.userId === uid) return true;
+
+  // Personal team: active member can access files owned by team admin (shared storage)
+  const fileOwner = fileData?.userId as string | undefined;
+  if (fileOwner && !fileData?.organization_id) {
+    const seatId = `${fileOwner}_${uid}`;
+    const seatSnap = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(seatId).get();
+    if (seatSnap.exists && seatSnap.data()?.status === "active") {
+      return true;
+    }
+  }
 
   // Org admin (same logic as backup_files rules)
   const orgId = fileData?.organization_id as string | undefined;

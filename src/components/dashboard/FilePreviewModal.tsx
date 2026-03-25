@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Download, FileIcon, Loader2, Film, FolderInput } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Download, FileIcon, Loader2, Film, FolderInput, ZoomIn, ZoomOut } from "lucide-react";
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
 import { useHearts } from "@/hooks/useHearts";
@@ -52,6 +52,10 @@ interface FilePreviewModalProps {
   lutLibrary?: CreativeLUTLibraryEntry[] | null;
 }
 
+function clampImageZoom(z: number): number {
+  return Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+}
+
 function buildLUTOptions(
   library: CreativeLUTLibraryEntry[],
   includeBuiltin: boolean
@@ -82,6 +86,8 @@ export default function FilePreviewModal({
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+  const imageZoomHostRef = useRef<HTMLDivElement | null>(null);
 
   const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
   const hearts = useHearts(file?.id ?? null);
@@ -151,6 +157,22 @@ export default function FilePreviewModal({
       setLoading(false);
     }
   }, [file?.objectKey, previewType]);
+
+  useEffect(() => {
+    setImageZoom(1);
+  }, [file?.id, previewType]);
+
+  useEffect(() => {
+    const el = imageZoomHostRef.current;
+    if (!el || previewType !== "image" || !lowResPreviewUrl) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setImageZoom((z) => clampImageZoom(z + (e.deltaY > 0 ? -0.15 : 0.15)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [previewType, lowResPreviewUrl, file?.id]);
 
   useEffect(() => {
     if (file) {
@@ -320,12 +342,51 @@ export default function FilePreviewModal({
   ) {
     if (previewType === "image" && lowResPreviewUrl) {
       mediaBody = (
-        /* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */
-        <img
-          src={lowResPreviewUrl}
-          alt={file.name}
-          className="max-h-full max-w-full rounded-lg object-contain shadow-lg shadow-black/15"
-        />
+        <div
+          ref={imageZoomHostRef}
+          className="relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center"
+        >
+          <div className="flex max-h-[min(86dvh,calc(100dvh-7rem))] min-h-0 w-full flex-1 items-center justify-center overflow-auto">
+            <div
+              className="inline-flex origin-center transition-transform duration-150 ease-out"
+              style={{
+                transform: `scale(${imageZoom})`,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API */}
+              <img
+                src={lowResPreviewUrl}
+                alt={file.name}
+                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-lg shadow-black/20 dark:shadow-black/40"
+              />
+            </div>
+          </div>
+          <div className="pointer-events-auto absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-neutral-200/90 bg-neutral-900/88 px-1.5 py-1 shadow-xl backdrop-blur-md dark:border-white/20 dark:bg-black/85 sm:bottom-4">
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/95 transition-colors hover:bg-white/15"
+              aria-label="Zoom out"
+              onClick={() => setImageZoom((z) => clampImageZoom(z - 0.25))}
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="min-w-[3.25rem] rounded-lg px-2 py-1 text-center text-xs font-medium tabular-nums text-white/90 hover:bg-white/10"
+              onClick={() => setImageZoom(1)}
+            >
+              {Math.round(imageZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/95 transition-colors hover:bg-white/15"
+              aria-label="Zoom in"
+              onClick={() => setImageZoom((z) => clampImageZoom(z + 0.25))}
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       );
       mediaFooter = (
         <p className="mt-3 text-center text-xs text-neutral-600 dark:text-neutral-400">
@@ -354,11 +415,13 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "pdf" && fullUrl) {
       mediaBody = (
-        <iframe
-          src={fullUrl}
-          title={file.name}
-          className="h-full max-h-full min-h-[200px] w-full max-w-4xl rounded-lg border-0 bg-white shadow-lg"
-        />
+        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-xl border border-neutral-200/55 bg-neutral-200/20 shadow-2xl dark:border-white/10 dark:bg-black/35">
+          <iframe
+            src={fullUrl}
+            title={file.name}
+            className="h-full min-h-[480px] w-full flex-1 border-0 bg-white dark:bg-neutral-950"
+          />
+        </div>
       );
     } else if (previewType === "project_file") {
       mediaBody = (
@@ -404,9 +467,12 @@ export default function FilePreviewModal({
       headerActions={headerActions}
       media={mediaBody}
       mediaFooter={mediaFooter}
-      belowFold={
+      rightRail={
         file.id ? (
-          <div className="rounded-2xl border border-neutral-200/70 bg-white/85 p-5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-neutral-950/55">
+          <div className="flex h-full min-h-0 flex-col gap-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Comments
+            </p>
             <FileCommentsPanel fileId={file.id} />
           </div>
         ) : null

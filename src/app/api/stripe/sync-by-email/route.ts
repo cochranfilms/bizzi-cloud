@@ -4,6 +4,10 @@ import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
+import {
+  resolveTeamSeatCountsForProfile,
+  teamSeatCountsToFirestore,
+} from "@/lib/team-seat-pricing";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -110,12 +114,16 @@ export async function POST(request: Request) {
 
   let storageQuotaBytes = getStorageBytesForPlan(planId);
   let storageAddonId: string | null = null;
+  let subscriptionItems: SubscriptionItemWithPrice[] | undefined;
+  const subMetaRecord: Record<string, string | undefined> = {};
   if (stripeSubscriptionId) {
     try {
       const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
         expand: ["items.data.price"],
       });
+      Object.assign(subMetaRecord, sub.metadata ?? {});
       const items = sub.items.data as SubscriptionItemWithPrice[];
+      subscriptionItems = items;
       const computed = computeStorageFromSubscription(planId, items);
       storageQuotaBytes = computed.storageQuotaBytes;
       storageAddonId = computed.storageAddonId;
@@ -123,6 +131,11 @@ export async function POST(request: Request) {
       console.error("[Stripe sync-by-email] Failed to expand subscription:", err);
     }
   }
+  const teamResolved = resolveTeamSeatCountsForProfile(
+    subMetaRecord,
+    subscriptionItems
+  );
+  const teamFirestore = teamSeatCountsToFirestore(teamResolved);
 
   const db = getAdminFirestore();
   await db.collection("profiles").doc(uid).set(
@@ -130,6 +143,8 @@ export async function POST(request: Request) {
       userId: uid,
       plan_id: planId,
       addon_ids: addonIds,
+      seat_count: teamFirestore.seat_count,
+      team_seat_counts: teamFirestore.team_seat_counts,
       storage_quota_bytes: storageQuotaBytes,
       storage_addon_id: storageAddonId,
       stripe_customer_id: stripeCustomerId,

@@ -11,6 +11,8 @@ export interface CheckoutModalProps {
   addonName?: string;
   billing: "monthly" | "annual";
   priceLabel: string;
+  /** Personal team seat breakdown for guest summary */
+  teamSummaryLine?: string;
   onSubmit: (data: { name: string; email: string }) => Promise<void>;
   loading?: boolean;
   error?: string | null;
@@ -25,6 +27,7 @@ export default function CheckoutModal({
   addonName,
   billing,
   priceLabel,
+  teamSummaryLine,
   onSubmit,
   loading = false,
   error = null,
@@ -54,9 +57,14 @@ export default function CheckoutModal({
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           Enter your details to continue to checkout
         </p>
-        <div className="mt-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm dark:bg-neutral-800 dark:text-neutral-300">
-          {planName}
-          {addonName && ` + ${addonName}`} — {priceLabel}
+        <div className="mt-4 space-y-1 rounded-lg bg-neutral-50 px-3 py-2 text-sm dark:bg-neutral-800 dark:text-neutral-300">
+          <p>
+            {planName}
+            {addonName && ` + ${addonName}`} — {priceLabel}
+          </p>
+          {teamSummaryLine ? (
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">{teamSummaryLine}</p>
+          ) : null}
         </div>
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>

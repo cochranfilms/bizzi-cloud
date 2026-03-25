@@ -14,6 +14,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import type { DocumentReference } from "firebase-admin/firestore";
 import { GRACE_PERIOD_DAYS } from "@/lib/cold-storage-retention";
 import { getStorageBytesForPlan } from "@/lib/plan-constants";
+import { emptyTeamSeatCounts } from "@/lib/team-seat-pricing";
 
 export type StorageLifecycleStatus =
   | "active"
@@ -226,6 +227,7 @@ export async function transitionToScheduledDelete(params: {
       plan_id: "free",
       addon_ids: [],
       seat_count: 1,
+      team_seat_counts: emptyTeamSeatCounts(),
       storage_addon_id: null,
       storage_quota_bytes: getStorageBytesForPlan("free"),
       stripe_subscription_id: null,
@@ -270,6 +272,7 @@ export async function transitionToPersonalScheduledDelete(params: {
       plan_id: "free",
       addon_ids: [],
       seat_count: 1,
+      team_seat_counts: emptyTeamSeatCounts(),
       storage_addon_id: null,
       storage_quota_bytes: getStorageBytesForPlan("free"),
       stripe_subscription_id: null,

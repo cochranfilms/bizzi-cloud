@@ -32,7 +32,13 @@ export async function POST(request: Request) {
     "video_1", "video_2", "video_3", "video_4", "video_5",
   ];
 
-  let body: { planId?: string; addonIds?: string[]; billing?: string; storageAddonId?: string | null };
+  let body: {
+    planId?: string;
+    addonIds?: string[];
+    billing?: string;
+    storageAddonId?: string | null;
+    teamSeatCounts?: { none?: number; gallery?: number; editor?: number; fullframe?: number };
+  };
   try {
     body = await request.json();
   } catch {
@@ -56,5 +62,6 @@ export async function POST(request: Request) {
     addonIds,
     billing,
     storageAddonId,
+    teamSeatCounts: body.teamSeatCounts ?? undefined,
   });
 }

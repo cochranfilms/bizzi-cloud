@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Film, Play } from "lucide-react";
+
+const DEFAULT_LOOP_SECONDS = 5;
+const SCRUB_IDLE_MS = 220;
 
 interface VideoScrubThumbnailProps {
   /** Async function to fetch the video stream URL. Called on first hover. */
@@ -16,11 +19,14 @@ interface VideoScrubThumbnailProps {
   showPlayIcon?: boolean;
   /** How thumbnail/video fills the container: cover (crop) or contain (fit) */
   objectFit?: "object-cover" | "object-contain";
+  /**
+   * When not scrubbing, loop the first N seconds (same default as gallery marquee).
+   */
+  loopSeconds?: number;
 }
 
 /**
- * Video thumbnail that allows scrubbing on hover. Users can move the cursor
- * across the thumbnail to preview different frames without clicking.
+ * Video thumbnail: hover loads stream, short segment loops when idle, horizontal scrub previews frames.
  */
 export default function VideoScrubThumbnail({
   fetchStreamUrl,
@@ -29,17 +35,49 @@ export default function VideoScrubThumbnail({
   isLoading = false,
   showPlayIcon = true,
   objectFit = "object-cover",
+  loopSeconds = DEFAULT_LOOP_SECONDS,
 }: VideoScrubThumbnailProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamLoadFailed, setStreamLoadFailed] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrubIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoveringRef = useRef(false);
+
+  useEffect(() => {
+    isHoveringRef.current = isHovering;
+  }, [isHovering]);
+
+  const clearScrubIdleTimer = useCallback(() => {
+    if (scrubIdleTimerRef.current != null) {
+      clearTimeout(scrubIdleTimerRef.current);
+      scrubIdleTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleScrubEnd = useCallback(() => {
+    clearScrubIdleTimer();
+    scrubIdleTimerRef.current = setTimeout(() => {
+      scrubIdleTimerRef.current = null;
+      setIsScrubbing(false);
+      setScrubPosition(null);
+      const v = videoRef.current;
+      if (v && isHoveringRef.current) {
+        v.currentTime = 0;
+        void v.play().catch(() => {});
+      }
+    }, SCRUB_IDLE_MS);
+  }, [clearScrubIdleTimer]);
 
   const handleMouseEnter = useCallback(() => {
     setIsHovering(true);
+    setIsScrubbing(false);
+    setScrubPosition(null);
+    clearScrubIdleTimer();
     if (!streamUrl && !isFetching) {
       setIsFetching(true);
       fetchStreamUrl()
@@ -51,16 +89,18 @@ export default function VideoScrubThumbnail({
         })
         .finally(() => setIsFetching(false));
     }
-  }, [streamUrl, isFetching, fetchStreamUrl]);
+  }, [streamUrl, isFetching, fetchStreamUrl, clearScrubIdleTimer]);
 
   const handleMouseLeave = useCallback(() => {
     setIsHovering(false);
+    setIsScrubbing(false);
     setScrubPosition(null);
+    clearScrubIdleTimer();
     const video = videoRef.current;
     if (video) {
       video.pause();
     }
-  }, []);
+  }, [clearScrubIdleTimer]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -73,15 +113,54 @@ export default function VideoScrubThumbnail({
       const pct = Math.max(0, Math.min(1, x / rect.width));
       setScrubPosition(pct);
 
-      if (video && streamUrl && video.readyState >= 2) {
-        const time = pct * (video.duration || 0);
-        video.currentTime = time;
+      if (!video || !streamUrl) return;
+
+      setIsScrubbing(true);
+      scheduleScrubEnd();
+
+      if (video.readyState >= 1) {
+        video.pause();
+        if (video.readyState >= 2 && Number.isFinite(video.duration) && video.duration > 0) {
+          video.currentTime = pct * video.duration;
+        }
       }
     },
-    [streamUrl]
+    [streamUrl, scheduleScrubEnd]
   );
 
   const showVideo = isHovering && streamUrl && !streamLoadFailed;
+
+  /** Loop segment when idle on hover */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !showVideo || isScrubbing) return;
+    const onTime = () => {
+      const dur = v.duration;
+      if (!dur || !Number.isFinite(dur)) return;
+      const end = Math.min(loopSeconds, dur);
+      if (v.currentTime >= end - 0.05) {
+        v.currentTime = 0;
+      }
+    };
+    v.addEventListener("timeupdate", onTime);
+    return () => v.removeEventListener("timeupdate", onTime);
+  }, [showVideo, isScrubbing, loopSeconds, streamUrl]);
+
+  /** Start / resume looping playback when not scrubbing */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !showVideo || isScrubbing) return;
+    v.muted = true;
+    if (v.readyState >= 2) {
+      if (v.currentTime >= Math.min(loopSeconds, v.duration || loopSeconds) - 0.02) {
+        v.currentTime = 0;
+      }
+      void v.play().catch(() => {});
+    }
+  }, [showVideo, isScrubbing, loopSeconds, streamUrl]);
+
+  useEffect(() => () => clearScrubIdleTimer(), [clearScrubIdleTimer]);
+
   const showThumbnail = !showVideo && (thumbnailUrl || isLoading);
 
   return (
@@ -103,8 +182,10 @@ export default function VideoScrubThumbnail({
           onError={() => setStreamLoadFailed(true)}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
+            if (!isHoveringRef.current) return;
             if (v.duration && v.duration > 0) {
-              v.currentTime = v.duration * 0.05;
+              v.currentTime = 0;
+              void v.play().catch(() => {});
             }
           }}
         />
@@ -127,7 +208,7 @@ export default function VideoScrubThumbnail({
           </div>
         </div>
       )}
-      {showVideo && scrubPosition !== null && (
+      {showVideo && scrubPosition !== null && isScrubbing && (
         <div
           className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.8)]"
           style={{ left: `${scrubPosition * 100}%` }}

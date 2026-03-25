@@ -9,12 +9,37 @@ import {
   freeTier,
   storageTiers,
   powerUpAddons,
-  SEAT_PRICE,
   PLAN_LABELS,
   ADDON_LABELS,
 } from "@/lib/pricing-data";
+import {
+  emptyTeamSeatCounts,
+  maxSelectableForTier,
+  sumExtraTeamSeats,
+  teamSeatMonthlySubtotal,
+  type PersonalTeamSeatAccess,
+  type TeamSeatCounts,
+} from "@/lib/team-seat-pricing";
 import CheckoutModal from "@/components/CheckoutModal";
 import FreeSignUpModal from "@/components/FreeSignUpModal";
+
+function teamExtrasSummaryLine(
+  counts: TeamSeatCounts,
+  billing: "monthly" | "annual"
+): string {
+  const mult = billing === "annual" ? 0.75 : 1;
+  const sub = teamSeatMonthlySubtotal(counts) * mult;
+  if (sumExtraTeamSeats(counts) === 0) return "";
+  const parts: string[] = [];
+  if (counts.none) parts.push(`${counts.none}× base ($${(9 * mult).toFixed(0)}/ea)`);
+  if (counts.gallery)
+    parts.push(`${counts.gallery}× Gallery ($${(12 * mult).toFixed(0)}/ea)`);
+  if (counts.editor)
+    parts.push(`${counts.editor}× Editor ($${(14 * mult).toFixed(0)}/ea)`);
+  if (counts.fullframe)
+    parts.push(`${counts.fullframe}× Full Frame ($${(16 * mult).toFixed(0)}/ea)`);
+  return `Team: ${parts.join(", ")} · ~$${Math.round(sub)}/mo`;
+}
 
 export default function PricingSection() {
   const { user } = useAuth();
@@ -22,7 +47,9 @@ export default function PricingSection() {
   const searchParams = useSearchParams();
   const [selectedStorageId, setSelectedStorageId] = useState<string>("free");
   const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
-  const [seatCount, setSeatCount] = useState(1);
+  const [teamSeatCounts, setTeamSeatCounts] = useState<TeamSeatCounts>(() =>
+    emptyTeamSeatCounts()
+  );
   const [selectedBilling, setSelectedBilling] = useState<"monthly" | "annual">("monthly");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -34,14 +61,14 @@ export default function PricingSection() {
     addonName?: string;
     billing: "monthly" | "annual";
     priceLabel: string;
-    seatCount: number;
+    teamSummaryLine: string;
+    teamSeatCounts: TeamSeatCounts;
   } | null>(null);
 
   const selectedTier = storageTiers.find((t) => t.id === selectedStorageId);
   const selectedAddon = powerUpAddons.find((a) => a.id === selectedAddonId);
   const isFree = selectedStorageId === "free";
   const allowsSeats = selectedTier?.allowsSeats ?? false;
-  const extraSeats = Math.max(0, seatCount - 1);
   const baseMonthly =
     selectedTier && !isFree
       ? selectedBilling === "annual"
@@ -49,15 +76,26 @@ export default function PricingSection() {
         : selectedTier.price
       : 0;
   const addonMonthly = selectedAddon ? selectedAddon.price : 0;
-  const seatMonthly = allowsSeats ? extraSeats * SEAT_PRICE : 0;
-  const total = baseMonthly + addonMonthly + seatMonthly;
+  const teamSeatRawSubtotal = allowsSeats ? teamSeatMonthlySubtotal(teamSeatCounts) : 0;
+  const teamSeatDisplayMultiplier = selectedBilling === "annual" ? 0.75 : 1;
+  const teamSeatMonthlyDisplay = teamSeatRawSubtotal * teamSeatDisplayMultiplier;
+  const total = baseMonthly + addonMonthly + teamSeatMonthlyDisplay;
+  const extraTeamSeatsCount = allowsSeats ? sumExtraTeamSeats(teamSeatCounts) : 0;
+
+  const setTeamTier = (tier: PersonalTeamSeatAccess, value: number) => {
+    setTeamSeatCounts((prev) => {
+      const max = maxSelectableForTier(prev, tier);
+      const v = Math.min(Math.max(0, value), max);
+      return { ...prev, [tier]: v };
+    });
+  };
 
   const handleCheckout = useCallback(
     async (
       planId: string,
       addonId: string | null,
       billing: "monthly" | "annual",
-      seats: number
+      counts: TeamSeatCounts
     ) => {
       if (!user) {
         const tier = storageTiers.find((t) => t.id === planId);
@@ -72,8 +110,10 @@ export default function PricingSection() {
               : "";
         let label = priceLabel;
         if (addon) label += ` + $${addon.price}/mo add-on`;
-        if (tier?.allowsSeats && seats > 1)
-          label += ` + ${seats - 1} seat(s) @ $${SEAT_PRICE}/mo`;
+        const teamLine = tier?.allowsSeats
+          ? teamExtrasSummaryLine(counts, billing)
+          : "";
+        if (teamLine) label += ` · ${teamLine}`;
         setCheckoutModal({
           planId,
           planName: tier?.name ?? PLAN_LABELS[planId] ?? planId,
@@ -81,7 +121,8 @@ export default function PricingSection() {
           addonName: addon?.name ?? (addonId ? ADDON_LABELS[addonId] : undefined),
           billing,
           priceLabel: label,
-          seatCount: seats,
+          teamSummaryLine: teamLine,
+          teamSeatCounts: tier?.allowsSeats ? counts : emptyTeamSeatCounts(),
         });
         return;
       }
@@ -104,7 +145,7 @@ export default function PricingSection() {
             planId,
             addonId: addonId || undefined,
             billing,
-            seatCount: seats,
+            teamSeatCounts: counts,
           }),
         });
         const data = (await res.json()) as { url?: string; error?: string };
@@ -140,7 +181,7 @@ export default function PricingSection() {
             planId: checkoutModal.planId,
             addonId: checkoutModal.addonId ?? undefined,
             billing: checkoutModal.billing,
-            seatCount: checkoutModal.seatCount,
+            teamSeatCounts: checkoutModal.teamSeatCounts,
             email: data.email,
             name: data.name,
           }),
@@ -176,7 +217,7 @@ export default function PricingSection() {
           purchase,
           addon && ["gallery", "editor", "fullframe"].includes(addon) ? addon : null,
           billing === "annual" ? "annual" : "monthly",
-          1
+          emptyTeamSeatCounts()
         );
       }
     }
@@ -418,6 +459,7 @@ export default function PricingSection() {
                   onClick={() => {
                     setSelectedStorageId(tier.id);
                     if (tier.id === "free") setSelectedAddonId(null);
+                    if (!tier.allowsSeats) setTeamSeatCounts(emptyTeamSeatCounts());
                   }}
                   className={`rounded-xl border-2 px-4 py-3 text-left transition-all ${
                     selectedStorageId === tier.id
@@ -448,65 +490,119 @@ export default function PricingSection() {
               <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 2. Power Up
               </label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedAddonId(null)}
-                  className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all ${
-                    !selectedAddonId
-                      ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
-                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
-                  }`}
-                >
-                  No add-on
-                </button>
-                {powerUpAddons.map((addon) => (
+              <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+                Your add-on (admin). Team members can have different access in step 3.
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="flex min-w-0 flex-col gap-1.5">
                   <button
-                    key={addon.id}
                     type="button"
-                    onClick={() => setSelectedAddonId(addon.id)}
-                    className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all ${
-                      selectedAddonId === addon.id
-                        ? "text-white"
+                    onClick={() => setSelectedAddonId(null)}
+                    className={`rounded-xl border-2 px-3 py-2 text-left text-xs font-medium leading-snug transition-all sm:text-sm ${
+                      !selectedAddonId
+                        ? "border-bizzi-blue bg-bizzi-blue/5 dark:bg-bizzi-blue/10"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
                     }`}
-                    style={
-                      selectedAddonId === addon.id
-                        ? {
-                            backgroundColor: addon.accentColor,
-                            borderColor: addon.accentColor,
-                          }
-                        : undefined
-                    }
                   >
-                    {addon.name} (+${addon.price}/mo)
+                    No add-on
                   </button>
+                  <span className="min-h-[2.25rem] text-[10px] leading-tight text-neutral-400 dark:text-neutral-500">
+                    &nbsp;
+                  </span>
+                </div>
+                {powerUpAddons.map((addon) => (
+                  <div key={addon.id} className="flex min-w-0 flex-col gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAddonId(addon.id)}
+                      className={`rounded-xl border-2 px-3 py-2 text-left text-xs font-medium leading-snug transition-all sm:text-sm ${
+                        selectedAddonId === addon.id
+                          ? "text-white"
+                          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-600"
+                      }`}
+                      style={
+                        selectedAddonId === addon.id
+                          ? {
+                              backgroundColor: addon.accentColor,
+                              borderColor: addon.accentColor,
+                            }
+                          : undefined
+                      }
+                    >
+                      {addon.name} (+${addon.price}/mo)
+                    </button>
+                    <span
+                      className="rounded-md bg-neutral-100 px-2 py-1 text-center text-[10px] font-medium leading-tight text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                      title={addon.tagline}
+                    >
+                      {addon.tagline}
+                    </span>
+                  </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Row 3: Seats (only when allowsSeats) */}
+          {/* Row 3: Team seats (only when allowsSeats) */}
           {allowsSeats && (
             <div className="mt-6">
               <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                3. Seats
+                3. Team seats
               </label>
               <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
-                1 seat included. Add more at ${SEAT_PRICE}/seat/mo.
+                Optional · Shared storage · Not an organization — personal Team only. You’re included;
+                pick extra seats and each seat’s access. Annual pricing matches 25% off (shown as
+                monthly equivalent).
               </p>
-              <select
-                value={seatCount}
-                onChange={(e) => setSeatCount(parseInt(e.target.value, 10))}
-                className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                  <option key={n} value={n}>
-                    {n} seat{n > 1 ? "s" : ""}
-                    {n > 1 ? ` (+$${(n - 1) * SEAT_PRICE}/mo)` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {(
+                  [
+                    {
+                      key: "none" as const,
+                      label: "No add-on",
+                      hint: "+$9/seat/mo",
+                    },
+                    {
+                      key: "gallery" as const,
+                      label: "Gallery Suite",
+                      hint: "+$12/seat/mo",
+                    },
+                    {
+                      key: "editor" as const,
+                      label: "Editor",
+                      hint: "+$14/seat/mo",
+                    },
+                    {
+                      key: "fullframe" as const,
+                      label: "Full Frame",
+                      hint: "+$16/seat/mo",
+                    },
+                  ] as const
+                ).map(({ key, label, hint }) => {
+                  const maxOpt = maxSelectableForTier(teamSeatCounts, key);
+                  return (
+                    <div key={key} className="min-w-0">
+                      <span className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        {label}
+                      </span>
+                      <span className="mb-1 block text-[10px] text-neutral-500">{hint}</span>
+                      <select
+                        value={teamSeatCounts[key]}
+                        onChange={(e) =>
+                          setTeamTier(key, parseInt(e.target.value, 10))
+                        }
+                        className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                      >
+                        {Array.from({ length: maxOpt + 1 }, (_, i) => i).map((n) => (
+                          <option key={n} value={n}>
+                            {n} extra{n === 1 ? " seat" : " seats"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -545,15 +641,22 @@ export default function PricingSection() {
 
           {/* Summary + CTA */}
           <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 px-6 py-4 dark:border-neutral-700 dark:bg-neutral-800">
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg font-bold text-neutral-900 dark:text-white">
-                {isFree ? "Free" : `$${Math.round(total)}/mo`}
-              </span>
-              {!isFree && (
-                <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                  {selectedBilling === "annual" && selectedTier
-                    ? `($${selectedTier.annualPrice}/yr billed annually)`
-                    : "billed monthly"}
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-lg font-bold text-neutral-900 dark:text-white">
+                  {isFree ? "Free" : `$${Math.round(total)}/mo`}
+                </span>
+                {!isFree && (
+                  <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                    {selectedBilling === "annual" && selectedTier
+                      ? `($${selectedTier.annualPrice}/yr billed annually)`
+                      : "billed monthly"}
+                  </span>
+                )}
+              </div>
+              {!isFree && allowsSeats && extraTeamSeatsCount > 0 && (
+                <span className="text-xs font-medium text-bizzi-blue dark:text-bizzi-cyan">
+                  {teamExtrasSummaryLine(teamSeatCounts, selectedBilling)}
                 </span>
               )}
             </div>
@@ -577,7 +680,7 @@ export default function PricingSection() {
                     selectedStorageId,
                     selectedAddonId,
                     selectedBilling,
-                    seatCount
+                    allowsSeats ? teamSeatCounts : emptyTeamSeatCounts()
                   )
                 }
                 className="rounded-xl bg-bizzi-blue px-6 py-3 font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
@@ -815,6 +918,7 @@ export default function PricingSection() {
           addonName={checkoutModal?.addonName}
           billing={checkoutModal?.billing ?? "monthly"}
           priceLabel={checkoutModal?.priceLabel ?? ""}
+          teamSummaryLine={checkoutModal?.teamSummaryLine || undefined}
           onSubmit={handleGuestCheckout}
           loading={checkoutLoading}
           error={checkoutError}
@@ -826,8 +930,8 @@ export default function PricingSection() {
           30-day money-back guarantee · Cancel anytime
         </p>
         <p className="mt-2 text-center text-xs text-neutral-400">
-          Annual discount applies to base plan price only. Add-ons billed
-          monthly.
+          Annual discount applies to base plan, team seat tiers, and team seat
+          prices (add-on Power Ups stay monthly on the bill).
         </p>
       </div>
     </section>

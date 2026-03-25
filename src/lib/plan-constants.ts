@@ -67,6 +67,16 @@ export function getStripeSeatPriceId(): string | null {
   return process.env[STRIPE_PRICE_ENV_KEYS.seat] ?? null;
 }
 
+/** Personal team seat tier + billing (optional env override per tier) */
+export function getStripePersonalTeamSeatPriceId(
+  level: "none" | "gallery" | "editor" | "fullframe",
+  billing: BillingCycle
+): string | null {
+  const cycle = billing === "monthly" ? "MONTHLY" : "ANNUAL";
+  const key = `STRIPE_PRICE_TEAM_SEAT_${level.toUpperCase()}_${cycle}` as const;
+  return process.env[key] ?? null;
+}
+
 /** Resolve plan ID or addon ID from Stripe price ID (for webhook) */
 export function getPlanIdFromPriceId(priceId: string): PlanId | AddonId | null {
   for (const plan of ["solo", "indie", "video", "production"] as const) {

@@ -381,12 +381,6 @@ function PreviewModal({
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
-  /** Native preview video: 9:16 vs 16:9 frame from metadata */
-  const [nativeVideoTallFrame, setNativeVideoTallFrame] = useState(false);
-
-  useEffect(() => {
-    setNativeVideoTallFrame(false);
-  }, [asset.id, isVideo]);
 
   useEffect(() => {
     if (!isVideo || !asset.object_key) return;
@@ -543,22 +537,12 @@ function PreviewModal({
           />
         ) : (
           <div className="flex h-full w-full min-h-0 items-center justify-center">
-            <div
-              className={`mx-auto flex h-full max-h-full w-auto max-w-full overflow-hidden rounded-lg bg-black ${
-                nativeVideoTallFrame ? "aspect-[9/16]" : "aspect-video"
-              }`}
-            >
+            <div className="relative mx-auto max-h-full max-w-full overflow-hidden rounded-lg bg-black">
               <video
                 src={videoStreamUrl}
                 controls
                 playsInline
-                onLoadedMetadata={(e) => {
-                  const v = e.currentTarget;
-                  if (v.videoWidth > 0 && v.videoHeight > 0) {
-                    setNativeVideoTallFrame(v.videoHeight > v.videoWidth);
-                  }
-                }}
-                className="h-full w-full object-contain"
+                className="max-h-[min(92dvh,calc(100dvh-6rem))] max-w-full object-contain"
               />
             </div>
           </div>
@@ -607,75 +591,76 @@ function PreviewModal({
     </div>
   );
 
+  const commentsRail =
+    allowComments ? (
+      <div className="space-y-5 text-white/95">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-white/90">
+          <MessageCircle className="h-4 w-4 shrink-0 opacity-80" />
+          Comments
+        </h3>
+        <div className="space-y-2">
+          {comments.length === 0 ? (
+            <p className="text-sm text-white/60">No comments yet.</p>
+          ) : (
+            comments.map((c) => (
+              <div key={c.id} className="rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm">
+                <p className="font-medium text-white/90">{c.client_name || "Anonymous"}</p>
+                <p className="text-white/85">{c.body}</p>
+                <p className="mt-1 text-xs text-white/45">
+                  {c.created_at
+                    ? new Date(c.created_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : ""}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+        <form onSubmit={handleCommentSubmit} className="space-y-2.5">
+          <input
+            type="text"
+            value={commentName}
+            onChange={(e) => setCommentName(e.target.value)}
+            placeholder="Your name"
+            className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+          />
+          <input
+            type="email"
+            value={commentEmail}
+            onChange={(e) => setCommentEmail(e.target.value)}
+            placeholder="Email (optional)"
+            className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+          />
+          <textarea
+            value={commentBody}
+            onChange={(e) => setCommentBody(e.target.value)}
+            placeholder="Add a comment..."
+            rows={3}
+            className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
+          />
+          <button
+            type="submit"
+            disabled={submitting || !commentBody.trim()}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+          >
+            {submitting ? "Posting…" : "Post comment"}
+          </button>
+        </form>
+      </div>
+    ) : null;
+
   return (
     <ImmersiveFilePreviewShell
       variant="gallery"
       onClose={onClose}
       title={asset.name}
       media={mediaCore}
-      sideControls={lutSideControls}
-      belowFold={
-        allowComments ? (
-          <div className="space-y-5 text-white/95">
-            <h3 className="flex items-center gap-2 text-sm font-medium text-white/90">
-              <MessageCircle className="h-4 w-4 shrink-0 opacity-80" />
-              Comments
-            </h3>
-            <div className="space-y-2">
-              {comments.length === 0 ? (
-                <p className="text-sm text-white/60">No comments yet.</p>
-              ) : (
-                comments.map((c) => (
-                  <div key={c.id} className="rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm">
-                    <p className="font-medium text-white/90">{c.client_name || "Anonymous"}</p>
-                    <p className="text-white/85">{c.body}</p>
-                    <p className="mt-1 text-xs text-white/45">
-                      {c.created_at
-                        ? new Date(c.created_at).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : ""}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-            <form onSubmit={handleCommentSubmit} className="space-y-2.5">
-              <input
-                type="text"
-                value={commentName}
-                onChange={(e) => setCommentName(e.target.value)}
-                placeholder="Your name"
-                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
-              />
-              <input
-                type="email"
-                value={commentEmail}
-                onChange={(e) => setCommentEmail(e.target.value)}
-                placeholder="Email (optional)"
-                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
-              />
-              <textarea
-                value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
-                placeholder="Add a comment..."
-                rows={3}
-                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2 text-sm text-white placeholder-white/45"
-              />
-              <button
-                type="submit"
-                disabled={submitting || !commentBody.trim()}
-                className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
-              >
-                {submitting ? "Posting…" : "Post comment"}
-              </button>
-            </form>
-          </div>
-        ) : null
-      }
+      bottomBar={lutSideControls}
+      rightRail={commentsRail}
     />
   );
 }

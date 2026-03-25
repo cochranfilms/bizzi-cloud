@@ -1,12 +1,27 @@
 /**
  * Shared WebGL engine for applying 3D LUT to video.
- * WebGL texture read requires video origin CORS. If black/corrupted output,
- * verify B2 bucket or CDN CORS allows the app origin.
+ * Dual-LUT crossfade matches image preview smooth grade switches.
+ * WebGL texture read requires video origin CORS.
  */
 
-import { createLUTTexture } from "./image-lut-engine";
+import { createLUTTexture, uploadDataToLutTexture } from "./image-lut-engine";
 
 export { createLUTTexture };
+
+function identityLutData(size: number): Float32Array {
+  const values: number[] = [];
+  for (let b = 0; b < size; b++) {
+    for (let g = 0; g < size; g++) {
+      for (let r = 0; r < size; r++) {
+        const rf = size > 1 ? r / (size - 1) : 0;
+        const gf = size > 1 ? g / (size - 1) : 0;
+        const bf = size > 1 ? b / (size - 1) : 0;
+        values.push(rf, gf, bf, 1);
+      }
+    }
+  }
+  return new Float32Array(values);
+}
 
 const VERTEX_SHADER = `#version 300 es
 in vec2 a_position;
@@ -21,29 +36,31 @@ void main() {
 const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 uniform sampler2D u_video;
-uniform sampler2D u_lut;
-uniform float u_lutSize;
+uniform sampler2D u_lutA;
+uniform sampler2D u_lutB;
+uniform float u_lutSizeA;
+uniform float u_lutSizeB;
+uniform float u_lutCrossfade;
 uniform float u_lutEnabled;
 in vec2 v_texCoord;
 out vec4 fragColor;
 
-vec4 sampleLUT(vec3 rgb) {
-  float size = u_lutSize;
+vec4 sampleLUTFrom(sampler2D lut, float size, vec3 rgb) {
   float margin = 0.5 / size;
-  vec3 scaled = margin + rgb * (1.0 - 1.0 / size);
+  vec3 scaled = margin + clamp(rgb, 0.0, 1.0) * (1.0 - 1.0 / size);
   vec3 f = scaled * (size - 1.0);
   vec3 i0 = floor(f);
   vec3 i1 = min(i0 + 1.0, size - 1.0);
   vec3 t = fract(f);
 
-  vec4 c000 = texelFetch(u_lut, ivec2(i0.r + i0.g * size, i0.b), 0);
-  vec4 c100 = texelFetch(u_lut, ivec2(i1.r + i0.g * size, i0.b), 0);
-  vec4 c010 = texelFetch(u_lut, ivec2(i0.r + i1.g * size, i0.b), 0);
-  vec4 c110 = texelFetch(u_lut, ivec2(i1.r + i1.g * size, i0.b), 0);
-  vec4 c001 = texelFetch(u_lut, ivec2(i0.r + i0.g * size, i1.b), 0);
-  vec4 c101 = texelFetch(u_lut, ivec2(i1.r + i0.g * size, i1.b), 0);
-  vec4 c011 = texelFetch(u_lut, ivec2(i0.r + i1.g * size, i1.b), 0);
-  vec4 c111 = texelFetch(u_lut, ivec2(i1.r + i1.g * size, i1.b), 0);
+  vec4 c000 = texelFetch(lut, ivec2(int(i0.r + i0.g * size), int(i0.b)), 0);
+  vec4 c100 = texelFetch(lut, ivec2(int(i1.r + i0.g * size), int(i0.b)), 0);
+  vec4 c010 = texelFetch(lut, ivec2(int(i0.r + i1.g * size), int(i0.b)), 0);
+  vec4 c110 = texelFetch(lut, ivec2(int(i1.r + i1.g * size), int(i0.b)), 0);
+  vec4 c001 = texelFetch(lut, ivec2(int(i0.r + i0.g * size), int(i1.b)), 0);
+  vec4 c101 = texelFetch(lut, ivec2(int(i1.r + i0.g * size), int(i1.b)), 0);
+  vec4 c011 = texelFetch(lut, ivec2(int(i0.r + i1.g * size), int(i1.b)), 0);
+  vec4 c111 = texelFetch(lut, ivec2(int(i1.r + i1.g * size), int(i1.b)), 0);
 
   vec4 c00 = mix(c000, c100, t.r);
   vec4 c01 = mix(c010, c110, t.r);
@@ -57,7 +74,10 @@ vec4 sampleLUT(vec3 rgb) {
 void main() {
   vec4 v = texture(u_video, v_texCoord);
   if (u_lutEnabled > 0.5) {
-    fragColor = vec4(sampleLUT(v.rgb).rgb, v.a);
+    vec3 ga = sampleLUTFrom(u_lutA, u_lutSizeA, v.rgb).rgb;
+    vec3 gb = sampleLUTFrom(u_lutB, u_lutSizeB, v.rgb).rgb;
+    vec3 graded = mix(ga, gb, clamp(u_lutCrossfade, 0.0, 1.0));
+    fragColor = vec4(graded, v.a);
   } else {
     fragColor = v;
   }
@@ -67,15 +87,27 @@ void main() {
 export interface VideoLUTContext {
   gl: WebGL2RenderingContext;
   program: WebGLProgram;
-  lutTexture: WebGLTexture;
+  lutTextureA: WebGLTexture;
+  lutTextureB: WebGLTexture;
+  lutSizeA: number;
+  lutSizeB: number;
   videoTexture: WebGLTexture;
-  lutSize: number;
+  posBuffer: WebGLBuffer;
+  texBuffer: WebGLBuffer;
+  a_position: number;
+  a_texCoord: number;
+}
+
+export interface VideoLUTRenderOptions {
+  lutEnabled: boolean;
+  /** 0 = LUT A only, 1 = LUT B only (transition between grades). */
+  lutCrossfade: number;
 }
 
 export function createVideoLUTContext(
   gl: WebGL2RenderingContext,
-  lutTexture: WebGLTexture,
-  lutSize: number
+  primaryData: Float32Array,
+  primarySize: number
 ): VideoLUTContext {
   const compileShader = (source: string, type: number): WebGLShader => {
     const shader = gl.createShader(type)!;
@@ -97,6 +129,9 @@ export function createVideoLUTContext(
     throw new Error(gl.getProgramInfoLog(program) ?? "Program link failed");
   }
 
+  const lutTextureA = createLUTTexture(gl, primaryData, primarySize);
+  const lutTextureB = createLUTTexture(gl, identityLutData(2), 2);
+
   const videoTexture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, videoTexture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -104,7 +139,73 @@ export function createVideoLUTContext(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  return { gl, program, lutTexture, videoTexture, lutSize };
+  const posBuffer = gl.createBuffer()!;
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+    gl.STATIC_DRAW
+  );
+
+  const texBuffer = gl.createBuffer()!;
+  gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]),
+    gl.STATIC_DRAW
+  );
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+  const a_position = gl.getAttribLocation(program, "a_position");
+  const a_texCoord = gl.getAttribLocation(program, "a_texCoord");
+
+  return {
+    gl,
+    program,
+    lutTextureA,
+    lutTextureB,
+    lutSizeA: primarySize,
+    lutSizeB: 2,
+    videoTexture,
+    posBuffer,
+    texBuffer,
+    a_position,
+    a_texCoord,
+  };
+}
+
+/** Upload into secondary LUT slot for transitions. */
+export function setSecondaryVideoLut(
+  ctx: VideoLUTContext,
+  data: Float32Array,
+  size: number
+): void {
+  const { gl } = ctx;
+  if (ctx.lutSizeB !== size) {
+    gl.deleteTexture(ctx.lutTextureB);
+    ctx.lutTextureB = gl.createTexture()!;
+    ctx.lutSizeB = size;
+  }
+  uploadDataToLutTexture(gl, ctx.lutTextureB, data, size);
+}
+
+export function swapPrimarySecondaryVideoLut(ctx: VideoLUTContext): void {
+  const { gl } = ctx;
+  gl.deleteTexture(ctx.lutTextureA);
+  ctx.lutTextureA = ctx.lutTextureB;
+  ctx.lutSizeA = ctx.lutSizeB;
+  ctx.lutTextureB = createLUTTexture(gl, identityLutData(2), 2);
+  ctx.lutSizeB = 2;
+}
+
+export function disposeVideoLUTContext(ctx: VideoLUTContext): void {
+  const { gl } = ctx;
+  gl.deleteTexture(ctx.videoTexture);
+  gl.deleteTexture(ctx.lutTextureA);
+  gl.deleteTexture(ctx.lutTextureB);
+  gl.deleteBuffer(ctx.posBuffer);
+  gl.deleteBuffer(ctx.texBuffer);
+  gl.deleteProgram(ctx.program);
 }
 
 export function renderVideoFrameWithLUT(
@@ -112,9 +213,9 @@ export function renderVideoFrameWithLUT(
   video: HTMLVideoElement,
   width: number,
   height: number,
-  lutEnabled: boolean
+  options: VideoLUTRenderOptions
 ): void {
-  const { gl, program, lutTexture, videoTexture } = ctx;
+  const { gl, program, lutTextureA, lutTextureB, videoTexture } = ctx;
 
   gl.viewport(0, 0, width, height);
   gl.clearColor(0, 0, 0, 0);
@@ -126,34 +227,25 @@ export function renderVideoFrameWithLUT(
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, lutTexture);
+  gl.bindTexture(gl.TEXTURE_2D, lutTextureA);
 
-  const posLoc = gl.getAttribLocation(program, "a_position");
-  const texLoc = gl.getAttribLocation(program, "a_texCoord");
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, lutTextureB);
 
-  const posBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-    gl.STATIC_DRAW
-  );
-  gl.enableVertexAttribArray(posLoc);
-  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ctx.posBuffer);
+  gl.enableVertexAttribArray(ctx.a_position);
+  gl.vertexAttribPointer(ctx.a_position, 2, gl.FLOAT, false, 0, 0);
 
-  const texBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]),
-    gl.STATIC_DRAW
-  );
-  gl.enableVertexAttribArray(texLoc);
-  gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ctx.texBuffer);
+  gl.enableVertexAttribArray(ctx.a_texCoord);
+  gl.vertexAttribPointer(ctx.a_texCoord, 2, gl.FLOAT, false, 0, 0);
 
   gl.uniform1i(gl.getUniformLocation(program, "u_video"), 0);
-  gl.uniform1i(gl.getUniformLocation(program, "u_lut"), 1);
-  gl.uniform1f(gl.getUniformLocation(program, "u_lutSize"), ctx.lutSize);
-  gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), lutEnabled ? 1 : 0);
+  gl.uniform1i(gl.getUniformLocation(program, "u_lutA"), 1);
+  gl.uniform1i(gl.getUniformLocation(program, "u_lutB"), 2);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutSizeA"), ctx.lutSizeA);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutSizeB"), ctx.lutSizeB);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutCrossfade"), options.lutCrossfade);
+  gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), options.lutEnabled ? 1 : 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }

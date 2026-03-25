@@ -4,7 +4,15 @@ import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
   getOrCreateStripeStorageAddonPrice,
+  getOrCreatePersonalTeamSeatPrice,
 } from "@/lib/stripe-prices";
+import type { PersonalTeamSeatAccess, TeamSeatCounts } from "@/lib/team-seat-pricing";
+import {
+  clampTeamSeatCounts,
+  coerceTeamSeatCounts,
+  emptyTeamSeatCounts,
+  teamSeatCountsToMetadataStrings,
+} from "@/lib/team-seat-pricing";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import type { StorageAddonId } from "@/lib/pricing-data";
 import { VALID_STORAGE_ADDON_IDS } from "@/lib/pricing-data";
@@ -106,6 +114,29 @@ export async function createChangePlanCheckoutSession(
     }
   }
 
+  let targetTeamCounts: TeamSeatCounts = emptyTeamSeatCounts();
+  if (["indie", "video", "production"].includes(planId)) {
+    const fromProfile = profile?.team_seat_counts as TeamSeatCounts | undefined;
+    targetTeamCounts = clampTeamSeatCounts(coerceTeamSeatCounts(fromProfile ?? {}));
+    const tierOrder: PersonalTeamSeatAccess[] = ["none", "gallery", "editor", "fullframe"];
+    for (const tier of tierOrder) {
+      const qty = targetTeamCounts[tier];
+      if (qty <= 0) continue;
+      try {
+        const priceId = await getOrCreatePersonalTeamSeatPrice(tier, billing);
+        lineItems.push({ price: priceId, quantity: qty });
+      } catch (err) {
+        console.error("[Stripe checkout-change-plan] Team seat price failed:", tier, err);
+        return NextResponse.json(
+          { error: "Checkout failed. Please try again.", code: "TEAM_SEAT_PRICE_FAILED" },
+          { status: 500 }
+        );
+      }
+    }
+  }
+
+  const teamMeta = teamSeatCountsToMetadataStrings(targetTeamCounts);
+
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
     (typeof process.env.VERCEL_URL === "string"
@@ -130,6 +161,11 @@ export async function createChangePlanCheckoutSession(
         addonIds: addonIds.join(","),
         billing,
         replace_subscription: stripeSubscriptionId,
+        seat_count: teamMeta.seat_count,
+        team_seats_none: teamMeta.team_seats_none,
+        team_seats_gallery: teamMeta.team_seats_gallery,
+        team_seats_editor: teamMeta.team_seats_editor,
+        team_seats_fullframe: teamMeta.team_seats_fullframe,
         ...(storageAddonId ? { storageAddonId } : {}),
       },
       subscription_data: {
@@ -139,6 +175,11 @@ export async function createChangePlanCheckoutSession(
           addonIds: addonIds.join(","),
           billing,
           replace_subscription: stripeSubscriptionId,
+          seat_count: teamMeta.seat_count,
+          team_seats_none: teamMeta.team_seats_none,
+          team_seats_gallery: teamMeta.team_seats_gallery,
+          team_seats_editor: teamMeta.team_seats_editor,
+          team_seats_fullframe: teamMeta.team_seats_fullframe,
           ...(storageAddonId ? { storageAddonId } : {}),
         },
       },

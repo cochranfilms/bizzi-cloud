@@ -5,11 +5,19 @@ import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 import Hls from "hls.js";
 import {
   createVideoLUTContext,
-  createLUTTexture,
+  disposeVideoLUTContext,
   renderVideoFrameWithLUT,
+  setSecondaryVideoLut,
+  swapPrimarySecondaryVideoLut,
   type VideoLUTContext,
 } from "@/lib/creative-lut/video-lut-engine";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
+
+function easeOutQuad(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+
+const VIDEO_LUT_CROSSFADE_MS = 280;
 
 export interface LUTOption {
   id: string;
@@ -90,9 +98,10 @@ export default function VideoWithLUT({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  /** After metadata: true = use 9:16 presentation frame, false = 16:9 */
-  const [presentationTall, setPresentationTall] = useState(false);
   const glRef = useRef<VideoLUTContext | null>(null);
+  const displayedLutUrlRef = useRef<string | null>(null);
+  const lutCrossfadeRef = useRef(0);
+  const lutTransitionRafRef = useRef<number | null>(null);
 
   const options =
     lutOptions.length > 0
@@ -124,7 +133,22 @@ export default function VideoWithLUT({
   }, [lutOptions]);
 
   useEffect(() => {
-    if (!previewOn || !currentLutSource) return;
+    if (!previewOn || !currentLutSource) {
+      if (lutTransitionRafRef.current != null) {
+        cancelAnimationFrame(lutTransitionRafRef.current);
+        lutTransitionRafRef.current = null;
+      }
+      const ctx = glRef.current;
+      if (ctx) {
+        disposeVideoLUTContext(ctx);
+        glRef.current = null;
+      }
+      displayedLutUrlRef.current = null;
+      lutCrossfadeRef.current = 0;
+      setLutReady(false);
+      return;
+    }
+
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -136,31 +160,67 @@ export default function VideoWithLUT({
     }
 
     let cancelled = false;
-    getOrLoadLUT(currentLutSource)
-      .then(({ data, size }) => {
+
+    (async () => {
+      try {
+        const { data, size } = await getOrLoadLUT(currentLutSource);
         if (cancelled) return;
-        const lutTexture = createLUTTexture(gl, data, size);
-        glRef.current = createVideoLUTContext(gl, lutTexture, size);
+
+        if (!glRef.current) {
+          glRef.current = createVideoLUTContext(gl, data, size);
+          displayedLutUrlRef.current = currentLutSource;
+          lutCrossfadeRef.current = 0;
+          setLutReady(true);
+          setLutError(null);
+          return;
+        }
+
+        if (displayedLutUrlRef.current === currentLutSource) {
+          setLutError(null);
+          setLutReady(true);
+          return;
+        }
+
+        if (lutTransitionRafRef.current != null) {
+          cancelAnimationFrame(lutTransitionRafRef.current);
+          lutTransitionRafRef.current = null;
+        }
+
+        setSecondaryVideoLut(glRef.current, data, size);
+        lutCrossfadeRef.current = 0;
+        const ctx = glRef.current;
+        const start = performance.now();
+
+        const tick = () => {
+          if (cancelled || !glRef.current) return;
+          const t = Math.min(1, (performance.now() - start) / VIDEO_LUT_CROSSFADE_MS);
+          lutCrossfadeRef.current = easeOutQuad(t);
+          if (t < 1) {
+            lutTransitionRafRef.current = requestAnimationFrame(tick);
+          } else {
+            lutTransitionRafRef.current = null;
+            swapPrimarySecondaryVideoLut(ctx);
+            lutCrossfadeRef.current = 0;
+            displayedLutUrlRef.current = currentLutSource;
+          }
+        };
+        lutTransitionRafRef.current = requestAnimationFrame(tick);
         setLutReady(true);
         setLutError(null);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!cancelled) {
           setLutError(e instanceof Error ? e.message : "LUT load failed");
           setLutReady(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
-      const ctx = glRef.current;
-      if (ctx) {
-        ctx.gl.deleteTexture(ctx.videoTexture);
-        ctx.gl.deleteTexture(ctx.lutTexture);
-        ctx.gl.deleteProgram(ctx.program);
-        glRef.current = null;
+      if (lutTransitionRafRef.current != null) {
+        cancelAnimationFrame(lutTransitionRafRef.current);
+        lutTransitionRafRef.current = null;
       }
-      setLutReady(false);
     };
   }, [previewOn, currentLutSource]);
 
@@ -220,7 +280,10 @@ export default function VideoWithLUT({
       }
       if (cancelled) return;
 
-      renderVideoFrameWithLUT(ctx, video, w, h, !!currentLutSource && previewOn);
+      renderVideoFrameWithLUT(ctx, video, w, h, {
+        lutEnabled: !!currentLutSource && previewOn,
+        lutCrossfade: lutCrossfadeRef.current,
+      });
 
       if (!cancelled) rafId = requestAnimationFrame(render);
     };
@@ -344,23 +407,6 @@ export default function VideoWithLUT({
   }, [videoSrc, handleVideoError]);
 
   useEffect(() => {
-    setPresentationTall(false);
-  }, [videoSrc]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onMeta = () => {
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (w > 0 && h > 0) setPresentationTall(h > w);
-    };
-    video.addEventListener("loadedmetadata", onMeta);
-    if (video.readyState >= 1) onMeta();
-    return () => video.removeEventListener("loadedmetadata", onMeta);
-  }, [videoSrc]);
-
-  useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
 
@@ -427,7 +473,7 @@ export default function VideoWithLUT({
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
       : frameless
-        ? { minHeight: 0 }
+        ? { minHeight: 0, maxHeight: "100%" }
         : {
             maxHeight: "70vh",
             aspectRatio: "16 / 9",
@@ -439,17 +485,10 @@ export default function VideoWithLUT({
       ? "flex h-full max-h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4 lg:flex-row lg:items-center lg:justify-center lg:gap-5"
       : "flex h-full max-h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4";
 
-  const immersiveAspectClass =
-    frameless && !compactPreview && !isFullscreen
-      ? presentationTall
-        ? "aspect-[9/16] h-full max-h-full w-auto max-w-full"
-        : "aspect-video h-full max-h-full w-auto max-w-full"
-      : "";
-
   const videoShellClass = frameless
     ? compactPreview
       ? "rounded-lg bg-black"
-      : `rounded-lg bg-black ${immersiveAspectClass}`
+      : "rounded-lg bg-black mx-auto max-h-full max-w-full w-fit min-h-0 min-w-0"
     : compactPreview
       ? "rounded-lg bg-neutral-200 dark:bg-black"
       : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
@@ -476,7 +515,7 @@ export default function VideoWithLUT({
           className={
             compactPreview
               ? `h-full w-full object-cover ${className ?? ""}`
-              : `max-h-full max-w-full h-full w-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full" : !frameless ? "max-h-[70vh]" : ""}`
+              : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
           }
         />
         {previewOn && currentLutSource && (

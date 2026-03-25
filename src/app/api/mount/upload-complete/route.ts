@@ -9,6 +9,10 @@ import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { logActivityEvent } from "@/lib/activity-log";
+import {
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -147,6 +151,33 @@ export async function POST(request: Request) {
     visibilityScope = "private_org";
   }
 
+  let personalTeamOwnerId: string | null = null;
+  const driveOwnerUid =
+    typeof driveData?.userId === "string"
+      ? driveData.userId
+      : typeof driveData?.user_id === "string"
+        ? driveData.user_id
+        : null;
+  if (
+    !workspaceIdFromBody &&
+    !driveOrgId &&
+    driveOwnerUid &&
+    driveOwnerUid !== uid
+  ) {
+    const seatSnap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .doc(personalTeamSeatDocId(driveOwnerUid, uid))
+      .get();
+    const st = seatSnap.data()?.status as string | undefined;
+    if (!seatSnap.exists || st !== "active") {
+      return NextResponse.json(
+        { error: "You do not have access to this drive." },
+        { status: 403 }
+      );
+    }
+    personalTeamOwnerId = driveOwnerUid;
+  }
+
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
   // Create minimal snapshot (required by backup_files schema)
@@ -175,6 +206,7 @@ export async function POST(request: Request) {
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,
     owner_user_id: uid,
+    ...(personalTeamOwnerId ? { personal_team_owner_id: personalTeamOwnerId } : {}),
   });
 
   // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)

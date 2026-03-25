@@ -19,6 +19,11 @@ import {
   type StorageLifecycleStatus,
 } from "@/lib/storage-lifecycle";
 import { writeAuditLog } from "@/lib/audit-log";
+import {
+  resolveTeamSeatCountsForProfile,
+  teamSeatCountsToFirestore,
+  emptyTeamSeatCounts,
+} from "@/lib/team-seat-pricing";
 import Stripe from "stripe";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -128,14 +133,10 @@ export async function POST(request: Request) {
       const addonIds: string[] = addonIdsRaw
         ? addonIdsRaw.split(",").filter(Boolean)
         : [];
-      const seatCountRaw = session.metadata?.seat_count;
-      const seatCount =
-        typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-          ? parseInt(seatCountRaw, 10)
-          : 1;
 
       let storageQuotaBytes = getStorageBytesForPlan(planId as PlanId);
       let storageAddonId: string | null = null;
+      let subscriptionItems: SubscriptionItemWithPrice[] | undefined;
       const subId: string | null =
         typeof session.subscription === "string"
           ? session.subscription
@@ -146,6 +147,7 @@ export async function POST(request: Request) {
             expand: ["items.data.price"],
           });
           const items = sub.items.data as SubscriptionItemWithPrice[];
+          subscriptionItems = items;
           const computed = computeStorageFromSubscription(
             planId as PlanId,
             items
@@ -156,6 +158,13 @@ export async function POST(request: Request) {
           console.error("[Stripe webhook] Failed to expand subscription:", err);
         }
       }
+
+      const sessionMeta = session.metadata as Record<string, string | undefined>;
+      const teamResolved = resolveTeamSeatCountsForProfile(
+        sessionMeta ?? {},
+        subscriptionItems
+      );
+      const teamFirestore = teamSeatCountsToFirestore(teamResolved);
 
       if (replaceSubscriptionId) {
         try {
@@ -182,7 +191,8 @@ export async function POST(request: Request) {
           userId,
           plan_id: planId,
           addon_ids: addonIds,
-          seat_count: seatCount,
+          seat_count: teamFirestore.seat_count,
+          team_seat_counts: teamFirestore.team_seat_counts,
           storage_quota_bytes: storageQuotaBytes,
           storage_addon_id: storageAddonId,
           stripe_customer_id: session.customer ?? null,
@@ -244,6 +254,7 @@ export async function POST(request: Request) {
               plan_id: "free",
               addon_ids: [],
               seat_count: 1,
+              team_seat_counts: emptyTeamSeatCounts(),
               storage_addon_id: null,
               storage_quota_bytes: getStorageBytesForPlan("free"),
               stripe_subscription_id: null,
@@ -376,21 +387,17 @@ export async function POST(request: Request) {
       if (userId && subscription.status === "active") {
         const addonIdsRaw = subMeta?.addonIds ?? "";
         const addonIds: string[] = addonIdsRaw.split(",").filter(Boolean);
-        const seatCountRaw = subMeta?.seat_count;
-        const seatCount =
-          typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-            ? parseInt(seatCountRaw, 10)
-            : 1;
 
         let storageQuotaBytes = planId
           ? getStorageBytesForPlan(planId)
           : getStorageBytesForPlan("free");
         let storageAddonId: string | null = null;
+        let items: SubscriptionItemWithPrice[] = [];
         try {
           const sub = await stripe.subscriptions.retrieve(subscription.id, {
             expand: ["items.data.price"],
           });
-          const items = sub.items.data as SubscriptionItemWithPrice[];
+          items = sub.items.data as SubscriptionItemWithPrice[];
           const computed = computeStorageFromSubscription(
             (planId as PlanId) ?? "free",
             items
@@ -401,11 +408,16 @@ export async function POST(request: Request) {
           console.error("[Stripe webhook] Failed to expand subscription:", err);
         }
 
+        const metaRecord = subMeta as unknown as Record<string, string | undefined>;
+        const teamResolved = resolveTeamSeatCountsForProfile(metaRecord ?? {}, items);
+        const teamFirestore = teamSeatCountsToFirestore(teamResolved);
+
         await db.collection("profiles").doc(userId).set(
           {
             plan_id: planId ?? "free",
             addon_ids: addonIds,
-            seat_count: seatCount,
+            seat_count: teamFirestore.seat_count,
+            team_seat_counts: teamFirestore.team_seat_counts,
             storage_quota_bytes: storageQuotaBytes,
             storage_addon_id: storageAddonId,
             stripe_subscription_id: subscription.id,

@@ -19,10 +19,10 @@ export default function DashboardLayout({
   return (
     <ThemeProvider>
       <EnterpriseProvider>
-        <BackupProvider>
-          <CurrentFolderProvider>
-            <DashboardAuthGuard>
-              <SubscriptionProvider>
+        <SubscriptionProvider>
+          <BackupProvider>
+            <CurrentFolderProvider>
+              <DashboardAuthGuard>
                 <ConfirmProvider>
                   <DashboardAppearanceProvider>
                     <LayoutSettingsProvider>
@@ -33,10 +33,10 @@ export default function DashboardLayout({
                     </LayoutSettingsProvider>
                   </DashboardAppearanceProvider>
                 </ConfirmProvider>
-              </SubscriptionProvider>
             </DashboardAuthGuard>
           </CurrentFolderProvider>
-        </BackupProvider>
+          </BackupProvider>
+        </SubscriptionProvider>
       </EnterpriseProvider>
     </ThemeProvider>
   );

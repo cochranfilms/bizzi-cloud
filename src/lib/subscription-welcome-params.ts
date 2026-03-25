@@ -9,10 +9,14 @@ import {
   STORAGE_ADDON_LABELS,
   storageTiers,
   powerUpAddons,
-  SEAT_PRICE,
   type StorageAddonId,
   VALID_STORAGE_ADDON_IDS,
 } from "@/lib/pricing-data";
+import {
+  formatTeamSeatsSummaryLine,
+  resolveTeamSeatCountsForProfile,
+  teamSeatMonthlySubtotal,
+} from "@/lib/team-seat-pricing";
 import type Stripe from "stripe";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
@@ -70,11 +74,6 @@ export function buildSubscriptionWelcomeParamsFromInvoice(
   const planId = metadata.planId as string | undefined;
   const addonIdsRaw = metadata.addonIds as string | undefined;
   const billing = (metadata.billing as string) ?? "monthly";
-  const seatCountRaw = metadata.seat_count;
-  const seatCount =
-    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-      ? parseInt(seatCountRaw, 10)
-      : 1;
   const userId = metadata.userId as string | undefined;
   const customerName = (metadata.customer_name as string)?.trim?.() || undefined;
 
@@ -92,8 +91,8 @@ export function buildSubscriptionWelcomeParamsFromInvoice(
   const isGuest = !userId;
 
   let storageLine = getPlanStorage(planId) + " Encrypted Cloud Storage";
-  const items = subscription.items.data as SubscriptionItemWithPrice[];
-  for (const item of items) {
+  const subItems = subscription.items.data as SubscriptionItemWithPrice[];
+  for (const item of subItems) {
     if (item.deleted) continue;
     const meta = item.price?.metadata;
     const addonId = meta?.storage_addon_id as string | undefined;
@@ -105,7 +104,9 @@ export function buildSubscriptionWelcomeParamsFromInvoice(
   }
 
   const planName = PLAN_LABELS[planId] ?? planId;
-  const seatsLine = seatCount === 1 ? "1 seat" : `${seatCount} seats`;
+  const metaRecord = metadata as Record<string, string | undefined>;
+  const teamResolved = resolveTeamSeatCountsForProfile(metaRecord, subItems);
+  const seatsLine = formatTeamSeatsSummaryLine(teamResolved);
   const addonParts = addonIds
     .map((id) => {
       const name = ADDON_LABELS[id] ?? id;
@@ -125,7 +126,7 @@ export function buildSubscriptionWelcomeParamsFromInvoice(
     const tier = storageTiers.find((t) => t.id === planId);
     const planPrice = billing === "annual" ? tier?.annualPrice ?? 0 : tier?.price ?? 0;
     const addonTotal = addonIds.reduce((s, id) => s + getAddonPrice(id), 0);
-    const seatExtra = Math.max(0, seatCount - 1) * SEAT_PRICE;
+    const seatExtra = teamSeatMonthlySubtotal(teamResolved);
     const total = planPrice + addonTotal + seatExtra;
     amountStr = billing === "annual" ? `$${total}/year` : `$${total}/mo`;
   }
@@ -172,11 +173,6 @@ export function buildSubscriptionWelcomeParams(
   const planId = metadata.planId as string | undefined;
   const addonIdsRaw = metadata.addonIds as string | undefined;
   const billing = (metadata.billing as string) ?? "monthly";
-  const seatCountRaw = metadata.seat_count;
-  const seatCount =
-    typeof seatCountRaw === "string" && /^\d+$/.test(seatCountRaw)
-      ? parseInt(seatCountRaw, 10)
-      : 1;
   const userId = metadata.userId as string | undefined;
   const customerName = (metadata.customer_name as string)?.trim?.() || undefined;
 
@@ -219,8 +215,10 @@ export function buildSubscriptionWelcomeParams(
   // Plan name
   const planName = PLAN_LABELS[planId] ?? planId;
 
-  // Seats line
-  const seatsLine = seatCount === 1 ? "1 seat" : `${seatCount} seats`;
+  const metaRecord = metadata as Record<string, string | undefined>;
+  const subItems = subscription?.items.data as SubscriptionItemWithPrice[] | undefined;
+  const teamResolved = resolveTeamSeatCountsForProfile(metaRecord, subItems);
+  const seatsLine = formatTeamSeatsSummaryLine(teamResolved);
 
   // Addons line
   const addonParts = addonIds
@@ -248,7 +246,7 @@ export function buildSubscriptionWelcomeParams(
     const tier = storageTiers.find((t) => t.id === planId);
     const planPrice = billing === "annual" ? tier?.annualPrice ?? 0 : tier?.price ?? 0;
     const addonTotal = addonIds.reduce((s, id) => s + getAddonPrice(id), 0);
-    const seatExtra = Math.max(0, seatCount - 1) * SEAT_PRICE;
+    const seatExtra = teamSeatMonthlySubtotal(teamResolved);
     const total = planPrice + addonTotal + seatExtra;
     amountStr = billing === "annual" ? `$${total}/year` : `$${total}/mo`;
   }

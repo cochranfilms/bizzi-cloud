@@ -37,6 +37,7 @@ import {
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePathname } from "next/navigation";
@@ -98,6 +99,13 @@ interface BackupContextValue {
 
 /** Video extensions that trigger proxy generation (720p H.264). */
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+
+function personalTeamFileFields(drive: LinkedDrive): Record<string, unknown> {
+  if (drive.personal_team_owner_id) {
+    return { personal_team_owner_id: drive.personal_team_owner_id };
+  }
+  return {};
+}
 
 /** Fetch workspace fields for org drive uploads. Returns {} for personal. */
 async function getWorkspaceFieldsForOrgDrive(
@@ -419,6 +427,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     deleteStoredHandle,
   } = useFileSystemAccess();
 
+  const { personalTeamOwnerId } = useSubscription();
+
   const fetchDrives = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) {
       setLinkedDrives([]);
@@ -460,7 +470,43 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           is_creator_raw: data.is_creator_raw ?? false,
         });
       }
-      setLinkedDrives(drives);
+
+      let combined: LinkedDrive[] = drives;
+      if (
+        !isEnterpriseContext &&
+        personalTeamOwnerId &&
+        personalTeamOwnerId !== user.uid
+      ) {
+        const tq = query(
+          collection(db, "linked_drives"),
+          where("userId", "==", personalTeamOwnerId),
+          orderBy("createdAt", "desc")
+        );
+        const teamSnap = await getDocs(tq);
+        const teamDrives: LinkedDrive[] = [];
+        for (const d of teamSnap.docs) {
+          const data = d.data();
+          if (data.deleted_at) continue;
+          if (data.organization_id) continue;
+          let name = data.name as string;
+          if (name === "Uploads") name = "Storage";
+          teamDrives.push({
+            id: d.id,
+            user_id: data.userId,
+            name: `[Team] ${name}`,
+            mount_path: data.mount_path ?? null,
+            permission_handle_id: data.permission_handle_id ?? null,
+            last_synced_at: data.last_synced_at ?? null,
+            created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+            organization_id: null,
+            creator_section: data.creator_section ?? false,
+            is_creator_raw: data.is_creator_raw ?? false,
+            personal_team_owner_id: personalTeamOwnerId,
+          });
+        }
+        combined = [...drives, ...teamDrives];
+      }
+      setLinkedDrives(combined);
 
       // Enterprise users may have joined before we created drives on accept-invite,
       // or org may have been updated with new power-ups (e.g. Full Frame) after they joined.
@@ -531,7 +577,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, org]);
+  }, [user, isEnterpriseContext, org, personalTeamOwnerId]);
 
   useEffect(() => {
     fetchDrives();
@@ -875,6 +921,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 deleted_at: null,
                 organization_id: drive.organization_id ?? null,
                 ...workspaceFields,
+                ...personalTeamFileFields(drive),
               });
               if (idToken) {
                 fetch("/api/files/extract-metadata", {
@@ -1472,6 +1519,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               deleted_at: null,
               organization_id: drive.organization_id ?? null,
               ...workspaceFields,
+              ...personalTeamFileFields(drive),
             });
             options?.onFileComplete?.({
               name: file.name,
@@ -1723,6 +1771,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             organization_id: drive.organization_id ?? null,
             gallery_id: galleryId,
             ...workspaceFields,
+            ...personalTeamFileFields(drive),
           });
           getFirebaseAuth()
             .currentUser?.getIdToken(true)
@@ -1932,6 +1981,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           deleted_at: null,
           organization_id: drive.organization_id ?? null,
           ...workspaceFields,
+          ...personalTeamFileFields(drive),
         });
         if (idToken) {
           fetch("/api/files/extract-metadata", {

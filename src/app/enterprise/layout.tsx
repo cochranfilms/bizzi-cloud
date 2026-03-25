@@ -18,10 +18,10 @@ export default function EnterpriseLayout({
   return (
     <ThemeProvider>
       <EnterpriseProvider>
-        <BackupProvider>
-          <CurrentFolderProvider>
-            <DashboardAuthGuard>
-              <SubscriptionProvider>
+        <SubscriptionProvider>
+          <BackupProvider>
+            <CurrentFolderProvider>
+              <DashboardAuthGuard>
                 <ConfirmProvider>
                   <DashboardAppearanceProvider>
                     <LayoutSettingsProvider>
@@ -31,10 +31,10 @@ export default function EnterpriseLayout({
                     </LayoutSettingsProvider>
                   </DashboardAppearanceProvider>
                 </ConfirmProvider>
-              </SubscriptionProvider>
-            </DashboardAuthGuard>
-          </CurrentFolderProvider>
-        </BackupProvider>
+              </DashboardAuthGuard>
+            </CurrentFolderProvider>
+          </BackupProvider>
+        </SubscriptionProvider>
       </EnterpriseProvider>
     </ThemeProvider>
   );
