@@ -15,6 +15,7 @@ import FolderListRow from "./FolderListRow";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import {
   filterDriveFoldersByPowerUp,
   filterLinkedDrivesByPowerUp,
@@ -194,7 +195,8 @@ export default function FileGrid() {
     refresh: refreshHearted,
   } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
-  const { hasEditor, hasGallerySuite, loading: subscriptionLoading } = useSubscription();
+  const { loading: subscriptionLoading } = useSubscription();
+  const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
   const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath, effectiveDriveIdForFiles } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -865,7 +867,7 @@ export default function FileGrid() {
   })() : (currentDrive ? displayedFiles.length : recentFiles.length);
   const displayTotalCount = useFilteredScoped ? totalCount : totalFileCount;
 
-  const recentsRootReady = !loading && !subscriptionLoading;
+  const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
   const mainGridFadeReady = currentDrive
     ? !driveFilesLoading
     : activeTab === "recents"

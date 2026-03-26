@@ -37,11 +37,12 @@ export async function canAccessBackupFileById(
     const linkedDriveIdEarly = fileData?.linked_drive_id as string | undefined;
     if (linkedDriveIdEarly) {
       const driveSnap = await db.collection("linked_drives").doc(linkedDriveIdEarly).get();
-      const driveOwnerUid = driveSnap.data()?.userId as string | undefined;
-      if (driveOwnerUid) {
+      const driveData = driveSnap.data();
+      const driveTeamOwner = driveData?.personal_team_owner_id as string | undefined;
+      if (driveTeamOwner && driveData?.userId === driveTeamOwner) {
         const seatSnap = await db
           .collection(PERSONAL_TEAM_SEATS_COLLECTION)
-          .doc(`${driveOwnerUid}_${uid}`)
+          .doc(`${driveTeamOwner}_${uid}`)
           .get();
         if (seatSnap.exists && seatSnap.data()?.status === "active") {
           return true;

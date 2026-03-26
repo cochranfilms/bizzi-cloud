@@ -11,6 +11,7 @@ import {
 } from "@/lib/drive-powerup-filter";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useBackup } from "@/context/BackupContext";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
@@ -160,7 +161,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
-  const { planId, hasEditor, hasGallerySuite, loading: subscriptionLoading } = useSubscription();
+  const { planId, loading: subscriptionLoading } = useSubscription();
+  const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
   const {
     linkedDrives,
     storageVersion,
@@ -321,6 +323,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     if (
       loading ||
       subscriptionLoading ||
+      powerUpContextLoading ||
       !getOrCreateGalleryDrive ||
       (!getOrCreateStorageDrive && isPersonalHome && !skipEnsureForTeamMember) ||
       (!getOrCreateCreatorRawDrive && isPersonalHome && !skipEnsureForTeamMember)
@@ -363,6 +366,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     user?.uid,
     loading,
     subscriptionLoading,
+    powerUpContextLoading,
     planId,
     hasEditor,
     hasGallerySuite,
@@ -703,7 +707,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
   const pinnedContentReady =
     !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
-  const homeViewReady = !loading && !subscriptionLoading && pinnedContentReady;
+  const homeViewReady =
+    !loading && !subscriptionLoading && !powerUpContextLoading && pinnedContentReady;
 
   const showDragRect =
     dragState?.isActive &&

@@ -6,7 +6,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useBackup } from "@/context/BackupContext";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useRouter, useSearchParams } from "next/navigation";
 import { filterDriveFoldersByPowerUp } from "@/lib/drive-powerup-filter";
 import { getDisplayLabel, getVisibilityHelperText } from "@/lib/workspace-display-labels";
@@ -50,7 +50,7 @@ export function EnterpriseLocationSelector({
   const { user } = useAuth();
   const { setCurrentDrive, setEffectiveDriveIdForFiles } = useCurrentFolder();
   const { linkedDrives } = useBackup();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const router = useRouter();
   const searchParams = useSearchParams();
 

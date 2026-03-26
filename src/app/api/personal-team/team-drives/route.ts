@@ -6,6 +6,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
+import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
 
 const ACTIVE_SEAT = new Set(["active", "cold_storage"]);
 
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     const data = d.data();
     if (data.deleted_at) continue;
     if (data.organization_id) continue;
+    if (!isTeamContainerDriveDoc(data as Record<string, unknown>, ownerUid)) continue;
     let name = (data.name as string) ?? "Folder";
     if (name === "Uploads") name = "Storage";
     drives.push({

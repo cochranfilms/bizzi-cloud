@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import NotificationBell from "@/components/collaboration/NotificationBell";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
 interface DesktopTopNavbarProps {
   mountPanelOpen?: boolean;
@@ -56,7 +56,7 @@ export default function DesktopTopNavbar({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const { hasGallerySuite, hasEditor } = useSubscription();
+  const { hasGallerySuite, hasEditor } = useEffectivePowerUps();
 
   const filteredItems = navItems.filter((item) => {
     if (item.requiresGallerySuite && !hasGallerySuite) return false;

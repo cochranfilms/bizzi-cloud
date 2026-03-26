@@ -396,6 +396,19 @@ function useTeamRouteOwnerUid(): string | null {
   return m?.[1]?.trim() || null;
 }
 
+/** Owner viewing their own team route: writes must tag drives/files with personal_team_owner_id. */
+function isPersonalTeamOwnerRoute(teamRouteOwnerUid: string | null, uid: string | undefined): boolean {
+  return !!uid && !!teamRouteOwnerUid && teamRouteOwnerUid === uid;
+}
+
+function teamContainerWriteFields(
+  teamRouteOwnerUid: string | null,
+  uid: string | undefined
+): Record<string, unknown> {
+  if (!isPersonalTeamOwnerRoute(teamRouteOwnerUid, uid)) return {};
+  return { personal_team_owner_id: uid as string };
+}
+
 export function BackupProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { org } = useEnterprise();
@@ -479,6 +492,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         if (data.deleted_at) continue;
         const oid = data.organization_id ?? null;
         if (isEnterpriseContext && orgId ? oid !== orgId : !!oid) continue;
+        if (!isEnterpriseContext && !teamRouteOwnerUid && data.personal_team_owner_id) continue;
         let name = data.name as string;
         if (name === "Uploads") {
           await updateDoc(doc(db, "linked_drives", d.id), { name: "Storage" });
@@ -495,6 +509,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           organization_id: data.organization_id ?? null,
           creator_section: data.creator_section ?? false,
           is_creator_raw: data.is_creator_raw ?? false,
+          personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
         });
       }
 
@@ -601,6 +616,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         permission_handle_id: `${handle.name}-${Date.now()}`,
         createdAt: new Date(),
         ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+        ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
       });
 
       const drive: LinkedDrive = {
@@ -612,6 +628,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: null,
         created_at: new Date().toISOString(),
         organization_id: orgId ?? null,
+        personal_team_owner_id: isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid)
+          ? user.uid
+          : null,
       };
 
       await saveHandleToStore(drive.id, drive.id, drive.name, handle);
@@ -619,7 +638,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
       return drive;
     },
-    [user, isEnterpriseContext, org, requestPermission, saveHandleToStore]
+    [user, isEnterpriseContext, org, teamRouteOwnerUid, requestPermission, saveHandleToStore]
   );
 
   const startSync = useCallback(
@@ -1113,12 +1132,16 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       )
     );
     const orgId = isEnterpriseContext && org?.id ? org.id : null;
+    const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
     const storageDrive = existing.docs.find((d) => {
       const data = d.data();
       const name = data.name as string;
       if (name !== "Storage" && name !== "Uploads") return false;
       const oid = data.organization_id ?? null;
-      return orgId ? oid === orgId : !oid;
+      const pto = (data.personal_team_owner_id as string | undefined) ?? null;
+      if (orgId) return oid === orgId;
+      if (teamScoped) return !oid && pto === user.uid;
+      return !oid && !pto;
     });
     if (storageDrive) {
       const d = storageDrive;
@@ -1137,6 +1160,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: data.last_synced_at ?? null,
         created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         organization_id: data.organization_id ?? null,
+        personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
@@ -1145,6 +1169,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       permission_handle_id: `storage-${Date.now()}`,
       createdAt: new Date(),
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+      ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
     const drive: LinkedDrive = {
       id: docRef.id,
@@ -1155,16 +1180,18 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       last_synced_at: null,
       created_at: new Date().toISOString(),
       organization_id: orgId ?? null,
+      personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((ld) => ld.id !== drive.id)]);
     setStorageVersion((v) => v + 1);
     return drive;
-  }, [user, isEnterpriseContext, org, fetchDrives]);
+  }, [user, isEnterpriseContext, org, fetchDrives, teamRouteOwnerUid]);
 
   const getOrCreateCreatorRawDrive = useCallback(async (): Promise<LinkedDrive> => {
     if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
     const db = getFirebaseFirestore();
     const orgId = isEnterpriseContext && org?.id ? org.id : null;
+    const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
     const existing = await getDocs(
       query(
         collection(db, "linked_drives"),
@@ -1176,8 +1203,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const data = d.data();
       if (!data.is_creator_raw) return false;
       const oid = data.organization_id ?? null;
+      const pto = (data.personal_team_owner_id as string | undefined) ?? null;
       if (isEnterpriseContext && orgId) return oid === orgId;
-      return !oid;
+      if (teamScoped) return !oid && pto === user.uid;
+      return !oid && !pto;
     });
     if (rawDrive) {
       const d = rawDrive;
@@ -1193,6 +1222,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         organization_id: data.organization_id ?? null,
         creator_section: data.creator_section ?? true,
         is_creator_raw: data.is_creator_raw ?? true,
+        personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
@@ -1203,6 +1233,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       creator_section: true,
       is_creator_raw: true,
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+      ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
     const drive: LinkedDrive = {
       id: docRef.id,
@@ -1215,16 +1246,18 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       organization_id: orgId ?? null,
       creator_section: true,
       is_creator_raw: true,
+      personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     setStorageVersion((v) => v + 1);
     return drive;
-  }, [user, isEnterpriseContext, org]);
+  }, [user, isEnterpriseContext, org, teamRouteOwnerUid]);
 
   const getOrCreateGalleryDrive = useCallback(async (): Promise<LinkedDrive> => {
     if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
     const db = getFirebaseFirestore();
     const orgId = isEnterpriseContext && org?.id ? org.id : null;
+    const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
     const existing = await getDocs(
       query(
         collection(db, "linked_drives"),
@@ -1236,8 +1269,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const data = d.data();
       if (data.name !== "Gallery Media") return false;
       const oid = data.organization_id ?? null;
+      const pto = (data.personal_team_owner_id as string | undefined) ?? null;
       if (isEnterpriseContext && orgId) return oid === orgId;
-      return !oid;
+      if (teamScoped) return !oid && pto === user.uid;
+      return !oid && !pto;
     });
     if (galleryDrive) {
       const d = galleryDrive;
@@ -1251,6 +1286,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: data.last_synced_at ?? null,
         created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         organization_id: data.organization_id ?? null,
+        personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
@@ -1259,6 +1295,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: new Date(),
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
+      ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
     const drive: LinkedDrive = {
       id: docRef.id,
@@ -1269,11 +1306,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       last_synced_at: null,
       created_at: new Date().toISOString(),
       organization_id: orgId ?? null,
+      personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     setStorageVersion((v) => v + 1);
     return drive;
-  }, [user, isEnterpriseContext, org]);
+  }, [user, isEnterpriseContext, org, teamRouteOwnerUid]);
 
   const createFolder = useCallback(
     async (name: string, options?: { creatorSection?: boolean }): Promise<LinkedDrive> => {
@@ -1281,6 +1319,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const db = getFirebaseFirestore();
       const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const creatorSection = options?.creatorSection ?? false;
+      const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
       const docRef = await addDoc(collection(db, "linked_drives"), {
         userId: user.uid,
         name: name.trim() || "New folder",
@@ -1288,6 +1327,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date(),
         ...(orgId ? { organization_id: orgId } : { organization_id: null }),
         ...(creatorSection ? { creator_section: true } : {}),
+        ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
       });
       const drive: LinkedDrive = {
         id: docRef.id,
@@ -1299,12 +1339,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
         organization_id: orgId ?? null,
         creator_section: creatorSection,
+        personal_team_owner_id: teamScoped ? user.uid : null,
       };
       setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
       setStorageVersion((v) => v + 1);
       return drive;
     },
-    [user, isEnterpriseContext, org]
+    [user, isEnterpriseContext, org, teamRouteOwnerUid]
   );
 
   const creatorRawDriveId = useMemo(() => {

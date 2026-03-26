@@ -14,7 +14,7 @@ import {
   Images,
   Film,
 } from "lucide-react";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
 /** Powerup colors matching pricing cards */
 const CREATOR_COLOR = "#A47BFF"; // Editor purple
@@ -40,7 +40,7 @@ const navItems: Array<{
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { hasGallerySuite, hasEditor } = useSubscription();
+  const { hasGallerySuite, hasEditor } = useEffectivePowerUps();
 
   const filteredItems = navItems.filter((item) => {
     if (item.requiresGallerySuite && !hasGallerySuite) return false;

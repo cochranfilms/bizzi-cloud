@@ -7,6 +7,7 @@ service cloud.firestore {
     match /linked_drives/{driveId} {
       function personalTeamCanReadOwnerDrive() {
         return resource.data.organization_id == null
+          && resource.data.personal_team_owner_id == resource.data.userId
           && resource.data.userId is string
           && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid))
           && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid)).data.status == 'active';
@@ -39,15 +40,9 @@ service cloud.firestore {
     match /backup_files/{fileId} {
       function backupPersonalTeamMemberRead() {
         return resource.data.organization_id == null
-          && (
-            (resource.data.personal_team_owner_id is string
-              && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid))
-              && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active')
-            || (!(resource.data.personal_team_owner_id is string)
-              && resource.data.userId is string
-              && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid))
-              && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid)).data.status == 'active')
-          );
+          && resource.data.personal_team_owner_id is string
+          && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid))
+          && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active';
       }
       allow read: if request.auth != null
         && (resource.data.userId == request.auth.uid

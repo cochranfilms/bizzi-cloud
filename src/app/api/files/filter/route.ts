@@ -17,6 +17,12 @@ import {
 } from "@/lib/workspace-access";
 import { resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
+import {
+  fileBelongsToPersonalTeamContainer,
+  isPersonalScopeDriveDoc,
+  isPersonalScopeFileDoc,
+  isTeamContainerDriveDoc,
+} from "@/lib/backup-scope";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -500,6 +506,7 @@ export async function GET(request: Request) {
     for (const d of teamDrivesSnap.docs) {
       const data = d.data();
       if (data.deleted_at || data.organization_id) continue;
+      if (!isTeamContainerDriveDoc(data as Record<string, unknown>, teamOwnerTarget)) continue;
       driveMap.set(d.id, (data.name as string) ?? "Folder");
       driveIds.add(d.id);
     }
@@ -510,7 +517,7 @@ export async function GET(request: Request) {
       const data = d.data();
       if (!data.deleted_at) {
         const oid = data.organization_id ?? null;
-        if (!oid) {
+        if (!oid && isPersonalScopeDriveDoc(data as Record<string, unknown>)) {
           driveMap.set(d.id, data.name ?? "Folder");
         }
       }
@@ -718,7 +725,14 @@ export async function GET(request: Request) {
       });
       const driveFilterPersonal = (d: { data: () => Record<string, unknown> }) =>
         driveIds.has((d.data().linked_drive_id as string) ?? "");
-      let filteredDocs = allDocs.filter(driveFilterPersonal);
+      let filteredDocs = allDocs.filter(driveFilterPersonal).filter((doc) =>
+        filters.teamOwnerUserId
+          ? fileBelongsToPersonalTeamContainer(
+              doc.data() as Record<string, unknown>,
+              filters.teamOwnerUserId
+            )
+          : isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
+      );
       const batchNeedsPostFilter =
         !!filters.resolution ||
         !!filters.codec ||
@@ -888,6 +902,18 @@ export async function GET(request: Request) {
     driveIds.has(d.data().linked_drive_id as string);
 
   let filteredDocs = snap.docs.filter(driveFilter);
+  if (orgFilter == null) {
+    if (filters.teamOwnerUserId) {
+      const tow = filters.teamOwnerUserId;
+      filteredDocs = filteredDocs.filter((doc) =>
+        fileBelongsToPersonalTeamContainer(doc.data() as Record<string, unknown>, tow)
+      );
+    } else {
+      filteredDocs = filteredDocs.filter((doc) =>
+        isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
+      );
+    }
+  }
   if (needsPostFilter) {
     filteredDocs = filteredDocs.filter((doc) => {
       const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;

@@ -12,6 +12,7 @@ import {
   getRetentionDays,
   type ColdStorageSourceType,
 } from "@/lib/cold-storage-retention";
+import { isPersonalScopeDriveDoc, isPersonalScopeFileDoc } from "@/lib/backup-scope";
 
 const BATCH_SIZE = 100;
 const IN_QUERY_LIMIT = 30;
@@ -105,98 +106,113 @@ export async function migrateConsumerToColdStorage(
     .where("userId", "==", userId)
     .where("organization_id", "==", null)
     .get();
+  const personalDriveDocs = drivesSnap.docs.filter((d) =>
+    isPersonalScopeDriveDoc(d.data() as Record<string, unknown>)
+  );
   const driveIdToName = new Map<string, string>();
-  for (const d of drivesSnap.docs) {
+  for (const d of personalDriveDocs) {
     driveIdToName.set(d.id, (d.data().name as string) ?? "Drive");
   }
 
   let migratedCount = 0;
-  let filesRemaining = true;
 
-  while (filesRemaining) {
-    const filesSnap = await db
-      .collection("backup_files")
-      .where("userId", "==", userId)
-      .where("organization_id", "==", null)
-      .limit(BATCH_SIZE)
-      .get();
+  /** Only personal-scope drives; avoids migrating team-container files keyed under the same userId. */
+  for (const driveDoc of personalDriveDocs) {
+    const personalDriveId = driveDoc.id;
+    let drivePassEmpty = false;
+    while (!drivePassEmpty) {
+      const filesSnap = await db
+        .collection("backup_files")
+        .where("linked_drive_id", "==", personalDriveId)
+        .where("organization_id", "==", null)
+        .limit(BATCH_SIZE)
+        .get();
 
-    if (filesSnap.empty) {
-      filesRemaining = false;
-      break;
-    }
-
-    const objectKeys = filesSnap.docs
-      .map((d) => (d.data().object_key as string) ?? "")
-      .filter(Boolean);
-    const existingColdKeys = await getExistingColdStorageObjectKeys(
-      db,
-      "consumer",
-      { userId, objectKeys }
-    );
-
-    const batch = db.batch();
-    for (const fileDoc of filesSnap.docs) {
-      const data = fileDoc.data();
-      const objectKey = (data.object_key as string) ?? "";
-      if (!objectKey) {
-        batch.delete(fileDoc.ref);
-        continue;
+      if (filesSnap.empty) {
+        drivePassEmpty = true;
+        break;
       }
-      if (existingColdKeys.has(objectKey)) {
+
+      const personalRows = filesSnap.docs.filter((d) =>
+        isPersonalScopeFileDoc(d.data() as Record<string, unknown>)
+      );
+      if (personalRows.length === 0) {
+        drivePassEmpty = true;
+        break;
+      }
+
+      const objectKeys = personalRows
+        .map((d) => (d.data().object_key as string) ?? "")
+        .filter(Boolean);
+      const existingColdKeys = await getExistingColdStorageObjectKeys(
+        db,
+        "consumer",
+        { userId, objectKeys }
+      );
+
+      const batch = db.batch();
+      for (const fileDoc of personalRows) {
+        const data = fileDoc.data();
+        const objectKey = (data.object_key as string) ?? "";
+        if (!objectKey) {
+          batch.delete(fileDoc.ref);
+          continue;
+        }
+        if (existingColdKeys.has(objectKey)) {
+          batch.delete(fileDoc.ref);
+          migratedCount++;
+          continue;
+        }
+
+        const driveId = data.linked_drive_id as string;
+        const driveName = driveIdToName.get(driveId) ?? "Drive";
+
+        const planTierVal = planTier ?? "solo";
+        const retentionSnapshot = {
+          plan_tier: planTierVal,
+          retention_days: retentionDays,
+          computed_at: now,
+        };
+        const coldRef = db.collection("cold_storage_files").doc();
+        batch.set(coldRef, {
+          owner_type: "consumer",
+          user_id: userId,
+          org_id: null,
+          storage_scope_type: "personal_account",
+          workspace_id: null,
+          visibility_scope: "personal",
+          owner_user_id: userId,
+          team_id: null,
+          project_id: null,
+          gallery_id: null,
+          cold_storage_folder: coldStorageFolder,
+          object_key: objectKey,
+          relative_path: (data.relative_path as string) ?? "",
+          drive_name: driveName,
+          size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : 0,
+          linked_drive_id: driveId,
+          cold_storage_started_at: now,
+          cold_storage_expires_at: Timestamp.fromDate(expiresAt),
+          retention_days: retentionDays,
+          retention_snapshot: retentionSnapshot,
+          entered_cold_storage_at: now,
+          cold_storage_status: "active",
+          plan_tier: planTierVal,
+          source_type: sourceType,
+          content_type: data.content_type ?? null,
+          modified_at: data.modified_at ?? null,
+          created_at: data.created_at ?? new Date().toISOString(),
+          is_starred: data.is_starred ?? false,
+        });
         batch.delete(fileDoc.ref);
         migratedCount++;
-        continue;
       }
-
-      const driveId = data.linked_drive_id as string;
-      const driveName = driveIdToName.get(driveId) ?? "Drive";
-
-      const planTierVal = planTier ?? "solo";
-      const retentionSnapshot = {
-        plan_tier: planTierVal,
-        retention_days: retentionDays,
-        computed_at: now,
-      };
-      const coldRef = db.collection("cold_storage_files").doc();
-      batch.set(coldRef, {
-        owner_type: "consumer",
-        user_id: userId,
-        org_id: null,
-        storage_scope_type: "personal_account",
-        workspace_id: null,
-        visibility_scope: "personal",
-        owner_user_id: userId,
-        team_id: null,
-        project_id: null,
-        gallery_id: null,
-        cold_storage_folder: coldStorageFolder,
-        object_key: objectKey,
-        relative_path: (data.relative_path as string) ?? "",
-        drive_name: driveName,
-        size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : 0,
-        linked_drive_id: driveId,
-        cold_storage_started_at: now,
-        cold_storage_expires_at: Timestamp.fromDate(expiresAt),
-        retention_days: retentionDays,
-        retention_snapshot: retentionSnapshot,
-        entered_cold_storage_at: now,
-        cold_storage_status: "active",
-        plan_tier: planTierVal,
-        source_type: sourceType,
-        content_type: data.content_type ?? null,
-        modified_at: data.modified_at ?? null,
-        created_at: data.created_at ?? new Date().toISOString(),
-        is_starred: data.is_starred ?? false,
-      });
-      batch.delete(fileDoc.ref);
-      migratedCount++;
+      await batch.commit();
     }
-    await batch.commit();
   }
 
-  // Delete backup_snapshots and linked_drives for consumer
-  const driveIds = drivesSnap.docs.map((d) => d.id);
+  // Delete backup_snapshots and linked_drives for consumer (personal scope only)
+  const driveIds = personalDriveDocs.map((d) => d.id);
   for (const driveId of driveIds) {
     const snapSnap = await db
       .collection("backup_snapshots")
@@ -206,7 +222,7 @@ export async function migrateConsumerToColdStorage(
       await s.ref.delete();
     }
   }
-  for (const d of drivesSnap.docs) {
+  for (const d of personalDriveDocs) {
     await d.ref.delete();
   }
 

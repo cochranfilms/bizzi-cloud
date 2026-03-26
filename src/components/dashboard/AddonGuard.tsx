@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
 interface AddonGuardProps {
   children: React.ReactNode;
@@ -16,7 +16,7 @@ export default function AddonGuard({
   featureName,
   upgradeMessage = "Upgrade your plan to add this power-up.",
 }: AddonGuardProps) {
-  const { hasGallerySuite, hasEditor, loading } = useSubscription();
+  const { hasGallerySuite, hasEditor, loading } = useEffectivePowerUps();
   const hasAccess =
     required === "gallery" ? hasGallerySuite : hasEditor;
 

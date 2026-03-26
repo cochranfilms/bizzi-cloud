@@ -24,7 +24,7 @@ import UserMenu from "@/components/dashboard/UserMenu";
 import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
 import { useEnterprise } from "@/context/EnterpriseContext";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
 /** Powerup colors matching pricing cards */
 const CREATOR_COLOR = "#A47BFF"; // Editor purple
@@ -55,7 +55,7 @@ const navItems: Array<{
 export default function EnterpriseNavbar() {
   const pathname = usePathname();
   const { org, role } = useEnterprise();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
 
   const filteredNavItems = navItems.filter((item) => {
     if (item.requiresEditor && !hasEditor) return false;

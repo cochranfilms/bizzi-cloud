@@ -10,6 +10,7 @@ import {
   getAccessibleWorkspaceIds,
   userHasActiveOrganizationSeat,
 } from "@/lib/workspace-access";
+import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import { NextResponse } from "next/server";
 
 const WORKSPACE_IN_LIMIT = 30;
@@ -94,7 +95,8 @@ export async function GET(request: Request) {
           !data ||
           data.userId !== teamOwnerId ||
           data.organization_id ||
-          data.deleted_at
+          data.deleted_at ||
+          !isTeamContainerDriveDoc(data as Record<string, unknown>, teamOwnerId)
         ) {
           counts[driveId] = 0;
           return;

@@ -20,7 +20,7 @@ import {
 import UserMenu from "./UserMenu";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
 /** Powerup colors matching pricing cards */
 const CREATOR_COLOR = "#A47BFF"; // Editor purple
@@ -48,7 +48,7 @@ export default function TopNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const { hasGallerySuite, hasEditor } = useSubscription();
+  const { hasGallerySuite, hasEditor } = useEffectivePowerUps();
 
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;

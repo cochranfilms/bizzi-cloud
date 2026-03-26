@@ -15,6 +15,14 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
         { "fieldPath": "organization_id", "order": "ASCENDING" },
         { "fieldPath": "deleted_at", "order": "ASCENDING" },
         { "fieldPath": "modified_at", "order": "DESCENDING" }

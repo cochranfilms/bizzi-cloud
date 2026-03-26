@@ -12,7 +12,7 @@ import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
@@ -90,7 +90,7 @@ export default function FolderCard({
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
     hasGallerySuite,

@@ -3,7 +3,7 @@
 import { useState, createContext, useContext } from "react";
 import { PanelRight, HardDrive } from "lucide-react";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
@@ -29,7 +29,7 @@ export default function DesktopShell({
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mountPanelOpen, setMountPanelOpen] = useState(true);
-  const { hasEditor } = useSubscription();
+  const { hasEditor } = useEffectivePowerUps();
   const { cssVariables } = useDashboardAppearance();
 
   return (

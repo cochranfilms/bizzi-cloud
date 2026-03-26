@@ -16,7 +16,7 @@ import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
@@ -109,7 +109,7 @@ export default function FileListRow({
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const { renameFile, moveFile } = useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
     hasGallerySuite,

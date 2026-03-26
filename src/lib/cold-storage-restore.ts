@@ -492,6 +492,7 @@ async function restorePersonalTeamColdStorage(
         last_synced_at: null,
         createdAt: now,
         organization_id: null,
+        personal_team_owner_id: teamOwnerUserId,
         ...(isRaw ? { creator_section: true, is_creator_raw: true } : {}),
       });
       driveMap.set(f.drive_name, ref.id);

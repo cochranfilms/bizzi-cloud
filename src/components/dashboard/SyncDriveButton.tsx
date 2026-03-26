@@ -10,7 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useConfirm } from "@/hooks/useConfirm";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 
@@ -39,7 +39,7 @@ export default function SyncDriveButton() {
     unlinkDrive,
   } = useBackup();
   const { confirm } = useConfirm();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
     hasGallerySuite,

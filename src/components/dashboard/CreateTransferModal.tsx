@@ -7,7 +7,7 @@ import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterDriveFoldersByPowerUp } from "@/lib/drive-powerup-filter";
 import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter } from "next/navigation";
@@ -50,7 +50,7 @@ export default function CreateTransferModal({
     loadingAllFiles,
     fetchAllFilesForTransfer,
   } = useCloudFiles();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleDriveFolders = filterDriveFoldersByPowerUp(driveFolders, {
     hasEditor,
     hasGallerySuite,

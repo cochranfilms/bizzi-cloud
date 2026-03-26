@@ -2,7 +2,7 @@
 
 import { FolderOpen, Film, Images } from "lucide-react";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useRouter, useSearchParams } from "next/navigation";
 import { filterDriveFoldersByPowerUp } from "@/lib/drive-powerup-filter";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
@@ -18,7 +18,7 @@ function isSystemDrive(d: { name: string; isCreatorRaw?: boolean }) {
 
 export function EnterpriseDrivePicker() {
   const { setCurrentDrive } = useCurrentFolder();
-  const { hasEditor, hasGallerySuite } = useSubscription();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const router = useRouter();
   const searchParams = useSearchParams();
 
