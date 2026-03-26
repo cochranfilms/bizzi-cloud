@@ -5,6 +5,8 @@ import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 
 export const PERSONAL_TEAM_SEATS_COLLECTION = "personal_team_seats";
 export const PERSONAL_TEAM_INVITES_COLLECTION = "personal_team_invites";
+/** Team-scoped settings for synthetic personal team workspaces (keyed by team owner uid). */
+export const PERSONAL_TEAM_SETTINGS_COLLECTION = "personal_team_settings";
 
 export function personalTeamSeatDocId(teamOwnerUid: string, memberUid: string): string {
   return `${teamOwnerUid}_${memberUid}`;

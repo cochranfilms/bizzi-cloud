@@ -839,10 +839,14 @@ export default function ChangePlanPage() {
                 Add extra seats for your <strong className="text-neutral-800 dark:text-neutral-200">personal team</strong>{" "}
                 (not an Organization). After checkout, invite members from{" "}
                 <Link
-                  href="/dashboard/settings?tab=team"
+                  href={
+                    user
+                      ? `/team/${user.uid}/settings#team-management`
+                      : "/dashboard/settings"
+                  }
                   className="font-medium text-bizzi-blue hover:underline"
                 >
-                  Settings → Team Management
+                  Team settings — manage seats and invites
                 </Link>
                 .
               </p>

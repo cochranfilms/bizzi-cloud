@@ -38,7 +38,7 @@ import {
   TEAM_SEAT_MONTHLY_USD,
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
 } from "@/lib/team-seat-pricing";
-import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
+import { MemberTeamCard } from "@/components/dashboard/TeamManagementSection";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
@@ -944,10 +944,14 @@ function SubscriptionSection() {
                     Add or change team seats
                   </Link>
                   <Link
-                    href="/dashboard/settings?tab=team"
+                    href={
+                      user
+                        ? `/team/${user.uid}/settings#team-management`
+                        : "/dashboard/settings"
+                    }
                     className="inline-flex items-center rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-800 hover:bg-white dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"
                   >
-                    Team Management
+                    Team settings
                   </Link>
                 </div>
               </div>
@@ -1113,9 +1117,6 @@ function SettingsContent() {
     if (tab === "privacy") {
       document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth" });
     }
-    if (tab === "team") {
-      document.getElementById("team-management")?.scrollIntoView({ behavior: "smooth" });
-    }
   }, [searchParams]);
 
   return (
@@ -1126,7 +1127,7 @@ function SettingsContent() {
           <StorageSection />
           <PrivacySection />
           <SubscriptionSection />
-          <TeamManagementSection />
+          <MemberTeamCard />
       </div>
     </DashboardRouteFade>
   );

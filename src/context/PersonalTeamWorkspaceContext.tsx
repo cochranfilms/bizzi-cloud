@@ -13,7 +13,12 @@ import { doc, getDoc } from "firebase/firestore";
 import { getFirebaseFirestore } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
-import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
+import {
+  PERSONAL_TEAM_SETTINGS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team-constants";
+import { getThemeVariables } from "@/lib/enterprise-themes";
+import type { EnterpriseThemeId } from "@/types/enterprise";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 
 const SESSION_TEAM_KEY = "bizzi-active-personal-team";
@@ -51,6 +56,11 @@ export function PersonalTeamWorkspaceProvider({
   const resolveTeamLabel = useCallback(async (ownerUid: string): Promise<string> => {
     try {
       const db = getFirebaseFirestore();
+      const settingsSnap = await getDoc(
+        doc(db, PERSONAL_TEAM_SETTINGS_COLLECTION, ownerUid)
+      );
+      const customName = (settingsSnap.data()?.team_name as string | undefined)?.trim();
+      if (customName) return customName;
       const snap = await getDoc(doc(db, "profiles", ownerUid));
       const d = snap.data();
       const name =
@@ -74,6 +84,30 @@ export function PersonalTeamWorkspaceProvider({
       }
     }
   }, [teamOwnerUid]);
+
+  useEffect(() => {
+    if (!allowed || !teamOwnerUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = getFirebaseFirestore();
+        const snap = await getDoc(doc(db, PERSONAL_TEAM_SETTINGS_COLLECTION, teamOwnerUid));
+        const themeId = ((snap.data()?.theme as string | undefined) ?? "bizzi") as EnterpriseThemeId;
+        if (cancelled) return;
+        const vars = getThemeVariables(themeId);
+        for (const [k, v] of Object.entries(vars)) {
+          document.documentElement.style.setProperty(k, v);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      document.documentElement.style.removeProperty("--enterprise-primary");
+      document.documentElement.style.removeProperty("--enterprise-accent");
+    };
+  }, [allowed, teamOwnerUid]);
 
   useEffect(() => {
     if (authLoading) return;

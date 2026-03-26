@@ -1,6 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    /** Seat may use owner-linked team storage when active or cold_storage (matches Admin/API checks). */
+    function personalTeamSeatAllowsOwnerStorage(teamOwnerUid) {
+      return request.auth != null
+        && teamOwnerUid is string
+        && exists(/databases/$(database)/documents/personal_team_seats/$(teamOwnerUid + '_' + request.auth.uid))
+        && get(/databases/$(database)/documents/personal_team_seats/$(teamOwnerUid + '_' + request.auth.uid)).data.status in ['active', 'cold_storage'];
+    }
+    match /personal_team_settings/{ownerId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == ownerId
+          || personalTeamSeatAllowsOwnerStorage(ownerId));
+      /** Writes go through /api/personal-team/settings (Admin SDK) only. */
+      allow write: if false;
+    }
     match /profiles/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
@@ -9,8 +23,7 @@ service cloud.firestore {
         return resource.data.organization_id == null
           && resource.data.personal_team_owner_id == resource.data.userId
           && resource.data.userId is string
-          && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid))
-          && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.userId + '_' + request.auth.uid)).data.status == 'active';
+          && personalTeamSeatAllowsOwnerStorage(resource.data.userId);
       }
       allow read: if request.auth != null
         && (request.auth.uid == resource.data.userId
@@ -41,8 +54,7 @@ service cloud.firestore {
       function backupPersonalTeamMemberRead() {
         return resource.data.organization_id == null
           && resource.data.personal_team_owner_id is string
-          && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid))
-          && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active';
+          && personalTeamSeatAllowsOwnerStorage(resource.data.personal_team_owner_id);
       }
       /** Seat member can read any file on a team-container drive (uploader may be owner; file row may omit personal_team_owner_id). */
       function backupFileOnTeamDriveSeatRead() {
@@ -52,8 +64,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id
               == get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId
           && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id is string
-          && exists(/databases/$(database)/documents/personal_team_seats/$(get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id + '_' + request.auth.uid))
-          && get(/databases/$(database)/documents/personal_team_seats/$(get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active';
+          && personalTeamSeatAllowsOwnerStorage(get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id);
       }
       allow read: if request.auth != null
         && (resource.data.userId == request.auth.uid
@@ -68,8 +79,7 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.userId
         && (request.resource.data.personal_team_owner_id == null
           || (request.resource.data.personal_team_owner_id is string
-            && exists(/databases/$(database)/documents/personal_team_seats/$(request.resource.data.personal_team_owner_id + '_' + request.auth.uid))
-            && get(/databases/$(database)/documents/personal_team_seats/$(request.resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active'));
+            && personalTeamSeatAllowsOwnerStorage(request.resource.data.personal_team_owner_id)));
       allow update, delete: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))

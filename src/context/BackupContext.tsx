@@ -412,6 +412,44 @@ function teamContainerWriteFields(
   return { personal_team_owner_id: uid as string };
 }
 
+/** On `/team/[ownerUid]` as a seat member (not the owner). */
+function isPersonalTeamSeatOnRoute(
+  teamRouteOwnerUid: string | null,
+  uid: string | undefined
+): boolean {
+  return Boolean(teamRouteOwnerUid && uid && teamRouteOwnerUid !== uid);
+}
+
+async function createPersonalTeamDriveViaApi(
+  getIdToken: () => Promise<string>,
+  teamOwnerUserId: string,
+  body: { name: string; creator_section?: boolean; is_creator_raw?: boolean }
+): Promise<LinkedDrive> {
+  const token = await getIdToken();
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const res = await fetch(`${origin}/api/personal-team/create-drive`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      team_owner_user_id: teamOwnerUserId,
+      name: body.name,
+      creator_section: body.creator_section,
+      is_creator_raw: body.is_creator_raw,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(
+      (errBody.error as string) ?? `Could not create team folder (${res.status})`
+    );
+  }
+  const payload = (await res.json()) as { drive: LinkedDrive };
+  return payload.drive;
+}
+
 export function BackupProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { org } = useEnterprise();
@@ -1336,6 +1374,28 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     const db = getFirebaseFirestore();
     const orgId = isEnterpriseContext && org?.id ? org.id : null;
     const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
+    const teamSeatOnTeamRoute =
+      !isEnterpriseContext &&
+      !orgId &&
+      isPersonalTeamSeatOnRoute(teamRouteOwnerUid, user.uid);
+
+    if (teamSeatOnTeamRoute && teamRouteOwnerUid) {
+      const fromState = linkedDrives.find(
+        (d) =>
+          d.name === "Gallery Media" &&
+          d.personal_team_owner_id === teamRouteOwnerUid
+      );
+      if (fromState) return fromState;
+      const drive = await createPersonalTeamDriveViaApi(
+        () => user.getIdToken(),
+        teamRouteOwnerUid,
+        { name: "Gallery Media" }
+      );
+      setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
+      setStorageVersion((v) => v + 1);
+      return drive;
+    }
+
     const existing = await getDocs(
       query(
         collection(db, "linked_drives"),
@@ -1389,18 +1449,36 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     setStorageVersion((v) => v + 1);
     return drive;
-  }, [user, isEnterpriseContext, org, teamRouteOwnerUid]);
+  }, [user, isEnterpriseContext, org, teamRouteOwnerUid, linkedDrives]);
 
   const createFolder = useCallback(
     async (name: string, options?: { creatorSection?: boolean }): Promise<LinkedDrive> => {
       if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
-      const db = getFirebaseFirestore();
       const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const creatorSection = options?.creatorSection ?? false;
+      const displayName = name.trim() || "New folder";
+
+      if (
+        !isEnterpriseContext &&
+        !orgId &&
+        teamRouteOwnerUid &&
+        isPersonalTeamSeatOnRoute(teamRouteOwnerUid, user.uid)
+      ) {
+        const drive = await createPersonalTeamDriveViaApi(
+          () => user.getIdToken(),
+          teamRouteOwnerUid,
+          { name: displayName, creator_section: creatorSection }
+        );
+        setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
+        setStorageVersion((v) => v + 1);
+        return drive;
+      }
+
+      const db = getFirebaseFirestore();
       const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
       const docRef = await addDoc(collection(db, "linked_drives"), {
         userId: user.uid,
-        name: name.trim() || "New folder",
+        name: displayName,
         permission_handle_id: `manual-${Date.now()}`,
         createdAt: new Date(),
         ...(orgId ? { organization_id: orgId } : { organization_id: null }),
@@ -1410,7 +1488,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const drive: LinkedDrive = {
         id: docRef.id,
         user_id: user.uid,
-        name: name.trim() || "New folder",
+        name: displayName,
         mount_path: null,
         permission_handle_id: `manual-${Date.now()}`,
         last_synced_at: null,

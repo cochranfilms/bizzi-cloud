@@ -50,7 +50,8 @@ function statusLabel(status: string): string {
   }
 }
 
-function MemberTeamCard() {
+/** Shown on personal settings when the user is seated on someone else’s team (leave team). */
+export function MemberTeamCard() {
   const { user } = useAuth();
   const { personalTeamOwnerId, personalTeamSeatAccess, refetch } = useSubscription();
   const [leaving, setLeaving] = useState(false);

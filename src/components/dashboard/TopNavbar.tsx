@@ -96,7 +96,7 @@ export default function TopNavbar() {
           const Icon = item.icon;
           const href =
             teamNavBase && item.href === "/dashboard/settings"
-              ? "/dashboard/settings"
+              ? `${teamNavBase}/settings`
               : item.href.replace(/^\/dashboard/, navBase);
           const isActive = pathname === href || pathname?.startsWith(`${href}/`);
           const hasPowerupColor = isActive && item.activeBgColor;
@@ -164,7 +164,7 @@ export default function TopNavbar() {
             const Icon = item.icon;
             const href =
               teamNavBase && item.href === "/dashboard/settings"
-                ? "/dashboard/settings"
+                ? `${teamNavBase}/settings`
                 : item.href.replace(/^\/dashboard/, navBase);
             const isActive = pathname === href || pathname?.startsWith(`${href}/`);
             const hasPowerupColor = isActive && item.activeBgColor;
