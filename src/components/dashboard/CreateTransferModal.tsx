@@ -42,6 +42,7 @@ export default function CreateTransferModal({
   const router = useRouter();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
   const isDesktop = pathname?.startsWith("/desktop") ?? false;
+  const teamOwnerFromPath = /^\/team\/([^/]+)/.exec(pathname ?? "")?.[1]?.trim() ?? null;
   const { confirm } = useConfirm();
   const {
     allFilesForTransfer,
@@ -294,8 +295,15 @@ export default function CreateTransferModal({
 
   const handleDone = useCallback(() => {
     performClose();
-    router.push(isDesktop ? "/desktop/app/transfers" : isEnterprise ? "/enterprise/transfers" : "/dashboard/transfers");
-  }, [performClose, router, isEnterprise, isDesktop]);
+    const transfersHome = teamOwnerFromPath
+      ? `/team/${teamOwnerFromPath}/transfers`
+      : isDesktop
+        ? "/desktop/app/transfers"
+        : isEnterprise
+          ? "/enterprise/transfers"
+          : "/dashboard/transfers";
+    router.push(transfersHome);
+  }, [performClose, router, isEnterprise, isDesktop, teamOwnerFromPath]);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;
@@ -317,6 +325,7 @@ export default function CreateTransferModal({
       password: passwordEnabled && password.trim() ? password.trim() : null,
       expiresAt: expiresAt ? expiresAt : null,
       organizationId: isEnterprise && org?.id ? org.id : null,
+      ...(teamOwnerFromPath ? { personal_team_owner_id: teamOwnerFromPath } : {}),
     };
 
     const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -376,6 +385,8 @@ export default function CreateTransferModal({
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",
       organizationId: (data as { organizationId?: string | null }).organizationId ?? null,
+      personalTeamOwnerId:
+        (data as { personalTeamOwnerId?: string | null }).personalTeamOwnerId ?? null,
     };
 
     addTransferFromApi(transfer);
@@ -392,6 +403,7 @@ export default function CreateTransferModal({
     expiresAt,
     isEnterprise,
     org?.id,
+    teamOwnerFromPath,
     addTransferFromApi,
     onCreated,
   ]);

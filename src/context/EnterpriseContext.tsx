@@ -21,7 +21,7 @@ import { getFirebaseFirestore } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import type { Organization, OrganizationRole } from "@/types/enterprise";
 
-interface EnterpriseContextValue {
+export interface EnterpriseContextValue {
   organization: Organization | null;
   org: Organization | null;
   role: OrganizationRole | null;
@@ -192,4 +192,9 @@ export function useEnterprise() {
   const ctx = useContext(EnterpriseContext);
   if (!ctx) throw new Error("useEnterprise must be used within EnterpriseProvider");
   return ctx;
+}
+
+/** Safe outside EnterpriseProvider (returns null). */
+export function useEnterpriseOptional(): EnterpriseContextValue | null {
+  return useContext(EnterpriseContext);
 }

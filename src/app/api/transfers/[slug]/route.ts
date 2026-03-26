@@ -2,6 +2,7 @@ import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-a
 import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 import { hashSecret } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
+import { userCanManageTransfer } from "@/lib/transfer-team-access";
 
 export async function DELETE(
   request: Request,
@@ -35,10 +36,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
   }
 
-  const data = doc.data();
-  const transferUserId = data?.user_id ?? data?.userId ?? null;
-
-  if (transferUserId !== uid) {
+  const data = doc.data()!;
+  if (!(await userCanManageTransfer(uid, data))) {
     return NextResponse.json({ error: "You can only delete transfers you created" }, { status: 403 });
   }
 
@@ -146,10 +145,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
   }
 
-  const data = doc.data();
-  const transferUserId = data?.user_id ?? data?.userId ?? null;
-
-  if (transferUserId !== uid) {
+  const data = doc.data()!;
+  if (!(await userCanManageTransfer(uid, data))) {
     return NextResponse.json({ error: "You can only edit transfers you created" }, { status: 403 });
   }
 
@@ -207,5 +204,7 @@ export async function GET(
     expiresAt: expiresAt ?? null,
     createdAt: data.created_at,
     status,
+    organizationId: data.organization_id ?? null,
+    personalTeamOwnerId: data.personal_team_owner_id ?? null,
   });
 }

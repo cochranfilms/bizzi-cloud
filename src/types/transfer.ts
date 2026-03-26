@@ -32,11 +32,15 @@ export interface Transfer {
   slug: string;
   /** Organization ID when transfer belongs to an enterprise org. Null for personal. */
   organizationId?: string | null;
+  /** Personal-team container when transfer was created in a team workspace. */
+  personalTeamOwnerId?: string | null;
 }
 
 export interface CreateTransferInput {
   name: string;
   clientName: string;
+  /** Set when creating from /team/{ownerId}/… workspace. */
+  personalTeamOwnerId?: string | null;
   clientEmail?: string;
   files: Omit<TransferFile, "views" | "downloads" | "id">[];
   /** Default "downloadable" - allows download. "view" = preview only. */

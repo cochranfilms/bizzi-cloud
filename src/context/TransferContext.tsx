@@ -7,8 +7,14 @@ import {
   useEffect,
   useMemo,
   useState,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
+import { usePathname } from "next/navigation";
 import type { CreateTransferInput, Transfer, TransferFile } from "@/types/transfer";
+import { useAuth } from "@/context/AuthContext";
+import { useEnterpriseOptional } from "@/context/EnterpriseContext";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 
 function generateSlug(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -18,98 +24,138 @@ function generateId(): string {
   return `tf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const STORAGE_KEY = "bizzi-transfers";
-
-function loadTransfers(): Transfer[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.map((t: Transfer) => ({
-          ...t,
-          permission: t.permission ?? "downloadable",
-        }))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveTransfers(transfers: Transfer[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(transfers));
-}
-
 interface TransferContextValue {
   transfers: Transfer[];
   createTransfer: (input: CreateTransferInput) => Transfer;
-  /** Add a transfer from API response (e.g. after POST). Syncs to localStorage. */
+  /** Add a transfer from API response (e.g. after POST or public GET /t/...). */
   addTransferFromApi: (data: Transfer) => void;
   getTransferBySlug: (slug: string) => Transfer | undefined;
   recordView: (slug: string, fileId: string) => void;
   recordDownload: (slug: string, fileId: string) => void;
   cancelTransfer: (id: string) => void;
-  /** Delete a transfer (only if user owns it). Calls API and removes from local state. */
   deleteTransfer: (slug: string) => Promise<void>;
-  /** Update permission (view | downloadable) for a transfer. Calls API and updates local state. */
   updateTransferPermission: (slug: string, permission: "view" | "downloadable") => Promise<void>;
-  /** Update transfer settings: permission, expiresAt, password. Partial updates supported. */
-  updateTransfer: (slug: string, updates: {
-    permission?: "view" | "downloadable";
-    expiresAt?: string | null;
-    password?: string | null;
-  }) => Promise<void>;
+  updateTransfer: (
+    slug: string,
+    updates: {
+      permission?: "view" | "downloadable";
+      expiresAt?: string | null;
+      password?: string | null;
+    }
+  ) => Promise<void>;
 }
 
 const TransferContext = createContext<TransferContextValue | null>(null);
 
-export function TransferProvider({ children }: { children: React.ReactNode }) {
-  // Start with [] on both server and client to avoid hydration mismatch
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
+function TransferListSync({
+  setTransfers,
+}: {
+  setTransfers: Dispatch<SetStateAction<Transfer[]>>;
+}) {
+  const { user } = useAuth();
+  const pathname = usePathname() ?? "";
+  const enterpriseCtx = useEnterpriseOptional();
+
+  const isEnterprisePath = pathname.startsWith("/enterprise");
+  const orgId = enterpriseCtx?.organization?.id ?? null;
+  const orgLoading = enterpriseCtx?.loading ?? false;
+  const teamOwnerUserId = /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null;
+
   useEffect(() => {
-    setTransfers(loadTransfers());
+    if (!user) {
+      setTransfers([]);
+      return;
+    }
+
+    const inApp =
+      pathname.startsWith("/enterprise") ||
+      pathname.startsWith("/desktop/app") ||
+      pathname.startsWith("/team/") ||
+      pathname.startsWith("/dashboard");
+
+    if (!inApp) return;
+
+    if (isEnterprisePath && orgLoading) {
+      setTransfers([]);
+      return;
+    }
+
+    if (isEnterprisePath && !orgId) {
+      setTransfers([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken();
+        if (!token || cancelled) return;
+
+        const params = new URLSearchParams();
+        if (isEnterprisePath && orgId) {
+          params.set("context", "enterprise");
+          params.set("organization_id", orgId);
+        } else if (teamOwnerUserId) {
+          params.set("context", "personal_team");
+          params.set("team_owner_user_id", teamOwnerUserId);
+        } else {
+          params.set("context", "personal");
+        }
+
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(`${base}/api/transfers?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { transfers?: Transfer[] };
+        if (!cancelled) setTransfers(Array.isArray(data.transfers) ? data.transfers : []);
+      } catch {
+        if (!cancelled) setTransfers([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, pathname, isEnterprisePath, orgId, orgLoading, teamOwnerUserId]);
+
+  return null;
+}
+
+export function TransferProvider({ children }: { children: React.ReactNode }) {
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+
+  const createTransfer = useCallback((input: CreateTransferInput): Transfer => {
+    const now = new Date().toISOString();
+    const slug = generateSlug();
+    const files: TransferFile[] = input.files.map((f) => ({
+      ...f,
+      id: generateId(),
+      views: 0,
+      downloads: 0,
+    }));
+    const transfer: Transfer = {
+      id: generateId(),
+      name: input.name,
+      clientName: input.clientName,
+      clientEmail: input.clientEmail,
+      files,
+      permission: input.permission ?? "downloadable",
+      hasPassword: !!(input.password && input.password.trim()),
+      expiresAt: input.expiresAt,
+      createdAt: now,
+      status: "active",
+      slug,
+      organizationId: null,
+      personalTeamOwnerId: input.personalTeamOwnerId ?? null,
+    };
+    setTransfers((prev) => [...prev, transfer]);
+    return transfer;
   }, []);
 
-  const createTransfer = useCallback(
-    (input: CreateTransferInput): Transfer => {
-      const now = new Date().toISOString();
-      const slug = generateSlug();
-      const files: TransferFile[] = input.files.map((f) => ({
-        ...f,
-        id: generateId(),
-        views: 0,
-        downloads: 0,
-      }));
-      const transfer: Transfer = {
-        id: generateId(),
-        name: input.name,
-        clientName: input.clientName,
-        clientEmail: input.clientEmail,
-        files,
-        permission: input.permission ?? "downloadable",
-        hasPassword: !!(input.password && input.password.trim()),
-        expiresAt: input.expiresAt,
-        createdAt: now,
-        status: "active",
-        slug,
-      };
-      setTransfers((prev) => {
-        const next = [...prev, transfer];
-        saveTransfers(next);
-        return next;
-      });
-      return transfer;
-    },
-    []
-  );
-
   const addTransferFromApi = useCallback((data: Transfer) => {
-    setTransfers((prev) => {
-      const next = prev.some((x) => x.slug === data.slug) ? prev : [data, ...prev];
-      saveTransfers(next);
-      return next;
-    });
+    setTransfers((prev) => (prev.some((x) => x.slug === data.slug) ? prev : [data, ...prev]));
   }, []);
 
   const getTransferBySlug = useCallback(
@@ -123,8 +169,8 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   );
 
   const recordView = useCallback((slug: string, fileId: string) => {
-    setTransfers((prev) => {
-      const next = prev.map((t) => {
+    setTransfers((prev) =>
+      prev.map((t) => {
         if (t.slug !== slug) return t;
         return {
           ...t,
@@ -132,15 +178,13 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             f.id === fileId ? { ...f, views: f.views + 1 } : f
           ),
         };
-      });
-      saveTransfers(next);
-      return next;
-    });
+      })
+    );
   }, []);
 
   const recordDownload = useCallback((slug: string, fileId: string) => {
-    setTransfers((prev) => {
-      const next = prev.map((t) => {
+    setTransfers((prev) =>
+      prev.map((t) => {
         if (t.slug !== slug) return t;
         return {
           ...t,
@@ -148,20 +192,14 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             f.id === fileId ? { ...f, downloads: f.downloads + 1 } : f
           ),
         };
-      });
-      saveTransfers(next);
-      return next;
-    });
+      })
+    );
   }, []);
 
   const cancelTransfer = useCallback((id: string) => {
-    setTransfers((prev) => {
-      const next = prev.map((t) =>
-        t.id === id ? { ...t, status: "cancelled" as const } : t
-      );
-      saveTransfers(next);
-      return next;
-    });
+    setTransfers((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: "cancelled" as const } : t))
+    );
   }, []);
 
   const deleteTransfer = useCallback(async (slug: string) => {
@@ -180,11 +218,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       throw new Error(data?.error ?? "Failed to delete transfer");
     }
 
-    setTransfers((prev) => {
-      const next = prev.filter((t) => t.slug !== slug && t.id !== slug);
-      saveTransfers(next);
-      return next;
-    });
+    setTransfers((prev) => prev.filter((t) => t.slug !== slug && t.id !== slug));
   }, []);
 
   const updateTransferPermission = useCallback(
@@ -193,15 +227,12 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
       const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!idToken) throw new Error("Not authenticated");
 
-      // Optimistic update: apply immediately so card and modal stay in sync
       let prevSnapshot: Transfer[] | null = null;
       setTransfers((prev) => {
         prevSnapshot = prev;
-        const next = prev.map((t) =>
+        return prev.map((t) =>
           t.slug === slug || t.id === slug ? { ...t, permission } : t
         );
-        saveTransfers(next);
-        return next;
       });
 
       try {
@@ -220,10 +251,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           throw new Error(data?.error ?? "Failed to update permission");
         }
       } catch (err) {
-        if (prevSnapshot) {
-          setTransfers(prevSnapshot);
-          saveTransfers(prevSnapshot);
-        }
+        if (prevSnapshot) setTransfers(prevSnapshot);
         throw err;
       }
     },
@@ -250,11 +278,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
 
       if (Object.keys(body).length === 0) return;
 
-      // Optimistic update: apply immediately so card and modal stay in sync
       let prevSnapshot: Transfer[] | null = null;
       setTransfers((prev) => {
         prevSnapshot = prev;
-        const next = prev.map((t) => {
+        return prev.map((t) => {
           if (t.slug !== slug && t.id !== slug) return t;
           return {
             ...t,
@@ -265,8 +292,6 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
             }),
           };
         });
-        saveTransfers(next);
-        return next;
       });
 
       try {
@@ -285,10 +310,7 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
           throw new Error(data?.error ?? "Failed to update transfer");
         }
       } catch (err) {
-        if (prevSnapshot) {
-          setTransfers(prevSnapshot);
-          saveTransfers(prevSnapshot);
-        }
+        if (prevSnapshot) setTransfers(prevSnapshot);
         throw err;
       }
     },
@@ -323,7 +345,10 @@ export function TransferProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <TransferContext.Provider value={value}>{children}</TransferContext.Provider>
+    <TransferContext.Provider value={value}>
+      <TransferListSync setTransfers={setTransfers} />
+      {children}
+    </TransferContext.Provider>
   );
 }
 

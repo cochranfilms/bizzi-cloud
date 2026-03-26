@@ -182,6 +182,8 @@ export default function TransferView({ slug }: TransferViewProps) {
       expiresAt: string | null;
       createdAt: string;
       status: string;
+      organizationId?: string | null;
+      personalTeamOwnerId?: string | null;
     };
     const t: Transfer = {
       id: data.slug,
@@ -202,6 +204,8 @@ export default function TransferView({ slug }: TransferViewProps) {
       expiresAt: data.expiresAt,
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",
+      organizationId: data.organizationId ?? null,
+      personalTeamOwnerId: data.personalTeamOwnerId ?? null,
     };
     addTransferFromApi(t);
   }, [slug, addTransferFromApi]);
