@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
@@ -15,10 +15,20 @@ import {
   STORAGE_ADDONS,
   STORAGE_ADDON_LABELS,
   getStorageAddonTb,
+  planAllowsPersonalTeamSeats,
   type StorageAddonId,
 } from "@/lib/pricing-data";
+import {
+  PERSONAL_TEAM_SEAT_ACCESS_LABELS,
+  TEAM_SEAT_MONTHLY_USD,
+  MAX_EXTRA_PERSONAL_TEAM_SEATS,
+  maxSelectableForTier,
+  sumExtraTeamSeats,
+  teamSeatMonthlySubtotal,
+  type PersonalTeamSeatAccess,
+} from "@/lib/team-seat-pricing";
 import { PLAN_STORAGE_BYTES } from "@/lib/plan-constants";
-import { ArrowLeft, AlertTriangle, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Check, Loader2, Minus, Plus } from "lucide-react";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 function formatCents(cents: number): string {
@@ -29,6 +39,13 @@ function formatCents(cents: number): string {
 }
 
 const PLAN_ORDER = ["solo", "indie", "video", "production"];
+
+const ZERO_TEAM_SEAT_COUNTS = {
+  none: 0,
+  gallery: 0,
+  editor: 0,
+  fullframe: 0,
+} as const;
 
 function getPlanOrder(planId: string): number {
   if (planId === "free") return -1; // Free is lowest tier; paid plans are Upgrades
@@ -54,7 +71,15 @@ function formatBytes(bytes: number): string {
 export default function ChangePlanPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { planId: currentPlanId, addonIds: currentAddonIds, storageAddonId: currentStorageAddonId, hasPortalAccess, loading: subLoading, refetch } = useSubscription();
+  const {
+    planId: currentPlanId,
+    addonIds: currentAddonIds,
+    storageAddonId: currentStorageAddonId,
+    teamSeatCounts: subscriptionTeamSeats,
+    hasPortalAccess,
+    loading: subLoading,
+    refetch,
+  } = useSubscription();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedStorageAddonId, setSelectedStorageAddonId] = useState<string | null>(null);
@@ -77,6 +102,12 @@ export default function ChangePlanPage() {
     totalBytesUsed: number;
     requiredAddonIds: string[];
   } | null>(null);
+  const [draftTeamSeats, setDraftTeamSeats] = useState({
+    none: 0,
+    gallery: 0,
+    editor: 0,
+    fullframe: 0,
+  });
 
   // Fetch restore requirements when free user may be restoring from account delete
   useEffect(() => {
@@ -108,8 +139,21 @@ export default function ChangePlanPage() {
       setSelectedPlanId(currentPlanId);
       setSelectedAddonIds(currentAddonIds ?? []);
       setSelectedStorageAddonId(currentStorageAddonId ?? null);
+      setDraftTeamSeats({
+        none: subscriptionTeamSeats.none,
+        gallery: subscriptionTeamSeats.gallery,
+        editor: subscriptionTeamSeats.editor,
+        fullframe: subscriptionTeamSeats.fullframe,
+      });
     }
-  }, [subLoading, currentPlanId, currentAddonIds, currentStorageAddonId, restoreRequirements]);
+  }, [
+    subLoading,
+    currentPlanId,
+    currentAddonIds,
+    currentStorageAddonId,
+    subscriptionTeamSeats,
+    restoreRequirements,
+  ]);
 
   // Restore flow: auto-select required addons only after user has selected a plan (storage)
   useEffect(() => {
@@ -133,12 +177,30 @@ export default function ChangePlanPage() {
     }
   }, [selectedPlanId, selectedStorageAddonId]);
 
+  const effectiveTeamSeats = useMemo(() => {
+    if (
+      !selectedPlanId ||
+      selectedPlanId === "solo" ||
+      !planAllowsPersonalTeamSeats(selectedPlanId)
+    ) {
+      return ZERO_TEAM_SEAT_COUNTS;
+    }
+    return draftTeamSeats;
+  }, [selectedPlanId, draftTeamSeats]);
+
+  const teamSeatsChanged =
+    effectiveTeamSeats.none !== subscriptionTeamSeats.none ||
+    effectiveTeamSeats.gallery !== subscriptionTeamSeats.gallery ||
+    effectiveTeamSeats.editor !== subscriptionTeamSeats.editor ||
+    effectiveTeamSeats.fullframe !== subscriptionTeamSeats.fullframe;
+
   const hasChanges =
     selectedPlanId !== currentPlanId ||
     selectedAddonIds.length !== (currentAddonIds?.length ?? 0) ||
     selectedAddonIds.some((id) => !(currentAddonIds ?? []).includes(id)) ||
     (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id)) ||
-    selectedStorageAddonId !== (currentStorageAddonId ?? null);
+    selectedStorageAddonId !== (currentStorageAddonId ?? null) ||
+    teamSeatsChanged;
 
   function getEstimatedChange(): { cents: number; isCredit: boolean } | null {
     if (!hasChanges || !selectedPlanId || !currentPlanId || currentPlanId === "free") return null;
@@ -190,6 +252,7 @@ export default function ChangePlanPage() {
             addonIds: selectedAddonIds,
             billing,
             storageAddonId: selectedStorageAddonId,
+            teamSeatCounts: effectiveTeamSeats,
           }),
           signal: ac.signal,
         });
@@ -205,7 +268,16 @@ export default function ChangePlanPage() {
       }
     })();
     return () => ac.abort();
-  }, [hasChanges, selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, currentPlanId]);
+  }, [
+    hasChanges,
+    selectedPlanId,
+    selectedAddonIds,
+    selectedStorageAddonId,
+    billing,
+    user,
+    currentPlanId,
+    effectiveTeamSeats,
+  ]);
 
   const displayAmount = previewAmount ?? getEstimatedChange();
 
@@ -221,6 +293,17 @@ export default function ChangePlanPage() {
     });
   }, []);
 
+  const adjustTeamSeatTier = useCallback((tier: PersonalTeamSeatAccess, delta: number) => {
+    setDraftTeamSeats((prev) => {
+      let nextVal = prev[tier] + delta;
+      if (nextVal < 0) nextVal = 0;
+      const tentative = { ...prev, [tier]: nextVal };
+      const maxForTier = maxSelectableForTier(tentative, tier);
+      if (tentative[tier] > maxForTier) tentative[tier] = maxForTier;
+      return tentative;
+    });
+  }, []);
+
   const handleApply = useCallback(async () => {
     if (!selectedPlanId || !user) return;
     setApplyLoading(true);
@@ -232,12 +315,18 @@ export default function ChangePlanPage() {
         return;
       }
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      const body = JSON.stringify({
+      const teamSeatCountsPayload =
+        selectedPlanId === "solo" || !planAllowsPersonalTeamSeats(selectedPlanId)
+          ? { none: 0, gallery: 0, editor: 0, fullframe: 0 }
+          : draftTeamSeats;
+      const payload = {
         planId: selectedPlanId,
         addonIds: selectedAddonIds,
         billing,
         storageAddonId: selectedStorageAddonId,
-      });
+        teamSeatCounts: teamSeatCountsPayload,
+      };
+      const body = JSON.stringify(payload);
       const headers = {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -248,12 +337,7 @@ export default function ChangePlanPage() {
         const checkoutRes = await fetch(`${base}/api/stripe/checkout`, {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            planId: selectedPlanId,
-            addonIds: selectedAddonIds,
-            billing,
-            storageAddonId: selectedStorageAddonId,
-          }),
+          body: JSON.stringify(payload),
         });
         const checkoutData = (await checkoutRes.json()) as { url?: string; error?: string };
         if (checkoutRes.ok && checkoutData.url) {
@@ -309,7 +393,17 @@ export default function ChangePlanPage() {
     } finally {
       setApplyLoading(false);
     }
-  }, [currentPlanId, selectedPlanId, selectedAddonIds, selectedStorageAddonId, billing, user, refetch, displayAmount]);
+  }, [
+    currentPlanId,
+    selectedPlanId,
+    selectedAddonIds,
+    selectedStorageAddonId,
+    billing,
+    user,
+    refetch,
+    displayAmount,
+    draftTeamSeats,
+  ]);
 
   const handleCancelSubscription = useCallback(async () => {
     if (!user) return;
@@ -726,6 +820,86 @@ export default function ChangePlanPage() {
               })}
             </div>
           </div>
+
+          {selectedPlanId && planAllowsPersonalTeamSeats(selectedPlanId) && (
+            <div
+              className={`relative mb-8 ${isRestoringFromDelete && !storageSelected ? "opacity-60" : ""}`}
+            >
+              {isRestoringFromDelete && !storageSelected && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-neutral-100/80 dark:bg-neutral-800/80">
+                  <p className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 shadow-sm dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200">
+                    Select a plan above to edit team seats.
+                  </p>
+                </div>
+              )}
+              <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+                Personal team seats
+              </h3>
+              <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+                Add extra seats for your <strong className="text-neutral-800 dark:text-neutral-200">personal team</strong>{" "}
+                (not an Organization). After checkout, invite members from{" "}
+                <Link
+                  href="/dashboard/settings?tab=team"
+                  className="font-medium text-bizzi-blue hover:underline"
+                >
+                  Settings → Team Management
+                </Link>
+                .
+              </p>
+              <div className="space-y-3 rounded-xl border border-cyan-200/80 bg-cyan-50/50 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/25">
+                {(["none", "gallery", "editor", "fullframe"] as const).map((tier) => {
+                  const count = draftTeamSeats[tier];
+                  const max = maxSelectableForTier(draftTeamSeats, tier);
+                  const atMax = count >= max;
+                  const powerUpLocked = isRestoringFromDelete && !storageSelected;
+                  return (
+                    <div
+                      key={tier}
+                      className="flex flex-col gap-3 border-b border-cyan-200/60 pb-3 last:border-0 last:pb-0 dark:border-cyan-900/35 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                          {PERSONAL_TEAM_SEAT_ACCESS_LABELS[tier]}
+                        </p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          +${TEAM_SEAT_MONTHLY_USD[tier]}/mo per extra seat
+                          {billing === "annual" ? " (annual plan uses discounted seat pricing in Stripe)" : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${tier} seats`}
+                          onClick={() => adjustTeamSeatTier(tier, -1)}
+                          disabled={count <= 0 || powerUpLocked}
+                          className="rounded-lg border border-neutral-200 bg-white p-2 hover:bg-neutral-50 disabled:opacity-40 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
+                          {count}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Increase ${tier} seats`}
+                          onClick={() => adjustTeamSeatTier(tier, 1)}
+                          disabled={atMax || powerUpLocked}
+                          className="rounded-lg border border-neutral-200 bg-white p-2 hover:bg-neutral-50 disabled:opacity-40 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  Extra seats: {sumExtraTeamSeats(draftTeamSeats)} / {MAX_EXTRA_PERSONAL_TEAM_SEATS} max (your owner
+                  seat is included in the base plan). Approx. +${teamSeatMonthlySubtotal(draftTeamSeats)}/mo for these
+                  seats before proration.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="mb-8 flex flex-wrap items-center gap-4">
             <div>

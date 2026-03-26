@@ -27,7 +27,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
-  let body: { planId?: string; addonIds?: string[]; billing?: string; storageAddonId?: string | null };
+  let body: {
+    planId?: string;
+    addonIds?: string[];
+    billing?: string;
+    storageAddonId?: string | null;
+    teamSeatCounts?: { none?: number; gallery?: number; editor?: number; fullframe?: number };
+  };
   try {
     body = await request.json();
   } catch {
@@ -51,5 +57,6 @@ export async function POST(request: Request) {
     addonIds,
     billing,
     storageAddonId,
+    teamSeatCounts: body.teamSeatCounts ?? undefined,
   });
 }

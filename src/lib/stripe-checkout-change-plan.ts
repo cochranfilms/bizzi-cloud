@@ -38,12 +38,14 @@ export type CreateChangePlanCheckoutInput = {
   billing: BillingCycle;
   origin: string;
   storageAddonId?: string | null;
+  /** When omitted, uses profile.team_seat_counts */
+  teamSeatCounts?: Partial<TeamSeatCounts> | null;
 };
 
 export async function createChangePlanCheckoutSession(
   input: CreateChangePlanCheckoutInput
 ): Promise<NextResponse> {
-  const { uid, planId, addonIds, billing, origin, storageAddonId } = input;
+  const { uid, planId, addonIds, billing, origin, storageAddonId, teamSeatCounts: teamSeatBody } = input;
 
   if (!planId || !VALID_PLAN_IDS.includes(planId)) {
     return NextResponse.json(
@@ -117,7 +119,9 @@ export async function createChangePlanCheckoutSession(
   let targetTeamCounts: TeamSeatCounts = emptyTeamSeatCounts();
   if (["indie", "video", "production"].includes(planId)) {
     const fromProfile = profile?.team_seat_counts as TeamSeatCounts | undefined;
-    targetTeamCounts = clampTeamSeatCounts(coerceTeamSeatCounts(fromProfile ?? {}));
+    targetTeamCounts = clampTeamSeatCounts(
+      coerceTeamSeatCounts(teamSeatBody ?? fromProfile ?? {})
+    );
     const tierOrder: PersonalTeamSeatAccess[] = ["none", "gallery", "editor", "fullframe"];
     for (const tier of tierOrder) {
       const qty = targetTeamCounts[tier];
