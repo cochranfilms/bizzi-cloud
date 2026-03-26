@@ -1,20 +1,15 @@
 /**
  * Personal-account teams (not Organizations). Seat docs in `personal_team_seats`.
+ * Server-only: uses Admin SDK. For constants/helpers usable on the client, import
+ * `@/lib/personal-team-constants` instead.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { coerceTeamSeatCounts } from "@/lib/team-seat-pricing";
-
-export const PERSONAL_TEAM_SEATS_COLLECTION = "personal_team_seats";
-export const PERSONAL_TEAM_INVITES_COLLECTION = "personal_team_invites";
-
-export function personalTeamSeatDocId(teamOwnerUid: string, memberUid: string): string {
-  return `${teamOwnerUid}_${memberUid}`;
-}
-
-export type PersonalTeamSeatStatus = "invited" | "active" | "removed" | "cold_storage";
-
-export type PersonalTeamInviteStatus = "pending" | "accepted" | "cancelled" | "expired";
+import {
+  PERSONAL_TEAM_INVITES_COLLECTION,
+  PERSONAL_TEAM_SEATS_COLLECTION,
+} from "./personal-team-constants";
 
 export async function countAssignedSeatsForTier(
   teamOwnerUid: string,
@@ -85,10 +80,13 @@ export async function validateTeamSeatCapacity(
   return null;
 }
 
-export function seatAccessHasGallery(level: PersonalTeamSeatAccess): boolean {
-  return level === "gallery" || level === "fullframe";
-}
-
-export function seatAccessHasEditor(level: PersonalTeamSeatAccess): boolean {
-  return level === "editor" || level === "fullframe";
-}
+// Re-export for server code paths that imported these from `@/lib/personal-team`.
+export {
+  PERSONAL_TEAM_INVITES_COLLECTION,
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+  seatAccessHasEditor,
+  seatAccessHasGallery,
+  type PersonalTeamInviteStatus,
+  type PersonalTeamSeatStatus,
+} from "./personal-team-constants";

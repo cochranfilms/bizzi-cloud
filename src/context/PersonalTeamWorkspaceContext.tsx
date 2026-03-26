@@ -13,7 +13,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { getFirebaseFirestore } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
-import { personalTeamSeatDocId } from "@/lib/personal-team";
+import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 
 const SESSION_TEAM_KEY = "bizzi-active-personal-team";
