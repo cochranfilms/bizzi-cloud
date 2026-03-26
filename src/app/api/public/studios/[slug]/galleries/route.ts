@@ -39,7 +39,12 @@ export async function GET(
     .orderBy("created_at", "desc")
     .get();
 
-  const galleryIds = galleriesSnap.docs.map((d) => d.id);
+  const publicPersonalDocs = galleriesSnap.docs.filter((d) => {
+    const pto = d.data().personal_team_owner_id;
+    return !(typeof pto === "string" && pto.trim() !== "");
+  });
+
+  const galleryIds = publicPersonalDocs.map((d) => d.id);
   let coverMap: Record<string, { object_key: string; name: string }> = {};
 
   if (galleryIds.length > 0) {
@@ -63,7 +68,7 @@ export async function GET(
         });
       }
     }
-    for (const d of galleriesSnap.docs) {
+    for (const d of publicPersonalDocs) {
       const data = d.data();
       const coverId = data.cover_asset_id ?? null;
       const assets = byGallery[d.id] ?? [];
@@ -75,7 +80,7 @@ export async function GET(
     }
   }
 
-  const galleries = galleriesSnap.docs.map((d) => {
+  const galleries = publicPersonalDocs.map((d) => {
     const data = d.data();
     const cover = coverMap[d.id] ?? null;
     return {

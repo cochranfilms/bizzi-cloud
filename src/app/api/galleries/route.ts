@@ -1,3 +1,4 @@
+import type { DocumentData } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
 import { slugify, ensureUniqueSlug } from "@/lib/gallery-slug";
@@ -17,6 +18,16 @@ import {
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 import { userHasActiveOrganizationSeat } from "@/lib/workspace-access";
+
+function isNonOrgGalleryOid(oid: unknown): boolean {
+  return oid === null || oid === undefined || oid === "";
+}
+
+function galleryDocIsPersonalConsumer(data: DocumentData): boolean {
+  if (!isNonOrgGalleryOid(data.organization_id)) return false;
+  const pto = data.personal_team_owner_id;
+  return !(typeof pto === "string" && pto.trim() !== "");
+}
 
 function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -74,16 +85,13 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }
-    const allSnap = await db
+    const teamSnap = await db
       .collection("galleries")
-      .where("photographer_id", "==", teamOwnerUserId)
+      .where("personal_team_owner_id", "==", teamOwnerUserId)
       .orderBy("created_at", "desc")
       .get();
     snap = {
-      docs: allSnap.docs.filter((d) => {
-        const oid = d.data().organization_id;
-        return oid === null || oid === undefined || oid === "";
-      }),
+      docs: teamSnap.docs.filter((d) => isNonOrgGalleryOid(d.data().organization_id)),
     };
   } else {
     const allSnap = await db
@@ -92,10 +100,7 @@ export async function GET(request: Request) {
       .orderBy("created_at", "desc")
       .get();
     snap = {
-      docs: allSnap.docs.filter((d) => {
-        const oid = d.data().organization_id;
-        return oid === null || oid === undefined || oid === "";
-      }),
+      docs: allSnap.docs.filter((d) => galleryDocIsPersonalConsumer(d.data())),
     };
   }
 
@@ -173,9 +178,12 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
   const { uid } = auth;
 
-  const body = (await request.json().catch(() => ({}))) as CreateGalleryInput & { organization_id?: string | null };
+  const body = (await request.json().catch(() => ({}))) as CreateGalleryInput & {
+    organization_id?: string | null;
+  };
   const {
     organization_id: bodyOrgId,
+    personal_team_owner_id: rawPersonalTeamOwnerId,
     gallery_type: rawGalleryType,
     title,
     description,
@@ -238,6 +246,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized to create gallery for this organization" }, { status: 403 });
     }
   }
+
+  let personalTeamOwnerId: string | null = null;
+  if (rawPersonalTeamOwnerId != null && typeof rawPersonalTeamOwnerId === "string") {
+    const pto = rawPersonalTeamOwnerId.trim();
+    if (pto) {
+      if (organizationId) {
+        return NextResponse.json(
+          { error: "Team-scoped galleries cannot use an organization" },
+          { status: 400 }
+        );
+      }
+      personalTeamOwnerId = pto;
+      if (uid !== pto) {
+        const seatSnap = await db.collection("personal_team_seats").doc(`${pto}_${uid}`).get();
+        const st = seatSnap.data()?.status as string | undefined;
+        if (!seatSnap.exists || (st !== "active" && st !== "cold_storage")) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
+    }
+  }
+
   const baseSlug = slugify(title.trim());
   const slug = await ensureUniqueSlug(db, uid, baseSlug);
 
@@ -250,6 +280,7 @@ export async function POST(request: Request) {
   const now = new Date();
   const baseGalleryData = {
     ...(organizationId ? { organization_id: organizationId } : { organization_id: null }),
+    personal_team_owner_id: personalTeamOwnerId,
     gallery_type: galleryType,
     title: title.trim(),
     slug,

@@ -5,6 +5,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -86,8 +87,11 @@ export async function POST(
   }
 
   const g = gallerySnap.data()!;
-  if (g.photographer_id !== uid) {
-    return NextResponse.json({ error: "Only the gallery creator can create the favorites folder" }, { status: 403 });
+  if (!(await userCanManageGalleryAsPhotographer(uid, g))) {
+    return NextResponse.json(
+      { error: "Only the gallery creator can create the favorites folder" },
+      { status: 403 }
+    );
   }
 
   // Get or create Gallery Media drive

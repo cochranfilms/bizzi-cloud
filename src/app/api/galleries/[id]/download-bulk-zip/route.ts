@@ -13,6 +13,7 @@ import {
   checkAndIncrementDownloadCountBulk,
 } from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 const MAX_ITEMS = 50;
 
@@ -119,7 +120,7 @@ export async function POST(
   if (authHeader?.startsWith("Bearer ")) {
     try {
       const decoded = await verifyIdToken(authHeader.slice(7).trim());
-      if (decoded.uid === g.photographer_id) isOwner = true;
+      isOwner = await userCanManageGalleryAsPhotographer(decoded.uid, g);
     } catch {
       /* not owner */
     }

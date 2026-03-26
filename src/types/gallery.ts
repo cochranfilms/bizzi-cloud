@@ -301,6 +301,8 @@ export type ProofingStatus =
 export interface CreateGalleryInput {
   /** Required – photo or video */
   gallery_type: GalleryType;
+  /** When set, gallery belongs to this personal-team workspace (non-enterprise). */
+  personal_team_owner_id?: string | null;
   title: string;
   cover_asset_id?: string | null;
   share_image_asset_id?: string | null;

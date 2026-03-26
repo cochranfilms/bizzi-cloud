@@ -116,6 +116,9 @@ export function useGalleries(options?: { basePath?: string }) {
       const body = {
         ...input,
         organization_id: isEnterprise && org?.id ? org.id : null,
+        ...(isPersonalTeam && teamOwnerFromBase
+          ? { personal_team_owner_id: teamOwnerFromBase }
+          : {}),
       };
       const res = await fetch("/api/galleries", {
         method: "POST",
@@ -130,7 +133,7 @@ export function useGalleries(options?: { basePath?: string }) {
       await fetchGalleries();
       return data;
     },
-    [user, fetchGalleries, isEnterprise, org?.id]
+    [user, fetchGalleries, isEnterprise, org?.id, isPersonalTeam, teamOwnerFromBase]
   );
 
   const deleteGallery = useCallback(

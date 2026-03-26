@@ -10,6 +10,7 @@ import { validateLutFileForUpload } from "@/lib/creative-lut/parse-lut";
 import { MAX_LUTS_PER_SCOPE } from "@/types/creative-lut";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import { randomUUID } from "crypto";
 
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -45,7 +46,7 @@ async function requireGalleryOwner(
   }
 
   const galleryData = gallerySnap.data()!;
-  if (galleryData.photographer_id !== uid) {
+  if (!(await userCanManageGalleryAsPhotographer(uid, galleryData))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

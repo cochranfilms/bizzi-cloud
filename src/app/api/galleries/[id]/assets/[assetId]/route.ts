@@ -7,6 +7,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { deleteGalleryAssetAndStorage } from "@/lib/delete-gallery-asset";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
   createNotification,
   getActorDisplayName,
@@ -44,7 +45,7 @@ export async function PATCH(
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
-  if (gallerySnap.data()!.photographer_id !== uid) {
+  if (!(await userCanManageGalleryAsPhotographer(uid, gallerySnap.data()!))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

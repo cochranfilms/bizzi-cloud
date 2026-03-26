@@ -6,6 +6,7 @@
  */
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
@@ -49,7 +50,7 @@ export async function POST(
   }
 
   const galleryData = gallerySnap.data()!;
-  if (galleryData.photographer_id !== uid) {
+  if (!(await userCanManageGalleryAsPhotographer(uid, galleryData))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

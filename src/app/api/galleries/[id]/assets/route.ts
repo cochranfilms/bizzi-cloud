@@ -10,6 +10,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import type { GalleryAssetOrigin } from "@/types/gallery";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 function getMediaType(name: string): "image" | "video" {
   return GALLERY_VIDEO_EXT.test(name) ? "video" : GALLERY_IMAGE_EXT.test(name) ? "image" : "image";
@@ -50,11 +51,12 @@ export async function POST(
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
-  if (gallerySnap.data()!.photographer_id !== uid) {
+  const galleryRow = gallerySnap.data()!;
+  if (!(await userCanManageGalleryAsPhotographer(uid, galleryRow))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const galleryType = (gallerySnap.data()!.gallery_type === "video" ? "video" : "photo") as
+  const galleryType = (galleryRow.gallery_type === "video" ? "video" : "photo") as
     | "photo"
     | "video";
 

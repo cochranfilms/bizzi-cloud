@@ -9,6 +9,7 @@ import {
   normalizeGalleryMediaMode,
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -41,15 +42,17 @@ export async function GET(
   if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const data = snap.data()!;
-  if (data.photographer_id !== uid) {
+  if (!(await userCanManageGalleryAsPhotographer(uid, data))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
   let owner_handle: string | null = null;
-  if (data.photographer_id === uid) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    owner_handle = (profileSnap.data()?.public_slug as string) ?? null;
-  }
+  const slugUid =
+    typeof data.photographer_id === "string" && data.photographer_id
+      ? data.photographer_id
+      : uid;
+  const profileSnap = await db.collection("profiles").doc(slugUid).get();
+  owner_handle = (profileSnap.data()?.public_slug as string) ?? null;
 
   const version = typeof data.version === "number" ? data.version : 1;
   const media_mode = normalizeGalleryMediaMode({
@@ -96,7 +99,7 @@ export async function PATCH(
     const snap = await tx.get(ref);
     if (!snap.exists) return { status: 404 as const };
     const data = snap.data()!;
-    if (data.photographer_id !== uid) return { status: 403 as const };
+    if (!(await userCanManageGalleryAsPhotographer(uid, data))) return { status: 403 as const };
     const currentVersion = typeof data.version === "number" ? data.version : 1;
     if (currentVersion !== requestedVersion) {
       return { status: 409 as const };
@@ -186,7 +189,9 @@ export async function PATCH(
 
   if (body.title && body.title !== data.title) {
     const baseSlug = slugify(body.title.trim());
-    updates.slug = await ensureUniqueSlugInTransaction(tx, db, uid, baseSlug, id);
+    const slugPhotographerId =
+      typeof data.photographer_id === "string" && data.photographer_id ? data.photographer_id : uid;
+    updates.slug = await ensureUniqueSlugInTransaction(tx, db, slugPhotographerId, baseSlug, id);
   }
 
   if (Object.keys(updates).length === 0) {
@@ -236,7 +241,8 @@ export async function DELETE(
   const snap = await ref.get();
   if (!snap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
-  if (snap.data()!.photographer_id !== uid) {
+  const galleryData = snap.data()!;
+  if (!(await userCanManageGalleryAsPhotographer(uid, galleryData))) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

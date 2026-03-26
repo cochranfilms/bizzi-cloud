@@ -6,6 +6,7 @@ import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebas
 import { MAX_LUTS_PER_SCOPE } from "@/types/creative-lut";
 import type { CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import { randomUUID } from "crypto";
 
 const STORAGE_PREFIX = (galleryId: string) => `galleries/${galleryId}/lut`;
@@ -26,7 +27,7 @@ async function requireGalleryOwner(
     const gallerySnap = await db.collection("galleries").doc(galleryId).get();
     if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
     const galleryData = gallerySnap.data()!;
-    if (galleryData.photographer_id !== uid) {
+    if (!(await userCanManageGalleryAsPhotographer(uid, galleryData))) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
     return { uid };

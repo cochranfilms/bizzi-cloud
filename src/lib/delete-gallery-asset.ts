@@ -15,6 +15,7 @@ import {
 } from "@/lib/b2";
 import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
 import { deleteMuxAsset } from "@/lib/mux";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 const CHUNK = 400;
 
@@ -52,7 +53,7 @@ export async function deleteGalleryAssetAndStorage(input: {
     return { ok: false, error: "Gallery not found", status: 404 };
   }
   const gallery = gallerySnap.data()!;
-  if (gallery.photographer_id !== ownerUid) {
+  if (!(await userCanManageGalleryAsPhotographer(ownerUid, gallery))) {
     return { ok: false, error: "Access denied", status: 403 };
   }
 

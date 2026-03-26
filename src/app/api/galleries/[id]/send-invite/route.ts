@@ -11,6 +11,7 @@ import {
 } from "@/lib/emailjs";
 import { createGalleryInviteNotifications } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
+import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -55,7 +56,7 @@ export async function POST(
     return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const data = snap.data()!;
-  if (data.photographer_id !== uid)
+  if (!(await userCanManageGalleryAsPhotographer(uid, data)))
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
 
   const invitedEmails = (data.invited_emails ?? []) as string[];

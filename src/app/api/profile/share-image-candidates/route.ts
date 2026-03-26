@@ -33,7 +33,12 @@ export async function GET(request: Request) {
     .limit(50)
     .get();
 
-  const galleryIds = galleriesSnap.docs.map((d) => d.id);
+  const personalDocs = galleriesSnap.docs.filter((d) => {
+    const pto = d.data().personal_team_owner_id;
+    return !(typeof pto === "string" && pto.trim() !== "");
+  });
+
+  const galleryIds = personalDocs.map((d) => d.id);
   if (galleryIds.length === 0) {
     return NextResponse.json({ assets: [] });
   }
@@ -56,7 +61,7 @@ export async function GET(request: Request) {
       .get();
 
     const galleryTitles: Record<string, string> = {};
-    for (const d of galleriesSnap.docs) {
+    for (const d of personalDocs) {
       galleryTitles[d.id] = d.data().title ?? "Gallery";
     }
 
