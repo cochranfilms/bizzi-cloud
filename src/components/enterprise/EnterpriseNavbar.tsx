@@ -17,8 +17,6 @@ import {
   Search,
   Film,
   Images,
-  Shield,
-  LayoutGrid,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
 import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
@@ -36,7 +34,6 @@ const navItems: Array<{
   icon: typeof Home;
   requiresEditor?: boolean;
   requiresGallerySuite?: boolean;
-  adminOnly?: boolean;
   activeBgColor?: string;
 }> = [
   { href: "/enterprise", label: "Home", icon: Home },
@@ -48,19 +45,16 @@ const navItems: Array<{
   { href: "/enterprise/trash", label: "Deleted files", icon: Trash2 },
   { href: "/enterprise/seats", label: "Seats", icon: Users },
   { href: "/enterprise/settings", label: "Settings", icon: Settings },
-  { href: "/enterprise/admin", label: "Admin", icon: Shield, adminOnly: true },
-  { href: "/enterprise/admin/workspaces", label: "Workspaces", icon: LayoutGrid, adminOnly: true },
 ];
 
 export default function EnterpriseNavbar() {
   const pathname = usePathname();
-  const { org, role } = useEnterprise();
+  const { org } = useEnterprise();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
 
   const filteredNavItems = navItems.filter((item) => {
     if (item.requiresEditor && !hasEditor) return false;
     if (item.requiresGallerySuite && !hasGallerySuite) return false;
-    if (item.adminOnly && role !== "admin") return false;
     return true;
   });
   const [mobileOpen, setMobileOpen] = useState(false);

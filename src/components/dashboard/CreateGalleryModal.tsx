@@ -231,9 +231,9 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
 
   if (step === "type") {
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 sm:p-6">
-        <div className="flex min-h-full items-center justify-center py-4 sm:py-8">
-          <div className="my-auto w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+        <div className="flex min-h-full items-center justify-center px-4 py-10 sm:px-6 sm:py-12">
+          <div className="my-auto w-full max-w-3xl rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">New gallery</h2>
               <button
@@ -258,9 +258,9 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 sm:p-6">
-      <div className="flex min-h-full items-center justify-center py-4 sm:py-8">
-        <div className="my-auto w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+      <div className="flex min-h-full items-center justify-center px-4 py-10 sm:px-6 sm:py-12">
+        <div className="my-auto flex w-full max-w-3xl max-h-[calc(100dvh-5rem)] flex-col rounded-xl border border-neutral-200 bg-white shadow-xl sm:max-h-[calc(100dvh-6rem)] dark:border-neutral-700">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
             <div className="flex items-center gap-2">
               <button
