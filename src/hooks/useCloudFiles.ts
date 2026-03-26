@@ -176,6 +176,36 @@ export interface RecentFile {
   height?: number | null;
 }
 
+/** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
+function apiFileToRecentFile(
+  raw: Record<string, unknown>,
+  driveNameById: Map<string, string>
+): RecentFile {
+  const driveId = String(raw.driveId ?? "");
+  return {
+    id: String(raw.id ?? ""),
+    name: String(raw.name ?? ""),
+    path: String(raw.path ?? ""),
+    objectKey: String(raw.objectKey ?? ""),
+    size: Number(raw.size ?? 0),
+    modifiedAt: (raw.modifiedAt as string) ?? null,
+    driveId,
+    driveName: String(
+      raw.driveName ?? driveNameById.get(driveId) ?? "Unknown drive"
+    ),
+    contentType: (raw.contentType as string) ?? null,
+    assetType: (raw.assetType as string) ?? null,
+    galleryId: (raw.galleryId as string) ?? null,
+    proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
+    resolution_w: (raw.resolution_w as number) ?? null,
+    resolution_h: (raw.resolution_h as number) ?? null,
+    duration_sec: (raw.duration_sec as number) ?? null,
+    video_codec: (raw.video_codec as string) ?? null,
+    width: (raw.width as number) ?? null,
+    height: (raw.height as number) ?? null,
+  };
+}
+
 /** True when pathname is under /enterprise (enterprise storage context). */
 function useIsEnterpriseContext(): boolean {
   const pathname = usePathname();
@@ -241,82 +271,125 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         ])
       );
       const driveIds = new Set(scoped.map((d) => d.id));
-      const [folders, recentDocs] = await Promise.all([
-        Promise.all(
-          scoped.map(async (drive) => {
-            const countSnap = await getCountFromServer(
-              personalDriveFilesCountQuery(db, drive)
-            );
-            return {
-              id: drive.id,
-              name: drive.name,
-              type: "folder" as const,
-              key: `drive-${drive.id}`,
-              items: countSnap.data().count,
-              lastSyncedAt: drive.last_synced_at,
-              isCreatorRaw: drive.is_creator_raw === true,
-            };
-          })
-        ),
-        (async () => {
-          const perDrive = await Promise.all(
-            scoped.map((drive) =>
-              getDocs(
-                drive.organization_id
-                  ? query(
-                      collection(db, "backup_files"),
-                      where("linked_drive_id", "==", drive.id),
-                      where("organization_id", "==", drive.organization_id),
-                      where("deleted_at", "==", null),
-                      orderBy("modified_at", "desc"),
-                      limit(35)
-                    )
-                  : query(
-                      collection(db, "backup_files"),
-                      where("linked_drive_id", "==", drive.id),
-                      where("deleted_at", "==", null),
-                      orderBy("modified_at", "desc"),
-                      limit(35)
-                    )
-              )
-            )
-          );
-          const merged = perDrive.flatMap((s) => s.docs);
-          merged.sort(
-            (a, b) => backupModifiedMs(b.data()) - backupModifiedMs(a.data())
-          );
-          return merged.slice(0, 50);
-        })(),
-      ]);
-      setDriveFolders(folders);
+      const driveNameById = new Map(scoped.map((d) => [d.id, d.name]));
 
-      const recent: RecentFile[] = recentDocs
-        .filter((d) => {
-          if (d.data().deleted_at) return false;
-          return driveIds.has(d.data().linked_drive_id);
-        })
-        .slice(0, 24)
-        .map((d) => {
-          const data = d.data();
-          const path = data.relative_path ?? "";
-          const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
-          const drive = driveMap.get(data.linked_drive_id);
-          return {
-            id: d.id,
-            name,
-            path,
-            objectKey: data.object_key ?? "",
-            size: data.size_bytes ?? 0,
-            modifiedAt: data.modified_at ?? null,
-            driveId: data.linked_drive_id,
-            driveName: drive?.name ?? "Unknown drive",
-            contentType: data.content_type ?? null,
-            assetType: data.asset_type ?? null,
-            galleryId: data.gallery_id ?? null,
-            proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
-          };
-        });
-      setRecentFiles(recent);
+      if (isEnterpriseContext && orgId) {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const token = await user.getIdToken(true);
+        const driveIdsParam = scoped.map((d) => d.id).join(",");
+
+        const [countRes, recentRes] = await Promise.all([
+          fetch(
+            `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          ),
+          fetch(
+            `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=50`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          ),
+        ]);
+
+        const countData = countRes.ok
+          ? ((await countRes.json()) as { counts?: Record<string, number> })
+          : { counts: {} };
+        const countMap = countData.counts ?? {};
+        const folders: DriveFolder[] = scoped.map((drive) => ({
+          id: drive.id,
+          name: drive.name,
+          type: "folder" as const,
+          key: `drive-${drive.id}`,
+          items: countMap[drive.id] ?? 0,
+          lastSyncedAt: drive.last_synced_at,
+          isCreatorRaw: drive.is_creator_raw === true,
+        }));
+        setDriveFolders(folders);
+
+        const recentData = recentRes.ok
+          ? ((await recentRes.json()) as { files?: Record<string, unknown>[] })
+          : { files: [] };
+        const recent: RecentFile[] = (recentData.files ?? [])
+          .map((raw) => apiFileToRecentFile(raw, driveNameById))
+          .filter((r) => driveIds.has(r.driveId))
+          .slice(0, 24);
+        setRecentFiles(recent);
+      } else {
+        const [folders, recentDocs] = await Promise.all([
+          Promise.all(
+            scoped.map(async (drive) => {
+              const countSnap = await getCountFromServer(
+                personalDriveFilesCountQuery(db, drive)
+              );
+              return {
+                id: drive.id,
+                name: drive.name,
+                type: "folder" as const,
+                key: `drive-${drive.id}`,
+                items: countSnap.data().count,
+                lastSyncedAt: drive.last_synced_at,
+                isCreatorRaw: drive.is_creator_raw === true,
+              };
+            })
+          ),
+          (async () => {
+            const perDrive = await Promise.all(
+              scoped.map((drive) =>
+                getDocs(
+                  drive.organization_id
+                    ? query(
+                        collection(db, "backup_files"),
+                        where("linked_drive_id", "==", drive.id),
+                        where("organization_id", "==", drive.organization_id),
+                        where("deleted_at", "==", null),
+                        orderBy("modified_at", "desc"),
+                        limit(35)
+                      )
+                    : query(
+                        collection(db, "backup_files"),
+                        where("linked_drive_id", "==", drive.id),
+                        where("deleted_at", "==", null),
+                        orderBy("modified_at", "desc"),
+                        limit(35)
+                      )
+                )
+              )
+            );
+            const merged = perDrive.flatMap((s) => s.docs);
+            merged.sort(
+              (a, b) => backupModifiedMs(b.data()) - backupModifiedMs(a.data())
+            );
+            return merged.slice(0, 50);
+          })(),
+        ]);
+        setDriveFolders(folders);
+
+        const recent: RecentFile[] = recentDocs
+          .filter((d) => {
+            if (d.data().deleted_at) return false;
+            return driveIds.has(d.data().linked_drive_id);
+          })
+          .slice(0, 24)
+          .map((d) => {
+            const data = d.data();
+            const path = data.relative_path ?? "";
+            const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
+            const drive = driveMap.get(data.linked_drive_id);
+            return {
+              id: d.id,
+              name,
+              path,
+              objectKey: data.object_key ?? "",
+              size: data.size_bytes ?? 0,
+              modifiedAt: data.modified_at ?? null,
+              driveId: data.linked_drive_id,
+              driveName: drive?.name ?? "Unknown drive",
+              contentType: data.content_type ?? null,
+              assetType: data.asset_type ?? null,
+              galleryId: data.gallery_id ?? null,
+              proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
+            };
+          });
+        setRecentFiles(recent);
+      }
     } catch (err) {
       console.error("useCloudFiles:", err);
       setDriveFolders([]);
@@ -348,6 +421,42 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       });
       const driveMap = new Map(scoped.map((d) => [d.id, d]));
       const driveIds = new Set(scoped.map((d) => d.id));
+      const driveNameById = new Map(scoped.map((d) => [d.id, d.name]));
+
+      if (isEnterpriseContext && orgId) {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const token = await user.getIdToken(true);
+        const collected: RecentFile[] = [];
+        let cursor: string | null = null;
+        while (collected.length < 500) {
+          const params = new URLSearchParams({
+            context: "enterprise",
+            organization_id: orgId,
+            sort: "newest",
+            page_size: "50",
+          });
+          if (cursor) params.set("cursor", cursor);
+          const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) break;
+          const data = (await res.json()) as {
+            files?: Record<string, unknown>[];
+            hasMore?: boolean;
+            cursor?: string | null;
+          };
+          const list = data.files ?? [];
+          for (const raw of list) {
+            const r = apiFileToRecentFile(raw, driveNameById);
+            if (driveIds.has(r.driveId)) collected.push(r);
+            if (collected.length >= 500) break;
+          }
+          if (!data.hasMore || !data.cursor) break;
+          cursor = data.cursor;
+        }
+        setAllFilesForTransfer(collected.slice(0, 500));
+        return;
+      }
 
       let docList: QueryDocumentSnapshot<DocumentData>[] = [];
       const perDriveLimit = Math.max(
@@ -418,24 +527,38 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const fetchDriveFiles = useCallback(
     async (driveId: string): Promise<RecentFile[]> => {
       if (!isFirebaseConfigured() || !user) return [];
+      const driveMeta = new Map(linkedDrives.map((d) => [d.id, d]));
+      const drive = driveMeta.get(driveId);
+      const driveNameById = new Map(linkedDrives.map((d) => [d.id, d.name]));
+
+      if (drive?.organization_id) {
+        const token = await user.getIdToken(true);
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const params = new URLSearchParams({
+          context: "enterprise",
+          organization_id: drive.organization_id,
+          drive_id: driveId,
+          sort: "newest",
+          page_size: "50",
+        });
+        const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return [];
+        const data = (await res.json()) as { files?: Record<string, unknown>[] };
+        return (data.files ?? []).map((raw) =>
+          apiFileToRecentFile(raw, driveNameById)
+        );
+      }
+
       const db = getFirebaseFirestore();
-      const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
-      const drive = driveMap.get(driveId);
       const filesSnap = await getDocs(
-        drive?.organization_id
-          ? query(
-              collection(db, "backup_files"),
-              where("linked_drive_id", "==", driveId),
-              where("organization_id", "==", drive.organization_id),
-              where("deleted_at", "==", null),
-              orderBy("modified_at", "desc")
-            )
-          : query(
-              collection(db, "backup_files"),
-              where("linked_drive_id", "==", driveId),
-              where("deleted_at", "==", null),
-              orderBy("modified_at", "desc")
-            )
+        query(
+          collection(db, "backup_files"),
+          where("linked_drive_id", "==", driveId),
+          where("deleted_at", "==", null),
+          orderBy("modified_at", "desc")
+        )
       );
       return filesSnap.docs
         .filter((d) => !d.data().deleted_at)
