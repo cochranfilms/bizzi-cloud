@@ -312,6 +312,46 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           .filter((r) => driveIds.has(r.driveId))
           .slice(0, 24);
         setRecentFiles(recent);
+      } else if (teamRouteOwnerUid && scoped.length > 0) {
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const token = await user.getIdToken(true);
+        const driveIdsParam = scoped.map((d) => d.id).join(",");
+        const ownerParam = encodeURIComponent(teamRouteOwnerUid);
+
+        const [countRes, recentRes] = await Promise.all([
+          fetch(
+            `${base}/api/files/drive-item-counts?team_owner_id=${ownerParam}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          ),
+          fetch(
+            `${base}/api/files/filter?team_owner_id=${ownerParam}&sort=newest&page_size=50`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          ),
+        ]);
+
+        const countData = countRes.ok
+          ? ((await countRes.json()) as { counts?: Record<string, number> })
+          : { counts: {} };
+        const countMap = countData.counts ?? {};
+        const folders: DriveFolder[] = scoped.map((drive) => ({
+          id: drive.id,
+          name: drive.name,
+          type: "folder" as const,
+          key: `drive-${drive.id}`,
+          items: countMap[drive.id] ?? 0,
+          lastSyncedAt: drive.last_synced_at,
+          isCreatorRaw: drive.is_creator_raw === true,
+        }));
+        setDriveFolders(folders);
+
+        const recentData = recentRes.ok
+          ? ((await recentRes.json()) as { files?: Record<string, unknown>[] })
+          : { files: [] };
+        const recent: RecentFile[] = (recentData.files ?? [])
+          .map((raw) => apiFileToRecentFile(raw, driveNameById))
+          .filter((r) => driveIds.has(r.driveId))
+          .slice(0, 24);
+        setRecentFiles(recent);
       } else {
         const [folders, recentDocs] = await Promise.all([
           Promise.all(
@@ -1134,24 +1174,46 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       if (isEnterpriseContext && orgId) return oid === orgId;
       return !oid;
     });
+
+    let countMap: Record<string, number> = {};
+    if (isEnterpriseContext && orgId && drivesInContext.length > 0) {
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const token = await user.getIdToken(true);
+      const driveIdsParam = drivesInContext.map((d) => d.id).join(",");
+      const countRes = await fetch(
+        `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}&deleted=only`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (countRes.ok) {
+        const countData = (await countRes.json()) as { counts?: Record<string, number> };
+        countMap = countData.counts ?? {};
+      }
+    }
+
     const result: DeletedDrive[] = [];
     for (const d of drivesInContext) {
       const data = d.data();
       const oid = data.organization_id ?? null;
-      const countSnap = await getCountFromServer(
-        oid
-          ? query(
-              collection(db, "backup_files"),
-              where("linked_drive_id", "==", d.id),
-              where("organization_id", "==", oid),
-              where("deleted_at", "!=", null)
-            )
-          : query(
-              collection(db, "backup_files"),
-              where("linked_drive_id", "==", d.id),
-              where("deleted_at", "!=", null)
-            )
-      );
+      let items: number;
+      if (isEnterpriseContext && orgId) {
+        items = countMap[d.id] ?? 0;
+      } else {
+        const countSnap = await getCountFromServer(
+          oid
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", d.id),
+                where("organization_id", "==", oid),
+                where("deleted_at", "!=", null)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", d.id),
+                where("deleted_at", "!=", null)
+              )
+        );
+        items = countSnap.data().count;
+      }
       const deletedAt = data.deleted_at?.toDate?.()
         ? data.deleted_at.toDate().toISOString()
         : typeof data.deleted_at === "string"
@@ -1160,7 +1222,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       result.push({
         id: d.id,
         name: data.name ?? "Folder",
-        items: countSnap.data().count,
+        items,
         deletedAt,
       });
     }

@@ -1,7 +1,7 @@
 /**
  * GET /api/files/drive-item-counts
- * Per-drive visible file counts for enterprise members using workspace-scoped rules
- * (matches /api/files/filter). Avoids client-side aggregation 403s for non-admin seats.
+ * Per-drive file counts using Admin SDK and the same access rules as /api/files/filter.
+ * Avoids client-side getCountFromServer / runAggregationQuery 403s for org seats and team routes.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -45,18 +45,22 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const organizationId = url.searchParams.get("organization_id")?.trim();
-  if (!organizationId) {
-    return NextResponse.json({ error: "organization_id required" }, { status: 400 });
+  const organizationId = url.searchParams.get("organization_id")?.trim() || null;
+  const teamOwnerId = url.searchParams.get("team_owner_id")?.trim() || null;
+  if (organizationId && teamOwnerId) {
+    return NextResponse.json(
+      { error: "Specify organization_id or team_owner_id, not both" },
+      { status: 400 }
+    );
+  }
+  if (!organizationId && !teamOwnerId) {
+    return NextResponse.json(
+      { error: "organization_id or team_owner_id required" },
+      { status: 400 }
+    );
   }
 
-  const db = getAdminFirestore();
-  const profileSnap = await db.collection("profiles").doc(uid).get();
-  const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-  const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
-  if (profileOrgId !== organizationId && !hasSeat) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const trashOnly = url.searchParams.get("deleted") === "only";
 
   const driveIdsParam = url.searchParams.get("drive_ids")?.trim();
   if (!driveIdsParam) {
@@ -67,52 +71,99 @@ export async function GET(request: Request) {
     return NextResponse.json({ counts: {} });
   }
 
-  const accessibleWorkspaceIds = await getAccessibleWorkspaceIds(uid, organizationId);
+  const db = getAdminFirestore();
+
+  if (teamOwnerId) {
+    if (uid !== teamOwnerId) {
+      const seatSnap = await db
+        .collection("personal_team_seats")
+        .doc(`${teamOwnerId}_${uid}`)
+        .get();
+      const st = seatSnap.data()?.status as string | undefined;
+      if (!seatSnap.exists || (st !== "active" && st !== "cold_storage")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    const counts: Record<string, number> = {};
+    await Promise.all(
+      driveIds.map(async (driveId) => {
+        const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+        const data = driveSnap.data();
+        if (
+          !data ||
+          data.userId !== teamOwnerId ||
+          data.organization_id ||
+          data.deleted_at
+        ) {
+          counts[driveId] = 0;
+          return;
+        }
+        const coll = db.collection("backup_files");
+        const q = trashOnly
+          ? coll
+              .where("linked_drive_id", "==", driveId)
+              .where("deleted_at", "!=", null)
+          : coll
+              .where("linked_drive_id", "==", driveId)
+              .where("deleted_at", "==", null);
+        const agg = await q.count().get();
+        counts[driveId] = agg.data().count;
+      })
+    );
+    return NextResponse.json({ counts });
+  }
+
+  const orgId = organizationId as string;
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
+  const hasSeat = await userHasActiveOrganizationSeat(uid, orgId);
+  if (profileOrgId !== orgId && !hasSeat) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const accessibleWorkspaceIds = await getAccessibleWorkspaceIds(uid, orgId);
 
   async function countForDrive(driveId: string): Promise<number> {
     if (accessibleWorkspaceIds.length === 0) {
       const anyWorkspaces = await db
         .collection("workspaces")
-        .where("organization_id", "==", organizationId)
+        .where("organization_id", "==", orgId)
         .limit(1)
         .get();
       if (anyWorkspaces.empty) {
-        const agg = await db
-          .collection("backup_files")
+        const coll = db.collection("backup_files");
+        const base = coll
           .where("linked_drive_id", "==", driveId)
           .where("userId", "==", uid)
-          .where("organization_id", "==", organizationId)
-          .where("deleted_at", "==", null)
-          .count()
-          .get();
+          .where("organization_id", "==", orgId);
+        const q = trashOnly
+          ? base.where("deleted_at", "!=", null)
+          : base.where("deleted_at", "==", null);
+        const agg = await q.count().get();
         return agg.data().count;
       }
       return 0;
     }
 
-    if (accessibleWorkspaceIds.length <= WORKSPACE_IN_LIMIT) {
-      const agg = await db
-        .collection("backup_files")
+    const coll = db.collection("backup_files");
+    const baseForBatch = (batch: string[]) => {
+      const b = coll
         .where("linked_drive_id", "==", driveId)
-        .where("organization_id", "==", organizationId)
-        .where("deleted_at", "==", null)
-        .where("workspace_id", "in", accessibleWorkspaceIds)
-        .count()
-        .get();
+        .where("organization_id", "==", orgId)
+        .where("workspace_id", "in", batch);
+      return trashOnly ? b.where("deleted_at", "!=", null) : b.where("deleted_at", "==", null);
+    };
+
+    if (accessibleWorkspaceIds.length <= WORKSPACE_IN_LIMIT) {
+      const agg = await baseForBatch(accessibleWorkspaceIds).count().get();
       return agg.data().count;
     }
 
     let total = 0;
     for (let i = 0; i < accessibleWorkspaceIds.length; i += WORKSPACE_IN_LIMIT) {
       const batch = accessibleWorkspaceIds.slice(i, i + WORKSPACE_IN_LIMIT);
-      const agg = await db
-        .collection("backup_files")
-        .where("linked_drive_id", "==", driveId)
-        .where("organization_id", "==", organizationId)
-        .where("deleted_at", "==", null)
-        .where("workspace_id", "in", batch)
-        .count()
-        .get();
+      const agg = await baseForBatch(batch).count().get();
       total += agg.data().count;
     }
     return total;
