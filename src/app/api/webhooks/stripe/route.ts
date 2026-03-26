@@ -8,10 +8,9 @@ import {
   hasColdStorage,
   restoreColdStorageToHot,
 } from "@/lib/cold-storage-restore";
-import {
-  migrateConsumerToColdStorage,
-  migrateOrgToColdStorage,
-} from "@/lib/cold-storage-migrate";
+import { finalizePersonalTeamColdStorage } from "@/lib/personal-team-container-finalize";
+import { migrateConsumerToColdStorage } from "@/lib/cold-storage-migrate";
+import { finalizeOrganizationColdStorage } from "@/lib/org-container-finalize";
 import type { ColdStorageSourceType } from "@/lib/cold-storage-retention";
 import {
   transitionToGracePeriod,
@@ -185,6 +184,27 @@ export async function POST(request: Request) {
           console.error("[Stripe webhook] Failed to restore cold storage for user", userId, err);
         }
       }
+      const teamColdCheckout = await hasColdStorage({ teamOwnerUserId: userId });
+      if (teamColdCheckout) {
+        try {
+          const tr = await restoreColdStorageToHot({
+            type: "personal_team",
+            teamOwnerUserId: userId,
+          });
+          console.log(
+            "[Stripe webhook] checkout.session.completed: restored personal team cold storage for",
+            userId,
+            "files:",
+            tr.restored
+          );
+        } catch (err) {
+          console.error(
+            "[Stripe webhook] Failed to restore personal team cold storage for user",
+            userId,
+            err
+          );
+        }
+      }
 
       await db.collection("profiles").doc(userId).set(
         {
@@ -230,6 +250,29 @@ export async function POST(request: Request) {
           const profileSnap = await db.collection("profiles").doc(userId).get();
           const accountDeletionRequested = !!profileSnap.data()?.account_deletion_requested_at;
           if (!accountDeletionRequested) {
+            const teamOwnerSeats = await db
+              .collection("personal_team_seats")
+              .where("team_owner_user_id", "==", userId)
+              .limit(1)
+              .get();
+            if (!teamOwnerSeats.empty) {
+              try {
+                await finalizePersonalTeamColdStorage({
+                  teamOwnerUserId: userId,
+                  sourceType: "subscription_end" as ColdStorageSourceType,
+                  auditTrigger: "subscription_deleted",
+                });
+                console.log(
+                  "[Stripe webhook] subscription.deleted: finalized personal team for owner",
+                  userId
+                );
+              } catch (err) {
+                console.error(
+                  "[Stripe webhook] Failed to finalize personal team cold storage:",
+                  err
+                );
+              }
+            }
             try {
               const result = await migrateConsumerToColdStorage(
                 userId,
@@ -268,38 +311,27 @@ export async function POST(request: Request) {
           );
         }
 
-        // Org: migrate only if NOT admin removal (org status !== cold_storage)
         if (orgId) {
-          const orgSnap = await db.collection("organizations").doc(orgId).get();
-          const orgStatus = orgSnap.data()?.status as string | undefined;
-          if (orgStatus !== "cold_storage") {
-            try {
-              const result = await migrateOrgToColdStorage(
-                orgId,
-                "subscription_end" as ColdStorageSourceType
-              );
-              console.log(
-                "[Stripe webhook] subscription.deleted: migrated org",
-                orgId,
-                "files:",
-                result.migrated
-              );
-            } catch (err) {
-              console.error(
-                "[Stripe webhook] Failed to migrate org to cold storage:",
-                err
-              );
-            }
+          try {
+            const result = await finalizeOrganizationColdStorage({
+              orgId,
+              sourceType: "subscription_end" as ColdStorageSourceType,
+              auditTrigger: "subscription_deleted",
+              lifecycleBilling: "canceled",
+              cancelStripeWhenPossible: false,
+              isAdminRemoval: false,
+            });
+            console.log(
+              "[Stripe webhook] subscription.deleted: finalized org",
+              orgId,
+              "skipped:",
+              result.skipped,
+              "migrated:",
+              result.migrated
+            );
+          } catch (err) {
+            console.error("[Stripe webhook] Failed to finalize org cold storage:", err);
           }
-          await db.collection("organizations").doc(orgId).update({
-            plan_id: "free",
-            storage_quota_bytes: getStorageBytesForPlan("free"),
-            stripe_subscription_id: null,
-            billing_status: "canceled",
-            unpaid_invoice_url: null,
-            storage_lifecycle_status: "cold_storage",
-            grace_period_ends_at: FieldValue.delete(),
-          });
         }
         break;
       }
@@ -554,6 +586,27 @@ export async function POST(request: Request) {
               }
             } catch (err) {
               console.error("[Stripe webhook] Failed to restore consumer cold storage for user", consumerUserId, err);
+            }
+          }
+          const teamCold = await hasColdStorage({ teamOwnerUserId: consumerUserId });
+          if (teamCold) {
+            try {
+              const tr = await restoreColdStorageToHot({
+                type: "personal_team",
+                teamOwnerUserId: consumerUserId,
+              });
+              console.log(
+                "[Stripe webhook] invoice.paid: restored personal team cold storage for owner",
+                consumerUserId,
+                "files:",
+                tr.restored
+              );
+            } catch (err) {
+              console.error(
+                "[Stripe webhook] Failed to restore personal team cold storage for user",
+                consumerUserId,
+                err
+              );
             }
           }
         }

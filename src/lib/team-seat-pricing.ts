@@ -74,6 +74,30 @@ export function isPersonalTeamSeatAccess(s: string): s is PersonalTeamSeatAccess
   );
 }
 
+/** Display labels for EmailJS and Team Management UI */
+export const PERSONAL_TEAM_SEAT_ACCESS_LABELS: Record<PersonalTeamSeatAccess, string> = {
+  none: "Team seat (base access)",
+  gallery: "Bizzi Gallery Suite",
+  editor: "Bizzi Editor",
+  fullframe: "Bizzi Full Frame",
+};
+
+/** Short capability line for invite emails */
+export function personalTeamSeatAccessSummary(level: PersonalTeamSeatAccess): string {
+  switch (level) {
+    case "none":
+      return "Shared team storage, view and download team files, and upload (you can only delete your own uploads).";
+    case "gallery":
+      return "Includes base team access plus Gallery + invoicing features at the team seat level.";
+    case "editor":
+      return "Includes base team access plus Cloud Native Drive (Editor) at the team seat level.";
+    case "fullframe":
+      return "Includes Gallery Suite + Editor (Full Frame) at the team seat level.";
+    default:
+      return "Team access.";
+  }
+}
+
 function parseNonNegInt(raw: string | undefined): number {
   if (typeof raw !== "string" || !/^\d+$/.test(raw)) return 0;
   return Math.min(Math.max(0, parseInt(raw, 10)), MAX_EXTRA_PERSONAL_TEAM_SEATS);

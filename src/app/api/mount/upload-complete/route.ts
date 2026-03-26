@@ -13,6 +13,7 @@ import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
+import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
   } = body;
 
   let uid: string;
+  let authEmail: string | undefined;
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
@@ -50,6 +52,7 @@ export async function POST(request: Request) {
     try {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
+      authEmail = decoded.email;
     } catch {
       return NextResponse.json(
         { error: "Invalid or expired token" },
@@ -178,6 +181,16 @@ export async function POST(request: Request) {
     personalTeamOwnerId = driveOwnerUid;
   }
 
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const uploadMeta = await resolveBackupUploadMetadata(db, {
+    uid,
+    authEmail,
+    profileData: profileSnap.data(),
+    driveData,
+    organizationId,
+  });
+  const teamOwnerForFile = personalTeamOwnerId ?? uploadMeta.personalTeamOwnerId;
+
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
   // Create minimal snapshot (required by backup_files schema)
@@ -206,7 +219,11 @@ export async function POST(request: Request) {
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,
     owner_user_id: uid,
-    ...(personalTeamOwnerId ? { personal_team_owner_id: personalTeamOwnerId } : {}),
+    uploader_email: uploadMeta.uploaderEmail,
+    container_type: uploadMeta.containerType,
+    container_id: uploadMeta.containerId,
+    personal_team_owner_id: teamOwnerForFile,
+    role_at_upload: uploadMeta.roleAtUpload,
   });
 
   // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  EmailJS Template: Personal Team Invite (NOT organization)
+  Subject (set in EmailJS dashboard): You're invited to join a Bizzi team — {{inviter_name}}
+
+  Template variables:
+  - to_email
+  - inviter_name
+  - seat_access_label
+  - what_they_get
+  - cta_url
+  - cta_label
+  - logo_url
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bizzi team invite</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .pill { display: inline-block; background: #ecfeff; color: #0e7490; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .cta { display: inline-block; background: #00BFFF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+    .link-box { background: #f8fafc; border-radius: 8px; padding: 16px; margin: 24px 0; word-break: break-all; font-size: 14px; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="Bizzi Cloud" />
+  </div>
+  <h1>You've been invited to a Bizzi team</h1>
+  <p><strong>{{inviter_name}}</strong> added you to their <strong>personal team</strong> on Bizzi Cloud (this is not an organization workspace).</p>
+  <span class="pill">Seat access: {{seat_access_label}}</span>
+  <p>{{what_they_get}}</p>
+  <p>Team storage is shared with your admin. You keep your own Bizzi subscription; team access is in addition.</p>
+  <p>
+    <a href="{{cta_url}}" class="cta">{{cta_label}}</a>
+  </p>
+  <p>If the button doesn't work, use this link:</p>
+  <div class="link-box">{{cta_url}}</div>
+  <p>This email was sent to {{to_email}}. If you weren't expecting it, you can ignore this message.</p>
+  <div class="footer">
+    <p>Bizzi Cloud · Personal team collaboration</p>
+  </div>
+</body>
+</html>

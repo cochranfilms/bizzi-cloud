@@ -22,13 +22,31 @@ export async function canAccessBackupFileById(
   // Owner
   if (fileData?.userId === uid) return true;
 
-  // Personal team: active member can access files owned by team admin (shared storage)
-  const fileOwner = fileData?.userId as string | undefined;
-  if (fileOwner && !fileData?.organization_id) {
-    const seatId = `${fileOwner}_${uid}`;
-    const seatSnap = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(seatId).get();
-    if (seatSnap.exists && seatSnap.data()?.status === "active") {
-      return true;
+  // Personal team: any active seat on the shared container (denormalized owner or team drive owner)
+  if (!fileData?.organization_id) {
+    const pto = fileData?.personal_team_owner_id as string | undefined;
+    if (pto) {
+      const seatSnap = await db
+        .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+        .doc(`${pto}_${uid}`)
+        .get();
+      if (seatSnap.exists && seatSnap.data()?.status === "active") {
+        return true;
+      }
+    }
+    const linkedDriveIdEarly = fileData?.linked_drive_id as string | undefined;
+    if (linkedDriveIdEarly) {
+      const driveSnap = await db.collection("linked_drives").doc(linkedDriveIdEarly).get();
+      const driveOwnerUid = driveSnap.data()?.userId as string | undefined;
+      if (driveOwnerUid) {
+        const seatSnap = await db
+          .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+          .doc(`${driveOwnerUid}_${uid}`)
+          .get();
+        if (seatSnap.exists && seatSnap.data()?.status === "active") {
+          return true;
+        }
+      }
     }
   }
 

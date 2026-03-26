@@ -1,10 +1,11 @@
 /**
- * POST /api/personal-team/remove — admin removes a member.
+ * POST /api/personal-team/remove — admin removes a member; access revocation only.
+ * Shared team files stay with the team container (no cold storage / transfer).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { suggestIdentityDeletionAfterTeamScopeRemoved } from "@/lib/identity-scope";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
-import { migratePersonalTeamMemberUploadsToColdStorage } from "@/lib/cold-storage-migrate";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "@/lib/personal-team";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -50,15 +51,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Seat not found" }, { status: 404 });
   }
 
-  const adminProfile = await db.collection("profiles").doc(adminUid).get();
-  const planTier = (adminProfile.data()?.plan_id as string) ?? "solo";
+  const memberProfileSnap = await db.collection("profiles").doc(memberUid).get();
+  const memberProfile = memberProfileSnap.data();
+  const personalStatus = memberProfile?.personal_status as string | undefined;
+  const organizationId = memberProfile?.organization_id as string | undefined;
 
   try {
-    const { migrated } = await migratePersonalTeamMemberUploadsToColdStorage(
-      memberUid,
-      adminUid,
-      planTier
-    );
     await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId).set(
       {
         status: "removed",
@@ -73,7 +71,13 @@ export async function POST(request: Request) {
       },
       { merge: true }
     );
-    return NextResponse.json({ ok: true, migrated });
+    return NextResponse.json({
+      ok: true,
+      suggestIdentityDeletion: suggestIdentityDeletionAfterTeamScopeRemoved(
+        personalStatus,
+        organizationId
+      ),
+    });
   } catch (err) {
     console.error("[personal-team/remove]", err);
     return NextResponse.json({ error: "Failed to remove member" }, { status: 500 });

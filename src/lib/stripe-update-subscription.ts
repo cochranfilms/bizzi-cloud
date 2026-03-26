@@ -18,7 +18,7 @@ import {
   PERSONAL_TEAM_SEAT_ACCESS_LEVELS,
   teamSeatCountsToMetadataStrings,
 } from "@/lib/team-seat-pricing";
-import { countAssignedSeatsForTier } from "@/lib/personal-team";
+import { countUsedSeatsForTier } from "@/lib/personal-team";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
 import type { StorageAddonId } from "@/lib/pricing-data";
 import { VALID_STORAGE_ADDON_IDS } from "@/lib/pricing-data";
@@ -243,7 +243,7 @@ export async function updateSubscriptionWithProration(
   }
   if (allowsTeamSeats) {
     for (const tier of PERSONAL_TEAM_SEAT_ACCESS_LEVELS) {
-      const used = await countAssignedSeatsForTier(uid, tier);
+      const used = await countUsedSeatsForTier(uid, tier);
       if (used > targetTeamCounts[tier]) {
         return NextResponse.json(
           {

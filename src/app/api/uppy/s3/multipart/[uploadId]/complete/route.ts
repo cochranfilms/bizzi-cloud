@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { logActivityEvent } from "@/lib/activity-log";
 import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
+import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -65,6 +66,7 @@ export async function POST(
   }
 
   let uid: string;
+  let authEmail: string | undefined;
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
@@ -85,6 +87,7 @@ export async function POST(
     try {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
+      authEmail = decoded.email;
     } catch {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
@@ -151,6 +154,17 @@ export async function POST(
     visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
   }
 
+  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  const driveData = driveSnap.data();
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const uploadMeta = await resolveBackupUploadMetadata(db, {
+    uid,
+    authEmail,
+    profileData: profileSnap.data(),
+    driveData,
+    organizationId,
+  });
+
   const snapshotRef = await db.collection("backup_snapshots").add({
     linked_drive_id: driveId,
     userId: uid,
@@ -175,6 +189,11 @@ export async function POST(
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,
     owner_user_id: uid,
+    uploader_email: uploadMeta.uploaderEmail,
+    container_type: uploadMeta.containerType,
+    container_id: uploadMeta.containerId,
+    personal_team_owner_id: uploadMeta.personalTeamOwnerId,
+    role_at_upload: uploadMeta.roleAtUpload,
   });
 
   await db.doc(`linked_drives/${driveId}`).update({

@@ -10,6 +10,7 @@ import { isVideoFile } from "@/lib/bizzi-file-types";
 import { logActivityEvent } from "@/lib/activity-log";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
+import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
   }
 
   let uid: string;
+  let authEmail: string | undefined;
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
@@ -67,6 +69,7 @@ export async function POST(request: Request) {
   try {
     const decoded = await verifyIdToken(token);
     uid = decoded.uid;
+    authEmail = decoded.email;
   } catch {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
@@ -80,6 +83,14 @@ export async function POST(request: Request) {
       : new Date().toISOString();
 
   const db = getAdminFirestore();
+  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  const driveData = driveSnap.data();
+  if (!driveSnap.exists) {
+    return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+  }
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const profileData = profileSnap.data();
+
   let organizationId: string | null = null;
   let workspaceIdResolved: string | null = null;
   let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";
@@ -101,6 +112,20 @@ export async function POST(request: Request) {
     workspaceIdResolved = workspaceIdFromBody;
     visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
   }
+
+  const {
+    uploaderEmail,
+    containerType,
+    containerId,
+    personalTeamOwnerId,
+    roleAtUpload,
+  } = await resolveBackupUploadMetadata(db, {
+    uid,
+    authEmail,
+    profileData,
+    driveData,
+    organizationId,
+  });
 
   const snapshotRef = await db.collection("backup_snapshots").add({
     linked_drive_id: driveId,
@@ -126,6 +151,11 @@ export async function POST(request: Request) {
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,
     owner_user_id: uid,
+    uploader_email: uploaderEmail,
+    container_type: containerType,
+    container_id: containerId,
+    personal_team_owner_id: personalTeamOwnerId,
+    role_at_upload: roleAtUpload,
   });
 
   await db.doc(`linked_drives/${driveId}`).update({

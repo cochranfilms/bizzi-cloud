@@ -69,6 +69,9 @@ service cloud.firestore {
           || resource.data.team_owner_user_id == request.auth.uid);
       allow write: if false;
     }
+    match /personal_team_invites/{inviteId} {
+      allow read, write: if false;
+    }
     match /pinned_items/{itemId} {
       allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;

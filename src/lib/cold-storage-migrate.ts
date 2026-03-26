@@ -18,8 +18,13 @@ const IN_QUERY_LIMIT = 30;
 
 async function getExistingColdStorageObjectKeys(
   db: Firestore,
-  ownerType: "consumer" | "organization",
-  params: { userId?: string; orgId?: string; objectKeys: string[] }
+  ownerType: "consumer" | "organization" | "personal_team",
+  params: {
+    userId?: string;
+    orgId?: string;
+    teamOwnerUserId?: string;
+    objectKeys: string[];
+  }
 ): Promise<Set<string>> {
   if (params.objectKeys.length === 0) return new Set();
   const uniqueKeys = [...new Set(params.objectKeys)];
@@ -38,6 +43,11 @@ async function getExistingColdStorageObjectKeys(
       q = db
         .collection("cold_storage_files")
         .where("org_id", "==", params.orgId)
+        .where("object_key", "in", chunk);
+    } else if (ownerType === "personal_team" && params.teamOwnerUserId) {
+      q = db
+        .collection("cold_storage_files")
+        .where("personal_team_owner_id", "==", params.teamOwnerUserId)
         .where("object_key", "in", chunk);
     } else {
       continue;
@@ -363,31 +373,28 @@ export async function migrateOrgToColdStorage(
   return { migrated: migratedCount };
 }
 
-export interface MigratePersonalTeamMemberResult {
+export interface MigratePersonalTeamContainerResult {
   migrated: number;
 }
 
 /**
- * Team member leaving: move only their uploads made in the team context
- * (personal_team_owner_id == teamOwnerUid) to cold storage. Does not touch drives.
+ * Migrate all personal-team scoped backup_files to cold storage (full team container shutdown).
  */
-export async function migratePersonalTeamMemberUploadsToColdStorage(
-  memberUserId: string,
+export async function migratePersonalTeamContainerToColdStorage(
   teamOwnerUserId: string,
+  sourceType: ColdStorageSourceType,
   planTier: string
-): Promise<MigratePersonalTeamMemberResult> {
+): Promise<MigratePersonalTeamContainerResult> {
   const db = getAdminFirestore();
   const auth = getAdminAuth();
-  const sourceType: ColdStorageSourceType = "personal_team_leave";
-  let userEmail = "";
+  let ownerEmail = "";
   try {
-    const userRecord = await auth.getUser(memberUserId);
-    userEmail = (userRecord.email ?? "").trim().toLowerCase();
+    const r = await auth.getUser(teamOwnerUserId);
+    ownerEmail = (r.email ?? "").trim().toLowerCase();
   } catch {
     /* ignore */
   }
-  const coldStorageFolder = userEmail || `user_${memberUserId}`;
-  const retentionDays = getRetentionDays(planTier, sourceType);
+  const retentionDays = getRetentionDays(planTier ?? "solo", sourceType);
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + retentionDays);
   const now = Timestamp.now();
@@ -408,7 +415,6 @@ export async function migratePersonalTeamMemberUploadsToColdStorage(
   while (filesRemaining) {
     const filesSnap = await db
       .collection("backup_files")
-      .where("userId", "==", memberUserId)
       .where("personal_team_owner_id", "==", teamOwnerUserId)
       .limit(BATCH_SIZE)
       .get();
@@ -418,14 +424,13 @@ export async function migratePersonalTeamMemberUploadsToColdStorage(
       break;
     }
 
-    const objectKeys = filesSnap.docs
+    const orgObjectKeys = filesSnap.docs
       .map((d) => (d.data().object_key as string) ?? "")
       .filter(Boolean);
-    const existingColdKeys = await getExistingColdStorageObjectKeys(
-      db,
-      "consumer",
-      { userId: memberUserId, objectKeys }
-    );
+    const existingKeys = await getExistingColdStorageObjectKeys(db, "personal_team", {
+      teamOwnerUserId,
+      objectKeys: orgObjectKeys,
+    });
 
     const batch = db.batch();
     for (const fileDoc of filesSnap.docs) {
@@ -435,12 +440,20 @@ export async function migratePersonalTeamMemberUploadsToColdStorage(
         batch.delete(fileDoc.ref);
         continue;
       }
-      if (existingColdKeys.has(objectKey)) {
+      if (existingKeys.has(objectKey)) {
         batch.delete(fileDoc.ref);
         migratedCount++;
         continue;
       }
 
+      const fileUserId = (data.userId ?? data.user_id) as string;
+      let uploaderEmail = "";
+      try {
+        const ur = await auth.getUser(fileUserId);
+        uploaderEmail = (ur.email ?? "").trim().toLowerCase();
+      } catch {
+        /* ignore */
+      }
       const driveId = data.linked_drive_id as string;
       const driveName = driveIdToName.get(driveId) ?? "Drive";
       const planTierVal = planTier ?? "solo";
@@ -451,18 +464,21 @@ export async function migratePersonalTeamMemberUploadsToColdStorage(
       };
       const coldRef = db.collection("cold_storage_files").doc();
       batch.set(coldRef, {
-        owner_type: "consumer",
-        user_id: memberUserId,
+        owner_type: "personal_team",
+        user_id: fileUserId,
         org_id: null,
         storage_scope_type: "personal_team",
-        workspace_id: null,
-        visibility_scope: "personal_team",
-        owner_user_id: memberUserId,
+        container_type: "personal_team",
+        container_id: teamOwnerUserId,
+        workspace_id: data.workspace_id ?? null,
+        visibility_scope: data.visibility_scope ?? "personal_team",
+        owner_user_id: data.owner_user_id ?? fileUserId ?? null,
         personal_team_owner_id: teamOwnerUserId,
         team_id: teamOwnerUserId,
-        project_id: null,
+        project_id: data.project_id ?? null,
         gallery_id: data.gallery_id ?? null,
-        cold_storage_folder: coldStorageFolder,
+        uploader_email: uploaderEmail || null,
+        cold_storage_folder: ownerEmail || `team_${teamOwnerUserId}`,
         object_key: objectKey,
         relative_path: (data.relative_path as string) ?? "",
         drive_name: driveName,

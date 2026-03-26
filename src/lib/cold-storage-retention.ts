@@ -21,7 +21,7 @@ export type ColdStorageSourceType =
   | "subscription_end"
   | "account_delete"
   | "payment_failed"
-  | "personal_team_leave";
+  | "team_container_shutdown";
 
 export function getRetentionDays(
   planTier: string,

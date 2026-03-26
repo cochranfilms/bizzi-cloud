@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  EmailJS: EMAILJS_TEMPLATE_ID_ORG_PURGED
+  To: {{to_email}}
+
+  Subject (paste in EmailJS):
+  Cold storage for {{org_name}} has expired — data permanently removed
+
+  Variables: to_email, org_name, logo_url
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Organization cold storage expired</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .pill { display: inline-block; background: #f1f5f9; color: #475569; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .callout { background: #fef2f2; border-left: 4px solid #dc2626; border-radius: 0 8px 8px 0; padding: 16px 18px; margin: 24px 0; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="Bizzi Cloud" />
+  </div>
+  <span class="pill">Cold storage ended</span>
+  <h1>Recovery period over for {{org_name}}</h1>
+  <p>Hello,</p>
+  <p>The recovery window for <strong>{{org_name}}</strong> on Bizzi Cloud has ended. Cold storage data tied to this organization that was not restored has been <strong>permanently deleted</strong> per our retention policy.</p>
+  <div class="callout">
+    This action cannot be undone. If you need a new organization, you can sign up again from the Bizzi Cloud website.
+  </div>
+  <p>Questions? Reply to your prior support thread or open a new request through the help center.</p>
+  <p class="footer">This email was sent to {{to_email}} regarding {{org_name}}.</p>
+  <div class="footer">
+    <p>Bizzi Cloud · Data retention notice</p>
+  </div>
+</body>
+</html>

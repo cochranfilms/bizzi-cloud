@@ -6,7 +6,8 @@
  *
  * Schedule: daily (e.g. 5:45 UTC). Requires CRON_SECRET.
  */
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore } from "@/lib/firebase-admin";
+import { sendOrgPurgedEmail, sendTeamPurgedEmail } from "@/lib/emailjs";
 import {
   isB2Configured,
   deleteObjectWithRetry,
@@ -101,6 +102,47 @@ export async function POST(request: Request) {
           org_id: orgId,
         },
       });
+
+      const pto = data.personal_team_owner_id as string | undefined;
+      if (orgId) {
+        const leftOrg = await db
+          .collection("cold_storage_files")
+          .where("org_id", "==", orgId)
+          .limit(1)
+          .get();
+        if (leftOrg.empty) {
+          const snap = await db.collection("cold_storage_org_snapshots").doc(orgId).get();
+          const orgNamePurged = (snap.data()?.org_name as string) ?? "Organization";
+          const seats = snap.data()?.seats as Array<{ role?: string; email?: string }> | undefined;
+          const admin = seats?.find((s) => s.role === "admin");
+          const adminEm = (admin?.email ?? "").trim().toLowerCase();
+          if (adminEm) {
+            sendOrgPurgedEmail({ to_email: adminEm, org_name: orgNamePurged }).catch((err) =>
+              console.error("[cold-storage-cleanup] org purged email failed", orgId, err)
+            );
+          }
+        }
+      }
+      if (pto) {
+        const leftTeam = await db
+          .collection("cold_storage_files")
+          .where("personal_team_owner_id", "==", pto)
+          .limit(1)
+          .get();
+        if (leftTeam.empty) {
+          try {
+            const r = await getAdminAuth().getUser(pto);
+            const em = (r.email ?? "").trim().toLowerCase();
+            if (em) {
+              sendTeamPurgedEmail({ to_email: em }).catch((err) =>
+                console.error("[cold-storage-cleanup] team purged email failed", pto, err)
+              );
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
     }
   }
 

@@ -6,10 +6,8 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { hasColdStorage } from "@/lib/cold-storage-restore";
-import {
-  migrateConsumerToColdStorage,
-  migrateOrgToColdStorage,
-} from "@/lib/cold-storage-migrate";
+import { migrateConsumerToColdStorage } from "@/lib/cold-storage-migrate";
+import { finalizeOrganizationColdStorage } from "@/lib/org-container-finalize";
 import { transitionToColdStorage } from "@/lib/storage-lifecycle";
 import type { ColdStorageSourceType } from "@/lib/cold-storage-retention";
 import { NextResponse } from "next/server";
@@ -91,32 +89,24 @@ export async function POST(request: Request) {
     const orgId = doc.id;
 
     try {
-      if (await hasColdStorage({ orgId })) {
-        await transitionToColdStorage({
-          target: "org",
-          id: orgId,
-          billingStatus: "past_due",
-          auditTrigger: "grace_period_expired",
-        });
-        results.push({ type: "org", id: orgId, status: "already_migrated" });
-        continue;
-      }
-
-      const result = await migrateOrgToColdStorage(
+      const result = await finalizeOrganizationColdStorage({
         orgId,
-        "payment_failed" as ColdStorageSourceType
-      );
-      await transitionToColdStorage({
-        target: "org",
-        id: orgId,
-        billingStatus: "past_due",
+        sourceType: "payment_failed" as ColdStorageSourceType,
         auditTrigger: "grace_period_expired",
+        lifecycleBilling: "past_due",
+        cancelStripeWhenPossible: true,
+        isAdminRemoval: false,
       });
       results.push({
         type: "org",
         id: orgId,
-        status: "migrated",
-        error: result.migrated > 0 ? undefined : "no_files",
+        status: result.skipped ? "skipped" : "migrated",
+        error:
+          result.skipped && result.message === "already_finalized"
+            ? undefined
+            : !result.skipped && result.migrated === 0
+              ? "no_files"
+              : undefined,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

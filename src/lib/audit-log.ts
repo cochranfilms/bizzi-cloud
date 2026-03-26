@@ -13,6 +13,7 @@ export type AuditAction =
   | "account_deletion_canceled_by_payment"
   | "cold_storage_deleted"
   | "cold_storage_entered"
+  | "personal_team_cold_storage_finalized"
   | "do_not_sell_opt_out"
   | "grace_period_started"
   | "privacy_preferences_update"

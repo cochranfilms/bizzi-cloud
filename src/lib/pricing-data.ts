@@ -86,6 +86,11 @@ export const storageTiers = [
   },
 ];
 
+/** Bizzi Pro / Network / We Bizzi — personal team seats allowed (not Free / Creator). */
+export function planAllowsPersonalTeamSeats(planId: string): boolean {
+  return storageTiers.some((t) => t.id === planId && t.allowsSeats);
+}
+
 export const plans = [
   {
     id: "solo",

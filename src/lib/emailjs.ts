@@ -7,6 +7,7 @@
  * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
  * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
  * Org seat invite: EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE (optional; when set, invite email sent when org admin invites member)
+ * Personal team invite: EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE (optional; when set, email sent for personal-account team invites)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -155,6 +156,27 @@ function getOrgSeatInviteConfig(): {
   };
 }
 
+function getPersonalTeamInviteConfig(): {
+  serviceId: string;
+  templatePersonalTeamInvite: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templatePersonalTeamInvite =
+    process.env.EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templatePersonalTeamInvite || !publicKey) return null;
+  return {
+    serviceId,
+    templatePersonalTeamInvite,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
 function getOrgRemovalConfig(): {
   serviceId: string;
   templateOwner: string;
@@ -296,6 +318,47 @@ export async function sendOrgSeatInviteEmail(
   );
 }
 
+export interface PersonalTeamInviteEmailParams {
+  to_email: string;
+  inviter_name: string;
+  seat_access_label: string;
+  what_they_get: string;
+  cta_url: string;
+  cta_label: string;
+}
+
+/**
+ * Personal-account team invite (not Organization).
+ * Requires EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE. If not set, logs and skips.
+ * Template params: to_email, inviter_name, seat_access_label, what_they_get, cta_url, cta_label, logo_url
+ */
+export async function sendPersonalTeamInviteEmail(
+  params: PersonalTeamInviteEmailParams
+): Promise<void> {
+  const config = getPersonalTeamInviteConfig();
+  if (!config) {
+    console.warn(
+      "[EmailJS] Personal team invite skipped: EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE not set"
+    );
+    return;
+  }
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templatePersonalTeamInvite,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
 export interface OrgRemovalOwnerEmailParams {
   to_email: string;
   org_name: string;
@@ -356,6 +419,67 @@ export async function sendOrgRemovalMemberEmail(
       privateKey: config.privateKey,
     }
   );
+}
+
+async function optionalTemplateSend(
+  templateId: string | undefined,
+  templateParams: Record<string, unknown>
+): Promise<void> {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+  if (!serviceId || !templateId || !publicKey) return;
+  await emailjs.send(
+    serviceId,
+    templateId,
+    { ...templateParams, logo_url: getEmailLogoUrl() },
+    { publicKey, privateKey: privateKey ?? undefined }
+  );
+}
+
+/** Org entered recovery (cold) storage. Requires EMAILJS_TEMPLATE_ID_ORG_RECOVERY_STORAGE. */
+export async function sendOrgRecoveryStorageEmail(params: {
+  to_email: string;
+  org_name: string;
+  expires_date: string;
+  support_url: string;
+}): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_ORG_RECOVERY_STORAGE, params);
+}
+
+/** Org restored from cold storage. Requires EMAILJS_TEMPLATE_ID_ORG_RESTORED. */
+export async function sendOrgRestoredEmail(params: {
+  to_email: string;
+  org_name: string;
+}): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_ORG_RESTORED, params);
+}
+
+/** Org cold storage permanently expired. Requires EMAILJS_TEMPLATE_ID_ORG_PURGED. */
+export async function sendOrgPurgedEmail(params: {
+  to_email: string;
+  org_name: string;
+}): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_ORG_PURGED, params);
+}
+
+/** Personal team entered recovery storage. Requires EMAILJS_TEMPLATE_ID_TEAM_RECOVERY_STORAGE. */
+export async function sendTeamRecoveryStorageEmail(params: {
+  to_email: string;
+  expires_date: string;
+  support_url: string;
+}): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_TEAM_RECOVERY_STORAGE, params);
+}
+
+/** Personal team restored. Requires EMAILJS_TEMPLATE_ID_TEAM_RESTORED. */
+export async function sendTeamRestoredEmail(params: { to_email: string }): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_TEAM_RESTORED, params);
+}
+
+/** Personal team cold storage permanently expired. Requires EMAILJS_TEMPLATE_ID_TEAM_PURGED. */
+export async function sendTeamPurgedEmail(params: { to_email: string }): Promise<void> {
+  await optionalTemplateSend(process.env.EMAILJS_TEMPLATE_ID_TEAM_PURGED, params);
 }
 
 export interface ShareFileEmailParams {

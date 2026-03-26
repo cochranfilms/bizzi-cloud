@@ -4,6 +4,7 @@
  * If sole admin: rejects with message to transfer ownership or add another admin first.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { suggestIdentityDeletionAfterOrgLeave } from "@/lib/identity-scope";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 
@@ -84,11 +85,9 @@ export async function POST(request: Request) {
   });
 
   const personalStatus = profileData?.personal_status as string | undefined;
-  const hasPersonalWorkspace =
-    !personalStatus || personalStatus === "active" || personalStatus === "scheduled_delete" || personalStatus === "recoverable";
 
   return NextResponse.json({
     ok: true,
-    suggestIdentityDeletion: !hasPersonalWorkspace,
+    suggestIdentityDeletion: suggestIdentityDeletionAfterOrgLeave(personalStatus),
   });
 }

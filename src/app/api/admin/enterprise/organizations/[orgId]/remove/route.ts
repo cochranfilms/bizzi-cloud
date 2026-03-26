@@ -1,7 +1,7 @@
 /**
  * POST /api/admin/enterprise/organizations/[orgId]/remove
  * Admin-only: Mark organization for removal. Sends emails to owner (detailed) and seat members (short).
- * Members have 14 days to save files. Cron job performs permanent deletion after deadline.
+ * Members have 14 days to export data. Cron moves the org to cold storage (recoverable window) after the deadline.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";

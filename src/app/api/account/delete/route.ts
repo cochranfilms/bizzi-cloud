@@ -12,6 +12,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import { migrateAccountDeleteToColdStorage } from "@/lib/cold-storage-migrate";
 import { snapshotConsumerGalleries } from "@/lib/cold-storage-gallery-snapshot";
+import { finalizePersonalTeamColdStorage } from "@/lib/personal-team-container-finalize";
 import {
   transitionToScheduledDelete,
   transitionToPersonalScheduledDelete,
@@ -170,6 +171,28 @@ export async function POST(request: Request) {
         "[account-delete] Stripe cancel failed for user",
         uid,
         err
+      );
+    }
+  }
+
+  const teamAsOwnerSnap = await db
+    .collection("personal_team_seats")
+    .where("team_owner_user_id", "==", uid)
+    .limit(1)
+    .get();
+  if (!teamAsOwnerSnap.empty) {
+    try {
+      await finalizePersonalTeamColdStorage({
+        teamOwnerUserId: uid,
+        sourceType: "team_container_shutdown",
+        auditTrigger: "account_delete_team_owner",
+      });
+      console.log("[account-delete] Finalized personal team container for owner", uid);
+    } catch (err) {
+      console.error("[account-delete] Personal team finalize failed:", err);
+      return NextResponse.json(
+        { error: "Could not finalize team storage. Try again or contact support." },
+        { status: 500 }
       );
     }
   }

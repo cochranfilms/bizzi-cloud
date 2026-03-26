@@ -16,7 +16,6 @@ import {
   CreditCard,
   Loader2,
   Check,
-  Building2,
   ExternalLink,
   HardDrive,
   Shield,
@@ -31,8 +30,15 @@ import {
   PLAN_LABELS,
   ADDON_LABELS,
   STORAGE_ADDON_LABELS,
+  planAllowsPersonalTeamSeats,
   type StorageAddonId,
 } from "@/lib/pricing-data";
+import {
+  sumExtraTeamSeats,
+  TEAM_SEAT_MONTHLY_USD,
+  PERSONAL_TEAM_SEAT_ACCESS_LABELS,
+} from "@/lib/team-seat-pricing";
+import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
@@ -283,84 +289,6 @@ function AccountSection() {
           </p>
         )}
       </div>
-    </section>
-  );
-}
-
-function CreateOrganizationSection() {
-  const router = useRouter();
-  const { org, loading: orgLoading, refetch } = useEnterprise();
-  const { user } = useAuth();
-  const [orgName, setOrgName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = orgName.trim();
-    if (trimmed.length < 2) {
-      setError("Organization name must be at least 2 characters");
-      return;
-    }
-    setError(null);
-    setCreating(true);
-    try {
-      const token = await user?.getIdToken();
-      const res = await fetch("/api/enterprise/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to create organization");
-      }
-      await refetch();
-      router.push("/enterprise");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  if (orgLoading || org) return null;
-
-  return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-        <Building2 className="h-5 w-5 text-bizzi-blue" />
-        Create organization
-      </h2>
-      <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-        Create an enterprise organization to invite team members, customize branding, and manage shared storage.
-      </p>
-      <form onSubmit={handleCreate} className="flex gap-2">
-        <input
-          type="text"
-          value={orgName}
-          onChange={(e) => {
-            setOrgName(e.target.value);
-            setError(null);
-          }}
-          placeholder="Your company name"
-          disabled={creating}
-          className="flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-        />
-        <button
-          type="submit"
-          disabled={creating || orgName.trim().length < 2}
-          className="shrink-0 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
-        >
-          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
-        </button>
-      </form>
-      {error && (
-        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
     </section>
   );
 }
@@ -733,7 +661,13 @@ function SubscriptionSection() {
     hasPortalAccess,
     loading,
     refetch,
+    teamSeatCounts,
+    personalTeamOwnerId,
   } = useSubscription();
+  const [teamSeatUsage, setTeamSeatUsage] = useState<{
+    used: number;
+    purchased: number;
+  } | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -742,6 +676,43 @@ function SubscriptionSection() {
   const [confirmationType, setConfirmationType] = useState<"updated" | "cancelled" | "purchase" | null>(null);
   const [powerUpWarningModalOpen, setPowerUpWarningModalOpen] = useState(false);
   const [powerUpCheckLoading, setPowerUpCheckLoading] = useState(false);
+
+  const teamSeatsEligible =
+    planAllowsPersonalTeamSeats(planId ?? "free") && !personalTeamOwnerId;
+  const purchasedTeamSeats = sumExtraTeamSeats(teamSeatCounts);
+
+  useEffect(() => {
+    if (!user || !teamSeatsEligible || loading) {
+      setTeamSeatUsage(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/personal-team/members", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          overview?: { used: Record<string, number>; team_seat_counts: Record<string, number> };
+        };
+        const u = data.overview?.used;
+        const p = data.overview?.team_seat_counts;
+        if (!u || !p || cancelled) return;
+        const used =
+          (u.none ?? 0) + (u.gallery ?? 0) + (u.editor ?? 0) + (u.fullframe ?? 0);
+        const purch =
+          (p.none ?? 0) + (p.gallery ?? 0) + (p.editor ?? 0) + (p.fullframe ?? 0);
+        setTeamSeatUsage({ used, purchased: purch });
+      } catch {
+        if (!cancelled) setTeamSeatUsage(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, teamSeatsEligible, loading, planId, purchasedTeamSeats]);
 
   useEffect(() => {
     if (!user) return;
@@ -927,6 +898,60 @@ function SubscriptionSection() {
                 </strong>
               </p>
             )}
+            {teamSeatsEligible && (
+              <div className="rounded-lg border border-cyan-200/80 bg-cyan-50/60 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/25">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">Team seats</p>
+                <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+                  Personal team (not Organization). Extra seats are billed per access level.
+                </p>
+                <ul className="mt-2 space-y-0.5 text-xs text-neutral-600 dark:text-neutral-400">
+                  <li>
+                    {PERSONAL_TEAM_SEAT_ACCESS_LABELS.none}: ${TEAM_SEAT_MONTHLY_USD.none}/mo each
+                  </li>
+                  <li>
+                    {PERSONAL_TEAM_SEAT_ACCESS_LABELS.gallery}: ${TEAM_SEAT_MONTHLY_USD.gallery}/mo each
+                  </li>
+                  <li>
+                    {PERSONAL_TEAM_SEAT_ACCESS_LABELS.editor}: ${TEAM_SEAT_MONTHLY_USD.editor}/mo each
+                  </li>
+                  <li>
+                    {PERSONAL_TEAM_SEAT_ACCESS_LABELS.fullframe}: ${TEAM_SEAT_MONTHLY_USD.fullframe}/mo each
+                  </li>
+                </ul>
+                <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-300">
+                  Purchased extra seats:{" "}
+                  <strong className="text-neutral-900 dark:text-white">{purchasedTeamSeats}</strong>
+                  {teamSeatUsage && (
+                    <>
+                      {" "}
+                      · In use (assigned + pending):{" "}
+                      <strong className="text-neutral-900 dark:text-white">
+                        {teamSeatUsage.used}
+                      </strong>
+                      {" · "}
+                      Available:{" "}
+                      <strong className="text-neutral-900 dark:text-white">
+                        {Math.max(0, teamSeatUsage.purchased - teamSeatUsage.used)}
+                      </strong>
+                    </>
+                  )}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/dashboard/change-plan"
+                    className="inline-flex items-center rounded-lg bg-bizzi-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-bizzi-cyan"
+                  >
+                    Add or change team seats
+                  </Link>
+                  <Link
+                    href="/dashboard/settings?tab=team"
+                    className="inline-flex items-center rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-800 hover:bg-white dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                  >
+                    Team Management
+                  </Link>
+                </div>
+              </div>
+            )}
             {hasPortalAccess ? (
               <div className="flex flex-wrap items-center gap-3">
                 {isDesktop ? (
@@ -1084,8 +1109,12 @@ function SubscriptionSection() {
 function SettingsContent() {
   const searchParams = useSearchParams();
   useEffect(() => {
-    if (searchParams.get("tab") === "privacy") {
+    const tab = searchParams.get("tab");
+    if (tab === "privacy") {
       document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth" });
+    }
+    if (tab === "team") {
+      document.getElementById("team-management")?.scrollIntoView({ behavior: "smooth" });
     }
   }, [searchParams]);
 
@@ -1096,8 +1125,8 @@ function SettingsContent() {
           <AccountSection />
           <StorageSection />
           <PrivacySection />
-          <CreateOrganizationSection />
           <SubscriptionSection />
+          <TeamManagementSection />
       </div>
     </DashboardRouteFade>
   );

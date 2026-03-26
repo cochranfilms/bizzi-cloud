@@ -473,6 +473,28 @@ export async function GET(request: Request) {
   });
   let driveIds = new Set(driveMap.keys());
 
+  if (orgFilter == null) {
+    const profileForTeam = await db.collection("profiles").doc(uid).get();
+    const pto = profileForTeam.data()?.personal_team_owner_id as string | undefined;
+    if (pto && pto !== uid) {
+      const seatSnap = await db.collection("personal_team_seats").doc(`${pto}_${uid}`).get();
+      if (seatSnap.exists && seatSnap.data()?.status === "active") {
+        const teamDrivesSnap = await db
+          .collection("linked_drives")
+          .where("userId", "==", pto)
+          .get();
+        for (const d of teamDrivesSnap.docs) {
+          const data = d.data();
+          if (data.deleted_at || data.organization_id) continue;
+          if (!driveMap.has(d.id)) {
+            driveMap.set(d.id, (data.name as string) ?? "Folder");
+          }
+          driveIds.add(d.id);
+        }
+      }
+    }
+  }
+
   // Enterprise: get accessible workspace IDs (workspace-based visibility)
   let accessibleWorkspaceIds: string[] = [];
   if (orgFilter != null) {
@@ -619,12 +641,104 @@ export async function GET(request: Request) {
       });
     }
   } else {
-    // Personal: owner-based query (unchanged)
-    q = db
-      .collection("backup_files")
-      .where("userId", "==", uid)
-      .where("deleted_at", "==", null)
-      .where("organization_id", "==", null);
+    let idList =
+      filters.driveId && driveIds.has(filters.driveId)
+        ? [filters.driveId]
+        : [...driveIds];
+    if (idList.length === 0) {
+      return NextResponse.json({
+        files: [],
+        totalCount: 0,
+        hasMore: false,
+        cursor: null,
+      });
+    }
+    const PERSONAL_DRIVE_IN_LIMIT = 30;
+    if (idList.length <= PERSONAL_DRIVE_IN_LIMIT) {
+      q = db
+        .collection("backup_files")
+        .where("linked_drive_id", "in", idList)
+        .where("deleted_at", "==", null);
+    } else {
+      const batches = [];
+      for (let i = 0; i < idList.length; i += PERSONAL_DRIVE_IN_LIMIT) {
+        const batch = idList.slice(i, i + PERSONAL_DRIVE_IN_LIMIT);
+        batches.push(
+          db
+            .collection("backup_files")
+            .where("linked_drive_id", "in", batch)
+            .where("deleted_at", "==", null)
+            .limit(MAX_FETCH_FOR_POST_FILTER * 2)
+            .get()
+        );
+      }
+      const results = await Promise.all(batches);
+      const allDocs = results.flatMap((s) => s.docs);
+      const orderFieldEarly =
+        filters.sort === "newest" || filters.sort === "oldest"
+          ? "modified_at"
+          : filters.sort === "largest" || filters.sort === "smallest"
+            ? "size_bytes"
+            : "relative_path";
+      const orderDirEarly =
+        filters.sort === "oldest" || filters.sort === "smallest" || filters.sort === "name_asc"
+          ? "asc"
+          : "desc";
+      allDocs.sort((a, b) => {
+        const va = a.data()[orderFieldEarly];
+        const vb = b.data()[orderFieldEarly];
+        if (va == null && vb == null) return 0;
+        if (va == null) return orderDirEarly === "asc" ? -1 : 1;
+        if (vb == null) return orderDirEarly === "asc" ? 1 : -1;
+        const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+        return orderDirEarly === "asc" ? cmp : -cmp;
+      });
+      const driveFilterPersonal = (d: { data: () => Record<string, unknown> }) =>
+        driveIds.has((d.data().linked_drive_id as string) ?? "");
+      let filteredDocs = allDocs.filter(driveFilterPersonal);
+      const batchNeedsPostFilter =
+        !!filters.resolution ||
+        !!filters.codec ||
+        !!filters.search ||
+        !!filters.tags ||
+        !!filters.aspectRatio ||
+        !!filters.fileType ||
+        (filters.fileTypes?.length ?? 0) > 0 ||
+        !!filters.frameRate ||
+        !!filters.duration ||
+        !!filters.container ||
+        !!filters.audio ||
+        !!filters.audioChannels ||
+        !!filters.colorProfile ||
+        !!filters.bitDepth ||
+        !!filters.orientation ||
+        !!filters.rawFormat ||
+        !!filters.cameraModel ||
+        !!filters.lens ||
+        !!filters.editedStatus ||
+        !!filters.shared ||
+        !!filters.commented;
+      if (batchNeedsPostFilter) {
+        filteredDocs = filteredDocs.filter((doc) => {
+          const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
+          return passesPostFilters(item, filtersWithIds);
+        });
+      }
+      const page = filteredDocs.slice(0, filters.pageSize);
+      const lastDoc = page[page.length - 1];
+      const hasMore = filteredDocs.length > filters.pageSize;
+      const files = page.map((d) =>
+        toFileResponse(d as import("firebase-admin/firestore").QueryDocumentSnapshot, driveMap, {
+          includeAdminFields: false,
+        })
+      );
+      return NextResponse.json({
+        files,
+        totalCount: filteredDocs.length,
+        hasMore,
+        cursor: hasMore && lastDoc ? lastDoc.id : null,
+      });
+    }
   }
 
   if (filters.driveId && driveIds.has(filters.driveId)) {

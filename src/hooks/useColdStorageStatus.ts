@@ -5,6 +5,14 @@ import { useAuth } from "@/context/AuthContext";
 
 export interface ColdStorageStatus {
   hasColdStorage: boolean;
+  containerType?: "consumer" | "organization" | "personal_team";
+  recoveryRole?:
+    | "consumer"
+    | "org_admin"
+    | "org_member"
+    | "team_admin"
+    | "team_member";
+  canRestoreContainer?: boolean;
   sourceType?: string;
   expiresAt?: string | null;
   daysRemaining?: number | null;
@@ -12,6 +20,8 @@ export interface ColdStorageStatus {
   unpaidInvoiceUrl?: string | null;
   billingStatus?: string | null;
   orgName?: string | null;
+  informationalMessage?: string | null;
+  restoreRequirements?: { totalBytesUsed: number; requiredAddonIds: string[] };
 }
 
 export function useColdStorageStatus() {
@@ -50,6 +60,9 @@ export function useColdStorageStatus() {
 
   return {
     hasColdStorage: data.hasColdStorage,
+    containerType: data.containerType,
+    recoveryRole: data.recoveryRole,
+    canRestoreContainer: data.canRestoreContainer,
     sourceType: data.sourceType,
     expiresAt: data.expiresAt,
     daysRemaining: data.daysRemaining,
@@ -57,6 +70,8 @@ export function useColdStorageStatus() {
     unpaidInvoiceUrl: data.unpaidInvoiceUrl,
     billingStatus: data.billingStatus,
     orgName: data.orgName,
+    informationalMessage: data.informationalMessage,
+    restoreRequirements: data.restoreRequirements,
     loading,
     refetch: fetchStatus,
   };

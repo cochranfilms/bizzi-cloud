@@ -14,6 +14,33 @@
       "collectionGroup": "backup_files",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "modified_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "deleted_at", "order": "ASCENDING" },
         { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
         { "fieldPath": "organization_id", "order": "ASCENDING" },
@@ -714,6 +741,22 @@
       "fields": [
         { "fieldPath": "team_owner_user_id", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "personal_team_invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "team_owner_user_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cold_storage_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uploader_email", "order": "ASCENDING" },
+        { "fieldPath": "storage_scope_type", "order": "ASCENDING" }
       ]
     }
   ],

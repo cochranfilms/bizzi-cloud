@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  EmailJS: EMAILJS_TEMPLATE_ID_ORG_RECOVERY_STORAGE
+  To: {{to_email}}
+
+  Subject (paste in EmailJS):
+  {{org_name}} is in recovery storage — restore access from your admin dashboard
+
+  Variables: to_email, org_name, expires_date, support_url, logo_url
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Organization recovery storage</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; }
+    .logo { margin-bottom: 24px; }
+    .logo img { height: 48px; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    p { margin: 0 0 16px; }
+    .pill { display: inline-block; background: #fff7ed; color: #c2410c; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .cta { display: inline-block; background: #00BFFF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+    .callout { background: #f8fafc; border-left: 4px solid #00BFFF; border-radius: 0 8px 8px 0; padding: 16px 18px; margin: 24px 0; }
+    .footer { font-size: 12px; color: #64748b; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <img src="{{logo_url}}" alt="Bizzi Cloud" />
+  </div>
+  <span class="pill">Recovery storage</span>
+  <h1>{{org_name}} has moved to recovery storage</h1>
+  <p>Hello,</p>
+  <p>Your organization <strong>{{org_name}}</strong> on Bizzi Cloud is now in <strong>recovery storage</strong>. Data is retained until the date below. As the <strong>organization administrator</strong>, you can restore full access from your dashboard using the normal billing / restore flow.</p>
+  <div class="callout">
+    <strong>Restore-by date</strong><br />
+    {{expires_date}}
+  </div>
+  <p>Team members cannot complete organization restore; only an org admin can. If you need help, contact support.</p>
+  <p>
+    <a href="{{support_url}}" class="cta">Contact support</a>
+  </p>
+  <p class="footer">This email was sent to {{to_email}} regarding {{org_name}}.</p>
+  <div class="footer">
+    <p>Bizzi Cloud · Organization recovery</p>
+  </div>
+</body>
+</html>

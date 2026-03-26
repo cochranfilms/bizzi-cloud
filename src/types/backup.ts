@@ -54,6 +54,11 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   team_id?: string | null;
   /** Uploader’s team admin when file is in shared personal team storage */
   personal_team_owner_id?: string | null;
+  /** Normalized container scope for lifecycle / policy */
+  container_type?: "personal" | "organization" | "personal_team" | null;
+  container_id?: string | null;
+  uploader_email?: string | null;
+  role_at_upload?: string | null;
   /** Future: project scope */
   project_id?: string | null;
 }
