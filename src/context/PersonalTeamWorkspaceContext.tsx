@@ -8,25 +8,38 @@ import {
   useState,
   useCallback,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
-import { getFirebaseFirestore } from "@/lib/firebase/client";
+import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import {
   PERSONAL_TEAM_SETTINGS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
-import { getThemeVariables } from "@/lib/enterprise-themes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
-import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
+import {
+  PERSONAL_TEAM_SEAT_ACCESS_LABELS,
+  type PersonalTeamSeatAccess,
+} from "@/lib/team-seat-pricing";
 
 const SESSION_TEAM_KEY = "bizzi-active-personal-team";
+
+export const BIZZI_TEAM_WORKSPACE_UPDATED = "bizzi-team-workspace-updated" as const;
+
+export function notifyTeamWorkspaceUpdated(ownerId: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(BIZZI_TEAM_WORKSPACE_UPDATED, { detail: { ownerId } })
+  );
+}
 
 export interface PersonalTeamWorkspaceContextValue {
   teamOwnerUid: string;
   /** Display label for switcher / chrome */
   teamName: string;
+  teamLogoUrl: string | null;
+  teamThemeId: EnterpriseThemeId;
   roleLabel: string;
   loading: boolean;
 }
@@ -36,7 +49,52 @@ const PersonalTeamWorkspaceContext =
 
 function roleForMemberLevel(level: string | undefined): string {
   if (level === "none" || !level) return "Member";
-  return PERSONAL_TEAM_SEAT_ACCESS_LABELS[level as PersonalTeamSeatAccess] ?? "Member";
+  return (
+    PERSONAL_TEAM_SEAT_ACCESS_LABELS[level as PersonalTeamSeatAccess] ?? "Member"
+  );
+}
+
+async function loadTeamWorkspaceAppearance(
+  ownerUid: string
+): Promise<{
+  name: string;
+  logoUrl: string | null;
+  themeId: EnterpriseThemeId;
+}> {
+  try {
+    const db = getFirebaseFirestore();
+    const settingsSnap = await getDoc(
+      doc(db, PERSONAL_TEAM_SETTINGS_COLLECTION, ownerUid)
+    );
+    const data = settingsSnap.data();
+    const customName = (data?.team_name as string | undefined)?.trim();
+    const logoUrl =
+      (data?.logo_url as string | undefined)?.trim() || null;
+    const themeId = ((data?.theme as string | undefined) ??
+      "bizzi") as EnterpriseThemeId;
+    if (customName) {
+      return { name: customName, logoUrl, themeId };
+    }
+    const profSnap = await getDoc(doc(db, "profiles", ownerUid));
+    const d = profSnap.data();
+    const pName =
+      (d?.display_name as string)?.trim() ||
+      (d?.displayName as string)?.trim() ||
+      (d?.name as string)?.trim() ||
+      "";
+    const label = pName
+      ? pName.endsWith("s")
+        ? `${pName}' team`
+        : `${pName}'s team`
+      : "Team workspace";
+    return { name: label, logoUrl, themeId };
+  } catch {
+    return {
+      name: "Team workspace",
+      logoUrl: null,
+      themeId: "bizzi",
+    };
+  }
 }
 
 export function PersonalTeamWorkspaceProvider({
@@ -48,32 +106,14 @@ export function PersonalTeamWorkspaceProvider({
 }) {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [teamName, setTeamName] = useState<string>("Team workspace");
+  const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null);
+  const [teamThemeId, setTeamThemeId] = useState<EnterpriseThemeId>("bizzi");
   const [roleLabel, setRoleLabel] = useState<string>("Member");
   const [accessLoading, setAccessLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
-
-  const resolveTeamLabel = useCallback(async (ownerUid: string): Promise<string> => {
-    try {
-      const db = getFirebaseFirestore();
-      const settingsSnap = await getDoc(
-        doc(db, PERSONAL_TEAM_SETTINGS_COLLECTION, ownerUid)
-      );
-      const customName = (settingsSnap.data()?.team_name as string | undefined)?.trim();
-      if (customName) return customName;
-      const snap = await getDoc(doc(db, "profiles", ownerUid));
-      const d = snap.data();
-      const name =
-        (d?.display_name as string)?.trim() ||
-        (d?.displayName as string)?.trim() ||
-        (d?.name as string)?.trim() ||
-        "";
-      if (name) return name.endsWith("s") ? `${name}' team` : `${name}'s team`;
-    } catch {
-      /* ignore */
-    }
-    return "Team workspace";
-  }, []);
+  const [statusChecked, setStatusChecked] = useState(!isFirebaseConfigured());
 
   useEffect(() => {
     if (typeof window !== "undefined" && teamOwnerUid) {
@@ -86,28 +126,63 @@ export function PersonalTeamWorkspaceProvider({
   }, [teamOwnerUid]);
 
   useEffect(() => {
-    if (!allowed || !teamOwnerUid) return;
+    if (!isFirebaseConfigured()) return;
+    if (authLoading) return;
+    if (!user) {
+      setStatusChecked(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const db = getFirebaseFirestore();
-        const snap = await getDoc(doc(db, PERSONAL_TEAM_SETTINGS_COLLECTION, teamOwnerUid));
-        const themeId = ((snap.data()?.theme as string | undefined) ?? "bizzi") as EnterpriseThemeId;
-        if (cancelled) return;
-        const vars = getThemeVariables(themeId);
-        for (const [k, v] of Object.entries(vars)) {
-          document.documentElement.style.setProperty(k, v);
+        const token = await user.getIdToken();
+        const res = await fetch("/api/account/status", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.redirect_to_interstitial) {
+            router.replace("/account/personal-deleted");
+            return;
+          }
         }
+        if (!cancelled) setStatusChecked(true);
       } catch {
-        /* ignore */
+        if (!cancelled) setStatusChecked(true);
       }
     })();
     return () => {
       cancelled = true;
-      document.documentElement.style.removeProperty("--enterprise-primary");
-      document.documentElement.style.removeProperty("--enterprise-accent");
     };
-  }, [allowed, teamOwnerUid]);
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    if (authLoading) return;
+    if (!user) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname ?? "/team")}`);
+    }
+  }, [authLoading, user, router, pathname]);
+
+  const refreshAppearance = useCallback(async () => {
+    if (!teamOwnerUid) return;
+    const app = await loadTeamWorkspaceAppearance(teamOwnerUid);
+    setTeamName(app.name);
+    setTeamLogoUrl(app.logoUrl);
+    setTeamThemeId(app.themeId);
+  }, [teamOwnerUid]);
+
+  useEffect(() => {
+    if (!allowed || !teamOwnerUid) return;
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent<{ ownerId?: string }>).detail;
+      if (d?.ownerId && d.ownerId !== teamOwnerUid) return;
+      void refreshAppearance();
+    };
+    window.addEventListener(BIZZI_TEAM_WORKSPACE_UPDATED, handler);
+    return () =>
+      window.removeEventListener(BIZZI_TEAM_WORKSPACE_UPDATED, handler);
+  }, [allowed, teamOwnerUid, refreshAppearance]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -122,9 +197,11 @@ export function PersonalTeamWorkspaceProvider({
       setAccessLoading(true);
       try {
         if (user.uid === teamOwnerUid) {
-          const label = await resolveTeamLabel(teamOwnerUid);
+          const app = await loadTeamWorkspaceAppearance(teamOwnerUid);
           if (cancelled) return;
-          setTeamName(label);
+          setTeamName(app.name);
+          setTeamLogoUrl(app.logoUrl);
+          setTeamThemeId(app.themeId);
           setRoleLabel("Admin");
           setAllowed(true);
           return;
@@ -132,18 +209,25 @@ export function PersonalTeamWorkspaceProvider({
 
         const db = getFirebaseFirestore();
         const seatId = personalTeamSeatDocId(teamOwnerUid, user.uid);
-        const seatSnap = await getDoc(doc(db, "personal_team_seats", seatId));
+        const seatSnap = await getDoc(
+          doc(db, "personal_team_seats", seatId)
+        );
         const st = seatSnap.data()?.status as string | undefined;
-        if (!seatSnap.exists() || (st !== "active" && st !== "cold_storage")) {
+        if (
+          !seatSnap.exists() ||
+          (st !== "active" && st !== "cold_storage")
+        ) {
           if (!cancelled) {
             setAllowed(false);
           }
           return;
         }
         const level = seatSnap.data()?.seat_access_level as string | undefined;
-        const label = await resolveTeamLabel(teamOwnerUid);
+        const app = await loadTeamWorkspaceAppearance(teamOwnerUid);
         if (cancelled) return;
-        setTeamName(label);
+        setTeamName(app.name);
+        setTeamLogoUrl(app.logoUrl);
+        setTeamThemeId(app.themeId);
         setRoleLabel(roleForMemberLevel(level));
         setAllowed(true);
       } finally {
@@ -154,7 +238,7 @@ export function PersonalTeamWorkspaceProvider({
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user, teamOwnerUid, resolveTeamLabel]);
+  }, [authLoading, user, teamOwnerUid]);
 
   useEffect(() => {
     if (authLoading || accessLoading) return;
@@ -168,22 +252,47 @@ export function PersonalTeamWorkspaceProvider({
     return {
       teamOwnerUid,
       teamName,
+      teamLogoUrl,
+      teamThemeId,
       roleLabel,
       loading: false,
     };
-  }, [allowed, teamOwnerUid, teamName, roleLabel]);
+  }, [
+    allowed,
+    teamOwnerUid,
+    teamName,
+    teamLogoUrl,
+    teamThemeId,
+    roleLabel,
+  ]);
 
-  const ready = !authLoading && !accessLoading && !!user && allowed && value !== null;
+  if (!isFirebaseConfigured()) {
+    return <>{children}</>;
+  }
+
+  if (!authLoading && !user) {
+    return null;
+  }
+
+  const shellReady =
+    !authLoading &&
+    !!user &&
+    statusChecked &&
+    !accessLoading &&
+    allowed &&
+    value !== null;
 
   return (
     <PersonalTeamWorkspaceContext.Provider value={value}>
-      <DashboardRouteFade
-        ready={ready}
-        srOnlyMessage="Loading team workspace"
-        placeholderClassName="min-h-screen rounded-none"
-      >
-        {ready ? children : null}
-      </DashboardRouteFade>
+      <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950">
+        <DashboardRouteFade
+          ready={shellReady}
+          srOnlyMessage="Loading team workspace"
+          placeholderClassName="min-h-screen rounded-none"
+        >
+          {shellReady ? children : null}
+        </DashboardRouteFade>
+      </div>
     </PersonalTeamWorkspaceContext.Provider>
   );
 }

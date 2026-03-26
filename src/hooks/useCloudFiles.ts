@@ -54,6 +54,9 @@ function filterScopedLinkedDrives(
       return !oid;
     })
     .filter((d) => {
+      if (opts.isEnterpriseContext && opts.orgId && d.is_org_shared === true) {
+        return false;
+      }
       const creatorSection = d.creator_section === true;
       const isCreatorRaw = d.is_creator_raw === true;
       if (opts.creatorOnly) return creatorSection;

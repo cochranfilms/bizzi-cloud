@@ -6,6 +6,10 @@ import Link from "next/link";
 import { ChevronDown, User, Building2, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import {
+  usePersonalTeamWorkspace,
+  BIZZI_TEAM_WORKSPACE_UPDATED,
+} from "@/context/PersonalTeamWorkspaceContext";
 
 interface Workspace {
   id: string;
@@ -37,6 +41,14 @@ export default function WorkspaceSwitcher() {
   const activeTeamOwnerId = teamPathMatch?.[1] ?? null;
   const { user } = useAuth();
   const { org } = useEnterprise();
+  const teamCtx = usePersonalTeamWorkspace();
+  const [workspaceListVersion, setWorkspaceListVersion] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setWorkspaceListVersion((v) => v + 1);
+    window.addEventListener(BIZZI_TEAM_WORKSPACE_UPDATED, bump);
+    return () => window.removeEventListener(BIZZI_TEAM_WORKSPACE_UPDATED, bump);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -58,7 +70,7 @@ export default function WorkspaceSwitcher() {
         setWorkspaces({ personal: null, personalTeams: [], organizations: [] });
       }
     })();
-  }, [user]);
+  }, [user, workspaceListVersion]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -72,7 +84,9 @@ export default function WorkspaceSwitcher() {
 
   const activeTeamName =
     activeTeamOwnerId &&
-    workspaces?.personalTeams?.find((t) => t.ownerUserId === activeTeamOwnerId)?.name;
+    (teamCtx?.teamOwnerUid === activeTeamOwnerId
+      ? teamCtx.teamName
+      : workspaces?.personalTeams?.find((t) => t.ownerUserId === activeTeamOwnerId)?.name);
 
   const currentLabel = isEnterprise
     ? org?.name ?? "Enterprise"

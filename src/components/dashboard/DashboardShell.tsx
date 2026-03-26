@@ -7,10 +7,13 @@ import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
+import TeamBrandingOnboardingGate from "./TeamBrandingOnboardingGate";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
 import SupportHelpButton from "./SupportHelpButton";
 import GlobalDropZone from "./GlobalDropZone";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
+import { getThemeVariables } from "@/lib/enterprise-themes";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -30,9 +33,13 @@ export default function DashboardShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const { cssVariables } = useDashboardAppearance();
   const pathname = usePathname();
+  const teamWs = usePersonalTeamWorkspace();
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
   const rightPanelBasePath = teamNavBase ?? "/dashboard";
+  const teamThemeVars = teamWs ? getThemeVariables(teamWs.teamThemeId) : {};
+  const stackedNavTop = teamWs ? "top-[6.25rem]" : "top-14";
+  const mobilePanelBtnTop = teamWs ? "top-[7.25rem]" : "top-16";
 
   return (
     <UppyUploadProvider>
@@ -41,11 +48,15 @@ export default function DashboardShell({
         value={{ rightPanelOpen, setRightPanelOpen }}
       >
         <div
-          className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
-          style={cssVariables}
+          className={`flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 ${
+            teamWs ? "border-l-4 border-[var(--enterprise-primary)]" : ""
+          }`}
+          data-team-theme={teamWs ? teamWs.teamThemeId : undefined}
+          style={{ ...teamThemeVars, ...cssVariables } as React.CSSProperties}
         >
         {/* Top navbar - main nav */}
         <TopNavbar />
+        <TeamBrandingOnboardingGate />
         <PendingInvitesBanner />
         <BackgroundUploadIndicator />
         <SupportHelpButton />
@@ -64,7 +75,7 @@ export default function DashboardShell({
           {/* Main content */}
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Mobile panel button */}
-            <div className="fixed right-4 top-16 z-30 xl:hidden">
+            <div className={`fixed right-4 z-30 xl:hidden ${mobilePanelBtnTop}`}>
               <button
                 type="button"
                 className="rounded-lg bg-white p-2 shadow dark:bg-neutral-800"
@@ -80,7 +91,7 @@ export default function DashboardShell({
 
           {/* Right panel - desktop: always visible on xl; mobile: slide-out */}
           <div
-            className={`fixed bottom-0 right-0 top-14 z-40 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${
+            className={`fixed bottom-0 right-0 z-40 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${stackedNavTop} ${
               rightPanelOpen ? "translate-x-0" : "translate-x-full xl:translate-x-0"
             }`}
           >

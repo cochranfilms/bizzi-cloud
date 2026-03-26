@@ -550,6 +550,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           organization_id: data.organization_id ?? null,
           creator_section: data.creator_section ?? false,
           is_creator_raw: data.is_creator_raw ?? false,
+          is_org_shared: data.is_org_shared === true,
           personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
         });
       }
@@ -613,6 +614,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 organization_id: data.organization_id ?? null,
                 creator_section: data.creator_section ?? false,
                 is_creator_raw: data.is_creator_raw ?? false,
+                is_org_shared: data.is_org_shared === true,
+                personal_team_owner_id:
+                  (data.personal_team_owner_id as string | undefined) ?? null,
               });
             }
             setLinkedDrives(drives2);
@@ -654,6 +658,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         organization_id: data.organization_id ?? null,
         creator_section: data.creator_section ?? false,
         is_creator_raw: data.is_creator_raw ?? false,
+        is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     };
@@ -1251,6 +1256,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     const teamScoped = isPersonalTeamOwnerRoute(teamRouteOwnerUid, user.uid);
     const storageDrive = existing.docs.find((d) => {
       const data = d.data();
+      if (data.is_org_shared === true) return false;
       const name = data.name as string;
       if (name !== "Storage" && name !== "Uploads") return false;
       const oid = data.organization_id ?? null;
@@ -1276,6 +1282,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: data.last_synced_at ?? null,
         created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         organization_id: data.organization_id ?? null,
+        is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
@@ -1284,6 +1291,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       name: "Storage",
       permission_handle_id: `storage-${Date.now()}`,
       createdAt: new Date(),
+      is_org_shared: false,
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
@@ -1296,6 +1304,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       last_synced_at: null,
       created_at: new Date().toISOString(),
       organization_id: orgId ?? null,
+      is_org_shared: false,
       personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((ld) => ld.id !== drive.id)]);
@@ -1318,6 +1327,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     const rawDrive = existing.docs.find((d) => {
       const data = d.data();
       if (!data.is_creator_raw) return false;
+      if (data.is_org_shared === true) return false;
       const oid = data.organization_id ?? null;
       const pto = (data.personal_team_owner_id as string | undefined) ?? null;
       if (isEnterpriseContext && orgId) return oid === orgId;
@@ -1338,6 +1348,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         organization_id: data.organization_id ?? null,
         creator_section: data.creator_section ?? true,
         is_creator_raw: data.is_creator_raw ?? true,
+        is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
@@ -1348,6 +1359,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date(),
       creator_section: true,
       is_creator_raw: true,
+      is_org_shared: false,
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
@@ -1362,6 +1374,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       organization_id: orgId ?? null,
       creator_section: true,
       is_creator_raw: true,
+      is_org_shared: false,
       personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
@@ -1406,6 +1419,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     const galleryDrive = existing.docs.find((d) => {
       const data = d.data();
       if (data.name !== "Gallery Media") return false;
+      if (data.is_org_shared === true) return false;
       const oid = data.organization_id ?? null;
       const pto = (data.personal_team_owner_id as string | undefined) ?? null;
       if (isEnterpriseContext && orgId) return oid === orgId;
@@ -1424,6 +1438,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         last_synced_at: data.last_synced_at ?? null,
         created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
         organization_id: data.organization_id ?? null,
+        is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
       };
     }
@@ -1432,6 +1447,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       name: "Gallery Media",
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: new Date(),
+      is_org_shared: false,
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
@@ -1444,6 +1460,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       last_synced_at: null,
       created_at: new Date().toISOString(),
       organization_id: orgId ?? null,
+      is_org_shared: false,
       personal_team_owner_id: teamScoped ? user.uid : null,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
@@ -1505,7 +1522,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   );
 
   const creatorRawDriveId = useMemo(() => {
-    const raw = linkedDrives.find((d) => d.is_creator_raw);
+    const raw = linkedDrives.find(
+      (d) => d.is_creator_raw === true && d.is_org_shared !== true
+    );
     return raw?.id ?? null;
   }, [linkedDrives]);
 

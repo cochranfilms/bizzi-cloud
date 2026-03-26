@@ -6,8 +6,11 @@ import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import { useAuth } from "@/context/AuthContext";
-import { usePersonalTeamWorkspaceRequired } from "@/context/PersonalTeamWorkspaceContext";
-import { ENTERPRISE_THEMES, getThemeVariables } from "@/lib/enterprise-themes";
+import {
+  usePersonalTeamWorkspaceRequired,
+  notifyTeamWorkspaceUpdated,
+} from "@/context/PersonalTeamWorkspaceContext";
+import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
@@ -64,13 +67,6 @@ export default function TeamSettingsPage() {
     };
   }, [loadSettings]);
 
-  useEffect(() => {
-    const vars = getThemeVariables(themeId);
-    for (const [k, v] of Object.entries(vars)) {
-      document.documentElement.style.setProperty(k, v);
-    }
-  }, [themeId]);
-
   const handleSaveName = async () => {
     if (!user || !isOwner) return;
     const trimmed = teamName.trim();
@@ -98,6 +94,7 @@ export default function TeamSettingsPage() {
         throw new Error((data.error as string) ?? "Failed to update");
       }
       await loadSettings();
+      notifyTeamWorkspaceUpdated(teamOwnerUid);
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -125,6 +122,7 @@ export default function TeamSettingsPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error((data.error as string) ?? "Failed to update theme");
       }
+      notifyTeamWorkspaceUpdated(teamOwnerUid);
     } catch {
       await loadSettings();
     }
@@ -169,6 +167,7 @@ export default function TeamSettingsPage() {
       setLogoPreview(data.logo_url as string);
       setLogoFile(null);
       await loadSettings();
+      notifyTeamWorkspaceUpdated(teamOwnerUid);
     } catch (err) {
       setLogoError(err instanceof Error ? err.message : "Failed to upload");
     } finally {

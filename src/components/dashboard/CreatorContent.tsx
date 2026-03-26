@@ -44,7 +44,9 @@ export default function CreatorContent() {
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const { confirm } = useConfirm();
 
-  const creatorDrives = linkedDrives.filter((d) => d.creator_section);
+  const creatorDrives = linkedDrives.filter(
+    (d) => d.creator_section && d.is_org_shared !== true
+  );
 
   const loadDriveFiles = useCallback(
     async (driveId: string, options?: { silent?: boolean }) => {

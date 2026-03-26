@@ -11,7 +11,6 @@ import { ConfirmProvider } from "@/context/ConfirmContext";
 import { SubscriptionProvider } from "@/context/SubscriptionContext";
 import { PersonalTeamWorkspaceProvider } from "@/context/PersonalTeamWorkspaceContext";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import DashboardAuthGuard from "@/components/dashboard/DashboardAuthGuard";
 import CheckoutSuccessSync from "@/components/dashboard/CheckoutSuccessSync";
 
 export default function TeamLayoutShell({
@@ -27,20 +26,18 @@ export default function TeamLayoutShell({
         <SubscriptionProvider>
           <BackupProvider>
             <CurrentFolderProvider>
-              <DashboardAuthGuard>
-                <ConfirmProvider>
-                  <DashboardAppearanceProvider>
-                    <LayoutSettingsProvider>
-                      <PersonalTeamWorkspaceProvider teamOwnerUid={teamOwnerUid}>
-                        <Suspense fallback={null}>
-                          <CheckoutSuccessSync />
-                        </Suspense>
-                        <DashboardShell>{children}</DashboardShell>
-                      </PersonalTeamWorkspaceProvider>
-                    </LayoutSettingsProvider>
-                  </DashboardAppearanceProvider>
-                </ConfirmProvider>
-              </DashboardAuthGuard>
+              <ConfirmProvider>
+                <DashboardAppearanceProvider>
+                  <LayoutSettingsProvider>
+                    <PersonalTeamWorkspaceProvider teamOwnerUid={teamOwnerUid}>
+                      <Suspense fallback={null}>
+                        <CheckoutSuccessSync />
+                      </Suspense>
+                      <DashboardShell>{children}</DashboardShell>
+                    </PersonalTeamWorkspaceProvider>
+                  </LayoutSettingsProvider>
+                </DashboardAppearanceProvider>
+              </ConfirmProvider>
             </CurrentFolderProvider>
           </BackupProvider>
         </SubscriptionProvider>
