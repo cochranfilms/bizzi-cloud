@@ -18,6 +18,7 @@ import {
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
+import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
 async function requireAuth(request: Request): Promise<{ uid: string; email?: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -159,17 +160,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "You cannot invite yourself." }, { status: 400 });
     }
 
-    const memberProfile = await db.collection("profiles").doc(memberUid).get();
-    const memberData = memberProfile.data();
-    const existingOwner = memberData?.personal_team_owner_id as string | undefined;
-    if (existingOwner && existingOwner === adminUid) {
-      return NextResponse.json({ error: "This user is already on your team." }, { status: 400 });
-    }
-    if (existingOwner && existingOwner !== adminUid) {
-      return NextResponse.json(
-        { error: "This user is already on another personal team." },
-        { status: 400 }
-      );
+    const existingSeatId = personalTeamSeatDocId(adminUid, memberUid);
+    const existingSeat = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(existingSeatId).get();
+    if (existingSeat.exists) {
+      const st = existingSeat.data()?.status as string | undefined;
+      if (st === "active" || st === "invited") {
+        return NextResponse.json({ error: "This user is already on your team." }, { status: 400 });
+      }
     }
 
     const docId = personalTeamSeatDocId(adminUid, memberUid);
@@ -215,6 +212,17 @@ export async function POST(request: Request) {
       },
       { merge: true }
     );
+
+    const ownerLabel = await getActorDisplayName(db, adminUid);
+    await createNotification({
+      recipientUserId: memberUid,
+      actorUserId: adminUid,
+      type: "personal_team_added",
+      metadata: {
+        actorDisplayName: ownerLabel,
+        teamOwnerUserId: adminUid,
+      },
+    }).catch((err) => console.error("[personal-team/invite] notification:", err));
 
     return NextResponse.json({
       ok: true,

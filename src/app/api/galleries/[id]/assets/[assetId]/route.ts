@@ -7,6 +7,11 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { deleteGalleryAssetAndStorage } from "@/lib/delete-gallery-asset";
 import { NextResponse } from "next/server";
+import {
+  createNotification,
+  getActorDisplayName,
+  resolveEmailsToUserIds,
+} from "@/lib/notification-service";
 
 const VALID_PROOFING_STATUSES = ["pending", "selected", "editing", "delivered"] as const;
 
@@ -64,6 +69,33 @@ export async function PATCH(
   }
 
   await assetRef.update(updates);
+
+  if (
+    proofingStatus &&
+    VALID_PROOFING_STATUSES.includes(proofingStatus as (typeof VALID_PROOFING_STATUSES)[number])
+  ) {
+    const g = gallerySnap.data()!;
+    const invited = (g.invited_emails as string[]) ?? [];
+    const galleryTitle = (g.title as string) ?? "Gallery";
+    const photographerLabel = await getActorDisplayName(db, uid);
+    const recipientUids = await resolveEmailsToUserIds(invited, uid);
+    await Promise.all(
+      recipientUids.map((rid) =>
+        createNotification({
+          recipientUserId: rid,
+          actorUserId: uid,
+          type: "gallery_proofing_status_updated",
+          metadata: {
+            actorDisplayName: photographerLabel,
+            galleryId,
+            galleryTitle,
+            proofingStatus: proofingStatus as string,
+          },
+        }).catch((err) => console.error("[gallery asset PATCH] notify:", err))
+      )
+    );
+  }
+
   return NextResponse.json({ ok: true });
 }
 

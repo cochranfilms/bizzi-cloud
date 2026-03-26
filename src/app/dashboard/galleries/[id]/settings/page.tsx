@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -42,6 +42,12 @@ interface GalleryData {
 export default function GallerySettingsPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const navBase =
+    typeof pathname === "string" && pathname.startsWith("/team/")
+      ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? "/dashboard")
+      : "/dashboard";
+  const galleriesRoot = `${navBase}/galleries`;
   const id = params?.id as string;
   const { user } = useAuth();
   const [gallery, setGallery] = useState<GalleryData | null>(null);
@@ -55,15 +61,15 @@ export default function GallerySettingsPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        if (res.status === 404) router.replace("/dashboard/galleries");
+        if (res.status === 404) router.replace(galleriesRoot);
         return;
       }
       const data = await res.json();
       setGallery(data);
     } catch {
-      router.replace("/dashboard/galleries");
+      router.replace(galleriesRoot);
     }
-  }, [user, id, router]);
+  }, [user, id, router, galleriesRoot]);
 
   useEffect(() => {
     if (!user || !id) {
@@ -82,7 +88,7 @@ export default function GallerySettingsPage() {
         {gallery ? (
         <div className="mx-auto max-w-2xl space-y-6">
           <Link
-            href={`/dashboard/galleries/${id}`}
+            href={`${navBase}/galleries/${id}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
           >
             <ChevronLeft className="h-4 w-4" />

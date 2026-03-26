@@ -11,7 +11,29 @@ export type NotificationType =
   | "file_reply_created"
   | "transfer_sent"
   | "gallery_invite"
-  | "org_seat_invite";
+  | "org_seat_invite"
+  | "personal_team_added"
+  | "personal_team_joined_owner"
+  | "personal_team_you_were_removed"
+  | "personal_team_member_left_owner"
+  | "org_member_joined"
+  | "org_you_were_removed"
+  | "org_role_changed"
+  | "org_storage_quota_changed"
+  | "org_removal_scheduled"
+  | "gallery_proofing_comment"
+  | "gallery_favorites_submitted"
+  | "gallery_proofing_status_updated"
+  | "share_invitee_removed"
+  | "share_link_deleted"
+  | "share_permission_downgraded"
+  | "transfer_deleted_by_sender"
+  | "transfer_expiring_soon"
+  | "billing_payment_failed"
+  | "billing_subscription_canceled"
+  | "billing_subscription_welcome"
+  | "lifecycle_storage_purged"
+  | "support_ticket_submitted";
 
 export interface Notification {
   id: string;
@@ -37,6 +59,22 @@ export interface Notification {
     orgId?: string;
     orgName?: string;
     inviteToken?: string;
+    teamOwnerUserId?: string;
+    newMemberDisplayName?: string;
+    newRole?: string;
+    storageQuotaSummary?: string;
+    removalDeadline?: string;
+    clientName?: string;
+    clientEmail?: string;
+    proofingStatus?: string;
+    unpaidInvoiceUrl?: string;
+    planName?: string;
+    ticketId?: string;
+    /** cold-storage purge: org | personal_team */
+    purgeScope?: string;
+    supportSubject?: string;
+    /** billing: consumer profile vs org subscription */
+    billingScope?: "consumer" | "org";
   } | null;
 }
 

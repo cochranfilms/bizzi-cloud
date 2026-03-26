@@ -7,6 +7,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
+import { createNotification } from "@/lib/notification-service";
 
 /** POST – Add comment on an asset */
 export async function POST(
@@ -71,6 +72,25 @@ export async function POST(
     body: commentBody.trim().slice(0, 2000),
     created_at: now,
   });
+
+  const photographerId = g.photographer_id as string;
+  const galleryTitle = (g.title as string) ?? "Gallery";
+  const cName = typeof clientName === "string" ? clientName.trim() : "";
+  const cEmail = typeof clientEmail === "string" ? clientEmail.trim() : "";
+  const label = cName || cEmail || "A client";
+  await createNotification({
+    recipientUserId: photographerId,
+    actorUserId: photographerId,
+    type: "gallery_proofing_comment",
+    allowSelfActor: true,
+    metadata: {
+      actorDisplayName: label,
+      galleryId,
+      galleryTitle,
+      clientName: cName || undefined,
+      clientEmail: cEmail || undefined,
+    },
+  }).catch((err) => console.error("[galleries/comments POST] notification:", err));
 
   return NextResponse.json({
     id: ref.id,

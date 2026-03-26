@@ -13,6 +13,9 @@ export function formatNotificationMessage(
   const fileName = metadata?.fileName ?? "your file";
   const folderName = metadata?.folderName;
   const fileCount = metadata?.fileCount ?? 1;
+  const galleryTitle = metadata?.galleryTitle ?? "a gallery";
+  const orgName = metadata?.orgName ?? "your organization";
+  const clientLabel = metadata?.clientName?.trim() || metadata?.clientEmail?.trim() || "A client";
 
   switch (type) {
     case "file_comment_created":
@@ -34,12 +37,86 @@ export function formatNotificationMessage(
       }
       return `${actor} sent you a transfer`;
     case "gallery_invite": {
-      const galleryTitle = metadata?.galleryTitle ?? "a gallery";
-      return `${actor} invited you to view ${galleryTitle}`;
+      const gTitle = metadata?.galleryTitle ?? "a gallery";
+      return `${actor} invited you to view ${gTitle}`;
     }
     case "org_seat_invite": {
-      const orgName = metadata?.orgName ?? "an organization";
-      return `${actor} invited you to join ${orgName}`;
+      const on = metadata?.orgName ?? "an organization";
+      return `${actor} invited you to join ${on}`;
+    }
+    case "personal_team_added":
+      return `${actor} added you to their team`;
+    case "personal_team_joined_owner": {
+      const joiner = metadata?.newMemberDisplayName ?? actor;
+      return `${joiner} joined your team`;
+    }
+    case "personal_team_you_were_removed":
+      return `You were removed from ${actor}'s team`;
+    case "personal_team_member_left_owner": {
+      const leaver = metadata?.newMemberDisplayName ?? actor;
+      return `${leaver} left your team`;
+    }
+    case "org_member_joined": {
+      const who = metadata?.newMemberDisplayName ?? actor;
+      return `${who} joined ${orgName}`;
+    }
+    case "org_you_were_removed":
+      return `You were removed from ${orgName}`;
+    case "org_role_changed": {
+      const role = metadata?.newRole ?? "member";
+      return `Your role in ${orgName} was updated to ${role}`;
+    }
+    case "org_storage_quota_changed": {
+      const q = metadata?.storageQuotaSummary ?? "your storage allocation";
+      return `Your storage allocation in ${orgName} was updated (${q})`;
+    }
+    case "org_removal_scheduled": {
+      const when = metadata?.removalDeadline ?? "soon";
+      return `${orgName} is scheduled for removal. Export data before ${when}.`;
+    }
+    case "gallery_proofing_comment":
+      return `${clientLabel} commented on ${galleryTitle}`;
+    case "gallery_favorites_submitted":
+      return `${clientLabel} submitted favorites in ${galleryTitle}`;
+    case "gallery_proofing_status_updated": {
+      const st = metadata?.proofingStatus ?? "updated";
+      return `${actor} updated proofing status to “${st}” in ${galleryTitle}`;
+    }
+    case "share_invitee_removed": {
+      const folder = folderName ?? "a shared folder";
+      return `You no longer have access to ${folder}`;
+    }
+    case "share_link_deleted": {
+      const folder = folderName ?? "a shared item";
+      return `${actor} removed the share link for ${folder}`;
+    }
+    case "share_permission_downgraded": {
+      const folder = folderName ?? "a shared item";
+      return `Your access to ${folder} was changed to view-only`;
+    }
+    case "transfer_deleted_by_sender":
+      return `${actor} removed a transfer sent to you`;
+    case "transfer_expiring_soon": {
+      const tname = metadata?.transferName ?? "A transfer";
+      return `${tname} expires soon`;
+    }
+    case "billing_payment_failed":
+      return `Payment failed — update your billing details to avoid losing access`;
+    case "billing_subscription_canceled":
+      return metadata?.billingScope === "org"
+        ? `Your organization subscription has ended`
+        : `Your subscription has ended`;
+    case "billing_subscription_welcome": {
+      const plan = metadata?.planName ?? "your plan";
+      return `Welcome! Your subscription to ${plan} is active`;
+    }
+    case "lifecycle_storage_purged":
+      return metadata?.purgeScope === "org"
+        ? `Cold storage for ${orgName} has been permanently purged`
+        : `Your team cold storage retention period has ended and files were purged`;
+    case "support_ticket_submitted": {
+      const sub = metadata?.supportSubject ?? "your request";
+      return `Support ticket received: ${sub}`;
     }
     default:
       return "New activity";

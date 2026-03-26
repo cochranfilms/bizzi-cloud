@@ -26,6 +26,11 @@ import {
 import Stripe from "stripe";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import {
+  createNotification,
+  getOrganizationActiveMemberUserIds,
+  getOrganizationAdminUserIds,
+} from "@/lib/notification-service";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -309,9 +314,21 @@ export async function POST(request: Request) {
             },
             { merge: true }
           );
+          await createNotification({
+            recipientUserId: userId,
+            actorUserId: userId,
+            type: "billing_subscription_canceled",
+            allowSelfActor: true,
+            metadata: { billingScope: "consumer", actorDisplayName: "Billing" },
+          }).catch((err) =>
+            console.error("[Stripe webhook] subscription.deleted consumer notify:", err)
+          );
         }
 
         if (orgId) {
+          const orgSnapPre = await db.collection("organizations").doc(orgId).get();
+          const orgNamePre = (orgSnapPre.data()?.name as string) ?? "Organization";
+          const memberUidsPre = await getOrganizationActiveMemberUserIds(db, orgId);
           try {
             const result = await finalizeOrganizationColdStorage({
               orgId,
@@ -332,6 +349,24 @@ export async function POST(request: Request) {
           } catch (err) {
             console.error("[Stripe webhook] Failed to finalize org cold storage:", err);
           }
+          await Promise.all(
+            memberUidsPre.map((mid) =>
+              createNotification({
+                recipientUserId: mid,
+                actorUserId: mid,
+                type: "billing_subscription_canceled",
+                allowSelfActor: true,
+                metadata: {
+                  billingScope: "org",
+                  orgId,
+                  orgName: orgNamePre,
+                  actorDisplayName: "Billing",
+                },
+              }).catch((err) =>
+                console.error("[Stripe webhook] subscription.deleted org notify:", mid, err)
+              )
+            )
+          );
         }
         break;
       }
@@ -499,6 +534,19 @@ export async function POST(request: Request) {
             stripe_updated_at: new Date().toISOString(),
           });
         }
+        await createNotification({
+          recipientUserId: userId,
+          actorUserId: userId,
+          type: "billing_payment_failed",
+          allowSelfActor: true,
+          metadata: {
+            unpaidInvoiceUrl: unpaidInvoiceUrl ?? undefined,
+            actorDisplayName: "Billing",
+            billingScope: "consumer",
+          },
+        }).catch((err) =>
+          console.error("[Stripe webhook] invoice.payment_failed consumer notify:", err)
+        );
       }
 
       if (orgId) {
@@ -519,6 +567,27 @@ export async function POST(request: Request) {
             });
           }
         }
+        const orgNameBill = (orgSnap.data()?.name as string) ?? "Organization";
+        const adminUidsBill = await getOrganizationAdminUserIds(db, orgId);
+        await Promise.all(
+          adminUidsBill.map((aid) =>
+            createNotification({
+              recipientUserId: aid,
+              actorUserId: aid,
+              type: "billing_payment_failed",
+              allowSelfActor: true,
+              metadata: {
+                unpaidInvoiceUrl: unpaidInvoiceUrl ?? undefined,
+                orgId,
+                orgName: orgNameBill,
+                actorDisplayName: "Billing",
+                billingScope: "org",
+              },
+            }).catch((err) =>
+              console.error("[Stripe webhook] invoice.payment_failed org notify:", aid, err)
+            )
+          )
+        );
       }
       break;
     }
@@ -646,6 +715,21 @@ export async function POST(request: Request) {
             .catch((err) => {
               console.error("[Stripe webhook] invoice.paid: subscription welcome email failed:", err);
             });
+          const welcomeUserId = subscription.metadata?.userId as string | undefined;
+          if (welcomeUserId) {
+            await createNotification({
+              recipientUserId: welcomeUserId,
+              actorUserId: welcomeUserId,
+              type: "billing_subscription_welcome",
+              allowSelfActor: true,
+              metadata: {
+                planName: welcomeParams.plan_name,
+                actorDisplayName: "Bizzi Cloud",
+              },
+            }).catch((err) =>
+              console.error("[Stripe webhook] invoice.paid welcome notify:", err)
+            );
+          }
         }
         return NextResponse.json({ received: true });
       }

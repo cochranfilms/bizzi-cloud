@@ -7,6 +7,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { getStripeInstance } from "@/lib/stripe";
 import { sendOrgRemovalOwnerEmail, sendOrgRemovalMemberEmail } from "@/lib/emailjs";
+import { createNotification, resolveEmailsToUserIds } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
 const GRACE_DAYS = 14;
@@ -127,6 +128,30 @@ export async function POST(
     } catch (err) {
       console.error("[remove-org] Failed to send member email to", email, err);
     }
+  }
+
+  const inAppSeen = new Set<string>();
+  for (const doc of seatsSnap.docs) {
+    const seatData = doc.data();
+    let uid = typeof seatData.user_id === "string" ? seatData.user_id.trim() : "";
+    if (!uid && typeof seatData.email === "string") {
+      const resolved = await resolveEmailsToUserIds([seatData.email], undefined);
+      uid = resolved[0] ?? "";
+    }
+    if (!uid || inAppSeen.has(uid)) continue;
+    inAppSeen.add(uid);
+    await createNotification({
+      recipientUserId: uid,
+      actorUserId: uid,
+      type: "org_removal_scheduled",
+      allowSelfActor: true,
+      metadata: {
+        orgName,
+        orgId,
+        removalDeadline: deadlineStr,
+        actorDisplayName: "Bizzi Cloud",
+      },
+    }).catch((err) => console.error("[remove-org] in-app notification:", uid, err));
   }
 
   return NextResponse.json({

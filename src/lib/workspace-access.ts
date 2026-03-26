@@ -12,6 +12,16 @@ export async function isOrgAdmin(uid: string, organizationId: string): Promise<b
   return seatSnap.exists && (seatSnap.data()?.role === "admin");
 }
 
+/** Active organization membership (any role), for APIs when profile.organization_id may be stale. */
+export async function userHasActiveOrganizationSeat(
+  uid: string,
+  organizationId: string
+): Promise<boolean> {
+  const db = getAdminFirestore();
+  const seatSnap = await db.collection("organization_seats").doc(`${organizationId}_${uid}`).get();
+  return seatSnap.exists && seatSnap.data()?.status === "active";
+}
+
 /** Check if user can write to a workspace (upload, create, update, delete). */
 export async function userCanWriteWorkspace(
   uid: string,
@@ -125,15 +135,26 @@ export async function getAccessibleWorkspaceIds(
           accessible.push(doc.id);
         }
         break;
-      case "gallery":
+      case "gallery": {
+        const seatSnap = await db.collection("organization_seats").doc(`${organizationId}_${uid}`).get();
+        if (seatSnap.exists && seatSnap.data()?.status === "active") {
+          const did = ws.drive_id;
+          if (did) {
+            const dr = await db.collection("linked_drives").doc(did).get();
+            if (dr.exists && dr.data()?.is_org_shared === true) {
+              accessible.push(doc.id);
+              break;
+            }
+          }
+        }
         if (ws.gallery_id) {
           const gallerySnap = await db.collection("galleries").doc(ws.gallery_id).get();
           if (gallerySnap.exists && gallerySnap.data()?.photographer_id === uid) {
             accessible.push(doc.id);
           }
-          // Future: check gallery collaborators
         }
         break;
+      }
     }
   }
 

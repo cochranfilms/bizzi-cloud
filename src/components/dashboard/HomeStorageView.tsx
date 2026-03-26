@@ -30,6 +30,7 @@ import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { useAuth } from "@/context/AuthContext";
 
 const DRAG_THRESHOLD_PX = 5;
 const DND_MOVE_TYPE = "application/x-bizzi-move-items";
@@ -141,6 +142,7 @@ interface HomeStorageViewProps {
 }
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
+  const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -310,12 +312,18 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   // Enterprise: create Gallery Media when org has Gallery Suite/Full Frame and it's missing
   // (Storage/RAW are created by ensure-drives API).
   useEffect(() => {
+    const isPersonalHome = basePath === "/dashboard" || basePath.startsWith("/team/");
+    const teamOwnerFromPath =
+      basePath.startsWith("/team/") ? basePath.replace(/^\/team\//, "").split("/")[0] : null;
+    const skipEnsureForTeamMember =
+      Boolean(teamOwnerFromPath && user?.uid && teamOwnerFromPath !== user.uid);
+
     if (
       loading ||
       subscriptionLoading ||
       !getOrCreateGalleryDrive ||
-      (!getOrCreateStorageDrive && basePath === "/dashboard") ||
-      (!getOrCreateCreatorRawDrive && basePath === "/dashboard")
+      (!getOrCreateStorageDrive && isPersonalHome && !skipEnsureForTeamMember) ||
+      (!getOrCreateCreatorRawDrive && isPersonalHome && !skipEnsureForTeamMember)
     )
       return;
     const hasStorage = driveFolders.some((d) => d.name === "Storage");
@@ -336,7 +344,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     let cancelled = false;
     (async () => {
       try {
-        if (basePath === "/dashboard") {
+        if (isPersonalHome && !skipEnsureForTeamMember) {
           if (!hasStorage && getOrCreateStorageDrive) await getOrCreateStorageDrive();
           if (!cancelled && !hasRaw && hasEditor && getOrCreateCreatorRawDrive)
             await getOrCreateCreatorRawDrive();
@@ -352,6 +360,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     };
   }, [
     basePath,
+    user?.uid,
     loading,
     subscriptionLoading,
     planId,

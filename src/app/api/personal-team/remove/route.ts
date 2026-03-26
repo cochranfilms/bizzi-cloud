@@ -7,6 +7,7 @@ import { suggestIdentityDeletionAfterTeamScopeRemoved } from "@/lib/identity-sco
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "@/lib/personal-team";
+import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -71,6 +72,14 @@ export async function POST(request: Request) {
       },
       { merge: true }
     );
+    const ownerLabel = await getActorDisplayName(db, adminUid);
+    await createNotification({
+      recipientUserId: memberUid,
+      actorUserId: adminUid,
+      type: "personal_team_you_were_removed",
+      metadata: { actorDisplayName: ownerLabel },
+    }).catch((err) => console.error("[personal-team/remove] notification:", err));
+
     return NextResponse.json({
       ok: true,
       suggestIdentityDeletion: suggestIdentityDeletionAfterTeamScopeRemoved(

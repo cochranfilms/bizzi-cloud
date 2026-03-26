@@ -33,6 +33,8 @@ export function useGalleries(options?: { basePath?: string }) {
   const { org } = useEnterprise();
   const basePath = options?.basePath ?? "";
   const isEnterprise = basePath === "/enterprise";
+  const teamOwnerFromBase = /^\/team\/([^/]+)/.exec(basePath)?.[1]?.trim() ?? null;
+  const isPersonalTeam = !!teamOwnerFromBase;
   const [galleries, setGalleries] = useState<GalleryListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,9 @@ export function useGalleries(options?: { basePath?: string }) {
       if (isEnterprise && org?.id) {
         params.set("context", "enterprise");
         params.set("organization_id", org.id);
+      } else if (isPersonalTeam && teamOwnerFromBase) {
+        params.set("context", "personal_team");
+        params.set("team_owner_user_id", teamOwnerFromBase);
       }
       const url = params.toString() ? `/api/galleries?${params.toString()}` : "/api/galleries";
       const res = await fetch(url, {
@@ -65,7 +70,7 @@ export function useGalleries(options?: { basePath?: string }) {
     } finally {
       setLoading(false);
     }
-  }, [user, isEnterprise, org?.id]);
+  }, [user, isEnterprise, org?.id, isPersonalTeam, teamOwnerFromBase]);
 
   useEffect(() => {
     fetchGalleries();

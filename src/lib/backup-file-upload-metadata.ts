@@ -14,6 +14,31 @@ export type ResolvedBackupUploadMetadata = {
   roleAtUpload: string | null;
 };
 
+async function resolvePersonalTeamFromOwner(
+  db: Firestore,
+  uid: string,
+  teamOwner: string,
+  uploaderEmail: string | null
+): Promise<ResolvedBackupUploadMetadata> {
+  const seatSnap = await db
+    .collection("personal_team_seats")
+    .doc(personalTeamSeatDocId(teamOwner, uid))
+    .get();
+  const seatData = seatSnap.data();
+  const role = seatSnap.exists
+    ? ((seatData?.seat_access_level as string) ?? "member")
+    : teamOwner === uid
+      ? "admin"
+      : null;
+  return {
+    uploaderEmail,
+    containerType: "personal_team",
+    containerId: teamOwner,
+    personalTeamOwnerId: teamOwner,
+    roleAtUpload: role,
+  };
+}
+
 export async function resolveBackupUploadMetadata(
   db: Firestore,
   input: {
@@ -41,25 +66,12 @@ export async function resolveBackupUploadMetadata(
     };
   }
 
-  if (personalTeamOwnerFromProfile) {
-    const teamOwner = personalTeamOwnerFromProfile;
-    const seatSnap = await db
-      .collection("personal_team_seats")
-      .doc(personalTeamSeatDocId(teamOwner, uid))
-      .get();
-    const seatData = seatSnap.data();
-    const role = seatSnap.exists
-      ? ((seatData?.seat_access_level as string) ?? "member")
-      : teamOwner === uid
-        ? "admin"
-        : null;
-    return {
-      uploaderEmail,
-      containerType: "personal_team",
-      containerId: teamOwner,
-      personalTeamOwnerId: teamOwner,
-      roleAtUpload: role,
-    };
+  const driveTeamOwnerRaw = driveData?.personal_team_owner_id;
+  const driveTeamOwner =
+    typeof driveTeamOwnerRaw === "string" && driveTeamOwnerRaw.trim() ? driveTeamOwnerRaw.trim() : null;
+
+  if (driveTeamOwner) {
+    return resolvePersonalTeamFromOwner(db, uid, driveTeamOwner, uploaderEmail);
   }
 
   const driveUid =
@@ -87,6 +99,10 @@ export async function resolveBackupUploadMetadata(
       personalTeamOwnerId: null,
       roleAtUpload: null,
     };
+  }
+
+  if (personalTeamOwnerFromProfile) {
+    return resolvePersonalTeamFromOwner(db, uid, personalTeamOwnerFromProfile, uploaderEmail);
   }
 
   return {

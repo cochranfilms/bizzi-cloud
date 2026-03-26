@@ -37,7 +37,6 @@ import {
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
-import { useSubscription } from "@/context/SubscriptionContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePathname } from "next/navigation";
@@ -390,11 +389,19 @@ function useIsEnterpriseContext(): boolean {
   return typeof pathname === "string" && pathname.startsWith("/enterprise");
 }
 
+/** Team workspace: `/team/{ownerUid}/...` — drives scoped to that owner's personal team container. */
+function useTeamRouteOwnerUid(): string | null {
+  const pathname = usePathname();
+  const m = typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname) : null;
+  return m?.[1]?.trim() || null;
+}
+
 export function BackupProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { org } = useEnterprise();
   const { selectedWorkspaceId } = useCurrentFolder();
   const isEnterpriseContext = useIsEnterpriseContext();
+  const teamRouteOwnerUid = useTeamRouteOwnerUid();
   const [linkedDrives, setLinkedDrives] = useState<LinkedDrive[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -426,8 +433,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     getStoredHandleByDrive,
     deleteStoredHandle,
   } = useFileSystemAccess();
-
-  const { personalTeamOwnerId } = useSubscription();
 
   const fetchDrives = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) {
@@ -472,14 +477,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
 
       let combined: LinkedDrive[] = drives;
-      if (
-        !isEnterpriseContext &&
-        personalTeamOwnerId &&
-        personalTeamOwnerId !== user.uid
-      ) {
+
+      if (!isEnterpriseContext && teamRouteOwnerUid) {
         const tq = query(
           collection(db, "linked_drives"),
-          where("userId", "==", personalTeamOwnerId),
+          where("userId", "==", teamRouteOwnerUid),
           orderBy("createdAt", "desc")
         );
         const teamSnap = await getDocs(tq);
@@ -493,7 +495,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           teamDrives.push({
             id: d.id,
             user_id: data.userId,
-            name: `[Team] ${name}`,
+            name,
             mount_path: data.mount_path ?? null,
             permission_handle_id: data.permission_handle_id ?? null,
             last_synced_at: data.last_synced_at ?? null,
@@ -501,11 +503,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             organization_id: null,
             creator_section: data.creator_section ?? false,
             is_creator_raw: data.is_creator_raw ?? false,
-            personal_team_owner_id: personalTeamOwnerId,
+            personal_team_owner_id: teamRouteOwnerUid,
           });
         }
-        combined = [...drives, ...teamDrives];
+        combined = teamDrives;
       }
+
       setLinkedDrives(combined);
 
       // Enterprise users may have joined before we created drives on accept-invite,
@@ -577,7 +580,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, org, personalTeamOwnerId]);
+  }, [user, isEnterpriseContext, org, teamRouteOwnerUid]);
 
   useEffect(() => {
     fetchDrives();

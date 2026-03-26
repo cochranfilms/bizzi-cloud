@@ -10,7 +10,12 @@ import type {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getAccessibleWorkspaceIds, isOrgAdmin } from "@/lib/workspace-access";
+import {
+  getAccessibleWorkspaceIds,
+  isOrgAdmin,
+  userHasActiveOrganizationSeat,
+} from "@/lib/workspace-access";
+import { resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import { NextResponse } from "next/server";
 
@@ -22,6 +27,7 @@ type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc" | "n
 function parseFilters(searchParams: URLSearchParams) {
   const context = searchParams.get("context") ?? undefined;
   const organizationId = searchParams.get("organization_id")?.trim() || null;
+  const teamOwnerUserId = searchParams.get("team_owner_id")?.trim() || null;
   const driveId = searchParams.get("drive_id") ?? searchParams.get("drive") ?? undefined;
   const galleryId = searchParams.get("gallery_id") ?? searchParams.get("gallery") ?? undefined;
   const mediaType = searchParams.get("media_type") ?? undefined;
@@ -69,6 +75,7 @@ function parseFilters(searchParams: URLSearchParams) {
   return {
     context,
     organizationId,
+    teamOwnerUserId,
     driveId,
     galleryId,
     mediaType,
@@ -444,7 +451,8 @@ export async function GET(request: Request) {
   if (filters.context === "enterprise" && filters.organizationId) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    if (profileOrgId !== filters.organizationId) {
+    const hasSeat = await userHasActiveOrganizationSeat(uid, filters.organizationId);
+    if (profileOrgId !== filters.organizationId && !hasSeat) {
       return NextResponse.json(
         { error: "Unauthorized to access this organization's files" },
         { status: 403 }
@@ -455,44 +463,59 @@ export async function GET(request: Request) {
     orgFilter = null; // personal: only organization_id null
   }
 
-  const drivesQuery = db
-    .collection("linked_drives")
-    .where("userId", "==", uid);
-  const drivesSnap = orgFilter != null
-    ? await drivesQuery.where("organization_id", "==", orgFilter).get()
-    : await drivesQuery.get();
   const driveMap = new Map<string, string>();
-  drivesSnap.docs.forEach((d) => {
-    const data = d.data();
-    if (!data.deleted_at) {
-      const oid = data.organization_id ?? null;
-      if (orgFilter != null ? oid === orgFilter : !oid) {
-        driveMap.set(d.id, data.name ?? "Folder");
-      }
-    }
-  });
-  let driveIds = new Set(driveMap.keys());
+  let driveIds = new Set<string>();
 
-  if (orgFilter == null) {
-    const profileForTeam = await db.collection("profiles").doc(uid).get();
-    const pto = profileForTeam.data()?.personal_team_owner_id as string | undefined;
-    if (pto && pto !== uid) {
-      const seatSnap = await db.collection("personal_team_seats").doc(`${pto}_${uid}`).get();
-      if (seatSnap.exists && seatSnap.data()?.status === "active") {
-        const teamDrivesSnap = await db
-          .collection("linked_drives")
-          .where("userId", "==", pto)
-          .get();
-        for (const d of teamDrivesSnap.docs) {
-          const data = d.data();
-          if (data.deleted_at || data.organization_id) continue;
-          if (!driveMap.has(d.id)) {
-            driveMap.set(d.id, (data.name as string) ?? "Folder");
-          }
-          driveIds.add(d.id);
+  if (orgFilter != null) {
+    const drivesQuery = db
+      .collection("linked_drives")
+      .where("userId", "==", uid);
+    const drivesSnap = await drivesQuery.where("organization_id", "==", orgFilter).get();
+    drivesSnap.docs.forEach((d) => {
+      const data = d.data();
+      if (!data.deleted_at) {
+        const oid = data.organization_id ?? null;
+        if (oid === orgFilter) {
+          driveMap.set(d.id, data.name ?? "Folder");
         }
       }
+    });
+    driveIds = new Set(driveMap.keys());
+  } else if (filters.teamOwnerUserId) {
+    const teamOwnerTarget = filters.teamOwnerUserId;
+    if (uid !== teamOwnerTarget) {
+      const seatSnap = await db
+        .collection("personal_team_seats")
+        .doc(`${teamOwnerTarget}_${uid}`)
+        .get();
+      const st = seatSnap.data()?.status as string | undefined;
+      if (!seatSnap.exists || (st !== "active" && st !== "cold_storage")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
+    const teamDrivesSnap = await db
+      .collection("linked_drives")
+      .where("userId", "==", teamOwnerTarget)
+      .get();
+    for (const d of teamDrivesSnap.docs) {
+      const data = d.data();
+      if (data.deleted_at || data.organization_id) continue;
+      driveMap.set(d.id, (data.name as string) ?? "Folder");
+      driveIds.add(d.id);
+    }
+  } else {
+    const drivesQuery = db.collection("linked_drives").where("userId", "==", uid);
+    const drivesSnap = await drivesQuery.get();
+    drivesSnap.docs.forEach((d) => {
+      const data = d.data();
+      if (!data.deleted_at) {
+        const oid = data.organization_id ?? null;
+        if (!oid) {
+          driveMap.set(d.id, data.name ?? "Folder");
+        }
+      }
+    });
+    driveIds = new Set(driveMap.keys());
   }
 
   // Enterprise: get accessible workspace IDs (workspace-based visibility)
@@ -742,7 +765,29 @@ export async function GET(request: Request) {
   }
 
   if (filters.driveId && driveIds.has(filters.driveId)) {
-    q = q.where("linked_drive_id", "==", filters.driveId);
+    if (orgFilter != null) {
+      const pillarIds = await resolveEnterprisePillarDriveIds(orgFilter, filters.driveId);
+      for (const pid of pillarIds) {
+        if (!driveMap.has(pid)) {
+          const dSnap = await db.collection("linked_drives").doc(pid).get();
+          if (dSnap.exists && !dSnap.data()?.deleted_at) {
+            driveMap.set(pid, (dSnap.data()?.name as string) ?? "Drive");
+            driveIds.add(pid);
+          }
+        }
+      }
+      const effective = pillarIds.filter((id) => driveIds.has(id));
+      const idsForQuery = effective.length > 0 ? effective : [filters.driveId];
+      if (idsForQuery.length === 1) {
+        q = q.where("linked_drive_id", "==", idsForQuery[0]);
+      } else if (idsForQuery.length <= 30) {
+        q = q.where("linked_drive_id", "in", idsForQuery);
+      } else {
+        q = q.where("linked_drive_id", "==", filters.driveId);
+      }
+    } else {
+      q = q.where("linked_drive_id", "==", filters.driveId);
+    }
   }
   if (filters.galleryId) {
     q = q.where("gallery_id", "==", filters.galleryId);

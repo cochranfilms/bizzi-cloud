@@ -1,7 +1,12 @@
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { verifyShareAccess } from "@/lib/share-access";
-import { createShareNotifications } from "@/lib/notification-service";
+import {
+  createNotification,
+  createShareNotifications,
+  getActorDisplayName,
+  resolveEmailsToUserIds,
+} from "@/lib/notification-service";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 
@@ -243,11 +248,29 @@ export async function PATCH(
     tx.update(shareRef, updates);
     const effectiveFolderName =
       (updates.folder_name as string) ?? (share.folder_name as string) ?? "Shared folder";
+    const prevInvitedLower = prevInvited
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const nextInvitedLower = Array.isArray(invitedEmails)
+      ? newInvitedEmails
+      : prevInvitedLower;
+    const nextInviteSet = new Set(nextInvitedLower);
+    const removedInvitees = Array.isArray(invitedEmails)
+      ? prevInvitedLower.filter((e) => !nextInviteSet.has(e))
+      : [];
+    const prevPermission = (share.permission as string) ?? "view";
+    const nextPermission =
+      (updates.permission as string) ?? (share.permission as string) ?? "view";
+    const permissionDowngraded = prevPermission === "edit" && nextPermission === "view";
     return {
       status: 200 as const,
       ok: true,
       newInvitedEmails,
       prevInvited,
+      nextInvitedLower,
+      removedInvitees,
+      permissionDowngraded,
       folderName: effectiveFolderName,
       fileIds: (share.referenced_file_ids as string[] | undefined) ?? (share.backup_file_id ? [share.backup_file_id] : []),
       linkedDriveId: share.linked_drive_id as string | undefined,
@@ -311,6 +334,57 @@ export async function PATCH(
     }
   }
 
+  if (result.ok && "removedInvitees" in result && (result.removedInvitees?.length ?? 0) > 0) {
+    const actorDisplayName = await getActorDisplayName(db, uid);
+    let folderNameVal = result.folderName as string;
+    if (!folderNameVal && (result.linkedDriveId as string)) {
+      const driveSnap = await db
+        .collection("linked_drives")
+        .doc(result.linkedDriveId as string)
+        .get();
+      folderNameVal = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Folder";
+    }
+    const removedUids = await resolveEmailsToUserIds(result.removedInvitees ?? [], uid);
+    await Promise.all(
+      removedUids.map((rid) =>
+        createNotification({
+          recipientUserId: rid,
+          actorUserId: uid,
+          type: "share_invitee_removed",
+          shareId: null,
+          metadata: { actorDisplayName, folderName: folderNameVal },
+        }).catch((err) => console.error("[shares PATCH] removed notify:", err))
+      )
+    );
+  }
+
+  if (result.ok && "permissionDowngraded" in result && result.permissionDowngraded) {
+    const actorDisplayName = await getActorDisplayName(db, uid);
+    let folderNameVal = result.folderName as string;
+    if (!folderNameVal && (result.linkedDriveId as string)) {
+      const driveSnap = await db
+        .collection("linked_drives")
+        .doc(result.linkedDriveId as string)
+        .get();
+      folderNameVal = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Folder";
+    }
+    const downgradedUids = await resolveEmailsToUserIds(
+      (result.nextInvitedLower as string[]) ?? [],
+      uid
+    );
+    await Promise.all(
+      downgradedUids.map((rid) =>
+        createNotification({
+          recipientUserId: rid,
+          actorUserId: uid,
+          type: "share_permission_downgraded",
+          shareId: shareToken,
+          metadata: { actorDisplayName, folderName: folderNameVal },
+        }).catch((err) => console.error("[shares PATCH] perm notify:", err))
+      )
+    );
+  }
+
   return NextResponse.json({ ok: true });
 }
 
@@ -355,10 +429,27 @@ export async function DELETE(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const invitedEmails = (share.invited_emails as string[] | undefined) ?? [];
+  const folderNameDel = (share.folder_name as string) ?? "Shared folder";
+  const deleteNotifyUids = await resolveEmailsToUserIds(invitedEmails, uid);
+  const ownerLabelDel = await getActorDisplayName(db, uid);
+
   // Delete share record only—never delete backup_files.
   // Virtual shares (referenced_file_ids): only this doc is deleted; originals stay.
   // Standard shares (linked_drive_id): only this doc is deleted; drive and files stay.
   await shareRef.delete();
+
+  await Promise.all(
+    deleteNotifyUids.map((rid) =>
+      createNotification({
+        recipientUserId: rid,
+        actorUserId: uid,
+        type: "share_link_deleted",
+        shareId: null,
+        metadata: { actorDisplayName: ownerLabelDel, folderName: folderNameDel },
+      }).catch((err) => console.error("[shares DELETE] notify:", err))
+    )
+  );
 
   const shareData = share as { linked_drive_id?: string; backup_file_id?: string; folder_name?: string };
   logActivityEvent({

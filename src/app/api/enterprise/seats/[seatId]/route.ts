@@ -2,6 +2,11 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { SEAT_STORAGE_TIERS } from "@/lib/enterprise-storage";
+import {
+  createNotification,
+  formatStorageQuotaSummary,
+  getActorDisplayName,
+} from "@/lib/notification-service";
 
 /** PATCH - Update a seat's storage allocation (admin only). */
 export async function PATCH(
@@ -109,6 +114,22 @@ export async function PATCH(
         organization_role: newRole,
       });
     }
+    if (targetUserId && targetUserId !== adminUid) {
+      const orgSnap = await db.collection("organizations").doc(orgId).get();
+      const orgName = (orgSnap.data()?.name as string) ?? "Organization";
+      const adminLabel = await getActorDisplayName(db, adminUid);
+      await createNotification({
+        recipientUserId: targetUserId,
+        actorUserId: adminUid,
+        type: "org_role_changed",
+        metadata: {
+          actorDisplayName: adminLabel,
+          orgName,
+          orgId,
+          newRole,
+        },
+      }).catch((err) => console.error("[enterprise/seats PATCH role] notification:", err));
+    }
     return NextResponse.json({ success: true });
   }
 
@@ -161,10 +182,28 @@ export async function PATCH(
   }
 
   const seatRef = db.collection("organization_seats").doc(seatId);
+  const seatBefore = await seatRef.get();
+  const seatUserId = seatBefore.data()?.user_id as string | undefined;
   await seatRef.set(
     { storage_quota_bytes: newQuota },
     { merge: true }
   );
+
+  if (seatUserId && seatUserId !== adminUid) {
+    const orgName = (orgSnap.data()?.name as string) ?? "Organization";
+    const adminLabel = await getActorDisplayName(db, adminUid);
+    await createNotification({
+      recipientUserId: seatUserId,
+      actorUserId: adminUid,
+      type: "org_storage_quota_changed",
+      metadata: {
+        actorDisplayName: adminLabel,
+        orgName,
+        orgId,
+        storageQuotaSummary: formatStorageQuotaSummary(newQuota),
+      },
+    }).catch((err) => console.error("[enterprise/seats PATCH storage] notification:", err));
+  }
 
   return NextResponse.json({ success: true });
 }
@@ -287,6 +326,19 @@ export async function DELETE(
       },
       { merge: true }
     );
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgName = (orgSnap.data()?.name as string) ?? "Organization";
+    const adminLabel = await getActorDisplayName(db, adminUid);
+    await createNotification({
+      recipientUserId: removedUserId,
+      actorUserId: adminUid,
+      type: "org_you_were_removed",
+      metadata: {
+        actorDisplayName: adminLabel,
+        orgName,
+        orgId,
+      },
+    }).catch((err) => console.error("[enterprise/seats DELETE] notification:", err));
   }
 
   return NextResponse.json({ success: true });

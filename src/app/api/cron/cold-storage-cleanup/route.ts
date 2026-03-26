@@ -8,6 +8,7 @@
  */
 import { getAdminAuth, getAdminFirestore } from "@/lib/firebase-admin";
 import { sendOrgPurgedEmail, sendTeamPurgedEmail } from "@/lib/emailjs";
+import { createNotification, resolveEmailsToUserIds } from "@/lib/notification-service";
 import {
   isB2Configured,
   deleteObjectWithRetry,
@@ -120,6 +121,22 @@ export async function POST(request: Request) {
             sendOrgPurgedEmail({ to_email: adminEm, org_name: orgNamePurged }).catch((err) =>
               console.error("[cold-storage-cleanup] org purged email failed", orgId, err)
             );
+            const orgNotifyUids = await resolveEmailsToUserIds([adminEm], undefined);
+            if (orgNotifyUids[0]) {
+              await createNotification({
+                recipientUserId: orgNotifyUids[0],
+                actorUserId: orgNotifyUids[0],
+                type: "lifecycle_storage_purged",
+                allowSelfActor: true,
+                metadata: {
+                  purgeScope: "org",
+                  orgName: orgNamePurged,
+                  actorDisplayName: "Bizzi Cloud",
+                },
+              }).catch((err) =>
+                console.error("[cold-storage-cleanup] org purged notify", orgId, err)
+              );
+            }
           }
         }
       }
@@ -138,6 +155,18 @@ export async function POST(request: Request) {
                 console.error("[cold-storage-cleanup] team purged email failed", pto, err)
               );
             }
+            await createNotification({
+              recipientUserId: pto,
+              actorUserId: pto,
+              type: "lifecycle_storage_purged",
+              allowSelfActor: true,
+              metadata: {
+                purgeScope: "personal_team",
+                actorDisplayName: "Bizzi Cloud",
+              },
+            }).catch((err) =>
+              console.error("[cold-storage-cleanup] team purged notify", pto, err)
+            );
           } catch {
             /* ignore */
           }

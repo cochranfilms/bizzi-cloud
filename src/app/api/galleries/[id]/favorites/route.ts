@@ -7,6 +7,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
+import { createNotification } from "@/lib/notification-service";
 
 /** POST – Create a favorites list (client, no auth required for public galleries) */
 export async function POST(
@@ -75,6 +76,25 @@ export async function POST(
     favorite_count: currentFav + addedCount,
     updated_at: now,
   });
+
+  const photographerId = g.photographer_id as string;
+  const galleryTitle = (g.title as string) ?? "Gallery";
+  const cName = typeof clientName === "string" ? clientName.trim() : "";
+  const cEmail = typeof clientEmail === "string" ? clientEmail.trim() : "";
+  const label = cName || cEmail || "A client";
+  await createNotification({
+    recipientUserId: photographerId,
+    actorUserId: photographerId,
+    type: "gallery_favorites_submitted",
+    allowSelfActor: true,
+    metadata: {
+      actorDisplayName: label,
+      galleryId,
+      galleryTitle,
+      clientName: cName || undefined,
+      clientEmail: cEmail || undefined,
+    },
+  }).catch((err) => console.error("[galleries/favorites POST] notification:", err));
 
   return NextResponse.json({
     id: listRef.id,

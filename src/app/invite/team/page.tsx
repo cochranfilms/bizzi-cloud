@@ -49,19 +49,30 @@ function InviteTeamInner() {
           },
           body: JSON.stringify({ token: token.trim() }),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          team_owner_user_id?: string;
+        };
         if (!res.ok) {
           acceptStarted.current = false;
           setStatus("error");
-          setMessage((data.error as string) ?? "Could not accept invite.");
+          setMessage(data.error ?? "Could not accept invite.");
           return;
         }
+        const ownerId =
+          typeof data.team_owner_user_id === "string" ? data.team_owner_user_id.trim() : "";
         setStatus("done");
-        setMessage("You're on the team. Opening your dashboard…");
+        setMessage("You're on the team. Opening your team workspace…");
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("subscription-updated"));
+          try {
+            sessionStorage.setItem("bizzi-team-invite-accepted", "1");
+          } catch {
+            /* ignore */
+          }
         }
-        router.replace("/dashboard");
+        const dest = ownerId ? `/team/${ownerId}` : "/dashboard";
+        router.replace(dest);
         router.refresh();
       } catch {
         acceptStarted.current = false;

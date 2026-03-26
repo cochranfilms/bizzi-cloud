@@ -16,6 +16,7 @@ import {
   resolveMediaModeFromCreateBody,
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
+import { userHasActiveOrganizationSeat } from "@/lib/workspace-access";
 
 function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const context = url.searchParams.get("context") ?? "personal";
   const organizationId = url.searchParams.get("organization_id")?.trim() || null;
+  const teamOwnerUserId = url.searchParams.get("team_owner_user_id")?.trim() || null;
 
   const db = getAdminFirestore();
 
@@ -51,7 +53,8 @@ export async function GET(request: Request) {
   if (context === "enterprise" && organizationId) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    if (profileOrgId !== organizationId) {
+    const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
+    if (profileOrgId !== organizationId && !hasSeat) {
       return NextResponse.json({ error: "Unauthorized to list this organization's galleries" }, { status: 403 });
     }
     snap = await db
@@ -60,6 +63,28 @@ export async function GET(request: Request) {
       .where("organization_id", "==", organizationId)
       .orderBy("created_at", "desc")
       .get();
+  } else if (context === "personal_team" && teamOwnerUserId) {
+    if (uid !== teamOwnerUserId) {
+      const seatSnap = await db
+        .collection("personal_team_seats")
+        .doc(`${teamOwnerUserId}_${uid}`)
+        .get();
+      const st = seatSnap.data()?.status as string | undefined;
+      if (!seatSnap.exists || (st !== "active" && st !== "cold_storage")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+    const allSnap = await db
+      .collection("galleries")
+      .where("photographer_id", "==", teamOwnerUserId)
+      .orderBy("created_at", "desc")
+      .get();
+    snap = {
+      docs: allSnap.docs.filter((d) => {
+        const oid = d.data().organization_id;
+        return oid === null || oid === undefined || oid === "";
+      }),
+    };
   } else {
     const allSnap = await db
       .collection("galleries")
@@ -208,7 +233,8 @@ export async function POST(request: Request) {
   if (organizationId) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    if (profileOrgId !== organizationId) {
+    const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
+    if (profileOrgId !== organizationId && !hasSeat) {
       return NextResponse.json({ error: "Unauthorized to create gallery for this organization" }, { status: 403 });
     }
   }

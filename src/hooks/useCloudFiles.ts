@@ -35,10 +35,19 @@ import type {
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
-  opts: { isEnterpriseContext: boolean; orgId: string | null; creatorOnly: boolean }
+  opts: {
+    isEnterpriseContext: boolean;
+    orgId: string | null;
+    creatorOnly: boolean;
+    teamRouteOwnerUid: string | null;
+  }
 ): LinkedDrive[] {
   return drives
     .filter((d) => {
+      if (opts.teamRouteOwnerUid) {
+        return d.personal_team_owner_id === opts.teamRouteOwnerUid;
+      }
+      if (d.personal_team_owner_id) return false;
       const oid = d.organization_id ?? null;
       if (opts.isEnterpriseContext && opts.orgId) return oid === opts.orgId;
       return !oid;
@@ -173,6 +182,12 @@ function useIsEnterpriseContext(): boolean {
   return typeof pathname === "string" && pathname.startsWith("/enterprise");
 }
 
+function useTeamRouteOwnerUid(): string | null {
+  const pathname = usePathname();
+  const m = typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname) : null;
+  return m?.[1]?.trim() || null;
+}
+
 export interface UseCloudFilesOptions {
   /** When true, return only Creator section drives (incl. RAW). When false, exclude Creator drives. */
   creatorOnly?: boolean;
@@ -182,6 +197,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { user } = useAuth();
   const { org } = useEnterprise();
   const isEnterpriseContext = useIsEnterpriseContext();
+  const teamRouteOwnerUid = useTeamRouteOwnerUid();
   const creatorOnly = options?.creatorOnly ?? false;
   const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
@@ -211,6 +227,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         isEnterpriseContext,
         orgId,
         creatorOnly,
+        teamRouteOwnerUid,
       });
       const driveMap = new Map(
         scoped.map((d) => [
@@ -308,7 +325,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       hasInitiallyLoadedRef.current = true;
       setLoading(false);
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]);
+  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]);
 
   useEffect(() => {
     fetchCloudFiles();
@@ -327,6 +344,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         isEnterpriseContext,
         orgId,
         creatorOnly,
+        teamRouteOwnerUid,
       });
       const driveMap = new Map(scoped.map((d) => [d.id, d]));
       const driveIds = new Set(scoped.map((d) => d.id));
@@ -395,7 +413,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     } finally {
       setLoadingAllFiles(false);
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]);
+  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]);
 
   const fetchDriveFiles = useCallback(
     async (driveId: string): Promise<RecentFile[]> => {
@@ -634,6 +652,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         isEnterpriseContext,
         orgId,
         creatorOnly,
+        teamRouteOwnerUid,
       });
       const driveMap = new Map(
         scoped.map((d) => [d.id, { id: d.id, name: d.name }])
@@ -690,7 +709,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         };
         });
     },
-    [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives]
+    [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]
   );
 
   const recalculateStorage = useCallback(async () => {

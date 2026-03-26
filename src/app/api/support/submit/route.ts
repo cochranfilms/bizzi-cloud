@@ -4,6 +4,7 @@
  */
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { sendSupportTicketEmail } from "@/lib/emailjs";
+import { createNotification } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
 const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
@@ -90,6 +91,19 @@ export async function POST(request: Request) {
       console.error("[support/submit] EmailJS failed:", err);
       // Ticket is saved; email failure is non-fatal
     }
+
+    const subjectShort = subject.length > 80 ? `${subject.slice(0, 77)}…` : subject;
+    await createNotification({
+      recipientUserId: uid,
+      actorUserId: uid,
+      type: "support_ticket_submitted",
+      allowSelfActor: true,
+      metadata: {
+        ticketId: docRef.id,
+        supportSubject: subjectShort,
+        actorDisplayName: "Support",
+      },
+    }).catch((err) => console.error("[support/submit] notification:", err));
 
     return NextResponse.json({
       id: docRef.id,

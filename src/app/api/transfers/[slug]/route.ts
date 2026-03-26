@@ -1,4 +1,5 @@
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 import { hashSecret } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 
@@ -41,7 +42,37 @@ export async function DELETE(
     return NextResponse.json({ error: "You can only delete transfers you created" }, { status: 403 });
   }
 
+  const clientEmailRaw =
+    typeof data?.clientEmail === "string"
+      ? data.clientEmail.trim()
+      : typeof data?.client_email === "string"
+        ? data.client_email.trim()
+        : "";
+  const senderLabel = await getActorDisplayName(db, uid);
+
   await db.collection("transfers").doc(slug).delete();
+
+  if (clientEmailRaw) {
+    let recipientUid: string | null = null;
+    try {
+      const r = await getAdminAuth().getUserByEmail(clientEmailRaw.toLowerCase());
+      if (r.uid && r.uid !== uid) recipientUid = r.uid;
+    } catch {
+      recipientUid = null;
+    }
+    if (recipientUid) {
+      await createNotification({
+        recipientUserId: recipientUid,
+        actorUserId: uid,
+        type: "transfer_deleted_by_sender",
+        metadata: {
+          actorDisplayName: senderLabel,
+          transferSlug: slug,
+          transferName: (data?.name as string) ?? "Transfer",
+        },
+      }).catch((err) => console.error("[transfers DELETE] notify:", err));
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
@@ -92,6 +123,7 @@ export async function PATCH(
       expiresAt !== null && typeof expiresAt === "string" && expiresAt.trim()
         ? expiresAt.trim()
         : null;
+    updates.expiry_warning_sent = false;
   }
 
   if (password !== undefined) {

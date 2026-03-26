@@ -1,7 +1,10 @@
-import type { NotificationType } from "@/types/collaboration";
+import type { Notification, NotificationType } from "@/types/collaboration";
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
+import type { Firestore } from "firebase-admin/firestore";
 import { formatNotificationMessage } from "./notification-format";
 import { getFileDisplayName } from "./file-access";
+
+export type NotificationMetadata = NonNullable<Notification["metadata"]>;
 
 export interface CreateNotificationInput {
   recipientUserId: string;
@@ -10,24 +13,20 @@ export interface CreateNotificationInput {
   fileId?: string | null;
   commentId?: string | null;
   shareId?: string | null;
-  metadata?: {
-    fileName?: string;
-    actorDisplayName?: string;
-    fileCount?: number;
-    parentCommentId?: string;
-    transferSlug?: string;
-    transferName?: string;
-    galleryId?: string;
-    galleryTitle?: string;
-    orgId?: string;
-    orgName?: string;
-    inviteToken?: string;
-  };
+  /** When true, deliver even if recipient === actor (billing, support ack, etc.). */
+  allowSelfActor?: boolean;
+  metadata?: NotificationMetadata;
 }
 
-/** Never notify the actor for their own action. */
-export function shouldNotify(recipientUserId: string, actorUserId: string): boolean {
-  return recipientUserId !== actorUserId && recipientUserId.length > 0;
+/** Never notify the actor for their own action (unless allowSelfActor). */
+export function shouldNotify(
+  recipientUserId: string,
+  actorUserId: string,
+  allowSelfActor?: boolean
+): boolean {
+  if (!recipientUserId) return false;
+  if (allowSelfActor) return true;
+  return recipientUserId !== actorUserId;
 }
 
 /**
@@ -35,7 +34,7 @@ export function shouldNotify(recipientUserId: string, actorUserId: string): bool
  * Deduplication: optional - caller can pass a dedupeKey to avoid rapid duplicates.
  */
 export async function createNotification(input: CreateNotificationInput): Promise<string | null> {
-  if (!shouldNotify(input.recipientUserId, input.actorUserId)) return null;
+  if (!shouldNotify(input.recipientUserId, input.actorUserId, input.allowSelfActor)) return null;
 
   const db = getAdminFirestore();
   const now = new Date();
@@ -51,10 +50,9 @@ export async function createNotification(input: CreateNotificationInput): Promis
     fileName: fileName ?? input.metadata?.fileName,
     actorDisplayName,
   };
-  // Firestore rejects undefined; omit undefined values
   const metadata = Object.fromEntries(
     Object.entries(rawMetadata).filter(([, v]) => v !== undefined)
-  );
+  ) as NotificationMetadata;
 
   const message = formatNotificationMessage(input.type, actorDisplayName, metadata);
 
@@ -74,6 +72,106 @@ export async function createNotification(input: CreateNotificationInput): Promis
   return doc.id;
 }
 
+/** Resolve emails to Firebase user IDs for in-app delivery. */
+export async function resolveEmailsToUserIds(
+  emails: string[],
+  excludeUserId?: string
+): Promise<string[]> {
+  const auth = getAdminAuth();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of emails) {
+    const email = raw?.toLowerCase?.()?.trim();
+    if (!email?.includes("@")) continue;
+    try {
+      const rec = await auth.getUserByEmail(email);
+      if (rec.uid && rec.uid !== excludeUserId && !seen.has(rec.uid)) {
+        seen.add(rec.uid);
+        out.push(rec.uid);
+      }
+    } catch {
+      /* no user */
+    }
+  }
+  return out;
+}
+
+/** Active org admins with a bound user account. */
+export async function getOrganizationAdminUserIds(
+  db: Firestore,
+  orgId: string,
+  excludeUserId?: string
+): Promise<string[]> {
+  const snap = await db
+    .collection("organization_seats")
+    .where("organization_id", "==", orgId)
+    .get();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const d of snap.docs) {
+    const s = d.data();
+    if (s.status !== "active" || s.role !== "admin") continue;
+    const uid = typeof s.user_id === "string" ? s.user_id : "";
+    if (!uid || uid === excludeUserId || seen.has(uid)) continue;
+    seen.add(uid);
+    out.push(uid);
+  }
+  return out;
+}
+
+/** Active org members (admin or member) with a bound user account. */
+export async function getOrganizationActiveMemberUserIds(
+  db: Firestore,
+  orgId: string,
+  excludeUserId?: string
+): Promise<string[]> {
+  const snap = await db
+    .collection("organization_seats")
+    .where("organization_id", "==", orgId)
+    .get();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const d of snap.docs) {
+    const s = d.data();
+    if (s.status !== "active") continue;
+    const uid = typeof s.user_id === "string" ? s.user_id : "";
+    if (!uid || uid === excludeUserId || seen.has(uid)) continue;
+    seen.add(uid);
+    out.push(uid);
+  }
+  return out;
+}
+
+export async function getActorDisplayName(db: Firestore, uid: string): Promise<string> {
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const data = profileSnap.data();
+  const fromProfile =
+    (data?.displayName as string | undefined)?.trim() ||
+    (data?.display_name as string | undefined)?.trim();
+  if (fromProfile) return fromProfile;
+  try {
+    const u = await getAdminAuth().getUser(uid);
+    return (
+      (u.displayName as string | undefined)?.trim() ||
+      u.email?.split("@")[0] ||
+      "Someone"
+    );
+  } catch {
+    return "Someone";
+  }
+}
+
+export function formatStorageQuotaSummary(bytes: number | null): string {
+  if (bytes === null) return "Unlimited";
+  if (bytes <= 0) return "0";
+  const tb = bytes / 1024 ** 4;
+  if (tb >= 1) return `${tb % 1 === 0 ? tb : tb.toFixed(1)} TB`;
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb % 1 === 0 ? gb : gb.toFixed(1)} GB`;
+  const mb = bytes / 1024 ** 2;
+  return `${Math.max(1, Math.round(mb))} MB`;
+}
+
 /**
  * Create share notifications for recipients when files are shared.
  * Resolves invited emails to user IDs via profiles.
@@ -91,8 +189,16 @@ export async function createShareNotifications(params: {
   folderName?: string;
 }): Promise<void> {
   const db = getAdminFirestore();
-  const { sharedByUserId, actorDisplayName, actorEmail, fileIds, folderShareId, permission, invitedEmails, folderName } =
-    params;
+  const {
+    sharedByUserId,
+    actorDisplayName,
+    actorEmail,
+    fileIds,
+    folderShareId,
+    permission,
+    invitedEmails,
+    folderName,
+  } = params;
 
   if (invitedEmails.length === 0) return;
 

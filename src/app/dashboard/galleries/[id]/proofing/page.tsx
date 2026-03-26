@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -216,6 +216,12 @@ function ProofingAssetCell({
 export default function GalleryProofingPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const navBase =
+    typeof pathname === "string" && pathname.startsWith("/team/")
+      ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? "/dashboard")
+      : "/dashboard";
+  const galleriesRoot = `${navBase}/galleries`;
   const id = params?.id as string;
   const { user } = useAuth();
   const [galleryTitle, setGalleryTitle] = useState("");
@@ -257,7 +263,7 @@ export default function GalleryProofingPage() {
       ]);
 
       if (!viewRes.ok) {
-        if (viewRes.status === 404) router.replace("/dashboard/galleries");
+        if (viewRes.status === 404) router.replace(galleriesRoot);
         return;
       }
 
@@ -276,11 +282,11 @@ export default function GalleryProofingPage() {
         setComments(commentsData.comments ?? []);
       }
     } catch {
-      router.replace("/dashboard/galleries");
+      router.replace(galleriesRoot);
     } finally {
       setLoading(false);
     }
-  }, [user, id, router]);
+  }, [user, id, router, galleriesRoot]);
 
   useEffect(() => {
     setLoading(true);
@@ -401,7 +407,7 @@ export default function GalleryProofingPage() {
         <DashboardRouteFade ready={!loading} srOnlyMessage="Loading proofing">
         <div className="mx-auto max-w-6xl space-y-6">
           <Link
-            href={`/dashboard/galleries/${id}`}
+            href={`${navBase}/galleries/${id}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
           >
             <ChevronLeft className="h-4 w-4" />

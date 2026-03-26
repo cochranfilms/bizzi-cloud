@@ -196,7 +196,11 @@ export default function GalleryGrid({ basePath }: GalleryGridProps) {
   const pathname = usePathname();
   const resolvedBasePath =
     basePath ??
-    (pathname?.startsWith("/enterprise") ? "/enterprise" : pathname?.startsWith("/desktop") ? "/desktop/app" : "/dashboard");
+    (pathname?.startsWith("/enterprise")
+      ? "/enterprise"
+      : pathname?.startsWith("/desktop")
+        ? "/desktop/app"
+        : pathname?.match(/^(\/team\/[^/]+)/)?.[1] ?? "/dashboard");
   const { galleries, loading, error, createGallery, deleteGallery } = useGalleries({
     basePath: resolvedBasePath,
   });

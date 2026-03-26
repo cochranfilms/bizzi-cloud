@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -130,6 +130,12 @@ interface GalleryAsset {
 export default function GalleryDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const navBase =
+    typeof pathname === "string" && pathname.startsWith("/team/")
+      ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? "/dashboard")
+      : "/dashboard";
+  const galleriesRoot = `${navBase}/galleries`;
   const id = params?.id as string;
   const { user } = useAuth();
   const { recentFiles } = useCloudFiles();
@@ -231,15 +237,15 @@ export default function GalleryDetailPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        if (res.status === 404) router.replace("/dashboard/galleries");
+        if (res.status === 404) router.replace(galleriesRoot);
         return;
       }
       const data = await res.json();
       setGallery(data);
     } catch {
-      router.replace("/dashboard/galleries");
+      router.replace(galleriesRoot);
     }
-  }, [user, id, router]);
+  }, [user, id, router, galleriesRoot]);
 
   const fetchAssets = useCallback(async () => {
     if (!user || !id) return;
@@ -343,7 +349,7 @@ export default function GalleryDetailPage() {
         {gallery ? (
         <div className="mx-auto max-w-6xl space-y-6">
           <Link
-            href="/dashboard/galleries"
+            href={galleriesRoot}
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -369,14 +375,14 @@ export default function GalleryDetailPage() {
             </div>
             <div className="flex items-center gap-2">
               <Link
-                href={`/dashboard/galleries/${id}/proofing`}
+                href={`${navBase}/galleries/${id}/proofing`}
                 className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
               >
                 <Heart className="h-4 w-4" />
                 Proofing
               </Link>
               <Link
-                href={`/dashboard/galleries/${id}/settings`}
+                href={`${navBase}/galleries/${id}/settings`}
                 className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
               >
                 <Settings className="h-4 w-4" />

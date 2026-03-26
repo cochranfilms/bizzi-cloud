@@ -3,7 +3,20 @@
 import { useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquare, Heart, Share2, FileText, Images, Users } from "lucide-react";
+import {
+  MessageSquare,
+  Heart,
+  Share2,
+  FileText,
+  Images,
+  Users,
+  UserPlus,
+  Building2,
+  CreditCard,
+  LifeBuoy,
+  Clock,
+  Ban,
+} from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   markNotificationRead,
@@ -23,19 +36,131 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
     case "file_comment_created":
     case "file_comment_edited":
     case "file_reply_created":
+    case "gallery_proofing_comment":
       return <MessageSquare className="h-4 w-4 flex-shrink-0" />;
     case "file_hearted":
       return <Heart className="h-4 w-4 flex-shrink-0" />;
     case "file_shared":
     case "transfer_sent":
+    case "share_invitee_removed":
+    case "share_link_deleted":
+    case "share_permission_downgraded":
       return <Share2 className="h-4 w-4 flex-shrink-0" />;
     case "gallery_invite":
+    case "gallery_favorites_submitted":
+    case "gallery_proofing_status_updated":
       return <Images className="h-4 w-4 flex-shrink-0" />;
     case "org_seat_invite":
-      return <Users className="h-4 w-4 flex-shrink-0" />;
+    case "org_member_joined":
+    case "org_you_were_removed":
+    case "org_role_changed":
+    case "org_storage_quota_changed":
+    case "org_removal_scheduled":
+      return <Building2 className="h-4 w-4 flex-shrink-0" />;
+    case "personal_team_added":
+    case "personal_team_joined_owner":
+    case "personal_team_you_were_removed":
+    case "personal_team_member_left_owner":
+      return <UserPlus className="h-4 w-4 flex-shrink-0" />;
+    case "transfer_deleted_by_sender":
+    case "transfer_expiring_soon":
+      return <Clock className="h-4 w-4 flex-shrink-0" />;
+    case "billing_payment_failed":
+    case "billing_subscription_canceled":
+    case "billing_subscription_welcome":
+      return <CreditCard className="h-4 w-4 flex-shrink-0" />;
+    case "lifecycle_storage_purged":
+      return <Ban className="h-4 w-4 flex-shrink-0" />;
+    case "support_ticket_submitted":
+      return <LifeBuoy className="h-4 w-4 flex-shrink-0" />;
     default:
       return <FileText className="h-4 w-4 flex-shrink-0" />;
   }
+}
+
+function resolveNotificationHref(n: Notification, shareBasePath: string): string {
+  const m = n.metadata ?? {};
+  if (n.shareId) {
+    return `${shareBasePath}/shared/${n.shareId}`;
+  }
+  if (n.fileId) {
+    return n.commentId
+      ? `${shareBasePath}?file=${n.fileId}#comment-${n.commentId}`
+      : `${shareBasePath}?file=${n.fileId}`;
+  }
+
+  if (n.type === "transfer_deleted_by_sender") {
+    return `${shareBasePath}/transfers`;
+  }
+
+  if (
+    (n.type === "transfer_sent" || n.type === "transfer_expiring_soon") &&
+    m.transferSlug
+  ) {
+    return `/t/${m.transferSlug}`;
+  }
+
+  if (
+    (n.type === "gallery_invite" || n.type === "gallery_proofing_status_updated") &&
+    m.galleryId
+  ) {
+    return `/g/${m.galleryId}`;
+  }
+
+  if (
+    (n.type === "gallery_proofing_comment" || n.type === "gallery_favorites_submitted") &&
+    m.galleryId
+  ) {
+    return `${shareBasePath}/galleries/${m.galleryId}/proofing`;
+  }
+
+  if (n.type === "org_seat_invite" && m.inviteToken) {
+    return `/invite/join?token=${encodeURIComponent(m.inviteToken)}`;
+  }
+
+  if (n.type === "personal_team_added" && m.teamOwnerUserId) {
+    return `/team/${m.teamOwnerUserId}`;
+  }
+
+  const orgBillingTypes: Notification["type"][] = [
+    "org_member_joined",
+    "org_you_were_removed",
+    "org_role_changed",
+    "org_storage_quota_changed",
+    "org_removal_scheduled",
+  ];
+  if (orgBillingTypes.includes(n.type)) {
+    return "/enterprise/settings";
+  }
+
+  if (
+    n.type === "billing_payment_failed" ||
+    n.type === "billing_subscription_canceled" ||
+    n.type === "billing_subscription_welcome"
+  ) {
+    if (m.orgId || m.billingScope === "org") {
+      return "/enterprise/settings";
+    }
+    return "/dashboard/settings";
+  }
+
+  if (
+    n.type === "share_invitee_removed" ||
+    n.type === "share_link_deleted" ||
+    n.type === "share_permission_downgraded"
+  ) {
+    return `${shareBasePath}/shared`;
+  }
+
+  if (n.type === "lifecycle_storage_purged") {
+    return shareBasePath === "/enterprise" ? "/enterprise" : "/dashboard";
+  }
+
+  if (n.type === "support_ticket_submitted") {
+    return "/dashboard/settings";
+  }
+
+  return "/dashboard";
 }
 
 function NotificationLink({
@@ -47,20 +172,7 @@ function NotificationLink({
   onClick: () => void;
   shareBasePath: string;
 }) {
-  const href =
-    n.shareId
-      ? `${shareBasePath}/shared/${n.shareId}`
-      : n.fileId
-        ? n.commentId
-          ? `${shareBasePath}?file=${n.fileId}#comment-${n.commentId}`
-          : `${shareBasePath}?file=${n.fileId}`
-        : n.type === "transfer_sent" && n.metadata?.transferSlug
-          ? `/t/${n.metadata.transferSlug}`
-          : n.type === "gallery_invite" && n.metadata?.galleryId
-            ? `/g/${n.metadata.galleryId}`
-            : n.type === "org_seat_invite" && n.metadata?.inviteToken
-              ? `/invite/join?token=${encodeURIComponent(n.metadata.inviteToken)}`
-              : "/dashboard";
+  const href = resolveNotificationHref(n, shareBasePath);
 
   return (
     <Link

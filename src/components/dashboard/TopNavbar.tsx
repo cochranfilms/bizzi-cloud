@@ -50,6 +50,10 @@ export default function TopNavbar() {
   const [searchFocused, setSearchFocused] = useState(false);
   const { hasGallerySuite, hasEditor } = useSubscription();
 
+  const teamNavBase =
+    typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
+  const navBase = teamNavBase ?? "/dashboard";
+
   const filteredItems = navItems.filter((item) => {
     if (item.requiresGallerySuite && !hasGallerySuite) return false;
     if (item.requiresEditor && !hasEditor) return false;
@@ -90,12 +94,16 @@ export default function TopNavbar() {
       <nav className="hidden md:flex items-center gap-0.5">
         {filteredItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const href =
+            teamNavBase && item.href === "/dashboard/settings"
+              ? "/dashboard/settings"
+              : item.href.replace(/^\/dashboard/, navBase);
+          const isActive = pathname === href || pathname?.startsWith(`${href}/`);
           const hasPowerupColor = isActive && item.activeBgColor;
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                 hasPowerupColor
                   ? "font-medium text-white"
@@ -154,12 +162,16 @@ export default function TopNavbar() {
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
           {filteredItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const href =
+              teamNavBase && item.href === "/dashboard/settings"
+                ? "/dashboard/settings"
+                : item.href.replace(/^\/dashboard/, navBase);
+            const isActive = pathname === href || pathname?.startsWith(`${href}/`);
             const hasPowerupColor = isActive && item.activeBgColor;
             return (
               <li key={item.href}>
                 <Link
-                  href={item.href}
+                  href={href}
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     hasPowerupColor

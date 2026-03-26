@@ -1,10 +1,13 @@
 /**
  * GET /api/account/workspaces
- * Returns personal workspace and organization workspaces with status for workspace switcher.
+ * Returns personal workspace, personal teams, and organization workspaces with status for workspace switcher.
  */
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import type { PersonalStatus } from "@/types/profile";
 import { NextResponse } from "next/server";
+import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
+import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 
 function badgeFromStatus(
   storageLifecycle: string | undefined,
@@ -20,6 +23,26 @@ function badgeFromStatus(
   if (status === "grace_period") return "Past Due";
   if (billingStatus === "past_due") return "Past Due";
   return "Active";
+}
+
+async function profileDisplayName(
+  db: import("firebase-admin/firestore").Firestore,
+  uid: string
+): Promise<string> {
+  const snap = await db.collection("profiles").doc(uid).get();
+  const d = snap.data();
+  const name =
+    (d?.display_name as string)?.trim() ||
+    (d?.displayName as string)?.trim() ||
+    (d?.name as string)?.trim() ||
+    "";
+  if (name) return name;
+  try {
+    const rec = await getAdminAuth().getUser(uid);
+    return (rec.email?.split("@")[0] ?? "") || "Team";
+  } catch {
+    return "Team";
+  }
 }
 
 export async function GET(request: Request) {
@@ -89,8 +112,58 @@ export async function GET(request: Request) {
     });
   }
 
+  const personalTeams: Array<{
+    id: string;
+    ownerUserId: string;
+    name: string;
+    role: string;
+    status: string;
+  }> = [];
+  const teamSeen = new Set<string>();
+
+  const planId = (profileData?.plan_id as string) ?? "free";
+  const isTeamOwner = planAllowsPersonalTeamSeats(planId);
+
+  if (isTeamOwner) {
+    const ownerName = await profileDisplayName(db, uid);
+    const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
+    personalTeams.push({
+      id: `team_${uid}`,
+      ownerUserId: uid,
+      name: label,
+      role: "Admin",
+      status: badgeFromStatus(personalStorageLifecycle, personalBillingStatus, personalStatus),
+    });
+    teamSeen.add(uid);
+  }
+
+  const memberSeatsSnap = await db
+    .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+    .where("member_user_id", "==", uid)
+    .get();
+
+  for (const seatDoc of memberSeatsSnap.docs) {
+    const sd = seatDoc.data();
+    const ownerId = sd.team_owner_user_id as string;
+    const st = (sd.status as string) ?? "active";
+    if (!ownerId || ownerId === uid || teamSeen.has(ownerId)) continue;
+    if (st !== "active" && st !== "cold_storage") continue;
+    const ownerName = await profileDisplayName(db, ownerId);
+    const level = (sd.seat_access_level as PersonalTeamSeatAccess) ?? "none";
+    const roleLabel = level === "none" ? "Member" : PERSONAL_TEAM_SEAT_ACCESS_LABELS[level] ?? "Member";
+    personalTeams.push({
+      id: `team_${ownerId}`,
+      ownerUserId: ownerId,
+      name: ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`,
+      role: roleLabel,
+      status: st === "cold_storage" ? "Recovery Storage" : "Active",
+    });
+    teamSeen.add(ownerId);
+  }
+
   return NextResponse.json({
     personal,
     organizations,
+    personalTeams,
   });
 }

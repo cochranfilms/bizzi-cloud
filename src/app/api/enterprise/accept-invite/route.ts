@@ -4,6 +4,11 @@ import { ensureDefaultDrivesForOrgUser } from "@/lib/ensure-default-drives";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import {
+  createNotification,
+  getActorDisplayName,
+  getOrganizationAdminUserIds,
+} from "@/lib/notification-service";
 
 /** POST - Accept a pending invite to join an organization. */
 export async function POST(request: Request) {
@@ -180,10 +185,29 @@ export async function POST(request: Request) {
 
   await batch.commit();
 
+  const orgSnapForNotify = await db.collection("organizations").doc(orgId).get();
+  const orgNameNotify = (orgSnapForNotify.data()?.name as string) ?? "Organization";
+  const joinerLabel = await getActorDisplayName(db, uid);
+  const adminUids = await getOrganizationAdminUserIds(db, orgId, uid);
+  await Promise.all(
+    adminUids.map((adminUid) =>
+      createNotification({
+        recipientUserId: adminUid,
+        actorUserId: uid,
+        type: "org_member_joined",
+        metadata: {
+          actorDisplayName: joinerLabel,
+          newMemberDisplayName: joinerLabel,
+          orgName: orgNameNotify,
+          orgId,
+        },
+      }).catch((err) => console.error("[enterprise/accept-invite] admin notification:", err))
+    )
+  );
+
   // Create default drives (Storage, RAW, Gallery Media) for enterprise user based on org add-ons
-  const orgSnap = await db.collection("organizations").doc(orgId).get();
-  const orgAddonIds = Array.isArray(orgSnap.data()?.addon_ids)
-    ? (orgSnap.data()?.addon_ids as string[])
+  const orgAddonIds = Array.isArray(orgSnapForNotify.data()?.addon_ids)
+    ? (orgSnapForNotify.data()?.addon_ids as string[])
     : [];
   try {
     await ensureDefaultDrivesForOrgUser(uid, orgId, orgAddonIds);

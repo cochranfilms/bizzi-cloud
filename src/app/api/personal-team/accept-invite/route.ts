@@ -11,6 +11,7 @@ import {
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
 import { isPersonalTeamSeatAccess, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
+import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
 async function requireAuth(request: Request): Promise<{ uid: string; email?: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -98,14 +99,12 @@ export async function POST(request: Request) {
   }
 
   const memberProfile = await db.collection("profiles").doc(memberUid).get();
-  const existingOwner = memberProfile.data()?.personal_team_owner_id as string | undefined;
-  if (existingOwner && existingOwner !== teamOwnerUid) {
-    return NextResponse.json(
-      { error: "You are already on another personal team. Leave that team first." },
-      { status: 400 }
-    );
-  }
-  if (existingOwner === teamOwnerUid) {
+  const existingSeatId = personalTeamSeatDocId(teamOwnerUid, memberUid);
+  const existingSeatSnap = await db
+    .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+    .doc(existingSeatId)
+    .get();
+  if (existingSeatSnap.exists && existingSeatSnap.data()?.status === "active") {
     await inviteDoc.ref.set(
       {
         status: "accepted",
@@ -114,7 +113,11 @@ export async function POST(request: Request) {
       },
       { merge: true }
     );
-    return NextResponse.json({ ok: true, already_member: true });
+    return NextResponse.json({
+      ok: true,
+      already_member: true,
+      team_owner_user_id: teamOwnerUid,
+    });
   }
 
   const docId = personalTeamSeatDocId(teamOwnerUid, memberUid);
@@ -150,5 +153,16 @@ export async function POST(request: Request) {
     { merge: true }
   );
 
-  return NextResponse.json({ ok: true });
+  const joinerLabel = await getActorDisplayName(db, memberUid);
+  await createNotification({
+    recipientUserId: teamOwnerUid,
+    actorUserId: memberUid,
+    type: "personal_team_joined_owner",
+    metadata: {
+      actorDisplayName: joinerLabel,
+      newMemberDisplayName: joinerLabel,
+    },
+  }).catch((err) => console.error("[personal-team/accept-invite] notification:", err));
+
+  return NextResponse.json({ ok: true, team_owner_user_id: teamOwnerUid });
 }

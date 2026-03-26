@@ -8,7 +8,15 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  where,
+} from "firebase/firestore";
 import { getFirebaseFirestore } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
 import type { Organization, OrganizationRole } from "@/types/enterprise";
@@ -67,14 +75,46 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
 
     try {
       const db = getFirebaseFirestore();
+      let storedOrgId: string | null = null;
+      if (typeof window !== "undefined") {
+        try {
+          storedOrgId = sessionStorage.getItem("bizzi-enterprise-org");
+        } catch {
+          // ignore
+        }
+      }
+
+      const seatsSnap = await getDocs(
+        query(
+          collection(db, "organization_seats"),
+          where("user_id", "==", user.uid),
+          where("status", "==", "active"),
+          limit(20)
+        )
+      );
+      const seatOrgIds = [
+        ...new Set(
+          seatsSnap.docs
+            .map((d) => d.data().organization_id as string)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        ),
+      ];
+
       const profileRef = doc(db, "profiles", user.uid);
       const profileSnap = await getDoc(profileRef);
       const profileData = profileSnap.data();
+      const profileOrgId = profileData?.organization_id as string | undefined;
 
-      const orgId = profileData?.organization_id as string | undefined;
-      const orgRole = profileData?.organization_role as OrganizationRole | undefined;
+      let chosenOrgId: string | null = null;
+      if (storedOrgId && seatOrgIds.includes(storedOrgId)) {
+        chosenOrgId = storedOrgId;
+      } else if (profileOrgId && seatOrgIds.includes(profileOrgId)) {
+        chosenOrgId = profileOrgId;
+      } else if (seatOrgIds.length > 0) {
+        chosenOrgId = seatOrgIds[0];
+      }
 
-      if (!orgId) {
+      if (!chosenOrgId) {
         setOrganization(null);
         setRole(null);
         setLoading(false);
@@ -88,7 +128,11 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
-      const orgRef = doc(db, "organizations", orgId);
+      const seatDocId = `${chosenOrgId}_${user.uid}`;
+      const seatSnap = await getDoc(doc(db, "organization_seats", seatDocId));
+      const roleFromSeat = (seatSnap.data()?.role as OrganizationRole | undefined) ?? "member";
+
+      const orgRef = doc(db, "organizations", chosenOrgId);
       const orgSnap = await getDoc(orgRef);
 
       if (!orgSnap.exists()) {
@@ -100,8 +144,11 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
 
       const org = parseOrgFromFirestore(orgSnap.id, orgSnap.data()!);
       setOrganization(org);
-      setRole(orgRole ?? "member");
-      // Persist org id for resilience on refresh (EnterpriseAuthGuard can use for retry)
+      setRole(
+        profileOrgId === chosenOrgId
+          ? ((profileData?.organization_role as OrganizationRole | undefined) ?? roleFromSeat)
+          : roleFromSeat
+      );
       if (typeof window !== "undefined") {
         try {
           sessionStorage.setItem("bizzi-enterprise-org", org.id);

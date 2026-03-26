@@ -90,6 +90,8 @@ export function useFilteredFiles(
   const pathname = usePathname();
   const { driveId, effectiveDriveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
   const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
+  const teamOwnerFromPath =
+    typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
   const driveIdForApi = effectiveDriveId ?? driveId;
 
   const [filterState, setFilterState] = useState<FilterState>(() =>
@@ -172,6 +174,7 @@ export function useFilteredFiles(
       const token = await user.getIdToken(true);
       const params = filterStateToSearchParams(state);
       if (driveIdForApi) params.set("drive_id", driveIdForApi);
+      if (teamOwnerFromPath) params.set("team_owner_id", teamOwnerFromPath);
       if (isEnterprise && org?.id) {
         params.set("context", "enterprise");
         params.set("organization_id", org.id);
@@ -198,7 +201,7 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, driveIdForApi, isEnterprise, org?.id]);
+  }, [user, driveIdForApi, isEnterprise, org?.id, teamOwnerFromPath]);
 
   const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 

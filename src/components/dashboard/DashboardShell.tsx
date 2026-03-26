@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, createContext, useContext } from "react";
+import { usePathname } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
 import TopNavbar from "./TopNavbar";
@@ -28,6 +29,10 @@ export default function DashboardShell({
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const { cssVariables } = useDashboardAppearance();
+  const pathname = usePathname();
+  const teamNavBase =
+    typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
+  const rightPanelBasePath = teamNavBase ?? "/dashboard";
 
   return (
     <UppyUploadProvider>
@@ -79,7 +84,10 @@ export default function DashboardShell({
               rightPanelOpen ? "translate-x-0" : "translate-x-full xl:translate-x-0"
             }`}
           >
-            <RightPanel onMobileClose={() => setRightPanelOpen(false)} />
+            <RightPanel
+              basePath={rightPanelBasePath}
+              onMobileClose={() => setRightPanelOpen(false)}
+            />
           </div>
         </div>
       </div>
