@@ -122,7 +122,9 @@ export async function GET(request: Request) {
   const teamSeen = new Set<string>();
 
   const planId = (profileData?.plan_id as string) ?? "free";
-  const isTeamOwner = planAllowsPersonalTeamSeats(planId);
+  /** Only show “your team” as admin when you are not a seat on someone else’s team. */
+  const seatedOnOtherTeam = !!(profileData?.personal_team_owner_id as string | undefined)?.trim();
+  const isTeamOwner = planAllowsPersonalTeamSeats(planId) && !seatedOnOtherTeam;
 
   if (isTeamOwner) {
     const ownerName = await profileDisplayName(db, uid);

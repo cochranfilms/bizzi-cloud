@@ -17,12 +17,20 @@ service cloud.firestore {
             && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
             && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
           || personalTeamCanReadOwnerDrive());
-      allow write: if request.auth != null
-        && (request.auth.uid == resource.data.userId
-          || (resource.data.organization_id is string
-            && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
-            && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
+      function orgLinkedDriveAdmin() {
+        return resource.data.organization_id is string
+          && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
+          && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin';
+      }
+      // Split write so team members can update owner drives (e.g. last_synced_at) but cannot delete them.
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null
+        && (request.auth.uid == resource.data.userId
+          || orgLinkedDriveAdmin()
+          || personalTeamCanReadOwnerDrive());
+      allow delete: if request.auth != null
+        && (request.auth.uid == resource.data.userId
+          || orgLinkedDriveAdmin());
     }
     match /backup_snapshots/{snapshotId} {
       allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;

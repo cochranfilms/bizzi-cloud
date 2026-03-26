@@ -443,6 +443,28 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setError(null);
+
+      if (!isEnterpriseContext && teamRouteOwnerUid) {
+        const token = await user.getIdToken();
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "";
+        const res = await fetch(
+          `${origin}/api/personal-team/team-drives?owner_uid=${encodeURIComponent(teamRouteOwnerUid)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(
+            (errBody.error as string) ??
+              `Could not load team workspace drives (${res.status})`
+          );
+        }
+        const payload = await res.json();
+        const teamDrives = (payload.drives ?? []) as LinkedDrive[];
+        setLinkedDrives(teamDrives);
+        return;
+      }
+
       const db = getFirebaseFirestore();
       const q = query(
         collection(db, "linked_drives"),
@@ -476,38 +498,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      let combined: LinkedDrive[] = drives;
-
-      if (!isEnterpriseContext && teamRouteOwnerUid) {
-        const tq = query(
-          collection(db, "linked_drives"),
-          where("userId", "==", teamRouteOwnerUid),
-          orderBy("createdAt", "desc")
-        );
-        const teamSnap = await getDocs(tq);
-        const teamDrives: LinkedDrive[] = [];
-        for (const d of teamSnap.docs) {
-          const data = d.data();
-          if (data.deleted_at) continue;
-          if (data.organization_id) continue;
-          let name = data.name as string;
-          if (name === "Uploads") name = "Storage";
-          teamDrives.push({
-            id: d.id,
-            user_id: data.userId,
-            name,
-            mount_path: data.mount_path ?? null,
-            permission_handle_id: data.permission_handle_id ?? null,
-            last_synced_at: data.last_synced_at ?? null,
-            created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-            organization_id: null,
-            creator_section: data.creator_section ?? false,
-            is_creator_raw: data.is_creator_raw ?? false,
-            personal_team_owner_id: teamRouteOwnerUid,
-          });
-        }
-        combined = teamDrives;
-      }
+      const combined: LinkedDrive[] = drives;
 
       setLinkedDrives(combined);
 

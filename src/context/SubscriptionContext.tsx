@@ -8,6 +8,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
@@ -39,6 +40,7 @@ interface SubscriptionContextValue extends SubscriptionState {
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { user } = useAuth();
   const [planId, setPlanId] = useState("free");
   const [addonIds, setAddonIds] = useState<string[]>([]);
@@ -124,16 +126,25 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     return () => window.removeEventListener("subscription-updated", handler);
   }, [fetchProfile]);
 
-  const hasGallerySuite =
-    addonIds.includes("gallery") ||
-    addonIds.includes("fullframe") ||
-    personalTeamSeatAccess === "gallery" ||
-    personalTeamSeatAccess === "fullframe";
-  const hasEditor =
-    addonIds.includes("editor") ||
-    addonIds.includes("fullframe") ||
-    personalTeamSeatAccess === "editor" ||
-    personalTeamSeatAccess === "fullframe";
+  /**
+   * On `/team/{ownerUid}`, when the viewer is a seat on that owner’s team, drive visibility
+   * (Storage / RAW / Gallery Media) follows the seat tier only — not the member’s personal add-ons.
+   * Everywhere else, use the signed-in account’s own subscription add-ons only (keeps personal vs team separated).
+   */
+  const teamRouteOwnerUid =
+    typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
+  const useSeatOnlyForPowerUps =
+    !!teamRouteOwnerUid &&
+    !!personalTeamOwnerId &&
+    teamRouteOwnerUid === personalTeamOwnerId;
+
+  const hasGallerySuite = useSeatOnlyForPowerUps
+    ? personalTeamSeatAccess === "gallery" || personalTeamSeatAccess === "fullframe"
+    : addonIds.includes("gallery") || addonIds.includes("fullframe");
+
+  const hasEditor = useSeatOnlyForPowerUps
+    ? personalTeamSeatAccess === "editor" || personalTeamSeatAccess === "fullframe"
+    : addonIds.includes("editor") || addonIds.includes("fullframe");
 
   const value = useMemo<SubscriptionContextValue>(
     () => ({
