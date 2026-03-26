@@ -7,7 +7,10 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { canAccessBackupFileById } from "@/lib/file-access";
+import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team-constants";
 import { NextResponse } from "next/server";
+
+const ACTIVE_TEAM_SEAT = new Set(["active", "cold_storage"]);
 
 const RECENT_DAYS = 7;
 const DEFAULT_LIMIT = 50;
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
     const data = driveSnap.data();
     const ownerId = data?.userId as string;
     const orgId = data?.organization_id as string | undefined;
+    const pto = data?.personal_team_owner_id as string | undefined;
     const isOwner = ownerId === auth.uid;
     const isOrgAdmin =
       orgId &&
@@ -66,7 +70,15 @@ export async function POST(request: Request) {
         .doc(`${orgId}_${auth.uid}`)
         .get()).exists &&
       (await db.collection("organization_seats").doc(`${orgId}_${auth.uid}`).get()).data()?.role === "admin";
-    if (!isOwner && !isOrgAdmin) {
+    const isTeamContainer =
+      !orgId && typeof pto === "string" && pto.length > 0 && ownerId === pto;
+    let isTeamSeatMember = false;
+    if (isTeamContainer && !isOwner && ownerId) {
+      const seatSnap = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(`${pto}_${auth.uid}`).get();
+      const st = (seatSnap.data()?.status as string) ?? "";
+      isTeamSeatMember = seatSnap.exists && ACTIVE_TEAM_SEAT.has(st);
+    }
+    if (!isOwner && !isOrgAdmin && !isTeamSeatMember) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
   }

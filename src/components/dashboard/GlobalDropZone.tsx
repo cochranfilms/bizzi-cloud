@@ -34,7 +34,8 @@ export default function GlobalDropZone() {
     ? (pathname === "/dashboard" ||
         pathname === "/dashboard/files" ||
         pathname?.startsWith("/enterprise") ||
-        pathname?.startsWith("/desktop/app")) &&
+        pathname?.startsWith("/desktop/app") ||
+        pathname?.startsWith("/team/")) &&
       !pathname?.includes("/galleries/") &&
       !pathname?.includes("/transfers")
     : false;
@@ -65,7 +66,8 @@ export default function GlobalDropZone() {
         const isFilesView =
           pathname === "/dashboard/files" ||
           pathname === "/enterprise/files" ||
-          pathname === "/desktop/app/files";
+          pathname === "/desktop/app/files" ||
+          (!!pathname?.startsWith("/team/") && pathname.includes("/files"));
 
         // Home: always Storage drive root. All files: current drive + folder (or Storage if none).
         const storageDrive = linkedDrives.find((d) => d.name === "Storage" || d.name === "Uploads");

@@ -44,6 +44,17 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid))
           && get(/databases/$(database)/documents/personal_team_seats/$(resource.data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active';
       }
+      /** Seat member can read any file on a team-container drive (uploader may be owner; file row may omit personal_team_owner_id). */
+      function backupFileOnTeamDriveSeatRead() {
+        return resource.data.organization_id == null
+          && resource.data.linked_drive_id is string
+          && exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
+          && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id
+              == get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.userId
+          && get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id is string
+          && exists(/databases/$(database)/documents/personal_team_seats/$(get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id + '_' + request.auth.uid))
+          && get(/databases/$(database)/documents/personal_team_seats/$(get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id)).data.personal_team_owner_id + '_' + request.auth.uid)).data.status == 'active';
+      }
       allow read: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || (exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
@@ -51,7 +62,8 @@ service cloud.firestore {
           || (resource.data.organization_id is string
             && exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
             && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
-          || backupPersonalTeamMemberRead());
+          || backupPersonalTeamMemberRead()
+          || backupFileOnTeamDriveSeatRead());
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.userId
         && (request.resource.data.personal_team_owner_id == null
