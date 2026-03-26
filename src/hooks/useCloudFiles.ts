@@ -168,6 +168,8 @@ export interface RecentFile {
   galleryId?: string | null;
   /** Video proxy status (ready, pending, failed, raw_unsupported, etc.) */
   proxyStatus?: ProxyStatus | null;
+  /** Server-side time the file row was created on upload (preferred for Recent Uploads). */
+  uploadedAt?: string | null;
   /** Optional metadata from filter API / backup_files */
   resolution_w?: number | null;
   resolution_h?: number | null;
@@ -178,6 +180,17 @@ export interface RecentFile {
 }
 
 /** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
+/** ISO timestamp for “when this upload counts as recent” (upload time wins over file mtime). */
+function recentUploadRecencyIso(file: RecentFile): string | null {
+  const raw = file.uploadedAt ?? file.modifiedAt;
+  if (!raw) return null;
+  if (typeof raw === "string") return raw;
+  if (typeof (raw as { toDate?: () => Date }).toDate === "function") {
+    return (raw as { toDate: () => Date }).toDate().toISOString();
+  }
+  return null;
+}
+
 function apiFileToRecentFile(
   raw: Record<string, unknown>,
   driveNameById: Map<string, string>
@@ -198,6 +211,7 @@ function apiFileToRecentFile(
     assetType: (raw.assetType as string) ?? null,
     galleryId: (raw.galleryId as string) ?? null,
     proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
+    uploadedAt: (raw.uploadedAt as string) ?? null,
     resolution_w: (raw.resolution_w as number) ?? null,
     resolution_h: (raw.resolution_h as number) ?? null,
     duration_sec: (raw.duration_sec as number) ?? null,
@@ -210,8 +224,14 @@ function apiFileToRecentFile(
 /** List files via Admin-backed filter API (avoids client Firestore rule / index issues for personal & team drives). */
 async function fetchFilesFromFilterApi(
   user: User,
-  options: { driveId?: string; teamOwnerUserId?: string | null; pageSize?: number }
-): Promise<RecentFile[]> {
+  options: {
+    driveId?: string;
+    teamOwnerUserId?: string | null;
+    pageSize?: number;
+    cursor?: string | null;
+    enterprise?: { organizationId: string };
+  }
+): Promise<{ files: RecentFile[]; nextCursor: string | null; hasMore: boolean }> {
   const token = await user.getIdToken(true);
   const base = typeof window !== "undefined" ? window.location.origin : "";
   const params = new URLSearchParams({
@@ -220,13 +240,26 @@ async function fetchFilesFromFilterApi(
   });
   if (options.driveId) params.set("drive_id", options.driveId);
   if (options.teamOwnerUserId) params.set("team_owner_id", options.teamOwnerUserId);
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.enterprise) {
+    params.set("context", "enterprise");
+    params.set("organization_id", options.enterprise.organizationId);
+  }
   const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return [];
-  const data = (await res.json()) as { files?: Record<string, unknown>[] };
+  if (!res.ok) return { files: [], nextCursor: null, hasMore: false };
+  const data = (await res.json()) as {
+    files?: Record<string, unknown>[];
+    cursor?: string | null;
+    hasMore?: boolean;
+  };
   const emptyDriveNames = new Map<string, string>();
-  return (data.files ?? []).map((raw) => apiFileToRecentFile(raw, emptyDriveNames));
+  return {
+    files: (data.files ?? []).map((raw) => apiFileToRecentFile(raw, emptyDriveNames)),
+    nextCursor: data.cursor ?? null,
+    hasMore: data.hasMore === true,
+  };
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
@@ -394,7 +427,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             })
           ),
           (async (): Promise<RecentFile[]> => {
-            const list = await fetchFilesFromFilterApi(user, { pageSize: 50 });
+            const { files: list } = await fetchFilesFromFilterApi(user, { pageSize: 50 });
             return list.filter((r) => driveIds.has(r.driveId)).slice(0, 24);
           })(),
         ]);
@@ -508,7 +541,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             if (collected.length >= 500) break;
           }
         } else {
-          const part = await fetchFilesFromFilterApi(user, {
+          const { files: part } = await fetchFilesFromFilterApi(user, {
             driveId: drive.id,
             teamOwnerUserId: teamRouteOwnerUid,
             pageSize: perDriveLimit,
@@ -568,7 +601,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         );
       }
 
-      const files = await fetchFilesFromFilterApi(user, {
+      const { files } = await fetchFilesFromFilterApi(user, {
         driveId,
         teamOwnerUserId: teamRouteOwnerUid,
         pageSize: 50,
@@ -593,50 +626,49 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       .map((d) => d.id);
     if (storageDriveIds.length === 0) return [];
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
+    const maxPagesPerDrive = 12;
     const perDrive = await Promise.all(
       storageDriveIds.map(async (driveId) => {
         const drive = driveMap.get(driveId);
         const batch: RecentFile[] = [];
         try {
-          let rows: RecentFile[] = [];
-          if (drive?.organization_id) {
-            const token = await user.getIdToken(true);
-            const base = typeof window !== "undefined" ? window.location.origin : "";
-            const params = new URLSearchParams({
-              context: "enterprise",
-              organization_id: drive.organization_id,
-              drive_id: driveId,
-              sort: "newest",
-              page_size: "50",
-            });
-            const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) {
-              const data = (await res.json()) as { files?: Record<string, unknown>[] };
-              const m = new Map<string, string>();
-              rows = (data.files ?? []).map((raw) => apiFileToRecentFile(raw, m));
+          let cursor: string | null = null;
+          for (let page = 0; page < maxPagesPerDrive; page++) {
+            let pageResult: {
+              files: RecentFile[];
+              nextCursor: string | null;
+              hasMore: boolean;
+            };
+            if (drive?.organization_id) {
+              pageResult = await fetchFilesFromFilterApi(user, {
+                driveId,
+                pageSize: 50,
+                cursor,
+                enterprise: { organizationId: drive.organization_id },
+              });
+            } else {
+              pageResult = await fetchFilesFromFilterApi(user, {
+                driveId,
+                teamOwnerUserId: teamRouteOwnerUid,
+                pageSize: 50,
+                cursor,
+              });
             }
-          } else {
-            rows = await fetchFilesFromFilterApi(user, {
-              driveId,
-              teamOwnerUserId: teamRouteOwnerUid,
-              pageSize: 50,
-            });
-          }
-          for (const row of rows) {
-            const raw = row.modifiedAt ?? null;
-            let dateStr: string | null = null;
-            if (raw) {
-              if (typeof raw === "string") dateStr = raw;
-              else if (typeof (raw as { toDate?: () => Date }).toDate === "function")
-                dateStr = (raw as { toDate: () => Date }).toDate().toISOString();
+            const { files: rows, nextCursor, hasMore } = pageResult;
+            for (const row of rows) {
+              const dateStr = recentUploadRecencyIso(row);
+              if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
+              batch.push({
+                ...row,
+                driveName: drive?.name ?? row.driveName ?? "Storage",
+              });
             }
-            if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
-            batch.push({
-              ...row,
-              driveName: drive?.name ?? row.driveName ?? "Storage",
-            });
+            const lastRow = rows[rows.length - 1];
+            const lastRec = lastRow ? recentUploadRecencyIso(lastRow) : null;
+            if (!hasMore || !nextCursor || rows.length === 0) break;
+            // Newest-first: once the oldest item in this page is outside the window, older pages won't qualify.
+            if (!lastRec || lastRec < seventyTwoHoursAgo) break;
+            cursor = nextCursor;
           }
         } catch {
           // skip this drive
@@ -646,11 +678,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     );
     const all = perDrive.flat();
     all.sort((a, b) => {
-      const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
-      const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+      const ta = new Date(recentUploadRecencyIso(a) ?? 0).getTime();
+      const tb = new Date(recentUploadRecencyIso(b) ?? 0).getTime();
       return tb - ta;
     });
-    const result = all.slice(0, 24);
+    const dedup = new Map<string, RecentFile>();
+    for (const f of all) dedup.set(f.id, f);
+    const result = [...dedup.values()].slice(0, 24);
     setRecentUploads(result);
     return result;
   }, [user, linkedDrives, teamRouteOwnerUid]);
@@ -683,6 +717,11 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 objectKey: data.object_key ?? "",
                 size: data.size_bytes ?? 0,
                 modifiedAt: data.modified_at ?? null,
+                uploadedAt: data.uploaded_at?.toDate?.()
+                  ? data.uploaded_at.toDate().toISOString()
+                  : typeof data.uploaded_at === "string"
+                    ? data.uploaded_at
+                    : null,
                 driveId: data.linked_drive_id,
                 driveName: drive?.name ?? "Unknown drive",
                 contentType: data.content_type ?? null,
@@ -698,7 +737,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       let cancelled = false;
       const refresh = async () => {
         if (cancelled) return;
-        const files = await fetchFilesFromFilterApi(user, {
+        const { files } = await fetchFilesFromFilterApi(user, {
           driveId,
           teamOwnerUserId: teamRouteOwnerUid,
           pageSize: 80,

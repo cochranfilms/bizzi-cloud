@@ -22,7 +22,10 @@ import {
   where,
   orderBy,
   limit,
+  onSnapshot,
 } from "firebase/firestore";
+import type { QueryDocumentSnapshot } from "firebase/firestore";
+import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import type { LinkedDrive } from "@/types/backup";
 import { enumerateFiles } from "@/lib/sync-engine";
 import { UploadManager, type QueuedFile } from "@/lib/upload-manager";
@@ -592,6 +595,80 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     fetchDrives();
   }, [fetchDrives]);
 
+  /** Real-time linked_drives so new folders and drive metadata sync without refresh (personal, enterprise, team). */
+  useEffect(() => {
+    if (!isFirebaseConfigured() || !user) return;
+
+    const db = getFirebaseFirestore();
+    const mapDoc = (d: QueryDocumentSnapshot): LinkedDrive | null => {
+      const data = d.data();
+      if (data.deleted_at) return null;
+      let name = data.name as string;
+      if (name === "Uploads") name = "Storage";
+      return {
+        id: d.id,
+        user_id: data.userId,
+        name,
+        mount_path: data.mount_path ?? null,
+        permission_handle_id: data.permission_handle_id ?? null,
+        last_synced_at: data.last_synced_at ?? null,
+        created_at: data.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+        organization_id: data.organization_id ?? null,
+        creator_section: data.creator_section ?? false,
+        is_creator_raw: data.is_creator_raw ?? false,
+        personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
+      };
+    };
+
+    if (!isEnterpriseContext && teamRouteOwnerUid) {
+      const qTeam = query(
+        collection(db, "linked_drives"),
+        where("userId", "==", teamRouteOwnerUid),
+        where("personal_team_owner_id", "==", teamRouteOwnerUid),
+        orderBy("createdAt", "desc")
+      );
+      return onSnapshot(
+        qTeam,
+        (snap) => {
+          const drives: LinkedDrive[] = [];
+          for (const d of snap.docs) {
+            const data = d.data();
+            if (data.deleted_at || data.organization_id) continue;
+            if (!isTeamContainerDriveDoc(data as Record<string, unknown>, teamRouteOwnerUid)) continue;
+            const ld = mapDoc(d as QueryDocumentSnapshot);
+            if (ld) drives.push({ ...ld, personal_team_owner_id: teamRouteOwnerUid });
+          }
+          setLinkedDrives(drives);
+        },
+        (err) => console.error("[BackupContext] team drives listener:", err)
+      );
+    }
+
+    const q = query(
+      collection(db, "linked_drives"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
+    return onSnapshot(
+      q,
+      (snap) => {
+        const orgIdLocal = org?.id ?? null;
+        const drives: LinkedDrive[] = [];
+        for (const d of snap.docs) {
+          const data = d.data();
+          if (data.deleted_at) continue;
+          const oid = data.organization_id ?? null;
+          if (isEnterpriseContext && orgIdLocal ? oid !== orgIdLocal : !!oid) continue;
+          if (!isEnterpriseContext && !teamRouteOwnerUid && data.personal_team_owner_id) continue;
+          const ld = mapDoc(d as QueryDocumentSnapshot);
+          if (ld) drives.push(ld);
+        }
+        setLinkedDrives(drives);
+      },
+      (err) => console.error("[BackupContext] linked_drives listener:", err)
+    );
+  }, [user, isEnterpriseContext, org?.id, teamRouteOwnerUid]);
+
   useEffect(() => {
     ensureDrivesAttemptedRef.current = false;
   }, [org?.id]);
@@ -931,6 +1008,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 modified_at: modifiedAt
                   ? new Date(modifiedAt).toISOString()
                   : new Date().toISOString(),
+                uploaded_at: new Date().toISOString(),
                 deleted_at: null,
                 organization_id: drive.organization_id ?? null,
                 ...workspaceFields,
@@ -1474,7 +1552,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 resolvedWorkspaceId = data.workspace_id;
                 if (data.drive_id && data.drive_id !== drive.id) {
                   const altDrive = linkedDrives.find((d) => d.id === data.drive_id);
-                  if (altDrive) drive = altDrive;
+                  drive = altDrive ?? { ...drive, id: data.drive_id };
                 }
               }
             } catch {
@@ -1551,6 +1629,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               modified_at: file.lastModified
                 ? new Date(file.lastModified).toISOString()
                 : new Date().toISOString(),
+              uploaded_at: new Date().toISOString(),
               deleted_at: null,
               organization_id: drive.organization_id ?? null,
               ...workspaceFields,
@@ -1802,6 +1881,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             size_bytes: file.size,
             content_type: file.type || "application/octet-stream",
             modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
+            uploaded_at: new Date().toISOString(),
             deleted_at: null,
             organization_id: drive.organization_id ?? null,
             gallery_id: galleryId,
@@ -2013,6 +2093,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               modified_at: file.lastModified
                 ? new Date(file.lastModified).toISOString()
                 : new Date().toISOString(),
+          uploaded_at: new Date().toISOString(),
           deleted_at: null,
           organization_id: drive.organization_id ?? null,
           ...workspaceFields,

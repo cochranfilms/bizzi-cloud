@@ -214,6 +214,7 @@ export async function POST(request: Request) {
     size_bytes: size,
     content_type: typeof contentType === "string" ? contentType : "application/octet-stream",
     modified_at: now,
+    uploaded_at: now,
     deleted_at: null,
     organization_id: organizationId,
     workspace_id: workspaceIdResolved,

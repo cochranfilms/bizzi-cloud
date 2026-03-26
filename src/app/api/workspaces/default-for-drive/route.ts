@@ -2,11 +2,12 @@
  * GET /api/workspaces/default-for-drive?drive_id=...&organization_id=...&workspace_id=... (optional)
  * Resolves workspace for upload. Returns workspace_id, drive_id, workspace_name.
  * If workspace_id provided: validates write access, returns that workspace.
- * Else: returns My Private for the drive.
+ * Else: returns the org shared workspace for the pillar when it exists; otherwise My Private for the drive.
  */
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
+import { getOrgSharedUploadTarget } from "@/lib/org-pillar-drives";
 import { visibilityScopeFromWorkspaceType, scopeLabelFromScope } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { getDisplayLabel } from "@/lib/workspace-display-labels";
@@ -75,6 +76,34 @@ export async function GET(request: Request) {
     return NextResponse.json({
       workspace_id: workspaceIdParam,
       drive_id: wsDriveId,
+      drive_name: driveName,
+      workspace_name: displayName,
+      visibility_scope: scope,
+      scope_label: scopeLabelFromScope(scope),
+    });
+  }
+
+  const sharedTarget = await getOrgSharedUploadTarget(organizationId, driveId);
+  if (sharedTarget) {
+    const wsSnap = await db.collection("workspaces").doc(sharedTarget.workspaceId).get();
+    const wsData = wsSnap.data();
+    const sharedDriveSnap = await db.collection("linked_drives").doc(sharedTarget.sharedDriveId).get();
+    const sharedDriveData = sharedDriveSnap.exists ? sharedDriveSnap.data() : {};
+    const driveType = getDriveType(sharedDriveData ?? {});
+    const scope = visibilityScopeFromWorkspaceType("org_shared");
+    const displayName = getDisplayLabel(
+      {
+        name: (wsData?.name as string) ?? "Shared Library",
+        workspace_type: "org_shared",
+        drive_type: driveType,
+      },
+      null
+    );
+    const driveName =
+      driveType === "raw" ? "RAW" : driveType === "gallery" ? "Gallery Media" : "Storage";
+    return NextResponse.json({
+      workspace_id: sharedTarget.workspaceId,
+      drive_id: sharedTarget.sharedDriveId,
       drive_name: driveName,
       workspace_name: displayName,
       visibility_scope: scope,

@@ -145,6 +145,7 @@ export async function POST(request: Request) {
     size_bytes: sizeBytes,
     content_type: contentType,
     modified_at: modifiedAt,
+    uploaded_at: new Date().toISOString(),
     deleted_at: null,
     organization_id: organizationId,
     gallery_id: galleryId ?? null,

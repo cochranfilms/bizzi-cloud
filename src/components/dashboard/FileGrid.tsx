@@ -492,7 +492,7 @@ export default function FileGrid() {
   }, [loadPinnedFiles]);
 
   // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
-  // Also when drive in URL differs from current (e.g. switching drives in EnterpriseLocationSelector)
+  // Also when drive in URL differs from current (e.g. deep link or toolbar drive change)
   useEffect(() => {
     const driveId = searchParams.get("drive");
     if (!driveId) return;

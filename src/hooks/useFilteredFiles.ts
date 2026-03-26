@@ -66,6 +66,7 @@ function toRecentFile(raw: Record<string, unknown>): RecentFile {
     objectKey: String(raw.objectKey ?? ""),
     size: Number(raw.size ?? 0),
     modifiedAt: (raw.modifiedAt as string) ?? null,
+    uploadedAt: (raw.uploadedAt as string) ?? null,
     driveId: String(raw.driveId ?? ""),
     driveName: String(raw.driveName ?? "Unknown"),
     contentType: (raw.contentType as string) ?? null,

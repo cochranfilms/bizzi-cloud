@@ -43,3 +43,31 @@ export async function resolveEnterprisePillarDriveIds(
   if (orgSharedId && orgSharedId !== memberDriveId) ids.push(orgSharedId);
   return ids;
 }
+
+/**
+ * Shared pillar (org_shared) drive + workspace for a member's pillar drive, when Shared Storage/RAW/Gallery exist.
+ * Used so enterprise uploads land in the shared library visible to all seat members (team-like workflow).
+ */
+export async function getOrgSharedUploadTarget(
+  organizationId: string,
+  memberDriveId: string
+): Promise<{ workspaceId: string; sharedDriveId: string } | null> {
+  const db = getAdminFirestore();
+  const pillarIds = await resolveEnterprisePillarDriveIds(organizationId, memberDriveId);
+  for (const driveId of pillarIds) {
+    if (driveId === memberDriveId) continue;
+    const dSnap = await db.collection("linked_drives").doc(driveId).get();
+    if (!dSnap.exists || dSnap.data()?.deleted_at) continue;
+    if (dSnap.data()?.is_org_shared !== true) continue;
+    const wsSnap = await db
+      .collection("workspaces")
+      .where("organization_id", "==", organizationId)
+      .where("drive_id", "==", driveId)
+      .where("workspace_type", "==", "org_shared")
+      .limit(1)
+      .get();
+    if (wsSnap.empty) continue;
+    return { workspaceId: wsSnap.docs[0].id, sharedDriveId: driveId };
+  }
+  return null;
+}

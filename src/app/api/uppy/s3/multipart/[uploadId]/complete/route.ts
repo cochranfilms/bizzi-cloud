@@ -184,6 +184,7 @@ export async function POST(
     size_bytes: fileSize,
     content_type: contentType,
     modified_at: lastModified,
+    uploaded_at: new Date().toISOString(),
     deleted_at: null,
     organization_id: organizationId,
     workspace_id: workspaceIdResolved,
