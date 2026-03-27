@@ -3,6 +3,7 @@
  * Enterprise: EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID_INVOICE, EMAILJS_TEMPLATE_ID_SIGNUP,
  *   EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
  * Share emails: EMAILJS_TEMPLATE_ID_SHARE (optional; when set, share notifications send email)
+ * Workspace share (team/org admin): EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE (optional)
  * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
  * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
  * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
@@ -54,6 +55,64 @@ function getShareConfig(): {
     publicKey,
     privateKey: privateKey ?? undefined,
   };
+}
+
+function getShareWorkspaceConfig(): {
+  serviceId: string;
+  templateShareWorkspace: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateShareWorkspace = process.env.EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateShareWorkspace || !publicKey) return null;
+  return {
+    serviceId,
+    templateShareWorkspace,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+export interface ShareWorkspaceAdminEmailParams {
+  to_email: string;
+  sender_name: string;
+  sender_photo_url: string;
+  file_names_html: string;
+  share_title: string;
+  share_url: string;
+  scope_label: string;
+  workspace_name: string;
+  cta_url: string;
+}
+
+/**
+ * Notify org/team admin when content is shared with a workspace.
+ * Requires EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE. No-op if unset.
+ */
+export async function sendShareWorkspaceEmailToAdmin(
+  params: ShareWorkspaceAdminEmailParams
+): Promise<void> {
+  const config = getShareWorkspaceConfig();
+  if (!config || !params.to_email?.trim()) return;
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateShareWorkspace,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
 }
 
 function getTransferConfig(): {
@@ -615,6 +674,71 @@ export async function sendShareFileEmailsToInvitees(
   ).catch((err) => {
     console.error("[EmailJS] Share email batch error:", err);
   });
+}
+
+/**
+ * Admin-only email when a share targets a workspace (team/org). No-op if template unset or no to_email.
+ */
+export async function sendWorkspaceShareAdminNotificationEmail(params: {
+  toEmail: string | null | undefined;
+  sharedByUserId: string;
+  actorDisplayName: string;
+  fileIds: string[];
+  folderName: string;
+  shareToken: string;
+  scopeLabel: string;
+  workspaceName: string;
+  ctaUrl: string;
+}): Promise<void> {
+  if (!getShareWorkspaceConfig() || !params.toEmail?.trim()) return;
+
+  let senderPhotoUrl: string;
+  try {
+    const authUser = await getAdminAuth().getUser(params.sharedByUserId);
+    senderPhotoUrl =
+      (authUser.photoURL as string) ?? getAvatarPlaceholder(params.actorDisplayName);
+  } catch {
+    senderPhotoUrl = getAvatarPlaceholder(params.actorDisplayName);
+  }
+
+  const fileNames =
+    params.fileIds.length > 0
+      ? await getFileDisplayNames(params.fileIds)
+      : [];
+  const totalCount = params.fileIds.length;
+  const fileNamesHtml =
+    fileNames.length > 0
+      ? `<ul>${fileNames.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}${
+          totalCount > fileNames.length
+            ? `<li><em>…and ${totalCount - fileNames.length} more</em></li>`
+            : ""
+        }</ul>`
+      : `<p><em>${escapeHtml(params.folderName)}</em></p>`;
+
+  const shareTitle =
+    params.fileIds.length <= 1 && params.folderName
+      ? params.folderName
+      : params.fileIds.length > 1
+        ? `${params.fileIds.length} files`
+        : params.folderName || "files";
+
+  const shareUrl = `${getShareBaseUrl()}/s/${params.shareToken}`;
+
+  try {
+    await sendShareWorkspaceEmailToAdmin({
+      to_email: params.toEmail.trim().toLowerCase(),
+      sender_name: params.actorDisplayName,
+      sender_photo_url: senderPhotoUrl,
+      file_names_html: fileNamesHtml,
+      share_title: shareTitle,
+      share_url: shareUrl,
+      scope_label: params.scopeLabel,
+      workspace_name: params.workspaceName,
+      cta_url: params.ctaUrl,
+    });
+  } catch (err) {
+    console.error("[EmailJS] Workspace share admin email error:", err);
+  }
 }
 
 /**

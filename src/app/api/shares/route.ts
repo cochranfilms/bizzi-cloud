@@ -1,10 +1,193 @@
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { generateShareToken } from "@/lib/share-token";
-import { createShareNotifications } from "@/lib/notification-service";
-import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
+import {
+  createShareNotifications,
+  createWorkspaceShareNotifications,
+} from "@/lib/notification-service";
+import {
+  sendShareFileEmailsToInvitees,
+  sendWorkspaceShareAdminNotificationEmail,
+} from "@/lib/emailjs";
 import { NextResponse } from "next/server";
+import { hydrateFolderShareDoc } from "@/lib/folder-share-hydrate";
+import {
+  getEnterpriseOrgPrimaryAdminEmail,
+  getRecipientModeFromDoc,
+  parseWorkspaceTargetKey,
+  userCanAccessWorkspaceShareTarget,
+  workspaceTargetKey,
+} from "@/lib/folder-share-workspace";
+import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
+import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
+import type { WorkspaceShareTargetKind } from "@/types/folder-share";
+import type { WorkspaceType } from "@/types/workspace";
+
+function scopeLabelForWorkspaceType(t: WorkspaceType): string {
+  switch (t) {
+    case "org_shared":
+      return "Organization";
+    case "team":
+      return "Team";
+    case "project":
+      return "Project";
+    case "gallery":
+      return "Gallery";
+    case "private":
+      return "Private";
+    default:
+      return "Workspace";
+  }
+}
+
+async function workspaceDisplayContext(
+  db: Firestore,
+  kind: WorkspaceShareTargetKind,
+  targetId: string
+): Promise<{ name: string; scopeLabel: string; organizationId: string | null }> {
+  if (kind === "personal_team") {
+    const settings = await db.collection(PERSONAL_TEAM_SETTINGS_COLLECTION).doc(targetId).get();
+    const custom = (settings.data()?.team_name as string | undefined)?.trim();
+    if (custom) return { name: custom, scopeLabel: "Team", organizationId: null };
+    try {
+      const authUser = await getAdminAuth().getUser(targetId);
+      const label = (authUser.displayName?.trim() || authUser.email?.split("@")[0] || "Team").trim();
+      return { name: `${label}'s team`, scopeLabel: "Team", organizationId: null };
+    } catch {
+      return { name: "Team workspace", scopeLabel: "Team", organizationId: null };
+    }
+  }
+  const wsSnap = await db.collection("workspaces").doc(targetId).get();
+  if (!wsSnap.exists) {
+    return { name: "Workspace", scopeLabel: "Workspace", organizationId: null };
+  }
+  const ws = wsSnap.data()!;
+  const orgId = ws.organization_id as string;
+  const wsType = (ws.workspace_type as WorkspaceType) ?? "private";
+  return {
+    name: ((ws.name as string) ?? "Workspace").trim() || "Workspace",
+    scopeLabel: scopeLabelForWorkspaceType(wsType),
+    organizationId: orgId ?? null,
+  };
+}
+
+async function resolveActorDisplayNameForShare(
+  uid: string,
+  authEmail: string | undefined
+): Promise<string> {
+  const db = getAdminFirestore();
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const fromProfile = (profileSnap.data()?.displayName as string | undefined)?.trim();
+  if (fromProfile) return fromProfile;
+  try {
+    const authUser = await getAdminAuth().getUser(uid);
+    return (
+      (authUser.displayName as string | undefined)?.trim() ??
+      authEmail?.split("@")[0] ??
+      authUser.email?.split("@")[0] ??
+      "Someone"
+    );
+  } catch {
+    return authEmail?.split("@")[0] ?? "Someone";
+  }
+}
+
+function appBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof process.env.VERCEL_URL === "string" && process.env.VERCEL_URL)
+    return `https://${process.env.VERCEL_URL}`;
+  return "https://www.bizzicloud.io";
+}
+
+async function deliverShareNotificationsAndEmail(params: {
+  db: Firestore;
+  uid: string;
+  email: string | undefined;
+  recipientMode: "email" | "workspace";
+  workspaceKind: WorkspaceShareTargetKind | null;
+  workspaceTargetId: string | null;
+  shareToken: string;
+  folderName: string;
+  fileIds: string[];
+  invitedEmails: string[];
+  permission: string;
+}): Promise<void> {
+  const actorDisplayName = await resolveActorDisplayNameForShare(params.uid, params.email);
+  if (params.recipientMode === "email" && params.invitedEmails.length > 0) {
+    await Promise.all([
+      createShareNotifications({
+        sharedByUserId: params.uid,
+        actorDisplayName,
+        actorEmail: params.email ?? undefined,
+        fileIds: params.fileIds,
+        folderShareId: params.shareToken,
+        permission: params.permission,
+        invitedEmails: params.invitedEmails,
+        folderName: params.folderName,
+      }),
+      sendShareFileEmailsToInvitees({
+        invitedEmails: params.invitedEmails,
+        sharedByUserId: params.uid,
+        actorDisplayName,
+        fileIds: params.fileIds,
+        folderName: params.folderName,
+        shareToken: params.shareToken,
+      }),
+    ]);
+    return;
+  }
+
+  if (
+    params.recipientMode === "workspace" &&
+    params.workspaceKind &&
+    params.workspaceTargetId
+  ) {
+    const ctx = await workspaceDisplayContext(
+      params.db,
+      params.workspaceKind,
+      params.workspaceTargetId
+    );
+    await createWorkspaceShareNotifications({
+      sharedByUserId: params.uid,
+      actorDisplayName,
+      fileIds: params.fileIds,
+      folderShareId: params.shareToken,
+      folderName: params.folderName,
+      workspaceShareName: ctx.name,
+      workspaceTargetKey: workspaceTargetKey(params.workspaceKind, params.workspaceTargetId),
+      kind: params.workspaceKind,
+      targetId: params.workspaceTargetId,
+    });
+    let adminEmail: string | null = null;
+    if (params.workspaceKind === "enterprise_workspace" && ctx.organizationId) {
+      adminEmail = await getEnterpriseOrgPrimaryAdminEmail(ctx.organizationId);
+    } else if (params.workspaceKind === "personal_team") {
+      try {
+        adminEmail = (await getAdminAuth().getUser(params.workspaceTargetId)).email ?? null;
+      } catch {
+        adminEmail = null;
+      }
+    }
+    const base = appBaseUrl();
+    const ctaUrl =
+      params.workspaceKind === "personal_team"
+        ? `${base}/team/${params.workspaceTargetId}/shared`
+        : `${base}/enterprise/shared`;
+    await sendWorkspaceShareAdminNotificationEmail({
+      toEmail: adminEmail,
+      sharedByUserId: params.uid,
+      actorDisplayName,
+      fileIds: params.fileIds,
+      folderName: params.folderName,
+      shareToken: params.shareToken,
+      scopeLabel: ctx.scopeLabel,
+      workspaceName: ctx.name,
+      ctaUrl,
+    });
+  }
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -30,6 +213,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const linkedDriveIdParam = url.searchParams.get("linked_drive_id");
   const backupFileIdParam = url.searchParams.get("backup_file_id");
+  const shareRecipientParam = (url.searchParams.get("share_recipient") ?? "email").trim();
+  const workspaceKindParam = url.searchParams.get("workspace_kind") as WorkspaceShareTargetKind | null;
+  const workspaceIdParam = url.searchParams.get("workspace_id")?.trim() || null;
 
   const db = getAdminFirestore();
 
@@ -43,7 +229,6 @@ export async function GET(request: Request) {
         .where("owner_id", "==", uid)
         .where("linked_drive_id", "==", linkedDriveIdParam)
         .where("backup_file_id", "==", backupFileIdParam)
-        .limit(1)
         .get();
     } else {
       existingSnap = await db
@@ -51,7 +236,6 @@ export async function GET(request: Request) {
         .where("owner_id", "==", uid)
         .where("linked_drive_id", "==", linkedDriveIdParam)
         .where("backup_file_id", "==", null)
-        .limit(1)
         .get();
     }
 
@@ -59,7 +243,27 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Share not found" }, { status: 404 });
     }
 
-    const d = existingSnap.docs[0];
+    const wantWorkspace =
+      shareRecipientParam === "workspace" &&
+      workspaceKindParam &&
+      (workspaceKindParam === "enterprise_workspace" || workspaceKindParam === "personal_team") &&
+      workspaceIdParam;
+    const wantKey = wantWorkspace
+      ? workspaceTargetKey(workspaceKindParam!, workspaceIdParam!)
+      : null;
+
+    let d: QueryDocumentSnapshot | undefined;
+    if (wantKey) {
+      d = existingSnap.docs.find((doc) => (doc.data().workspace_target_key as string) === wantKey);
+    } else {
+      d = existingSnap.docs.find((doc) => getRecipientModeFromDoc(doc.data()) === "email");
+      if (!d) d = existingSnap.docs[0];
+    }
+
+    if (!d) {
+      return NextResponse.json({ error: "Share not found" }, { status: 404 });
+    }
+
     const data = d.data();
     const expiresAt = data.expires_at?.toDate?.();
     if (expiresAt && expiresAt < new Date()) {
@@ -67,6 +271,7 @@ export async function GET(request: Request) {
     }
 
     const version = typeof data.version === "number" ? data.version : 1;
+    const wt = data.workspace_target as { kind?: string; id?: string } | undefined;
     return NextResponse.json({
       token: data.token,
       share_url: `/s/${data.token}`,
@@ -77,8 +282,22 @@ export async function GET(request: Request) {
       backup_file_id: data.backup_file_id ?? null,
       version,
       folder_name: data.folder_name ?? null,
+      recipient_mode: getRecipientModeFromDoc(data as Record<string, unknown>),
+      workspace_target:
+        wt?.kind && wt?.id ? { kind: wt.kind, id: wt.id } : null,
+      workspace_target_key: (data.workspace_target_key as string) ?? null,
     });
   }
+
+  const listContext = url.searchParams.get("context");
+  const listWorkspaceKindRaw = url.searchParams.get("workspace_kind");
+  const listWorkspaceKindParam =
+    listWorkspaceKindRaw === "enterprise_workspace" || listWorkspaceKindRaw === "personal_team"
+      ? listWorkspaceKindRaw
+      : null;
+  const listWorkspaceIdParam = url.searchParams.get("workspace_id")?.trim() || null;
+  const listOrganizationIdParam =
+    url.searchParams.get("organization_id")?.trim() || null;
 
   // Shares I created (owner)
   const ownedSnap = await db
@@ -101,78 +320,50 @@ export async function GET(request: Request) {
     sharedByEmail?: string;
     sharedByPhotoUrl?: string;
     invited_emails?: string[];
+    recipient_mode?: string;
+    workspace_target?: { kind: string; id: string };
+    workspace_target_key?: string;
   };
 
   const owned: ShareItem[] = [];
 
   for (const d of ownedSnap.docs) {
-    const data = d.data();
-    const referencedFileIds = data.referenced_file_ids as string[] | undefined;
-    const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
-
-    const expiresAt = data.expires_at?.toDate?.();
-    if (expiresAt && expiresAt < new Date()) continue;
-
-    // Show all owned shares immediately (including before inviting anyone)
-    let itemName: string;
-    let itemType: "file" | "folder";
-
-    if (isVirtualShare) {
-      itemName = (data.folder_name as string) ?? "Shared folder";
-      itemType = "folder";
-      owned.push({
-        id: d.id,
-        token: data.token as string,
-        linked_drive_id: "",
-        folder_name: itemName,
-        item_type: itemType,
-        permission: (data.permission as string) ?? "view",
-        created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-        share_url: `/s/${data.token}`,
-        invited_emails: (data.invited_emails as string[] | undefined) ?? [],
-      });
-      continue;
+    const raw = d.data();
+    const mode = getRecipientModeFromDoc(raw as Record<string, unknown>);
+    if (listContext === "personal" && mode === "workspace") continue;
+    if (listContext === "workspace") {
+      if (mode !== "workspace") continue;
+      const key = raw.workspace_target_key as string | undefined;
+      if (listWorkspaceKindParam && listWorkspaceIdParam) {
+        const want = workspaceTargetKey(listWorkspaceKindParam, listWorkspaceIdParam);
+        if (key !== want) continue;
+      } else if (listOrganizationIdParam) {
+        const accessible = await getAccessibleWorkspaceIds(uid, listOrganizationIdParam);
+        const keys = new Set(
+          accessible.map((wid) => workspaceTargetKey("enterprise_workspace", wid))
+        );
+        if (!key || !keys.has(key)) continue;
+      } else continue;
     }
 
-    const driveId = (data.linked_drive_id as string)?.trim?.() || "";
-    const backupFileId = (data.backup_file_id as string | null | undefined)?.trim?.() || null;
-    const isFileShare = !!backupFileId;
-
-    if (!driveId) continue;
-
-    const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-
-    // Skip if drive was deleted
-    if (!driveSnap.exists) continue;
-
-    if (isFileShare && backupFileId) {
-      const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
-      if (!fileSnap.exists) continue;
-      const fileData = fileSnap.data();
-      if (fileData?.deleted_at) continue;
-      const path = (fileData?.relative_path ?? "") as string;
-      itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
-      itemType = "file";
-    } else {
-      itemName = driveSnap.data()?.name ?? "Folder";
-      itemType = "folder";
-    }
-
+    const hydrated = await hydrateFolderShareDoc(db, d);
+    if (!hydrated) continue;
     owned.push({
-      id: d.id,
-      token: data.token as string,
-      linked_drive_id: driveId,
-      folder_name: itemName,
-      item_type: itemType,
-      permission: (data.permission as string) ?? "view",
-      created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-      share_url: `/s/${data.token}`,
-      invited_emails: (data.invited_emails as string[] | undefined) ?? [],
+      id: hydrated.id,
+      token: hydrated.token,
+      linked_drive_id: hydrated.linked_drive_id,
+      folder_name: hydrated.folder_name,
+      item_type: hydrated.item_type,
+      permission: hydrated.permission,
+      created_at: hydrated.created_at,
+      share_url: hydrated.share_url,
+      invited_emails: hydrated.invited_emails,
+      recipient_mode: hydrated.recipient_mode,
+      workspace_target: hydrated.workspace_target,
+      workspace_target_key: hydrated.workspace_target_key,
     });
   }
 
-  // Shares shared with me (invited by email)
-  // Shares shared with me (invited by email). Query uses lowercase; stored emails must match.
   const invited: ShareItem[] = [];
   const emailForQuery = email?.trim().toLowerCase();
   const adminAuth = getAdminAuth();
@@ -181,100 +372,99 @@ export async function GET(request: Request) {
     { sharedBy: string; sharedByEmail: string; sharedByPhotoUrl: string | null }
   >();
 
-  if (emailForQuery) {
-    const invitedSnap = await db
-      .collection("folder_shares")
-      .where("invited_emails", "array-contains", emailForQuery)
-      .get();
+  async function pushInvitedWithSharer(d: QueryDocumentSnapshot) {
+    const data = d.data();
+    if (data.owner_id === uid) return;
+    const hydrated = await hydrateFolderShareDoc(db, d);
+    if (!hydrated) return;
 
-    for (const d of invitedSnap.docs) {
-      const data = d.data();
-      if (data.owner_id === uid) continue; // already in owned
-
-      const expiresAt = data.expires_at?.toDate?.();
-      if (expiresAt && expiresAt < new Date()) continue;
-
-      const referencedFileIds = data.referenced_file_ids as string[] | undefined;
-      const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
-
-      let itemName: string;
-      let itemType: "file" | "folder";
-
-      if (isVirtualShare) {
-        itemName = (data.folder_name as string) ?? "Shared folder";
-        itemType = "folder";
-      } else {
-        const driveId = data.linked_drive_id as string | undefined;
-        const backupFileId = data.backup_file_id as string | null | undefined;
-        const isFileShare = !!backupFileId;
-
-        const driveIdSafe = (driveId as string)?.trim?.() || "";
-        if (!driveIdSafe) continue;
-
-        const driveSnap = await db.collection("linked_drives").doc(driveIdSafe).get();
-        if (!driveSnap.exists) continue;
-
-        const backupFileIdSafe = (backupFileId as string)?.trim?.() || "";
-        if (isFileShare && backupFileIdSafe) {
-          const fileSnap = await db.collection("backup_files").doc(backupFileIdSafe).get();
-          if (!fileSnap.exists) continue;
-          const fileData = fileSnap.data();
-          if (fileData?.deleted_at) continue;
-          const path = (fileData?.relative_path ?? "") as string;
-          itemName = path.split("/").filter(Boolean).pop() ?? path ?? "File";
-          itemType = "file";
-        } else {
-          itemName = driveSnap.data()?.name ?? "Folder";
-          itemType = "folder";
-        }
+    const ownerId = (data.owner_id as string)?.trim?.() || "";
+    let sharerInfo = ownerId ? sharerCache.get(ownerId) : null;
+    if (ownerId && !sharerInfo) {
+      const ownerSnap = await db.collection("profiles").doc(ownerId).get();
+      const profileData = ownerSnap.exists ? ownerSnap.data() : null;
+      let authEmail: string | undefined;
+      let sharedByPhotoUrl: string | null = null;
+      try {
+        const authUser = await adminAuth.getUser(ownerId);
+        authEmail = authUser.email ?? undefined;
+        sharedByPhotoUrl = authUser.photoURL ?? null;
+      } catch {
+        /* user missing */
       }
+      const sharedByEmail =
+        (profileData?.email as string)?.trim() || (authEmail?.trim()) || "";
+      const sharedBy =
+        (profileData?.displayName as string)?.trim() ||
+        sharedByEmail ||
+        authEmail ||
+        "Unknown";
+      sharerInfo = { sharedBy, sharedByEmail, sharedByPhotoUrl };
+      sharerCache.set(ownerId, sharerInfo);
+    }
+    const resolvedSharer = sharerInfo ?? {
+      sharedBy: "Unknown",
+      sharedByEmail: "",
+      sharedByPhotoUrl: null as string | null,
+    };
 
-      const ownerId = (data.owner_id as string)?.trim?.() || "";
-      let sharerInfo = ownerId ? sharerCache.get(ownerId) : null;
-      if (ownerId && !sharerInfo) {
-        const ownerSnap = await db.collection("profiles").doc(ownerId).get();
-        const profileData = ownerSnap.exists ? ownerSnap.data() : null;
-        let authEmail: string | undefined;
-        let sharedByPhotoUrl: string | null = null;
-        try {
-          const authUser = await adminAuth.getUser(ownerId);
-          authEmail = authUser.email ?? undefined;
-          sharedByPhotoUrl = authUser.photoURL ?? null;
-        } catch {
-          // User may be deleted or disabled
+    invited.push({
+      id: hydrated.id,
+      token: hydrated.token,
+      linked_drive_id: hydrated.linked_drive_id,
+      folder_name: hydrated.folder_name,
+      item_type: hydrated.item_type,
+      permission: hydrated.permission,
+      created_at: hydrated.created_at,
+      share_url: hydrated.share_url,
+      sharedBy: resolvedSharer.sharedBy,
+      owner_id: ownerId || undefined,
+      sharedByEmail: resolvedSharer.sharedByEmail || undefined,
+      sharedByPhotoUrl: resolvedSharer.sharedByPhotoUrl ?? undefined,
+      recipient_mode: hydrated.recipient_mode,
+      workspace_target: hydrated.workspace_target,
+      workspace_target_key: hydrated.workspace_target_key,
+    });
+  }
+
+  if (listContext === null || listContext === "personal") {
+    if (emailForQuery) {
+      const invitedSnap = await db
+        .collection("folder_shares")
+        .where("invited_emails", "array-contains", emailForQuery)
+        .get();
+
+      for (const d of invitedSnap.docs) {
+        if (getRecipientModeFromDoc(d.data() as Record<string, unknown>) === "workspace") {
+          continue;
         }
-        const sharedByEmail =
-          (profileData?.email as string)?.trim() ||
-          (authEmail?.trim()) ||
-          "";
-        const sharedBy =
-          (profileData?.displayName as string)?.trim() ||
-          sharedByEmail ||
-          authEmail ||
-          "Unknown";
-        sharerInfo = { sharedBy, sharedByEmail, sharedByPhotoUrl };
-        sharerCache.set(ownerId, sharerInfo);
+        await pushInvitedWithSharer(d);
       }
-      const resolvedSharer = sharerInfo ?? {
-        sharedBy: "Unknown",
-        sharedByEmail: "",
-        sharedByPhotoUrl: null as string | null,
-      };
+    }
+  }
 
-      invited.push({
-        id: d.id,
-        token: data.token as string,
-        linked_drive_id: isVirtualShare ? "" : (data.linked_drive_id as string),
-        folder_name: itemName,
-        item_type: itemType,
-        permission: (data.permission as string) ?? "view",
-        created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
-        share_url: `/s/${data.token}`,
-        sharedBy: resolvedSharer.sharedBy,
-        owner_id: ownerId || undefined,
-        sharedByEmail: resolvedSharer.sharedByEmail || undefined,
-        sharedByPhotoUrl: resolvedSharer.sharedByPhotoUrl ?? undefined,
-      });
+  if (listContext === "workspace") {
+    const keys: string[] = [];
+    if (listWorkspaceKindParam && listWorkspaceIdParam) {
+      keys.push(workspaceTargetKey(listWorkspaceKindParam, listWorkspaceIdParam));
+    } else if (listOrganizationIdParam) {
+      const accessible = await getAccessibleWorkspaceIds(uid, listOrganizationIdParam);
+      for (const wid of accessible) {
+        keys.push(workspaceTargetKey("enterprise_workspace", wid));
+      }
+    }
+    for (const key of keys) {
+      const wsSnap = await db
+        .collection("folder_shares")
+        .where("workspace_target_key", "==", key)
+        .get();
+      for (const d of wsSnap.docs) {
+        const data = d.data();
+        if (data.owner_id === uid) continue;
+        const wt = parseWorkspaceTargetKey(key);
+        if (wt && !(await userCanAccessWorkspaceShareTarget(uid, wt.kind, wt.id))) continue;
+        await pushInvitedWithSharer(d);
+      }
     }
   }
 
@@ -322,7 +512,46 @@ export async function POST(request: Request) {
     invited_emails: invitedEmails,
     referenced_file_ids: referencedFileIds,
     folder_name: folderName,
+    recipient_mode: recipientModeBody,
+    workspace_target: workspaceTargetBody,
   } = body;
+
+  const recipientMode: "email" | "workspace" =
+    recipientModeBody === "workspace" ? "workspace" : "email";
+  const workspaceTargetRaw = workspaceTargetBody as
+    | { kind?: string; id?: string }
+    | undefined;
+  let workspaceKind: WorkspaceShareTargetKind | null = null;
+  let workspaceTargetId: string | null = null;
+  if (recipientMode === "workspace") {
+    if (
+      !workspaceTargetRaw ||
+      (workspaceTargetRaw.kind !== "enterprise_workspace" &&
+        workspaceTargetRaw.kind !== "personal_team") ||
+      typeof workspaceTargetRaw.id !== "string" ||
+      !workspaceTargetRaw.id.trim()
+    ) {
+      return NextResponse.json(
+        { error: "workspace_target with kind and id is required for workspace shares" },
+        { status: 400 }
+      );
+    }
+    workspaceKind = workspaceTargetRaw.kind as WorkspaceShareTargetKind;
+    workspaceTargetId = workspaceTargetRaw.id.trim();
+    if (!(await userCanAccessWorkspaceShareTarget(uid, workspaceKind, workspaceTargetId))) {
+      return NextResponse.json({ error: "You cannot share to this workspace" }, { status: 403 });
+    }
+  } else if (
+    workspaceTargetRaw &&
+    typeof workspaceTargetRaw === "object" &&
+    workspaceTargetRaw.kind &&
+    workspaceTargetRaw.id
+  ) {
+    return NextResponse.json(
+      { error: "Remove workspace_target when using email recipients" },
+      { status: 400 }
+    );
+  }
 
   const isVirtualShare =
     Array.isArray(referencedFileIds) &&
@@ -360,7 +589,33 @@ export async function POST(request: Request) {
     );
   }
 
+  const invitedEmailsNormalized = Array.isArray(invitedEmails)
+    ? invitedEmails
+        .filter((e: unknown) => typeof e === "string")
+        .map((e) => (e as string).trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+
+  if (recipientMode === "workspace" && invitedEmailsNormalized.length > 0) {
+    return NextResponse.json(
+      { error: "Workspace shares cannot include invited emails" },
+      { status: 400 }
+    );
+  }
+
   const db = getAdminFirestore();
+
+  let targetOrganizationId: string | null = null;
+  let workspaceTargetKeyValue: string | null = null;
+  if (recipientMode === "workspace" && workspaceKind && workspaceTargetId) {
+    workspaceTargetKeyValue = workspaceTargetKey(workspaceKind, workspaceTargetId);
+    if (workspaceKind === "enterprise_workspace") {
+      const wsSnap = await db.collection("workspaces").doc(workspaceTargetId).get();
+      targetOrganizationId = wsSnap.exists
+        ? ((wsSnap.data()?.organization_id as string) ?? null)
+        : null;
+    }
+  }
 
   if (isVirtualShare) {
     // Virtual share: reference files by ID only; no linked_drive created.
@@ -394,10 +649,7 @@ export async function POST(request: Request) {
     const shareToken = generateShareToken();
     const now = new Date();
 
-    const invitedEmailsNormalized = Array.isArray(invitedEmails)
-      ? invitedEmails.filter((e: unknown) => typeof e === "string").map((e) => (e as string).trim().toLowerCase())
-      : [];
-    const shareData = {
+    const shareData: Record<string, unknown> = {
       token: shareToken,
       owner_id: uid,
       referenced_file_ids: uniqueIds,
@@ -406,49 +658,31 @@ export async function POST(request: Request) {
       access_level: access_level as "private" | "public",
       expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
       created_at: now,
-      invited_emails: invitedEmailsNormalized,
+      invited_emails: recipientMode === "workspace" ? [] : invitedEmailsNormalized,
+      version: 1,
+      recipient_mode: recipientMode,
     };
+    if (recipientMode === "workspace" && workspaceKind && workspaceTargetId && workspaceTargetKeyValue) {
+      shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };
+      shareData.workspace_target_key = workspaceTargetKeyValue;
+      shareData.target_organization_id = targetOrganizationId;
+    }
 
     await db.collection("folder_shares").doc(shareToken).set(shareData);
 
-    if (shareData.invited_emails.length > 0) {
-      const profileSnap = await db.collection("profiles").doc(uid).get();
-      let actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
-      if (!actorDisplayName) {
-        try {
-          const authUser = await getAdminAuth().getUser(uid);
-          actorDisplayName =
-            (authUser.displayName as string)?.trim() ??
-            email?.split("@")[0] ??
-            authUser.email?.split("@")[0] ??
-            "Someone";
-        } catch {
-          actorDisplayName = email?.split("@")[0] ?? "Someone";
-        }
-      } else {
-        actorDisplayName = actorDisplayName || (email?.split("@")[0] ?? "Someone");
-      }
-      await Promise.all([
-        createShareNotifications({
-          sharedByUserId: uid,
-          actorDisplayName,
-          actorEmail: email ?? undefined,
-          fileIds: uniqueIds,
-          folderShareId: shareToken,
-          permission,
-          invitedEmails: shareData.invited_emails,
-          folderName: shareData.folder_name,
-        }),
-        sendShareFileEmailsToInvitees({
-          invitedEmails: shareData.invited_emails,
-          sharedByUserId: uid,
-          actorDisplayName,
-          fileIds: uniqueIds,
-          folderName: shareData.folder_name,
-          shareToken,
-        }),
-      ]);
-    }
+    await deliverShareNotificationsAndEmail({
+      db,
+      uid,
+      email,
+      recipientMode,
+      workspaceKind,
+      workspaceTargetId,
+      shareToken,
+      folderName: shareData.folder_name as string,
+      fileIds: uniqueIds,
+      invitedEmails: (shareData.invited_emails as string[]) ?? [],
+      permission,
+    });
 
     logActivityEvent({
       event_type: "share_link_created",
@@ -472,6 +706,11 @@ export async function POST(request: Request) {
       access_level: shareData.access_level,
       permission: shareData.permission,
       invited_emails: shareData.invited_emails,
+      recipient_mode: recipientMode,
+      workspace_target:
+        recipientMode === "workspace" && workspaceKind && workspaceTargetId
+          ? { kind: workspaceKind, id: workspaceTargetId }
+          : null,
     });
   }
 
@@ -510,44 +749,73 @@ export async function POST(request: Request) {
     backupFileIdToStore = backupFileId;
   }
 
-  // Get-or-create: check for existing share
-  let existingDoc: { data: () => Record<string, unknown> } | null = null;
+  // Get-or-create: check for existing share (same recipient mode + workspace key)
+  let existingDoc: QueryDocumentSnapshot | null = null;
   if (backupFileIdToStore) {
     const snap = await db
       .collection("folder_shares")
       .where("owner_id", "==", uid)
       .where("linked_drive_id", "==", linkedDriveId)
       .where("backup_file_id", "==", backupFileIdToStore)
-      .limit(1)
       .get();
-    if (!snap.empty) existingDoc = snap.docs[0];
+    const cand =
+      recipientMode === "workspace" && workspaceTargetKeyValue
+        ? snap.docs.filter((d) => (d.data().workspace_target_key as string) === workspaceTargetKeyValue)
+        : snap.docs.filter((d) => getRecipientModeFromDoc(d.data()) === "email");
+    if (cand.length > 0) existingDoc = cand[0];
   } else {
     const snap = await db
       .collection("folder_shares")
       .where("owner_id", "==", uid)
       .where("linked_drive_id", "==", linkedDriveId)
+      .where("backup_file_id", "==", null)
       .get();
-    const folderShare = snap.docs.find((d) => !d.data().backup_file_id);
-    if (folderShare) existingDoc = folderShare;
+    let folderShares = snap.docs.filter((d) => !d.data().backup_file_id);
+    if (recipientMode === "workspace" && workspaceTargetKeyValue) {
+      folderShares = folderShares.filter(
+        (d) => (d.data().workspace_target_key as string) === workspaceTargetKeyValue
+      );
+    } else {
+      folderShares = folderShares.filter((d) => getRecipientModeFromDoc(d.data()) === "email");
+    }
+    if (folderShares.length > 0) existingDoc = folderShares[0];
   }
 
   if (existingDoc) {
     const data = existingDoc.data();
+    const existingMode = getRecipientModeFromDoc(data);
+    if (existingMode !== recipientMode) {
+      return NextResponse.json(
+        {
+          error:
+            "A share already exists for this item with a different recipient type. Delete it first or open that share.",
+        },
+        { status: 409 }
+      );
+    }
+    if (
+      recipientMode === "workspace" &&
+      workspaceTargetKeyValue &&
+      (data.workspace_target_key as string) !== workspaceTargetKeyValue
+    ) {
+      return NextResponse.json(
+        { error: "A share already exists for this item with a different workspace target." },
+        { status: 409 }
+      );
+    }
     const shareToken = data.token as string;
     return NextResponse.json({
       token: shareToken,
       share_url: `/s/${shareToken}`,
       existing: true,
+      recipient_mode: existingMode,
     });
   }
 
   const shareToken = generateShareToken();
   const now = new Date();
 
-  const invitedEmailsNormalized = Array.isArray(invitedEmails)
-    ? invitedEmails.filter((e: unknown) => typeof e === "string").map((e) => (e as string).trim().toLowerCase())
-    : [];
-  const shareData = {
+  const shareData: Record<string, unknown> = {
     token: shareToken,
     owner_id: uid,
     linked_drive_id: linkedDriveId,
@@ -557,8 +825,15 @@ export async function POST(request: Request) {
     access_level: access_level as "private" | "public",
     expires_at: expiresAt && typeof expiresAt === "string" ? new Date(expiresAt) : null,
     created_at: now,
-    invited_emails: invitedEmailsNormalized,
+    invited_emails: recipientMode === "workspace" ? [] : invitedEmailsNormalized,
+    version: 1,
+    recipient_mode: recipientMode,
   };
+  if (recipientMode === "workspace" && workspaceKind && workspaceTargetId && workspaceTargetKeyValue) {
+    shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };
+    shareData.workspace_target_key = workspaceTargetKeyValue;
+    shareData.target_organization_id = targetOrganizationId;
+  }
 
   await db.collection("folder_shares").doc(shareToken).set(shareData);
 
@@ -577,50 +852,29 @@ export async function POST(request: Request) {
     },
   }).catch(() => {});
 
-  if (shareData.invited_emails.length > 0) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    let actorDisplayName = (profileSnap.data()?.displayName as string)?.trim();
-    if (!actorDisplayName) {
-      try {
-        const authUser = await getAdminAuth().getUser(uid);
-        actorDisplayName =
-          (authUser.displayName as string)?.trim() ??
-          email?.split("@")[0] ??
-          authUser.email?.split("@")[0] ??
-          "Someone";
-      } catch {
-        actorDisplayName = email?.split("@")[0] ?? "Someone";
-      }
-    } else {
-      actorDisplayName = actorDisplayName || (email?.split("@")[0] ?? "Someone");
-    }
-    const actorEmail = email ?? undefined;
-    const fileIds = backupFileIdToStore ? [backupFileIdToStore] : [];
-    await Promise.all([
-      createShareNotifications({
-        sharedByUserId: uid,
-        actorDisplayName,
-        actorEmail,
-        fileIds,
-        folderShareId: shareToken,
-        permission,
-        invitedEmails: shareData.invited_emails,
-        folderName: shareData.folder_name,
-      }),
-      sendShareFileEmailsToInvitees({
-        invitedEmails: shareData.invited_emails,
-        sharedByUserId: uid,
-        actorDisplayName,
-        fileIds,
-        folderName: shareData.folder_name,
-        shareToken,
-      }),
-    ]);
-  }
+  const fileIdsStd = backupFileIdToStore ? [backupFileIdToStore] : [];
+  await deliverShareNotificationsAndEmail({
+    db,
+    uid,
+    email,
+    recipientMode,
+    workspaceKind,
+    workspaceTargetId,
+    shareToken,
+    folderName: folderNameTrimmed,
+    fileIds: fileIdsStd,
+    invitedEmails: (shareData.invited_emails as string[]) ?? [],
+    permission,
+  });
 
   return NextResponse.json({
     token: shareToken,
     share_url: `/s/${shareToken}`,
     existing: false,
+    recipient_mode: recipientMode,
+    workspace_target:
+      recipientMode === "workspace" && workspaceKind && workspaceTargetId
+        ? { kind: workspaceKind, id: workspaceTargetId }
+        : null,
   });
 }

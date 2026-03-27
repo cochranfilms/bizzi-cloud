@@ -19,7 +19,7 @@ type PkgMeta = {
   macosPackageKind?: string;
 };
 
-function useUppyFileList<M extends Meta, B extends Body>(uppy: Uppy<M, B> | null): UppyFile<M, B>[] {
+export function useUppyFileList<M extends Meta, B extends Body>(uppy: Uppy<M, B> | null): UppyFile<M, B>[] {
   const [, setV] = useState(0);
   useEffect(() => {
     if (!uppy) return;
@@ -72,10 +72,51 @@ function aggregateFileProgress<M extends Meta, B extends Body>(files: UppyFile<M
   return { bytesTotal, bytesUploaded, failed, complete, pct, allDone };
 }
 
-export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
+function escapeSelectorId(id: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(id);
+  }
+  return id.replace(/([\\:!#$%^&*()+=[\]{}|';",./<>?~`])/g, "\\$1");
+}
+
+/**
+ * Hides native Uppy file rows for macOS package members (they are shown as one card in
+ * UppyGroupedQueueList). Loose files still appear in the Dashboard file list.
+ */
+export function HiddenMacosPackageRowsStyle<M extends Meta, B extends Body>({
   uppy,
 }: {
   uppy: Uppy<M, B> | null;
+}) {
+  const files = useUppyFileList(uppy);
+  const rules = useMemo(() => {
+    const hiddenIds = files
+      .filter((f) => Boolean((f.meta as PkgMeta).macosPackageGroupRoot?.trim()))
+      .map((f) => f.id);
+    if (hiddenIds.length === 0) return "";
+    return hiddenIds
+      .map((id) => `#uppy_${escapeSelectorId(id)}`)
+      .join(",\n");
+  }, [files]);
+  if (!rules) return null;
+  return (
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `${rules}{display:none!important;}`,
+      }}
+    />
+  );
+}
+
+export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
+  uppy,
+  bundlesOnly = false,
+  listClassName = "",
+}: {
+  uppy: Uppy<M, B> | null;
+  /** When true, only macOS package cards (loose files use the native Uppy list). */
+  bundlesOnly?: boolean;
+  listClassName?: string;
 }) {
   const files = useUppyFileList(uppy);
 
@@ -100,6 +141,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   }, [files]);
 
   if (files.length === 0) return null;
+  if (bundlesOnly && bundleGroups.length === 0) return null;
 
   const removeLoose = (id: string) => {
     if (!uppy) return;
@@ -123,8 +165,12 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
     }
   };
 
+  const outerClass = bundlesOnly
+    ? `space-y-2 px-2 pt-2 ${listClassName}`.trim()
+    : `max-h-[280px] space-y-3 overflow-y-auto px-3 pb-3 ${listClassName}`.trim();
+
   return (
-    <div className="max-h-[280px] space-y-3 overflow-y-auto px-3 pb-3" aria-label="Upload queue">
+    <div className={outerClass} aria-label={bundlesOnly ? "Package uploads" : "Upload queue"}>
       {bundleGroups.map((g) => {
         const label = packageKindDisplayLabel(g.kind);
         const displayName = g.root.split("/").filter(Boolean).pop() ?? g.root;
@@ -195,58 +241,60 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
         );
       })}
 
-      {loose.map((f) => {
-        const size = f.size ?? 0;
-        const up = Number(f.progress?.bytesUploaded ?? 0);
-        const done =
-          f.progress?.uploadComplete === true || (size > 0 && up >= size);
-        const pct = size > 0 ? Math.min(100, done ? 100 : (up / size) * 100) : 0;
-        const name = f.name ?? "File";
-        return (
-          <div
-            key={f.id}
-            className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-800">
-              {f.preview ? (
-                // eslint-disable-next-line @next/next/no-img-element -- Uppy blob/object URL
-                <img src={f.preview} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-neutral-400">
-                  <FileIcon className="h-5 w-5" />
-                </div>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
-              <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
-                <div
-                  className={`h-full ${f.error ? "bg-red-500" : "bg-bizzi-blue dark:bg-bizzi-cyan"}`}
-                  style={{ width: `${f.error ? 100 : pct}%` }}
-                />
-              </div>
-            </div>
-            {f.error && (
-              <button
-                type="button"
-                onClick={() => void uppy?.retryUpload(f.id)}
-                className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                aria-label={`Retry ${name}`}
+      {!bundlesOnly
+        ? loose.map((f) => {
+            const size = f.size ?? 0;
+            const up = Number(f.progress?.bytesUploaded ?? 0);
+            const done =
+              f.progress?.uploadComplete === true || (size > 0 && up >= size);
+            const pct = size > 0 ? Math.min(100, done ? 100 : (up / size) * 100) : 0;
+            const name = f.name ?? "File";
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => removeLoose(f.id)}
-              className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800"
-              aria-label={`Remove ${name}`}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      })}
+                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-800">
+                  {f.preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- Uppy blob/object URL
+                    <img src={f.preview} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-neutral-400">
+                      <FileIcon className="h-5 w-5" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
+                  <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+                    <div
+                      className={`h-full ${f.error ? "bg-red-500" : "bg-bizzi-blue dark:bg-bizzi-cyan"}`}
+                      style={{ width: `${f.error ? 100 : pct}%` }}
+                    />
+                  </div>
+                </div>
+                {f.error && (
+                  <button
+                    type="button"
+                    onClick={() => void uppy?.retryUpload(f.id)}
+                    className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    aria-label={`Retry ${name}`}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeLoose(f.id)}
+                  className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800"
+                  aria-label={`Remove ${name}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })
+        : null}
     </div>
   );
 }

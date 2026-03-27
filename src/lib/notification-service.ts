@@ -3,6 +3,10 @@ import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { formatNotificationMessage } from "./notification-format";
 import { getFileDisplayName } from "./file-access";
+import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team-constants";
+import type { Workspace } from "@/types/workspace";
+import type { WorkspaceShareTargetKind } from "@/types/folder-share";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
 
 export type NotificationMetadata = NonNullable<Notification["metadata"]>;
 
@@ -255,6 +259,116 @@ export async function createShareNotifications(params: {
           fileCount: fileCount > 1 ? fileCount : undefined,
         }).filter(([, v]) => v !== undefined)
       ),
+    });
+  }
+  await batch.commit();
+}
+
+/**
+ * User IDs that should receive in-app notifications for a workspace-targeted share
+ * (all seats with access to that workspace, excluding the sharer).
+ */
+export async function getUserIdsForWorkspaceShareInbox(
+  db: Firestore,
+  kind: WorkspaceShareTargetKind,
+  targetId: string,
+  excludeUserId?: string
+): Promise<string[]> {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (userId: string) => {
+    if (!userId || userId === excludeUserId || seen.has(userId)) return;
+    seen.add(userId);
+    out.push(userId);
+  };
+
+  if (kind === "personal_team") {
+    push(targetId);
+    const snap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .where("team_owner_user_id", "==", targetId)
+      .get();
+    for (const d of snap.docs) {
+      const st = d.data().status as string | undefined;
+      if (st !== "active" && st !== "cold_storage") continue;
+      const mid = d.data().member_user_id as string | undefined;
+      if (mid) push(mid);
+    }
+    return out;
+  }
+
+  const wsSnap = await db.collection("workspaces").doc(targetId).get();
+  if (!wsSnap.exists) return [];
+  const ws = wsSnap.data() as Workspace;
+  const orgId = ws.organization_id;
+  if (!orgId) return [];
+
+  const seatsSnap = await db
+    .collection("organization_seats")
+    .where("organization_id", "==", orgId)
+    .where("status", "==", "active")
+    .get();
+
+  for (const d of seatsSnap.docs) {
+    const userId = d.data().user_id as string | undefined;
+    if (!userId) continue;
+    if (await userCanAccessWorkspace(userId, targetId)) push(userId);
+  }
+  return out;
+}
+
+export async function createWorkspaceShareNotifications(params: {
+  sharedByUserId: string;
+  actorDisplayName: string;
+  fileIds: string[];
+  folderShareId: string;
+  folderName?: string;
+  workspaceShareName: string;
+  workspaceTargetKey: string;
+  kind: WorkspaceShareTargetKind;
+  targetId: string;
+}): Promise<void> {
+  const db = getAdminFirestore();
+  const recipientUids = await getUserIdsForWorkspaceShareInbox(
+    db,
+    params.kind,
+    params.targetId,
+    params.sharedByUserId
+  );
+  if (recipientUids.length === 0) return;
+
+  const fileCount = params.fileIds.length;
+  const fileName =
+    fileCount === 1 && params.fileIds[0] ? await getFileDisplayName(params.fileIds[0]) : undefined;
+  const metadata = Object.fromEntries(
+    Object.entries({
+      fileName,
+      folderName: params.folderName,
+      actorDisplayName: params.actorDisplayName,
+      fileCount: fileCount > 1 ? fileCount : undefined,
+      workspaceShareName: params.workspaceShareName,
+      workspaceTargetKey: params.workspaceTargetKey,
+      shareToken: params.folderShareId,
+    }).filter(([, v]) => v !== undefined)
+  ) as NonNullable<Notification["metadata"]>;
+
+  const message = formatNotificationMessage("file_shared", params.actorDisplayName, metadata);
+
+  const now = new Date();
+  const batch = db.batch();
+  for (const recipientUserId of recipientUids) {
+    const ref = db.collection("notifications").doc();
+    batch.set(ref, {
+      recipientUserId,
+      actorUserId: params.sharedByUserId,
+      type: "file_shared",
+      fileId: params.fileIds[0] ?? null,
+      commentId: null,
+      shareId: params.folderShareId,
+      message,
+      isRead: false,
+      createdAt: now,
+      metadata,
     });
   }
   await batch.commit();

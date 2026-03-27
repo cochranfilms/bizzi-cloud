@@ -215,6 +215,23 @@
       ]
     },
     {
+      "collectionGroup": "folder_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "workspace_target_key", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "folder_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "workspace_target_key", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "backup_files",
       "queryScope": "COLLECTION",
       "fields": [

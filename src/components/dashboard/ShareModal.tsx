@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Copy, Check, Link2, Lock, UserPlus, Download, File } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 
 interface ShareModalProps {
   open: boolean;
@@ -35,6 +37,19 @@ export default function ShareModal({
   initialInvitedEmails = [],
 }: ShareModalProps) {
   const { user } = useAuth();
+  const pathname = usePathname() ?? "";
+  const { org } = useEnterprise();
+  const routeTeamOwnerId = useMemo(() => {
+    const m = pathname.match(/^\/team\/([^/]+)/);
+    return m?.[1] ?? null;
+  }, [pathname]);
+
+  type WorkspacePick = {
+    kind: "enterprise_workspace" | "personal_team";
+    id: string;
+    label: string;
+  };
+
   const [shareName, setShareName] = useState<string>(folderName.trim() || "");
   const [shareToken, setShareToken] = useState<string | null>(initialShareToken ?? null);
   const [shareVersion, setShareVersion] = useState<number>(1);
@@ -46,6 +61,13 @@ export default function ShareModal({
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [recipientTab, setRecipientTab] = useState<"email" | "workspace">("email");
+  const [workspaceTarget, setWorkspaceTarget] = useState<WorkspacePick | null>(null);
+  const [targetQuery, setTargetQuery] = useState("");
+  const [targetResults, setTargetResults] = useState<
+    { kind: "enterprise_workspace" | "personal_team"; id: string; label: string; subtitle: string }[]
+  >([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
 
   const hasValidShareName = shareName.trim().length > 0;
   const lastFetchedForRef = useRef<string | null>(null);
@@ -62,10 +84,16 @@ export default function ShareModal({
       const token = await user.getIdToken();
       const params = new URLSearchParams({ linked_drive_id: linkedDriveId });
       if (backupFileId) params.set("backup_file_id", backupFileId);
-      const res = await fetch(
-        `/api/shares?${params.toString()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      if (recipientTab === "workspace" && workspaceTarget) {
+        params.set("share_recipient", "workspace");
+        params.set("workspace_kind", workspaceTarget.kind);
+        params.set("workspace_id", workspaceTarget.id);
+      } else {
+        params.set("share_recipient", "email");
+      }
+      const res = await fetch(`/api/shares?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
         const data = await res.json();
         setShareToken(data.token);
@@ -74,11 +102,14 @@ export default function ShareModal({
         setAccessLevel((data.access_level as "private" | "public") ?? "private");
         setPermission((data.permission as "view" | "edit") ?? "view");
         setInvitedEmails(data.invited_emails ?? []);
+      } else {
+        setShareToken(null);
+        setShareVersion(1);
       }
     } catch {
-      // No existing share, will create on first action
+      setShareToken(null);
     }
-  }, [linkedDriveId, backupFileId, user, folderName]);
+  }, [linkedDriveId, backupFileId, user, folderName, recipientTab, workspaceTarget]);
 
   const fetchShareVersion = useCallback(
     async (token: string) => {
@@ -115,6 +146,16 @@ export default function ShareModal({
           setAccessLevel((data.access_level as "private" | "public") ?? "private");
           setPermission((data.permission as "view" | "edit") ?? "view");
           setInvitedEmails(Array.isArray(data.invited_emails) ? data.invited_emails : []);
+          if (data.recipient_mode === "workspace" && data.workspace_target?.kind && data.workspace_target?.id) {
+            setRecipientTab("workspace");
+            setWorkspaceTarget({
+              kind: data.workspace_target.kind as WorkspacePick["kind"],
+              id: data.workspace_target.id,
+              label: `Workspace ${data.workspace_target.id.slice(0, 8)}…`,
+            });
+          } else {
+            setRecipientTab("email");
+          }
         }
       } catch {
         // ignore
@@ -130,6 +171,22 @@ export default function ShareModal({
     if (open) {
       if (justOpened) {
         setShareName(folderName.trim() || "");
+        if (routeTeamOwnerId) {
+          setRecipientTab("workspace");
+          setWorkspaceTarget({
+            kind: "personal_team",
+            id: routeTeamOwnerId,
+            label: "This team",
+          });
+        } else if (pathname.startsWith("/enterprise")) {
+          setRecipientTab("workspace");
+          setWorkspaceTarget(null);
+        } else {
+          setRecipientTab("email");
+          setWorkspaceTarget(null);
+        }
+        setTargetQuery("");
+        setTargetResults([]);
       }
       setNameError(null);
       if (initialShareToken) {
@@ -147,7 +204,6 @@ export default function ShareModal({
         }
       } else if (linkedDriveId && justOpened) {
         lastFetchedForRef.current = null;
-        fetchExistingShare();
       }
     } else {
       lastFetchedForRef.current = null;
@@ -167,10 +223,50 @@ export default function ShareModal({
     initialPermission,
     initialInvitedEmails,
     folderName,
-    fetchExistingShare,
     fetchShareVersion,
     fetchShareDetails,
+    routeTeamOwnerId,
+    pathname,
   ]);
+
+  useEffect(() => {
+    if (!open || !linkedDriveId || !user || initialShareToken) return;
+    if (recipientTab === "workspace" && !workspaceTarget && !routeTeamOwnerId) return;
+    fetchExistingShare();
+  }, [
+    open,
+    linkedDriveId,
+    user,
+    initialShareToken,
+    fetchExistingShare,
+    recipientTab,
+    workspaceTarget,
+    routeTeamOwnerId,
+  ]);
+
+  useEffect(() => {
+    if (!open || recipientTab !== "workspace" || !user || routeTeamOwnerId) return;
+    const t = setTimeout(async () => {
+      setTargetsLoading(true);
+      try {
+        const token = await user.getIdToken();
+        const params = new URLSearchParams({ q: targetQuery });
+        if (org?.id) params.set("organization_id", org.id);
+        const res = await fetch(`/api/share-targets?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        setTargetResults(Array.isArray(data.targets) ? data.targets : []);
+      } catch {
+        setTargetResults([]);
+      } finally {
+        setTargetsLoading(false);
+      }
+    }, 280);
+    return () => clearTimeout(t);
+  }, [open, recipientTab, user, targetQuery, org?.id, routeTeamOwnerId]);
+
+  const recipientLocked = !!(shareToken || initialShareToken);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
     if (!user) return null;
@@ -178,6 +274,10 @@ export default function ShareModal({
     const name = shareName.trim();
     if (!name) {
       setNameError("Please name your share before copying the link or adding people.");
+      return null;
+    }
+    if (recipientTab === "workspace" && !workspaceTarget) {
+      setNameError("Select a team or organization workspace first.");
       return null;
     }
     setNameError(null);
@@ -193,8 +293,12 @@ export default function ShareModal({
         folder_name: name,
         permission,
         access_level: accessLevel,
-        invited_emails: invitedEmails,
+        invited_emails: recipientTab === "workspace" ? [] : invitedEmails,
+        recipient_mode: recipientTab === "workspace" ? "workspace" : "email",
       };
+      if (recipientTab === "workspace" && workspaceTarget) {
+        body.workspace_target = { kind: workspaceTarget.kind, id: workspaceTarget.id };
+      }
       if (isVirtualShare) {
         body.referenced_file_ids = referencedFileIds;
       } else {
@@ -223,7 +327,20 @@ export default function ShareModal({
     } finally {
       setLoading(false);
     }
-  }, [linkedDriveId, backupFileId, referencedFileIds, user, shareToken, initialShareToken, permission, accessLevel, invitedEmails, shareName]);
+  }, [
+    linkedDriveId,
+    backupFileId,
+    referencedFileIds,
+    user,
+    shareToken,
+    initialShareToken,
+    permission,
+    accessLevel,
+    invitedEmails,
+    shareName,
+    recipientTab,
+    workspaceTarget,
+  ]);
 
   const copyLink = useCallback(async () => {
     if (!hasValidShareName && !shareToken && !initialShareToken) {
@@ -240,6 +357,7 @@ export default function ShareModal({
   }, [ensureShare, hasValidShareName, shareToken, initialShareToken]);
 
   const addEmail = useCallback(async () => {
+    if (recipientTab === "workspace") return;
     const trimmed = emailInput.trim().toLowerCase();
     if (!trimmed) return;
     if (invitedEmails.includes(trimmed)) return;
@@ -291,10 +409,25 @@ export default function ShareModal({
         setLoading(false);
       }
     }
-  }, [emailInput, invitedEmails, ensureShare, user, shareVersion, fetchShareVersion, hasValidShareName, shareToken, initialShareToken, shareName, linkedDriveId, referencedFileIds]);
+  }, [
+    recipientTab,
+    emailInput,
+    invitedEmails,
+    ensureShare,
+    user,
+    shareVersion,
+    fetchShareVersion,
+    hasValidShareName,
+    shareToken,
+    initialShareToken,
+    shareName,
+    linkedDriveId,
+    referencedFileIds,
+  ]);
 
   const removeEmail = useCallback(
     async (email: string) => {
+      if (recipientTab === "workspace") return;
       const next = invitedEmails.filter((e) => e !== email);
       setInvitedEmails(next);
       const token = shareToken ?? initialShareToken;
@@ -327,7 +460,7 @@ export default function ShareModal({
         }
       }
     },
-    [invitedEmails, shareToken, initialShareToken, user, shareVersion, fetchShareVersion]
+    [recipientTab, invitedEmails, shareToken, initialShareToken, user, shareVersion, fetchShareVersion]
   );
 
   const saveChanges = useCallback(
@@ -339,7 +472,8 @@ export default function ShareModal({
       const shareTokenToUse = shareToken ?? initialShareToken;
       if (!shareTokenToUse || !user) return;
       const level = overrides?.access_level ?? accessLevel;
-      const emails = overrides?.invited_emails ?? invitedEmails;
+      const emails =
+        recipientTab === "workspace" ? [] : overrides?.invited_emails ?? invitedEmails;
       const perm = overrides?.permission ?? permission;
       setLoading(true);
       setError(null);
@@ -374,7 +508,7 @@ export default function ShareModal({
         setLoading(false);
       }
     },
-    [shareToken, initialShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
+    [recipientTab, shareToken, initialShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
   const handleClose = useCallback(async () => {
@@ -482,6 +616,110 @@ export default function ShareModal({
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
               Give your share a unique name so you can find it easily.
             </p>
+          </div>
+
+          {/* Recipients: email vs workspace */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Share with
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={recipientLocked}
+                onClick={() => {
+                  setRecipientTab("email");
+                  if (!recipientLocked) setShareToken(null);
+                }}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
+                  recipientTab === "email"
+                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
+                    : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                }`}
+              >
+                <UserPlus className="h-4 w-4" />
+                Email
+              </button>
+              <button
+                type="button"
+                disabled={recipientLocked}
+                onClick={() => {
+                  setRecipientTab("workspace");
+                  if (!recipientLocked) setShareToken(null);
+                  if (routeTeamOwnerId) {
+                    setWorkspaceTarget({
+                      kind: "personal_team",
+                      id: routeTeamOwnerId,
+                      label: "This team",
+                    });
+                  }
+                }}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
+                  recipientTab === "workspace"
+                    ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
+                    : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                }`}
+              >
+                <Building2 className="h-4 w-4" />
+                Team / org
+              </button>
+            </div>
+            {recipientTab === "workspace" && (
+              <div className="mt-3 space-y-2">
+                {routeTeamOwnerId ? (
+                  <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                    {workspaceTarget?.label ?? "This team"} — all seat members will be notified.
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      type="search"
+                      placeholder="Search teams and workspaces…"
+                      value={targetQuery}
+                      onChange={(e) => setTargetQuery(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                    />
+                    {targetsLoading ? (
+                      <p className="text-xs text-neutral-500">Searching…</p>
+                    ) : (
+                      <ul className="max-h-40 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                        {targetResults.length === 0 ? (
+                          <li className="px-3 py-2 text-xs text-neutral-500">No matches</li>
+                        ) : (
+                          targetResults.map((row) => (
+                            <li key={`${row.kind}:${row.id}`}>
+                              <button
+                                type="button"
+                                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                onClick={() =>
+                                  setWorkspaceTarget({
+                                    kind: row.kind,
+                                    id: row.id,
+                                    label: row.label,
+                                  })
+                                }
+                              >
+                                <span className="font-medium text-neutral-900 dark:text-white">
+                                  {row.label}
+                                </span>
+                                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                  {row.subtitle}
+                                </span>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                    {workspaceTarget && !routeTeamOwnerId && (
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                        Selected: <strong>{workspaceTarget.label}</strong>
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Copy link - primary action */}
@@ -601,6 +839,7 @@ export default function ShareModal({
           </div>
 
           {/* Add people */}
+          {recipientTab === "email" && (
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Add people
@@ -624,9 +863,10 @@ export default function ShareModal({
               </button>
             </div>
           </div>
+          )}
 
           {/* People with access */}
-          {(user?.email || invitedEmails.length > 0) && (
+          {recipientTab === "email" && (user?.email || invitedEmails.length > 0) && (
             <div>
               <p className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 People with access

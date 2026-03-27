@@ -7,12 +7,35 @@ import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import SharerCard, { type SharerCardItem } from "./SharerCard";
 import SectionTitle from "./SectionTitle";
 import ShareModal from "./ShareModal";
-import { useShares } from "@/hooks/useShares";
+import { useShares, type SharesListQuery } from "@/hooks/useShares";
 import DashboardRouteFade from "./DashboardRouteFade";
 import { useConfirm } from "@/hooks/useConfirm";
+import { usePathname } from "next/navigation";
+import { useEnterprise } from "@/context/EnterpriseContext";
 
 export default function SharedGrid() {
-  const { owned, invited, loading, error, deleteShare, refetch } = useShares();
+  const pathname = usePathname() ?? "";
+  const { org } = useEnterprise();
+
+  const sharesListQuery = useMemo<SharesListQuery | null>(() => {
+    const teamMatch = pathname.match(/^\/team\/([^/]+)/);
+    if (teamMatch?.[1]) {
+      return {
+        context: "workspace",
+        workspace_kind: "personal_team",
+        workspace_id: teamMatch[1],
+      };
+    }
+    if (pathname.startsWith("/enterprise")) {
+      if (org?.id) {
+        return { context: "workspace", organization_id: org.id };
+      }
+      return { context: "workspace" };
+    }
+    return { context: "personal" };
+  }, [pathname, org?.id]);
+
+  const { owned, invited, loading, error, deleteShare, refetch } = useShares(sharesListQuery);
   const { confirm } = useConfirm();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sentReceivedFilter, setSentReceivedFilter] = useState<"all" | "sent" | "received">("all");

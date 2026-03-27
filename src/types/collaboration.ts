@@ -75,6 +75,10 @@ export interface Notification {
     supportSubject?: string;
     /** billing: consumer profile vs org subscription */
     billingScope?: "consumer" | "org";
+    /** Workspace-targeted share: human name for inbox copy */
+    workspaceShareName?: string;
+    workspaceTargetKey?: string;
+    shareToken?: string;
   } | null;
 }
 

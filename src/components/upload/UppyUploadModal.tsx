@@ -13,11 +13,10 @@ import {
 import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
-  MACOS_PACKAGE_STRUCTURED_UPLOAD_BLURB,
 } from "@/lib/macos-package-bundles";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
-import UppyGroupedQueueList from "./UppyGroupedQueueList";
-import { Upload, ChevronUp, ChevronDown, X, Loader2, Check, FolderOpen } from "lucide-react";
+import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
+import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
  * We track failed files and surface them so users can retry from the Dashboard. */
@@ -116,31 +115,11 @@ export default function UppyUploadModal({
     failedCount: 0,
     allComplete: false,
   });
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const [macosPackageWarning, setMacosPackageWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) setMacosPackageWarning(null);
   }, [open]);
-
-  const handlePackageFolderInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const list = e.target.files;
-      e.target.value = "";
-      const uppy = uppyRef.current;
-      if (!list?.length || !uppy) return;
-      setMacosPackageWarning(null);
-      for (const f of Array.from(list)) {
-        try {
-          uppy.addFile({ name: f.name, data: f });
-        } catch {
-          // duplicate or restriction
-        }
-      }
-      queueMicrotask(() => resumeUploadIfNeeded(uppy));
-    },
-    []
-  );
 
   useEffect(() => {
     if (!open) {
@@ -492,48 +471,24 @@ export default function UppyUploadModal({
       {/* Expanded: Uppy Dashboard */}
       {expanded && ready && uppyRef.current && (
         <div className="border-t border-neutral-100 dark:border-neutral-800">
-          <input
-            ref={folderInputRef}
-            type="file"
-            multiple
-            className="sr-only"
-            aria-hidden
-            // Enable folder selection (Chrome, Edge, Safari). Paths appear as webkitRelativePath on each File.
-            {...({ webkitdirectory: "true", directory: "true" } as Record<string, string>)}
-            onChange={handlePackageFolderInputChange}
-          />
-          <p className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
-            {MACOS_PACKAGE_STRUCTURED_UPLOAD_BLURB} Previews: images, RAW (when the browser can decode them), and a
-            still frame for videos. Final Cut libraries: drag the{" "}
-            <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">.fcpbundle</code> from Finder (so the
-            browser sees a folder) or use <strong>Upload folder</strong> below — or compress the library and upload the
-            .zip.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => folderInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              Upload folder…
-            </button>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              For .fcpbundle, .photoslibrary, .logicx, and other macOS packages.
-            </span>
-          </div>
           {macosPackageWarning && (
-            <div className="mx-3 mb-2 whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100">
+            <div className="mx-3 mt-2 whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100">
               {macosPackageWarning}
             </div>
           )}
-          <UppyGroupedQueueList uppy={uppyRef.current} />
-          <Dashboard
-            uppy={uppyRef.current}
-            proudlyDisplayPoweredByUppy={false}
-            height={320}
-            showSelectedFiles={false}
-          />
+          <div className="mx-2 mb-2 mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900/80">
+            <HiddenMacosPackageRowsStyle uppy={uppyRef.current} />
+            <UppyGroupedQueueList uppy={uppyRef.current} bundlesOnly />
+            <Dashboard
+              uppy={uppyRef.current}
+              proudlyDisplayPoweredByUppy={false}
+              height={hasFiles ? 340 : 300}
+              showSelectedFiles
+              note={null}
+              fileManagerSelectionType="both"
+              className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
+            />
+          </div>
         </div>
       )}
     </div>

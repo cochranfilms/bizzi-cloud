@@ -26,11 +26,19 @@ export function formatNotificationMessage(
       return `A reply was added to your comment on ${fileName}`;
     case "file_hearted":
       return `${actor} hearted your video`;
-    case "file_shared":
+    case "file_shared": {
+      const wsName = metadata?.workspaceShareName?.trim();
+      if (wsName) {
+        if (fileCount > 1) {
+          return `${actor} shared ${fileCount} files with ${wsName}`;
+        }
+        return `${actor} shared ${folderName ?? fileName} with ${wsName}`;
+      }
       if (fileCount > 1) {
         return `${actor} shared ${fileCount} files with you`;
       }
       return `${actor} shared ${folderName ?? fileName} with you`;
+    }
     case "transfer_sent":
       if (fileCount > 1) {
         return `${actor} sent you a transfer with ${fileCount} files`;

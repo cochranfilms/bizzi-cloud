@@ -1,7 +1,7 @@
 import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { verifyShareAccess } from "@/lib/share-access";
+import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
 
 const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to share previews
@@ -51,14 +51,7 @@ export async function POST(
   }
 
   const authHeader = request.headers.get("Authorization");
-  const access = await verifyShareAccess(
-    {
-      owner_id: share.owner_id as string,
-      access_level: share.access_level as string | undefined,
-      invited_emails: share.invited_emails as string[] | undefined,
-    },
-    authHeader
-  );
+  const access = await verifyShareAccess(shareFirestoreDataToAccessDoc(share as Record<string, unknown>), authHeader);
 
   if (!access.allowed) {
     return NextResponse.json(

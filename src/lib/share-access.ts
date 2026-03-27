@@ -1,17 +1,40 @@
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { verifyIdToken } from "@/lib/firebase-admin";
+import {
+  getRecipientModeFromDoc,
+  parseWorkspaceTargetKey,
+  userCanAccessWorkspaceShareTarget,
+} from "@/lib/folder-share-workspace";
 
 export type ShareAccessResult =
   | { allowed: true }
   | { allowed: false; code: "private_share_requires_auth"; message: string }
   | { allowed: false; code: "access_denied"; message: string };
 
+export type ShareAccessDoc = {
+  owner_id: string;
+  access_level?: string;
+  invited_emails?: string[];
+  recipient_mode?: string;
+  workspace_target_key?: string;
+};
+
+export function shareFirestoreDataToAccessDoc(data: Record<string, unknown>): ShareAccessDoc {
+  return {
+    owner_id: data.owner_id as string,
+    access_level: data.access_level as string | undefined,
+    invited_emails: data.invited_emails as string[] | undefined,
+    recipient_mode: data.recipient_mode as string | undefined,
+    workspace_target_key: data.workspace_target_key as string | undefined,
+  };
+}
+
 /**
  * Verify that the visitor has access to a share.
  * - Public shares: anyone can access.
- * - Private shares: only owner or invited_emails (requires auth).
+ * - Private shares: owner, invited_emails, or workspace target membership (requires auth).
  */
 export async function verifyShareAccess(
-  share: { owner_id: string; access_level?: string; invited_emails?: string[] },
+  share: ShareAccessDoc,
   authHeader: string | null
 ): Promise<ShareAccessResult> {
   const accessLevel = share.access_level ?? "public";
@@ -47,6 +70,14 @@ export async function verifyShareAccess(
 
   if (uid === share.owner_id) {
     return { allowed: true };
+  }
+
+  const mode = getRecipientModeFromDoc(share as Record<string, unknown>);
+  if (mode === "workspace" && share.workspace_target_key) {
+    const parsed = parseWorkspaceTargetKey(share.workspace_target_key);
+    if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id))) {
+      return { allowed: true };
+    }
   }
 
   const invited = share.invited_emails ?? [];

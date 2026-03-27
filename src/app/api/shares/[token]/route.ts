@@ -1,12 +1,14 @@
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
-import { verifyShareAccess } from "@/lib/share-access";
+import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
 import {
   createNotification,
   createShareNotifications,
   getActorDisplayName,
+  getUserIdsForWorkspaceShareInbox,
   resolveEmailsToUserIds,
 } from "@/lib/notification-service";
+import { getRecipientModeFromDoc, parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 
@@ -38,14 +40,7 @@ export async function GET(
   }
 
   const authHeader = request.headers.get("Authorization");
-  const access = await verifyShareAccess(
-    {
-      owner_id: share.owner_id as string,
-      access_level: share.access_level as string | undefined,
-      invited_emails: share.invited_emails as string[] | undefined,
-    },
-    authHeader
-  );
+  const access = await verifyShareAccess(shareFirestoreDataToAccessDoc(share as Record<string, unknown>), authHeader);
 
   if (!access.allowed) {
     return NextResponse.json(
@@ -161,6 +156,13 @@ export async function GET(
   }
   if (requesterUid === ownerId) {
     response.invited_emails = share.invited_emails ?? [];
+    response.recipient_mode = getRecipientModeFromDoc(share as Record<string, unknown>);
+    const wt = share.workspace_target as { kind?: string; id?: string } | undefined;
+    if (wt?.kind && wt?.id) {
+      response.workspace_target = { kind: wt.kind, id: wt.id };
+    }
+    response.workspace_target_key = (share.workspace_target_key as string) ?? null;
+    response.version = version;
   }
   return NextResponse.json(response);
 }
@@ -211,6 +213,20 @@ export async function PATCH(
 
   const db = getAdminFirestore();
   const shareRef = db.collection("folder_shares").doc(shareToken);
+
+  const preCheck = await shareRef.get();
+  if (preCheck.exists) {
+    const preData = preCheck.data()!;
+    if (
+      getRecipientModeFromDoc(preData as Record<string, unknown>) === "workspace" &&
+      Array.isArray(invitedEmails)
+    ) {
+      return NextResponse.json(
+        { error: "Workspace-targeted shares cannot be updated via email invitees" },
+        { status: 400 }
+      );
+    }
+  }
 
   const result = await db.runTransaction(async (tx) => {
     const shareSnap = await tx.get(shareRef);
@@ -431,8 +447,17 @@ export async function DELETE(
 
   const invitedEmails = (share.invited_emails as string[] | undefined) ?? [];
   const folderNameDel = (share.folder_name as string) ?? "Shared folder";
-  const deleteNotifyUids = await resolveEmailsToUserIds(invitedEmails, uid);
   const ownerLabelDel = await getActorDisplayName(db, uid);
+  const shareModeDel = getRecipientModeFromDoc(share as Record<string, unknown>);
+  let deleteNotifyUids: string[];
+  if (shareModeDel === "workspace" && share.workspace_target_key) {
+    const parsed = parseWorkspaceTargetKey(share.workspace_target_key as string);
+    deleteNotifyUids = parsed
+      ? await getUserIdsForWorkspaceShareInbox(db, parsed.kind, parsed.id, uid)
+      : [];
+  } else {
+    deleteNotifyUids = await resolveEmailsToUserIds(invitedEmails, uid);
+  }
 
   // Delete share record only—never delete backup_files.
   // Virtual shares (referenced_file_ids): only this doc is deleted; originals stay.

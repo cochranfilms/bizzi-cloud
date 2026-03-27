@@ -1,6 +1,6 @@
 import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { verifyShareAccess } from "@/lib/share-access";
+import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -53,14 +53,7 @@ export async function GET(
   }
 
   const authHeader = request.headers.get("Authorization");
-  const access = await verifyShareAccess(
-    {
-      owner_id: share.owner_id as string,
-      access_level: share.access_level as string | undefined,
-      invited_emails: share.invited_emails as string[] | undefined,
-    },
-    authHeader
-  );
+  const access = await verifyShareAccess(shareFirestoreDataToAccessDoc(share as Record<string, unknown>), authHeader);
 
   if (!access.allowed) {
     return new NextResponse("Access denied", { status: 403 });

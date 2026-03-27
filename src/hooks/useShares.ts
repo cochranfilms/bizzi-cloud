@@ -15,6 +15,16 @@ export interface ShareListItem {
   sharedByEmail?: string;
   sharedByPhotoUrl?: string;
   invited_emails?: string[];
+  recipient_mode?: string;
+  workspace_target?: { kind: string; id: string };
+  workspace_target_key?: string;
+}
+
+export interface SharesListQuery {
+  context: "personal" | "workspace";
+  workspace_kind?: "enterprise_workspace" | "personal_team";
+  workspace_id?: string;
+  organization_id?: string;
 }
 
 export interface UseSharesResult {
@@ -27,7 +37,7 @@ export interface UseSharesResult {
   deleteShare: (token: string) => Promise<void>;
 }
 
-export function useShares(): UseSharesResult {
+export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
   const { user } = useAuth();
   const [owned, setOwned] = useState<ShareListItem[]>([]);
   const [invited, setInvited] = useState<ShareListItem[]>([]);
@@ -53,7 +63,15 @@ export function useShares(): UseSharesResult {
     const controller = new AbortController();
     try {
       const token = await user.getIdToken();
-      const res = await fetch("/api/shares", {
+      const params = new URLSearchParams();
+      if (listQuery) {
+        params.set("context", listQuery.context);
+        if (listQuery.workspace_kind) params.set("workspace_kind", listQuery.workspace_kind);
+        if (listQuery.workspace_id) params.set("workspace_id", listQuery.workspace_id);
+        if (listQuery.organization_id) params.set("organization_id", listQuery.organization_id);
+      }
+      const qs = params.toString();
+      const res = await fetch(qs ? `/api/shares?${qs}` : "/api/shares", {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });
@@ -62,32 +80,61 @@ export function useShares(): UseSharesResult {
         throw new Error(data.error ?? "Failed to load shares");
       }
       const data = await res.json();
-      setOwned(
-        (data.owned ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; invited_emails?: string[] }) => ({
-          id: s.id,
-          token: s.token,
-          folder_name: s.folder_name,
-          item_type: s.item_type === "file" ? "file" : "folder",
-          permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
-          share_url: s.share_url,
-          sharedBy: "You",
-          invited_emails: Array.isArray(s.invited_emails) ? s.invited_emails : [],
-        }))
-      );
-      setInvited(
-        (data.invited ?? []).map((s: { id: string; token: string; folder_name: string; item_type?: string; permission: string; share_url: string; sharedBy?: string; owner_id?: string; sharedByEmail?: string; sharedByPhotoUrl?: string }) => ({
-          id: s.id,
-          token: s.token,
-          folder_name: s.folder_name,
-          item_type: s.item_type === "file" ? "file" : "folder",
-          permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
-          share_url: s.share_url,
-          sharedBy: s.sharedBy ?? "Someone",
-          owner_id: s.owner_id,
-          sharedByEmail: s.sharedByEmail,
-          sharedByPhotoUrl: s.sharedByPhotoUrl,
-        }))
-      );
+      const mapOwned = (s: {
+        id: string;
+        token: string;
+        folder_name: string;
+        item_type?: string;
+        permission: string;
+        share_url: string;
+        invited_emails?: string[];
+        recipient_mode?: string;
+        workspace_target?: { kind: string; id: string };
+        workspace_target_key?: string;
+      }): ShareListItem => ({
+        id: s.id,
+        token: s.token,
+        folder_name: s.folder_name,
+        item_type: s.item_type === "file" ? "file" : "folder",
+        permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
+        share_url: s.share_url,
+        sharedBy: "You",
+        invited_emails: Array.isArray(s.invited_emails) ? s.invited_emails : [],
+        recipient_mode: s.recipient_mode,
+        workspace_target: s.workspace_target,
+        workspace_target_key: s.workspace_target_key,
+      });
+      const mapInvited = (s: {
+        id: string;
+        token: string;
+        folder_name: string;
+        item_type?: string;
+        permission: string;
+        share_url: string;
+        sharedBy?: string;
+        owner_id?: string;
+        sharedByEmail?: string;
+        sharedByPhotoUrl?: string;
+        recipient_mode?: string;
+        workspace_target?: { kind: string; id: string };
+        workspace_target_key?: string;
+      }): ShareListItem => ({
+        id: s.id,
+        token: s.token,
+        folder_name: s.folder_name,
+        item_type: s.item_type === "file" ? "file" : "folder",
+        permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
+        share_url: s.share_url,
+        sharedBy: s.sharedBy ?? "Someone",
+        owner_id: s.owner_id,
+        sharedByEmail: s.sharedByEmail,
+        sharedByPhotoUrl: s.sharedByPhotoUrl,
+        recipient_mode: s.recipient_mode,
+        workspace_target: s.workspace_target,
+        workspace_target_key: s.workspace_target_key,
+      });
+      setOwned((data.owned ?? []).map(mapOwned));
+      setInvited((data.invited ?? []).map(mapInvited));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load shares");
       setOwned([]);
@@ -97,7 +144,7 @@ export function useShares(): UseSharesResult {
       hasLoadedOnceRef.current = true;
       setLoading(false);
     }
-  }, [user]);
+  }, [user, listQuery]);
 
   const deleteShare = useCallback(
     async (token: string) => {

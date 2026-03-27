@@ -6,6 +6,11 @@ import {
 import { MACOS_PACKAGE_CONTAINERS_COLLECTION } from "@/lib/macos-package-container-admin";
 import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/macos-package-synthetic-id";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import {
+  getRecipientModeFromDoc,
+  parseWorkspaceTargetKey,
+  userCanAccessWorkspaceShareTarget,
+} from "@/lib/folder-share-workspace";
 
 function personalTeamSeatAllowsAccess(status: string | undefined): boolean {
   return status === "active" || status === "cold_storage";
@@ -96,6 +101,12 @@ export async function canAccessBackupFileById(
       if (data.invited_emails.some((e: string) => e?.toLowerCase() === userEmail.toLowerCase()))
         return true;
     }
+    if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
+      const key = data.workspace_target_key as string | undefined;
+      const parsed = parseWorkspaceTargetKey(key);
+      if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
+        return true;
+    }
   }
 
   // Single file share: backup_file_id
@@ -113,6 +124,12 @@ export async function canAccessBackupFileById(
     if (data.access_level === "public") return true;
     if (userEmail && Array.isArray(data.invited_emails)) {
       if (data.invited_emails.some((e: string) => e?.toLowerCase() === userEmail.toLowerCase()))
+        return true;
+    }
+    if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
+      const key = data.workspace_target_key as string | undefined;
+      const parsed = parseWorkspaceTargetKey(key);
+      if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
         return true;
     }
   }
@@ -134,6 +151,12 @@ export async function canAccessBackupFileById(
       if (data.access_level === "public") return true;
       if (userEmail && Array.isArray(data.invited_emails)) {
         if (data.invited_emails.some((e: string) => e?.toLowerCase() === userEmail.toLowerCase()))
+          return true;
+      }
+      if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
+        const key = data.workspace_target_key as string | undefined;
+        const parsed = parseWorkspaceTargetKey(key);
+        if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
           return true;
       }
     }
