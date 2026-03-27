@@ -37,6 +37,7 @@ export default function DashboardShell({
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
   const rightPanelBasePath = teamNavBase ?? "/dashboard";
+  const commentsHref = teamNavBase ? `${teamNavBase}/comments` : undefined;
   const teamThemeVars = teamWs ? getThemeVariables(teamWs.teamThemeId) : {};
   const stackedNavTop = teamWs ? "top-[6.25rem]" : "top-14";
   const mobilePanelBtnTop = teamWs ? "top-[7.25rem]" : "top-16";
@@ -97,6 +98,7 @@ export default function DashboardShell({
           >
             <RightPanel
               basePath={rightPanelBasePath}
+              commentsHref={commentsHref}
               onMobileClose={() => setRightPanelOpen(false)}
             />
           </div>

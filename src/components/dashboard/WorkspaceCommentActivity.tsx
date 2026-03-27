@@ -102,7 +102,7 @@ export default function WorkspaceCommentActivity({
         {title}
       </h2>
       <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-        Recent comments on files in this workspace. Open the file from All files to view the thread.
+        Recent comments on files in this workspace. Click a file to open it in the immersive viewer with comments.
       </p>
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -132,9 +132,9 @@ export default function WorkspaceCommentActivity({
                   </td>
                   <td className="py-2 pr-3">
                     <Link
-                      href={`${filesBasePath}/files`}
+                      href={`${filesBasePath}/files?preview=${encodeURIComponent(row.fileId)}`}
                       className="font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-                      title={`File id: ${row.fileId}`}
+                      title={`Open preview: ${row.fileName}`}
                     >
                       {row.fileName}
                     </Link>

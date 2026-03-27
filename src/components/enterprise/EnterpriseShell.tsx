@@ -19,7 +19,7 @@ export default function EnterpriseShell({
 }: {
   children: React.ReactNode;
 }) {
-  const { org } = useEnterprise();
+  const { org, role } = useEnterprise();
   const { cssVariables } = useDashboardAppearance();
   const theme = org?.theme ?? "bizzi";
   const orgVars = getThemeVariables(theme);
@@ -71,6 +71,7 @@ export default function EnterpriseShell({
         >
           <RightPanel
             basePath="/enterprise"
+            commentsHref={role === "admin" ? "/enterprise/comments" : undefined}
             storageComponent={<EnterpriseStorageBadge />}
             onMobileClose={() => setRightPanelOpen(false)}
           />

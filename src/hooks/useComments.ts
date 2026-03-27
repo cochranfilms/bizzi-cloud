@@ -20,6 +20,7 @@ function mapCommentFromApi(raw: Record<string, unknown>, fileId: string): Commen
     authorUserId: raw.authorUserId as string,
     authorDisplayName: (raw.authorDisplayName ?? null) as string | null,
     authorEmail: (raw.authorEmail ?? null) as string | null,
+    authorPhotoURL: (raw.authorPhotoURL ?? null) as string | null,
     authorRoleSnapshot: (raw.authorRoleSnapshot ?? null) as string | null,
     workspace_type: (raw.workspace_type ?? null) as Comment["workspace_type"],
     workspace_id: (raw.workspace_id ?? null) as string | null,

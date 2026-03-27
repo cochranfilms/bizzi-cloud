@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { Send } from "lucide-react";
 
 const MAX_HEIGHT_PX = 128;
@@ -14,6 +15,17 @@ interface AddCommentInputProps {
   autoFocus?: boolean;
   /** High-contrast chrome on glass/frosted immersive panels */
   immersiveChrome?: boolean;
+  /** Signed-in user avatar in immersive comment composer */
+  composerPhotoURL?: string | null;
+  /** For initials fallback when `composerPhotoURL` is empty */
+  composerDisplayLabel?: string;
+}
+
+function composerInitials(label: string): string {
+  const parts = label.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
+  return label.slice(0, 2).toUpperCase() || "?";
 }
 
 export default function AddCommentInput({
@@ -23,6 +35,8 @@ export default function AddCommentInput({
   showCancel = false,
   autoFocus = false,
   immersiveChrome = false,
+  composerPhotoURL,
+  composerDisplayLabel = "",
 }: AddCommentInputProps) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -69,8 +83,34 @@ export default function AddCommentInput({
     ? "min-h-[2.5rem] w-full resize-none rounded-none border border-white/25 bg-neutral-950/45 px-3 py-2 text-sm leading-snug text-white placeholder-neutral-400 focus:border-bizzi-cyan focus:outline-none focus:ring-1 focus:ring-bizzi-cyan/30 disabled:opacity-50"
     : "min-h-[2.5rem] w-full resize-none rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm leading-snug text-neutral-900 placeholder-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/20 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20";
 
+  const photo = composerPhotoURL?.trim() || null;
+  const showComposerAvatar = immersiveChrome && !!composerDisplayLabel.trim();
+
   return (
     <div className="flex items-end gap-2">
+      {showComposerAvatar ? (
+        <div
+          className={`relative mb-px h-9 w-9 shrink-0 overflow-hidden rounded-full ${
+            photo
+              ? ""
+              : "flex items-center justify-center bg-white/15 text-[11px] font-semibold text-white"
+          }`}
+          aria-hidden
+        >
+          {photo ? (
+            <Image
+              src={photo}
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 object-cover"
+              unoptimized
+            />
+          ) : (
+            composerInitials(composerDisplayLabel)
+          )}
+        </div>
+      ) : null}
       <textarea
         ref={textareaRef}
         value={body}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { Comment } from "@/types/collaboration";
 
@@ -50,6 +51,8 @@ export default function CommentItem({
   const name = displayName(comment, isOwn);
   const timeLabel = formatCommentTime(comment.createdAt);
   const role = comment.authorRoleSnapshot;
+  const avatarLabel = name === "You" ? comment.authorDisplayName || "You" : name;
+  const photoUrl = comment.authorPhotoURL?.trim() || null;
 
   if (comment.isDeleted) {
     return (
@@ -69,14 +72,27 @@ export default function CommentItem({
     <div className={`group relative py-2 ${immersiveChrome ? "rounded-none" : "rounded-lg"}`}>
       <div className="flex gap-2.5">
         <div
-          className={
-            immersiveChrome
-              ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold text-white"
-              : "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100"
-          }
+          className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-full ${
+            photoUrl
+              ? ""
+              : immersiveChrome
+                ? "flex items-center justify-center bg-white/15 text-[11px] font-semibold text-white"
+                : "flex items-center justify-center bg-neutral-200 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100"
+          }`}
           aria-hidden
         >
-          {initials(name === "You" ? comment.authorDisplayName || "You" : name)}
+          {photoUrl ? (
+            <Image
+              src={photoUrl}
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 object-cover"
+              unoptimized
+            />
+          ) : (
+            initials(avatarLabel)
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">

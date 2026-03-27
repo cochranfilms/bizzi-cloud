@@ -3,7 +3,7 @@
  * POST /api/files/[fileId]/comments - Create a comment.
  */
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   canAccessBackupFileById,
   getFileDisplayName,
@@ -36,6 +36,7 @@ function mapCommentDoc(d: QueryDocumentSnapshot) {
     authorUserId: data.authorUserId as string,
     authorDisplayName: (data.author_display_name ?? null) as string | null,
     authorEmail: (data.author_email ?? null) as string | null,
+    authorPhotoURL: (data.author_photo_url ?? null) as string | null,
     authorRoleSnapshot: (data.author_role_snapshot ?? null) as string | null,
     workspace_type: (data.workspace_type ?? null) as string | null,
     workspace_id: (data.workspace_id ?? null) as string | null,
@@ -78,6 +79,32 @@ async function hydrateAuthorFields(rows: CommentRow[]): Promise<CommentRow[]> {
   });
 }
 
+async function hydrateAuthorPhotos(rows: CommentRow[]): Promise<CommentRow[]> {
+  const need = [
+    ...new Set(
+      rows.filter((r) => !r.authorPhotoURL && r.authorUserId).map((r) => r.authorUserId)
+    ),
+  ];
+  if (need.length === 0) return rows;
+  const auth = getAdminAuth();
+  const photoByUid = new Map<string, string | null>();
+  const chunk = 100;
+  for (let i = 0; i < need.length; i += chunk) {
+    const batch = need.slice(i, i + chunk);
+    try {
+      const result = await auth.getUsers(batch.map((uid) => ({ uid })));
+      result.users.forEach((u) => photoByUid.set(u.uid, u.photoURL ?? null));
+    } catch (e) {
+      console.error("[comments GET] hydrateAuthorPhotos batch error", e);
+    }
+  }
+  return rows.map((r) => {
+    if (r.authorPhotoURL) return r;
+    const url = photoByUid.get(r.authorUserId);
+    return url ? { ...r, authorPhotoURL: url } : r;
+  });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ fileId: string }> }
@@ -113,6 +140,7 @@ export async function GET(
 
   let comments = snap.docs.map((d) => mapCommentDoc(d));
   comments = await hydrateAuthorFields(comments);
+  comments = await hydrateAuthorPhotos(comments);
 
   return NextResponse.json({ comments });
 }
@@ -154,6 +182,14 @@ export async function POST(
     "Member";
   const authorEmail = (prof?.email as string | undefined) || auth.email || null;
 
+  let authorPhotoURL: string | null = null;
+  try {
+    const authUser = await getAdminAuth().getUser(auth.uid);
+    authorPhotoURL = authUser.photoURL ?? null;
+  } catch {
+    // ignore
+  }
+
   const now = new Date();
   const doc: Record<string, unknown> = {
     fileId,
@@ -161,6 +197,7 @@ export async function POST(
     authorUserId: auth.uid,
     author_display_name: authorDisplayName,
     author_email: authorEmail,
+    author_photo_url: authorPhotoURL,
     author_role_snapshot: authorRoleSnapshot,
     workspace_type: scope.workspace_type,
     workspace_id: scope.workspace_id,
@@ -210,6 +247,7 @@ export async function POST(
     authorUserId: auth.uid,
     authorDisplayName,
     authorEmail,
+    authorPhotoURL,
     authorRoleSnapshot,
     workspace_type: scope.workspace_type,
     workspace_id: scope.workspace_id,

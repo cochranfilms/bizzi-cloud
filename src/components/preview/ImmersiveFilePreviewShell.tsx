@@ -9,6 +9,7 @@ import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceCon
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
+import { LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP } from "@/lib/landing-gradient";
 
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
@@ -129,8 +130,9 @@ export default function ImmersiveFilePreviewShell({
     : {
         WebkitBackdropFilter: BACKDROP_BLUR,
         backdropFilter: BACKDROP_BLUR,
-        backgroundColor: "rgba(5, 16, 42, 0.9)",
-        backgroundImage: `radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.22, washOpacity + 0.08)}), transparent 56%), linear-gradient(180deg, rgba(25, 65, 120, 0.45) 0%, rgba(4, 14, 38, 0.94) 42%, rgba(2, 8, 24, 0.96) 100%)`,
+        /** Landing-page sky gradient (hues) over blur; slightly translucent so the dashboard shows through */
+        backgroundColor: "rgba(255, 255, 255, 0.12)",
+        backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
       };
 
   const headerChromeBorder: CSSProperties = isGallery

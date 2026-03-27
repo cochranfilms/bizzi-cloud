@@ -13,7 +13,6 @@ import {
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
-import WorkspaceCommentActivity from "@/components/dashboard/WorkspaceCommentActivity";
 import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
 
 export default function TeamSettingsPage() {
@@ -323,11 +322,6 @@ export default function TeamSettingsPage() {
                 ))}
               </div>
             </section>
-
-            <WorkspaceCommentActivity
-              apiPath={`/api/team/${encodeURIComponent(teamOwnerUid)}/comments/activity`}
-              filesBasePath={`/team/${encodeURIComponent(teamOwnerUid)}`}
-            />
 
             <TeamManagementSection />
           </div>

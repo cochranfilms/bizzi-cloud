@@ -29,7 +29,7 @@ import { getAuthToken } from "@/lib/auth-token";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
 import ItemActionsMenu from "./ItemActionsMenu";
 import BulkMoveModal from "./BulkMoveModal";
@@ -233,6 +233,8 @@ export default function FileGrid() {
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const isBizziCloudBaseDrive = (name: string) =>
     name === "Storage" || name === "RAW" || name === "Gallery Media";
   const {
@@ -506,6 +508,27 @@ export default function FileGrid() {
       }
     }
   }, [searchParams, currentDrive, visibleDriveFolders, openDrive, clearFiltersAndKeepDrive]);
+
+  // Deep link from comment activity (and similar): /files?preview=<fileId> opens immersive preview
+  const previewFromUrl = searchParams.get("preview");
+  useEffect(() => {
+    const fileId = previewFromUrl?.trim();
+    if (!fileId) return;
+    let cancelled = false;
+    void (async () => {
+      const files = await fetchFilesByIds([fileId], 1);
+      if (cancelled) return;
+      if (files[0]) setPreviewFile(files[0]);
+      const next = new URLSearchParams(searchParams.toString());
+      if (!next.has("preview")) return;
+      next.delete("preview");
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewFromUrl, fetchFilesByIds, router, pathname, searchParams]);
 
   const toggleFileSelection = useCallback((id: string) => {
     setSelectedFileIds((prev) => {

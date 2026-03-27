@@ -12,8 +12,6 @@ import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
-import WorkspaceCommentActivity from "@/components/dashboard/WorkspaceCommentActivity";
-
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
@@ -279,14 +277,6 @@ export default function EnterpriseSettingsPage() {
               ))}
             </div>
           </section>
-
-          {isAdmin ? (
-            <WorkspaceCommentActivity
-              apiPath="/api/enterprise/comments/activity"
-              filesBasePath="/enterprise"
-              title="Organization file comments"
-            />
-          ) : null}
 
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
             <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">

@@ -89,6 +89,8 @@ export interface Comment {
   /** Denormalized at write; GET may hydrate from profiles if missing. */
   authorDisplayName?: string | null;
   authorEmail?: string | null;
+  /** From Firebase Auth / denormalized on write; GET may hydrate via Admin Auth if missing. */
+  authorPhotoURL?: string | null;
   authorRoleSnapshot?: string | null;
   workspace_type?: FileCommentWorkspaceType | null;
   workspace_id?: string | null;

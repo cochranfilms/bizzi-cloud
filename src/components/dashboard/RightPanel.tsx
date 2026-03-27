@@ -8,6 +8,7 @@ import {
   FolderKanban,
   Activity,
   Share2,
+  MessageCircle,
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
 import SyncDriveButton from "./SyncDriveButton";
@@ -22,6 +23,8 @@ interface RightPanelProps {
   onMobileClose?: () => void;
   /** Base path for links (e.g. /dashboard or /enterprise). Default: /dashboard */
   basePath?: string;
+  /** When set, shows a Quick access link (org / team file comment activity). */
+  commentsHref?: string;
   /** Optional custom storage component (e.g. EnterpriseStorageBadge). Default: StorageBadge */
   storageComponent?: React.ReactNode;
 }
@@ -29,6 +32,7 @@ interface RightPanelProps {
 export default function RightPanel({
   onMobileClose,
   basePath = "/dashboard",
+  commentsHref,
   storageComponent,
 }: RightPanelProps) {
   const pathname = usePathname();
@@ -62,6 +66,22 @@ export default function RightPanel({
               </li>
             );
           })}
+          {commentsHref ? (
+            <li key={commentsHref}>
+              <Link
+                href={commentsHref}
+                onClick={onMobileClose}
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === commentsHref
+                    ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                    : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                }`}
+              >
+                <MessageCircle className="h-4 w-4 flex-shrink-0" />
+                Comments
+              </Link>
+            </li>
+          ) : null}
         </ul>
       </div>
 

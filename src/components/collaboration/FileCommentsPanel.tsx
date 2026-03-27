@@ -113,6 +113,10 @@ export default function FileCommentsPanel({
           placeholder="Add a comment…"
           autoFocus={false}
           immersiveChrome={immersiveChrome}
+          composerPhotoURL={user.photoURL ?? null}
+          composerDisplayLabel={
+            user.displayName?.trim() || user.email?.split("@")[0] || user.uid.slice(0, 8)
+          }
         />
       ) : (
         <p
