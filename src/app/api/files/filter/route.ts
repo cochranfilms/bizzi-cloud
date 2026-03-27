@@ -19,8 +19,8 @@ import { resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import {
   fileBelongsToPersonalTeamContainer,
-  isPersonalScopeDriveDoc,
-  isPersonalScopeFileDoc,
+  fileVisibleOnPersonalDashboard,
+  isPersonalDashboardDriveDoc,
   isTeamContainerDriveDoc,
 } from "@/lib/backup-scope";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
@@ -623,7 +623,10 @@ export async function GET(request: Request) {
       const data = d.data();
       if (!data.deleted_at) {
         const oid = data.organization_id ?? null;
-        if (!oid && isPersonalScopeDriveDoc(data as Record<string, unknown>)) {
+        if (
+          !oid &&
+          isPersonalDashboardDriveDoc(data as Record<string, unknown>, uid)
+        ) {
           driveMap.set(d.id, data.name ?? "Folder");
         }
       }
@@ -855,7 +858,7 @@ export async function GET(request: Request) {
                 doc.data() as Record<string, unknown>,
                 filters.teamOwnerUserId
               )
-            : isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
+            : fileVisibleOnPersonalDashboard(doc.data() as Record<string, unknown>, uid)
         );
       const batchNeedsPostFilter =
         !!filters.resolution ||
@@ -1033,7 +1036,7 @@ export async function GET(request: Request) {
   let filteredDocs = snap.docs
     .filter(driveFilter)
     .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>));
-  if (orgFilter == null) {
+    if (orgFilter == null) {
     if (filters.teamOwnerUserId) {
       const tow = filters.teamOwnerUserId;
       filteredDocs = filteredDocs.filter((doc) =>
@@ -1041,7 +1044,7 @@ export async function GET(request: Request) {
       );
     } else {
       filteredDocs = filteredDocs.filter((doc) =>
-        isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
+        fileVisibleOnPersonalDashboard(doc.data() as Record<string, unknown>, uid)
       );
     }
   }

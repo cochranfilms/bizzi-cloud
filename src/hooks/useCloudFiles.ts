@@ -67,7 +67,8 @@ function filterScopedLinkedDrives(
       if (opts.teamRouteOwnerUid) {
         return d.personal_team_owner_id === opts.teamRouteOwnerUid;
       }
-      if (d.personal_team_owner_id) return false;
+      const pto = d.personal_team_owner_id ?? null;
+      if (pto && pto !== d.user_id) return false;
       const oid = d.organization_id ?? null;
       if (opts.isEnterpriseContext && opts.orgId) return oid === opts.orgId;
       return !oid;

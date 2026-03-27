@@ -290,6 +290,18 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     const storageRows = baseFolderItems.filter(
       (f) => f.driveId && isStorageDrive({ name: f.name })
     );
+    const mergeStoragePillar = (rows: FolderItem[]): FolderItem[] => {
+      if (rows.length <= 1) return rows;
+      const totalItems = rows.reduce((s, r) => s + r.items, 0);
+      const primary = rows.reduce((a, b) => {
+        if (a.items !== b.items) return a.items > b.items ? a : b;
+        const ca = createdMs(a.driveId!);
+        const cb = createdMs(b.driveId!);
+        if (ca !== cb) return ca <= cb ? a : b;
+        return a.driveId! <= b.driveId! ? a : b;
+      });
+      return [{ ...primary, items: totalItems }];
+    };
     const rawRows = baseFolderItems.filter((f) => {
       const ld = linkedDrives.find((x) => x.id === f.driveId);
       return ld?.is_creator_raw === true;
@@ -298,7 +310,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       (f) => f.driveId && isGalleryMediaDrive({ name: f.name })
     );
 
-    const merged = [...pickCanonical(storageRows), ...pickCanonical(rawRows), ...pickCanonical(galleryRows)];
+    const merged = [
+      ...mergeStoragePillar(storageRows),
+      ...pickCanonical(rawRows),
+      ...pickCanonical(galleryRows),
+    ];
     return merged.sort((a, b) => {
       const order = (name: string) => {
         const base = teamAwareBaseName(name);

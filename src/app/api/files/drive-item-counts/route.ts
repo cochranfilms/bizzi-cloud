@@ -19,8 +19,8 @@ import {
 } from "@/lib/workspace-access";
 import {
   fileBelongsToPersonalTeamContainer,
-  isPersonalScopeDriveDoc,
-  isPersonalScopeFileDoc,
+  fileVisibleOnPersonalDashboard,
+  isPersonalDashboardDriveDoc,
   isTeamContainerDriveDoc,
 } from "@/lib/backup-scope";
 import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
           !data ||
           owner !== uid ||
           data.organization_id ||
-          !isPersonalScopeDriveDoc(data as Record<string, unknown>)
+          !isPersonalDashboardDriveDoc(data as Record<string, unknown>, uid)
         ) {
           counts[driveId] = 0;
           return;
@@ -143,7 +143,7 @@ export async function GET(request: Request) {
           db,
           driveId,
           trashOnly,
-          isPersonalScopeFileDoc
+          (d) => fileVisibleOnPersonalDashboard(d, uid)
         );
       })
     );

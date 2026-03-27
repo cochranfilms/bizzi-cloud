@@ -549,7 +549,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         if (data.deleted_at) continue;
         const oid = data.organization_id ?? null;
         if (isEnterpriseContext && orgId ? oid !== orgId : !!oid) continue;
-        if (!isEnterpriseContext && !teamRouteOwnerUid && data.personal_team_owner_id) continue;
+        if (!isEnterpriseContext && !teamRouteOwnerUid) {
+          const pto = data.personal_team_owner_id as string | undefined;
+          if (pto && pto !== user.uid) continue;
+        }
         let name = data.name as string;
         if (name === "Uploads") {
           await updateDoc(doc(db, "linked_drives", d.id), { name: "Storage" });
@@ -730,7 +733,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           if (data.deleted_at) continue;
           const oid = data.organization_id ?? null;
           if (isEnterpriseContext && orgIdLocal ? oid !== orgIdLocal : !!oid) continue;
-          if (!isEnterpriseContext && !teamRouteOwnerUid && data.personal_team_owner_id) continue;
+          if (!isEnterpriseContext && !teamRouteOwnerUid) {
+            const pto = data.personal_team_owner_id as string | undefined;
+            if (pto && pto !== user.uid) continue;
+          }
           const ld = mapDoc(d as QueryDocumentSnapshot);
           if (ld) drives.push(ld);
         }
