@@ -35,7 +35,7 @@ function CommentReplyList({
     <div
       className={
         immersiveChrome
-          ? "ml-6 mt-2 border-l-2 border-neutral-700 pl-4 dark:border-white/35"
+          ? "ml-6 mt-2 border-l-2 border-white/30 pl-4"
           : "ml-6 mt-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-700"
       }
     >
@@ -83,7 +83,7 @@ export default function FileCommentsPanel({
         <h3
           className={
             immersiveChrome
-              ? "text-xs font-medium uppercase tracking-wide text-neutral-800 dark:text-neutral-200"
+              ? "text-xs font-medium uppercase tracking-wide text-white/90"
               : "text-sm font-medium text-neutral-700 dark:text-neutral-300"
           }
         >
@@ -97,7 +97,7 @@ export default function FileCommentsPanel({
             onChange={(e) => setSortOrder(e.target.value === "desc" ? "desc" : "asc")}
             className={
               immersiveChrome
-                ? "max-w-[9.5rem] rounded-md border border-neutral-600/50 bg-white/90 px-2 py-1 text-[11px] text-neutral-900 dark:border-white/25 dark:bg-neutral-900/60 dark:text-neutral-200"
+                ? "max-w-[9.5rem] rounded-none border border-white/20 bg-neutral-950/40 px-2 py-1 text-[11px] text-white/90"
                 : "max-w-[9.5rem] rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
             }
           >
@@ -118,7 +118,7 @@ export default function FileCommentsPanel({
         <p
           className={
             immersiveChrome
-              ? "py-4 text-sm text-neutral-700 dark:text-neutral-300"
+              ? "py-4 text-sm text-white/70"
               : "py-4 text-sm text-neutral-500 dark:text-neutral-400"
           }
         >
@@ -128,7 +128,13 @@ export default function FileCommentsPanel({
 
       <div className="min-h-[3rem]">
         {error ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+          <p
+            className={
+              immersiveChrome
+                ? "rounded-none border border-red-400/50 bg-red-950/35 px-3 py-2 text-xs text-red-200"
+                : "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+            }
+          >
             {error}
           </p>
         ) : null}
@@ -136,7 +142,7 @@ export default function FileCommentsPanel({
           <p
             className={
               immersiveChrome
-                ? "py-3 text-sm text-neutral-700 dark:text-neutral-300"
+                ? "py-3 text-sm text-white/70"
                 : "py-3 text-sm text-neutral-500 dark:text-neutral-400"
             }
           >
@@ -146,14 +152,14 @@ export default function FileCommentsPanel({
           <div
             className={
               immersiveChrome
-                ? "rounded-lg border border-dashed border-neutral-700 py-5 text-center dark:border-white/40"
+                ? "rounded-none border border-dashed border-white/35 py-5 text-center"
                 : "rounded-lg border border-dashed border-neutral-200 py-5 text-center dark:border-neutral-700"
             }
           >
             <p
               className={
                 immersiveChrome
-                  ? "text-sm text-neutral-800 dark:text-neutral-200"
+                  ? "text-sm text-white/80"
                   : "text-sm text-neutral-500 dark:text-neutral-400"
               }
             >

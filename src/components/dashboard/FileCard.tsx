@@ -61,13 +61,10 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 
 function isVideoFile(name: string) {
   return GALLERY_VIDEO_EXT.test(name.toLowerCase());
-}
-function isImageFile(name: string) {
-  return GALLERY_IMAGE_EXT.test(name);
 }
 function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
@@ -117,12 +114,10 @@ export default function FileCard({
     isVideo,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
-  const isImage = isImageFile(file.name);
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
     enabled: !!file.objectKey && isPdf && isInView,
   });
-  const hasLargePreview = isVideo || isImage || isPdf;
   const { confirm } = useConfirm();
   const hearts = useHearts(file.id);
   const sizeClasses = FILE_SIZE_CLASSES[layoutSize];
@@ -144,9 +139,7 @@ export default function FileCard({
     <div
       ref={cardRef}
       title={!showCardInfo ? file.name : undefined}
-      className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${aspectClass} ${sizeClasses.padding} ${
-        hasLargePreview ? "items-stretch" : "items-center"
-      } ${
+      className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${
         selected
           ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
@@ -244,9 +237,7 @@ export default function FileCard({
         </div>
       )}
       <div
-        className={`relative flex items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${
-          hasLargePreview ? "mb-2 w-full min-w-0 min-h-0 flex-1" : "shrink-0 " + sizeClasses.icon
-        }`}
+        className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
       >
         {isVideo && file.objectKey ? (
           <VideoScrubThumbnail
@@ -254,19 +245,20 @@ export default function FileCard({
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
             objectFit={videoObjectFit}
+            className="absolute inset-0 h-full min-h-0 w-full"
           />
-        ) : (thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
+        ) : thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, video frame, or PDF first page */}
             <img
               src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
               alt=""
-              className={`h-full w-full ${objectFit}`}
+              className={`absolute inset-0 h-full w-full ${objectFit}`}
             />
           </>
         ) : isVideo ? (
-          <div className="relative flex h-full w-full items-center justify-center">
-            <Film className="absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] text-neutral-500 dark:text-neutral-400" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Film className="absolute inset-2 max-h-full max-w-full text-neutral-500 dark:text-neutral-400" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
                 <Play className="ml-1 h-6 w-6 fill-white text-white" />
@@ -274,23 +266,25 @@ export default function FileCard({
             </div>
           </div>
         ) : (
-          <FileIcon className={sizeClasses.iconInner} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <FileIcon className={sizeClasses.iconInner} />
+          </div>
         )}
       </div>
       {showCardInfo && (
-        <div className="shrink-0 min-w-0">
-          <h3 className={`mb-1 truncate w-full text-center font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
+        <div className={`shrink-0 min-w-0 w-full ${sizeClasses.padding} pt-2`}>
+          <h3 className={`mb-1 truncate w-full text-left font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
             {file.name}
           </h3>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
             {formatBytes(file.size)} · {file.driveName}
           </p>
-          <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+          <p className="mt-0.5 text-left text-xs text-neutral-400 dark:text-neutral-500">
             {formatDate(file.modifiedAt)}
           </p>
           {isVideo && file.proxyStatus && (
             <p
-              className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400"
+              className="mt-1 text-left text-[10px] text-neutral-500 dark:text-neutral-400"
               title={
                 file.proxyStatus === "ready"
                   ? "Proxy ready for editing"
@@ -315,7 +309,7 @@ export default function FileCard({
             </p>
           )}
           <div
-            className="mt-2 flex justify-center"
+            className="mt-2 flex w-full justify-start"
             onClick={(e) => e.stopPropagation()}
             role="presentation"
           >

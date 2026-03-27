@@ -280,13 +280,14 @@ export default function FilePreviewModal({
           onToggle={hearts.toggle}
           size="sm"
           showCount
+          immersiveDark
         />
       ) : null}
       <button
         type="button"
         onClick={handleDownload}
         disabled={downloading}
-        className="touch-target-sm rounded-lg p-2 text-neutral-600 transition-colors hover:bg-neutral-900/10 hover:text-bizzi-blue disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-white/10 dark:hover:text-bizzi-cyan"
+        className="touch-target-sm rounded-none p-2 text-white/85 transition-colors hover:bg-white/10 hover:text-bizzi-cyan disabled:opacity-50"
         aria-label="Download full resolution"
       >
         <Download className="h-4 w-4" />

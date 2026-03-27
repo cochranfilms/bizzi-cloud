@@ -1,6 +1,13 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import {
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team-constants";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
-import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
+
+function personalTeamSeatAllowsAccess(status: string | undefined): boolean {
+  return status === "active" || status === "cold_storage";
+}
 
 /**
  * Verifies that a user has access to a backup file by ID.
@@ -22,32 +29,34 @@ export async function canAccessBackupFileById(
   // Owner
   if (fileData?.userId === uid) return true;
 
-  // Personal team: any active seat on the shared container (denormalized owner or team drive owner)
+  // Personal team: owner always has access (members upload with userId = member)
   if (!fileData?.organization_id) {
     const pto = fileData?.personal_team_owner_id as string | undefined;
-    if (pto) {
-      const seatSnap = await db
-        .collection(PERSONAL_TEAM_SEATS_COLLECTION)
-        .doc(`${pto}_${uid}`)
-        .get();
-      if (seatSnap.exists && seatSnap.data()?.status === "active") {
-        return true;
-      }
-    }
+    if (pto && pto === uid) return true;
+
     const linkedDriveIdEarly = fileData?.linked_drive_id as string | undefined;
     if (linkedDriveIdEarly) {
       const driveSnap = await db.collection("linked_drives").doc(linkedDriveIdEarly).get();
       const driveData = driveSnap.data();
       const driveTeamOwner = driveData?.personal_team_owner_id as string | undefined;
       if (driveTeamOwner && driveData?.userId === driveTeamOwner) {
+        if (uid === driveTeamOwner) return true;
         const seatSnap = await db
           .collection(PERSONAL_TEAM_SEATS_COLLECTION)
-          .doc(`${driveTeamOwner}_${uid}`)
+          .doc(personalTeamSeatDocId(driveTeamOwner, uid))
           .get();
-        if (seatSnap.exists && seatSnap.data()?.status === "active") {
-          return true;
-        }
+        const st = seatSnap.data()?.status as string | undefined;
+        if (seatSnap.exists && personalTeamSeatAllowsAccess(st)) return true;
       }
+    }
+
+    if (pto) {
+      const seatSnap = await db
+        .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+        .doc(personalTeamSeatDocId(pto, uid))
+        .get();
+      const st = seatSnap.data()?.status as string | undefined;
+      if (seatSnap.exists && personalTeamSeatAllowsAccess(st)) return true;
     }
   }
 

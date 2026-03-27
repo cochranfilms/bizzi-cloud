@@ -13,7 +13,7 @@ import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accen
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
 
-const BACKDROP_BLUR = "blur(44px) saturate(1.06)";
+const BACKDROP_BLUR = "blur(56px) saturate(1.08)";
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -117,54 +117,50 @@ export default function ImmersiveFilePreviewShell({
 
   const isGallery = variant === "gallery";
 
-  const baseTint = isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)";
   const washOpacity = isDark ? ambientStrengthDark : ambientStrength;
-  const backdropStyle: CSSProperties = {
-    WebkitBackdropFilter: BACKDROP_BLUR,
-    backdropFilter: BACKDROP_BLUR,
-    backgroundColor: baseTint,
-    backgroundImage: `radial-gradient(ellipse 85% 60% at 50% -5%, rgba(${accentRgb},${washOpacity}), transparent 55%), linear-gradient(180deg, rgba(${accentRgb},${washOpacity * 0.45}) 0%, transparent 35%)`,
-  };
+  /** Strong blue veil + accent wash so the dashboard recedes; blur works where the engine supports it */
+  const backdropStyle: CSSProperties = isGallery
+    ? {
+        WebkitBackdropFilter: BACKDROP_BLUR,
+        backdropFilter: BACKDROP_BLUR,
+        backgroundColor: isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)",
+        backgroundImage: `radial-gradient(ellipse 85% 60% at 50% -5%, rgba(${accentRgb},${washOpacity}), transparent 55%), linear-gradient(180deg, rgba(${accentRgb},${washOpacity * 0.45}) 0%, transparent 35%)`,
+      }
+    : {
+        WebkitBackdropFilter: BACKDROP_BLUR,
+        backdropFilter: BACKDROP_BLUR,
+        backgroundColor: "rgba(5, 16, 42, 0.9)",
+        backgroundImage: `radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.22, washOpacity + 0.08)}), transparent 56%), linear-gradient(180deg, rgba(25, 65, 120, 0.45) 0%, rgba(4, 14, 38, 0.94) 42%, rgba(2, 8, 24, 0.96) 100%)`,
+      };
 
-  const headerAccentStyle: CSSProperties = {
-    borderBottomColor: workspaceAccent,
-    borderBottomWidth: 2,
-    borderBottomStyle: "solid",
-  };
+  const headerChromeBorder: CSSProperties = isGallery
+    ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }
+    : {
+        borderWidth: 2,
+        borderStyle: "solid",
+        borderColor: workspaceAccent,
+      };
 
-  const railAccentClass =
-    envKey === "personal"
-      ? isDark
-        ? "border-l border-neutral-800"
-        : "border-l border-neutral-200/90"
-      : "";
-
-  const railAccentStyle: CSSProperties | undefined =
-    envKey !== "personal"
+  const railChromeBorder: CSSProperties | undefined = isGallery
+    ? undefined
+    : envKey === "personal"
       ? {
-          borderLeftWidth: 3,
-          borderLeftStyle: "solid",
-          borderLeftColor: workspaceAccent,
+          borderWidth: 2,
+          borderStyle: "solid",
+          borderColor: isDark ? "rgba(120, 120, 120, 0.45)" : "rgba(70, 70, 80, 0.4)",
         }
-      : undefined;
+      : {
+          borderWidth: 2,
+          borderStyle: "solid",
+          borderColor: workspaceAccent,
+        };
 
-  const barBg = isGallery
-    ? "bg-black/52"
-    : isDark
-      ? "bg-neutral-950/72"
-      : "bg-white/78";
+  const barBg = isGallery ? "bg-black/52" : "bg-neutral-950/78";
 
-  const titleClass = isGallery
-    ? "text-white/95"
-    : isDark
-      ? "text-white"
-      : "text-neutral-950";
+  /** Header bar is always dark glass in app mode so the filename stays legible in light and dark theme */
+  const titleClass = "text-white/95";
 
-  const closeBtn = isGallery
-    ? "text-white/90 hover:bg-white/15"
-    : isDark
-      ? "text-white/90 hover:bg-white/10"
-      : "text-neutral-900 hover:bg-neutral-900/10";
+  const closeBtn = "text-white/90 hover:bg-white/15";
 
   const asideDivider = isGallery
     ? "border-white/15"
@@ -194,7 +190,7 @@ export default function ImmersiveFilePreviewShell({
 
   const rightRailOuter = isGallery
     ? "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-white/28 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4"
-    : `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-neutral-200/40 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4 dark:border-white/12 ${panelBaseApp}`;
+    : "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-none border-0 bg-neutral-950/75 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4";
 
   const shell = (
     <div
@@ -217,13 +213,11 @@ export default function ImmersiveFilePreviewShell({
         onClick={(e) => e.stopPropagation()}
       >
         <header
-          className={`relative z-20 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-xl border-0 px-3 py-2 backdrop-blur-2xl sm:mb-3 sm:rounded-2xl sm:px-4 ${barBg}`}
+          className={`relative z-20 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-none border-0 px-3 py-2 backdrop-blur-2xl sm:mb-3 sm:px-4 ${barBg}`}
           style={{
             WebkitBackdropFilter: "blur(20px)",
             backdropFilter: "blur(20px)",
-            ...(isGallery
-              ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }
-              : headerAccentStyle),
+            ...headerChromeBorder,
           }}
         >
           {title ? (
@@ -242,7 +236,7 @@ export default function ImmersiveFilePreviewShell({
           <button
             type="button"
             onClick={onClose}
-            className={`touch-target-sm ml-auto flex shrink-0 items-center justify-center rounded-full p-2 transition-colors ${closeBtn}`}
+            className={`touch-target-sm ml-auto flex shrink-0 items-center justify-center rounded-none p-2 transition-colors ${closeBtn}`}
             aria-label="Close"
           >
             <X className="h-5 w-5 sm:h-6 sm:w-6" />
@@ -285,8 +279,8 @@ export default function ImmersiveFilePreviewShell({
 
             {hasRight ? (
               <aside
-                className={`${rightRailOuter} ${railAccentClass}`}
-                style={!isGallery ? railAccentStyle : undefined}
+                className={rightRailOuter}
+                style={!isGallery ? railChromeBorder : undefined}
               >
                 <div className="max-h-[min(42dvh,520px)] overflow-y-auto px-3 py-3 sm:px-3.5 sm:py-3.5 lg:max-h-[calc(100dvh-5.5rem)]">
                   {rightRail}

@@ -56,7 +56,7 @@ export default function CommentItem({
       <div
         className={
           immersiveChrome
-            ? "py-1.5 text-xs italic text-neutral-600 dark:text-neutral-400"
+            ? "py-1.5 text-xs italic text-white/45"
             : "py-1.5 text-xs italic text-neutral-500 dark:text-neutral-400"
         }
       >
@@ -66,12 +66,12 @@ export default function CommentItem({
   }
 
   return (
-    <div className="group relative rounded-lg py-2">
+    <div className={`group relative py-2 ${immersiveChrome ? "rounded-none" : "rounded-lg"}`}>
       <div className="flex gap-2.5">
         <div
           className={
             immersiveChrome
-              ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100"
+              ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold text-white"
               : "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100"
           }
           aria-hidden
@@ -83,20 +83,42 @@ export default function CommentItem({
             <span
               className={
                 immersiveChrome
-                  ? "text-sm font-medium text-neutral-900 dark:text-white"
+                  ? "text-sm font-medium text-white"
                   : "text-sm font-medium text-neutral-900 dark:text-white"
               }
             >
               {name}
             </span>
             {role && name !== "You" ? (
-              <span className="text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <span
+                className={
+                  immersiveChrome
+                    ? "text-[10px] uppercase tracking-wide text-white/50"
+                    : "text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+                }
+              >
                 {role.replace(/_/g, " ")}
               </span>
             ) : null}
-            <span className="text-[11px] text-neutral-500 dark:text-neutral-400">{timeLabel}</span>
+            <span
+              className={
+                immersiveChrome
+                  ? "text-[11px] text-white/55"
+                  : "text-[11px] text-neutral-500 dark:text-neutral-400"
+              }
+            >
+              {timeLabel}
+            </span>
             {comment.isEdited ? (
-              <span className="text-[11px] text-neutral-400 dark:text-neutral-500">· edited</span>
+              <span
+                className={
+                  immersiveChrome
+                    ? "text-[11px] text-white/45"
+                    : "text-[11px] text-neutral-400 dark:text-neutral-500"
+                }
+              >
+                · edited
+              </span>
             ) : null}
           </div>
           {editing ? (
@@ -107,7 +129,7 @@ export default function CommentItem({
                 rows={2}
                 className={
                   immersiveChrome
-                    ? "min-h-[3.5rem] w-full resize-y rounded-lg border border-neutral-700/90 bg-white px-2.5 py-2 text-sm text-neutral-950 focus:border-bizzi-blue focus:outline-none dark:border-white/35 dark:bg-neutral-950/55 dark:text-white"
+                    ? "min-h-[3.5rem] w-full resize-y rounded-none border border-white/25 bg-neutral-950/45 px-2.5 py-2 text-sm text-white placeholder-neutral-400 focus:border-bizzi-cyan focus:outline-none"
                     : "min-h-[3.5rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm focus:border-bizzi-blue focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
                 }
               />
@@ -138,7 +160,7 @@ export default function CommentItem({
             <p
               className={
                 immersiveChrome
-                  ? "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
+                  ? "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-white/85"
                   : "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
               }
             >
@@ -153,7 +175,7 @@ export default function CommentItem({
               onClick={() => setMenuOpen(!menuOpen)}
               className={
                 immersiveChrome
-                  ? "rounded p-1 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-900/10 group-hover:opacity-100 dark:text-neutral-300 dark:hover:bg-white/10"
+                  ? "rounded-none p-1 text-white/70 opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
                   : "rounded p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-800"
               }
               aria-label="Comment options"
