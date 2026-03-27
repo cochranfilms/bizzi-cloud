@@ -318,6 +318,11 @@ export default function FileGrid() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  /** Files landing: flat grid from filter API (no Storage/RAW/Gallery folder tiles). */
+  const allFilesFlatLanding =
+    typeof pathname === "string" &&
+    (/^\/(dashboard|enterprise)\/files$/.test(pathname) ||
+      /^\/team\/[^/]+\/files$/.test(pathname));
   const teamAwareDriveName = (name: string) => name.replace(/^\[Team\]\s+/, "");
   const isBizziCloudBaseDrive = (name: string) => {
     const b = teamAwareDriveName(name);
@@ -343,6 +348,7 @@ export default function FileGrid() {
     driveIdAsNavigation: isBizziCloudBaseDrive(currentDrive?.name ?? "")
       ? currentDrive?.id ?? null
       : null,
+    scopeAllFilesAtRoot: allFilesFlatLanding && !currentDrive,
   });
 
   const teamOwnerUserIdForPackages =
@@ -819,8 +825,11 @@ export default function FileGrid() {
 
   /** Stale-while-revalidate: keep showing previous files during filter load to avoid blinking */
   const fallbackFiles = currentDrive ? displayedFilesWithMacosPackages : recentFiles;
+  /** Flat /files landing should not flash "recents" while the cross-drive filter loads */
+  const skipFilteredFallbackWhileLoading =
+    allFilesFlatLanding && !currentDrive && useFilteredScoped;
   const filesToShow = useFilteredScoped
-    ? filtersLoading && filteredFiles.length === 0
+    ? filtersLoading && filteredFiles.length === 0 && !skipFilteredFallbackWhileLoading
       ? fallbackFiles
       : creativeProjectsFilterActive
         ? (filteredFilesWithCreativePackages ?? filteredFiles)
@@ -1977,7 +1986,9 @@ export default function FileGrid() {
             )}
             {filesToShow.length > 0 && (
               <>
-                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Recently synced files</h3>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  {useFilteredScoped ? "Files" : "Recently synced files"}
+                </h3>
                 {viewMode === "list" ? (
                   <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                     <table className="w-full text-left text-sm">
@@ -2083,6 +2094,16 @@ export default function FileGrid() {
                 )}
               </>
             )}
+            {!loading &&
+              useFilteredScoped &&
+              !filtersLoading &&
+              filesToShow.length === 0 && (
+                <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                  {hasFilters
+                    ? "No files match your filters. Try adjusting or clearing filters."
+                    : "No files yet. Upload or sync from Backup, then refresh."}
+                </div>
+              )}
             {!loading && !useFilteredScoped && folderItems.length === 0 && filesToShow.length === 0 && (
               <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No files yet. Click Sync in the Backup section to sync a drive.

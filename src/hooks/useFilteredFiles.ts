@@ -80,6 +80,11 @@ export interface UseFilteredFilesOptions {
   effectiveDriveId?: string | null;
   driveIdAsNavigation?: string | null;
   fallbackToCloudFiles?: boolean;
+  /**
+   * When true and user is at Files landing (no drive open), always use `/api/files/filter`
+   * across all linked drives instead of folder tiles + recents-only list.
+   */
+  scopeAllFilesAtRoot?: boolean;
 }
 
 export interface UseFilteredFilesResult {
@@ -112,7 +117,8 @@ export function useFilteredFiles(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { driveId, effectiveDriveId, driveIdAsNavigation } = options ?? {};
+  const { driveId, effectiveDriveId, driveIdAsNavigation, scopeAllFilesAtRoot = false } =
+    options ?? {};
   const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
@@ -141,10 +147,11 @@ export function useFilteredFiles(
   const effectiveFilterStateRef = useRef(effectiveFilterState);
   effectiveFilterStateRef.current = effectiveFilterState;
   const hasFilters = hasActiveFilters(effectiveFilterState);
-  const useFilteredScoped = hasFilters || !!effectiveDriveId;
+  const useFilteredScoped = scopeAllFilesAtRoot || hasFilters || !!effectiveDriveId;
   const filterKey = useMemo(
-    () => `${filterStateKey(effectiveFilterState)}|effective=${effectiveDriveId ?? ""}`,
-    [effectiveFilterState, effectiveDriveId]
+    () =>
+      `${filterStateKey(effectiveFilterState)}|effective=${effectiveDriveId ?? ""}|flatRoot=${scopeAllFilesAtRoot ? "1" : "0"}`,
+    [effectiveFilterState, effectiveDriveId, scopeAllFilesAtRoot]
   );
 
   const updateUrl = useCallback(

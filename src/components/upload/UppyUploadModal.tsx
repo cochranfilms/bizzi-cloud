@@ -17,6 +17,7 @@ import {
 } from "@/lib/macos-package-bundles";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
+import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -157,6 +158,8 @@ export default function UppyUploadModal({
       id: "AwsS3",
       endpoint: typeof window !== "undefined" ? `${window.location.origin}/api/uppy` : "",
       headers: {} as Record<string, string>,
+      /** Lower than default 6 to reduce concurrent B2/S3 sockets during huge .fcpbundle uploads */
+      limit: 3,
       shouldUseMultipart: (file: { size?: number | null }) => (file.size ?? 0) > 5 * 1024 * 1024,
       retryDelays: [0, 1000, 3000, 5000, 10000],
       uploadPartBytes: uploadPartBytesCompat,
@@ -289,28 +292,30 @@ export default function UppyUploadModal({
           meta.lastModified ??
           null;
         if (metaDriveId && relativePath && sizeBytes) {
-          try {
-            const token = await getAuthToken(false);
-            if (!token) return;
-            await fetch(`${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                driveId: metaDriveId,
-                relativePath,
-                sizeBytes: Number(sizeBytes),
-                contentType,
-                lastModified: lastModified != null ? Number(lastModified) : null,
-                workspaceId: meta.workspaceId ?? null,
-                galleryId: meta.galleryId ?? null,
-              }),
-            });
-          } catch {
-            // Non-blocking; file is in B2, record creation may retry or user can re-upload
-          }
+          enqueuePresignedComplete(async () => {
+            try {
+              const token = await getAuthToken(false);
+              if (!token) return;
+              await fetch(`${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  driveId: metaDriveId,
+                  relativePath,
+                  sizeBytes: Number(sizeBytes),
+                  contentType,
+                  lastModified: lastModified != null ? Number(lastModified) : null,
+                  workspaceId: meta.workspaceId ?? null,
+                  galleryId: meta.galleryId ?? null,
+                }),
+              });
+            } catch {
+              // Non-blocking; file is in B2, record creation may retry or user can re-upload
+            }
+          });
         }
       }
       updateProgress();
