@@ -12,6 +12,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
+import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
@@ -79,6 +80,8 @@ export default function FilePreviewModal({
   lutConfig = null,
   lutLibrary = null,
 }: FilePreviewModalProps) {
+  const theme = useThemeResolved();
+  const immersiveLightChrome = theme === "light";
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoProcessing, setVideoProcessing] = useState(false);
@@ -280,14 +283,19 @@ export default function FilePreviewModal({
           onToggle={hearts.toggle}
           size="sm"
           showCount
-          immersiveDark
+          immersiveDark={!immersiveLightChrome}
+          immersiveLightChrome={immersiveLightChrome}
         />
       ) : null}
       <button
         type="button"
         onClick={handleDownload}
         disabled={downloading}
-        className="touch-target-sm rounded-none p-2 text-white/85 transition-colors hover:bg-white/10 hover:text-bizzi-cyan disabled:opacity-50"
+        className={
+          immersiveLightChrome
+            ? "touch-target-sm rounded-none p-2 text-neutral-800 transition-colors hover:bg-neutral-900/10 hover:text-bizzi-blue disabled:opacity-50"
+            : "touch-target-sm rounded-none p-2 text-white/85 transition-colors hover:bg-white/10 hover:text-bizzi-cyan disabled:opacity-50"
+        }
         aria-label="Download full resolution"
       >
         <Download className="h-4 w-4" />

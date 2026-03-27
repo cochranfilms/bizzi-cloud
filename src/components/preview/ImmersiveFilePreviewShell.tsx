@@ -9,7 +9,10 @@ import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceCon
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
-import { LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP } from "@/lib/landing-gradient";
+import {
+  LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP,
+  LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP_DARK,
+} from "@/lib/landing-gradient";
 
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
@@ -127,13 +130,21 @@ export default function ImmersiveFilePreviewShell({
         backgroundColor: isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)",
         backgroundImage: `radial-gradient(ellipse 85% 60% at 50% -5%, rgba(${accentRgb},${washOpacity}), transparent 55%), linear-gradient(180deg, rgba(${accentRgb},${washOpacity * 0.45}) 0%, transparent 35%)`,
       }
-    : {
-        WebkitBackdropFilter: BACKDROP_BLUR,
-        backdropFilter: BACKDROP_BLUR,
-        /** Landing-page sky gradient (hues) over blur; slightly translucent so the dashboard shows through */
-        backgroundColor: "rgba(255, 255, 255, 0.12)",
-        backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
-      };
+    : isDark
+      ? {
+          WebkitBackdropFilter: BACKDROP_BLUR,
+          backdropFilter: BACKDROP_BLUR,
+          /** Deeper sky gradient (same family as light immersive); white header chrome */
+          backgroundColor: "rgba(6, 28, 48, 0.42)",
+          backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP_DARK}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.12, washOpacity * 0.4)}), transparent 56%)`,
+        }
+      : {
+          WebkitBackdropFilter: BACKDROP_BLUR,
+          backdropFilter: BACKDROP_BLUR,
+          /** Landing-page sky gradient (hues) over blur; slightly translucent so the dashboard shows through */
+          backgroundColor: "rgba(255, 255, 255, 0.12)",
+          backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
+        };
 
   const headerChromeBorder: CSSProperties = isGallery
     ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }
@@ -157,12 +168,20 @@ export default function ImmersiveFilePreviewShell({
           borderColor: workspaceAccent,
         };
 
-  const barBg = isGallery ? "bg-black/52" : "bg-neutral-950/78";
+  const barBg = isGallery
+    ? "bg-black/52"
+    : isDark
+      ? "bg-slate-950/78"
+      : "bg-sky-50/55";
 
-  /** Header bar is always dark glass in app mode so the filename stays legible in light and dark theme */
-  const titleClass = "text-white/95";
+  /** App immersive: dark text on light sky backdrop (light theme), white text on deeper sky (dark theme) */
+  const titleClass = isGallery ? "text-white/95" : isDark ? "text-white/95" : "text-neutral-900";
 
-  const closeBtn = "text-white/90 hover:bg-white/15";
+  const closeBtn = isGallery
+    ? "text-white/90 hover:bg-white/15"
+    : isDark
+      ? "text-white/90 hover:bg-white/15"
+      : "text-neutral-800 hover:bg-neutral-900/10";
 
   const asideDivider = isGallery
     ? "border-white/15"
