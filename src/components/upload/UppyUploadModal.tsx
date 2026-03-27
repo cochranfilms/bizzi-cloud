@@ -25,6 +25,29 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+/**
+ * Presigned PUTs only sign host + x-amz-server-side-encryption. XMLHttpRequest sets
+ * Content-Type automatically for Blob/File when blob.type is non-empty (e.g. FCP
+ * bundles Safari/Chrome represent as zip-backed types). Unsigned Content-Type breaks
+ * SigV4 → B2 returns 403; Chrome surfaces as net::ERR_ACCESS_DENIED.
+ */
+async function uploadPartBytesCompat(
+  args: Parameters<typeof AwsS3.uploadPartBytes>[0]
+): ReturnType<typeof AwsS3.uploadPartBytes> {
+  const { body, size } = args;
+  // Empty `type` keeps XMLHttpRequest from attaching an unsigned Content-Type (see comment above).
+  if (body instanceof Blob && body.type !== "") {
+    const buffer = await body.arrayBuffer();
+    const bodyNeutral = new Blob([buffer], { type: "" });
+    return AwsS3.uploadPartBytes({
+      ...args,
+      body: bodyNeutral,
+      size: size ?? bodyNeutral.size,
+    });
+  }
+  return AwsS3.uploadPartBytes(args);
+}
+
 function resumeUploadIfNeeded(uppy: Uppy): void {
   const { currentUploads, files } = uppy.getState();
   if (Object.keys(currentUploads).length > 0) {
@@ -110,6 +133,7 @@ export default function UppyUploadModal({
       headers: {} as Record<string, string>,
       shouldUseMultipart: (file: { size?: number | null }) => (file.size ?? 0) > 5 * 1024 * 1024,
       retryDelays: [0, 1000, 3000, 5000, 10000],
+      uploadPartBytes: uploadPartBytesCompat,
     };
     uppy.use(AwsS3, awsS3Opts);
 
