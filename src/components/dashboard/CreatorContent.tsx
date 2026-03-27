@@ -208,7 +208,7 @@ export default function CreatorContent() {
             ) : (
               <div className={`grid gap-4 ${gridColsClass}`}>
                 {driveFiles.map((file) => (
-                  <div key={file.id}>
+                  <div key={file.id} className="h-full min-h-0">
                     <FileCard
                       file={file}
                       onClick={() => setPreviewFile(file)}

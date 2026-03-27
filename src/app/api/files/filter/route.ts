@@ -25,6 +25,7 @@ import {
 } from "@/lib/backup-scope";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { isCreativeProjectFilterMatch } from "@/lib/creative-file-registry";
+import { isImageFile, isVideoFile } from "@/lib/bizzi-file-types";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -140,6 +141,51 @@ function parseFilters(searchParams: URLSearchParams) {
     creativeProjects,
     workspaceId,
   };
+}
+
+/** Batch query path cannot apply these in Firestore; refine in memory like the main path. */
+function mustRefineInMemoryForBatchQuery(filters: ReturnType<typeof parseFilters>): boolean {
+  return !!(
+    filters.mediaTypes?.length ||
+    filters.mediaType ||
+    filters.assetTypes?.length ||
+    filters.assetType ||
+    filters.usageStatus ||
+    filters.galleryId ||
+    filters.starred
+  );
+}
+
+function mediaTypeWantsList(filters: {
+  mediaTypes?: string[];
+  mediaType?: string;
+}): string[] {
+  const out: string[] = filters.mediaTypes?.length ? [...filters.mediaTypes] : [];
+  if (filters.mediaType && !out.includes(filters.mediaType)) out.push(filters.mediaType);
+  return out;
+}
+
+function itemMatchesMediaTypeWants(item: Record<string, unknown>, wants: string[]): boolean {
+  if (wants.length === 0) return true;
+  const mt = String((item.media_type as string) ?? "").toLowerCase();
+  const ct = String((item.content_type as string) ?? item.mime_type ?? "").toLowerCase();
+  const path = String((item.relative_path as string) ?? "");
+  const base = path.split("/").filter(Boolean).pop() ?? path;
+
+  return wants.some((w) => {
+    const x = w.toLowerCase();
+    if (x === "video") {
+      if (mt === "video") return true;
+      if (ct.startsWith("video/")) return true;
+      return base.length > 0 && isVideoFile(base);
+    }
+    if (x === "photo") {
+      if (mt === "photo") return true;
+      if (ct.startsWith("image/")) return true;
+      return base.length > 0 && isImageFile(base);
+    }
+    return mt === x;
+  });
 }
 
 /** Compute aspect ratio string from dimensions (e.g. 1080x1920 -> "9:16") */
@@ -335,11 +381,14 @@ function passesPostFilters(
     const set = (filters as FiltersWithIds).commentedFileIds;
     if (!set?.has(String(item.id ?? ""))) return false;
   }
-  if (filters.mediaTypes?.length) {
-    const mt = String((item.media_type as string) ?? "").toLowerCase();
-    const hasMatch = filters.mediaTypes.some((m) => m.toLowerCase() === mt);
-    if (!hasMatch) return false;
+  if (filters.usageStatus) {
+    if (String((item.usage_status as string) ?? "") !== filters.usageStatus) return false;
   }
+  if (filters.galleryId) {
+    if (String((item.gallery_id as string) ?? "") !== filters.galleryId) return false;
+  }
+  const mediaWants = mediaTypeWantsList(filters);
+  if (mediaWants.length > 0 && !itemMatchesMediaTypeWants(item, mediaWants)) return false;
   if (filters.assetTypes?.length) {
     const at = String((item.asset_type as string) ?? "").toLowerCase();
     const hasMatch = filters.assetTypes.some((a) => a.toLowerCase() === at);
@@ -705,7 +754,8 @@ export async function GET(request: Request) {
         !!filters.commented ||
         !!filters.dateFrom ||
         !!filters.dateTo ||
-        !!filters.creativeProjects;
+        !!filters.creativeProjects ||
+        mustRefineInMemoryForBatchQuery(filters);
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -815,7 +865,8 @@ export async function GET(request: Request) {
         !!filters.commented ||
         !!filters.dateFrom ||
         !!filters.dateTo ||
-        !!filters.creativeProjects;
+        !!filters.creativeProjects ||
+        mustRefineInMemoryForBatchQuery(filters);
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -918,6 +969,7 @@ export async function GET(request: Request) {
   }
   q = q.orderBy(orderField, orderDir);
   const hasDateRangeFilter = !!(filters.dateFrom || filters.dateTo);
+  const mediaWantsForPost = mediaTypeWantsList(filters);
   const needsPostFilter =
     !!filters.resolution ||
     !!filters.codec ||
@@ -942,6 +994,7 @@ export async function GET(request: Request) {
     !!filters.commented ||
     hasDateRangeFilter ||
     !!filters.creativeProjects ||
+    mediaWantsForPost.length > 0 ||
     (orderField !== "size_bytes" && ((filters.sizeMin != null && filters.sizeMin >= 0) || (filters.sizeMax != null && filters.sizeMax > 0)));
   const fetchLimit = needsPostFilter ? MAX_FETCH_FOR_POST_FILTER : filters.pageSize;
 

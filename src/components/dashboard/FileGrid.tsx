@@ -27,6 +27,7 @@ import { useHeartedFiles } from "@/hooks/useHeartedFiles";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken } from "@/lib/auth-token";
 import { useBackup } from "@/context/BackupContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -45,18 +46,12 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
-import { expandMacosPackageRowIds } from "@/lib/macos-package-display";
+import {
+  expandMacosPackageRowIds,
+  mergeDriveFilesWithMacosPackages,
+  type MacosPackageListEntry,
+} from "@/lib/macos-package-display";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
-
-type MacosPackageListEntry = {
-  id: string;
-  root_relative_path: string;
-  root_segment_name?: string | null;
-  display_label?: string | null;
-  file_count: number;
-  total_bytes: number;
-  last_activity_at: string | null;
-};
 
 function recentFileFromMacosPackageListEntry(
   pkg: MacosPackageListEntry,
@@ -264,6 +259,7 @@ export default function FileGrid() {
     refresh: refreshHearted,
   } = useHeartedFiles();
   const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
+  const { org } = useEnterprise();
   const { loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
   const { setCurrentDrive: setCurrentFolderDriveId, currentDrivePath, setCurrentDrivePath, effectiveDriveIdForFiles } = useCurrentFolder();
@@ -279,6 +275,9 @@ export default function FileGrid() {
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [macosPackagesForFolder, setMacosPackagesForFolder] = useState<MacosPackageListEntry[]>([]);
+  const [creativeFilterPackagesByDrive, setCreativeFilterPackagesByDrive] = useState<
+    Record<string, MacosPackageListEntry[]>
+  >({});
   const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
   const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
   const [packageInfoLoading, setPackageInfoLoading] = useState(false);
@@ -323,7 +322,9 @@ export default function FileGrid() {
   const {
     files: filteredFiles,
     loading: filtersLoading,
-    totalCount,
+    loadMoreLoading: filtersLoadMoreLoading,
+    hasMore: filterHasMore,
+    loadMore: loadMoreFilteredFiles,
     hasFilters,
     useFilteredScoped,
     filterState,
@@ -339,6 +340,113 @@ export default function FileGrid() {
       ? currentDrive?.id ?? null
       : null,
   });
+
+  const teamOwnerUserIdForPackages =
+    pathname ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() || null : null;
+  const isEnterprisePackagesScope = pathname?.startsWith("/enterprise") ?? false;
+  const creativeProjectScopedDrives = useMemo((): LinkedDrive[] => {
+    return linkedDrives.filter((d) => {
+      if (isEnterprisePackagesScope && org?.id) return d.organization_id === org.id;
+      if (teamOwnerUserIdForPackages) {
+        return d.user_id === teamOwnerUserIdForPackages && !d.organization_id;
+      }
+      return !d.organization_id;
+    });
+  }, [linkedDrives, isEnterprisePackagesScope, org?.id, teamOwnerUserIdForPackages]);
+
+  const creativeProjectsFilterActive = useFilteredScoped && filterState.creative_projects === true;
+
+  useEffect(() => {
+    if (!creativeProjectsFilterActive) {
+      setCreativeFilterPackagesByDrive({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token || cancelled) return;
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const results = await Promise.all(
+          creativeProjectScopedDrives.map(
+            async (drive): Promise<[string, MacosPackageListEntry[]]> => {
+              try {
+                const packages = await fetchPackagesListCached({
+                  origin: base,
+                  token,
+                  driveId: drive.id,
+                  folderPath: "",
+                  storageVersion,
+                });
+                return [drive.id, packages];
+              } catch {
+                return [drive.id, []];
+              }
+            }
+          )
+        );
+        if (!cancelled) setCreativeFilterPackagesByDrive(Object.fromEntries(results));
+      } catch {
+        if (!cancelled) setCreativeFilterPackagesByDrive({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [creativeProjectsFilterActive, creativeProjectScopedDrives, storageVersion]);
+
+  const filteredFilesWithCreativePackages = useMemo((): RecentFile[] | null => {
+    if (!creativeProjectsFilterActive) return null;
+    const byDrive = new Map<string, RecentFile[]>();
+    for (const f of filteredFiles) {
+      if (!f.driveId) continue;
+      const arr = byDrive.get(f.driveId) ?? [];
+      arr.push(f);
+      byDrive.set(f.driveId, arr);
+    }
+    const merged: RecentFile[] = [];
+    const handled = new Set<string>();
+    for (const drive of creativeProjectScopedDrives) {
+      handled.add(drive.id);
+      const pkgs = creativeFilterPackagesByDrive[drive.id] ?? [];
+      const driveFilesForMerge = byDrive.get(drive.id) ?? [];
+      merged.push(
+        ...mergeDriveFilesWithMacosPackages(
+          driveFilesForMerge,
+          pkgs,
+          drive.id,
+          drive.name ?? "Folder"
+        )
+      );
+    }
+    for (const [driveId, files] of byDrive) {
+      if (!handled.has(driveId)) merged.push(...files);
+    }
+    merged.sort((a, b) => {
+      const ta = new Date(a.uploadedAt ?? a.modifiedAt ?? 0).getTime();
+      const tb = new Date(b.uploadedAt ?? b.modifiedAt ?? 0).getTime();
+      return tb - ta;
+    });
+    return merged;
+  }, [
+    creativeProjectsFilterActive,
+    filteredFiles,
+    creativeProjectScopedDrives,
+    creativeFilterPackagesByDrive,
+  ]);
+
+  const filesForPackageExpand = useMemo(
+    () => (creativeProjectsFilterActive ? filteredFiles : driveFiles),
+    [creativeProjectsFilterActive, filteredFiles, driveFiles]
+  );
+
+  const packagesForPackageExpand = useMemo(() => {
+    if (creativeProjectsFilterActive) {
+      return Object.values(creativeFilterPackagesByDrive).flat();
+    }
+    return macosPackagesForFolder;
+  }, [creativeProjectsFilterActive, creativeFilterPackagesByDrive, macosPackagesForFolder]);
+
   const handleSearchChange = useCallback(
     (v: string) => setFilter("search", v || undefined),
     [setFilter]
@@ -607,7 +715,7 @@ export default function FileGrid() {
   const filesToShow = useFilteredScoped
     ? filtersLoading && filteredFiles.length === 0
       ? fallbackFiles
-      : filteredFiles
+      : filteredFilesWithCreativePackages ?? filteredFiles
     : currentDrive
       ? displayedFilesWithMacosPackages
       : recentFiles;
@@ -940,7 +1048,7 @@ export default function FileGrid() {
       folderKeys: string[],
       targetDriveId: string
     ) => {
-      const expandedIds = expandMacosPackageRowIds(fileIds, driveFiles, macosPackagesForFolder);
+      const expandedIds = expandMacosPackageRowIds(fileIds, filesForPackageExpand, packagesForPackageExpand);
       if (expandedIds.length > 0) {
         await moveFilesToFolder(expandedIds, targetDriveId);
       }
@@ -972,8 +1080,8 @@ export default function FileGrid() {
       clearSelection,
       refetch,
       loadDriveFiles,
-      driveFiles,
-      macosPackagesForFolder,
+      filesForPackageExpand,
+      packagesForPackageExpand,
     ]
   );
 
@@ -1001,8 +1109,8 @@ export default function FileGrid() {
   const handleBulkNewTransfer = useCallback(async () => {
     const fileIds = expandMacosPackageRowIds(
       Array.from(selectedFileIds),
-      driveFiles,
-      macosPackagesForFolder
+      filesForPackageExpand,
+      packagesForPackageExpand
     );
     if (fileIds.length > 0) {
       const files = await fetchFilesByIds(fileIds);
@@ -1019,13 +1127,13 @@ export default function FileGrid() {
       setTransferInitialFiles([]);
     }
     setTransferModalOpen(true);
-  }, [selectedFileIds, fetchFilesByIds, driveFiles, macosPackagesForFolder]);
+  }, [selectedFileIds, fetchFilesByIds, filesForPackageExpand, packagesForPackageExpand]);
 
   const handleBulkShare = useCallback(async () => {
     const fileIds = expandMacosPackageRowIds(
       Array.from(selectedFileIds),
-      driveFiles,
-      macosPackagesForFolder
+      filesForPackageExpand,
+      packagesForPackageExpand
     );
     const folderKeys = Array.from(selectedFolderKeys);
     const folderDriveIds = folderKeys
@@ -1058,8 +1166,8 @@ export default function FileGrid() {
     refetch,
     currentDrive,
     loadDriveFiles,
-    driveFiles,
-    macosPackagesForFolder,
+    filesForPackageExpand,
+    packagesForPackageExpand,
   ]);
 
   const openMacosPackageInfo = useCallback((file: RecentFile) => {
@@ -1068,14 +1176,6 @@ export default function FileGrid() {
   }, []);
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
-
-  const totalFileCount = useFilteredScoped ? (() => {
-    const base = currentDrive
-      ? displayedFilesWithMacosPackages.length
-      : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
-    return base;
-  })() : (currentDrive ? displayedFilesWithMacosPackages.length : recentFiles.length);
-  const displayTotalCount = useFilteredScoped ? totalCount : totalFileCount;
 
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
   const mainGridFadeReady = currentDrive
@@ -1109,8 +1209,10 @@ export default function FileGrid() {
           {(useFilteredScoped || !currentDrive) && (
           <ActiveFilterBar
             activeFilters={activeFiltersWithLabels}
-            resultCount={filesToShow.length}
-            totalCount={useFilteredScoped ? totalCount : displayTotalCount}
+            loadedCount={filesToShow.length}
+            hasMoreFromApi={useFilteredScoped ? filterHasMore : false}
+            onLoadMore={useFilteredScoped ? loadMoreFilteredFiles : undefined}
+            loadMoreLoading={useFilteredScoped ? filtersLoadMoreLoading : false}
             onRemove={removeFilterById}
             onClearAll={clearFilters}
             onSaveView={undefined}
@@ -1318,7 +1420,7 @@ export default function FileGrid() {
                   data-item-id={file.id}
                   draggable={!!file.driveId}
                   onDragStart={handleDragStart}
-                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
                 >
                   <FileCard
                     file={file}
@@ -1570,9 +1672,7 @@ export default function FileGrid() {
                     data-item-id={file.id}
                     draggable={!!file.driveId && !isPkg}
                     onDragStart={handleDragStart}
-                    className={
-                      !!file.driveId && !isPkg ? "cursor-grab active:cursor-grabbing" : undefined
-                    }
+                    className={`h-full min-h-0${!!file.driveId && !isPkg ? " cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <FileCard
                       file={file}
@@ -1807,7 +1907,7 @@ export default function FileGrid() {
                       data-item-id={file.id}
                       draggable={!!file.driveId}
                       onDragStart={handleDragStart}
-                      className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                      className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
                     >
                       <FileCard
                         file={file}
@@ -1885,7 +1985,7 @@ export default function FileGrid() {
                     data-item-id={file.id}
                     draggable={!!file.driveId}
                     onDragStart={handleDragStart}
-                    className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <FileCard
                       file={file}

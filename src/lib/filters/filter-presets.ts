@@ -95,13 +95,23 @@ export interface QuickFilterDef {
   id: string;
   label: string;
   /** Filter state to apply when clicked (merge with current) */
-  apply: Record<string, string | string[] | boolean>;
+  apply: Record<string, string | string[] | boolean | undefined>;
+  /**
+   * Keys to clear when turning this chip on (e.g. legacy asset_type vs creative_projects).
+   * Only keys listed in `apply` participate in active-state detection.
+   */
+  clearOnApply?: string[];
 }
 
 export const QUICK_FILTERS: QuickFilterDef[] = [
   { id: "videos", label: "Videos", apply: { media_type: "video" } },
   { id: "photos", label: "Photos", apply: { media_type: "photo" } },
-  { id: "project_files", label: "Project Files", apply: { asset_type: "project_file" } },
+  {
+    id: "project_files",
+    label: "Project Files",
+    apply: { creative_projects: true },
+    clearOnApply: ["asset_type"],
+  },
   { id: "raw", label: "RAW", apply: { file_type: "raw" } },
   { id: "favorites", label: "Favorites", apply: { starred: true } },
   { id: "shared", label: "Shared", apply: { shared: true } },

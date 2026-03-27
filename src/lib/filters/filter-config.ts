@@ -136,6 +136,12 @@ export const UNIVERSAL_FILTERS: FilterDef[] = [
     ],
   },
   {
+    id: "creative_projects",
+    label: "Project files",
+    type: "checkbox",
+    field: "creative_projects",
+  },
+  {
     id: "shared",
     label: "Shared",
     type: "checkbox",

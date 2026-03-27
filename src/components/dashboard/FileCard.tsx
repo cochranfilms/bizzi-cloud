@@ -143,11 +143,13 @@ export default function FileCard({
     if (ok) onDelete?.();
   };
 
+  const sizeLine = `${formatBytes(file.size)} · ${file.driveName}${file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}`;
+
   return (
     <div
       ref={cardRef}
       title={!showCardInfo ? file.name : undefined}
-      className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${
+      className={`group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
         selected
           ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
@@ -320,26 +322,33 @@ export default function FileCard({
         )}
       </div>
       {showCardInfo && (
-        <div className={`shrink-0 min-w-0 w-full ${sizeClasses.padding} pt-2`}>
-          <h3 className={`mb-1 truncate w-full text-left font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${sizeClasses.padding} pt-2`}
+        >
+          <h3 className={`mb-1 w-full truncate text-left font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
             {file.name}
           </h3>
-          <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
-            {formatBytes(file.size)} · {file.driveName}
-            {file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}
+          <p
+            className="truncate text-left text-xs text-neutral-500 dark:text-neutral-400"
+            title={sizeLine}
+          >
+            {sizeLine}
           </p>
-          {isMacosPackage ? (
-            <p className="mt-0.5 text-left text-xs text-neutral-500 dark:text-neutral-400">
-              {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
-              {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
-            </p>
-          ) : null}
-          <p className="mt-0.5 text-left text-xs text-neutral-400 dark:text-neutral-500">
+          {/* Fixed slot so macOS package rows don’t shift the date / heart row vs other cards */}
+          <div className="mt-0.5 min-h-[1.375rem] shrink-0">
+            {isMacosPackage ? (
+              <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
+                {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
+                {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
+              </p>
+            ) : null}
+          </div>
+          <p className="mt-0.5 shrink-0 text-left text-xs text-neutral-400 dark:text-neutral-500">
             {formatDate(file.modifiedAt)}
           </p>
-          {!isMacosPackage && isVideo && file.proxyStatus && (
+          {!isMacosPackage && isVideo && file.proxyStatus ? (
             <p
-              className="mt-1 text-left text-[10px] text-neutral-500 dark:text-neutral-400"
+              className="mt-1 shrink-0 text-left text-[10px] text-neutral-500 dark:text-neutral-400"
               title={
                 file.proxyStatus === "ready"
                   ? "Proxy ready for editing"
@@ -362,10 +371,10 @@ export default function FileCard({
                       ? "RAW only"
                       : null}
             </p>
-          )}
+          ) : null}
           {showHeartRow ? (
             <div
-              className="mt-2 flex w-full justify-start"
+              className="mt-auto flex w-full justify-start pt-2"
               onClick={(e) => e.stopPropagation()}
               role="presentation"
             >

@@ -22,11 +22,23 @@ export interface ActiveFilter {
   label: string;
 }
 
+/** Query params that should deserialize as booleans (chip + drawer parity with Firestore filters). */
+const BOOLEAN_PARAM_KEYS = new Set([
+  "starred",
+  "shared",
+  "commented",
+  "creative_projects",
+]);
+
 /** Parse filter state from URL search params */
 export function filtersFromSearchParams(searchParams: URLSearchParams): FilterState {
   const state: FilterState = {};
   for (const [key, value] of searchParams) {
     if (!value) continue;
+    if (BOOLEAN_PARAM_KEYS.has(key)) {
+      state[key] = value === "true" || value === "1";
+      continue;
+    }
     const existing = state[key];
     if (existing === undefined) {
       state[key] = value;

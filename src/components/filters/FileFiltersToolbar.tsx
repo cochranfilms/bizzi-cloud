@@ -40,7 +40,7 @@ export default function FileFiltersToolbar({
   }, [searchValue]);
 
   useEffect(() => {
-    const t = setTimeout(() => onSearchChange(localSearch), 300);
+    const t = setTimeout(() => onSearchChange(localSearch), 400);
     return () => clearTimeout(t);
   }, [localSearch, onSearchChange]);
 

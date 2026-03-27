@@ -20,6 +20,7 @@ import {
   Activity,
   Building2,
   Archive,
+  Layers,
 } from "lucide-react";
 import { mapSeverityToBadge } from "@/admin/utils/mapSeverityToBadge";
 
@@ -38,6 +39,7 @@ const navGroups = [
     label: "Operations",
     items: [
       { href: "/admin/organizations", label: "Organizations", icon: Building2 },
+      { href: "/admin/platform-data", label: "Platform data", icon: Layers },
       { href: "/admin/files", label: "Files", icon: FileStack },
       { href: "/admin/cold-storage", label: "Cold Storage", icon: Archive },
       { href: "/admin/uploads", label: "Upload Analytics", icon: Upload },

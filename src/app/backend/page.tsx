@@ -658,6 +658,10 @@ export default function BackendDocPage() {
                     <td className="text-neutral-600 dark:text-neutral-400">Manage enterprise orgs, create orgs, resend signup links</td>
                   </tr>
                   <tr>
+                    <td className="py-2 pr-4">/admin/platform-data</td>
+                    <td className="text-neutral-600 dark:text-neutral-400">Workspaces, folder shares, and activity logs across all scopes</td>
+                  </tr>
+                  <tr>
                     <td className="py-2 pr-4">/admin/storage</td>
                     <td className="text-neutral-600 dark:text-neutral-400">Storage analytics, bucket stats, orphan cleanup</td>
                   </tr>

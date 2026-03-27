@@ -1000,7 +1000,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   data-item-id={file.id}
                   draggable={!!file.driveId}
                   onDragStart={handleDragStart}
-                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
                 >
                   <FileCard
                     file={file}
@@ -1227,7 +1227,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     data-item-id={file.id}
                     draggable={!!file.driveId}
                     onDragStart={handleDragStart}
-                    className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <FileCard
                       file={file}

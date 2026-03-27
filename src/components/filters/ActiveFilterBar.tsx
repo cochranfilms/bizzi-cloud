@@ -5,8 +5,15 @@ import type { ActiveFilter } from "@/lib/filters/apply-filters";
 
 interface ActiveFilterBarProps {
   activeFilters: ActiveFilter[];
-  resultCount: number;
-  totalCount: number;
+  /** Items currently shown in the grid for this view (e.g. after client-side merge). */
+  loadedCount: number;
+  /**
+   * When true, the filter API reported another page for this query.
+   * Not a global "total in library" — only "more pages exist for current filters".
+   */
+  hasMoreFromApi?: boolean;
+  onLoadMore?: () => void;
+  loadMoreLoading?: boolean;
   onRemove: (id: string, value?: string) => void;
   onClearAll: () => void;
   onSaveView?: () => void;
@@ -15,14 +22,18 @@ interface ActiveFilterBarProps {
 
 export default function ActiveFilterBar({
   activeFilters,
-  resultCount,
-  totalCount,
+  loadedCount,
+  hasMoreFromApi = false,
+  onLoadMore,
+  loadMoreLoading = false,
   onRemove,
   onClearAll,
   onSaveView,
   isLoading = false,
 }: ActiveFilterBarProps) {
   if (activeFilters.length === 0 && !isLoading) return null;
+
+  const countLabel = `${loadedCount} ${loadedCount === 1 ? "item" : "items"}`;
 
   return (
     <div className="flex flex-wrap items-center gap-2 py-2">
@@ -48,16 +59,23 @@ export default function ActiveFilterBar({
           >
             Clear all
           </button>
-          <span className="text-sm text-neutral-500 dark:text-neutral-400">
-            •
-          </span>
+          <span className="text-sm text-neutral-500 dark:text-neutral-400">•</span>
         </>
       )}
       <span className="text-sm text-neutral-500 dark:text-neutral-400">
-        {isLoading
-          ? "Loading…"
-          : `Showing ${resultCount} of ${totalCount} file${totalCount === 1 ? "" : "s"}`}
+        {isLoading ? "Loading…" : `Showing ${countLabel}`}
+        {!isLoading && hasMoreFromApi ? " · More on server" : null}
       </span>
+      {!isLoading && hasMoreFromApi && onLoadMore ? (
+        <button
+          type="button"
+          onClick={() => void onLoadMore()}
+          disabled={loadMoreLoading}
+          className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-bizzi-blue shadow-sm transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-600 dark:bg-neutral-800 dark:text-bizzi-cyan dark:hover:bg-neutral-700"
+        >
+          {loadMoreLoading ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
       {onSaveView && activeFilters.length > 0 && (
         <button
           type="button"

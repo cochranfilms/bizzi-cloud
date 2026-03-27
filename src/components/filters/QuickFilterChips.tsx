@@ -14,9 +14,10 @@ interface QuickFilterChipsProps {
 
 function isQuickFilterActive(
   filterState: FilterState,
-  apply: Record<string, string | string[] | boolean>
+  apply: Record<string, string | string[] | boolean | undefined>
 ): boolean {
   return Object.entries(apply).every(([key, value]) => {
+    if (value === undefined) return true;
     const current = filterState[key];
     if (typeof value === "boolean") return current === value;
     if (Array.isArray(value)) {
@@ -38,12 +39,19 @@ export default function QuickFilterChips({
   const handleClick = (def: QuickFilterDef) => {
     const isActive = isQuickFilterActive(filterState, def.apply);
     if (isActive) {
+      const keys = new Set([
+        ...Object.keys(def.apply),
+        ...(def.clearOnApply ?? []),
+      ]);
       const clear = Object.fromEntries(
-        Object.keys(def.apply).map((k) => [k, undefined as string | string[] | boolean | undefined])
+        [...keys].map((k) => [k, undefined as string | string[] | boolean | undefined])
       );
       onApply(clear);
     } else {
-      onApply(def.apply);
+      const extras = Object.fromEntries(
+        (def.clearOnApply ?? []).map((k) => [k, undefined as string | string[] | boolean | undefined])
+      );
+      onApply({ ...extras, ...def.apply });
     }
   };
 

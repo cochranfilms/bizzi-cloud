@@ -5,12 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { getUserIdToken } from "@/lib/auth-token";
-import {
-  apiFileToRecentFile,
-  type RecentFile,
-  useCloudFiles,
-  type DriveFolder,
-} from "@/hooks/useCloudFiles";
+import { apiFileToRecentFile, type RecentFile, useCloudFiles } from "@/hooks/useCloudFiles";
 import { usePathname } from "next/navigation";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
@@ -21,17 +16,15 @@ import {
   mergeDriveFilesWithMacosPackages,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
-import { Check, Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { Check, Download, FolderInput, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import SectionTitle from "./SectionTitle";
-import FolderCard, { type FolderItem } from "./FolderCard";
-import FolderListRow from "./FolderListRow";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
-import { filterDriveFoldersByPowerUp, filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useConfirm } from "@/hooks/useConfirm";
-import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
+import { getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
 import type { LinkedDrive } from "@/types/backup";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
@@ -91,59 +84,7 @@ function ProjectsFilesSkeleton({
   );
 }
 
-function ProjectsFolderStripSkeleton({
-  viewMode,
-  cardSize,
-  aspectRatio: _aspectRatio,
-}: {
-  viewMode: ViewMode;
-  cardSize: CardSize;
-  aspectRatio: AspectRatio;
-}) {
-  const pulse = "animate-pulse rounded-lg bg-neutral-200/80 dark:bg-neutral-800/90";
-  if (viewMode === "list") {
-    return (
-      <div
-        className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700"
-        aria-busy="true"
-        aria-label="Loading folders"
-      >
-        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 px-4 py-3">
-              <div className={`h-4 w-4 shrink-0 rounded ${pulse}`} />
-              <div className={`h-4 min-w-0 flex-1 ${pulse}`} />
-              <div className={`h-4 w-12 shrink-0 ${pulse}`} />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  const gridCols =
-    viewMode === "thumbnail"
-      ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-      : cardSize === "small"
-        ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-        : cardSize === "large"
-          ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
-          : "sm:grid-cols-3 md:grid-cols-4";
-  const n = viewMode === "thumbnail" ? 4 : 6;
-  return (
-    <div className={`grid gap-4 ${gridCols}`} aria-busy="true" aria-label="Loading folders">
-      {Array.from({ length: n }).map((_, i) => (
-        <div key={i} className="flex min-w-0 flex-col gap-2">
-          <div
-            className={`w-full rounded-xl ${
-              viewMode === "thumbnail" ? "aspect-video" : "aspect-[4/3]"
-            } ${pulse}`}
-          />
-          <div className={`h-3 w-[70%] ${pulse}`} />
-        </div>
-      ))}
-    </div>
-  );
-}
+const NO_FOLDER_SELECTION: Set<string> = new Set();
 
 type ProjectsContext = "personal" | "enterprise" | "team";
 
@@ -257,16 +198,11 @@ export default function ProjectsView({
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const { confirm } = useConfirm();
   const {
-    driveFolders,
-    loading: cloudLoading,
     refetch,
-    deleteFile,
     deleteFiles,
-    deleteFolder,
     fetchFilesByIds,
     getFileIdsForBulkShare,
     moveFilesToFolder,
-    moveFolderContentsToFolder,
   } = useCloudFiles();
   const { download: bulkDownload, isLoading: bulkDownloadLoading } = useBulkDownload({ fetchFilesByIds });
 
@@ -291,7 +227,6 @@ export default function ProjectsView({
   const [allPackagesForMove, setAllPackagesForMove] = useState<MacosPackageListEntry[]>([]);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
-  const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
@@ -322,46 +257,6 @@ export default function ProjectsView({
       return !d.organization_id;
     });
   }, [linkedDrives, ctx, org?.id, teamOwnerUserId]);
-
-  const scopedDriveIds = useMemo(() => new Set(scopedDrives.map((d) => d.id)), [scopedDrives]);
-
-  const teamAwareBaseName = (name: string) => name.replace(/^\[Team\]\s+/, "");
-  const isStorageDrive = (d: { name: string }) => teamAwareBaseName(d.name) === "Storage";
-  const isRawDrive = (d: { isCreatorRaw?: boolean }) => d.isCreatorRaw === true;
-  const isGalleryMediaDrive = (d: { name: string }) => teamAwareBaseName(d.name) === "Gallery Media";
-  const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
-    isStorageDrive(d) || isRawDrive(d) || isGalleryMediaDrive(d);
-
-  const folderStripItems: FolderItem[] = useMemo(() => {
-    const scopedFolderRows = driveFolders.filter((d) => scopedDriveIds.has(d.id));
-    const visibleSystem = filterDriveFoldersByPowerUp(scopedFolderRows, { hasEditor, hasGallerySuite });
-    const visibleSystemIds = new Set(visibleSystem.map((d) => d.id));
-    return scopedFolderRows
-      .filter((d) => {
-        if (isSystemDrive(d)) return visibleSystemIds.has(d.id);
-        return true;
-      })
-      .map((d) => ({
-        name: d.name,
-        type: "folder" as const,
-        key: d.key,
-        items: d.items,
-        hideShare: false,
-        driveId: d.id,
-        customIcon: d.isCreatorRaw ? Film : isGalleryMediaDrive(d) ? Images : undefined,
-        preventDelete: isSystemDrive(d),
-        preventRename: isSystemDrive(d),
-        preventMove: isSystemDrive(d),
-        isSystemFolder: isSystemDrive(d),
-      }))
-      .sort((a, b) => {
-        const order = (name: string) => {
-          const base = teamAwareBaseName(name);
-          return base === "Storage" ? 0 : base === "RAW" ? 1 : base === "Gallery Media" ? 2 : 3;
-        };
-        return order(a.name) - order(b.name);
-      });
-  }, [driveFolders, scopedDriveIds, hasEditor, hasGallerySuite]);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -479,7 +374,6 @@ export default function ProjectsView({
 
   const clearSelection = useCallback(() => {
     setSelectedFileIds(new Set());
-    setSelectedFolderKeys(new Set());
   }, []);
 
   const toggleFileSelection = useCallback((id: string) => {
@@ -491,21 +385,12 @@ export default function ProjectsView({
     });
   }, []);
 
-  const toggleFolderSelection = useCallback((key: string) => {
-    setSelectedFolderKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       const payload = getMovePayloadFromDragSource(
         e.currentTarget as HTMLElement,
         selectedFileIds,
-        selectedFolderKeys
+        NO_FOLDER_SELECTION
       );
       if (!payload || payload.fileIds.length + payload.folderKeys.length === 0) {
         e.preventDefault();
@@ -514,21 +399,14 @@ export default function ProjectsView({
       setDragMovePayload(e.dataTransfer, payload);
       e.dataTransfer.effectAllowed = "move";
     },
-    [selectedFileIds, selectedFolderKeys]
+    [selectedFileIds]
   );
 
   const performMove = useCallback(
-    async (fileIds: string[], folderKeys: string[], targetDriveId: string) => {
+    async (fileIds: string[], targetDriveId: string) => {
       const expandedIds = expandMacosPackageRowIds(fileIds, memberFilesForMove, allPackagesForMove);
       if (expandedIds.length > 0) {
         await moveFilesToFolder(expandedIds, targetDriveId);
-      }
-      for (const key of folderKeys) {
-        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
-        const drive = linkedDrives.find((d) => d.id === driveId);
-        if (drive && driveId !== targetDriveId) {
-          await moveFolderContentsToFolder(driveId, targetDriveId);
-        }
       }
       clearSelection();
       await refetch();
@@ -536,33 +414,15 @@ export default function ProjectsView({
       const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
       setMoveNotice(`Items moved into the "${destName}" folder`);
     },
-    [
-      memberFilesForMove,
-      allPackagesForMove,
-      moveFilesToFolder,
-      moveFolderContentsToFolder,
-      linkedDrives,
-      clearSelection,
-      refetch,
-      load,
-    ]
-  );
-
-  const handleDropOnFolder = useCallback(
-    async (targetDriveId: string, e: React.DragEvent) => {
-      const parsed = getDragMovePayload(e.dataTransfer);
-      if (!parsed) return;
-      await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
-    },
-    [performMove]
+    [memberFilesForMove, allPackagesForMove, moveFilesToFolder, linkedDrives, clearSelection, refetch, load]
   );
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
-      await performMove(Array.from(selectedFileIds), Array.from(selectedFolderKeys), targetDriveId);
+      await performMove(Array.from(selectedFileIds), targetDriveId);
       setMoveModalOpen(false);
     },
-    [selectedFileIds, selectedFolderKeys, performMove]
+    [selectedFileIds, performMove]
   );
 
   const handleBulkDelete = useCallback(async () => {
@@ -571,46 +431,21 @@ export default function ProjectsView({
       memberFilesForMove,
       allPackagesForMove
     );
-    const folderKeys = Array.from(selectedFolderKeys);
-    const total = fileIds.length + folderKeys.length;
-    if (total === 0) return;
+    if (fileIds.length === 0) return;
     const ok = await confirm({
-      message: `Delete ${total} item${total === 1 ? "" : "s"}? You can restore files from Deleted files.`,
+      message: `Delete ${fileIds.length} item${fileIds.length === 1 ? "" : "s"}? You can restore files from Deleted files.`,
       destructive: true,
     });
     if (!ok) return;
     try {
-      if (fileIds.length > 0) await deleteFiles(fileIds);
-      for (const key of folderKeys) {
-        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
-        const drive = linkedDrives.find((d) => d.id === driveId) as LinkedDrive | undefined;
-        const itemCount = driveFolders.find((f: DriveFolder) => f.key === key)?.items ?? 0;
-        const folderMeta = folderStripItems.find((f) => f.key === key);
-        if (drive && !folderMeta?.preventDelete) {
-          await deleteFolder({ id: drive.id, name: drive.name }, itemCount);
-        }
-      }
+      await deleteFiles(fileIds);
       clearSelection();
       await refetch();
       await load();
     } catch (e) {
       console.error(e);
     }
-  }, [
-    selectedFileIds,
-    selectedFolderKeys,
-    memberFilesForMove,
-    allPackagesForMove,
-    confirm,
-    deleteFiles,
-    deleteFolder,
-    linkedDrives,
-    driveFolders,
-    folderStripItems,
-    clearSelection,
-    refetch,
-    load,
-  ]);
+  }, [selectedFileIds, memberFilesForMove, allPackagesForMove, confirm, deleteFiles, clearSelection, refetch, load]);
 
   const handleBulkShare = useCallback(async () => {
     const fileIds = expandMacosPackageRowIds(
@@ -618,12 +453,8 @@ export default function ProjectsView({
       memberFilesForMove,
       allPackagesForMove
     );
-    const folderKeys = Array.from(selectedFolderKeys);
-    const folderDriveIds = folderKeys
-      .map((k) => (k.startsWith("drive-") ? k.slice(6) : k))
-      .filter(Boolean);
     try {
-      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds);
+      const allFileIds = await getFileIdsForBulkShare(fileIds, []);
       if (allFileIds.length === 0) return;
       setShareFolderName(`Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`);
       setShareReferencedFileIds(allFileIds);
@@ -636,16 +467,7 @@ export default function ProjectsView({
     } catch (e) {
       console.error(e);
     }
-  }, [
-    selectedFileIds,
-    selectedFolderKeys,
-    memberFilesForMove,
-    allPackagesForMove,
-    getFileIdsForBulkShare,
-    clearSelection,
-    refetch,
-    load,
-  ]);
+  }, [selectedFileIds, memberFilesForMove, allPackagesForMove, getFileIdsForBulkShare, clearSelection, refetch, load]);
 
   const handleBulkNewTransfer = useCallback(async () => {
     const fileIds = expandMacosPackageRowIds(
@@ -678,104 +500,8 @@ export default function ProjectsView({
 
   const movementFolders = filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite });
 
-  const showFolderSection = folderStripItems.length > 0 || cloudLoading;
-
   return (
     <div className="w-full space-y-0">
-      {showFolderSection ? (
-        <section className="mb-8 border-b border-neutral-200/60 pb-8 dark:border-neutral-800/60">
-          <SectionTitle className="mb-4">Folders</SectionTitle>
-          {folderStripItems.length > 0 ? (
-            viewMode === "list" ? (
-              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                      <th className="w-10 px-3 py-3" />
-                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
-                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Items</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {folderStripItems.map((item) => {
-                      const driveId = item.driveId ?? "";
-                      const isFolderInSelection = selectedFolderKeys.has(item.key);
-                      const isDropTarget =
-                        !!driveId &&
-                        !isFolderInSelection &&
-                        linkedDrives.some((d) => d.id === driveId);
-                      const canDragFolder = !!item.driveId && !item.preventMove;
-                      return (
-                        <FolderListRow
-                          key={item.key}
-                          item={item}
-                          isDropTarget={isDropTarget}
-                          onItemsDropped={handleDropOnFolder}
-                          selectable={!!item.driveId && !item.preventDelete}
-                          selected={selectedFolderKeys.has(item.key)}
-                          onSelect={() => toggleFolderSelection(item.key)}
-                          draggable={canDragFolder}
-                          onDragStart={handleDragStart}
-                        />
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div
-                className={`grid gap-4 ${
-                  viewMode === "thumbnail"
-                    ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                    : cardSize === "small"
-                      ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-                      : cardSize === "large"
-                        ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
-                        : "sm:grid-cols-3 md:grid-cols-4"
-                }`}
-              >
-                {folderStripItems.map((item) => {
-                  const driveId = item.driveId ?? "";
-                  const isFolderInSelection = selectedFolderKeys.has(item.key);
-                  const isDropTarget =
-                    !!driveId && !isFolderInSelection && linkedDrives.some((d) => d.id === driveId);
-                  const canDragFolder = !!item.driveId && !item.preventMove;
-                  return (
-                    <div
-                      key={item.key}
-                      data-selectable-item
-                      data-item-type="folder"
-                      data-item-key={item.key}
-                      draggable={canDragFolder}
-                      onDragStart={handleDragStart}
-                      className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
-                    >
-                      <FolderCard
-                        item={item}
-                        isDropTarget={isDropTarget}
-                        onItemsDropped={handleDropOnFolder}
-                        selectable={!!item.driveId && !item.preventDelete}
-                        selected={selectedFolderKeys.has(item.key)}
-                        onSelect={() => toggleFolderSelection(item.key)}
-                        layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                        layoutAspectRatio={aspectRatio}
-                        showCardInfo={showCardInfo}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            <ProjectsFolderStripSkeleton
-              viewMode={viewMode}
-              cardSize={cardSize}
-              aspectRatio={aspectRatio}
-            />
-          )}
-        </section>
-      ) : null}
-
       <SectionTitle className="mb-4 mt-1">Creative projects</SectionTitle>
       {projectsLoading ? (
         <ProjectsFilesSkeleton
@@ -838,7 +564,7 @@ export default function ProjectsView({
               data-item-id={file.id}
               draggable={!!file.driveId}
               onDragStart={handleDragStart}
-              className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+              className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
             >
               <FileCard
                 file={file}
@@ -866,10 +592,10 @@ export default function ProjectsView({
         </div>
       ) : null}
 
-      {selectedFileIds.size + selectedFolderKeys.size > 0 && (
+      {selectedFileIds.size > 0 && (
         <BulkActionBar
           selectedFileCount={selectedFileIds.size}
-          selectedFolderCount={selectedFolderKeys.size}
+          selectedFolderCount={0}
           onMove={() => setMoveModalOpen(true)}
           onNewTransfer={handleBulkNewTransfer}
           onShare={handleBulkShare}
@@ -884,10 +610,8 @@ export default function ProjectsView({
         open={moveModalOpen}
         onClose={() => setMoveModalOpen(false)}
         selectedFileCount={selectedFileIds.size}
-        selectedFolderCount={selectedFolderKeys.size}
-        excludeDriveIds={Array.from(selectedFolderKeys).map((k) =>
-          k.startsWith("drive-") ? k.slice(6) : k
-        )}
+        selectedFolderCount={0}
+        excludeDriveIds={[]}
         folders={movementFolders}
         onMove={handleBulkMoveConfirm}
       />

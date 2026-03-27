@@ -5,7 +5,11 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
-import type { RecentFile } from "@/hooks/useCloudFiles";
+import { apiFileToRecentFile, type RecentFile } from "@/hooks/useCloudFiles";
+import {
+  FILTER_FILES_MAX_CUMULATIVE_PAGES,
+  FILTER_FILES_PAGE_SIZE,
+} from "@/lib/filters/filter-fetch-config";
 import {
   filtersFromSearchParams,
   searchParamsFromFilters,
@@ -17,7 +21,8 @@ import {
   type ActiveFilter,
 } from "@/lib/filters/apply-filters";
 
-const FILTER_DEBOUNCE_MS = 300;
+/** Debounce before hitting /api/files/filter after filter key changes (pairs with search UI debounce). */
+const FILTER_DEBOUNCE_MS = 400;
 
 /** Stable serialization of filter state for effect deps - avoids refetch loops */
 function filterStateKey(state: FilterState): string {
@@ -25,61 +30,77 @@ function filterStateKey(state: FilterState): string {
   return keys.map((k) => `${k}=${JSON.stringify(state[k])}`).join("|");
 }
 
+/** Shared query shape for page 1 and "Load more" (cursor appended per request). */
+function buildFilterApiSearchParams(args: {
+  filterState: FilterState;
+  driveIdForApi: string | null | undefined;
+  teamOwnerFromPath: string | null;
+  isEnterprise: boolean;
+  orgId: string | undefined;
+  selectedWorkspaceId: string | null;
+}): URLSearchParams {
+  const {
+    filterState,
+    driveIdForApi,
+    teamOwnerFromPath,
+    isEnterprise,
+    orgId,
+    selectedWorkspaceId,
+  } = args;
+  const creativeProjectsActive = filterState.creative_projects === true;
+  const params = filterStateToSearchParams(filterState);
+  if (driveIdForApi) params.set("drive_id", driveIdForApi);
+  if (teamOwnerFromPath) params.set("team_owner_id", teamOwnerFromPath);
+  if (isEnterprise && orgId) {
+    params.set("context", "enterprise");
+    params.set("organization_id", orgId);
+    /**
+     * Enterprise scope for Project Files (`creative_projects` / All files chip):
+     * We intentionally **omit** `workspace_id` so the result set matches the **Projects**
+     * sidebar tab (org-wide creative assets the member can access).
+     *
+     * All **other** enterprise filter combinations still pass `workspace_id` when the user
+     * has a workspace selected, so Videos/Photos/search/advanced filters stay aligned with
+     * the rest of the enterprise browser (workspace-scoped).
+     */
+    if (
+      !creativeProjectsActive &&
+      selectedWorkspaceId != null &&
+      selectedWorkspaceId !== ""
+    ) {
+      params.set("workspace_id", selectedWorkspaceId);
+    }
+  }
+  params.set("page_size", String(FILTER_FILES_PAGE_SIZE));
+  return params;
+}
+
 export interface UseFilteredFilesOptions {
-  /** Scope to a specific drive when viewing inside a drive */
   driveId?: string | null;
-  /** When viewing a workspace on a different drive (e.g. Shared Library), use this drive for file queries */
   effectiveDriveId?: string | null;
-  /** When set, treat "drive" param as navigation (not a filter) when it matches this ID - e.g. Storage, RAW, Gallery Media */
   driveIdAsNavigation?: string | null;
-  /** Use standard useCloudFiles when no filters (default true) */
   fallbackToCloudFiles?: boolean;
 }
 
 export interface UseFilteredFilesResult {
   files: RecentFile[];
   loading: boolean;
-  totalCount: number;
-  /** Set or update a filter */
+  /** True while appending the next cursor page. */
+  loadMoreLoading: boolean;
+  /** Raw rows returned so far for the active filter (before any UI merge e.g. macOS packages). */
+  loadedCount: number;
+  /** Server indicates another page exists for this filter. */
+  hasMore: boolean;
+  /** Append next page (same filter + cursor). Respects {@link FILTER_FILES_MAX_CUMULATIVE_PAGES}. */
+  loadMore: () => Promise<void>;
   setFilter: (id: string, value: string | string[] | boolean | undefined) => void;
-  /** Remove a single filter */
   removeFilterById: (id: string, value?: string) => void;
-  /** Clear all filters */
   clearFilters: () => void;
-  /** Clear filters but keep drive in URL (for Storage/RAW/Gallery Media navigation) */
   clearFiltersAndKeepDrive: (driveId: string) => void;
-  /** Current filter state */
   filterState: FilterState;
-  /** Active filters for chip display */
   activeFilters: ActiveFilter[];
-  /** Whether any filters are active */
   hasFilters: boolean;
-  /** Whether using filtered/scoped view (filters or effective drive for workspace) */
   useFilteredScoped: boolean;
-}
-
-/** Map API response file to RecentFile */
-function toRecentFile(raw: Record<string, unknown>): RecentFile {
-  return {
-    id: String(raw.id ?? ""),
-    name: String(raw.name ?? ""),
-    path: String(raw.path ?? ""),
-    objectKey: String(raw.objectKey ?? ""),
-    size: Number(raw.size ?? 0),
-    modifiedAt: (raw.modifiedAt as string) ?? null,
-    uploadedAt: (raw.uploadedAt as string) ?? null,
-    driveId: String(raw.driveId ?? ""),
-    driveName: String(raw.driveName ?? "Unknown"),
-    contentType: (raw.contentType as string) ?? null,
-    galleryId: (raw.galleryId as string) ?? null,
-    proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
-    resolution_w: (raw.resolution_w as number) ?? null,
-    resolution_h: (raw.resolution_h as number) ?? null,
-    duration_sec: (raw.duration_sec as number) ?? null,
-    video_codec: (raw.video_codec as string) ?? null,
-    width: (raw.width as number) ?? null,
-    height: (raw.height as number) ?? null,
-  };
 }
 
 export function useFilteredFiles(
@@ -91,7 +112,7 @@ export function useFilteredFiles(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { driveId, effectiveDriveId, driveIdAsNavigation, fallbackToCloudFiles = true } = options ?? {};
+  const { driveId, effectiveDriveId, driveIdAsNavigation } = options ?? {};
   const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
@@ -102,10 +123,14 @@ export function useFilteredFiles(
   );
   const [files, setFiles] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
+  const [loadMoreLoading, setLoadMoreLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
-  /** When drive is navigation (Storage/RAW/Gallery Media), exclude it from "active filters" */
-  /** Stable ref so fetchFiltered doesn't need effectiveFilterState in deps (avoids refetch loop) */
+  const filterEpochRef = useRef(0);
+  const listAbortRef = useRef<AbortController | null>(null);
+  const pagesFetchedRef = useRef(0);
+
   const effectiveFilterState =
     driveIdAsNavigation && filterState.drive === driveIdAsNavigation
       ? (() => {
@@ -167,47 +192,154 @@ export function useFilteredFiles(
   const fetchFiltered = useCallback(async () => {
     if (!user) {
       setFiles([]);
-      setTotalCount(0);
+      setHasMore(false);
+      setNextCursor(null);
+      pagesFetchedRef.current = 0;
       setLoading(false);
       return;
     }
+
+    filterEpochRef.current += 1;
+    const epoch = filterEpochRef.current;
+    listAbortRef.current?.abort();
+    const ac = new AbortController();
+    listAbortRef.current = ac;
+    const { signal } = ac;
+
     const state = effectiveFilterStateRef.current;
     setLoading(true);
+    setLoadMoreLoading(false);
+    pagesFetchedRef.current = 0;
+    setNextCursor(null);
+    setHasMore(false);
+
     try {
       const token = await user.getIdToken(true);
-      const params = filterStateToSearchParams(state);
-      if (driveIdForApi) params.set("drive_id", driveIdForApi);
-      if (teamOwnerFromPath) params.set("team_owner_id", teamOwnerFromPath);
-      if (isEnterprise && org?.id) {
-        params.set("context", "enterprise");
-        params.set("organization_id", org.id);
-        if (selectedWorkspaceId != null && selectedWorkspaceId !== "") {
-          params.set("workspace_id", selectedWorkspaceId);
-        }
-      }
+      if (epoch !== filterEpochRef.current) return;
+
       const base = typeof window !== "undefined" ? window.location.origin : "";
+      const driveNameFallback = new Map<string, string>();
+      const mapRows = (rows: Record<string, unknown>[]) =>
+        rows.map((raw) => apiFileToRecentFile(raw, driveNameFallback));
+
+      const params = buildFilterApiSearchParams({
+        filterState: state,
+        driveIdForApi,
+        teamOwnerFromPath,
+        isEnterprise,
+        orgId: org?.id,
+        selectedWorkspaceId: selectedWorkspaceId ?? null,
+      });
+      params.delete("cursor");
+
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal,
       });
+      if (epoch !== filterEpochRef.current) return;
+
       if (!res.ok) {
         setFiles([]);
-        setTotalCount(0);
+        setHasMore(false);
+        setNextCursor(null);
         return;
       }
+
       const data = (await res.json()) as {
         files?: Record<string, unknown>[];
-        totalCount?: number;
+        cursor?: string | null;
+        hasMore?: boolean;
       };
-      const list = (data.files ?? []).map(toRecentFile);
-      setFiles(list);
-      setTotalCount(data.totalCount ?? list.length);
-    } catch {
+      const pageRows = mapRows(data.files ?? []);
+      pagesFetchedRef.current = 1;
+      let stillHasMore = data.hasMore === true && !!data.cursor;
+      if (pagesFetchedRef.current >= FILTER_FILES_MAX_CUMULATIVE_PAGES) stillHasMore = false;
+
+      setFiles(pageRows);
+      setNextCursor(stillHasMore && data.cursor ? String(data.cursor) : null);
+      setHasMore(stillHasMore);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (epoch !== filterEpochRef.current) return;
       setFiles([]);
-      setTotalCount(0);
+      setHasMore(false);
+      setNextCursor(null);
     } finally {
-      setLoading(false);
+      if (epoch === filterEpochRef.current) setLoading(false);
     }
   }, [user, driveIdForApi, isEnterprise, org?.id, teamOwnerFromPath, selectedWorkspaceId]);
+
+  const loadMore = useCallback(async () => {
+    if (!user || !useFilteredScoped) return;
+    if (!hasMore || !nextCursor || loading || loadMoreLoading) return;
+    if (pagesFetchedRef.current >= FILTER_FILES_MAX_CUMULATIVE_PAGES) return;
+
+    const epoch = filterEpochRef.current;
+    const ac = new AbortController();
+    listAbortRef.current?.abort();
+    listAbortRef.current = ac;
+    const { signal } = ac;
+
+    setLoadMoreLoading(true);
+    try {
+      const token = await user.getIdToken(true);
+      if (epoch !== filterEpochRef.current) return;
+
+      const state = effectiveFilterStateRef.current;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const driveNameFallback = new Map<string, string>();
+
+      const params = buildFilterApiSearchParams({
+        filterState: state,
+        driveIdForApi,
+        teamOwnerFromPath,
+        isEnterprise,
+        orgId: org?.id,
+        selectedWorkspaceId: selectedWorkspaceId ?? null,
+      });
+      params.set("cursor", nextCursor);
+
+      const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      });
+      if (epoch !== filterEpochRef.current) return;
+
+      if (!res.ok) return;
+
+      const data = (await res.json()) as {
+        files?: Record<string, unknown>[];
+        cursor?: string | null;
+        hasMore?: boolean;
+      };
+      const mapRows = (rows: Record<string, unknown>[]) =>
+        rows.map((raw) => apiFileToRecentFile(raw, driveNameFallback));
+      const pageRows = mapRows(data.files ?? []);
+
+      setFiles((prev) => [...prev, ...pageRows]);
+      pagesFetchedRef.current += 1;
+      let stillHasMore = data.hasMore === true && !!data.cursor;
+      if (pagesFetchedRef.current >= FILTER_FILES_MAX_CUMULATIVE_PAGES) stillHasMore = false;
+      setNextCursor(stillHasMore && data.cursor ? String(data.cursor) : null);
+      setHasMore(stillHasMore);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    } finally {
+      setLoadMoreLoading(false);
+    }
+  }, [
+    user,
+    useFilteredScoped,
+    hasMore,
+    nextCursor,
+    loading,
+    loadMoreLoading,
+    driveIdForApi,
+    isEnterprise,
+    org?.id,
+    teamOwnerFromPath,
+    selectedWorkspaceId,
+  ]);
 
   const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 
@@ -217,17 +349,26 @@ export function useFilteredFiles(
       if (filterStateKey(prev) === filterStateKey(next)) return prev;
       return next;
     });
-    // searchQueryString is stable string from searchParams.toString(); using searchParams directly would cause refetch loops
   }, [searchQueryString]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (useFilteredScoped) {
-      const t = setTimeout(fetchFiltered, FILTER_DEBOUNCE_MS);
-      return () => clearTimeout(t);
+    if (!useFilteredScoped) {
+      listAbortRef.current?.abort();
+      setFiles([]);
+      setHasMore(false);
+      setNextCursor(null);
+      pagesFetchedRef.current = 0;
+      return;
     }
+    const t = window.setTimeout(() => {
+      void fetchFiltered();
+    }, FILTER_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(t);
+      listAbortRef.current?.abort();
+    };
   }, [useFilteredScoped, filterKey, fetchFiltered]);
 
-  /** Replace URL with only drive= when opening Storage/RAW/Gallery Media (clears stale filters) */
   const clearFiltersAndKeepDrive = useCallback(
     (driveIdToKeep: string) => {
       const next = `${pathname ?? ""}?drive=${driveIdToKeep}`;
@@ -242,7 +383,10 @@ export function useFilteredFiles(
   return {
     files: useFilteredScoped ? files : [],
     loading: useFilteredScoped ? loading : false,
-    totalCount: useFilteredScoped ? totalCount : 0,
+    loadMoreLoading: useFilteredScoped ? loadMoreLoading : false,
+    loadedCount: useFilteredScoped ? files.length : 0,
+    hasMore: useFilteredScoped ? hasMore : false,
+    loadMore,
     setFilter,
     removeFilterById,
     clearFilters,
