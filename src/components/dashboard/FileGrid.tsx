@@ -48,6 +48,7 @@ import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
 import {
   expandMacosPackageRowIds,
+  isMacosPackageFileRow,
   mergeDriveFilesWithMacosPackages,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
@@ -104,10 +105,6 @@ function mergeDisplayedFilesWithMacosPackages(
     if (tb !== ta) return tb - ta;
     return a.name.localeCompare(b.name);
   });
-}
-
-function isMacosPkgFileRow(file: RecentFile): boolean {
-  return file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
 }
 
 function BulkActionBar({
@@ -1295,7 +1292,7 @@ export default function FileGrid() {
 
   const navigateIntoMacosPackage = useCallback(
     (file: RecentFile) => {
-      if (!file.driveId || !isMacosPkgFileRow(file)) return;
+      if (!file.driveId || !isMacosPackageFileRow(file)) return;
       const folder =
         visibleDriveFolders.find((d) => d.id === file.driveId) ??
         linkedDrives.find((d) => d.id === file.driveId);
@@ -1709,7 +1706,7 @@ export default function FileGrid() {
                       );
                     })}
                     {filesToShow.map((file) => {
-                      const isPkg = isMacosPkgFileRow(file);
+                      const isPkg = isMacosPackageFileRow(file);
                       return (
                         <FileListRow
                           key={file.id}
@@ -1795,7 +1792,7 @@ export default function FileGrid() {
                 );
               })}
               {filesToShow.map((file) => {
-                const isPkg = isMacosPkgFileRow(file);
+                const isPkg = isMacosPackageFileRow(file);
                 return (
                   <div
                     key={file.id}
@@ -2039,7 +2036,7 @@ export default function FileGrid() {
                     </div>
                   )}
                   {filesToShow.map((file) => {
-                    const isPkg = isMacosPkgFileRow(file);
+                    const isPkg = isMacosPackageFileRow(file);
                     return (
                       <div
                         key={file.id}

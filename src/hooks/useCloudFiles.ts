@@ -1118,6 +1118,38 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     }
   }, [user, bumpStorageVersion]);
 
+  /** After trash/restore/permanent-delete succeeds: coalesce refreshes so the UI is not blocked on full refetches. */
+  const POST_MUTATION_REFRESH_DEBOUNCE_MS = 400;
+  const postMutationRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (postMutationRefreshTimerRef.current !== null) {
+        clearTimeout(postMutationRefreshTimerRef.current);
+      }
+    };
+  }, []);
+
+  const scheduleDebouncedPostTrashMetadataRefresh = useCallback(() => {
+    if (postMutationRefreshTimerRef.current !== null) {
+      clearTimeout(postMutationRefreshTimerRef.current);
+    }
+    postMutationRefreshTimerRef.current = setTimeout(() => {
+      postMutationRefreshTimerRef.current = null;
+      void fetchCloudFiles();
+      void fetchRecentUploads();
+      void recalculateStorage();
+    }, POST_MUTATION_REFRESH_DEBOUNCE_MS);
+  }, [fetchCloudFiles, fetchRecentUploads, recalculateStorage]);
+
+  /** Immediate client patch after mutation success — never call before the API succeeds. */
+  const removeFileIdsFromLocalLists = useCallback((fileIds: string[]) => {
+    const idSet = new Set(fileIds);
+    setRecentFiles((prev) => prev.filter((f) => !idSet.has(f.id)));
+    setRecentUploads((prev) => prev.filter((f) => !idSet.has(f.id)));
+    setAllFilesForTransfer((prev) => prev.filter((f) => !idSet.has(f.id)));
+  }, []);
+
   const deleteFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
@@ -1127,10 +1159,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         console.error(e);
         return;
       }
-      await recalculateStorage();
-      await fetchCloudFiles();
+      removeFileIdsFromLocalLists([fileId]);
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [user, removeFileIdsFromLocalLists, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const deleteFiles = useCallback(
@@ -1142,10 +1174,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         console.error(e);
         return;
       }
-      await recalculateStorage();
-      await fetchCloudFiles();
+      removeFileIdsFromLocalLists(fileIds);
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [user, removeFileIdsFromLocalLists, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const restoreFile = useCallback(
@@ -1166,10 +1198,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data?.error as string) ?? "Failed to restore file");
       }
-      await recalculateStorage();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [user, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const permanentlyDeleteFile = useCallback(
@@ -1190,10 +1221,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data?.error as string) ?? "Failed to permanently delete");
       }
-      await recalculateStorage();
-      await fetchCloudFiles();
+      removeFileIdsFromLocalLists([fileId]);
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [user, removeFileIdsFromLocalLists, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const renameFile = useCallback(

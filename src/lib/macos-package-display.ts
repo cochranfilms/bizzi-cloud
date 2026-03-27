@@ -28,6 +28,14 @@ export type MacosPackageSyntheticFileRow = {
   macosPackageLabel: string | null;
 };
 
+/** True when the row is a collapsed macOS package (FCP / Premiere bundle, etc.). */
+export function isMacosPackageFileRow(file: {
+  id: string;
+  assetType?: string | null;
+}): boolean {
+  return file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
+}
+
 export function recentFileFromMacosPackageListEntry(
   pkg: MacosPackageListEntry,
   driveId: string,

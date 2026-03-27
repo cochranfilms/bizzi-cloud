@@ -10,6 +10,7 @@ import {
   filterLinkedDrivesByPowerUp,
 } from "@/lib/drive-powerup-filter";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
+import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useBackup } from "@/context/BackupContext";
@@ -31,6 +32,7 @@ import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken, getCurrentUserIdToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
+import { isMacosPackageFileRow } from "@/lib/macos-package-display";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -170,8 +172,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getOrCreateCreatorRawDrive,
     getOrCreateGalleryDrive,
     loading: backupDrivesLoading,
+    creatorRawDriveId,
   } = useBackup();
-  const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
+  const { setCurrentDrive: setCurrentFolderDriveId, setCurrentDrivePath } = useCurrentFolder();
   const {
     viewMode,
     cardSize,
@@ -182,6 +185,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
+  const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
+  const [packageInfoLoading, setPackageInfoLoading] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [dragState, setDragState] = useState<{
@@ -194,6 +200,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
+  const { downloadMacosPackageZip } = useBulkDownload({ fetchFilesByIds });
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
   useEffect(() => {
@@ -279,6 +286,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     }
   }, [pinnedFileIds]);
 
+  const syncPinsAfterFileMutate = useCallback(() => {
+    void refetchPinned();
+    void loadPinnedFiles();
+  }, [refetchPinned, loadPinnedFiles]);
+
   useEffect(() => {
     loadPinnedFiles();
   }, [loadPinnedFiles]);
@@ -312,6 +324,42 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       cancelled = true;
     };
   }, [fileIdFromUrl, router]);
+
+  useEffect(() => {
+    if (!packageInfoId) {
+      setPackageInfoJson(null);
+      setPackageInfoLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPackageInfoLoading(true);
+    setPackageInfoJson(null);
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) {
+          if (!cancelled) setPackageInfoJson({ error: "Not signed in" });
+          return;
+        }
+        const res = await fetch(`/api/packages/${encodeURIComponent(packageInfoId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!cancelled) {
+          setPackageInfoJson(
+            res.ok ? data : { error: (data.error as string) ?? res.statusText ?? "Error" }
+          );
+        }
+      } catch {
+        if (!cancelled) setPackageInfoJson({ error: "Failed to load package info" });
+      } finally {
+        if (!cancelled) setPackageInfoLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [packageInfoId]);
 
   // Load recent uploads (Storage files from past 7 days) on mount and when storage changes
   useEffect(() => {
@@ -394,12 +442,29 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   ]);
 
   const openDrive = useCallback(
-    (driveId: string, name: string) => {
+    (driveId: string, name: string, pathInsideDrive = "") => {
       recordRecentOpen("folder", driveId, getAuthToken);
       setCurrentFolderDriveId(driveId);
+      setCurrentDrivePath(pathInsideDrive.replace(/^\/+/, ""));
       router.push(`${filesHref}?drive=${driveId}`);
     },
-    [filesHref, setCurrentFolderDriveId, router]
+    [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, router]
+  );
+
+  const openMacosPackageInfo = useCallback((file: RecentFile) => {
+    if (!file.macosPackageId) return;
+    setPackageInfoId(file.macosPackageId);
+  }, []);
+
+  const navigateIntoMacosPackage = useCallback(
+    (file: RecentFile) => {
+      if (!file.driveId || !isMacosPackageFileRow(file)) return;
+      const folder = linkedDrives.find((d) => d.id === file.driveId);
+      const name = folder?.name ?? file.driveName ?? "Folder";
+      const pathInside = file.path.replace(/^\/+/, "");
+      openDrive(file.driveId, name, pathInside);
+    },
+    [linkedDrives, openDrive]
   );
 
   const toggleFileSelection = useCallback((id: string) => {
@@ -583,9 +648,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         }
       }
       clearSelection();
-      await refetch();
+      if (folderKeys.length > 0) await refetch();
       await refetchPinned();
-      loadPinnedFiles();
+      void loadPinnedFiles();
     } catch (err) {
       console.error("Bulk delete failed:", err);
     }
@@ -909,24 +974,31 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       />
                     );
                   })}
-                  {pinnedFiles.map((file) => (
-                    <FileListRow
-                      key={file.id}
-                      file={file}
-                      onClick={() => setPreviewFile(file)}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                        await refetch();
-                        await refetchPinned();
-                        loadPinnedFiles();
-                      }}
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                      draggable={!!file.driveId}
-                      onDragStart={handleDragStart}
-                    />
-                  ))}
+                  {pinnedFiles.map((file) => {
+                    const isPkg = isMacosPackageFileRow(file);
+                    return (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          syncPinsAfterFileMutate();
+                        }}
+                        onDownloadPackage={
+                          isPkg && file.macosPackageId
+                            ? () => downloadMacosPackageZip(file.macosPackageId!)
+                            : undefined
+                        }
+                        onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                        draggable={!!file.driveId}
+                        onDragStart={handleDragStart}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -992,35 +1064,45 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   </div>
                 );
               })}
-              {pinnedFiles.map((file) => (
-                <div
-                  key={file.id}
-                  data-selectable-item
-                  data-item-type="file"
-                  data-item-id={file.id}
-                  draggable={!!file.driveId}
-                  onDragStart={handleDragStart}
-                  className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                >
-                  <FileCard
-                    file={file}
-                    onClick={() => setPreviewFile(file)}
-                    onDelete={async () => {
-                      await deleteFile(file.id);
-                      await refetch();
-                      await refetchPinned();
-                      loadPinnedFiles();
-                    }}
-                    selectable
-                    selected={selectedFileIds.has(file.id)}
-                    onSelect={() => toggleFileSelection(file.id)}
-                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                    layoutAspectRatio={aspectRatio}
-                    thumbnailScale={thumbnailScale}
-                    showCardInfo={showCardInfo}
-                  />
-                </div>
-              ))}
+              {pinnedFiles.map((file) => {
+                const isPkg = isMacosPackageFileRow(file);
+                return (
+                  <div
+                    key={file.id}
+                    data-selectable-item
+                    data-item-type="file"
+                    data-item-id={file.id}
+                    draggable={!!file.driveId}
+                    onDragStart={handleDragStart}
+                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
+                  >
+                    <FileCard
+                      file={file}
+                      onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        syncPinsAfterFileMutate();
+                      }}
+                      onDownloadPackage={
+                        isPkg && file.macosPackageId
+                          ? () => downloadMacosPackageZip(file.macosPackageId!)
+                          : undefined
+                      }
+                      onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                      onMacosPackageNavigate={
+                        isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                      }
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      thumbnailScale={thumbnailScale}
+                      showCardInfo={showCardInfo}
+                    />
+                  </div>
+                );
+              })}
             </div>
           )
           ) : (
@@ -1187,23 +1269,31 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       </tr>
                     </thead>
                     <tbody data-selectable-grid>
-                      {recentUploads.map((file) => (
-                        <FileListRow
-                          key={file.id}
-                          file={file}
-                          onClick={() => setPreviewFile(file)}
-                          onDelete={async () => {
-                            await deleteFile(file.id);
-                            await refetch();
-                            fetchRecentUploads();
-                          }}
-                          selectable
-                          selected={selectedFileIds.has(file.id)}
-                          onSelect={() => toggleFileSelection(file.id)}
-                          draggable={!!file.driveId}
-                          onDragStart={handleDragStart}
-                        />
-                      ))}
+                      {recentUploads.map((file) => {
+                        const isPkg = isMacosPackageFileRow(file);
+                        return (
+                          <FileListRow
+                            key={file.id}
+                            file={file}
+                            onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                            onDelete={async () => {
+                              await deleteFile(file.id);
+                              syncPinsAfterFileMutate();
+                            }}
+                            onDownloadPackage={
+                              isPkg && file.macosPackageId
+                                ? () => downloadMacosPackageZip(file.macosPackageId!)
+                                : undefined
+                            }
+                            onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                            selectable
+                            selected={selectedFileIds.has(file.id)}
+                            onSelect={() => toggleFileSelection(file.id)}
+                            draggable={!!file.driveId}
+                            onDragStart={handleDragStart}
+                          />
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1219,34 +1309,45 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         : "sm:grid-cols-3 md:grid-cols-4"
                 }`}
               >
-                {recentUploads.map((file) => (
-                  <div
-                    key={file.id}
-                    data-selectable-item
-                    data-item-type="file"
-                    data-item-id={file.id}
-                    draggable={!!file.driveId}
-                    onDragStart={handleDragStart}
-                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                  >
-                    <FileCard
-                      file={file}
-                      onClick={() => setPreviewFile(file)}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                        await refetch();
-                        fetchRecentUploads();
-                      }}
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                      layoutAspectRatio={aspectRatio}
-                      thumbnailScale={thumbnailScale}
-                      showCardInfo={showCardInfo}
-                    />
-                  </div>
-                ))}
+                {recentUploads.map((file) => {
+                  const isPkg = isMacosPackageFileRow(file);
+                  return (
+                    <div
+                      key={file.id}
+                      data-selectable-item
+                      data-item-type="file"
+                      data-item-id={file.id}
+                      draggable={!!file.driveId}
+                      onDragStart={handleDragStart}
+                      className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
+                    >
+                      <FileCard
+                        file={file}
+                        onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          syncPinsAfterFileMutate();
+                        }}
+                        onDownloadPackage={
+                          isPkg && file.macosPackageId
+                            ? () => downloadMacosPackageZip(file.macosPackageId!)
+                            : undefined
+                        }
+                        onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                        onMacosPackageNavigate={
+                          isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                        }
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                        layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                        layoutAspectRatio={aspectRatio}
+                        thumbnailScale={thumbnailScale}
+                        showCardInfo={showCardInfo}
+                      />
+                    </div>
+                  );
+                })}
               </div>
               )
             ) : (
@@ -1323,7 +1424,49 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         />
       )}
 
-      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      {packageInfoId ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="home-macos-package-info-title"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setPackageInfoId(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3
+                id="home-macos-package-info-title"
+                className="text-lg font-semibold text-neutral-900 dark:text-white"
+              >
+                Package info
+              </h3>
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                onClick={() => setPackageInfoId(null)}
+              >
+                Close
+              </button>
+            </div>
+            {packageInfoLoading ? (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
+            ) : (
+              <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs text-neutral-700 dark:text-neutral-300">
+                {JSON.stringify(packageInfoJson, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <FilePreviewModal
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+        showLUTForVideo={previewFile?.driveId === creatorRawDriveId}
+      />
     </div>
   );
 }
