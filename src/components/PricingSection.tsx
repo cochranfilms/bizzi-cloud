@@ -23,6 +23,7 @@ import FreeSignUpModal from "@/components/FreeSignUpModal";
 import BuildPlanConfigurator, {
   type PlanBuilderCheckoutPayload,
 } from "@/components/pricing/BuildPlanConfigurator";
+import PowerUpProductTiles from "@/components/pricing/PowerUpProductTiles";
 
 function teamExtrasSummaryLine(
   counts: TeamSeatCounts,
@@ -314,12 +315,13 @@ export default function PricingSection() {
       className="scroll-mt-28 px-6 py-20 md:py-28"
     >
       <div className="mx-auto max-w-6xl">
-        <div className="mb-16 text-center">
-          <h2 className="mb-4 text-3xl font-bold tracking-tight text-bizzi-navy md:text-4xl">
-            Transparent Pricing
+        <div className="mb-20 px-2 text-center md:mb-24">
+          <h2 className="mx-auto mb-6 max-w-4xl text-4xl font-bold leading-[1.08] tracking-tight text-bizzi-navy md:text-5xl md:leading-[1.06]">
+            The creator&apos;s workspace in the cloud
           </h2>
-          <p className="mx-auto max-w-2xl text-lg text-neutral-600">
-            Start free, scale as your brand grows. No hidden fees, no surprises.
+          <p className="mx-auto max-w-2xl text-base leading-relaxed text-neutral-600 md:text-lg md:leading-relaxed">
+            Bizzi Cloud Power Ups are designed to optimize post production from
+            the storage layer up.
           </p>
         </div>
 
@@ -329,89 +331,22 @@ export default function PricingSection() {
           </div>
         )}
 
-        {/* Power Up comparison cards — informational only */}
-        <div className="mb-16">
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
-              Power up any plan
-            </h3>
-            <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
-              Add only what your workflow needs. Available on every paid plan
-              (except free).
-            </p>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              Stack freely. Cancel anytime. Add-ons billed monthly.
-            </p>
-          </div>
-          <div className="grid gap-6 sm:grid-cols-3">
-            {powerUpAddons.map((addon) => (
-              <div
-                key={addon.id}
-                className="flex h-full flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900"
-              >
-                <div
-                  className="h-1 w-full shrink-0"
-                  style={{ backgroundColor: addon.accentColor }}
-                />
-                <div className="flex flex-grow flex-col p-6">
-                  <div className="flex items-center">
-                    <span
-                      className="text-xs font-semibold uppercase tracking-wider"
-                      style={{ color: addon.accentColor }}
-                    >
-                      {addon.tagline}
-                    </span>
-                  </div>
-                  <h4
-                    className="text-lg font-bold text-neutral-900 dark:text-white"
-                    style={{ color: addon.accentColor }}
-                  >
-                    {addon.name}
-                  </h4>
-                  <p className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-                    {addon.description}
-                  </p>
-                  {addon.bundleNote && (
-                    <span
-                      className="mt-2 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
-                      style={{
-                        backgroundColor: addon.accentColor + "15",
-                        color: addon.accentColor,
-                      }}
-                    >
-                      ✦ {addon.bundleNote}
-                    </span>
-                  )}
-                  <div className="mt-4 flex items-baseline gap-1">
-                    <span className="text-sm text-neutral-500">+</span>
-                    <span
-                      className="text-2xl font-bold"
-                      style={{ color: addon.accentColor }}
-                    >
-                      ${addon.price}
-                    </span>
-                    <span className="text-sm text-neutral-500">/mo</span>
-                  </div>
-                  <ul className="mt-4 flex-grow space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
-                    {addon.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2">
-                        <span
-                          className="shrink-0"
-                          style={{ color: addon.accentColor }}
-                        >
-                          ✓
-                        </span>
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-500 dark:text-neutral-400">
-                    Available on <strong>all paid plans</strong>
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Power Ups — product-style tiles (summaries on hover / + control) */}
+        <div className="mb-20 md:mb-24">
+          <PowerUpProductTiles
+            addons={powerUpAddons.map(
+              ({ id, name, price, accentColor, bundleNote }) => ({
+                id,
+                name,
+                price,
+                accentColor,
+                bundleNote,
+              })
+            )}
+          />
+          <p className="mx-auto mt-12 max-w-lg text-center text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 md:mt-14">
+            Stack freely. Cancel anytime. Add-ons billed monthly.
+          </p>
         </div>
 
         {/* Plan builder — same UI as dashboard Change Plan; extra TB add-ons only in settings */}

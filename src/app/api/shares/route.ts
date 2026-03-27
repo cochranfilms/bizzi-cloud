@@ -112,6 +112,37 @@ function workspaceShareInboxLabel(kind: WorkspaceShareTargetKind): string {
   return kind === "personal_team" ? "Personal team · Shared tab" : "Org · Shared tab";
 }
 
+/**
+ * Matches the GET list owned-loop rules: workspace-targeted shares the owner creates from
+ * outside the team/org UI are omitted from Sent on the workspace Shared tab but must
+ * still appear as Received for the owner (same inbox seat members already see).
+ */
+function workspaceTargetedShareOmittedFromOwnedTab(
+  raw: Record<string, unknown>,
+  listWorkspaceKindParam: WorkspaceShareTargetKind | null,
+  listOrganizationIdParam: string | null
+): boolean {
+  const mode = getRecipientModeFromDoc(raw);
+  if (mode !== "workspace") return false;
+  const suo = raw.share_ui_origin as string | undefined;
+  const shareOrigin: "dashboard" | "personal_team" | "enterprise" | null =
+    suo === "dashboard" || suo === "personal_team" || suo === "enterprise" ? suo : null;
+
+  if (listWorkspaceKindParam === "personal_team") {
+    const fromPersonalHome =
+      shareOrigin === "dashboard" || (shareOrigin === null && mode === "workspace");
+    return fromPersonalHome;
+  }
+  if (listOrganizationIdParam) {
+    const fromOutsideEnterpriseUi =
+      shareOrigin === "dashboard" ||
+      shareOrigin === "personal_team" ||
+      (shareOrigin === null && mode === "workspace");
+    return fromOutsideEnterpriseUi;
+  }
+  return false;
+}
+
 async function deliverShareNotificationsAndEmail(params: {
   db: Firestore;
   uid: string;
@@ -416,7 +447,6 @@ export async function GET(request: Request) {
 
   async function pushInvitedWithSharer(d: QueryDocumentSnapshot) {
     const data = d.data();
-    if (data.owner_id === uid) return;
     const hydrated = await hydrateFolderShareDoc(db, d);
     if (!hydrated) return;
 
@@ -480,6 +510,7 @@ export async function GET(request: Request) {
         if (getRecipientModeFromDoc(d.data() as Record<string, unknown>) === "workspace") {
           continue;
         }
+        if (d.data().owner_id === uid) continue;
         await pushInvitedWithSharer(d);
       }
     }
@@ -502,7 +533,17 @@ export async function GET(request: Request) {
         .get();
       for (const d of wsSnap.docs) {
         const data = d.data();
-        if (data.owner_id === uid) continue;
+        if (data.owner_id === uid) {
+          if (
+            !workspaceTargetedShareOmittedFromOwnedTab(
+              data as Record<string, unknown>,
+              listWorkspaceKindParam,
+              listOrganizationIdParam
+            )
+          ) {
+            continue;
+          }
+        }
         const wt = parseWorkspaceTargetKey(key);
         if (wt && !(await userCanAccessWorkspaceShareTarget(uid, wt.kind, wt.id))) continue;
         await pushInvitedWithSharer(d);
