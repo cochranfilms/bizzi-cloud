@@ -13,6 +13,7 @@ import {
   type PlanId,
 } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
+import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import {
   resolveTeamSeatCountsForProfile,
   teamSeatCountsToFirestore,
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
   if (subIdForItems) {
     try {
       const sub = await stripe.subscriptions.retrieve(subIdForItems, {
-        expand: ["items.data.price"],
+        expand: ["items.data.price.product"],
       });
       subscriptionItems = sub.items.data as (Stripe.SubscriptionItem & {
         price: Stripe.Price;
@@ -143,7 +144,13 @@ export async function POST(request: Request) {
     }
   }
 
-  const storageQuotaBytes = getStorageBytesForPlan(planId);
+  let storageQuotaBytes = getStorageBytesForPlan(planId);
+  let profileStorageAddonId: string | null = null;
+  if (subscriptionItems?.length) {
+    const computed = computeStorageFromSubscription(planId, subscriptionItems);
+    storageQuotaBytes = computed.storageQuotaBytes;
+    profileStorageAddonId = computed.storageAddonId;
+  }
 
   const subId =
     typeof session.subscription === "string"
@@ -158,6 +165,7 @@ export async function POST(request: Request) {
       seat_count: teamFirestore.seat_count,
       team_seat_counts: teamFirestore.team_seat_counts,
       storage_quota_bytes: storageQuotaBytes,
+      storage_addon_id: profileStorageAddonId,
       storage_used_bytes: 0,
       stripe_customer_id: session.customer ?? null,
       stripe_subscription_id: subId,

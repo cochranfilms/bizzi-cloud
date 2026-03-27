@@ -2,6 +2,7 @@ import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
+import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import {
@@ -10,30 +11,6 @@ import {
 } from "@/lib/team-seat-pricing";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
-
-function computeStorageFromSubscription(
-  planId: PlanId,
-  items: SubscriptionItemWithPrice[]
-): { storageQuotaBytes: number; storageAddonId: string | null } {
-  let storageAddonTb = 0;
-  let storageAddonId: string | null = null;
-  for (const item of items) {
-    if (item.deleted) continue;
-    const meta = item.price?.metadata;
-    const addonId = meta?.storage_addon_id as string | undefined;
-    const tb = meta?.storage_addon_tb ? parseInt(String(meta.storage_addon_tb), 10) : 0;
-    if (addonId && !isNaN(tb) && tb > 0) {
-      storageAddonTb += tb;
-      storageAddonId = addonId;
-    }
-  }
-  const baseBytes = getStorageBytesForPlan(planId);
-  const addonBytes = storageAddonTb * 1024 ** 4;
-  return {
-    storageQuotaBytes: baseBytes + addonBytes,
-    storageAddonId,
-  };
-}
 
 /**
  * Sync profile from Stripe by looking up the user's subscription via their email.
@@ -119,7 +96,7 @@ export async function POST(request: Request) {
   if (stripeSubscriptionId) {
     try {
       const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-        expand: ["items.data.price"],
+        expand: ["items.data.price.product"],
       });
       Object.assign(subMetaRecord, sub.metadata ?? {});
       const items = sub.items.data as SubscriptionItemWithPrice[];

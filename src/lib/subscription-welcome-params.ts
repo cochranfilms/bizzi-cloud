@@ -12,6 +12,8 @@ import {
   type StorageAddonId,
   VALID_STORAGE_ADDON_IDS,
 } from "@/lib/pricing-data";
+import type { PlanId } from "@/lib/plan-constants";
+import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import {
   formatTeamSeatsSummaryLine,
   resolveTeamSeatCountsForProfile,
@@ -92,15 +94,10 @@ export function buildSubscriptionWelcomeParamsFromInvoice(
 
   let storageLine = getPlanStorage(planId) + " Encrypted Cloud Storage";
   const subItems = subscription.items.data as SubscriptionItemWithPrice[];
-  for (const item of subItems) {
-    if (item.deleted) continue;
-    const meta = item.price?.metadata;
-    const addonId = meta?.storage_addon_id as string | undefined;
-    if (addonId) {
-      const label = getStorageAddonLabel(addonId);
-      if (label) storageLine += ` + ${label}`;
-      break;
-    }
+  const storageComputed = computeStorageFromSubscription(planId as PlanId, subItems);
+  if (storageComputed.storageAddonId) {
+    const label = getStorageAddonLabel(storageComputed.storageAddonId);
+    if (label) storageLine += ` + ${label}`;
   }
 
   const planName = PLAN_LABELS[planId] ?? planId;
@@ -193,23 +190,13 @@ export function buildSubscriptionWelcomeParams(
 
   // Resolve storage from subscription items (includes storage addon if present)
   let storageLine = getPlanStorage(planId) + " Encrypted Cloud Storage";
-  let storageAddonLabel: string | null = null;
-
   if (subscription) {
     const items = subscription.items.data as SubscriptionItemWithPrice[];
-    for (const item of items) {
-      if (item.deleted) continue;
-      const meta = item.price?.metadata;
-      const addonId = meta?.storage_addon_id as string | undefined;
-      if (addonId) {
-        storageAddonLabel = getStorageAddonLabel(addonId);
-        break;
-      }
+    const storageComputed = computeStorageFromSubscription(planId as PlanId, items);
+    if (storageComputed.storageAddonId) {
+      const storageAddonLabel = getStorageAddonLabel(storageComputed.storageAddonId);
+      if (storageAddonLabel) storageLine += ` + ${storageAddonLabel}`;
     }
-  }
-
-  if (storageAddonLabel) {
-    storageLine += ` + ${storageAddonLabel}`;
   }
 
   // Plan name

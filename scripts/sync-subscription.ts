@@ -137,20 +137,14 @@ async function main() {
   let storageAddonId: string | null = null;
   if (stripeSubscriptionId) {
     try {
+      const { computeStorageFromSubscription } = require("@/lib/stripe-storage-from-subscription");
       const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-        expand: ["items.data.price"],
+        expand: ["items.data.price.product"],
       });
       const items = sub.items.data;
-      for (const item of items) {
-        if (item.deleted) continue;
-        const meta = item.price?.metadata;
-        const addonId = meta?.storage_addon_id as string | undefined;
-        const tb = meta?.storage_addon_tb ? parseInt(String(meta.storage_addon_tb), 10) : 0;
-        if (addonId && !isNaN(tb) && tb > 0) {
-          storageQuotaBytes += tb * 1024 ** 4;
-          storageAddonId = addonId;
-        }
-      }
+      const computed = computeStorageFromSubscription(planId, items);
+      storageQuotaBytes = computed.storageQuotaBytes;
+      storageAddonId = computed.storageAddonId;
     } catch (err) {
       console.error("Failed to expand subscription:", err);
     }

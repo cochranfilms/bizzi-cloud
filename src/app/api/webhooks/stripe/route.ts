@@ -31,32 +31,11 @@ import {
   getOrganizationActiveMemberUserIds,
   getOrganizationAdminUserIds,
 } from "@/lib/notification-service";
+import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
-function computeStorageFromSubscription(
-  planId: PlanId,
-  items: SubscriptionItemWithPrice[]
-): { storageQuotaBytes: number; storageAddonId: string | null } {
-  let storageAddonTb = 0;
-  let storageAddonId: string | null = null;
-  for (const item of items) {
-    if (item.deleted) continue;
-    const meta = item.price?.metadata;
-    const addonId = meta?.storage_addon_id as string | undefined;
-    const tb = meta?.storage_addon_tb ? parseInt(String(meta.storage_addon_tb), 10) : 0;
-    if (addonId && !isNaN(tb) && tb > 0) {
-      storageAddonTb += tb;
-      storageAddonId = addonId;
-    }
-  }
-  const baseBytes = getStorageBytesForPlan(planId);
-  const addonBytes = storageAddonTb * 1024 ** 4;
-  return {
-    storageQuotaBytes: baseBytes + addonBytes,
-    storageAddonId,
-  };
-}
+const SUBSCRIPTION_EXPAND_ITEMS = ["items.data.price.product"] as const;
 
 export const runtime = "nodejs";
 
@@ -148,7 +127,7 @@ export async function POST(request: Request) {
       if (subId) {
         try {
           const sub = await stripe.subscriptions.retrieve(subId, {
-            expand: ["items.data.price"],
+            expand: [...SUBSCRIPTION_EXPAND_ITEMS],
           });
           const items = sub.items.data as SubscriptionItemWithPrice[];
           subscriptionItems = items;
@@ -462,7 +441,7 @@ export async function POST(request: Request) {
         let items: SubscriptionItemWithPrice[] = [];
         try {
           const sub = await stripe.subscriptions.retrieve(subscription.id, {
-            expand: ["items.data.price"],
+            expand: [...SUBSCRIPTION_EXPAND_ITEMS],
           });
           items = sub.items.data as SubscriptionItemWithPrice[];
           const computed = computeStorageFromSubscription(
@@ -608,7 +587,7 @@ export async function POST(request: Request) {
       }
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-        expand: ["items.data.price"],
+        expand: [...SUBSCRIPTION_EXPAND_ITEMS],
       });
       let orgId = subscription.metadata?.organization_id as string | undefined;
       let inviteToken = subscription.metadata?.invite_token as string | undefined;

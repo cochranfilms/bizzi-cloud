@@ -24,6 +24,10 @@ import type { StorageAddonId } from "@/lib/pricing-data";
 import { VALID_STORAGE_ADDON_IDS } from "@/lib/pricing-data";
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
+import {
+  getResolvedStorageAddonIdFromItem,
+  subscriptionItemIsAdditionalStorage,
+} from "@/lib/stripe-storage-from-subscription";
 
 const VALID_PLAN_IDS = ["solo", "indie", "video", "production"];
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
@@ -114,7 +118,7 @@ export async function updateSubscriptionWithProration(
   let subscription: Stripe.Subscription;
   try {
     subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-      expand: ["items.data.price"],
+      expand: ["items.data.price.product"],
     });
   } catch (err) {
     console.error("[Stripe update-subscription] Failed to retrieve:", err);
@@ -136,7 +140,7 @@ export async function updateSubscriptionWithProration(
     }
     if (isAddonItem(item)) {
       addonItems.push(item);
-    } else if (isStorageAddonItem(item)) {
+    } else if (isStorageAddonItem(item) || subscriptionItemIsAdditionalStorage(item)) {
       storageAddonItems.push(item);
     } else if (isPlanItem(item)) {
       planItem = item;
@@ -208,7 +212,10 @@ export async function updateSubscriptionWithProration(
       : null;
 
   const currentStorageAddonId =
-    storageAddonItems.length > 0 ? getStorageAddonIdFromItem(storageAddonItems[0]) : null;
+    storageAddonItems.length > 0
+      ? getResolvedStorageAddonIdFromItem(planId as PlanId, storageAddonItems[0]) ??
+        getStorageAddonIdFromItem(storageAddonItems[0])
+      : null;
   if (currentStorageAddonId !== targetStorageAddonId) {
     for (const item of storageAddonItems) {
       itemsToUpdate.push({ id: item.id, deleted: true });
