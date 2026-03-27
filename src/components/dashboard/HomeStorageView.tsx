@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
@@ -263,6 +263,51 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     const drive = visibleSystemDrives.find((d) => d.id === f.driveId);
     return drive ? isSystemDrive(drive) : false;
   });
+
+  /** One tile per pillar (Storage / RAW / Gallery). Duplicate linked_drives for the same role show as extra cards without this. */
+  const displayBaseFolderItems = useMemo(() => {
+    if (baseFolderItems.length <= 1) return baseFolderItems;
+
+    const createdMs = (driveId: string) => {
+      const d = linkedDrives.find((x) => x.id === driveId);
+      if (!d?.created_at) return Number.MAX_SAFE_INTEGER;
+      const t = Date.parse(d.created_at);
+      return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+    };
+
+    const pickCanonical = (rows: FolderItem[]): FolderItem[] => {
+      const withId = rows.filter((r) => r.driveId);
+      if (withId.length <= 1) return withId;
+      const best = withId.reduce((a, b) => {
+        const ca = createdMs(a.driveId!);
+        const cb = createdMs(b.driveId!);
+        if (ca !== cb) return ca <= cb ? a : b;
+        return a.driveId! <= b.driveId! ? a : b;
+      });
+      return [best];
+    };
+
+    const storageRows = baseFolderItems.filter(
+      (f) => f.driveId && isStorageDrive({ name: f.name })
+    );
+    const rawRows = baseFolderItems.filter((f) => {
+      const ld = linkedDrives.find((x) => x.id === f.driveId);
+      return ld?.is_creator_raw === true;
+    });
+    const galleryRows = baseFolderItems.filter(
+      (f) => f.driveId && isGalleryMediaDrive({ name: f.name })
+    );
+
+    const merged = [...pickCanonical(storageRows), ...pickCanonical(rawRows), ...pickCanonical(galleryRows)];
+    return merged.sort((a, b) => {
+      const order = (name: string) => {
+        const base = teamAwareBaseName(name);
+        return base === "Storage" ? 0 : base === "RAW" ? 1 : base === "Gallery Media" ? 2 : 3;
+      };
+      return order(a.name) - order(b.name);
+    });
+  }, [baseFolderItems, linkedDrives]);
+
   const driveFolderItems = folderItems.filter((f) => {
     const drive = driveFolders.find((d) => d.id === f.driveId);
     return drive ? !isSystemDrive(drive) : false;
@@ -847,13 +892,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
-        {baseFolderItems.length > 0 ? (
+        {displayBaseFolderItems.length > 0 ? (
           <div
             className="flex justify-center w-full max-w-4xl mx-auto"
-            style={{ ["--folder-count" as string]: baseFolderItems.length }}
+            style={{ ["--folder-count" as string]: displayBaseFolderItems.length }}
           >
             <div className="grid grid-cols-1 gap-4 max-w-full sm:grid-cols-[repeat(var(--folder-count),minmax(260px,320px))]">
-            {baseFolderItems.map((item) => {
+            {displayBaseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
               const isFolderInSelection = selectedFolderKeys.has(item.key);
