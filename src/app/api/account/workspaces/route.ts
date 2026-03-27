@@ -3,12 +3,19 @@
  * Returns personal workspace, personal teams, and organization workspaces with status for workspace switcher.
  */
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import type { PersonalStatus } from "@/types/profile";
+import type { EnterpriseThemeId } from "@/types/enterprise";
 import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
 import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
+
+function normalizeThemeId(raw: unknown): EnterpriseThemeId {
+  const t = typeof raw === "string" ? raw.trim() : "";
+  return ENTERPRISE_THEMES.some((x) => x.id === t) ? (t as EnterpriseThemeId) : "bizzi";
+}
 
 function badgeFromStatus(
   storageLifecycle: string | undefined,
@@ -26,15 +33,17 @@ function badgeFromStatus(
   return "Active";
 }
 
-async function personalTeamWorkspaceName(
+async function personalTeamWorkspaceMeta(
   db: import("firebase-admin/firestore").Firestore,
   ownerUid: string,
   profileFallback: string
-): Promise<string> {
+): Promise<{ name: string; theme: EnterpriseThemeId }> {
   const snap = await db.collection(PERSONAL_TEAM_SETTINGS_COLLECTION).doc(ownerUid).get();
-  const custom = (snap.data()?.team_name as string | undefined)?.trim();
-  if (custom) return custom;
-  return profileFallback;
+  const data = snap.data();
+  const custom = (data?.team_name as string | undefined)?.trim();
+  const name = custom || profileFallback;
+  const theme = normalizeThemeId(data?.theme);
+  return { name, theme };
 }
 
 async function profileDisplayName(
@@ -104,6 +113,7 @@ export async function GET(request: Request) {
     role: string;
     status: string;
     storageLifecycle: string;
+    theme: EnterpriseThemeId;
   }> = [];
 
   for (const seatDoc of activeSeatsSnap.docs) {
@@ -121,6 +131,7 @@ export async function GET(request: Request) {
       role,
       status: badgeFromStatus(orgStorageLifecycle, orgBillingStatus),
       storageLifecycle: orgStorageLifecycle,
+      theme: normalizeThemeId(orgData?.theme),
     });
   }
 
@@ -130,6 +141,7 @@ export async function GET(request: Request) {
     name: string;
     role: string;
     status: string;
+    theme: EnterpriseThemeId;
   }> = [];
   const teamSeen = new Set<string>();
 
@@ -141,13 +153,14 @@ export async function GET(request: Request) {
   if (isTeamOwner) {
     const ownerName = await profileDisplayName(db, uid);
     const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const name = await personalTeamWorkspaceName(db, uid, label);
+    const { name, theme } = await personalTeamWorkspaceMeta(db, uid, label);
     personalTeams.push({
       id: `team_${uid}`,
       ownerUserId: uid,
       name,
       role: "Admin",
       status: badgeFromStatus(personalStorageLifecycle, personalBillingStatus, personalStatus),
+      theme,
     });
     teamSeen.add(uid);
   }
@@ -166,7 +179,7 @@ export async function GET(request: Request) {
     const ownerName = await profileDisplayName(db, ownerId);
     const fallback =
       ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const name = await personalTeamWorkspaceName(db, ownerId, fallback);
+    const { name, theme } = await personalTeamWorkspaceMeta(db, ownerId, fallback);
     const level = (sd.seat_access_level as PersonalTeamSeatAccess) ?? "none";
     const roleLabel = level === "none" ? "Member" : PERSONAL_TEAM_SEAT_ACCESS_LABELS[level] ?? "Member";
     personalTeams.push({
@@ -175,6 +188,7 @@ export async function GET(request: Request) {
       name,
       role: roleLabel,
       status: st === "cold_storage" ? "Recovery Storage" : "Active",
+      theme,
     });
     teamSeen.add(ownerId);
   }

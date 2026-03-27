@@ -10,6 +10,8 @@ import {
   usePersonalTeamWorkspace,
   BIZZI_TEAM_WORKSPACE_UPDATED,
 } from "@/context/PersonalTeamWorkspaceContext";
+import { getThemeById } from "@/lib/enterprise-themes";
+import type { EnterpriseThemeId } from "@/types/enterprise";
 
 interface Workspace {
   id: string;
@@ -17,6 +19,8 @@ interface Workspace {
   /** Organization: admin | member. Personal team: Admin | Member | tier label */
   role?: string;
   status: string;
+  /** Set for organization workspaces (workspace switcher label color). */
+  theme?: EnterpriseThemeId;
 }
 
 interface PersonalTeamWs {
@@ -25,6 +29,7 @@ interface PersonalTeamWs {
   name: string;
   role: string;
   status: string;
+  theme: EnterpriseThemeId;
 }
 
 export default function WorkspaceSwitcher() {
@@ -128,12 +133,27 @@ export default function WorkspaceSwitcher() {
 
   const isPersonalContext = !isEnterprise && !activeTeamOwnerId;
 
+  const teamRowForActivePath = activeTeamOwnerId
+    ? workspaces?.personalTeams?.find((x) => x.ownerUserId === activeTeamOwnerId)
+    : undefined;
+  const triggerPrimary =
+    isEnterprise && org?.theme
+      ? getThemeById(org.theme).primary
+      : activeTeamOwnerId && teamCtx?.teamOwnerUid === activeTeamOwnerId
+        ? getThemeById(teamCtx.teamThemeId).primary
+        : teamRowForActivePath?.theme
+          ? getThemeById(teamRowForActivePath.theme).primary
+          : null;
+
   return (
     <div className="relative" ref={menuRef}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+        className={`flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800 ${
+          triggerPrimary ? "" : "text-neutral-900 hover:text-neutral-900 dark:text-white dark:hover:text-white"
+        }`}
+        style={triggerPrimary ? { color: triggerPrimary } : undefined}
         aria-expanded={open}
         aria-haspopup="true"
       >
@@ -149,72 +169,92 @@ export default function WorkspaceSwitcher() {
               className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
                 isPersonalContext
                   ? "bg-neutral-100 font-medium dark:bg-neutral-700"
-                  : "hover:bg-neutral-50 dark:hover:bg-neutral-700"
+                  : "hover:bg-neutral-50 dark:hover:bg-white/10"
               }`}
             >
-              <User className="h-4 w-4 flex-shrink-0 text-neutral-500" />
-              <span className="flex-1 truncate">{workspaces.personal.name}</span>
+              <User className="h-4 w-4 flex-shrink-0 text-neutral-600 dark:text-neutral-300" />
+              <span className="flex-1 truncate font-medium text-neutral-900 dark:text-white">
+                {workspaces.personal.name}
+              </span>
               {workspaces.personal.status !== "Active" && (
-                <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs dark:bg-neutral-600">
+                <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100">
                   {workspaces.personal.status}
                 </span>
               )}
             </Link>
           )}
-          {workspaces?.personalTeams?.map((t) => (
-            <Link
-              key={t.id}
-              href={`/team/${t.ownerUserId}`}
-              onClick={() => setOpen(false)}
-              className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
-                activeTeamOwnerId === t.ownerUserId
-                  ? "bg-cyan-50 font-medium text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-100"
-                  : "hover:bg-neutral-50 dark:hover:bg-neutral-700"
-              }`}
-            >
-              <Users className="h-4 w-4 flex-shrink-0 text-neutral-500" />
-              <span className="flex-1 truncate">{t.name}</span>
-              {t.role === "Admin" ? (
-                <span className="rounded bg-cyan-100 px-1.5 py-0.5 text-xs text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200">
-                  Admin
-                </span>
-              ) : (
-                <span className="max-w-[84px] truncate rounded bg-neutral-200 px-1.5 py-0.5 text-xs dark:bg-neutral-600">
-                  {t.role}
-                </span>
-              )}
-            </Link>
-          ))}
-          {workspaces?.organizations?.map((orgWs) => (
-            <Link
-              key={orgWs.id}
-              href="/enterprise"
-              onClick={() => {
-                setOpen(false);
-                if (typeof window !== "undefined") {
-                  sessionStorage.setItem("bizzi-enterprise-org", orgWs.id);
-                }
-              }}
-              className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
-                isEnterprise && org?.id === orgWs.id
-                  ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-                  : "hover:bg-neutral-50 dark:hover:bg-neutral-700"
-              }`}
-            >
-              <Building2 className="h-4 w-4 flex-shrink-0 text-neutral-500" />
-              <span className="flex-1 truncate">{orgWs.name}</span>
-              {orgWs.role === "admin" && (
-                <span className="rounded bg-[var(--enterprise-primary)]/20 px-1.5 py-0.5 text-xs text-[var(--enterprise-primary)]">
-                  Admin
-                </span>
-              )}
-              {orgWs.status !== "Active" && (
-                <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs dark:bg-neutral-600">
-                  {orgWs.status}
-                </span>
-              )}
-            </Link>
-          ))}
+          {workspaces?.personalTeams?.map((t) => {
+            const tp = getThemeById(t.theme).primary;
+            const teamRowActive = activeTeamOwnerId === t.ownerUserId;
+            return (
+              <Link
+                key={t.id}
+                href={`/team/${t.ownerUserId}`}
+                onClick={() => setOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-white/10 ${
+                  teamRowActive ? "font-medium" : ""
+                }`}
+                style={{
+                  color: tp,
+                  ...(teamRowActive ? { backgroundColor: `${tp}26` } : {}),
+                }}
+              >
+                <Users className="h-4 w-4 flex-shrink-0 opacity-90" style={{ color: tp }} />
+                <span className="flex-1 truncate">{t.name}</span>
+                {t.role === "Admin" ? (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: `${tp}40`, color: tp }}
+                  >
+                    Admin
+                  </span>
+                ) : (
+                  <span className="max-w-[84px] truncate rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100">
+                    {t.role}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+          {workspaces?.organizations?.map((orgWs) => {
+            const op = getThemeById(orgWs.theme ?? "bizzi").primary;
+            const orgRowActive = isEnterprise && org?.id === orgWs.id;
+            return (
+              <Link
+                key={orgWs.id}
+                href="/enterprise"
+                onClick={() => {
+                  setOpen(false);
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("bizzi-enterprise-org", orgWs.id);
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-white/10 ${
+                  orgRowActive ? "font-medium" : ""
+                }`}
+                style={{
+                  color: op,
+                  ...(orgRowActive ? { backgroundColor: `${op}26` } : {}),
+                }}
+              >
+                <Building2 className="h-4 w-4 flex-shrink-0 opacity-90" style={{ color: op }} />
+                <span className="flex-1 truncate">{orgWs.name}</span>
+                {orgWs.role === "admin" && (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: `${op}40`, color: op }}
+                  >
+                    Admin
+                  </span>
+                )}
+                {orgWs.status !== "Active" && (
+                  <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100">
+                    {orgWs.status}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
