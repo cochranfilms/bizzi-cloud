@@ -5,8 +5,8 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
-  canAccessBackupFileById,
-  getFileDisplayName,
+  getCollaborationFileDisplayName,
+  resolveCollaborationFileContext,
 } from "@/lib/file-access";
 import { createNotification } from "@/lib/notification-service";
 import {
@@ -111,11 +111,13 @@ export async function GET(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId } = await params;
+  const { fileId: rawFileId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId) return NextResponse.json({ error: "fileId required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
 
   const db = getAdminFirestore();
   const url = new URL(request.url);
@@ -126,7 +128,7 @@ export async function GET(
   try {
     snap = await db
       .collection("file_comments")
-      .where("fileId", "==", fileId)
+      .where("fileId", "==", collabFileId)
       .orderBy("createdAt", order === "desc" ? "desc" : "asc")
       .limit(limit)
       .get();
@@ -151,11 +153,14 @@ export async function POST(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId } = await params;
+  const { fileId: rawFileId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId) return NextResponse.json({ error: "fileId required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
+  const anchorId = ctx.anchorBackupFileId;
 
   const body = await request.json().catch(() => ({}));
   const { body: commentBody, parentCommentId } = body;
@@ -165,7 +170,7 @@ export async function POST(
   }
 
   const db = getAdminFirestore();
-  const fileSnap = await db.collection("backup_files").doc(fileId).get();
+  const fileSnap = await db.collection("backup_files").doc(anchorId).get();
   if (!fileSnap.exists) return NextResponse.json({ error: "File not found" }, { status: 404 });
   const fileData = fileSnap.data()!;
   const ownerId = fileData.userId as string;
@@ -192,7 +197,7 @@ export async function POST(
 
   const now = new Date();
   const doc: Record<string, unknown> = {
-    fileId,
+    fileId: collabFileId,
     parentCommentId: parentCommentId && typeof parentCommentId === "string" ? parentCommentId : null,
     authorUserId: auth.uid,
     author_display_name: authorDisplayName,
@@ -218,23 +223,23 @@ export async function POST(
     const parentSnap = await db.collection("file_comments").doc(doc.parentCommentId as string).get();
     const parentAuthor = parentSnap.data()?.authorUserId as string | undefined;
     if (parentAuthor && parentAuthor !== auth.uid) {
-      const fileName = await getFileDisplayName(fileId);
+      const fileName = await getCollaborationFileDisplayName(collabFileId, anchorId);
       await createNotification({
         recipientUserId: parentAuthor,
         actorUserId: auth.uid,
         type: "file_reply_created",
-        fileId,
+        fileId: collabFileId,
         commentId: ref.id,
         metadata: { fileName, actorDisplayName: authorDisplayName, parentCommentId: doc.parentCommentId as string },
       });
     }
   } else if (ownerId !== auth.uid) {
-    const fileName = await getFileDisplayName(fileId);
+    const fileName = await getCollaborationFileDisplayName(collabFileId, anchorId);
     await createNotification({
       recipientUserId: ownerId,
       actorUserId: auth.uid,
       type: "file_comment_created",
-      fileId,
+      fileId: collabFileId,
       commentId: ref.id,
       metadata: { fileName, actorDisplayName: authorDisplayName },
     });
@@ -242,7 +247,7 @@ export async function POST(
 
   return NextResponse.json({
     id: ref.id,
-    fileId,
+    fileId: collabFileId,
     parentCommentId: doc.parentCommentId,
     authorUserId: auth.uid,
     authorDisplayName,

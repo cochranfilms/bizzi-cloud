@@ -3,7 +3,10 @@
  * POST /api/files/[fileId]/hearts - Toggle heart (add if not present, remove if present).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { canAccessBackupFileById, getFileDisplayName } from "@/lib/file-access";
+import {
+  getCollaborationFileDisplayName,
+  resolveCollaborationFileContext,
+} from "@/lib/file-access";
 import { createNotification } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 
@@ -25,16 +28,18 @@ export async function GET(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId } = await params;
+  const { fileId: rawFileId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId) return NextResponse.json({ error: "fileId required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
 
   const db = getAdminFirestore();
   const [countSnap, userHeartSnap] = await Promise.all([
-    db.collection("file_hearts").where("fileId", "==", fileId).count().get(),
-    db.collection("file_hearts").where("fileId", "==", fileId).where("userId", "==", auth.uid).limit(1).get(),
+    db.collection("file_hearts").where("fileId", "==", collabFileId).count().get(),
+    db.collection("file_hearts").where("fileId", "==", collabFileId).where("userId", "==", auth.uid).limit(1).get(),
   ]);
 
   return NextResponse.json({
@@ -49,27 +54,30 @@ export async function POST(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId } = await params;
+  const { fileId: rawFileId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId) return NextResponse.json({ error: "fileId required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
+  const anchorId = ctx.anchorBackupFileId;
 
   const db = getAdminFirestore();
-  const fileSnap = await db.collection("backup_files").doc(fileId).get();
+  const fileSnap = await db.collection("backup_files").doc(anchorId).get();
   if (!fileSnap.exists) return NextResponse.json({ error: "File not found" }, { status: 404 });
   const ownerId = fileSnap.data()?.userId as string;
 
   const existingSnap = await db
     .collection("file_hearts")
-    .where("fileId", "==", fileId)
+    .where("fileId", "==", collabFileId)
     .where("userId", "==", auth.uid)
     .limit(1)
     .get();
 
   if (!existingSnap.empty) {
     await existingSnap.docs[0].ref.delete();
-    const countSnap = await db.collection("file_hearts").where("fileId", "==", fileId).count().get();
+    const countSnap = await db.collection("file_hearts").where("fileId", "==", collabFileId).count().get();
     return NextResponse.json({
       hasHearted: false,
       count: countSnap.data().count,
@@ -77,23 +85,23 @@ export async function POST(
   }
 
   await db.collection("file_hearts").add({
-    fileId,
+    fileId: collabFileId,
     userId: auth.uid,
     createdAt: new Date(),
   });
 
-  const countSnap = await db.collection("file_hearts").where("fileId", "==", fileId).count().get();
+  const countSnap = await db.collection("file_hearts").where("fileId", "==", collabFileId).count().get();
   const profileSnap = await db.collection("profiles").doc(auth.uid).get();
   const actorDisplayName =
     (profileSnap.data()?.displayName as string) ?? auth.email?.split("@")[0] ?? "Someone";
 
   if (ownerId !== auth.uid) {
-    const fileName = await getFileDisplayName(fileId);
+    const fileName = await getCollaborationFileDisplayName(collabFileId, anchorId);
     await createNotification({
       recipientUserId: ownerId,
       actorUserId: auth.uid,
       type: "file_hearted",
-      fileId,
+      fileId: collabFileId,
       metadata: { fileName, actorDisplayName },
     });
   }

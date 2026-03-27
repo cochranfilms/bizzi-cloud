@@ -56,7 +56,7 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
     }
     try {
       const orderParam = sortOrder === "desc" ? "desc" : "asc";
-      const res = await fetch(`/api/files/${fileId}/comments?order=${orderParam}`, {
+      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments?order=${orderParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -91,7 +91,7 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
       const token = await getAuthToken(true);
       if (!token) return null;
       try {
-        const res = await fetch(`/api/files/${fileId}/comments`, {
+        const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -125,7 +125,7 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
       const token = await getAuthToken(true);
       if (!token) return false;
       try {
-        const res = await fetch(`/api/files/${fileId}/comments/${commentId}`, {
+        const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments/${encodeURIComponent(commentId)}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -161,7 +161,7 @@ export function useComments(fileId: string | null, options: UseCommentsOptions =
       const token = await getAuthToken(true);
       if (!token) return false;
       try {
-        const res = await fetch(`/api/files/${fileId}/comments/${commentId}`, {
+        const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments/${encodeURIComponent(commentId)}`, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
         });

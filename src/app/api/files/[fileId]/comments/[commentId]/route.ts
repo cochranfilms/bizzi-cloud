@@ -3,10 +3,9 @@
  * DELETE /api/files/[fileId]/comments/[commentId] - Soft-delete own comment.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { canAccessBackupFileById } from "@/lib/file-access";
+import { resolveCollaborationFileContext } from "@/lib/file-access";
 import { canModerateFileComment } from "@/lib/file-comment-moderation";
 import { createNotification } from "@/lib/notification-service";
-import { getFileDisplayName } from "@/lib/file-access";
 import { NextResponse } from "next/server";
 
 async function requireAuth(request: Request): Promise<{ uid: string; email?: string } | NextResponse> {
@@ -27,11 +26,14 @@ export async function PATCH(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId, commentId } = await params;
+  const { fileId: rawFileId, commentId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId || !commentId) return NextResponse.json({ error: "IDs required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
+  const anchorId = ctx.anchorBackupFileId;
 
   const body = await request.json().catch(() => ({}));
   const trimmed = typeof body.body === "string" ? body.body.trim() : "";
@@ -43,7 +45,7 @@ export async function PATCH(
   const ref = db.collection("file_comments").doc(commentId);
   const docSnap = await ref.get();
   if (!docSnap.exists) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
-  if (docSnap.data()?.fileId !== fileId) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
+  if (docSnap.data()?.fileId !== collabFileId) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
   if (docSnap.data()?.authorUserId !== auth.uid) {
     return NextResponse.json({ error: "Can only edit your own comment" }, { status: 403 });
   }
@@ -55,7 +57,7 @@ export async function PATCH(
     updatedAt: now,
   });
 
-  const fileSnap = await db.collection("backup_files").doc(fileId).get();
+  const fileSnap = await db.collection("backup_files").doc(anchorId).get();
   const ownerId = fileSnap.data()?.userId as string;
   const profileSnap = await db.collection("profiles").doc(auth.uid).get();
   const actorDisplayName =
@@ -66,7 +68,7 @@ export async function PATCH(
       recipientUserId: ownerId,
       actorUserId: auth.uid,
       type: "file_comment_edited",
-      fileId,
+      fileId: collabFileId,
       commentId,
       metadata: { actorDisplayName },
     });
@@ -86,19 +88,22 @@ export async function DELETE(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId, commentId } = await params;
+  const { fileId: rawFileId, commentId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId || !commentId) return NextResponse.json({ error: "IDs required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const collabFileId = ctx.collabFileId;
+  const anchorId = ctx.anchorBackupFileId;
 
   const db = getAdminFirestore();
   const ref = db.collection("file_comments").doc(commentId);
   const docSnap = await ref.get();
   if (!docSnap.exists) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
-  if (docSnap.data()?.fileId !== fileId) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
+  if (docSnap.data()?.fileId !== collabFileId) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
   const authorId = docSnap.data()?.authorUserId as string;
-  const canModerate = await canModerateFileComment(auth.uid, fileId);
+  const canModerate = await canModerateFileComment(auth.uid, anchorId);
   if (authorId !== auth.uid && !canModerate) {
     return NextResponse.json({ error: "Can only delete your own comment" }, { status: 403 });
   }

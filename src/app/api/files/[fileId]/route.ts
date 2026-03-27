@@ -2,7 +2,10 @@
  * GET /api/files/[fileId] - Fetch file metadata by ID (for users with access, including shared files).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { canAccessBackupFileById } from "@/lib/file-access";
+import {
+  hydrateCollaborationFileForApiResponse,
+  resolveCollaborationFileContext,
+} from "@/lib/file-access";
 import { NextResponse } from "next/server";
 
 async function requireAuth(request: Request): Promise<{ uid: string; email?: string } | NextResponse> {
@@ -23,14 +26,28 @@ export async function GET(
 ) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const { fileId } = await params;
+  const { fileId: rawFileId } = await params;
+  const fileId = rawFileId ? decodeURIComponent(rawFileId) : "";
   if (!fileId) return NextResponse.json({ error: "fileId required" }, { status: 400 });
 
-  const hasAccess = await canAccessBackupFileById(auth.uid, fileId, auth.email);
-  if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const ctx = await resolveCollaborationFileContext(auth.uid, fileId, auth.email);
+  if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
 
   const db = getAdminFirestore();
-  const fileSnap = await db.collection("backup_files").doc(fileId).get();
+  if (ctx.collabFileId !== ctx.anchorBackupFileId) {
+    const hydrated = await hydrateCollaborationFileForApiResponse(
+      auth.uid,
+      auth.email,
+      ctx.collabFileId
+    );
+    if (!hydrated) return NextResponse.json({ error: "File not found" }, { status: 404 });
+    return NextResponse.json({
+      ...hydrated,
+      proxyStatus: null,
+    });
+  }
+
+  const fileSnap = await db.collection("backup_files").doc(ctx.anchorBackupFileId).get();
   if (!fileSnap.exists) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
   const data = fileSnap.data()!;

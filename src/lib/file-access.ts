@@ -3,6 +3,7 @@ import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
+import { MACOS_PACKAGE_CONTAINERS_COLLECTION } from "@/lib/macos-package-container-admin";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
 
 function personalTeamSeatAllowsAccess(status: string | undefined): boolean {
@@ -138,6 +139,188 @@ export async function canAccessBackupFileById(
   }
 
   return false;
+}
+
+/** UI synthetic id for a macOS package row (`macos-pkg:${containerDocId}`). */
+export const MACOS_PACKAGE_SYNTHETIC_FILE_ID_PREFIX = "macos-pkg:";
+
+export function isMacosPackageSyntheticFileId(fileId: string): boolean {
+  return typeof fileId === "string" && fileId.startsWith(MACOS_PACKAGE_SYNTHETIC_FILE_ID_PREFIX);
+}
+
+export function parseMacosPackageIdFromSyntheticFileId(fileId: string): string | null {
+  if (!isMacosPackageSyntheticFileId(fileId)) return null;
+  const rest = fileId.slice(MACOS_PACKAGE_SYNTHETIC_FILE_ID_PREFIX.length);
+  return rest.length > 0 ? rest : null;
+}
+
+/** Any non-deleted backup_files row linked to the package (for access + owner). */
+export async function getAnchorBackupFileIdForMacosPackage(
+  packageId: string
+): Promise<string | null> {
+  const db = getAdminFirestore();
+  const snap = await db
+    .collection("backup_files")
+    .where("macos_package_id", "==", packageId)
+    .where("deleted_at", "==", null)
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  return snap.docs[0].id;
+}
+
+export type CollaborationFileContext =
+  | { ok: true; collabFileId: string; anchorBackupFileId: string }
+  | { ok: false };
+
+/**
+ * Maps URL/API file id to a real backup_files doc for permissions + metadata.
+ * Synthetic macOS package ids reuse hearts/comments keyed by the synthetic id.
+ */
+export async function resolveCollaborationFileContext(
+  uid: string,
+  fileId: string,
+  userEmail?: string
+): Promise<CollaborationFileContext> {
+  const pkgId = parseMacosPackageIdFromSyntheticFileId(fileId);
+  if (pkgId) {
+    const anchor = await getAnchorBackupFileIdForMacosPackage(pkgId);
+    if (!anchor) return { ok: false };
+    const can = await canAccessBackupFileById(uid, anchor, userEmail);
+    if (!can) return { ok: false };
+    return { ok: true, collabFileId: fileId, anchorBackupFileId: anchor };
+  }
+  const can = await canAccessBackupFileById(uid, fileId, userEmail);
+  if (!can) return { ok: false };
+  return { ok: true, collabFileId: fileId, anchorBackupFileId: fileId };
+}
+
+export async function getCollaborationFileDisplayName(
+  collabFileId: string,
+  anchorBackupFileId: string
+): Promise<string> {
+  if (collabFileId === anchorBackupFileId) {
+    return getFileDisplayName(anchorBackupFileId);
+  }
+  const pkgId = parseMacosPackageIdFromSyntheticFileId(collabFileId);
+  if (!pkgId) return getFileDisplayName(anchorBackupFileId);
+  const db = getAdminFirestore();
+  const cs = await db.collection(MACOS_PACKAGE_CONTAINERS_COLLECTION).doc(pkgId).get();
+  if (cs.exists) {
+    const d = cs.data();
+    const seg = (d?.root_segment_name as string | undefined)?.trim();
+    if (seg) return seg;
+    const root = (d?.root_relative_path as string) ?? "";
+    const base = root.split("/").filter(Boolean).pop();
+    if (base) return base;
+  }
+  return getFileDisplayName(anchorBackupFileId);
+}
+
+/** File list / recent-open row for either a backup_files id or a synthetic package id. */
+export async function hydrateCollaborationFileForApiResponse(
+  uid: string,
+  userEmail: string | undefined,
+  collabFileId: string,
+  driveNameCache?: Map<string, string>
+): Promise<{
+  id: string;
+  name: string;
+  path: string;
+  objectKey: string;
+  size: number;
+  modifiedAt: string | null;
+  driveId: string;
+  driveName: string;
+  contentType: string | null;
+  galleryId: string | null;
+  assetType?: string | null;
+  macosPackageId?: string | null;
+} | null> {
+  const ctx = await resolveCollaborationFileContext(uid, collabFileId, userEmail);
+  if (!ctx.ok) return null;
+
+  const db = getAdminFirestore();
+  const cache = driveNameCache ?? new Map<string, string>();
+
+  async function driveNameFor(id: string): Promise<string> {
+    if (!id) return "Unknown";
+    const hit = cache.get(id);
+    if (hit) return hit;
+    const driveSnap = await db.collection("linked_drives").doc(id).get();
+    const n = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Unknown drive" : "Unknown";
+    cache.set(id, n);
+    return n;
+  }
+
+  if (ctx.collabFileId === ctx.anchorBackupFileId) {
+    const fileSnap = await db.collection("backup_files").doc(ctx.anchorBackupFileId).get();
+    if (!fileSnap.exists) return null;
+    const data = fileSnap.data()!;
+    if (data.deleted_at) return null;
+    const path = (data.relative_path as string) ?? "";
+    const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+    const driveId = (data.linked_drive_id as string) ?? "";
+    return {
+      id: fileSnap.id,
+      name,
+      path,
+      objectKey: (data.object_key as string) ?? "",
+      size: Number(data.size_bytes ?? 0),
+      modifiedAt:
+        data.modified_at != null
+          ? typeof data.modified_at === "string"
+            ? data.modified_at
+            : (data.modified_at as { toDate?: () => Date }).toDate?.()?.toISOString?.() ?? null
+          : null,
+      driveId,
+      driveName: await driveNameFor(driveId),
+      contentType: (data.content_type as string) ?? null,
+      galleryId: (data.gallery_id as string) ?? null,
+    };
+  }
+
+  const pkgId = parseMacosPackageIdFromSyntheticFileId(ctx.collabFileId)!;
+  const cref = await db.collection(MACOS_PACKAGE_CONTAINERS_COLLECTION).doc(pkgId).get();
+  if (!cref.exists) return null;
+  const cd = cref.data()!;
+  const anchorSnap = await db.collection("backup_files").doc(ctx.anchorBackupFileId).get();
+  if (!anchorSnap.exists) return null;
+  const ad = anchorSnap.data()!;
+  if (ad.deleted_at) return null;
+
+  const rootPath = (cd.root_relative_path as string) ?? "";
+  const name =
+    ((cd.root_segment_name as string) ?? "").trim() ||
+    rootPath.split("/").filter(Boolean).pop() ||
+    "?";
+  const driveId = (cd.linked_drive_id as string) ?? (ad.linked_drive_id as string) ?? "";
+  const lastAct = cd.last_activity_at;
+  const modifiedAt =
+    lastAct != null
+      ? typeof lastAct === "string"
+        ? lastAct
+        : (lastAct as { toDate?: () => Date }).toDate?.()?.toISOString?.() ?? null
+      : ad.modified_at != null
+        ? typeof ad.modified_at === "string"
+          ? ad.modified_at
+          : (ad.modified_at as { toDate?: () => Date }).toDate?.()?.toISOString?.() ?? null
+        : null;
+
+  return {
+    id: ctx.collabFileId,
+    name,
+    path: rootPath,
+    objectKey: "",
+    size: Number(cd.total_bytes ?? 0),
+    modifiedAt,
+    driveId,
+    driveName: await driveNameFor(driveId),
+    contentType: null,
+    galleryId: null,
+    assetType: "macos_package",
+    macosPackageId: pkgId,
+  };
 }
 
 /**

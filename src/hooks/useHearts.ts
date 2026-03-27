@@ -20,7 +20,7 @@ export function useHearts(fileId: string | null) {
     const token = await getAuthToken();
     if (!token) return;
     try {
-      const res = await fetch(`/api/files/${fileId}/hearts`, {
+      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -47,7 +47,7 @@ export function useHearts(fileId: string | null) {
     setHasHearted((prev) => !prev);
     setCount((c) => (hasHearted ? c - 1 : c + 1));
     try {
-      const res = await fetch(`/api/files/${fileId}/hearts`, {
+      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

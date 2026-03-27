@@ -3,7 +3,7 @@
  * Query: ?limit=50&cursor=heartDocId
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { canAccessBackupFileById } from "@/lib/file-access";
+import { hydrateCollaborationFileForApiResponse } from "@/lib/file-access";
 import { NextResponse } from "next/server";
 
 const DEFAULT_LIMIT = 50;
@@ -74,41 +74,20 @@ export async function GET(request: Request) {
   }> = [];
 
   for (const fileId of fileIds) {
-    const hasAccess = await canAccessBackupFileById(uid, fileId, email);
-    if (!hasAccess) continue;
-
-    const fileSnap = await db.collection("backup_files").doc(fileId).get();
-    if (!fileSnap.exists) continue;
-
-    const data = fileSnap.data();
-    if (data?.deleted_at) continue;
-
-    const path = (data?.relative_path as string) ?? "";
-    const name = path.split("/").filter(Boolean).pop() ?? (path || "?");
-    const driveId = (data?.linked_drive_id as string) ?? "";
-    let driveName = driveMap.get(driveId);
-    if (!driveName && driveId) {
-      const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-      driveName = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Unknown";
-      driveMap.set(driveId, driveName);
-    }
+    const row = await hydrateCollaborationFileForApiResponse(uid, email, fileId, driveMap);
+    if (!row) continue;
 
     files.push({
-      id: fileSnap.id,
-      name,
-      path,
-      objectKey: (data?.object_key as string) ?? "",
-      size: (data?.size_bytes as number) ?? 0,
-      modifiedAt:
-        data?.modified_at != null
-          ? typeof data.modified_at === "string"
-            ? data.modified_at
-            : (data.modified_at as { toDate?: () => Date }).toDate?.()?.toISOString?.() ?? null
-          : null,
-      driveId,
-      driveName: driveName ?? "Unknown",
-      contentType: (data?.content_type as string) ?? null,
-      galleryId: (data?.gallery_id as string) ?? null,
+      id: row.id,
+      name: row.name,
+      path: row.path,
+      objectKey: row.objectKey,
+      size: row.size,
+      modifiedAt: row.modifiedAt,
+      driveId: row.driveId,
+      driveName: row.driveName,
+      contentType: row.contentType,
+      galleryId: row.galleryId,
     });
   }
 

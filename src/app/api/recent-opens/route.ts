@@ -6,7 +6,7 @@
  * Query: ?limit=50
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { canAccessBackupFileById } from "@/lib/file-access";
+import { hydrateCollaborationFileForApiResponse, resolveCollaborationFileContext } from "@/lib/file-access";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team-constants";
 import { NextResponse } from "next/server";
 
@@ -53,8 +53,8 @@ export async function POST(request: Request) {
   const db = getAdminFirestore();
 
   if (itemType === "file") {
-    const hasAccess = await canAccessBackupFileById(auth.uid, itemId, auth.email);
-    if (!hasAccess) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    const ctx = await resolveCollaborationFileContext(auth.uid, itemId, auth.email);
+    if (!ctx.ok) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   } else {
     const driveSnap = await db.collection("linked_drives").doc(itemId).get();
     if (!driveSnap.exists) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
@@ -152,43 +152,26 @@ export async function GET(request: Request) {
 
   for (const item of items) {
     if (item.itemType === "file") {
-      const hasAccess = await canAccessBackupFileById(auth.uid, item.itemId, auth.email);
-      if (!hasAccess) continue;
-
-      const fileSnap = await db.collection("backup_files").doc(item.itemId).get();
-      if (!fileSnap.exists) continue;
-      const data = fileSnap.data();
-      if (data?.deleted_at) continue;
-
-      const path = (data?.relative_path as string) ?? "";
-      const name = path.split("/").filter(Boolean).pop() ?? (path || "?");
-      const driveId = (data?.linked_drive_id as string) ?? "";
-      let driveName = driveMap.get(driveId);
-      if (!driveName && driveId) {
-        const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-        driveName = driveSnap.exists ? (driveSnap.data()?.name as string) ?? "Folder" : "Unknown";
-        driveMap.set(driveId, driveName);
-      }
-
-      const modifiedAt =
-        data?.modified_at != null
-          ? typeof data.modified_at === "string"
-            ? data.modified_at
-            : (data.modified_at as { toDate?: () => Date }).toDate?.()?.toISOString?.() ?? null
-          : null;
+      const row = await hydrateCollaborationFileForApiResponse(
+        auth.uid,
+        auth.email,
+        item.itemId,
+        driveMap
+      );
+      if (!row) continue;
 
       result.push({
         type: "file",
-        id: fileSnap.id,
-        name,
-        driveId,
-        driveName: driveName ?? "Unknown",
-        path,
-        objectKey: (data?.object_key as string) ?? "",
-        size: (data?.size_bytes as number) ?? 0,
-        modifiedAt,
-        contentType: (data?.content_type as string) ?? null,
-        galleryId: (data?.gallery_id as string) ?? null,
+        id: row.id,
+        name: row.name,
+        driveId: row.driveId,
+        driveName: row.driveName,
+        path: row.path,
+        objectKey: row.objectKey,
+        size: row.size,
+        modifiedAt: row.modifiedAt,
+        contentType: row.contentType,
+        galleryId: row.galleryId,
         openedAt: item.openedAt.toISOString(),
       });
     } else {
