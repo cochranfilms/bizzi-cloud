@@ -11,6 +11,7 @@ import {
 import { getRecipientModeFromDoc, parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export async function GET(
   request: Request,
@@ -117,7 +118,7 @@ export async function GET(
         .collection("backup_files")
         .where("userId", "==", ownerId)
         .where("linked_drive_id", "==", linkedDriveId)
-        .where("deleted_at", "==", null)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .get();
 
       files = filesSnap.docs.map((d) => {

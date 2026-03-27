@@ -4,6 +4,7 @@ import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -18,7 +19,7 @@ async function getFileIdForObject(db: Firestore, uid: string, objectKey: string)
     .get();
   if (snap.empty) return null;
   const data = snap.docs[0].data();
-  if (data.deleted_at) return null;
+  if (!isBackupFileActiveForListing(data as Record<string, unknown>)) return null;
   return snap.docs[0].id;
 }
 
@@ -170,7 +171,7 @@ async function getObjectKeyForFile(
   const doc = await db.collection("backup_files").doc(fileId).get();
   if (!doc.exists) return null;
   const data = doc.data();
-  if (data?.deleted_at) return null;
+  if (!data || !isBackupFileActiveForListing(data as Record<string, unknown>)) return null;
   return data?.object_key ?? null;
 }
 

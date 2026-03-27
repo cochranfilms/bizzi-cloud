@@ -15,6 +15,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import { useAuth } from "@/context/AuthContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
@@ -51,7 +52,7 @@ export async function fetchPinnedFiles(ids: string[]): Promise<RecentFile[]> {
     }
     filesSnap.docs.forEach((d) => {
       const data = d.data();
-      if (data.deleted_at) return;
+      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) return;
       const path = data.relative_path ?? "";
       const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
       allFiles.push({

@@ -8,6 +8,7 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import { AggregateField } from "firebase-admin/firestore";
 import { getCategoryFromFile } from "@/lib/analytics/category-map";
+import { BACKUP_LIFECYCLE_ACTIVE, isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 const CATEGORY_LABELS: Record<string, string> = {
   videos: "Videos",
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
     db.collection("backup_files").limit(5000).get(),
     (async () => {
       try {
-        const q = db.collection("backup_files").where("deleted_at", "==", null);
+        const q = db.collection("backup_files").where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
         const agg = q.aggregate({ totalBytes: AggregateField.sum("size_bytes") });
         return await agg.get();
       } catch {
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
     const bytesByOrg = new Map<string, number>();
     for (const doc of filesSnap.docs) {
       const data = doc.data();
-      if (data.deleted_at) continue;
+      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
       const size = typeof data.size_bytes === "number" ? data.size_bytes : 0;
       const orgId = data.organization_id;
       if (orgId) {
@@ -108,7 +109,7 @@ export async function GET(request: Request) {
   let sampledBytes = 0;
   for (const doc of filesSnap.docs) {
     const data = doc.data();
-    if (data.deleted_at) continue;
+    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
     const size = typeof data.size_bytes === "number" ? data.size_bytes : 0;
     sampledBytes += size;
     const cat = getCategoryFromFile(
@@ -162,10 +163,20 @@ export async function GET(request: Request) {
   const fileCounts = new Map<string, number>();
   for (const p of sorted) {
     if (orgIds.has(p.id)) {
-      const snap = await db.collection("backup_files").where("organization_id", "==", p.id).where("deleted_at", "==", null).count().get();
+      const snap = await db
+        .collection("backup_files")
+        .where("organization_id", "==", p.id)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+        .count()
+        .get();
       fileCounts.set(p.id, snap.data().count);
     } else {
-      const snap = await db.collection("backup_files").where("userId", "==", p.id).where("deleted_at", "==", null).count().get();
+      const snap = await db
+        .collection("backup_files")
+        .where("userId", "==", p.id)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+        .count()
+        .get();
       fileCounts.set(p.id, snap.data().count);
     }
   }

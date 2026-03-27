@@ -1,22 +1,12 @@
 /**
- * Remove a gallery asset and, when no other gallery row references the same backup file,
- * delete the backup_files document and B2 objects (content, proxy, thumbs, cover cache, LUT-baked).
+ * Gallery asset removal: explicit detach (metadata + gallery row only) vs purge (remove last backing
+ * storage when no other gallery refs). Normal product flows should default to purge only when
+ * intent is irreversible; use detach for “remove from this gallery” without storage deletion.
  */
 import type { Firestore, Query } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { logActivityEvent } from "@/lib/activity-log";
-import {
-  deleteObjectWithRetry,
-  getCoverDerivativeCacheKey,
-  getLutBakedObjectKey,
-  getProxyObjectKey,
-  getVideoThumbnailCacheKey,
-  isB2Configured,
-} from "@/lib/b2";
-import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
-import { deleteMuxAsset } from "@/lib/mux";
+import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
-import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
 
 const CHUNK = 400;
 
@@ -32,20 +22,28 @@ async function deleteByQuery(db: Firestore, q: Query): Promise<void> {
   }
 }
 
+export type GalleryAssetStorageAction = "detach_metadata" | "purge_unreferenced_backing";
+
 export type DeleteGalleryAssetResult =
   | {
       ok: true;
       backup_file_deleted: boolean;
       b2_deleted: boolean;
+      storage_action: GalleryAssetStorageAction;
+      /** Present when purge runs via deletion_jobs (gallery_storage + purge). */
+      purge_job_id?: string | null;
     }
   | { ok: false; error: string; status: number };
 
+/** @default purge_unreferenced_backing — same as historical DELETE behavior */
 export async function deleteGalleryAssetAndStorage(input: {
   galleryId: string;
   assetId: string;
   ownerUid: string;
+  storageAction?: GalleryAssetStorageAction;
 }): Promise<DeleteGalleryAssetResult> {
   const { galleryId, assetId, ownerUid } = input;
+  const storageAction: GalleryAssetStorageAction = input.storageAction ?? "purge_unreferenced_backing";
   const db = getAdminFirestore();
 
   const galleryRef = db.collection("galleries").doc(galleryId);
@@ -65,7 +63,6 @@ export async function deleteGalleryAssetAndStorage(input: {
   }
   const asset = assetSnap.data()!;
   const backupFileId = asset.backup_file_id as string;
-  const objectKey = ((asset.object_key as string) ?? "").trim();
 
   const fileSnapForOrigin = await db.collection("backup_files").doc(backupFileId).get();
   const fileDataForOrigin = fileSnapForOrigin.exists ? fileSnapForOrigin.data()! : null;
@@ -102,7 +99,12 @@ export async function deleteGalleryAssetAndStorage(input: {
   await assetRef.delete();
 
   if (effectiveOrigin === "linked") {
-    return { ok: true, backup_file_deleted: false, b2_deleted: false };
+    return {
+      ok: true,
+      backup_file_deleted: false,
+      b2_deleted: false,
+      storage_action: storageAction,
+    };
   }
 
   const stillLinked = await db
@@ -111,76 +113,67 @@ export async function deleteGalleryAssetAndStorage(input: {
     .limit(1)
     .get();
   if (!stillLinked.empty) {
-    return { ok: true, backup_file_deleted: false, b2_deleted: false };
+    return {
+      ok: true,
+      backup_file_deleted: false,
+      b2_deleted: false,
+      storage_action: storageAction,
+    };
+  }
+
+  if (storageAction === "detach_metadata") {
+    const fileRef = db.collection("backup_files").doc(backupFileId);
+    const fileSnap = await fileRef.get();
+    if (fileSnap.exists) {
+      const fileData = fileSnap.data()!;
+      if (fileData.userId === ownerUid && (fileData.gallery_id as string | null) === galleryId) {
+        await fileRef.update({ gallery_id: null });
+      }
+    }
+    return {
+      ok: true,
+      backup_file_deleted: false,
+      b2_deleted: false,
+      storage_action: "detach_metadata",
+    };
   }
 
   const fileRef = db.collection("backup_files").doc(backupFileId);
   const fileSnap = await fileRef.get();
   if (!fileSnap.exists) {
-    return { ok: true, backup_file_deleted: false, b2_deleted: false };
+    return {
+      ok: true,
+      backup_file_deleted: false,
+      b2_deleted: false,
+      storage_action: "purge_unreferenced_backing",
+    };
   }
   const fileData = fileSnap.data()!;
   if (fileData.userId !== ownerUid) {
-    return { ok: true, backup_file_deleted: false, b2_deleted: false };
+    return {
+      ok: true,
+      backup_file_deleted: false,
+      b2_deleted: false,
+      storage_action: "purge_unreferenced_backing",
+    };
   }
 
-  const pathLabel =
-    ((fileData.relative_path as string) ?? "").split("/").filter(Boolean).pop() ?? null;
-  const muxId = fileData.mux_asset_id as string | undefined;
-  if (muxId) {
-    await deleteMuxAsset(muxId);
-  }
+  const jobId = await enqueueBackupFilesPurgeJob(db, {
+    requestedBy: ownerUid,
+    fileIds: [backupFileId],
+    purgeVariant: "gallery_rich",
+    galleryPurge: {
+      gallery_id: galleryId,
+      asset_id: assetId,
+      owner_uid: ownerUid,
+    },
+  });
 
-  let b2Deleted = false;
-  if (objectKey && isB2Configured()) {
-    const refsSnap = await db.collection("backup_files").where("object_key", "==", objectKey).get();
-    const otherRefs = refsSnap.docs.filter((d) => d.id !== backupFileId);
-    if (otherRefs.length === 0) {
-      try {
-        await deleteObjectWithRetry(objectKey);
-        b2Deleted = true;
-        await Promise.all([
-          deleteObjectWithRetry(getProxyObjectKey(objectKey)).catch(() => {}),
-          deleteObjectWithRetry(getVideoThumbnailCacheKey(objectKey)).catch(() => {}),
-          deleteObjectWithRetry(getLutBakedObjectKey(objectKey)).catch(() => {}),
-          ...Object.keys(COVER_DERIVATIVE_WIDTHS).map((size) =>
-            deleteObjectWithRetry(getCoverDerivativeCacheKey(objectKey, size)).catch(() => {})
-          ),
-        ]);
-      } catch (err) {
-        console.error("[delete-gallery-asset] B2 delete failed:", objectKey, err);
-      }
-    }
-  }
-
-  await deleteByQuery(db, db.collection("file_hearts").where("fileId", "==", backupFileId));
-
-  const pinSnap = await db.collection("pinned_items").where("itemId", "==", backupFileId).get();
-  if (!pinSnap.empty) {
-    const batch = db.batch();
-    for (const d of pinSnap.docs) {
-      if (d.data().itemType === "file") batch.delete(d.ref);
-    }
-    await batch.commit();
-  }
-
-  await applyMacosPackageStatsForActiveBackupFileRemoval(db, fileData);
-
-  await fileRef.delete();
-
-  const orgId = (gallery.organization_id as string | null | undefined) ?? null;
-  logActivityEvent({
-    event_type: "file_deleted",
-    actor_user_id: ownerUid,
-    scope_type: orgId ? "organization" : "personal_account",
-    organization_id: orgId,
-    file_id: backupFileId,
-    target_type: "file",
-    target_name: pathLabel,
-    linked_drive_id: (fileData.linked_drive_id as string) ?? null,
-    drive_type: "gallery",
-    metadata: { source: "gallery_asset_delete", gallery_id: galleryId, asset_id: assetId },
-  }).catch(() => {});
-
-  return { ok: true, backup_file_deleted: true, b2_deleted: b2Deleted };
+  return {
+    ok: true,
+    backup_file_deleted: false,
+    b2_deleted: false,
+    storage_action: "purge_unreferenced_backing",
+    purge_job_id: jobId,
+  };
 }

@@ -6,6 +6,7 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
       .collection("backup_files")
       .where("userId", "==", uid)
       .where("organization_id", "==", null)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .where("linked_drive_id", "in", batch)
       .limit(1)
       .get();
@@ -68,7 +69,7 @@ export async function GET(request: Request) {
       .collection("backup_files")
       .where("userId", "==", uid)
       .where("organization_id", "==", null)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .where("linked_drive_id", "in", batch)
       .limit(1)
       .get();

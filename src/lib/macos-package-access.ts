@@ -2,6 +2,7 @@ import type { DocumentData } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { MACOS_PACKAGE_CONTAINERS_COLLECTION } from "@/lib/macos-package-container-admin";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export async function verifyMacosPackageAccessForUser(
   uid: string,
@@ -19,7 +20,7 @@ export async function verifyMacosPackageAccessForUser(
   const member = await db
     .collection("backup_files")
     .where("macos_package_id", "==", packageId)
-    .where("deleted_at", "==", null)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
     .limit(1)
     .get();
   if (member.empty) {

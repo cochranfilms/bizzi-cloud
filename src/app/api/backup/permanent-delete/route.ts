@@ -1,24 +1,19 @@
 /**
  * POST /api/backup/permanent-delete
- * Permanently deletes files (and optionally a drive) from Firestore AND B2.
+ * Marks authorized backup_files as pending_permanent_delete, sets deletion_jobs row, returns immediately.
+ * Physical B2 + Firestore removal runs in /api/cron/deletion-jobs-worker.
  * Body: { file_ids?: string[], drive_id?: string }
- *
- * For each file: deletes B2 object (content + proxy + thumbnail cache) if no other
- * backup_file references it, then deletes Firestore doc.
- * For drive_id: deletes all files the caller is allowed to remove in the drive, then the drive doc.
  */
 import type { DocumentData } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import {
-  isB2Configured,
-  deleteObjectWithRetry,
-  getVideoThumbnailCacheKey,
-  getProxyObjectKey,
-} from "@/lib/b2";
 import { logActivityEvent } from "@/lib/activity-log";
 import { assertMayRemoveBackupFile, TrashForbiddenError } from "@/lib/container-delete-policy";
-import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
+import { BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE } from "@/lib/backup-file-lifecycle";
+import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { NextResponse } from "next/server";
+
+const UPDATE_BATCH = 500;
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -83,7 +78,6 @@ export async function POST(request: Request) {
 
   const authorizedIds: string[] = [];
   const authorizedFileData: DocumentData[] = [];
-  const filesToDelete: Array<{ id: string; object_key: string }> = [];
   for (const id of idsToDelete) {
     try {
       await assertMayRemoveBackupFile(uid, id);
@@ -96,59 +90,60 @@ export async function POST(request: Request) {
     const snap = await db.collection("backup_files").doc(id).get();
     if (!snap.exists) continue;
     const fileData = snap.data()!;
+    const ls = fileData.lifecycle_state as string | undefined;
+    if (ls === "pending_permanent_delete" || ls === "permanently_deleted") {
+      continue;
+    }
     authorizedIds.push(id);
     authorizedFileData.push(fileData);
-    const objectKey = (fileData.object_key as string) ?? "";
-    if (objectKey) filesToDelete.push({ id, object_key: objectKey });
   }
 
-  let b2Deleted = 0;
-  let b2Skipped = 0;
-
-  if (isB2Configured()) {
-    for (const { id, object_key } of filesToDelete) {
-      const refsSnap = await db
-        .collection("backup_files")
-        .where("object_key", "==", object_key)
-        .get();
-      const otherRefs = refsSnap.docs.filter((d) => d.id !== id);
-      if (otherRefs.length > 0) {
-        b2Skipped++;
-        continue;
-      }
-
-      try {
-        await deleteObjectWithRetry(object_key);
-        b2Deleted++;
-        const proxyKey = getProxyObjectKey(object_key);
-        const thumbKey = getVideoThumbnailCacheKey(object_key);
-        await Promise.all([
-          deleteObjectWithRetry(proxyKey).catch(() => {}),
-          deleteObjectWithRetry(thumbKey).catch(() => {}),
-        ]);
-      } catch (err) {
-        console.error("[permanent-delete] B2 delete failed after retries:", object_key, err);
-      }
+  if (authorizedIds.length === 0) {
+    if (driveId) {
+      await db.collection("linked_drives").doc(driveId).delete();
+      logActivityEvent({
+        event_type: "file_deleted",
+        actor_user_id: uid,
+        scope_type: "personal_account",
+        linked_drive_id: driveId,
+        metadata: { deleted_count: 0, drive_deleted: true, purge_async: false },
+      }).catch(() => {});
+      return NextResponse.json({
+        ok: true,
+        job_id: null,
+        filesDeleted: 0,
+        filesEnqueued: 0,
+        driveDeleted: 1,
+        drivePurgePending: false,
+        b2Deleted: 0,
+        b2Skipped: 0,
+      });
     }
+    return NextResponse.json({ error: "No files to delete" }, { status: 400 });
   }
 
-  for (const fileData of authorizedFileData) {
-    await applyMacosPackageStatsForActiveBackupFileRemoval(db, fileData);
-  }
-
-  const BATCH_SIZE = 500;
-  for (let i = 0; i < authorizedIds.length; i += BATCH_SIZE) {
-    const chunk = authorizedIds.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < authorizedIds.length; i += UPDATE_BATCH) {
     const batch = db.batch();
-    for (const id of chunk) {
-      batch.delete(db.collection("backup_files").doc(id));
+    const end = Math.min(i + UPDATE_BATCH, authorizedIds.length);
+    for (let j = i; j < end; j++) {
+      const id = authorizedIds[j];
+      const fileData = authorizedFileData[j];
+      const patch: Record<string, unknown> = {
+        lifecycle_state: BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+      };
+      if (!fileData.deleted_at) {
+        patch.deleted_at = FieldValue.serverTimestamp();
+      }
+      batch.update(db.collection("backup_files").doc(id), patch);
     }
     await batch.commit();
   }
 
-  if (driveId) {
-    await db.collection("linked_drives").doc(driveId).delete();
-  }
+  const jobId = await enqueueBackupFilesPurgeJob(db, {
+    requestedBy: uid,
+    fileIds: authorizedIds,
+    driveId: driveId ?? null,
+  });
 
   logActivityEvent({
     event_type: "file_deleted",
@@ -157,15 +152,20 @@ export async function POST(request: Request) {
     linked_drive_id: driveId ?? null,
     metadata: {
       deleted_count: authorizedIds.length,
-      drive_deleted: !!driveId,
+      drive_will_delete: !!driveId,
+      deletion_job_id: jobId,
+      purge_async: true,
     },
   }).catch(() => {});
 
   return NextResponse.json({
     ok: true,
+    job_id: jobId,
     filesDeleted: authorizedIds.length,
-    driveDeleted: driveId ? 1 : 0,
-    b2Deleted,
-    b2Skipped,
+    filesEnqueued: authorizedIds.length,
+    driveDeleted: 0,
+    drivePurgePending: !!driveId,
+    b2Deleted: 0,
+    b2Skipped: 0,
   });
 }

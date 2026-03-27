@@ -2,6 +2,7 @@
  * Uppy S3 API — Create backup_files record after presigned PUT upload (files ≤5MB).
  * For small files, Uppy uses presigned PUT directly to B2; no multipart complete is called.
  * The client calls this after a successful presigned upload so the file appears in Storage/Recent Uploads.
+ * (Deletion roadmap Phase 7: optional move toward stricter server-owned row creation / idempotency — not required here yet.)
  */
 import { isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
@@ -11,6 +12,7 @@ import { logActivityEvent } from "@/lib/activity-log";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
@@ -159,6 +161,7 @@ export async function POST(request: Request) {
     modified_at: modifiedAt,
     uploaded_at: new Date().toISOString(),
     deleted_at: null,
+    lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
     organization_id: organizationId,
     gallery_id: galleryId ?? null,
     workspace_id: workspaceIdResolved,

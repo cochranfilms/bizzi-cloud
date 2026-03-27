@@ -11,6 +11,7 @@ import {
   applyMacosPackageDelta,
   mergeMacosPackageTrashDeltasInto,
 } from "@/lib/macos-package-container-admin";
+import { BACKUP_LIFECYCLE_ACTIVE, BACKUP_LIFECYCLE_TRASHED } from "@/lib/backup-file-lifecycle";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -92,13 +93,13 @@ export async function POST(request: Request) {
         .collection("backup_files")
         .where("linked_drive_id", "==", did)
         .where("userId", "==", uid)
-        .where("deleted_at", "==", null)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .get(),
       db
         .collection("backup_files")
         .where("linked_drive_id", "==", did)
         .where("user_id", "==", uid)
-        .where("deleted_at", "==", null)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .get(),
     ]);
 
@@ -130,7 +131,10 @@ export async function POST(request: Request) {
   for (let i = 0; i < docList.length; i += UPDATE_BATCH) {
     const batch = db.batch();
     for (const d of docList.slice(i, i + UPDATE_BATCH)) {
-      batch.update(d.ref, { deleted_at: FieldValue.serverTimestamp() });
+      batch.update(d.ref, {
+        deleted_at: FieldValue.serverTimestamp(),
+        lifecycle_state: BACKUP_LIFECYCLE_TRASHED,
+      });
     }
     await batch.commit();
   }

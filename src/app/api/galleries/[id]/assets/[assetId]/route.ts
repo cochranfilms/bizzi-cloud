@@ -2,10 +2,16 @@
  * PATCH /api/galleries/[id]/assets/[assetId]
  * Update gallery asset (photographer only) – e.g. proofing_status
  *
- * DELETE — remove asset from gallery; deletes backup_files row and B2 objects when no other gallery asset references that file.
+ * DELETE — remove gallery asset. Body optional: { storage_action?: "detach" | "purge" }.
+ * purge (default): historical behavior — may delete backup_files + B2 when origin is gallery_storage and no ref remains.
+ * detach: remove gallery row + clear gallery_id on backup only; never B2 purge.
+ * purge (gallery_storage): enqueues deletion_jobs with gallery_rich variant; response may include purge_job_id (physical delete is async).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { deleteGalleryAssetAndStorage } from "@/lib/delete-gallery-asset";
+import {
+  deleteGalleryAssetAndStorage,
+  type GalleryAssetStorageAction,
+} from "@/lib/delete-gallery-asset";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
@@ -123,10 +129,16 @@ export async function DELETE(
     return NextResponse.json({ error: "Gallery ID and asset ID required" }, { status: 400 });
   }
 
+  const body = await request.json().catch(() => ({}));
+  const rawAction = (body as { storage_action?: string }).storage_action;
+  const storageAction: GalleryAssetStorageAction =
+    rawAction === "detach" ? "detach_metadata" : "purge_unreferenced_backing";
+
   const result = await deleteGalleryAssetAndStorage({
     galleryId,
     assetId,
     ownerUid: uid,
+    storageAction,
   });
 
   if (!result.ok) {
@@ -137,5 +149,7 @@ export async function DELETE(
     ok: true,
     backup_file_deleted: result.backup_file_deleted,
     b2_deleted: result.b2_deleted,
+    storage_action: result.storage_action,
+    ...(result.purge_job_id != null ? { purge_job_id: result.purge_job_id } : {}),
   });
 }

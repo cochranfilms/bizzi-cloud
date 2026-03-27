@@ -8,6 +8,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi|mxf|mts|mkv|3gp|braw|r3d|ari|dng|crm|rcd|sir)$/i;
 const MAX_BATCH = 100;
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
   const filesSnap = await db
     .collection("backup_files")
     .where("userId", "==", uid)
-    .where("deleted_at", "==", null)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
     .where("linked_drive_id", "in", driveIds.slice(0, 10)) // Firestore "in" max 10
     .get();
 
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
         db
           .collection("backup_files")
           .where("userId", "==", uid)
-          .where("deleted_at", "==", null)
+          .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
           .where("linked_drive_id", "in", driveIds.slice(10 + i * 10, 10 + (i + 1) * 10))
           .get()
       )

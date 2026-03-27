@@ -1,9 +1,13 @@
 /**
  * GET /api/files/drive-item-counts
  * Per-drive file counts using Admin SDK and the same access rules as /api/files/filter.
- * Avoids client-side getCountFromServer / runAggregationQuery 403s for org seats and team routes.
+ * Active vs trash uses lifecycle_state (not deleted_at). Trash counts = restorable rows only (trashed).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import {
+  BACKUP_LIFECYCLE_ACTIVE,
+  BACKUP_LIFECYCLE_TRASHED,
+} from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import {
@@ -14,6 +18,10 @@ import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import { NextResponse } from "next/server";
 
 const WORKSPACE_IN_LIMIT = 30;
+
+function lifecycleStateForDriveCount(trashOnly: boolean): string {
+  return trashOnly ? BACKUP_LIFECYCLE_TRASHED : BACKUP_LIFECYCLE_ACTIVE;
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -62,8 +70,8 @@ export async function GET(request: Request) {
   }
 
   const db = getAdminFirestore();
+  const ls = lifecycleStateForDriveCount(trashOnly);
 
-  /** Personal-account drives (no org): avoids client getCountFromServer failed-precondition on trash counts. */
   if (personal) {
     if (organizationId || teamOwnerId) {
       return NextResponse.json(
@@ -82,9 +90,9 @@ export async function GET(request: Request) {
           return;
         }
         const coll = db.collection("backup_files");
-        const q = trashOnly
-          ? coll.where("linked_drive_id", "==", driveId).where("deleted_at", "!=", null)
-          : coll.where("linked_drive_id", "==", driveId).where("deleted_at", "==", null);
+        const q = coll
+          .where("linked_drive_id", "==", driveId)
+          .where("lifecycle_state", "==", ls);
         const agg = await q.count().get();
         counts[driveId] = agg.data().count;
       })
@@ -133,13 +141,7 @@ export async function GET(request: Request) {
           return;
         }
         const coll = db.collection("backup_files");
-        const q = trashOnly
-          ? coll
-              .where("linked_drive_id", "==", driveId)
-              .where("deleted_at", "!=", null)
-          : coll
-              .where("linked_drive_id", "==", driveId)
-              .where("deleted_at", "==", null);
+        const q = coll.where("linked_drive_id", "==", driveId).where("lifecycle_state", "==", ls);
         const agg = await q.count().get();
         counts[driveId] = agg.data().count;
       })
@@ -157,10 +159,7 @@ export async function GET(request: Request) {
 
   const accessibleWorkspaceIds = await getAccessibleWorkspaceIds(uid, orgId);
 
-  if (
-    workspaceNarrowId &&
-    !accessibleWorkspaceIds.includes(workspaceNarrowId)
-  ) {
+  if (workspaceNarrowId && !accessibleWorkspaceIds.includes(workspaceNarrowId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -181,9 +180,7 @@ export async function GET(request: Request) {
           .where("linked_drive_id", "==", driveId)
           .where("userId", "==", uid)
           .where("organization_id", "==", orgId);
-        const q = trashOnly
-          ? base.where("deleted_at", "!=", null)
-          : base.where("deleted_at", "==", null);
+        const q = base.where("lifecycle_state", "==", ls);
         const agg = await q.count().get();
         return agg.data().count;
       }
@@ -196,7 +193,7 @@ export async function GET(request: Request) {
         .where("linked_drive_id", "==", driveId)
         .where("organization_id", "==", orgId)
         .where("workspace_id", "in", batch);
-      return trashOnly ? b.where("deleted_at", "!=", null) : b.where("deleted_at", "==", null);
+      return b.where("lifecycle_state", "==", ls);
     };
 
     if (workspaceIdsForCount.length <= WORKSPACE_IN_LIMIT) {

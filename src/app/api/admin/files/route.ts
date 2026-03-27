@@ -5,6 +5,7 @@
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export async function GET(request: Request) {
   const auth = await requireAdminAuth(request);
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const authService = getAdminAuth();
 
-  let q = db.collection("backup_files").where("deleted_at", "==", null);
+  let q = db.collection("backup_files").where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
   if (ownerId) {
     q = q.where("userId", "==", ownerId) as typeof q;
   }

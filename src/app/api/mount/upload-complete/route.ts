@@ -14,6 +14,7 @@ import {
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
@@ -219,6 +220,7 @@ export async function POST(request: Request) {
     modified_at: now,
     uploaded_at: now,
     deleted_at: null,
+    lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
     organization_id: organizationId,
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,

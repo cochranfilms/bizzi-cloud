@@ -10,6 +10,7 @@ import { verifyMacosPackageAccessForUser } from "@/lib/macos-package-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { NextResponse } from "next/server";
 
 const PAGE = 500;
@@ -97,7 +98,7 @@ export async function POST(
         let q = db
           .collection("backup_files")
           .where("macos_package_id", "==", packageId)
-          .where("deleted_at", "==", null)
+          .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
           .orderBy("relative_path")
           .limit(PAGE);
         if (last) q = q.startAfter(last);
@@ -147,7 +148,7 @@ async function fetchFirstMemberObjectKey(packageId: string): Promise<string | nu
   const snap = await db
     .collection("backup_files")
     .where("macos_package_id", "==", packageId)
-    .where("deleted_at", "==", null)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
     .limit(1)
     .get();
   if (snap.empty) return null;

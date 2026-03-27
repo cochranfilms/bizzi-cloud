@@ -26,6 +26,10 @@ import {
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { isCreativeProjectFilterMatch } from "@/lib/creative-file-registry";
 import { isImageFile, isVideoFile } from "@/lib/bizzi-file-types";
+import {
+  BACKUP_LIFECYCLE_ACTIVE,
+  isBackupFileActiveForListing,
+} from "@/lib/backup-file-lifecycle";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -531,10 +535,12 @@ export async function GET(request: Request) {
     const userFileIdsSnap = await db
       .collection("backup_files")
       .where("userId", "==", uid)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .limit(1000)
       .get();
-    const userFileIds = userFileIdsSnap.docs.map((d) => d.id);
+    const userFileIds = userFileIdsSnap.docs
+      .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>))
+      .map((d) => d.id);
     const commentedFileIds = new Set<string>();
     const IN_BATCH = 30; // Firestore "in" limit
     for (let i = 0; i < userFileIds.length; i += IN_BATCH) {
@@ -680,7 +686,7 @@ export async function GET(request: Request) {
           .collection("backup_files")
           .where("userId", "==", uid)
           .where("organization_id", "==", orgFilter)
-          .where("deleted_at", "==", null);
+          .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
       } else {
         // New member with no accessible workspaces - return empty
         return NextResponse.json({
@@ -695,7 +701,7 @@ export async function GET(request: Request) {
         .collection("backup_files")
         .where("organization_id", "==", orgFilter)
         .where("workspace_id", "in", workspaceIdsForQuery)
-        .where("deleted_at", "==", null);
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
    } else {
       // Batch queries and merge (Phase 1: rare; most orgs have few workspaces)
       const batches = [];
@@ -706,7 +712,7 @@ export async function GET(request: Request) {
             .collection("backup_files")
             .where("organization_id", "==", orgFilter)
             .where("workspace_id", "in", batch)
-            .where("deleted_at", "==", null)
+            .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
             .limit(MAX_FETCH_FOR_POST_FILTER * 2)
             .get()
         );
@@ -734,7 +740,9 @@ export async function GET(request: Request) {
       });
       const driveFilter = (d: { data: () => Record<string, unknown> }) =>
         driveIds.has((d.data().linked_drive_id as string) ?? "");
-      let filteredDocs = allDocs.filter(driveFilter);
+      let filteredDocs = allDocs
+        .filter(driveFilter)
+        .filter((doc) => isBackupFileActiveForListing(doc.data() as Record<string, unknown>));
       const batchNeedsPostFilter =
         !!filters.resolution ||
         !!filters.codec ||
@@ -801,7 +809,7 @@ export async function GET(request: Request) {
       q = db
         .collection("backup_files")
         .where("linked_drive_id", "in", idList)
-        .where("deleted_at", "==", null);
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
     } else {
       const batches = [];
       for (let i = 0; i < idList.length; i += PERSONAL_DRIVE_IN_LIMIT) {
@@ -810,7 +818,7 @@ export async function GET(request: Request) {
           db
             .collection("backup_files")
             .where("linked_drive_id", "in", batch)
-            .where("deleted_at", "==", null)
+            .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
             .limit(MAX_FETCH_FOR_POST_FILTER * 2)
             .get()
         );
@@ -838,14 +846,17 @@ export async function GET(request: Request) {
       });
       const driveFilterPersonal = (d: { data: () => Record<string, unknown> }) =>
         driveIds.has((d.data().linked_drive_id as string) ?? "");
-      let filteredDocs = allDocs.filter(driveFilterPersonal).filter((doc) =>
-        filters.teamOwnerUserId
-          ? fileBelongsToPersonalTeamContainer(
-              doc.data() as Record<string, unknown>,
-              filters.teamOwnerUserId
-            )
-          : isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
-      );
+      let filteredDocs = allDocs
+        .filter(driveFilterPersonal)
+        .filter((doc) => isBackupFileActiveForListing(doc.data() as Record<string, unknown>))
+        .filter((doc) =>
+          filters.teamOwnerUserId
+            ? fileBelongsToPersonalTeamContainer(
+                doc.data() as Record<string, unknown>,
+                filters.teamOwnerUserId
+              )
+            : isPersonalScopeFileDoc(doc.data() as Record<string, unknown>)
+        );
       const batchNeedsPostFilter =
         !!filters.resolution ||
         !!filters.codec ||
@@ -1019,7 +1030,9 @@ export async function GET(request: Request) {
   const driveFilter = (d: QueryDocumentSnapshot) =>
     driveIds.has(d.data().linked_drive_id as string);
 
-  let filteredDocs = snap.docs.filter(driveFilter);
+  let filteredDocs = snap.docs
+    .filter(driveFilter)
+    .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>));
   if (orgFilter == null) {
     if (filters.teamOwnerUserId) {
       const tow = filters.teamOwnerUserId;

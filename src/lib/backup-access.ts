@@ -6,6 +6,7 @@ import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
+import { BACKUP_LIFECYCLE_ACTIVE, isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import {
   getEffectiveStorageLifecycle,
   storageLifecycleBlocksAccess,
@@ -68,7 +69,8 @@ export async function verifyBackupFileAccess(
     .where("object_key", "==", objectKey)
     .limit(1)
     .get();
-  if (!snap.empty && !snap.docs[0].data().deleted_at) return true;
+  if (!snap.empty && isBackupFileActiveForListing(snap.docs[0].data() as Record<string, unknown>))
+    return true;
 
   // Proxy key: user has access if they own an original whose proxy matches
   if (objectKey.startsWith("proxies/") && objectKey.endsWith(".mp4")) {
@@ -78,7 +80,7 @@ export async function verifyBackupFileAccess(
       let q = db
         .collection("backup_files")
         .where("userId", "==", uid)
-        .where("deleted_at", "==", null)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .limit(BATCH)
         .orderBy(FieldPath.documentId());
       if (lastDoc) q = q.startAfter(lastDoc);

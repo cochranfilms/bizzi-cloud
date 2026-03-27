@@ -9,6 +9,7 @@
     "set-user-password": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' -r dotenv/config scripts/set-user-password.ts",
     "sync-subscription": "DOTENV_CONFIG_PATH=.env.local npx ts-node -r ./scripts/register-paths.js --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/sync-subscription.ts",
     "delete-user-files": "DOTENV_CONFIG_PATH=.env.local npx ts-node -r ./scripts/register-paths.js --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/delete-user-files.ts",
+    "backfill:backup-files-lifecycle": "DOTENV_CONFIG_PATH=.env.local npx ts-node -r ./scripts/register-paths.js --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/backfill-backup-files-lifecycle.ts",
     "dev": "node node_modules/next/dist/bin/next dev",
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start",

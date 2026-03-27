@@ -4,6 +4,7 @@
  */
 
 import { getCategoryFromFile } from "./category-map";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 export interface FileRecord {
   id: string;
@@ -12,6 +13,7 @@ export interface FileRecord {
   content_type?: string | null;
   usage_status?: string | null;
   deleted_at?: unknown;
+  lifecycle_state?: unknown;
   modified_at?: string | null;
   created_at?: string | null;
   raw_format?: string | null;
@@ -246,7 +248,9 @@ export function aggregateFiles(
     totalUsedBytes,
     totalQuotaBytes: quotaBytes,
     remainingBytes,
-    totalFileCount: files.filter((f) => f.deleted_at == null).length,
+    totalFileCount: files.filter((f) =>
+      isBackupFileActiveForListing(f as unknown as Record<string, unknown>)
+    ).length,
     categories,
     activeBytes: totalUsedBytes,
     archivedBytes,

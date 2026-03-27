@@ -5,6 +5,7 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { DocumentData } from "firebase-admin/firestore";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 export class TrashForbiddenError extends Error {
   constructor(message: string) {
@@ -54,7 +55,7 @@ export async function assertCanTrashBackupFile(
     throw new TrashForbiddenError("File not found");
   }
   const d = f.data()!;
-  if (d.deleted_at) {
+  if (!isBackupFileActiveForListing(d as Record<string, unknown>)) {
     throw new TrashForbiddenError("Already deleted");
   }
   await assertActorMayRemoveBackupFileData(actorUid, d);

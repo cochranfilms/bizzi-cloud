@@ -10,6 +10,7 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import type { PlanId } from "@/lib/plan-constants";
 import { AggregateField, Timestamp } from "firebase-admin/firestore";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 /** B2 Pay-as-you-go: $6/TB/month. First 10GB free. */
 const B2_STORAGE_USD_PER_TB = 6;
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
 
   let totalStorageBytes = totalStorageFromProfiles;
   try {
-    const q = db.collection("backup_files").where("deleted_at", "==", null);
+    const q = db.collection("backup_files").where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
     const agg = q.aggregate({ totalBytes: AggregateField.sum("size_bytes") });
     const aggSnap = await agg.get();
     const filesSum = Number(aggSnap.data().totalBytes ?? 0);

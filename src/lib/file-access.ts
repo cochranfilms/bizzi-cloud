@@ -11,6 +11,7 @@ import {
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
 } from "@/lib/folder-share-workspace";
+import { BACKUP_LIFECYCLE_ACTIVE, isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 function personalTeamSeatAllowsAccess(status: string | undefined): boolean {
   return status === "active" || status === "cold_storage";
@@ -31,7 +32,7 @@ export async function canAccessBackupFileById(
   if (!fileSnap.exists) return false;
 
   const fileData = fileSnap.data();
-  if (fileData?.deleted_at) return false;
+  if (!fileData || !isBackupFileActiveForListing(fileData as Record<string, unknown>)) return false;
 
   // Owner
   if (fileData?.userId === uid) return true;
@@ -179,7 +180,7 @@ export async function getAnchorBackupFileIdForMacosPackage(
   const snap = await db
     .collection("backup_files")
     .where("macos_package_id", "==", packageId)
-    .where("deleted_at", "==", null)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
     .limit(1)
     .get();
   if (snap.empty) return null;
@@ -274,7 +275,7 @@ export async function hydrateCollaborationFileForApiResponse(
     const fileSnap = await db.collection("backup_files").doc(ctx.anchorBackupFileId).get();
     if (!fileSnap.exists) return null;
     const data = fileSnap.data()!;
-    if (data.deleted_at) return null;
+    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) return null;
     const path = (data.relative_path as string) ?? "";
     const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
     const driveId = (data.linked_drive_id as string) ?? "";
@@ -304,7 +305,7 @@ export async function hydrateCollaborationFileForApiResponse(
   const anchorSnap = await db.collection("backup_files").doc(ctx.anchorBackupFileId).get();
   if (!anchorSnap.exists) return null;
   const ad = anchorSnap.data()!;
-  if (ad.deleted_at) return null;
+  if (!isBackupFileActiveForListing(ad as Record<string, unknown>)) return null;
 
   const rootPath = (cd.root_relative_path as string) ?? "";
   const name =

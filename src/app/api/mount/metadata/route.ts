@@ -8,6 +8,7 @@ import {
 import { getProjectRenditionState } from "@/lib/conform/project-rendition-state";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -103,13 +104,13 @@ export async function POST(request: Request) {
           .collection("backup_files")
           .where("userId", "==", uid)
           .where("linked_drive_id", "==", did)
-          .where("deleted_at", "==", null)
+          .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
           .get(),
         db
           .collection("backup_files")
           .where("user_id", "==", uid)
           .where("linked_drive_id", "==", did)
-          .where("deleted_at", "==", null)
+          .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
           .get(),
       ]);
       for (const snap of [filesByUserId, filesByUserIdSnake]) {

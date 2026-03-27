@@ -45,6 +45,12 @@ import {
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
+import {
+  BACKUP_LIFECYCLE_ACTIVE,
+  BACKUP_LIFECYCLE_TRASHED,
+  isBackupFileActiveForListing,
+  resolveBackupFileLifecycleState,
+} from "@/lib/backup-file-lifecycle";
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
@@ -681,13 +687,14 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             collection(db, "backup_files"),
             where("linked_drive_id", "==", drive.id),
             where("organization_id", "==", drive.organization_id),
-            where("deleted_at", "==", null),
+            where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE),
             orderBy("modified_at", "desc"),
             limit(perDriveLimit)
           );
           const snap = await getDocs(q);
           for (const d of snap.docs) {
-            if (d.data().deleted_at || !driveIds.has(d.data().linked_drive_id)) continue;
+            const raw = d.data() as Record<string, unknown>;
+            if (!isBackupFileActiveForListing(raw) || !driveIds.has(d.data().linked_drive_id)) continue;
             const data = d.data();
             const path = data.relative_path ?? "";
             const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
@@ -917,7 +924,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const snapshotConstraints: QueryConstraint[] = [
           where("linked_drive_id", "==", driveId),
           where("organization_id", "==", drive.organization_id),
-          where("deleted_at", "==", null),
+          where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE),
         ];
         if (selectedWorkspaceId != null && selectedWorkspaceId !== "") {
           snapshotConstraints.push(where("workspace_id", "==", selectedWorkspaceId));
@@ -926,7 +933,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const q = query(collection(db, "backup_files"), ...snapshotConstraints);
         return onSnapshot(q, (snap) => {
           const files: RecentFile[] = snap.docs
-            .filter((d) => !d.data().deleted_at)
+            .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>))
             .map((d) => {
               const data = d.data();
               const path = data.relative_path ?? "";
@@ -1012,7 +1019,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         }
         filesSnap.docs.forEach((d) => {
           const data = d.data();
-          if (data.deleted_at) return;
+          if (!isBackupFileActiveForListing(data as Record<string, unknown>)) return;
           const path = data.relative_path ?? "";
           const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
           allFiles.push({
@@ -1057,14 +1064,14 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
                   where("organization_id", "==", drive.organization_id),
-                  where("deleted_at", "!=", null),
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
                   orderBy("deleted_at", "desc"),
                   limit(120)
                 )
               : query(
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
-                  where("deleted_at", "!=", null),
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
                   orderBy("deleted_at", "desc"),
                   limit(120)
                 )
@@ -1243,9 +1250,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       await updateDoc(fileRef, { relative_path: newPath });
       await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, bumpStorageVersion]
+    [user, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const renameFolder = useCallback(
@@ -1256,9 +1263,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       await updateDoc(driveRef, { name: newName.trim() || "Folder" });
       await fetchDrives();
       bumpStorageVersion();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchCloudFiles, bumpStorageVersion, fetchDrives]
+    [user, bumpStorageVersion, fetchDrives, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const moveFile = useCallback(
@@ -1284,8 +1291,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         relative_path: fileName,
       });
       await reconcileMacosPackageForBackupFileClient(fileId);
-      await recalculateStorage();
-      await fetchCloudFiles();
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
     [
       user,
@@ -1293,8 +1300,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       orgId,
       orgRole,
       isEnterpriseContext,
-      fetchCloudFiles,
-      recalculateStorage,
+      bumpStorageVersion,
+      scheduleDebouncedPostTrashMetadataRefresh,
     ]
   );
 
@@ -1320,8 +1327,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         });
         await reconcileMacosPackageForBackupFileClient(fileId);
       }
-      await recalculateStorage();
-      await fetchCloudFiles();
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
     [
       user,
@@ -1329,8 +1336,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       orgId,
       orgRole,
       isEnterpriseContext,
-      fetchCloudFiles,
-      recalculateStorage,
+      bumpStorageVersion,
+      scheduleDebouncedPostTrashMetadataRefresh,
     ]
   );
 
@@ -1348,21 +1355,23 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", driveId),
                   where("organization_id", "==", folderDrive.organization_id),
-                  where("deleted_at", "==", null)
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
                 )
               : query(
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", driveId),
-                  where("deleted_at", "==", null)
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
                 )
             : query(
                 collection(db, "backup_files"),
                 where("userId", "==", user.uid),
                 where("linked_drive_id", "==", driveId),
-                where("deleted_at", "==", null)
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
               )
         );
-        snap.docs.forEach((d) => ids.add(d.id));
+        snap.docs
+          .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>))
+          .forEach((d) => ids.add(d.id));
       }
       return Array.from(ids);
     },
@@ -1381,21 +1390,22 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 collection(db, "backup_files"),
                 where("linked_drive_id", "==", sourceDriveId),
                 where("organization_id", "==", sourceDrive.organization_id),
-                where("deleted_at", "==", null)
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
               )
             : query(
                 collection(db, "backup_files"),
                 where("linked_drive_id", "==", sourceDriveId),
-                where("deleted_at", "==", null)
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
               )
           : query(
               collection(db, "backup_files"),
               where("userId", "==", user.uid),
               where("linked_drive_id", "==", sourceDriveId),
-              where("deleted_at", "==", null)
+              where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
             )
       );
       for (const d of filesSnap.docs) {
+        if (!isBackupFileActiveForListing(d.data() as Record<string, unknown>)) continue;
         const data = d.data();
         const path = (data.relative_path as string) ?? "";
         const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
@@ -1406,10 +1416,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         await reconcileMacosPackageForBackupFileClient(d.id);
       }
       if (sourceDrive) await unlinkDrive(sourceDrive);
-      await recalculateStorage();
-      await fetchCloudFiles();
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, linkedDrives, unlinkDrive, fetchCloudFiles, recalculateStorage]
+    [user, linkedDrives, unlinkDrive, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const deleteFolder = useCallback(
@@ -1428,21 +1438,23 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
                   where("organization_id", "==", linkedDriveMeta.organization_id),
-                  where("deleted_at", "==", null)
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
                 )
               : query(
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
-                  where("deleted_at", "==", null)
+                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
                 )
             : query(
                 collection(db, "backup_files"),
                 where("userId", "==", user.uid),
                 where("linked_drive_id", "==", drive.id),
-                where("deleted_at", "==", null)
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
               )
         );
-        const ids = filesSnap.docs.map((d) => d.id);
+        const ids = filesSnap.docs
+          .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>))
+          .map((d) => d.id);
         try {
           await trashBackupFileIdsViaApi(ids);
         } catch (e) {
@@ -1452,13 +1464,19 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         await updateDoc(doc(db, "linked_drives", drive.id), {
           deleted_at: serverTimestamp(),
         });
-        await recalculateStorage();
         await fetchDrives();
       }
       bumpStorageVersion();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, linkedDrives, unlinkDrive, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+    [
+      user,
+      linkedDrives,
+      unlinkDrive,
+      fetchDrives,
+      bumpStorageVersion,
+      scheduleDebouncedPostTrashMetadataRefresh,
+    ]
   );
 
   const fetchDeletedDrives = useCallback(async (): Promise<DeletedDrive[]> => {
@@ -1527,12 +1545,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
               collection(db, "backup_files"),
               where("linked_drive_id", "==", driveId),
               where("organization_id", "==", sourceDrive.organization_id),
-              where("deleted_at", "!=", null)
+              where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED)
             )
           : query(
               collection(db, "backup_files"),
               where("linked_drive_id", "==", driveId),
-              where("deleted_at", "!=", null)
+              where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED)
             )
       );
       const ids = filesSnap.docs.map((d) => d.id);
@@ -1556,12 +1574,11 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         }
       }
       await updateDoc(doc(db, "linked_drives", driveId), { deleted_at: null });
-      await recalculateStorage();
       await fetchDrives();
       bumpStorageVersion();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, linkedDrives, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+    [user, linkedDrives, fetchDrives, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const permanentlyDeleteDrive = useCallback(
@@ -1582,12 +1599,11 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data?.error as string) ?? "Failed to permanently delete");
       }
-      await recalculateStorage();
       await fetchDrives();
       bumpStorageVersion();
-      await fetchCloudFiles();
+      scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, fetchDrives, fetchCloudFiles, recalculateStorage, bumpStorageVersion]
+    [user, fetchDrives, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   return {

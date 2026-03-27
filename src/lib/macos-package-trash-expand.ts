@@ -3,6 +3,7 @@
  * doc IDs for trash/move. Client views only load a page of files, so expansion must run on the server.
  */
 import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export const MACOS_PACKAGE_ROW_ID_PREFIX = "macos-pkg:";
 
@@ -31,7 +32,7 @@ export async function expandTrashInputIdsWithMacosPackages(
       let q = db
         .collection("backup_files")
         .where("macos_package_id", "==", pkgId)
-        .where("deleted_at", "==", null)
+        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .orderBy("relative_path")
         .limit(page);
       if (last) q = q.startAfter(last);

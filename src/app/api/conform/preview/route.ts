@@ -8,6 +8,7 @@ import { getObjectMetadata, getProxyObjectKey } from "@/lib/b2";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { validateAssetForConform } from "@/lib/conform/validation";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 const VIDEO_EXT =
   /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp|m2ts|mpg|mpeg|ts|flv|wmv|ogv|braw|r3d|ari|dng)$/i;
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       .collection("backup_files")
       .where("userId", "==", uid)
       .where("linked_drive_id", "==", projectId)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .get()
   ).docs;
 

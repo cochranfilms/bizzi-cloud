@@ -1,21 +1,22 @@
 /**
- * Cron: Permanently delete files that have been in trash past the retention period.
- * Deletes from B2 (content + proxy + thumbnail) and Firestore.
+ * Cron: Expired trash → pending_permanent_delete + deletion_jobs enqueue.
+ * Physical purge runs in /api/cron/deletion-jobs-worker (shared engine).
  *
  * Schedule: daily (e.g. 4am). Requires CRON_SECRET.
  * Reads admin_settings.platform: permanentDeleteAfterDays ?? trashRetentionDays.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { Timestamp } from "firebase-admin/firestore";
 import {
-  isB2Configured,
-  deleteObjectWithRetry,
-  getVideoThumbnailCacheKey,
-  getProxyObjectKey,
-} from "@/lib/b2";
+  BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+  BACKUP_LIFECYCLE_TRASHED,
+} from "@/lib/backup-file-lifecycle";
+import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { NextResponse } from "next/server";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const BATCH_SIZE = 100;
+const UPDATE_BATCH = 450;
 
 export async function POST(request: Request) {
   if (CRON_SECRET) {
@@ -38,62 +39,43 @@ export async function POST(request: Request) {
 
   const snap = await db
     .collection("backup_files")
-    .where("deleted_at", "!=", null)
-    .where("deleted_at", "<", cutoff)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED)
+    .where("deleted_at", "<", Timestamp.fromDate(cutoff))
     .limit(BATCH_SIZE)
     .get();
 
-  let b2Deleted = 0;
-  let b2Skipped = 0;
-  let firestoreDeleted = 0;
+  const eligible = snap.docs;
 
-  if (isB2Configured()) {
-    for (const docSnap of snap.docs) {
-      const data = docSnap.data();
-      const objectKey = (data?.object_key as string) ?? "";
-      if (!objectKey) {
-        await docSnap.ref.delete();
-        firestoreDeleted++;
-        continue;
-      }
-
-      const refsSnap = await db
-        .collection("backup_files")
-        .where("object_key", "==", objectKey)
-        .get();
-      const otherRefs = refsSnap.docs.filter((d) => d.id !== docSnap.id);
-      if (otherRefs.length > 0) {
-        b2Skipped++;
-      } else {
-        try {
-          await deleteObjectWithRetry(objectKey);
-          b2Deleted++;
-          const proxyKey = getProxyObjectKey(objectKey);
-          const thumbKey = getVideoThumbnailCacheKey(objectKey);
-          await Promise.all([
-            deleteObjectWithRetry(proxyKey).catch(() => {}),
-            deleteObjectWithRetry(thumbKey).catch(() => {}),
-          ]);
-        } catch (err) {
-          console.error("[trash-cleanup] B2 delete failed after retries:", objectKey, err);
-          // Orphan-cleanup cron will remove B2 object later
-        }
-      }
-
-      await docSnap.ref.delete();
-      firestoreDeleted++;
-    }
-  } else {
-    for (const docSnap of snap.docs) {
-      await docSnap.ref.delete();
-      firestoreDeleted++;
-    }
+  if (eligible.length === 0) {
+    return NextResponse.json({
+      enqueued: 0,
+      jobs: 0,
+      retentionDays: permanentDeleteDays,
+    });
   }
 
+  const ids = eligible.map((d) => d.id);
+
+  for (let i = 0; i < ids.length; i += UPDATE_BATCH) {
+    const batch = db.batch();
+    for (const id of ids.slice(i, i + UPDATE_BATCH)) {
+      batch.update(db.collection("backup_files").doc(id), {
+        lifecycle_state: BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+      });
+    }
+    await batch.commit();
+  }
+
+  const jobId = await enqueueBackupFilesPurgeJob(db, {
+    requestedBy: "system:cron-trash-cleanup",
+    fileIds: ids,
+    driveId: null,
+  });
+
   return NextResponse.json({
-    deleted: firestoreDeleted,
-    b2Deleted,
-    b2Skipped,
+    enqueued: ids.length,
+    jobs: 1,
+    job_id: jobId,
     retentionDays: permanentDeleteDays,
   });
 }

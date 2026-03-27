@@ -10,6 +10,7 @@ import {
 } from "@/lib/macos-package-container-admin";
 import { verifyBackupFileAccessWithGalleryFallback } from "@/lib/backup-access";
 import { NextResponse } from "next/server";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
     const member = await db
       .collection("backup_files")
       .where("macos_package_id", "==", doc.id)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .limit(1)
       .get();
     if (member.empty) continue;

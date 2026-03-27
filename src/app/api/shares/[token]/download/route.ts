@@ -2,6 +2,7 @@ import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
 import { NextResponse } from "next/server";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 export async function POST(
   request: Request,
@@ -97,7 +98,7 @@ export async function POST(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  if (fileSnap.docs[0].data().deleted_at) {
+  if (!isBackupFileActiveForListing(fileSnap.docs[0].data() as Record<string, unknown>)) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 

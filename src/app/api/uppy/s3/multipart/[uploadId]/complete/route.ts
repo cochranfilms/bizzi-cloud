@@ -14,6 +14,7 @@ import { logActivityEvent } from "@/lib/activity-log";
 import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
@@ -189,6 +190,7 @@ export async function POST(
     modified_at: lastModified,
     uploaded_at: new Date().toISOString(),
     deleted_at: null,
+    lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
     organization_id: organizationId,
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,

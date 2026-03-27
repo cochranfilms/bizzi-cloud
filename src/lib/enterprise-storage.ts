@@ -11,6 +11,7 @@ import {
 import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
+import { isBackupFileActiveForListing } from "./backup-file-lifecycle";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -39,7 +40,7 @@ async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<numbe
   for (const snap of [asOwner, asTeamHost]) {
     for (const docSnap of snap.docs) {
       const data = docSnap.data();
-      if (data.deleted_at) continue;
+      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
       used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   }
@@ -57,7 +58,7 @@ async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
   let used = 0;
   for (const docSnap of filesSnap.docs) {
     const data = docSnap.data();
-    if (data.deleted_at) continue;
+    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
     if (typeof data.personal_team_owner_id === "string" && data.personal_team_owner_id)
       continue;
     used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
@@ -134,7 +135,7 @@ export async function checkUserCanUpload(
     usedBytes = 0;
     for (const docSnap of orgFilesSnap.docs) {
       const data = docSnap.data();
-      if (data.deleted_at) continue;
+      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
       usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   } else {
@@ -204,7 +205,7 @@ export async function getStorageStatus(
     usedBytes = 0;
     for (const docSnap of orgFilesSnap.docs) {
       const data = docSnap.data();
-      if (data.deleted_at) continue;
+      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
       usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   } else {

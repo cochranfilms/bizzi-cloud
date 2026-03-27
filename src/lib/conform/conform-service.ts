@@ -9,6 +9,7 @@
  */
 
 import type { Firestore } from "firebase-admin/firestore";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getObjectMetadata, getProxyObjectKey } from "@/lib/b2";
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
@@ -133,7 +134,7 @@ export async function startConformSession(
       .collection("backup_files")
       .where("userId", "==", userId)
       .where("linked_drive_id", "==", scope.projectId)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .get();
 
     let docs = filesSnap.docs;

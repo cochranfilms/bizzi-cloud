@@ -6,6 +6,7 @@
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { reconcileMacosPackageMembershipForBackupFile } from "@/lib/macos-package-container-admin";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
       .collection("backup_files")
       .where("linked_drive_id", "==", did)
       .where("userId", "==", uid)
-      .where("deleted_at", "==", null)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
       .get();
 
     for (const d of snap.docs) {
