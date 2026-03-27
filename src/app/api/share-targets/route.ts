@@ -5,28 +5,11 @@
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION, PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
-import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
+import { userCanAccessWorkspace } from "@/lib/workspace-access";
+import { getOrgWideShareTargetWorkspaceId } from "@/lib/org-pillar-drives";
 import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
-import type { WorkspaceType } from "@/types/workspace";
 import type { Firestore } from "firebase-admin/firestore";
-
-function scopeLabelForWorkspaceType(t: WorkspaceType): string {
-  switch (t) {
-    case "org_shared":
-      return "Organization";
-    case "team":
-      return "Team";
-    case "project":
-      return "Project";
-    case "gallery":
-      return "Gallery";
-    case "private":
-      return "Private";
-    default:
-      return "Workspace";
-  }
-}
 
 async function profileDisplayName(db: Firestore, uid: string): Promise<string> {
   const snap = await db.collection("profiles").doc(uid).get();
@@ -151,22 +134,17 @@ export async function GET(request: Request) {
     const orgSnap = await db.collection("organizations").doc(orgId).get();
     const orgName = orgSnap.exists ? ((orgSnap.data()?.name as string) ?? "Organization") : "Organization";
 
-    const workspaceIds = await getAccessibleWorkspaceIds(uid, orgId);
-    for (const wsId of workspaceIds) {
-      const wsSnap = await db.collection("workspaces").doc(wsId).get();
-      if (!wsSnap.exists) continue;
-      const ws = wsSnap.data()!;
-      const wsName = (ws.name as string) ?? "Workspace";
-      const wsType = (ws.workspace_type as WorkspaceType) ?? "private";
-      const scope = scopeLabelForWorkspaceType(wsType);
-      targets.push({
-        kind: "enterprise_workspace",
-        id: wsId,
-        label: wsName,
-        subtitle: `${orgName} · ${scope}`,
-        hrefHint: "/enterprise/shared",
-      });
-    }
+    const shareWsId = await getOrgWideShareTargetWorkspaceId(orgId);
+    if (!shareWsId) continue;
+    if (!(await userCanAccessWorkspace(uid, shareWsId))) continue;
+
+    targets.push({
+      kind: "enterprise_workspace",
+      id: shareWsId,
+      label: orgName,
+      subtitle: "Organization · All members",
+      hrefHint: "/enterprise/shared",
+    });
   }
 
   const filtered =

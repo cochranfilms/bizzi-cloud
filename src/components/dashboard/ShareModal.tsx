@@ -266,6 +266,16 @@ export default function ShareModal({
     return () => clearTimeout(t);
   }, [open, recipientTab, user, targetQuery, org?.id, routeTeamOwnerId]);
 
+  useEffect(() => {
+    if (routeTeamOwnerId) return;
+    setWorkspaceTarget((prev) => {
+      if (!prev) return prev;
+      const row = targetResults.find((r) => r.kind === prev.kind && r.id === prev.id);
+      if (row && row.label !== prev.label) return { ...prev, label: row.label };
+      return prev;
+    });
+  }, [targetResults, routeTeamOwnerId]);
+
   const recipientLocked = !!(shareToken || initialShareToken);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
@@ -492,9 +502,9 @@ export default function ShareModal({
             version: shareVersion,
           }),
         });
-            if (!res.ok) {
-              if (res.status === 409) {
-                fetchShareVersion(shareTokenToUse).then(setShareVersion);
+        if (!res.ok) {
+          if (res.status === 409) {
+            fetchShareVersion(shareTokenToUse).then(setShareVersion);
             const data = await res.json().catch(() => ({}));
             throw new Error(data.error ?? "Share was modified. Refreshed.");
           }
@@ -559,22 +569,20 @@ export default function ShareModal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-[100] overflow-y-auto bg-black/50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-modal-title"
     >
       <div
-        className="absolute inset-0 bg-black/50"
+        className="flex min-h-full items-center justify-center px-4 pt-[max(3rem,calc(1.25rem+env(safe-area-inset-top,0px)))] pb-[max(3rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] sm:px-6 sm:pt-14 sm:pb-14 md:pt-16 md:pb-16"
         onClick={handleClose}
-        aria-hidden
-      />
-      <div
-        className="relative z-10 w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
-        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
+        <div
+          className="relative z-10 my-auto flex w-full max-w-3xl max-h-[calc(100dvh-7rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col rounded-xl border border-neutral-200 bg-white shadow-xl sm:max-h-[calc(100dvh-8rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] dark:border-neutral-700 dark:bg-neutral-900"
+          onClick={(e) => e.stopPropagation()}
+        >
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
           <h3 id="share-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
             Share &quot;{shareName || folderName}&quot;
           </h3>
@@ -588,7 +596,8 @@ export default function ShareModal({
           </button>
         </div>
 
-        <div className="space-y-4 p-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="space-y-4 overflow-y-auto p-4 sm:p-6 sm:space-y-6">
           {error && (
             <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
           )}
@@ -667,14 +676,22 @@ export default function ShareModal({
             {recipientTab === "workspace" && (
               <div className="mt-3 space-y-2">
                 {routeTeamOwnerId ? (
-                  <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                    {workspaceTarget?.label ?? "This team"} — all seat members will be notified.
-                  </p>
+                  <div
+                    className="rounded-lg border border-bizzi-blue bg-bizzi-blue/10 px-3 py-2.5 text-sm text-neutral-800 ring-1 ring-bizzi-blue/25 dark:bg-bizzi-blue/15 dark:text-neutral-200 dark:ring-bizzi-blue/35"
+                    role="status"
+                  >
+                    <span className="font-medium text-neutral-900 dark:text-white">
+                      {workspaceTarget?.label ?? "This team"}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-neutral-600 dark:text-neutral-400">
+                      Personal team · All seat members will be notified.
+                    </span>
+                  </div>
                 ) : (
                   <>
                     <input
                       type="search"
-                      placeholder="Search teams and workspaces…"
+                      placeholder="Search teams and organizations…"
                       value={targetQuery}
                       onChange={(e) => setTargetQuery(e.target.value)}
                       className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
@@ -682,39 +699,49 @@ export default function ShareModal({
                     {targetsLoading ? (
                       <p className="text-xs text-neutral-500">Searching…</p>
                     ) : (
-                      <ul className="max-h-40 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                      <ul className="max-h-52 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
                         {targetResults.length === 0 ? (
                           <li className="px-3 py-2 text-xs text-neutral-500">No matches</li>
                         ) : (
-                          targetResults.map((row) => (
-                            <li key={`${row.kind}:${row.id}`}>
-                              <button
-                                type="button"
-                                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                                onClick={() =>
-                                  setWorkspaceTarget({
-                                    kind: row.kind,
-                                    id: row.id,
-                                    label: row.label,
-                                  })
-                                }
-                              >
-                                <span className="font-medium text-neutral-900 dark:text-white">
-                                  {row.label}
-                                </span>
-                                <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                  {row.subtitle}
-                                </span>
-                              </button>
-                            </li>
-                          ))
+                          targetResults.map((row) => {
+                            const selected =
+                              workspaceTarget?.kind === row.kind && workspaceTarget?.id === row.id;
+                            return (
+                              <li key={`${row.kind}:${row.id}`} className="border-b border-neutral-100 last:border-b-0 dark:border-neutral-800">
+                                <button
+                                  type="button"
+                                  aria-pressed={selected}
+                                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition-colors ${
+                                    selected
+                                      ? "bg-bizzi-blue/10 font-medium ring-2 ring-inset ring-bizzi-blue/40 dark:bg-bizzi-blue/15 dark:ring-bizzi-blue/50"
+                                      : "hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                  }`}
+                                  onClick={() =>
+                                    setWorkspaceTarget({
+                                      kind: row.kind,
+                                      id: row.id,
+                                      label: row.label,
+                                    })
+                                  }
+                                >
+                                  <span
+                                    className={
+                                      selected
+                                        ? "font-semibold text-bizzi-blue dark:text-bizzi-cyan"
+                                        : "font-medium text-neutral-900 dark:text-white"
+                                    }
+                                  >
+                                    {row.label}
+                                  </span>
+                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                    {row.subtitle}
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })
                         )}
                       </ul>
-                    )}
-                    {workspaceTarget && !routeTeamOwnerId && (
-                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                        Selected: <strong>{workspaceTarget.label}</strong>
-                      </p>
                     )}
                   </>
                 )}
@@ -903,8 +930,9 @@ export default function ShareModal({
             </div>
           )}
         </div>
+        </div>
 
-        <div className="flex justify-end border-t border-neutral-200 p-4 dark:border-neutral-700">
+        <div className="flex shrink-0 justify-end border-t border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
           <button
             type="button"
             onClick={handleClose}
@@ -913,6 +941,7 @@ export default function ShareModal({
             Done
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
