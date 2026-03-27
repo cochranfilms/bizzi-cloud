@@ -109,6 +109,23 @@ function backupModifiedMs(data: DocumentData): number {
 
 const TRASH_API_BATCH = 200;
 
+async function reconcileMacosPackageForBackupFileClient(backupFileId: string): Promise<void> {
+  const auth = getFirebaseAuth().currentUser;
+  if (!auth) return;
+  try {
+    const token = await getUserIdToken(auth, true);
+    if (!token) return;
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    await fetch(`${base}/api/files/reconcile-macos-package`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ backup_file_id: backupFileId }),
+    });
+  } catch {
+    /* package aggregates best-effort */
+  }
+}
+
 async function trashBackupFileIdsViaApi(fileIds: string[]): Promise<void> {
   if (fileIds.length === 0) return;
   const auth = getFirebaseAuth().currentUser;
@@ -186,6 +203,10 @@ export interface RecentFile {
   video_codec?: string | null;
   width?: number | null;
   height?: number | null;
+  /** Part of a macOS package when browsed as a single file row; synthetic package rows use assetType macos_package. */
+  macosPackageId?: string | null;
+  macosPackageFileCount?: number | null;
+  macosPackageLabel?: string | null;
 }
 
 /** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
@@ -222,6 +243,9 @@ export function apiFileToRecentFile(
     galleryId: (raw.galleryId as string) ?? null,
     proxyStatus: (raw.proxyStatus as RecentFile["proxyStatus"]) ?? null,
     uploadedAt: (raw.uploadedAt as string) ?? null,
+    macosPackageId: (raw.macos_package_id as string) ?? null,
+    macosPackageFileCount: raw.macos_package_file_count != null ? Number(raw.macos_package_file_count) : null,
+    macosPackageLabel: (raw.macos_package_label as string) ?? null,
     resolution_w: (raw.resolution_w as number) ?? null,
     resolution_h: (raw.resolution_h as number) ?? null,
     duration_sec: (raw.duration_sec as number) ?? null,
@@ -783,6 +807,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 assetType: data.asset_type ?? null,
                 galleryId: data.gallery_id ?? null,
                 proxyStatus: data.proxy_status ?? null,
+                macosPackageId: (data.macos_package_id as string) ?? null,
               };
             });
           onFiles(files);
@@ -985,10 +1010,21 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const restoreFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const db = getFirebaseFirestore();
-      await updateDoc(doc(db, "backup_files", fileId), {
-        deleted_at: null,
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/files/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ file_ids: [fileId] }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to restore file");
+      }
       await recalculateStorage();
       await fetchCloudFiles();
     },
@@ -1033,6 +1069,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       parts[parts.length - 1] = newName.trim();
       const newPath = parts.join("/");
       await updateDoc(fileRef, { relative_path: newPath });
+      await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
       await fetchCloudFiles();
     },
@@ -1066,6 +1103,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         linked_drive_id: targetDriveId,
         relative_path: fileName,
       });
+      await reconcileMacosPackageForBackupFileClient(fileId);
       await recalculateStorage();
       await fetchCloudFiles();
     },
@@ -1086,6 +1124,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           linked_drive_id: targetDriveId,
           relative_path: fileName,
         });
+        await reconcileMacosPackageForBackupFileClient(fileId);
       }
       await recalculateStorage();
       await fetchCloudFiles();
@@ -1162,6 +1201,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           linked_drive_id: targetDriveId,
           relative_path: fileName,
         });
+        await reconcileMacosPackageForBackupFileClient(d.id);
       }
       if (sourceDrive) await unlinkDrive(sourceDrive);
       await recalculateStorage();
@@ -1293,14 +1333,25 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
               where("deleted_at", "!=", null)
             )
       );
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < filesSnap.docs.length; i += BATCH_SIZE) {
-        const chunk = filesSnap.docs.slice(i, i + BATCH_SIZE);
-        const batch = writeBatch(db);
-        for (const d of chunk) {
-          batch.update(doc(db, "backup_files", d.id), { deleted_at: null });
+      const ids = filesSnap.docs.map((d) => d.id);
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const RESTORE_CHUNK = 200;
+      for (let i = 0; i < ids.length; i += RESTORE_CHUNK) {
+        const chunk = ids.slice(i, i + RESTORE_CHUNK);
+        const res = await fetch(`${base}/api/files/restore`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ file_ids: chunk }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data?.error as string) ?? "Failed to restore files");
         }
-        await batch.commit();
       }
       await updateDoc(doc(db, "linked_drives", driveId), { deleted_at: null });
       await recalculateStorage();

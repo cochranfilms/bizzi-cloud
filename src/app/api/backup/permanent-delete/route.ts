@@ -7,6 +7,7 @@
  * backup_file references it, then deletes Firestore doc.
  * For drive_id: deletes all files the caller is allowed to remove in the drive, then the drive doc.
  */
+import type { DocumentData } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   isB2Configured,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/b2";
 import { logActivityEvent } from "@/lib/activity-log";
 import { assertMayRemoveBackupFile, TrashForbiddenError } from "@/lib/container-delete-policy";
+import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -80,6 +82,7 @@ export async function POST(request: Request) {
   }
 
   const authorizedIds: string[] = [];
+  const authorizedFileData: DocumentData[] = [];
   const filesToDelete: Array<{ id: string; object_key: string }> = [];
   for (const id of idsToDelete) {
     try {
@@ -92,8 +95,10 @@ export async function POST(request: Request) {
     }
     const snap = await db.collection("backup_files").doc(id).get();
     if (!snap.exists) continue;
+    const fileData = snap.data()!;
     authorizedIds.push(id);
-    const objectKey = (snap.data()?.object_key as string) ?? "";
+    authorizedFileData.push(fileData);
+    const objectKey = (fileData.object_key as string) ?? "";
     if (objectKey) filesToDelete.push({ id, object_key: objectKey });
   }
 
@@ -125,6 +130,10 @@ export async function POST(request: Request) {
         console.error("[permanent-delete] B2 delete failed after retries:", object_key, err);
       }
     }
+  }
+
+  for (const fileData of authorizedFileData) {
+    await applyMacosPackageStatsForActiveBackupFileRemoval(db, fileData);
   }
 
   const BATCH_SIZE = 500;

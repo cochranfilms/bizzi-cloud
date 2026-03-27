@@ -30,6 +30,41 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const downloadMacosPackageZip = useCallback(async (packageId: string) => {
+    if (!packageId.startsWith("pkg_")) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const token = (await getFirebaseAuth().currentUser?.getIdToken(true)) ?? null;
+      if (!token) throw new Error("Not authenticated");
+      const res = await fetch(`/api/packages/${encodeURIComponent(packageId)}/download-zip`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data?.error ?? "Package download failed");
+      }
+      const disposition = res.headers.get("Content-Disposition");
+      let filename = "package-restore.zip";
+      const m = disposition?.match(/filename="([^"]+)"/);
+      if (m) filename = m[1];
+      const body = res.body;
+      if (!body) throw new Error("No response body");
+      const streamSaver = (await import("streamsaver")).default;
+      const fileStream = streamSaver.createWriteStream(filename);
+      await body.pipeTo(fileStream);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Package download failed";
+      setError(msg);
+      console.error("[useBulkDownload] package zip", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const download = useCallback(
     async (fileIds: string[]) => {
       if (fileIds.length === 0) return;
@@ -46,8 +81,33 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
         token = (await getFirebaseAuth().currentUser?.getIdToken(true)) ?? null;
         if (!token) throw new Error("Not authenticated");
 
-        const files = await fetchFilesByIds(fileIds, DOWNLOAD_LIMIT);
-        items = files.filter((f) => f.objectKey).map((f) => ({ object_key: f.objectKey, name: f.name }));
+        const pkgPref = "macos-pkg:";
+        const pkgIds = fileIds
+          .filter((id) => id.startsWith(pkgPref))
+          .map((id) => id.slice(pkgPref.length));
+        const normalIds = fileIds.filter((id) => !id.startsWith(pkgPref));
+        if (pkgIds.length > 0 && normalIds.length > 0) {
+          throw new Error(
+            "Download a macOS package by itself, or select regular files—don't mix both in one download."
+          );
+        }
+        if (pkgIds.length > 1) {
+          throw new Error("Download one macOS package at a time.");
+        }
+        if (pkgIds.length === 1) {
+          setIsLoading(false);
+          await downloadMacosPackageZip(pkgIds[0]);
+          return;
+        }
+
+        const files = await fetchFilesByIds(normalIds, DOWNLOAD_LIMIT);
+        items = files
+          .filter((f) => f.objectKey)
+          .map((f) => ({
+            object_key: f.objectKey,
+            // Preserve drive-relative paths so macOS packages (.fcpbundle, etc.) unzip with correct folders.
+            name: f.path && String(f.path).length > 0 ? f.path : f.name,
+          }));
         if (items.length === 0) {
           throw new Error("No downloadable files found");
         }
@@ -177,8 +237,8 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
         setIsLoading(false);
       }
     },
-    [fetchFilesByIds]
+    [fetchFilesByIds, downloadMacosPackageZip]
   );
 
-  return { download, isLoading, error };
+  return { download, downloadMacosPackageZip, isLoading, error };
 }

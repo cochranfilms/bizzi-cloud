@@ -14,6 +14,8 @@ import {
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -225,7 +227,14 @@ export async function POST(request: Request) {
     container_id: uploadMeta.containerId,
     personal_team_owner_id: teamOwnerForFile,
     role_at_upload: uploadMeta.roleAtUpload,
+    ...macosPackageFirestoreFieldsFromRelativePath(safePath),
   });
+
+  try {
+    await linkBackupFileToMacosPackageContainer(db, fileRef.id);
+  } catch (err) {
+    console.error("[mount upload-complete] macos package link failed:", err);
+  }
 
   // Trigger metadata extraction, proxy, and MUX (await so they complete before serverless terminates)
   const base = new URL(request.url).origin;

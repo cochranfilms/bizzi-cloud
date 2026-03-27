@@ -5,6 +5,7 @@
  */
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { reconcileMacosPackageMembershipForBackupFile } from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
   // Support both file rename (exact match) and folder rename (prefix match)
   const oldPrefix = `${safeOld}/`;
   let updated = 0;
+  const renamedIds: string[] = [];
 
   for (const did of driveIds) {
     const snap = await db
@@ -110,10 +112,19 @@ export async function POST(request: Request) {
             : null;
       if (newRel !== null) {
         await d.ref.update({ relative_path: newRel });
+        renamedIds.push(d.id);
         updated++;
       }
     }
   }
+
+  await Promise.all(
+    renamedIds.map((fid) =>
+      reconcileMacosPackageMembershipForBackupFile(db, fid).catch((err) => {
+        console.error("[mount/rename] macos package reconcile:", fid, err);
+      })
+    )
+  );
 
   if (updated === 0) {
     return NextResponse.json({ error: "File or folder not found" }, { status: 404 });

@@ -8,6 +8,7 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useAuth } from "@/context/AuthContext";
+import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 
 /**
  * Global drag-and-drop zone for file uploads. Shows "Drop File to Upload" overlay
@@ -56,10 +57,15 @@ export default function GlobalDropZone() {
 
       if (!shouldShowOverlay || !openPanel) return;
 
-      const files = e.dataTransfer?.files;
-      if (!files?.length) return;
-
-      const fileList = Array.from(files).filter((f) => f && f.size !== undefined);
+      let fileList: File[];
+      try {
+        fileList = await collectFilesFromDataTransfer(e.dataTransfer ?? null);
+      } catch {
+        const files = e.dataTransfer?.files;
+        if (!files?.length) return;
+        fileList = Array.from(files);
+      }
+      fileList = fileList.filter((f) => f && f.size !== undefined);
       if (fileList.length === 0) return;
 
       try {
@@ -199,7 +205,10 @@ export default function GlobalDropZone() {
       <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-white/50 bg-white/10 px-12 py-10">
         <Upload className="h-16 w-16 text-white" strokeWidth={1.5} />
         <p className="text-xl font-semibold text-white">Drop files to upload</p>
-        <p className="text-sm text-white/80">Release to add them to the uploader (multiple files supported)</p>
+        <p className="text-sm text-white/80">
+          Release to add them to the uploader. Final Cut (.fcpbundle) and other macOS packages keep folder
+          structure when the browser exposes the package as a directory.
+        </p>
       </div>
     </div>
   );

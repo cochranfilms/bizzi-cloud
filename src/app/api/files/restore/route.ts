@@ -1,13 +1,14 @@
 /**
- * POST /api/files/trash — soft-delete backup_files (move to trash) with server-side policy checks.
+ * POST /api/files/restore — clear deleted_at on backup_files (same policy as trash) and restore macOS package aggregates.
  * Body: { file_ids: string[] }
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { assertCanTrashBackupFile, TrashForbiddenError } from "@/lib/container-delete-policy";
+import { assertMayRemoveBackupFile, TrashForbiddenError } from "@/lib/container-delete-policy";
 import { FieldValue } from "firebase-admin/firestore";
 import {
+  packageStatDeltaFromFileData,
   applyMacosPackageDelta,
-  mergeMacosPackageTrashDeltasInto,
+  reconcileMacosPackageMembershipForBackupFile,
 } from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
@@ -44,9 +45,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Max ${MAX_FILES} files per request` }, { status: 400 });
   }
 
-  for (const id of fileIds) {
+  const db = getAdminFirestore();
+  const snapshots = await Promise.all(fileIds.map((id) => db.collection("backup_files").doc(id).get()));
+
+  for (let i = 0; i < fileIds.length; i++) {
+    const id = fileIds[i];
+    const snap = snapshots[i];
+    if (!snap.exists) {
+      return NextResponse.json({ error: `File not found: ${id}` }, { status: 404 });
+    }
+    const d = snap.data()!;
+    if (!d.deleted_at) {
+      continue;
+    }
     try {
-      await assertCanTrashBackupFile(uid, id);
+      await assertMayRemoveBackupFile(uid, id);
     } catch (err) {
       if (err instanceof TrashForbiddenError) {
         return NextResponse.json({ error: err.message }, { status: 403 });
@@ -55,32 +68,39 @@ export async function POST(request: Request) {
     }
   }
 
-  const db = getAdminFirestore();
-  const snapshots = await Promise.all(fileIds.map((id) => db.collection("backup_files").doc(id).get()));
-  const pkgDeltas = new Map<string, { count: number; bytes: number }>();
+  const pkgRestore = new Map<string, { count: number; bytes: number }>();
   for (let i = 0; i < fileIds.length; i++) {
     const snap = snapshots[i];
     if (!snap.exists) continue;
     const d = snap.data()!;
-    if (d.deleted_at) continue;
-    mergeMacosPackageTrashDeltasInto(pkgDeltas, d);
+    if (!d.deleted_at) continue;
+    const delta = packageStatDeltaFromFileData(d);
+    if (!delta) continue;
+    const cur = pkgRestore.get(delta.packageId) ?? { count: 0, bytes: 0 };
+    cur.count += delta.count;
+    cur.bytes += delta.bytes;
+    pkgRestore.set(delta.packageId, cur);
   }
 
   const batch = db.batch();
   for (const id of fileIds) {
     batch.update(db.collection("backup_files").doc(id), {
-      deleted_at: FieldValue.serverTimestamp(),
+      deleted_at: null,
     });
   }
   await batch.commit();
 
-  const negDeltas = new Map<string, { count: number; bytes: number }>();
-  for (const [pid, { count, bytes }] of pkgDeltas) {
-    negDeltas.set(pid, { count, bytes });
+  for (const [pid, { count, bytes }] of pkgRestore) {
+    await applyMacosPackageDelta(db, new Map([[pid, { count, bytes }]]));
   }
-  if (negDeltas.size > 0) {
-    await applyMacosPackageDelta(db, negDeltas);
-  }
+
+  await Promise.all(
+    fileIds.map((fid) =>
+      reconcileMacosPackageMembershipForBackupFile(db, fid).catch((err) => {
+        console.error("[restore] macos package reconcile:", fid, err);
+      })
+    )
+  );
 
   return NextResponse.json({ ok: true, count: fileIds.length });
 }

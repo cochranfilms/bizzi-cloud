@@ -23,6 +23,7 @@ import {
   isPersonalScopeFileDoc,
   isTeamContainerDriveDoc,
 } from "@/lib/backup-scope";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -352,6 +353,7 @@ function toFileResponse(
   const d = doc.data();
   const path = (d.relative_path as string) ?? "";
   const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+  const derivedPkg = macosPackageFirestoreFieldsFromRelativePath(path);
   const base: Record<string, unknown> = {
     id: doc.id,
     name,
@@ -383,6 +385,13 @@ function toFileResponse(
     orientation: d.orientation ?? null,
     is_starred: d.is_starred ?? false,
     usage_status: d.usage_status ?? null,
+    macos_package_kind:
+      (d.macos_package_kind as string | undefined) ?? derivedPkg.macos_package_kind ?? null,
+    macos_package_root_relative_path:
+      (d.macos_package_root_relative_path as string | undefined) ??
+      derivedPkg.macos_package_root_relative_path ??
+      null,
+    macos_package_id: (d.macos_package_id as string | undefined) ?? null,
     proxyStatus: d.proxy_status ?? null,
   };
   if (options?.includeAdminFields) {

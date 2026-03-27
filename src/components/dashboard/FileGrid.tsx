@@ -46,6 +46,107 @@ import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
 
+type MacosPackageListEntry = {
+  id: string;
+  root_relative_path: string;
+  root_segment_name?: string | null;
+  display_label?: string | null;
+  file_count: number;
+  total_bytes: number;
+  last_activity_at: string | null;
+};
+
+function recentFileFromMacosPackageListEntry(
+  pkg: MacosPackageListEntry,
+  driveId: string,
+  driveName: string
+): RecentFile {
+  const name =
+    (pkg.root_segment_name as string) ||
+    pkg.root_relative_path.split("/").filter(Boolean).pop() ||
+    pkg.root_relative_path;
+  return {
+    id: `macos-pkg:${pkg.id}`,
+    name,
+    path: pkg.root_relative_path,
+    objectKey: "",
+    size: Number(pkg.total_bytes ?? 0),
+    modifiedAt: pkg.last_activity_at,
+    driveId,
+    driveName,
+    assetType: "macos_package",
+    macosPackageId: pkg.id,
+    macosPackageFileCount: pkg.file_count,
+    macosPackageLabel: (pkg.display_label as string) ?? null,
+  };
+}
+
+function expandMacosPackageRowIds(
+  fileIds: string[],
+  driveFiles: RecentFile[],
+  packages: MacosPackageListEntry[]
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const id of fileIds) {
+    if (!id.startsWith("macos-pkg:")) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        result.push(id);
+      }
+      continue;
+    }
+    const pkgId = id.slice("macos-pkg:".length);
+    const pkg = packages.find((p) => p.id === pkgId);
+    const root = (pkg?.root_relative_path ?? "").replace(/^\/+/, "");
+    const members = driveFiles.filter((f) => {
+      if (f.macosPackageId === pkgId) return true;
+      if (!root) return false;
+      const p = f.path.replace(/^\/+/, "");
+      return p === root || p.startsWith(`${root}/`);
+    });
+    for (const m of members) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        result.push(m.id);
+      }
+    }
+  }
+  return result;
+}
+
+function mergeDisplayedFilesWithMacosPackages(
+  displayedFiles: RecentFile[],
+  packages: MacosPackageListEntry[],
+  driveId: string,
+  driveName: string
+): RecentFile[] {
+  const roots = new Set(packages.map((p) => p.root_relative_path.replace(/^\/+/, "")));
+  const pkgIds = new Set(packages.map((p) => p.id));
+  const filtered = displayedFiles.filter((f) => {
+    if (f.macosPackageId && pkgIds.has(f.macosPackageId)) return false;
+    const p = f.path.replace(/^\/+/, "");
+    for (const r of roots) {
+      if (!r) continue;
+      if (p === r || p.startsWith(`${r}/`)) return false;
+    }
+    return true;
+  });
+  const synthetic = packages.map((pkg) =>
+    recentFileFromMacosPackageListEntry(pkg, driveId, driveName)
+  );
+  return [...synthetic, ...filtered].sort((a, b) => {
+    const ta = new Date(a.modifiedAt ?? 0).getTime();
+    const tb = new Date(b.modifiedAt ?? 0).getTime();
+    if (tb !== ta) return tb - ta;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function isMacosPkgFileRow(file: RecentFile): boolean {
+  return file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
+}
+
 function BulkActionBar({
   selectedFileCount,
   selectedFolderCount,
@@ -209,12 +310,17 @@ export default function FileGrid() {
   } | null>(null);
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
+  const [macosPackagesForFolder, setMacosPackagesForFolder] = useState<MacosPackageListEntry[]>([]);
+  const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
+  const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
+  const [packageInfoLoading, setPackageInfoLoading] = useState(false);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
-  const { download: bulkDownload, isLoading: isDownloading } = useBulkDownload({ fetchFilesByIds });
+  const { download: bulkDownload, downloadMacosPackageZip, isLoading: isDownloading } =
+    useBulkDownload({ fetchFilesByIds });
   const handleBulkDownload = useCallback(() => {
     bulkDownload(Array.from(selectedFileIds));
   }, [bulkDownload, selectedFileIds]);
@@ -431,14 +537,89 @@ export default function FileGrid() {
     return { subfolderItems, displayedFiles: rootFiles };
   })();
 
+  useEffect(() => {
+    if (!currentDrive || useFilteredScoped) {
+      setMacosPackagesForFolder([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) return;
+        const q = new URLSearchParams({
+          drive_id: currentDrive.id,
+          folder_path: currentDrivePath,
+        });
+        const res = await fetch(`/api/packages/list?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { packages?: MacosPackageListEntry[] };
+        if (!cancelled) setMacosPackagesForFolder(data.packages ?? []);
+      } catch {
+        if (!cancelled) setMacosPackagesForFolder([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDrive, currentDrivePath, useFilteredScoped, storageVersion]);
+
+  const displayedFilesWithMacosPackages = useMemo(() => {
+    if (!currentDrive || useFilteredScoped) return displayedFiles;
+    return mergeDisplayedFilesWithMacosPackages(
+      displayedFiles,
+      macosPackagesForFolder,
+      currentDrive.id,
+      currentDrive.name
+    );
+  }, [currentDrive, useFilteredScoped, displayedFiles, macosPackagesForFolder]);
+
+  useEffect(() => {
+    if (!packageInfoId) {
+      setPackageInfoJson(null);
+      setPackageInfoLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPackageInfoLoading(true);
+    setPackageInfoJson(null);
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) {
+          if (!cancelled) setPackageInfoJson({ error: "Not signed in" });
+          return;
+        }
+        const res = await fetch(`/api/packages/${encodeURIComponent(packageInfoId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!cancelled) {
+          setPackageInfoJson(
+            res.ok ? data : { error: (data.error as string) ?? res.statusText ?? "Error" }
+          );
+        }
+      } catch {
+        if (!cancelled) setPackageInfoJson({ error: "Failed to load package info" });
+      } finally {
+        if (!cancelled) setPackageInfoLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [packageInfoId]);
+
   /** Stale-while-revalidate: keep showing previous files during filter load to avoid blinking */
-  const fallbackFiles = currentDrive ? displayedFiles : recentFiles;
+  const fallbackFiles = currentDrive ? displayedFilesWithMacosPackages : recentFiles;
   const filesToShow = useFilteredScoped
     ? filtersLoading && filteredFiles.length === 0
       ? fallbackFiles
       : filteredFiles
     : currentDrive
-      ? displayedFiles
+      ? displayedFilesWithMacosPackages
       : recentFiles;
 
   const showFolders = !useFilteredScoped;
@@ -705,7 +886,7 @@ export default function FileGrid() {
 
     try {
       let didUnlinkCurrentDrive = false;
-      const allFileIdsToDelete = [...fileIds];
+      const allFileIdsToDelete = expandMacosPackageRowIds(fileIds, driveFiles, macosPackagesForFolder);
 
       for (const key of folderKeys) {
         if (key.startsWith("gallery-subfolder-")) {
@@ -756,6 +937,7 @@ export default function FileGrid() {
     refetch,
     loadDriveFiles,
     confirm,
+    macosPackagesForFolder,
   ]);
 
   const handleBulkMove = useCallback(() => {
@@ -768,8 +950,9 @@ export default function FileGrid() {
       folderKeys: string[],
       targetDriveId: string
     ) => {
-      if (fileIds.length > 0) {
-        await moveFilesToFolder(fileIds, targetDriveId);
+      const expandedIds = expandMacosPackageRowIds(fileIds, driveFiles, macosPackagesForFolder);
+      if (expandedIds.length > 0) {
+        await moveFilesToFolder(expandedIds, targetDriveId);
       }
       for (const key of folderKeys) {
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
@@ -783,7 +966,7 @@ export default function FileGrid() {
       }
       clearSelection();
       await refetch();
-      if (currentDrive && fileIds.length > 0) {
+      if (currentDrive && expandedIds.length > 0) {
         loadDriveFiles(currentDrive.id);
       }
     },
@@ -797,6 +980,8 @@ export default function FileGrid() {
       clearSelection,
       refetch,
       loadDriveFiles,
+      driveFiles,
+      macosPackagesForFolder,
     ]
   );
 
@@ -829,7 +1014,11 @@ export default function FileGrid() {
   );
 
   const handleBulkNewTransfer = useCallback(async () => {
-    const fileIds = Array.from(selectedFileIds);
+    const fileIds = expandMacosPackageRowIds(
+      Array.from(selectedFileIds),
+      driveFiles,
+      macosPackagesForFolder
+    );
     if (fileIds.length > 0) {
       const files = await fetchFilesByIds(fileIds);
       setTransferInitialFiles(
@@ -845,10 +1034,14 @@ export default function FileGrid() {
       setTransferInitialFiles([]);
     }
     setTransferModalOpen(true);
-  }, [selectedFileIds, fetchFilesByIds]);
+  }, [selectedFileIds, fetchFilesByIds, driveFiles, macosPackagesForFolder]);
 
   const handleBulkShare = useCallback(async () => {
-    const fileIds = Array.from(selectedFileIds);
+    const fileIds = expandMacosPackageRowIds(
+      Array.from(selectedFileIds),
+      driveFiles,
+      macosPackagesForFolder
+    );
     const folderKeys = Array.from(selectedFolderKeys);
     const folderDriveIds = folderKeys
       .map((k) => (k.startsWith("drive-") ? k.slice(6) : k))
@@ -880,14 +1073,23 @@ export default function FileGrid() {
     refetch,
     currentDrive,
     loadDriveFiles,
+    driveFiles,
+    macosPackagesForFolder,
   ]);
+
+  const openMacosPackageInfo = useCallback((file: RecentFile) => {
+    if (!file.macosPackageId) return;
+    setPackageInfoId(file.macosPackageId);
+  }, []);
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
   const totalFileCount = useFilteredScoped ? (() => {
-    const base = currentDrive ? displayedFiles.length : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
+    const base = currentDrive
+      ? displayedFilesWithMacosPackages.length
+      : recentFiles.length + folderItems.reduce((s, f) => s + (typeof f.items === "number" ? f.items : 0), 0);
     return base;
-  })() : (currentDrive ? displayedFiles.length : recentFiles.length);
+  })() : (currentDrive ? displayedFilesWithMacosPackages.length : recentFiles.length);
   const displayTotalCount = useFilteredScoped ? totalCount : totalFileCount;
 
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
@@ -1208,7 +1410,7 @@ export default function FileGrid() {
             </div>
           )}
           <div className="flex items-center gap-2">
-            {(useFilteredScoped ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFiles.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
+            {(useFilteredScoped ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -1216,7 +1418,7 @@ export default function FileGrid() {
                     setSelectedFileIds(new Set(filesToShow.map((f) => f.id)));
                     setSelectedFolderKeys(new Set());
                   } else if (currentDrive) {
-                    setSelectedFileIds(new Set(displayedFiles.map((f) => f.id)));
+                    setSelectedFileIds(new Set(displayedFilesWithMacosPackages.map((f) => f.id)));
                     setSelectedFolderKeys(new Set(subfolderItems.map((s) => s.key)));
                   } else {
                     setSelectedFileIds(new Set(recentFiles.map((f) => f.id)));
@@ -1239,7 +1441,7 @@ export default function FileGrid() {
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No files match your filters. Try adjusting or clearing filters.
           </div>
-        ) : useFilteredScoped || subfolderItems.length > 0 || displayedFiles.length > 0 ? (
+        ) : useFilteredScoped || subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 ? (
             viewMode === "list" ? (
               <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
@@ -1287,23 +1489,51 @@ export default function FileGrid() {
                         />
                       );
                     })}
-                    {filesToShow.map((file) => (
-                      <FileListRow
-                        key={file.id}
-                        file={file}
-                        onClick={() => setPreviewFile(file)}
-                        onDelete={async () => {
-                          await deleteFile(file.id);
-                          if (currentDrive) loadDriveFiles(currentDrive.id);
-                        }}
-                        selectable
-                        selected={selectedFileIds.has(file.id)}
-                        onSelect={() => toggleFileSelection(file.id)}
-                        onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
-                        draggable={!!file.driveId}
-                        onDragStart={handleDragStart}
-                      />
-                    ))}
+                    {filesToShow.map((file) => {
+                      const isPkg = isMacosPkgFileRow(file);
+                      return (
+                        <FileListRow
+                          key={file.id}
+                          file={file}
+                          onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                          onDelete={
+                            isPkg
+                              ? async () => {
+                                  const ids = expandMacosPackageRowIds(
+                                    [file.id],
+                                    driveFiles,
+                                    macosPackagesForFolder
+                                  );
+                                  if (ids.length === 0) return;
+                                  const ok = await confirm({
+                                    message: `Move package "${file.name}" (${ids.length} files) to trash? You can restore from Deleted files.`,
+                                    destructive: true,
+                                    confirmLabel: "Move to trash",
+                                  });
+                                  if (!ok) return;
+                                  await deleteFiles(ids);
+                                  if (currentDrive) loadDriveFiles(currentDrive.id);
+                                }
+                              : async () => {
+                                  await deleteFile(file.id);
+                                  if (currentDrive) loadDriveFiles(currentDrive.id);
+                                }
+                          }
+                          selectable
+                          selected={selectedFileIds.has(file.id)}
+                          onSelect={() => toggleFileSelection(file.id)}
+                          onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                          draggable={!!file.driveId && !isPkg}
+                          onDragStart={handleDragStart}
+                          onDownloadPackage={
+                            isPkg && file.macosPackageId
+                              ? () => downloadMacosPackageZip(file.macosPackageId!)
+                              : undefined
+                          }
+                          onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                        />
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1350,34 +1580,64 @@ export default function FileGrid() {
                   </div>
                 );
               })}
-              {filesToShow.map((file) => (
-                <div
-                  key={file.id}
-                  data-selectable-item
-                  data-item-type="file"
-                  data-item-id={file.id}
-                  draggable={!!file.driveId}
-                  onDragStart={handleDragStart}
-                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
-                >
-                  <FileCard
-                    file={file}
-                    onClick={() => setPreviewFile(file)}
-                    onDelete={async () => {
-                      await deleteFile(file.id);
-                      if (currentDrive) loadDriveFiles(currentDrive.id);
-                    }}
-                    selectable
-                    selected={selectedFileIds.has(file.id)}
-                    onSelect={() => toggleFileSelection(file.id)}
-                    onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
-                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                    layoutAspectRatio={aspectRatio}
-                    thumbnailScale={thumbnailScale}
-                    showCardInfo={showCardInfo}
-                  />
-                </div>
-              ))}
+              {filesToShow.map((file) => {
+                const isPkg = isMacosPkgFileRow(file);
+                return (
+                  <div
+                    key={file.id}
+                    data-selectable-item
+                    data-item-type={isPkg ? "macos-package" : "file"}
+                    data-item-id={file.id}
+                    draggable={!!file.driveId && !isPkg}
+                    onDragStart={handleDragStart}
+                    className={
+                      !!file.driveId && !isPkg ? "cursor-grab active:cursor-grabbing" : undefined
+                    }
+                  >
+                    <FileCard
+                      file={file}
+                      onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                      onDelete={
+                        isPkg
+                          ? async () => {
+                              const ids = expandMacosPackageRowIds(
+                                [file.id],
+                                driveFiles,
+                                macosPackagesForFolder
+                              );
+                              if (ids.length === 0) return;
+                              const ok = await confirm({
+                                message: `Move package "${file.name}" (${ids.length} files) to trash? You can restore from Deleted files.`,
+                                destructive: true,
+                                confirmLabel: "Move to trash",
+                              });
+                              if (!ok) return;
+                              await deleteFiles(ids);
+                              if (currentDrive) loadDriveFiles(currentDrive.id);
+                            }
+                          : async () => {
+                              await deleteFile(file.id);
+                              if (currentDrive) loadDriveFiles(currentDrive.id);
+                            }
+                      }
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                      onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      thumbnailScale={thumbnailScale}
+                      showCardInfo={showCardInfo}
+                      onDownloadPackage={
+                        isPkg && file.macosPackageId
+                          ? () => downloadMacosPackageZip(file.macosPackageId!)
+                          : undefined
+                      }
+                      onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                    />
+                  </div>
+                );
+              })}
             </div>
             )
           ) : (
@@ -1742,6 +2002,44 @@ export default function FileGrid() {
           initialInvitedEmails={shareInitialData?.invitedEmails}
         />
       )}
+
+      {packageInfoId ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="macos-package-info-title"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setPackageInfoId(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3
+                id="macos-package-info-title"
+                className="text-lg font-semibold text-neutral-900 dark:text-white"
+              >
+                Package info
+              </h3>
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                onClick={() => setPackageInfoId(null)}
+              >
+                Close
+              </button>
+            </div>
+            {packageInfoLoading ? (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
+            ) : (
+              <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs text-neutral-700 dark:text-neutral-300">
+                {JSON.stringify(packageInfoJson, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <FilePreviewModal
         file={previewFile}

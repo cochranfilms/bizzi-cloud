@@ -15,8 +15,21 @@ import {
 import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { isPersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { sendOrgRestoredEmail, sendTeamRestoredEmail } from "@/lib/emailjs";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 
 const IN_QUERY_LIMIT = 30;
+
+async function linkMacosPackagesForRestoredFileIds(db: Firestore, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await Promise.all(
+    ids.map((fid) =>
+      linkBackupFileToMacosPackageContainer(db, fid).catch((err) => {
+        console.error("[cold-storage-restore] macos package link:", fid, err);
+      })
+    )
+  );
+}
 
 async function getExistingBackupObjectKeys(
   db: Firestore,
@@ -317,6 +330,7 @@ async function restoreOrgColdStorage(
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = db.batch();
     const chunk = files.slice(i, i + batchSize);
+    const restoredMacosFileIds: string[] = [];
     for (const f of chunk) {
       if (existingBackupKeys.has(f.object_key)) {
         batch.delete(db.collection("cold_storage_files").doc(f.id));
@@ -343,12 +357,14 @@ async function restoreOrgColdStorage(
         ? oldWorkspaceIdToNew.get(f.workspace_id) ?? null
         : null;
 
+      const relPath = String(f.relative_path ?? "");
       const fileRef = db.collection("backup_files").doc();
+      restoredMacosFileIds.push(fileRef.id);
       batch.set(fileRef, {
         backup_snapshot_id: snapshotRef.id,
         linked_drive_id: newDriveId,
         userId: f.user_id,
-        relative_path: f.relative_path,
+        relative_path: relPath,
         object_key: f.object_key,
         size_bytes: f.size_bytes,
         content_type: f.content_type ?? null,
@@ -362,12 +378,14 @@ async function restoreOrgColdStorage(
         project_id: f.project_id ?? null,
         gallery_id: f.gallery_id ?? null,
         created_at: now.toISOString(),
+        ...macosPackageFirestoreFieldsFromRelativePath(relPath),
       });
 
       batch.delete(db.collection("cold_storage_files").doc(f.id));
       restoredCount++;
     }
     await batch.commit();
+    await linkMacosPackagesForRestoredFileIds(db, restoredMacosFileIds);
   }
 
   // Recreate organization_seats: prefer snapshot, else infer from files
@@ -510,6 +528,7 @@ async function restorePersonalTeamColdStorage(
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = db.batch();
     const chunk = files.slice(i, i + batchSize);
+    const restoredMacosFileIds: string[] = [];
     for (const f of chunk) {
       if (existingBackupKeys.has(f.object_key)) {
         batch.delete(db.collection("cold_storage_files").doc(f.id));
@@ -529,12 +548,14 @@ async function restorePersonalTeamColdStorage(
         started_at: now.toISOString(),
         completed_at: now.toISOString(),
       });
+      const relPath = String(f.relative_path ?? "");
       const fileRef = db.collection("backup_files").doc();
+      restoredMacosFileIds.push(fileRef.id);
       batch.set(fileRef, {
         backup_snapshot_id: snapshotRef.id,
         linked_drive_id: newDriveId,
         userId: uploaderId,
-        relative_path: f.relative_path,
+        relative_path: relPath,
         object_key: f.object_key,
         size_bytes: f.size_bytes,
         content_type: f.content_type ?? null,
@@ -550,11 +571,13 @@ async function restorePersonalTeamColdStorage(
         gallery_id: f.gallery_id ?? null,
         created_at: now.toISOString(),
         is_starred: f.is_starred ?? false,
+        ...macosPackageFirestoreFieldsFromRelativePath(relPath),
       });
       batch.delete(db.collection("cold_storage_files").doc(f.id));
       restoredCount++;
     }
     await batch.commit();
+    await linkMacosPackagesForRestoredFileIds(db, restoredMacosFileIds);
   }
 
   const snapshotSnap = await db
@@ -664,6 +687,7 @@ async function restoreConsumerColdStorage(
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = db.batch();
     const chunk = files.slice(i, i + batchSize);
+    const restoredMacosFileIds: string[] = [];
     for (const f of chunk) {
       if (existingBackupKeys.has(f.object_key)) {
         batch.delete(db.collection("cold_storage_files").doc(f.id));
@@ -685,12 +709,14 @@ async function restoreConsumerColdStorage(
         completed_at: now.toISOString(),
       });
 
+      const relPath = String(f.relative_path ?? "");
       const fileRef = db.collection("backup_files").doc();
+      restoredMacosFileIds.push(fileRef.id);
       batch.set(fileRef, {
         backup_snapshot_id: snapshotRef.id,
         linked_drive_id: newDriveId,
         userId,
-        relative_path: f.relative_path,
+        relative_path: relPath,
         object_key: f.object_key,
         size_bytes: f.size_bytes,
         content_type: f.content_type ?? null,
@@ -705,6 +731,7 @@ async function restoreConsumerColdStorage(
         gallery_id: null,
         created_at: now.toISOString(),
         is_starred: f.is_starred ?? false,
+        ...macosPackageFirestoreFieldsFromRelativePath(relPath),
       });
 
       objectKeyToBackupFileId.set(f.object_key, fileRef.id);
@@ -712,6 +739,7 @@ async function restoreConsumerColdStorage(
       restoredCount++;
     }
     await batch.commit();
+    await linkMacosPackagesForRestoredFileIds(db, restoredMacosFileIds);
   }
 
   // If restored from account_delete: build full object_key map (include existing), restore galleries/hearts/pinned

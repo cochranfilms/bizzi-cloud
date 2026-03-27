@@ -16,6 +16,7 @@ import {
 import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
 import { deleteMuxAsset } from "@/lib/mux";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
 
 const CHUNK = 400;
 
@@ -162,6 +163,8 @@ export async function deleteGalleryAssetAndStorage(input: {
     }
     await batch.commit();
   }
+
+  await applyMacosPackageStatsForActiveBackupFileRemoval(db, fileData);
 
   await fileRef.delete();
 

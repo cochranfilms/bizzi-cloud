@@ -14,6 +14,8 @@ import { logActivityEvent } from "@/lib/activity-log";
 import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -195,7 +197,14 @@ export async function POST(
     container_id: uploadMeta.containerId,
     personal_team_owner_id: uploadMeta.personalTeamOwnerId,
     role_at_upload: uploadMeta.roleAtUpload,
+    ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
   });
+
+  try {
+    await linkBackupFileToMacosPackageContainer(db, fileRef.id);
+  } catch (err) {
+    console.error("[uppy complete] macos package link failed:", err);
+  }
 
   await db.doc(`linked_drives/${driveId}`).update({
     last_synced_at: new Date().toISOString(),

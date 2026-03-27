@@ -6,6 +6,8 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -204,12 +206,14 @@ export async function POST(
   });
 
   const batch = db.batch();
+  const newFileIds: string[] = [];
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
     const safeName = uniqueNames[i];
     const relativePath = `${galleryId}/favorites/${safeName}`;
 
     const fileRef = db.collection("backup_files").doc();
+    newFileIds.push(fileRef.id);
     batch.set(fileRef, {
       backup_snapshot_id: snapshotRef.id,
       linked_drive_id: galleryDriveId,
@@ -222,10 +226,19 @@ export async function POST(
       deleted_at: null,
       organization_id: null,
       gallery_id: galleryId,
+      ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
     });
   }
 
   await batch.commit();
+
+  await Promise.all(
+    newFileIds.map((fid) =>
+      linkBackupFileToMacosPackageContainer(db, fid).catch((err) => {
+        console.error("[create-favorite-folder] macos package link:", fid, err);
+      })
+    )
+  );
 
   // Update drive last_synced
   await db.collection("linked_drives").doc(galleryDriveId).update({

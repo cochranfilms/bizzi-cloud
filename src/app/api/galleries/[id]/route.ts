@@ -10,6 +10,10 @@ import {
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import {
+  applyMacosPackageDelta,
+  mergeMacosPackageTrashDeltasInto,
+} from "@/lib/macos-package-container-admin";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -257,12 +261,30 @@ export async function DELETE(
       .filter(Boolean);
     const uniqueIds = [...new Set(backupFileIds)];
 
+    const pkgDeltas = new Map<string, { count: number; bytes: number }>();
+    let batch = db.batch();
+    let batchCount = 0;
+
     for (const fileId of uniqueIds) {
       const fileRef = db.collection("backup_files").doc(fileId);
       const fileSnap = await fileRef.get();
-      if (fileSnap.exists && fileSnap.data()!.userId === uid) {
-        await fileRef.update({ deleted_at: FieldValue.serverTimestamp() });
+      if (!fileSnap.exists || fileSnap.data()!.userId !== uid) continue;
+      const fd = fileSnap.data()!;
+      if (fd.deleted_at) continue;
+      mergeMacosPackageTrashDeltasInto(pkgDeltas, fd);
+      batch.update(fileRef, { deleted_at: FieldValue.serverTimestamp() });
+      batchCount++;
+      if (batchCount >= 450) {
+        await batch.commit();
+        batch = db.batch();
+        batchCount = 0;
       }
+    }
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+    if (pkgDeltas.size > 0) {
+      await applyMacosPackageDelta(db, pkgDeltas);
     }
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, FileIcon, Film, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
+import { Archive, Check, Download, FileIcon, Film, Info, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
@@ -42,6 +42,8 @@ interface FileCardProps {
   thumbnailScale?: ThumbnailScale;
   /** Layout: whether to show metadata (filename, size, date, etc.) */
   showCardInfo?: boolean;
+  onDownloadPackage?: () => void;
+  onPackageInfo?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -89,6 +91,8 @@ export default function FileCard({
   layoutAspectRatio = "landscape",
   thumbnailScale = "fit",
   showCardInfo = true,
+  onDownloadPackage,
+  onPackageInfo,
 }: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -103,20 +107,22 @@ export default function FileCard({
     hasGallerySuite,
   });
   const { isPinned, pinItem, unpinItem } = usePinned();
+  const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const filePinned = isPinned("file", file.id);
-  const canPreview = !!file.objectKey;
+  const canPreview = isMacosPackage ? !!(onPackageInfo ?? onClick) : !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
-    enabled: isInView,
+    enabled: !isMacosPackage && isInView,
   });
-  const isVideo = isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false);
+  const isVideo =
+    !isMacosPackage && (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isVideo && isInView,
+    enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isPdf && isInView,
+    enabled: !isMacosPackage && !!file.objectKey && isPdf && isInView,
   });
   const { confirm } = useConfirm();
   const hearts = useHearts(file.id);
@@ -152,13 +158,13 @@ export default function FileCard({
       }`}
       role={canPreview ? "button" : undefined}
       tabIndex={canPreview ? 0 : undefined}
-      onClick={canPreview ? onClick : undefined}
+      onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
       onKeyDown={
         canPreview
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onClick?.();
+                (onPackageInfo ?? onClick)?.();
               }
             }
           : undefined
@@ -182,56 +188,92 @@ export default function FileCard({
           {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
         </button>
       )}
-      {(onDelete || file.driveId) && (
+      {((isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||
+        (!isMacosPackage && (onDelete || file.driveId))) && (
         <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
           <ItemActionsMenu
-            actions={[
-              ...(file.driveId
+            actions={
+              isMacosPackage
                 ? [
-                    {
-                      id: "share",
-                      label: "Share",
-                      icon: <Share2 className="h-4 w-4" />,
-                      onClick: () => setShareOpen(true),
-                    },
+                    ...(onDownloadPackage
+                      ? [
+                          {
+                            id: "download-pkg",
+                            label: "Download package (ZIP)",
+                            icon: <Download className="h-4 w-4" />,
+                            onClick: onDownloadPackage,
+                          },
+                        ]
+                      : []),
+                    ...(onPackageInfo
+                      ? [
+                          {
+                            id: "pkg-info",
+                            label: "Package info",
+                            icon: <Info className="h-4 w-4" />,
+                            onClick: onPackageInfo,
+                          },
+                        ]
+                      : []),
+                    ...(onDelete
+                      ? [
+                          {
+                            id: "delete-pkg",
+                            label: "Move to trash",
+                            onClick: handleDelete,
+                            destructive: true,
+                          },
+                        ]
+                      : []),
                   ]
-                : []),
-              {
-                id: filePinned ? "unpin" : "pin",
-                label: filePinned ? "Unpin" : "Pin",
-                icon: <Pin className="h-4 w-4" />,
-                onClick: () => (filePinned ? unpinItem("file", file.id) : pinItem("file", file.id)),
-              },
-              {
-                id: "rename",
-                label: "Rename",
-                icon: <Pencil className="h-4 w-4" />,
-                onClick: () => setRenameOpen(true),
-              },
-              {
-                id: "move",
-                label: "Move",
-                icon: <FolderInput className="h-4 w-4" />,
-                onClick: () => setMoveOpen(true),
-              },
-              {
-                id: "create-folder",
-                label: "Create New Folder",
-                icon: <FolderPlus className="h-4 w-4" />,
-                onClick: () => setCreateFolderOpen(true),
-              },
-              ...(onDelete
-                ? [
+                : [
+                    ...(file.driveId
+                      ? [
+                          {
+                            id: "share",
+                            label: "Share",
+                            icon: <Share2 className="h-4 w-4" />,
+                            onClick: () => setShareOpen(true),
+                          },
+                        ]
+                      : []),
                     {
-                      id: "delete",
-                      label: "Move to trash",
-                      onClick: handleDelete,
-                      destructive: true,
+                      id: filePinned ? "unpin" : "pin",
+                      label: filePinned ? "Unpin" : "Pin",
+                      icon: <Pin className="h-4 w-4" />,
+                      onClick: () => (filePinned ? unpinItem("file", file.id) : pinItem("file", file.id)),
                     },
+                    {
+                      id: "rename",
+                      label: "Rename",
+                      icon: <Pencil className="h-4 w-4" />,
+                      onClick: () => setRenameOpen(true),
+                    },
+                    {
+                      id: "move",
+                      label: "Move",
+                      icon: <FolderInput className="h-4 w-4" />,
+                      onClick: () => setMoveOpen(true),
+                    },
+                    {
+                      id: "create-folder",
+                      label: "Create New Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: () => setCreateFolderOpen(true),
+                    },
+                    ...(onDelete
+                      ? [
+                          {
+                            id: "delete",
+                            label: "Move to trash",
+                            onClick: handleDelete,
+                            destructive: true,
+                          },
+                        ]
+                      : []),
                   ]
-                : []),
-            ]}
-            ariaLabel="File actions"
+            }
+            ariaLabel={isMacosPackage ? "Package actions" : "File actions"}
             alignRight
           />
         </div>
@@ -239,7 +281,11 @@ export default function FileCard({
       <div
         className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
       >
-        {isVideo && file.objectKey ? (
+        {isMacosPackage ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
+            <Archive className={`${sizeClasses.iconInner} text-amber-800 dark:text-amber-400`} />
+          </div>
+        ) : isVideo && file.objectKey ? (
           <VideoScrubThumbnail
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
@@ -279,10 +325,16 @@ export default function FileCard({
           <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
             {formatBytes(file.size)} · {file.driveName}
           </p>
+          {isMacosPackage ? (
+            <p className="mt-0.5 text-left text-xs text-neutral-500 dark:text-neutral-400">
+              {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
+              {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
+            </p>
+          ) : null}
           <p className="mt-0.5 text-left text-xs text-neutral-400 dark:text-neutral-500">
             {formatDate(file.modifiedAt)}
           </p>
-          {isVideo && file.proxyStatus && (
+          {!isMacosPackage && isVideo && file.proxyStatus && (
             <p
               className="mt-1 text-left text-[10px] text-neutral-500 dark:text-neutral-400"
               title={
@@ -308,20 +360,22 @@ export default function FileCard({
                       : null}
             </p>
           )}
-          <div
-            className="mt-2 flex w-full justify-start"
-            onClick={(e) => e.stopPropagation()}
-            role="presentation"
-          >
-            <HeartButton
-              count={hearts.count}
-              hasHearted={hearts.hasHearted}
-              loading={hearts.loading}
-              onToggle={hearts.toggle}
-              size="sm"
-              showCount
-            />
-          </div>
+          {!isMacosPackage ? (
+            <div
+              className="mt-2 flex w-full justify-start"
+              onClick={(e) => e.stopPropagation()}
+              role="presentation"
+            >
+              <HeartButton
+                count={hearts.count}
+                hasHearted={hearts.hasHearted}
+                loading={hearts.loading}
+                onToggle={hearts.toggle}
+                size="sm"
+                showCount
+              />
+            </div>
+          ) : null}
         </div>
       )}
 

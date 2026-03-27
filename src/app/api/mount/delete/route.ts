@@ -4,8 +4,13 @@
  * Used by WebDAV DELETE when user deletes from Finder.
  */
 import { FieldValue } from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { logActivityEvent } from "@/lib/activity-log";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import {
+  applyMacosPackageDelta,
+  mergeMacosPackageTrashDeltasInto,
+} from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -78,8 +83,8 @@ export async function POST(request: Request) {
 
   // Delete file (exact match) or folder (prefix match)
   const pathPrefix = `${safePath}/`;
-  let deleted = 0;
   let firstDeletedRel: string | null = null;
+  const allDocs = new Map<string, QueryDocumentSnapshot>();
 
   for (const did of driveIds) {
     const [snapUserId, snapUserIdSnake] = await Promise.all([
@@ -97,27 +102,41 @@ export async function POST(request: Request) {
         .get(),
     ]);
 
-    const docsToDelete = new Map<string, typeof snapUserId.docs[0]>();
     for (const snap of [snapUserId, snapUserIdSnake]) {
       for (const d of snap.docs) {
         const rel = (d.data().relative_path as string) ?? "";
         const isFile = rel === safePath;
         const isInFolder = rel.startsWith(pathPrefix);
         if (isFile || isInFolder) {
-          docsToDelete.set(d.id, d);
+          allDocs.set(d.id, d);
           if (firstDeletedRel === null) firstDeletedRel = rel;
         }
       }
     }
-
-    for (const d of docsToDelete.values()) {
-      await d.ref.update({ deleted_at: FieldValue.serverTimestamp() });
-      deleted++;
-    }
   }
 
+  const deleted = allDocs.size;
   if (deleted === 0) {
     return NextResponse.json({ error: "File or folder not found" }, { status: 404 });
+  }
+
+  const pkgDeltas = new Map<string, { count: number; bytes: number }>();
+  for (const d of allDocs.values()) {
+    mergeMacosPackageTrashDeltasInto(pkgDeltas, d.data());
+  }
+
+  const UPDATE_BATCH = 450;
+  const docList = [...allDocs.values()];
+  for (let i = 0; i < docList.length; i += UPDATE_BATCH) {
+    const batch = db.batch();
+    for (const d of docList.slice(i, i + UPDATE_BATCH)) {
+      batch.update(d.ref, { deleted_at: FieldValue.serverTimestamp() });
+    }
+    await batch.commit();
+  }
+
+  if (pkgDeltas.size > 0) {
+    await applyMacosPackageDelta(db, pkgDeltas);
   }
 
   const targetName = safePath.split("/").pop() ?? safePath;

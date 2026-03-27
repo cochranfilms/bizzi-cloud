@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Check, FileIcon, Film, FolderInput } from "lucide-react";
+import { Archive, Check, Download, FileIcon, Film, FolderInput, Info } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
@@ -47,6 +47,7 @@ function getFileType(
   contentType?: string | null,
   assetType?: string | null
 ): string {
+  if (assetType === "macos_package") return "macOS package";
   if (assetType === "project_file" || isProjectFile(name)) return "Project File";
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (GALLERY_VIDEO_EXT.test(name.toLowerCase()) || contentType?.startsWith("video/")) return ext || "Video";
@@ -94,6 +95,9 @@ interface FileListRowProps {
   onAfterRename?: () => void;
   draggable?: boolean;
   onDragStart?: React.DragEventHandler<HTMLTableRowElement>;
+  /** macOS package (.fcpbundle) row: download full ZIP restore */
+  onDownloadPackage?: () => void;
+  onPackageInfo?: () => void;
 }
 
 export default function FileListRow({
@@ -106,6 +110,8 @@ export default function FileListRow({
   onAfterRename,
   draggable = false,
   onDragStart,
+  onDownloadPackage,
+  onPackageInfo,
 }: FileListRowProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -119,12 +125,16 @@ export default function FileListRow({
     hasGallerySuite,
   });
   const { isPinned, pinItem, unpinItem } = usePinned();
+  const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const filePinned = isPinned("file", file.id);
-  const canPreview = !!file.objectKey;
-  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", { enabled: true });
-  const isVideo = isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false);
+  const canPreview = isMacosPackage ? !!(onPackageInfo ?? onClick) : !!file.objectKey;
+  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
+    enabled: !isMacosPackage,
+  });
+  const isVideo =
+    !isMacosPackage && (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isVideo,
+    enabled: !isMacosPackage && !!file.objectKey && isVideo,
     isVideo,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
@@ -132,7 +142,7 @@ export default function FileListRow({
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
   const isProject = file.assetType === "project_file" || isProjectFile(file.name);
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isPdf,
+    enabled: !isMacosPackage && !!file.objectKey && isPdf,
   });
   const hasThumbnail = isVideo || isImage || isPdf;
   const { confirm } = useConfirm();
@@ -150,19 +160,19 @@ export default function FileListRow({
     <>
       <tr
         data-selectable-item
-        data-item-type="file"
+        data-item-type={isMacosPackage ? "macos-package" : "file"}
         data-item-id={file.id}
-        draggable={draggable}
+        draggable={draggable && !isMacosPackage}
         onDragStart={onDragStart}
         role={canPreview ? "button" : undefined}
         tabIndex={canPreview ? 0 : undefined}
-        onClick={canPreview ? onClick : undefined}
+        onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
         onKeyDown={
           canPreview
             ? (e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onClick?.();
+                  (onPackageInfo ?? onClick)?.();
                 }
               }
             : undefined
@@ -170,7 +180,7 @@ export default function FileListRow({
         className={`border-b border-neutral-100 transition-colors last:border-0 ${
           canPreview ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
         } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
-          draggable ? "cursor-grab active:cursor-grabbing" : ""
+          draggable && !isMacosPackage ? "cursor-grab active:cursor-grabbing" : ""
         }`}
       >
         <td className="w-10 px-3 py-2">
@@ -191,7 +201,11 @@ export default function FileListRow({
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
             <div className="relative flex h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800">
-              {isVideo && file.objectKey ? (
+              {isMacosPackage ? (
+                <div className="flex h-full w-full items-center justify-center bg-amber-50 dark:bg-amber-950/40">
+                  <Archive className="h-5 w-5 text-amber-800 dark:text-amber-400" />
+                </div>
+              ) : isVideo && file.objectKey ? (
                 <VideoScrubThumbnail
                   fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
                   thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
@@ -219,9 +233,17 @@ export default function FileListRow({
                 </div>
               )}
             </div>
-            <span className="truncate font-medium text-neutral-900 dark:text-white" title={file.name}>
-              {file.name}
-            </span>
+            <div className="min-w-0">
+              <span className="block truncate font-medium text-neutral-900 dark:text-white" title={file.name}>
+                {file.name}
+              </span>
+              {isMacosPackage ? (
+                <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                  {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
+                  {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
+                </span>
+              ) : null}
+            </div>
           </div>
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
@@ -252,58 +274,95 @@ export default function FileListRow({
         </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            {(onDelete || file.driveId) && (
+            {(isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||
+            (!isMacosPackage && (onDelete || file.driveId)) ? (
               <ItemActionsMenu
-                actions={[
-                  ...(file.driveId
+                actions={
+                  isMacosPackage
                     ? [
+                        ...(onDownloadPackage
+                          ? [
+                              {
+                                id: "download-pkg",
+                                label: "Download package (ZIP)",
+                                icon: <Download className="h-4 w-4" />,
+                                onClick: onDownloadPackage,
+                              },
+                            ]
+                          : []),
+                        ...(onPackageInfo
+                          ? [
+                              {
+                                id: "pkg-info",
+                                label: "Package info",
+                                icon: <Info className="h-4 w-4" />,
+                                onClick: onPackageInfo,
+                              },
+                            ]
+                          : []),
+                        ...(onDelete
+                          ? [
+                              {
+                                id: "delete-pkg",
+                                label: "Move to trash",
+                                icon: null,
+                                onClick: handleDelete,
+                                destructive: true,
+                              },
+                            ]
+                          : []),
+                      ]
+                    : [
+                        ...(file.driveId
+                          ? [
+                              {
+                                id: "share",
+                                label: "Share",
+                                icon: null,
+                                onClick: () => setShareOpen(true),
+                              },
+                            ]
+                          : []),
                         {
-                          id: "share",
-                          label: "Share",
+                          id: filePinned ? "unpin" : "pin",
+                          label: filePinned ? "Unpin" : "Pin",
                           icon: null,
-                          onClick: () => setShareOpen(true),
+                          onClick: () => (filePinned ? unpinItem("file", file.id) : pinItem("file", file.id)),
                         },
-                      ]
-                    : []),
-                  {
-                    id: filePinned ? "unpin" : "pin",
-                    label: filePinned ? "Unpin" : "Pin",
-                    icon: null,
-                    onClick: () => (filePinned ? unpinItem("file", file.id) : pinItem("file", file.id)),
-                  },
-                  {
-                    id: "rename",
-                    label: "Rename",
-                    icon: null,
-                    onClick: () => setRenameOpen(true),
-                  },
-                  {
-                    id: "move",
-                    label: "Move",
-                    icon: null,
-                    onClick: () => setMoveOpen(true),
-                  },
-                  {
-                    id: "create-folder",
-                    label: "Create New Folder",
-                    icon: null,
-                    onClick: () => setCreateFolderOpen(true),
-                  },
-                  ...(onDelete
-                    ? [
                         {
-                          id: "delete",
-                          label: "Move to trash",
-                          onClick: handleDelete,
-                          destructive: true,
+                          id: "rename",
+                          label: "Rename",
+                          icon: null,
+                          onClick: () => setRenameOpen(true),
                         },
+                        {
+                          id: "move",
+                          label: "Move",
+                          icon: null,
+                          onClick: () => setMoveOpen(true),
+                        },
+                        {
+                          id: "create-folder",
+                          label: "Create New Folder",
+                          icon: null,
+                          onClick: () => setCreateFolderOpen(true),
+                        },
+                        ...(onDelete
+                          ? [
+                              {
+                                id: "delete",
+                                label: "Move to trash",
+                                onClick: handleDelete,
+                                destructive: true,
+                              },
+                            ]
+                          : []),
                       ]
-                    : []),
-                ]}
-                ariaLabel="File actions"
+                }
+                ariaLabel={isMacosPackage ? "Package actions" : "File actions"}
                 alignRight
               />
-            )}
+            ) : null}
           </div>
         </td>
       </tr>

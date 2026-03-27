@@ -808,6 +808,15 @@
       "collectionGroup": "backup_files",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "macos_package_id", "order": "ASCENDING" },
+        { "fieldPath": "deleted_at", "order": "ASCENDING" },
+        { "fieldPath": "relative_path", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "linked_drive_id", "order": "ASCENDING" },
         { "fieldPath": "deleted_at", "order": "ASCENDING" },
         { "fieldPath": "modified_at", "order": "DESCENDING" }

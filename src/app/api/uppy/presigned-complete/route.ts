@@ -11,6 +11,8 @@ import { logActivityEvent } from "@/lib/activity-log";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -157,7 +159,14 @@ export async function POST(request: Request) {
     container_id: containerId,
     personal_team_owner_id: personalTeamOwnerId,
     role_at_upload: roleAtUpload,
+    ...macosPackageFirestoreFieldsFromRelativePath(safePath),
   });
+
+  try {
+    await linkBackupFileToMacosPackageContainer(db, fileRef.id);
+  } catch (err) {
+    console.error("[presigned-complete] macos package link failed:", err);
+  }
 
   await db.doc(`linked_drives/${driveId}`).update({
     last_synced_at: new Date().toISOString(),

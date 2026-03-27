@@ -46,6 +46,12 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { usePathname } from "next/navigation";
 import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceededModal";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
+import { getUploadRelativePath } from "@/lib/uppy-local-preview";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import {
+  flatMacosPackageUserMessage,
+  isLikelyFlatMacosPackageBrowserUpload,
+} from "@/lib/macos-package-bundles";
 
 interface BackupContextValue {
   linkedDrives: LinkedDrive[];
@@ -1077,6 +1083,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 organization_id: drive.organization_id ?? null,
                 ...workspaceFields,
                 ...personalTeamFileFields(drive),
+                ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
               });
               if (idToken) {
                 fetch("/api/files/extract-metadata", {
@@ -1089,6 +1096,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                     backup_file_id: fileRef.id,
                     object_key: objectKey,
                   }),
+                }).catch(() => {});
+                fetch("/api/packages/link-backup-file", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                  body: JSON.stringify({ backup_file_id: fileRef.id }),
                 }).catch(() => {});
               }
 
@@ -1595,6 +1610,17 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         if (filesToUpload.length === 0) return;
       }
 
+      const flatPkgs = filesToUpload.filter((f) => isLikelyFlatMacosPackageBrowserUpload(f));
+      filesToUpload = filesToUpload.filter((f) => !isLikelyFlatMacosPackageBrowserUpload(f));
+      if (flatPkgs.length > 0) {
+        setFileUploadError(
+          flatPkgs.length === 1
+            ? flatMacosPackageUserMessage(flatPkgs[0].name)
+            : `Skipped ${flatPkgs.length} macOS package(s). ${flatMacosPackageUserMessage(flatPkgs[0].name)}`
+        );
+      }
+      if (filesToUpload.length === 0) return;
+
       const bytesTotal = filesToUpload.reduce((s, f) => s + f.size, 0);
       const fileItems = filesToUpload.map((f, i) => ({
         id: `upload-${Date.now()}-${i}-${f.name}`,
@@ -1729,7 +1755,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               bytes_synced: file.size,
               completed_at: new Date(),
             });
-            const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+            const innerRel = getUploadRelativePath(file, file.name);
+            const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
             const workspaceFields = await getWorkspaceFieldsForOrgDrive(
               drive,
               idToken ?? null,
@@ -1752,6 +1779,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               organization_id: drive.organization_id ?? null,
               ...workspaceFields,
               ...personalTeamFileFields(drive),
+              ...macosPackageFirestoreFieldsFromRelativePath(relPath),
             });
             options?.onFileComplete?.({
               name: file.name,
@@ -1770,6 +1798,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   backup_file_id: fileRef.id,
                   object_key: ev.objectKey,
                 }),
+              }).catch(() => {});
+              fetch("/api/packages/link-backup-file", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ backup_file_id: fileRef.id }),
               }).catch(() => {});
             }
             if (VIDEO_EXT.test(file.name) && idToken) {
@@ -1810,7 +1846,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const file = filesToUpload[i];
           const item = fileItems[i];
           updateFile(item.id, { status: "uploading" });
-          const relPath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+          const innerRel = getUploadRelativePath(file, file.name);
+          const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
           const queued: QueuedFile = {
             id: item.id,
             file,
@@ -2005,6 +2042,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             gallery_id: galleryId,
             ...workspaceFields,
             ...personalTeamFileFields(drive),
+            ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
           });
           getCurrentUserIdToken(false)
             .then((token) =>
@@ -2019,6 +2057,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                       backup_file_id: fileRef.id,
                       object_key: ev.objectKey,
                     }),
+                  }).catch(() => {})
+                : Promise.resolve()
+            );
+          getCurrentUserIdToken(false)
+            .then((token) =>
+              token
+                ? fetch("/api/packages/link-backup-file", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ backup_file_id: fileRef.id }),
                   }).catch(() => {})
                 : Promise.resolve()
             );
@@ -2214,6 +2265,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           organization_id: drive.organization_id ?? null,
           ...workspaceFields,
           ...personalTeamFileFields(drive),
+          ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
         });
         if (idToken) {
           fetch("/api/files/extract-metadata", {
@@ -2226,6 +2278,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               backup_file_id: fileRef.id,
               object_key: objectKey,
             }),
+          }).catch(() => {});
+          fetch("/api/packages/link-backup-file", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ backup_file_id: fileRef.id }),
           }).catch(() => {});
         }
         if (VIDEO_EXT.test(relativePath)) {
