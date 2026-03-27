@@ -14,6 +14,7 @@ import {
   limit,
   updateDoc,
   serverTimestamp,
+  Timestamp,
   writeBatch,
   type QueryConstraint,
 } from "firebase/firestore";
@@ -1056,6 +1057,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         scoped.map((d) => [d.id, { id: d.id, name: d.name }])
       );
       const driveIds = new Set(driveMap.keys());
+      /** Soft-deleted rows (deleted_at set). Filter client-side so restorable trash matches resolver: excludes pending_permanent_delete etc., and includes legacy rows without lifecycle_state. */
+      const deletedAtLowerBound = Timestamp.fromMillis(0);
       const perDriveSnaps = await Promise.all(
         scoped.map((drive) =>
           getDocs(
@@ -1064,21 +1067,27 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
                   where("organization_id", "==", drive.organization_id),
-                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+                  where("deleted_at", ">", deletedAtLowerBound),
                   orderBy("deleted_at", "desc"),
                   limit(120)
                 )
               : query(
                   collection(db, "backup_files"),
                   where("linked_drive_id", "==", drive.id),
-                  where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+                  where("deleted_at", ">", deletedAtLowerBound),
                   orderBy("deleted_at", "desc"),
                   limit(120)
                 )
           )
         )
       );
-      const trashedDocs = perDriveSnaps.flatMap((s) => s.docs);
+      const trashedDocs = perDriveSnaps
+        .flatMap((s) => s.docs)
+        .filter(
+          (d) =>
+            resolveBackupFileLifecycleState(d.data() as Record<string, unknown>) ===
+            BACKUP_LIFECYCLE_TRASHED
+        );
       return trashedDocs
         .filter((d) => driveIds.has(d.data().linked_drive_id))
         .map((d) => {
@@ -1539,21 +1548,30 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       if (!isFirebaseConfigured() || !user) return;
       const db = getFirebaseFirestore();
       const sourceDrive = linkedDrives.find((d) => d.id === driveId);
+      const deletedAtLowerBound = Timestamp.fromMillis(0);
       const filesSnap = await getDocs(
         sourceDrive?.organization_id
           ? query(
               collection(db, "backup_files"),
               where("linked_drive_id", "==", driveId),
               where("organization_id", "==", sourceDrive.organization_id),
-              where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED)
+              where("deleted_at", ">", deletedAtLowerBound),
+              orderBy("deleted_at", "desc")
             )
           : query(
               collection(db, "backup_files"),
               where("linked_drive_id", "==", driveId),
-              where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED)
+              where("deleted_at", ">", deletedAtLowerBound),
+              orderBy("deleted_at", "desc")
             )
       );
-      const ids = filesSnap.docs.map((d) => d.id);
+      const ids = filesSnap.docs
+        .filter(
+          (d) =>
+            resolveBackupFileLifecycleState(d.data() as Record<string, unknown>) ===
+            BACKUP_LIFECYCLE_TRASHED
+        )
+        .map((d) => d.id);
       const token = await getCurrentUserIdToken(true);
       if (!token) return;
       const base = typeof window !== "undefined" ? window.location.origin : "";
