@@ -1,6 +1,6 @@
 import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
-import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
+  const result = await verifyBackupFileAccessWithGalleryFallbackAndLifecycle(uid, objectKey);
   if (!result.allowed) {
     console.warn("[preview-url] Access denied", {
       status: result.status,

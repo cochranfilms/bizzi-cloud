@@ -1,5 +1,5 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
-import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
+import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
   const name = (typeof fileName === "string" ? fileName : null) ?? "download";
 
-  const result = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
+  const result = await verifyBackupFileAccessWithGalleryFallbackAndLifecycle(uid, objectKey);
   if (!result.allowed) {
     return NextResponse.json(
       { error: result.message ?? "Access denied" },
