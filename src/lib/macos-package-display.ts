@@ -53,6 +53,41 @@ export function recentFileFromMacosPackageListEntry(
   };
 }
 
+/** Expand synthetic `macos-pkg:*` selection to concrete `backup_files` ids for move/bulk download. */
+export function expandMacosPackageRowIds(
+  fileIds: string[],
+  driveFiles: { id: string; path: string; macosPackageId?: string | null }[],
+  packages: MacosPackageListEntry[]
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const id of fileIds) {
+    if (!id.startsWith("macos-pkg:")) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        result.push(id);
+      }
+      continue;
+    }
+    const pkgId = id.slice("macos-pkg:".length);
+    const pkg = packages.find((p) => p.id === pkgId);
+    const root = (pkg?.root_relative_path ?? "").replace(/^\/+/, "");
+    const members = driveFiles.filter((f) => {
+      if (f.macosPackageId === pkgId) return true;
+      if (!root) return false;
+      const p = f.path.replace(/^\/+/, "");
+      return p === root || p.startsWith(`${root}/`);
+    });
+    for (const m of members) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        result.push(m.id);
+      }
+    }
+  }
+  return result;
+}
+
 /** One row per package + loose project files not under those package roots. */
 export function mergeDriveFilesWithMacosPackages<T extends { path: string; macosPackageId?: string | null }>(
   displayedFiles: T[],

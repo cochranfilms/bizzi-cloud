@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { downloadMacosPackageZipStreaming } from "@/lib/macos-package-zip-download";
 
 const DOWNLOAD_LIMIT = 50;
 const BULK_ZIP_RETRIES = 4;
@@ -35,26 +36,7 @@ export function useBulkDownload({ fetchFilesByIds }: UseBulkDownloadOptions) {
     setIsLoading(true);
     setError(null);
     try {
-      const token = (await getFirebaseAuth().currentUser?.getIdToken(true)) ?? null;
-      if (!token) throw new Error("Not authenticated");
-      const res = await fetch(`/api/packages/${encodeURIComponent(packageId)}/download-zip`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data?.error ?? "Package download failed");
-      }
-      const disposition = res.headers.get("Content-Disposition");
-      let filename = "package-restore.zip";
-      const m = disposition?.match(/filename="([^"]+)"/);
-      if (m) filename = m[1];
-      const body = res.body;
-      if (!body) throw new Error("No response body");
-      const streamSaver = (await import("streamsaver")).default;
-      const fileStream = streamSaver.createWriteStream(filename);
-      await body.pipeTo(fileStream);
+      await downloadMacosPackageZipStreaming(packageId);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Package download failed";

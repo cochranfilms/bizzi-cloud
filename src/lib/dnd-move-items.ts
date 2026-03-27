@@ -1,6 +1,30 @@
 /** Custom DataTransfer type for dragging files/folders to move into another linked drive folder */
 export const DND_MOVE_MIME = "application/x-bizzi-move-items" as const;
 
+export type DragMovePayload = { fileIds: string[]; folderKeys: string[] };
+
+/** Persist payload for drop (custom MIME + text/plain fallback for browsers that omit custom types). */
+export function setDragMovePayload(dt: DataTransfer, payload: DragMovePayload): void {
+  const s = JSON.stringify(payload);
+  dt.setData(DND_MOVE_MIME, s);
+  dt.setData("text/plain", s);
+}
+
+/** Read payload from a drop event. */
+export function getDragMovePayload(dt: DataTransfer): DragMovePayload | null {
+  const raw = dt.getData(DND_MOVE_MIME) || dt.getData("text/plain");
+  if (!raw?.trimStart().startsWith("{")) return null;
+  try {
+    const data = JSON.parse(raw) as { fileIds?: string[]; folderKeys?: string[] };
+    const fileIds = Array.isArray(data.fileIds) ? data.fileIds : [];
+    const folderKeys = Array.isArray(data.folderKeys) ? data.folderKeys : [];
+    if (fileIds.length + folderKeys.length === 0) return null;
+    return { fileIds, folderKeys };
+  } catch {
+    return null;
+  }
+}
+
 /** Build move payload: if the dragged item is part of the current selection, move the whole selection; otherwise move only that item. */
 export function getMovePayloadFromDragSource(
   sourceEl: HTMLElement,

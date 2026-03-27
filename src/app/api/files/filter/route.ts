@@ -94,7 +94,7 @@ function parseFilters(searchParams: URLSearchParams) {
   const cursor = searchParams.get("cursor") ?? undefined;
   const pageSize = Math.min(
     parseInt(searchParams.get("page_size") ?? String(PAGE_SIZE), 10) || PAGE_SIZE,
-    50
+    120
   );
   return {
     context,

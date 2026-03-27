@@ -14,9 +14,12 @@ import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLU
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
+import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { downloadMacosPackageZipStreaming } from "@/lib/macos-package-zip-download";
+import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/file-access";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
-const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
+const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
@@ -223,8 +226,26 @@ export default function FilePreviewModal({
 
 
   const handleDownload = useCallback(async () => {
-    if (!file?.objectKey) return;
+    if (!file) return;
+    const pkgFromRow = file.macosPackageId?.startsWith("pkg_") ? file.macosPackageId : null;
+    const pkgFromId = parseMacosPackageIdFromSyntheticFileId(file.id);
+    const packageId = pkgFromRow ?? pkgFromId ?? null;
+    if (packageId?.startsWith("pkg_")) {
+      setDownloading(true);
+      setError(null);
+      try {
+        await downloadMacosPackageZipStreaming(packageId);
+      } catch (err) {
+        console.error("Download error:", err);
+        setError(err instanceof Error ? err.message : "Download failed");
+      } finally {
+        setDownloading(false);
+      }
+      return;
+    }
+    if (!file.objectKey) return;
     setDownloading(true);
+    setError(null);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) throw new Error("Not authenticated");
@@ -253,10 +274,11 @@ export default function FilePreviewModal({
       a.click();
     } catch (err) {
       console.error("Download error:", err);
+      setError(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloading(false);
     }
-  }, [file?.objectKey, file?.name]);
+  }, [file]);
 
   const lutOptions: LUTOption[] =
     lutConfig && lutLibrary

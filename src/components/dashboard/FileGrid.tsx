@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { Check, CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 
-import { DND_MOVE_MIME, getMovePayloadFromDragSource } from "@/lib/dnd-move-items";
+import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
@@ -45,6 +45,8 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
+import { expandMacosPackageRowIds } from "@/lib/macos-package-display";
+import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 
 type MacosPackageListEntry = {
   id: string;
@@ -79,40 +81,6 @@ function recentFileFromMacosPackageListEntry(
     macosPackageFileCount: pkg.file_count,
     macosPackageLabel: (pkg.display_label as string) ?? null,
   };
-}
-
-function expandMacosPackageRowIds(
-  fileIds: string[],
-  driveFiles: RecentFile[],
-  packages: MacosPackageListEntry[]
-): string[] {
-  const result: string[] = [];
-  const seen = new Set<string>();
-  for (const id of fileIds) {
-    if (!id.startsWith("macos-pkg:")) {
-      if (!seen.has(id)) {
-        seen.add(id);
-        result.push(id);
-      }
-      continue;
-    }
-    const pkgId = id.slice("macos-pkg:".length);
-    const pkg = packages.find((p) => p.id === pkgId);
-    const root = (pkg?.root_relative_path ?? "").replace(/^\/+/, "");
-    const members = driveFiles.filter((f) => {
-      if (f.macosPackageId === pkgId) return true;
-      if (!root) return false;
-      const p = f.path.replace(/^\/+/, "");
-      return p === root || p.startsWith(`${root}/`);
-    });
-    for (const m of members) {
-      if (!seen.has(m.id)) {
-        seen.add(m.id);
-        result.push(m.id);
-      }
-    }
-  }
-  return result;
 }
 
 function mergeDisplayedFilesWithMacosPackages(
@@ -325,6 +293,12 @@ export default function FileGrid() {
     bulkDownload(Array.from(selectedFileIds));
   }, [bulkDownload, selectedFileIds]);
   const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!moveNotice) return;
+    const t = window.setTimeout(() => setMoveNotice(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [moveNotice]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
@@ -547,16 +521,15 @@ export default function FileGrid() {
       try {
         const token = await getAuthToken();
         if (!token) return;
-        const q = new URLSearchParams({
-          drive_id: currentDrive.id,
-          folder_path: currentDrivePath,
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const packages = await fetchPackagesListCached({
+          origin: base,
+          token,
+          driveId: currentDrive.id,
+          folderPath: currentDrivePath,
+          storageVersion,
         });
-        const res = await fetch(`/api/packages/list?${q}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { packages?: MacosPackageListEntry[] };
-        if (!cancelled) setMacosPackagesForFolder(data.packages ?? []);
+        if (!cancelled) setMacosPackagesForFolder(packages);
       } catch {
         if (!cancelled) setMacosPackagesForFolder([]);
       }
@@ -756,7 +729,7 @@ export default function FileGrid() {
         e.preventDefault();
         return;
       }
-      e.dataTransfer.setData(DND_MOVE_MIME, JSON.stringify(payload));
+      setDragMovePayload(e.dataTransfer, payload);
       e.dataTransfer.effectAllowed = "move";
     },
     [selectedFileIds, selectedFolderKeys]
@@ -969,6 +942,8 @@ export default function FileGrid() {
       if (currentDrive && expandedIds.length > 0) {
         loadDriveFiles(currentDrive.id);
       }
+      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [
       linkedDrives,
@@ -999,16 +974,9 @@ export default function FileGrid() {
 
   const handleDropOnFolder = useCallback(
     async (targetDriveId: string, e: React.DragEvent) => {
-      try {
-        const raw = e.dataTransfer.getData(DND_MOVE_MIME);
-        if (!raw) return;
-        const data = JSON.parse(raw) as { fileIds: string[]; folderKeys: string[] };
-        const { fileIds, folderKeys } = data;
-        if ((fileIds?.length ?? 0) + (folderKeys?.length ?? 0) === 0) return;
-        await performMove(fileIds ?? [], folderKeys ?? [], targetDriveId);
-      } catch {
-        // ignore parse errors
-      }
+      const parsed = getDragMovePayload(e.dataTransfer);
+      if (!parsed) return;
+      await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
     },
     [performMove]
   );
@@ -1936,6 +1904,16 @@ export default function FileGrid() {
       </DashboardRouteFade>
       </FilesViewWrapper>
         </div>
+
+        {moveNotice ? (
+          <div
+            role="status"
+            className="fixed bottom-24 left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
+          >
+            <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden />
+            <span className="text-left">{moveNotice}</span>
+          </div>
+        ) : null}
 
         {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar

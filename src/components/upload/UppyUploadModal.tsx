@@ -15,6 +15,8 @@ import {
   isLikelyFlatMacosPackageBrowserUpload,
   MACOS_PACKAGE_STRUCTURED_UPLOAD_BLURB,
 } from "@/lib/macos-package-bundles";
+import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import UppyGroupedQueueList from "./UppyGroupedQueueList";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check, FolderOpen } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -199,6 +201,10 @@ export default function UppyUploadModal({
         return;
       }
       const webkitRel = fileData ? getUploadRelativePath(fileData, file.name) : file.name;
+      const pkgFields = macosPackageFirestoreFieldsFromRelativePath(webkitRel);
+      const isMacosPackageMember = Boolean(
+        pkgFields.macos_package_kind && pkgFields.macos_package_root_relative_path
+      );
 
       let uniqueName = webkitRel;
       if (pathPrefix && galleryId) {
@@ -227,9 +233,15 @@ export default function UppyUploadModal({
             (file.data instanceof File ? file.data.lastModified : null) ??
             (file as { lastModified?: number }).lastModified ??
             null,
+          ...(isMacosPackageMember && pkgFields.macos_package_root_relative_path
+            ? {
+                macosPackageGroupRoot: pkgFields.macos_package_root_relative_path,
+                macosPackageKind: pkgFields.macos_package_kind,
+              }
+            : {}),
         },
       });
-      if (fileData) {
+      if (fileData && !isMacosPackageMember) {
         void attachUppyLocalPreview((preview) => {
           uppy.setFileState(file.id, { preview });
         }, fileData);
@@ -515,7 +527,13 @@ export default function UppyUploadModal({
               {macosPackageWarning}
             </div>
           )}
-          <Dashboard uppy={uppyRef.current} proudlyDisplayPoweredByUppy={false} height={380} />
+          <UppyGroupedQueueList uppy={uppyRef.current} />
+          <Dashboard
+            uppy={uppyRef.current}
+            proudlyDisplayPoweredByUppy={false}
+            height={320}
+            showSelectedFiles={false}
+          />
         </div>
       )}
     </div>

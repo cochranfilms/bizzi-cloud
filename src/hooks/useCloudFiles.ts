@@ -7,7 +7,6 @@ import {
   documentId,
   getDoc,
   getDocs,
-  getCountFromServer,
   onSnapshot,
   query,
   where,
@@ -43,6 +42,7 @@ import {
   recentFileFromMacosPackageListEntry,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
+import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
@@ -86,20 +86,37 @@ function shouldQueryDriveWideFiles(d: LinkedDrive | undefined, uid: string): boo
   return d.user_id === uid;
 }
 
-function personalDriveFilesCountQuery(db: Firestore, drive: LinkedDrive) {
-  if (drive.organization_id) {
-    return query(
-      collection(db, "backup_files"),
-      where("linked_drive_id", "==", drive.id),
-      where("organization_id", "==", drive.organization_id),
-      where("deleted_at", "==", null)
-    );
+/** Matches server trash/move policy so drive owners and org admins can move others’ files (e.g. team home). */
+function actorMayMoveBackupFile(
+  data: DocumentData,
+  actorUid: string,
+  linkedDrives: LinkedDrive[],
+  options: {
+    enterpriseOrgId: string | null | undefined;
+    enterpriseRole: string | null | undefined;
+    isEnterpriseContext: boolean;
   }
-  return query(
-    collection(db, "backup_files"),
-    where("linked_drive_id", "==", drive.id),
-    where("deleted_at", "==", null)
-  );
+): boolean {
+  const uploader = (data.userId ?? data.user_id) as string | undefined;
+  const fileOrgId = (data.organization_id as string | null) ?? null;
+  const driveId = (data.linked_drive_id as string) ?? "";
+
+  if (fileOrgId) {
+    const inCtx =
+      options.isEnterpriseContext &&
+      !!options.enterpriseOrgId &&
+      options.enterpriseOrgId === fileOrgId;
+    if (inCtx && options.enterpriseRole === "admin") return true;
+    if (uploader === actorUid) return true;
+    return false;
+  }
+
+  if (driveId) {
+    const drive = linkedDrives.find((d) => d.id === driveId);
+    if (drive?.user_id === actorUid) return true;
+  }
+
+  return uploader === actorUid;
 }
 
 function backupModifiedMs(data: DocumentData): number {
@@ -336,7 +353,7 @@ export interface UseCloudFilesOptions {
 
 export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { user } = useAuth();
-  const { org } = useEnterprise();
+  const { org, role: orgRole } = useEnterprise();
   const isEnterpriseContext = useIsEnterpriseContext();
   const teamRouteOwnerUid = useTeamRouteOwnerUid();
   const creatorOnly = options?.creatorOnly ?? false;
@@ -414,20 +431,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const token = await getUserIdToken(user, false);
         const driveIdsParam = scoped.map((d) => d.id).join(",");
 
-        const [countRes, recentRes] = await Promise.all([
-          fetch(
-            `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          ),
-          fetch(
-            `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=120`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          ),
-        ]);
+        const countP = fetch(
+          `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).then(async (r) =>
+          r.ok ? ((await r.json()) as { counts?: Record<string, number> }) : { counts: {} }
+        );
+        const recentP = fetch(
+          `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=120`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).then(async (r) =>
+          r.ok ? ((await r.json()) as { files?: Record<string, unknown>[] }) : { files: [] }
+        );
 
-        const countData = countRes.ok
-          ? ((await countRes.json()) as { counts?: Record<string, number> })
-          : { counts: {} };
+        const countData = await countP;
         const countMap = countData.counts ?? {};
         const folders: DriveFolder[] = scoped.map((drive) => ({
           id: drive.id,
@@ -440,9 +457,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         }));
         setDriveFolders(folders);
 
-        const recentData = recentRes.ok
-          ? ((await recentRes.json()) as { files?: Record<string, unknown>[] })
-          : { files: [] };
+        const recentData = await recentP;
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
@@ -454,20 +469,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const driveIdsParam = scoped.map((d) => d.id).join(",");
         const ownerParam = encodeURIComponent(teamRouteOwnerUid);
 
-        const [countRes, recentRes] = await Promise.all([
-          fetch(
-            `${base}/api/files/drive-item-counts?team_owner_id=${ownerParam}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          ),
-          fetch(
-            `${base}/api/files/filter?team_owner_id=${ownerParam}&sort=newest&page_size=120`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          ),
-        ]);
+        const countP = fetch(
+          `${base}/api/files/drive-item-counts?team_owner_id=${ownerParam}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).then(async (r) =>
+          r.ok ? ((await r.json()) as { counts?: Record<string, number> }) : { counts: {} }
+        );
+        const recentP = fetch(
+          `${base}/api/files/filter?team_owner_id=${ownerParam}&sort=newest&page_size=120`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).then(async (r) =>
+          r.ok ? ((await r.json()) as { files?: Record<string, unknown>[] }) : { files: [] }
+        );
 
-        const countData = countRes.ok
-          ? ((await countRes.json()) as { counts?: Record<string, number> })
-          : { counts: {} };
+        const countData = await countP;
         const countMap = countData.counts ?? {};
         const folders: DriveFolder[] = scoped.map((drive) => ({
           id: drive.id,
@@ -480,38 +495,46 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         }));
         setDriveFolders(folders);
 
-        const recentData = recentRes.ok
-          ? ((await recentRes.json()) as { files?: Record<string, unknown>[] })
-          : { files: [] };
+        const recentData = await recentP;
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
           .slice(0, 120);
         setRecentFiles(recent);
       } else {
-        const [folders, recentList] = await Promise.all([
-          Promise.all(
-            scoped.map(async (drive) => {
-              const countSnap = await getCountFromServer(
-                personalDriveFilesCountQuery(db, drive)
-              );
-              return {
-                id: drive.id,
-                name: drive.name,
-                type: "folder" as const,
-                key: `drive-${drive.id}`,
-                items: countSnap.data().count,
-                lastSyncedAt: drive.last_synced_at,
-                isCreatorRaw: drive.is_creator_raw === true,
-              };
-            })
-          ),
-          (async (): Promise<RecentFile[]> => {
-            const { files: list } = await fetchFilesFromFilterApi(user, { pageSize: 120 });
-            return list.filter((r) => driveIds.has(r.driveId)).slice(0, 120);
-          })(),
-        ]);
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const token = await getUserIdToken(user, false);
+        const driveIdsParam = scoped.map((d) => d.id).join(",");
+        const countP =
+          driveIdsParam.length > 0
+            ? fetch(
+                `${base}/api/files/drive-item-counts?personal=1&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              ).then(async (r) =>
+                r.ok ? ((await r.json()) as { counts?: Record<string, number> }) : { counts: {} }
+              )
+            : Promise.resolve({ counts: {} } as { counts?: Record<string, number> });
+        const recentP = (async (): Promise<RecentFile[]> => {
+          const { files: list } = await fetchFilesFromFilterApi(user, {
+            pageSize: 120,
+            teamOwnerUserId: teamRouteOwnerUid,
+          });
+          return list.filter((r) => driveIds.has(r.driveId)).slice(0, 120);
+        })();
+
+        const countData = await countP;
+        const countMap = countData.counts ?? {};
+        const folders: DriveFolder[] = scoped.map((drive) => ({
+          id: drive.id,
+          name: drive.name,
+          type: "folder" as const,
+          key: `drive-${drive.id}`,
+          items: countMap[drive.id] ?? 0,
+          lastSyncedAt: drive.last_synced_at,
+          isCreatorRaw: drive.is_creator_raw === true,
+        }));
         setDriveFolders(folders);
+        const recentList = await recentP;
         setRecentFiles(recentList);
       }
     } catch (err) {
@@ -726,55 +749,56 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
     /** UI only shows 24 rows; a few pages per drive is enough without loading every bundle member. */
     const maxPagesPerDrive = 4;
-    const perDrive: RecentFile[][] = [];
-    for (const driveId of storageDriveIds) {
-      if (runId !== recentUploadsFetchIdRef.current) return [];
-      const drive = driveMap.get(driveId);
-      const batch: RecentFile[] = [];
-      try {
-        let cursor: string | null = null;
-        for (let page = 0; page < maxPagesPerDrive; page++) {
-          let pageResult: {
-            files: RecentFile[];
-            nextCursor: string | null;
-            hasMore: boolean;
-          };
-          if (drive?.organization_id) {
-            pageResult = await fetchFilesFromFilterApi(user, {
-              driveId,
-              pageSize: 50,
-              cursor,
-              enterprise: { organizationId: drive.organization_id },
-              dateFrom: dateFromDay,
-              dateTo: dateToDay,
-            });
-          } else {
-            pageResult = await fetchFilesFromFilterApi(user, {
-              driveId,
-              teamOwnerUserId: teamRouteOwnerUid,
-              pageSize: 50,
-              cursor,
-              dateFrom: dateFromDay,
-              dateTo: dateToDay,
-            });
+    const perDrive = await Promise.all(
+      storageDriveIds.map(async (driveId) => {
+        if (runId !== recentUploadsFetchIdRef.current) return [];
+        const drive = driveMap.get(driveId);
+        const batch: RecentFile[] = [];
+        try {
+          let cursor: string | null = null;
+          for (let page = 0; page < maxPagesPerDrive; page++) {
+            let pageResult: {
+              files: RecentFile[];
+              nextCursor: string | null;
+              hasMore: boolean;
+            };
+            if (drive?.organization_id) {
+              pageResult = await fetchFilesFromFilterApi(user, {
+                driveId,
+                pageSize: 50,
+                cursor,
+                enterprise: { organizationId: drive.organization_id },
+                dateFrom: dateFromDay,
+                dateTo: dateToDay,
+              });
+            } else {
+              pageResult = await fetchFilesFromFilterApi(user, {
+                driveId,
+                teamOwnerUserId: teamRouteOwnerUid,
+                pageSize: 50,
+                cursor,
+                dateFrom: dateFromDay,
+                dateTo: dateToDay,
+              });
+            }
+            const { files: rows, nextCursor, hasMore } = pageResult;
+            for (const row of rows) {
+              const dateStr = recentUploadRecencyIso(row);
+              if (!dateStr || dateStr < recentCutoff) continue;
+              batch.push({
+                ...row,
+                driveName: drive?.name ?? row.driveName ?? "Storage",
+              });
+            }
+            if (!hasMore || !nextCursor || rows.length === 0) break;
+            cursor = nextCursor;
           }
-          const { files: rows, nextCursor, hasMore } = pageResult;
-          for (const row of rows) {
-            const dateStr = recentUploadRecencyIso(row);
-            if (!dateStr || dateStr < recentCutoff) continue;
-            batch.push({
-              ...row,
-              driveName: drive?.name ?? row.driveName ?? "Storage",
-            });
-          }
-          if (!hasMore || !nextCursor || rows.length === 0) break;
-          cursor = nextCursor;
+        } catch {
+          return [];
         }
-      } catch {
-        // skip this drive
-      }
-      perDrive.push(batch);
-    }
+        return batch;
+      })
+    );
     const all = perDrive.flat();
     all.sort((a, b) => {
       const ta = new Date(recentUploadRecencyIso(a) ?? 0).getTime();
@@ -785,26 +809,35 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const base = typeof window !== "undefined" ? window.location.origin : "";
     const synthetics: RecentFile[] = [];
     const activePkgIds = new Set<string>();
-    if (token) {
-      for (const driveId of storageDriveIds) {
-        if (runId !== recentUploadsFetchIdRef.current) return [];
-        const drive = driveMap.get(driveId);
-        const driveName = drive?.name ?? "Storage";
-        try {
-          const pres = await fetch(
-            `${base}/api/packages/list?drive_id=${encodeURIComponent(driveId)}&folder_path=`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (!pres.ok) continue;
-          const pdata = (await pres.json()) as { packages?: MacosPackageListEntry[] };
-          for (const p of pdata.packages ?? []) {
-            const la = p.last_activity_at;
-            if (!la || la < recentCutoff) continue;
-            synthetics.push(recentFileFromMacosPackageListEntry(p, driveId, driveName));
-            activePkgIds.add(p.id);
+    if (token && storageDriveIds.length > 0) {
+      const pkgByDrive = await Promise.all(
+        storageDriveIds.map(async (driveId) => {
+          const drive = driveMap.get(driveId);
+          const driveName = drive?.name ?? "Storage";
+          if (runId !== recentUploadsFetchIdRef.current) {
+            return { driveId, driveName, packages: [] as MacosPackageListEntry[] };
           }
-        } catch {
-          /* ignore package list errors */
+          try {
+            const packages = await fetchPackagesListCached({
+              origin: base,
+              token,
+              driveId,
+              folderPath: "",
+              storageVersion,
+            });
+            return { driveId, driveName, packages };
+          } catch {
+            return { driveId, driveName, packages: [] as MacosPackageListEntry[] };
+          }
+        })
+      );
+      if (runId !== recentUploadsFetchIdRef.current) return [];
+      for (const { driveId, driveName, packages } of pkgByDrive) {
+        for (const p of packages) {
+          const la = p.last_activity_at;
+          if (!la || la < recentCutoff) continue;
+          synthetics.push(recentFileFromMacosPackageListEntry(p, driveId, driveName));
+          activePkgIds.add(p.id);
         }
       }
     }
@@ -824,7 +857,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     if (runId !== recentUploadsFetchIdRef.current) return result;
     setRecentUploads(result);
     return result;
-  }, [user, linkedDrives, teamRouteOwnerUid]);
+  }, [user, linkedDrives, teamRouteOwnerUid, storageVersion]);
 
   /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
   const subscribeToDriveFiles = useCallback(
@@ -1153,8 +1186,16 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const db = getFirebaseFirestore();
       const fileSnap = await getDoc(doc(db, "backup_files", fileId));
       if (!fileSnap.exists()) return;
-      const data = fileSnap.data();
-      if (data?.userId !== user.uid) return;
+      const data = fileSnap.data()!;
+      if (
+        !actorMayMoveBackupFile(data, user.uid, linkedDrives, {
+          enterpriseOrgId: orgId,
+          enterpriseRole: orgRole,
+          isEnterpriseContext,
+        })
+      ) {
+        return;
+      }
       const path = (data.relative_path as string) ?? "";
       const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
       await updateDoc(doc(db, "backup_files", fileId), {
@@ -1165,17 +1206,31 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [
+      user,
+      linkedDrives,
+      orgId,
+      orgRole,
+      isEnterpriseContext,
+      fetchCloudFiles,
+      recalculateStorage,
+    ]
   );
 
   const moveFilesToFolder = useCallback(
     async (fileIds: string[], targetDriveId: string) => {
       if (!isFirebaseConfigured() || !user || fileIds.length === 0) return;
       const db = getFirebaseFirestore();
+      const moveOpts = {
+        enterpriseOrgId: orgId,
+        enterpriseRole: orgRole,
+        isEnterpriseContext,
+      };
       for (const fileId of fileIds) {
         const fileSnap = await getDoc(doc(db, "backup_files", fileId));
-        if (!fileSnap.exists() || fileSnap.data()?.userId !== user.uid) continue;
+        if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
+        if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
         const path = (data.relative_path as string) ?? "";
         const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
         await updateDoc(doc(db, "backup_files", fileId), {
@@ -1187,7 +1242,15 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       await recalculateStorage();
       await fetchCloudFiles();
     },
-    [user, fetchCloudFiles, recalculateStorage]
+    [
+      user,
+      linkedDrives,
+      orgId,
+      orgRole,
+      isEnterpriseContext,
+      fetchCloudFiles,
+      recalculateStorage,
+    ]
   );
 
   const getFileIdsForBulkShare = useCallback(

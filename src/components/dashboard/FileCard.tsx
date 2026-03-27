@@ -24,6 +24,7 @@ import CreateFolderModal from "./CreateFolderModal";
 import { useConfirm } from "@/hooks/useConfirm";
 import HeartButton from "@/components/collaboration/HeartButton";
 import { useHearts } from "@/hooks/useHearts";
+import { isProjectFile } from "@/lib/bizzi-file-types";
 
 interface FileCardProps {
   file: RecentFile;
@@ -108,6 +109,7 @@ export default function FileCard({
   });
   const { isPinned, pinItem, unpinItem } = usePinned();
   const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
+  const showHeartRow = !isMacosPackage || isProjectFile(file.name);
   const filePinned = isPinned("file", file.id);
   const canPreview = isMacosPackage ? !!(onPackageInfo ?? onClick) : !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
@@ -361,7 +363,7 @@ export default function FileCard({
                       : null}
             </p>
           )}
-          {!isMacosPackage ? (
+          {showHeartRow ? (
             <div
               className="mt-2 flex w-full justify-start"
               onClick={(e) => e.stopPropagation()}

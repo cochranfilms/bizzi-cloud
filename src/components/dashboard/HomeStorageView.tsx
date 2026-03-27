@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { Check, Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
   filterDriveFoldersByPowerUp,
@@ -34,7 +34,7 @@ import { useAuth } from "@/context/AuthContext";
 
 const DRAG_THRESHOLD_PX = 5;
 
-import { DND_MOVE_MIME, getMovePayloadFromDragSource } from "@/lib/dnd-move-items";
+import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 
 function BulkActionBar({
@@ -195,6 +195,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
   const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!moveNotice) return;
+    const t = window.setTimeout(() => setMoveNotice(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [moveNotice]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
@@ -437,7 +443,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         e.preventDefault();
         return;
       }
-      e.dataTransfer.setData(DND_MOVE_MIME, JSON.stringify(payload));
+      setDragMovePayload(e.dataTransfer, payload);
       e.dataTransfer.effectAllowed = "move";
     },
     [selectedFileIds, selectedFolderKeys]
@@ -621,6 +627,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       await refetch();
       await refetchPinned();
       loadPinnedFiles();
+      fetchRecentUploads();
+      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [
       linkedDrives,
@@ -630,6 +639,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       refetch,
       refetchPinned,
       loadPinnedFiles,
+      fetchRecentUploads,
     ]
   );
 
@@ -647,16 +657,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const handleDropOnFolder = useCallback(
     async (targetDriveId: string, e: React.DragEvent) => {
-      try {
-        const raw = e.dataTransfer.getData(DND_MOVE_MIME);
-        if (!raw) return;
-        const data = JSON.parse(raw) as { fileIds: string[]; folderKeys: string[] };
-        const { fileIds, folderKeys } = data;
-        if ((fileIds?.length ?? 0) + (folderKeys?.length ?? 0) === 0) return;
-        await performMove(fileIds ?? [], folderKeys ?? [], targetDriveId);
-      } catch {
-        // ignore
-      }
+      const parsed = getDragMovePayload(e.dataTransfer);
+      if (!parsed) return;
+      await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
     },
     [performMove]
   );
@@ -1256,6 +1259,16 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </section>
       </div>
       </DashboardRouteFade>
+
+      {moveNotice ? (
+        <div
+          role="status"
+          className="fixed bottom-24 left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
+        >
+          <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden />
+          <span className="text-left">{moveNotice}</span>
+        </div>
+      ) : null}
 
       {selectedFileIds.size + selectedFolderKeys.size > 0 && (
         <BulkActionBar
