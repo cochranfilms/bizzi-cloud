@@ -22,6 +22,7 @@ import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { isProjectFile } from "@/lib/bizzi-file-types";
+import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -133,7 +134,9 @@ export default function FileListRow({
     enabled: !isMacosPackage,
   });
   const isVideo =
-    !isMacosPackage && (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+    !isMacosPackage &&
+    !isAppleDoubleLeafName(file.name) &&
+    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo,
     isVideo,

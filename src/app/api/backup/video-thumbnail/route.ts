@@ -10,6 +10,7 @@ import {
 } from "@/lib/b2";
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 
@@ -59,6 +60,10 @@ export async function GET(request: Request) {
 
   if (!objectKey || typeof objectKey !== "string") {
     return new NextResponse("object_key required", { status: 400 });
+  }
+
+  if (isAppleDoubleLeafName(fileName) || isAppleDoubleLeafName(objectKey)) {
+    return new NextResponse("Not a video file", { status: 400 });
   }
 
   // Resolve video check: filename, path from DB, or content_type (persists across rename)

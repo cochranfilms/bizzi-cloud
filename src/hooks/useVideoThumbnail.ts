@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
+import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { withThumbnailSlot } from "@/lib/thumbnailQueue";
 
 const VIDEO_EXT =
@@ -26,7 +27,8 @@ export function useVideoThumbnail(
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const isVideo = isVideoOverride || isVideoFile(fileName);
+    const isVideo =
+      !isAppleDoubleLeafName(fileName) && (isVideoOverride || isVideoFile(fileName));
     if (!objectKey || !isVideo || !enabled) return;
 
     let cancelled = false;

@@ -388,7 +388,15 @@ function passesPostFilters(
     if (String((item.gallery_id as string) ?? "") !== filters.galleryId) return false;
   }
   const mediaWants = mediaTypeWantsList(filters);
-  if (mediaWants.length > 0 && !itemMatchesMediaTypeWants(item, mediaWants)) return false;
+  const creativeQuick = filters.creativeProjects === true;
+  if (creativeQuick && mediaWants.length > 0) {
+    const mediaOk = itemMatchesMediaTypeWants(item, mediaWants);
+    const creativeOk = isCreativeProjectFilterMatch(item);
+    if (!mediaOk && !creativeOk) return false;
+  } else {
+    if (mediaWants.length > 0 && !itemMatchesMediaTypeWants(item, mediaWants)) return false;
+    if (creativeQuick && !isCreativeProjectFilterMatch(item)) return false;
+  }
   if (filters.assetTypes?.length) {
     const at = String((item.asset_type as string) ?? "").toLowerCase();
     const hasMatch = filters.assetTypes.some((a) => a.toLowerCase() === at);
@@ -396,9 +404,6 @@ function passesPostFilters(
   } else if (filters.assetType) {
     const at = String((item.asset_type as string) ?? "").toLowerCase();
     if (at !== String(filters.assetType).toLowerCase()) return false;
-  }
-  if (filters.creativeProjects) {
-    if (!isCreativeProjectFilterMatch(item)) return false;
   }
   return true;
 }

@@ -15,6 +15,7 @@ import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
+import { isSkippableMacosMetadataUpload } from "@/lib/apple-double-files";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
@@ -183,6 +184,10 @@ export default function UppyUploadModal({
         return;
       }
       const webkitRel = fileData ? getUploadRelativePath(fileData, file.name) : file.name;
+      if (isSkippableMacosMetadataUpload(webkitRel)) {
+        queueMicrotask(() => uppy.removeFile(file.id));
+        return;
+      }
       const pkgFields = macosPackageFirestoreFieldsFromRelativePath(webkitRel);
       const isMacosPackageMember = Boolean(
         pkgFields.macos_package_kind && pkgFields.macos_package_root_relative_path

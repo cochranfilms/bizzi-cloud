@@ -25,6 +25,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import HeartButton from "@/components/collaboration/HeartButton";
 import { useHearts } from "@/hooks/useHearts";
 import { isProjectFile } from "@/lib/bizzi-file-types";
+import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 
 interface FileCardProps {
   file: RecentFile;
@@ -45,6 +46,8 @@ interface FileCardProps {
   showCardInfo?: boolean;
   onDownloadPackage?: () => void;
   onPackageInfo?: () => void;
+  /** Final Cut library / package: open drive folder to package root (e.g. double-click in All Files). */
+  onMacosPackageNavigate?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -94,6 +97,7 @@ export default function FileCard({
   showCardInfo = true,
   onDownloadPackage,
   onPackageInfo,
+  onMacosPackageNavigate,
 }: FileCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -116,7 +120,9 @@ export default function FileCard({
     enabled: !isMacosPackage && isInView,
   });
   const isVideo =
-    !isMacosPackage && (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+    !isMacosPackage &&
+    !isAppleDoubleLeafName(file.name) &&
+    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,
@@ -163,6 +169,15 @@ export default function FileCard({
       role={canPreview ? "button" : undefined}
       tabIndex={canPreview ? 0 : undefined}
       onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
+      onDoubleClick={
+        isMacosPackage && onMacosPackageNavigate
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onMacosPackageNavigate();
+            }
+          : undefined
+      }
       onKeyDown={
         canPreview
           ? (e) => {

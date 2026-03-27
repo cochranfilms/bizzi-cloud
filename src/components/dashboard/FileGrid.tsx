@@ -278,6 +278,10 @@ export default function FileGrid() {
   const [creativeFilterPackagesByDrive, setCreativeFilterPackagesByDrive] = useState<
     Record<string, MacosPackageListEntry[]>
   >({});
+  /** macOS package roots for All Files / filtered views (collapse interior files like drive browse). */
+  const [filterScopePackagesByDrive, setFilterScopePackagesByDrive] = useState<
+    Record<string, MacosPackageListEntry[]>
+  >({});
   const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
   const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
   const [packageInfoLoading, setPackageInfoLoading] = useState(false);
@@ -355,6 +359,57 @@ export default function FileGrid() {
   }, [linkedDrives, isEnterprisePackagesScope, org?.id, teamOwnerUserIdForPackages]);
 
   const creativeProjectsFilterActive = useFilteredScoped && filterState.creative_projects === true;
+
+  const filteredDriveIdsKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const f of filteredFiles) {
+      if (f.driveId) ids.add(f.driveId);
+    }
+    return [...ids].sort().join(",");
+  }, [filteredFiles]);
+
+  useEffect(() => {
+    if (!useFilteredScoped || creativeProjectsFilterActive || filteredDriveIdsKey === "") {
+      setFilterScopePackagesByDrive({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token || cancelled) return;
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        const driveIds = filteredDriveIdsKey.split(",").filter(Boolean);
+        const entries = await Promise.all(
+          driveIds.map(async (driveId): Promise<[string, MacosPackageListEntry[]]> => {
+            try {
+              const packages = await fetchPackagesListCached({
+                origin: base,
+                token,
+                driveId,
+                folderPath: "",
+                storageVersion,
+              });
+              return [driveId, packages];
+            } catch {
+              return [driveId, []];
+            }
+          })
+        );
+        if (!cancelled) setFilterScopePackagesByDrive(Object.fromEntries(entries));
+      } catch {
+        if (!cancelled) setFilterScopePackagesByDrive({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    useFilteredScoped,
+    creativeProjectsFilterActive,
+    filteredDriveIdsKey,
+    storageVersion,
+  ]);
 
   useEffect(() => {
     if (!creativeProjectsFilterActive) {
@@ -435,17 +490,69 @@ export default function FileGrid() {
     creativeFilterPackagesByDrive,
   ]);
 
+  const filteredFilesWithScopePackages = useMemo((): RecentFile[] | null => {
+    if (!useFilteredScoped || creativeProjectsFilterActive) return null;
+    if (filteredFiles.length === 0) return [];
+    const byDrive = new Map<string, RecentFile[]>();
+    const looseNoDrive: RecentFile[] = [];
+    for (const f of filteredFiles) {
+      if (!f.driveId) {
+        looseNoDrive.push(f);
+        continue;
+      }
+      const arr = byDrive.get(f.driveId) ?? [];
+      arr.push(f);
+      byDrive.set(f.driveId, arr);
+    }
+    const merged: RecentFile[] = [];
+    for (const [driveId, files] of byDrive) {
+      const driveMeta = linkedDrives.find((d) => d.id === driveId);
+      const pkgs = filterScopePackagesByDrive[driveId] ?? [];
+      merged.push(
+        ...mergeDriveFilesWithMacosPackages(
+          files,
+          pkgs,
+          driveId,
+          driveMeta?.name ?? "Storage"
+        )
+      );
+    }
+    const combined = [...looseNoDrive, ...merged];
+    combined.sort((a, b) => {
+      const ta = new Date(a.uploadedAt ?? a.modifiedAt ?? 0).getTime();
+      const tb = new Date(b.uploadedAt ?? b.modifiedAt ?? 0).getTime();
+      return tb - ta;
+    });
+    return combined;
+  }, [
+    useFilteredScoped,
+    creativeProjectsFilterActive,
+    filteredFiles,
+    filterScopePackagesByDrive,
+    linkedDrives,
+  ]);
+
   const filesForPackageExpand = useMemo(
-    () => (creativeProjectsFilterActive ? filteredFiles : driveFiles),
-    [creativeProjectsFilterActive, filteredFiles, driveFiles]
+    () =>
+      creativeProjectsFilterActive || useFilteredScoped ? filteredFiles : driveFiles,
+    [creativeProjectsFilterActive, useFilteredScoped, filteredFiles, driveFiles]
   );
 
   const packagesForPackageExpand = useMemo(() => {
     if (creativeProjectsFilterActive) {
       return Object.values(creativeFilterPackagesByDrive).flat();
     }
+    if (useFilteredScoped) {
+      return Object.values(filterScopePackagesByDrive).flat();
+    }
     return macosPackagesForFolder;
-  }, [creativeProjectsFilterActive, creativeFilterPackagesByDrive, macosPackagesForFolder]);
+  }, [
+    creativeProjectsFilterActive,
+    creativeFilterPackagesByDrive,
+    useFilteredScoped,
+    filterScopePackagesByDrive,
+    macosPackagesForFolder,
+  ]);
 
   const handleSearchChange = useCallback(
     (v: string) => setFilter("search", v || undefined),
@@ -526,11 +633,11 @@ export default function FileGrid() {
   );
 
   const openDrive = useCallback(
-    (id: string, name: string) => {
+    (id: string, name: string, pathInsideDrive = "") => {
       recordRecentOpen("folder", id, getAuthToken);
       setCurrentFolderDriveId(id);
       setCurrentDrive({ id, name });
-      setCurrentDrivePath("");
+      setCurrentDrivePath(pathInsideDrive.replace(/^\/+/, ""));
       loadDriveFiles(id);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
@@ -715,7 +822,9 @@ export default function FileGrid() {
   const filesToShow = useFilteredScoped
     ? filtersLoading && filteredFiles.length === 0
       ? fallbackFiles
-      : filteredFilesWithCreativePackages ?? filteredFiles
+      : creativeProjectsFilterActive
+        ? (filteredFilesWithCreativePackages ?? filteredFiles)
+        : (filteredFilesWithScopePackages ?? filteredFiles)
     : currentDrive
       ? displayedFilesWithMacosPackages
       : recentFiles;
@@ -1174,6 +1283,20 @@ export default function FileGrid() {
     if (!file.macosPackageId) return;
     setPackageInfoId(file.macosPackageId);
   }, []);
+
+  const navigateIntoMacosPackage = useCallback(
+    (file: RecentFile) => {
+      if (!file.driveId || !isMacosPkgFileRow(file)) return;
+      const folder =
+        visibleDriveFolders.find((d) => d.id === file.driveId) ??
+        linkedDrives.find((d) => d.id === file.driveId);
+      const name = folder?.name ?? file.driveName ?? "Folder";
+      const pathInside = file.path.replace(/^\/+/, "");
+      clearFilters();
+      openDrive(file.driveId, name, pathInside);
+    },
+    [visibleDriveFolders, linkedDrives, clearFilters, openDrive]
+  );
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
@@ -1709,6 +1832,11 @@ export default function FileGrid() {
                           : undefined
                       }
                       onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                      onMacosPackageNavigate={
+                        isPkg && (useFilteredScoped || (currentDrive && isPathTreeDrive))
+                          ? () => navigateIntoMacosPackage(file)
+                          : undefined
+                      }
                     />
                   </div>
                 );
@@ -1899,32 +2027,58 @@ export default function FileGrid() {
                       </span>
                     </div>
                   )}
-                  {filesToShow.map((file) => (
-                    <div
-                      key={file.id}
-                      data-selectable-item
-                      data-item-type="file"
-                      data-item-id={file.id}
-                      draggable={!!file.driveId}
-                      onDragStart={handleDragStart}
-                      className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                    >
-                      <FileCard
-                        file={file}
-                        onClick={() => setPreviewFile(file)}
-                        onDelete={async () => {
-                          await deleteFile(file.id);
-                        }}
-                        selectable
-                        selected={selectedFileIds.has(file.id)}
-                        onSelect={() => toggleFileSelection(file.id)}
-                        layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                        layoutAspectRatio={aspectRatio}
-                        thumbnailScale={thumbnailScale}
-                        showCardInfo={showCardInfo}
-                      />
-                    </div>
-                  ))}
+                  {filesToShow.map((file) => {
+                    const isPkg = isMacosPkgFileRow(file);
+                    return (
+                      <div
+                        key={file.id}
+                        data-selectable-item
+                        data-item-type={isPkg ? "macos-package" : "file"}
+                        data-item-id={file.id}
+                        draggable={!!file.driveId && !isPkg}
+                        onDragStart={handleDragStart}
+                        className={`h-full min-h-0${!!file.driveId && !isPkg ? " cursor-grab active:cursor-grabbing" : ""}`}
+                      >
+                        <FileCard
+                          file={file}
+                          onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                          onDelete={
+                            isPkg
+                              ? async () => {
+                                  const n = file.macosPackageFileCount ?? "all";
+                                  const ok = await confirm({
+                                    message: `Move package "${file.name}" (${n} files) to trash? You can restore from Deleted files.`,
+                                    destructive: true,
+                                    confirmLabel: "Move to trash",
+                                  });
+                                  if (!ok) return;
+                                  await deleteFiles([file.id]);
+                                  clearFilters();
+                                }
+                              : async () => {
+                                  await deleteFile(file.id);
+                                }
+                          }
+                          selectable
+                          selected={selectedFileIds.has(file.id)}
+                          onSelect={() => toggleFileSelection(file.id)}
+                          layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                          layoutAspectRatio={aspectRatio}
+                          thumbnailScale={thumbnailScale}
+                          showCardInfo={showCardInfo}
+                          onDownloadPackage={
+                            isPkg && file.macosPackageId
+                              ? () => downloadMacosPackageZip(file.macosPackageId!)
+                              : undefined
+                          }
+                          onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                          onMacosPackageNavigate={
+                            isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                          }
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
                 )}
               </>
