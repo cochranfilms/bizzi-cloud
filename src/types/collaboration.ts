@@ -78,11 +78,21 @@ export interface Notification {
   } | null;
 }
 
+export type FileCommentWorkspaceType = "personal" | "team" | "organization";
+export type FileCommentVisibilityScope = "owner_only" | "collaborators" | "share_recipient";
+
 export interface Comment {
   id: string;
   fileId: string;
   parentCommentId: string | null;
   authorUserId: string;
+  /** Denormalized at write; GET may hydrate from profiles if missing. */
+  authorDisplayName?: string | null;
+  authorEmail?: string | null;
+  authorRoleSnapshot?: string | null;
+  workspace_type?: FileCommentWorkspaceType | null;
+  workspace_id?: string | null;
+  visibility_scope?: FileCommentVisibilityScope | null;
   body: string;
   isEdited: boolean;
   isDeleted: boolean;

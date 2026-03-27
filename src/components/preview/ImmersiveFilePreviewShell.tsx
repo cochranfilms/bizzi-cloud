@@ -15,10 +15,18 @@ const OVERLAY_Z = 200;
 
 const BACKDROP_BLUR = "blur(44px) saturate(1.06)";
 
-function workspaceChromeShadow(outlineHex: string, innerAccent: string): CSSProperties {
-  return {
-    boxShadow: `0 0 0 1px ${innerAccent}, 0 0 0 3px ${outlineHex}`,
-  };
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function workspaceEnvironmentKey(pathname: string | null): "personal" | "team" | "organization" {
+  const p = pathname ?? "";
+  if (p.startsWith("/enterprise")) return "organization";
+  if (p.startsWith("/team/")) return "team";
+  return "personal";
 }
 
 export interface ImmersiveFilePreviewShellProps {
@@ -40,7 +48,7 @@ export interface ImmersiveFilePreviewShellProps {
 }
 
 /**
- * Portaled immersive preview: blurred dimmed backdrop, centered media, optional right rail.
+ * Portaled immersive preview: blurred dimmed backdrop, workspace-tinted environment, neutral media stage.
  */
 export default function ImmersiveFilePreviewShell({
   onClose,
@@ -60,6 +68,7 @@ export default function ImmersiveFilePreviewShell({
   const appearance = useDashboardAppearanceOptional();
   const enterprise = useEnterpriseOptional();
   const teamWs = usePersonalTeamWorkspace();
+  const envKey = workspaceEnvironmentKey(pathname);
 
   const workspaceAccent = useMemo(
     () =>
@@ -78,10 +87,12 @@ export default function ImmersiveFilePreviewShell({
     ]
   );
 
-  const appOutlineLight = "#ffffff";
-  const appOutlineDark = "#0a0a0a";
-  const appOutline = isDark ? appOutlineDark : appOutlineLight;
-  const appPanelOutlineStyle = workspaceChromeShadow(appOutline, workspaceAccent);
+  const rgb = useMemo(() => hexToRgb(workspaceAccent), [workspaceAccent]);
+  const accentRgb = rgb ? `${rgb.r},${rgb.g},${rgb.b}` : "0,191,255";
+
+  /** Stronger ambient wash for team/org; personal stays neutral. */
+  const ambientStrength = envKey === "personal" ? 0.05 : envKey === "team" ? 0.14 : 0.16;
+  const ambientStrengthDark = envKey === "personal" ? 0.07 : envKey === "team" ? 0.18 : 0.22;
 
   const [mountEl, setMountEl] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -106,24 +117,42 @@ export default function ImmersiveFilePreviewShell({
 
   const isGallery = variant === "gallery";
 
-  /** Dimmed scrim: stronger blur + opacity so dashboard behind reads as background only. */
-  const backdropTint = isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)";
+  const baseTint = isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)";
+  const washOpacity = isDark ? ambientStrengthDark : ambientStrength;
   const backdropStyle: CSSProperties = {
     WebkitBackdropFilter: BACKDROP_BLUR,
     backdropFilter: BACKDROP_BLUR,
-    backgroundColor: backdropTint,
+    backgroundColor: baseTint,
+    backgroundImage: `radial-gradient(ellipse 85% 60% at 50% -5%, rgba(${accentRgb},${washOpacity}), transparent 55%), linear-gradient(180deg, rgba(${accentRgb},${washOpacity * 0.45}) 0%, transparent 35%)`,
   };
 
-  const galleryRailShadow = workspaceChromeShadow("rgba(255,255,255,0.92)", workspaceAccent);
+  const headerAccentStyle: CSSProperties = {
+    borderBottomColor: workspaceAccent,
+    borderBottomWidth: 2,
+    borderBottomStyle: "solid",
+  };
 
-  /** Gallery uses visible borders; app chrome uses `workspaceChromeShadow` only (no double outline). */
-  const barBorder = isGallery ? "border-2 border-white/90" : "border-0";
+  const railAccentClass =
+    envKey === "personal"
+      ? isDark
+        ? "border-l border-neutral-800"
+        : "border-l border-neutral-200/90"
+      : "";
+
+  const railAccentStyle: CSSProperties | undefined =
+    envKey !== "personal"
+      ? {
+          borderLeftWidth: 3,
+          borderLeftStyle: "solid",
+          borderLeftColor: workspaceAccent,
+        }
+      : undefined;
 
   const barBg = isGallery
     ? "bg-black/52"
     : isDark
-      ? "bg-neutral-950/76"
-      : "bg-white/80";
+      ? "bg-neutral-950/72"
+      : "bg-white/78";
 
   const titleClass = isGallery
     ? "text-white/95"
@@ -154,15 +183,18 @@ export default function ImmersiveFilePreviewShell({
       ? "max-h-[min(56dvh,calc(100dvh-13rem))] sm:max-h-[min(58dvh,calc(100dvh-13.5rem))] lg:max-h-[min(62dvh,calc(100dvh-12.5rem))]"
       : "max-h-[min(82dvh,calc(100dvh-6.5rem))] sm:max-h-[min(84dvh,calc(100dvh-7rem))]";
 
-  const belowFoldClass = isGallery
-    ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border-2 border-white/88 bg-black/45 px-1 pt-6 shadow-[0_8px_40px_rgba(0,0,0,0.35)] sm:mt-4 sm:px-2 sm:pt-8"
-    : isDark
-      ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border-0 bg-neutral-950/72 pt-6 shadow-lg backdrop-blur-xl sm:mt-4 sm:pt-8"
-      : "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border-0 bg-white/80 pt-6 shadow-md backdrop-blur-xl sm:mt-4 sm:pt-8";
+  const panelBaseApp = isDark ? "bg-neutral-950/70 backdrop-blur-xl" : "bg-white/76 backdrop-blur-xl";
+  const toolsBarClass = isGallery
+    ? "w-full max-w-4xl shrink-0 rounded-xl border border-white/25 bg-black/48 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
+    : `w-full max-w-4xl shrink-0 rounded-xl border border-neutral-200/40 px-3 py-3 shadow-md sm:px-4 dark:border-white/10 ${panelBaseApp}`;
 
-  const headerStyle: CSSProperties | undefined = isGallery
-    ? workspaceChromeShadow("rgba(255,255,255,0.9)", workspaceAccent)
-    : appPanelOutlineStyle;
+  const belowFoldClass = isGallery
+    ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border border-white/30 bg-black/45 px-1 pt-5 shadow-[0_8px_40px_rgba(0,0,0,0.35)] sm:mt-4 sm:px-2 sm:pt-7"
+    : `relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border border-neutral-200/35 px-1 pt-5 shadow-md sm:mt-4 sm:px-2 sm:pt-7 dark:border-white/10 ${panelBaseApp}`;
+
+  const rightRailOuter = isGallery
+    ? "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-white/28 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4"
+    : `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-neutral-200/40 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4 dark:border-white/12 ${panelBaseApp}`;
 
   const shell = (
     <div
@@ -185,8 +217,14 @@ export default function ImmersiveFilePreviewShell({
         onClick={(e) => e.stopPropagation()}
       >
         <header
-          className={`relative z-20 mb-2 flex min-h-12 shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 backdrop-blur-2xl sm:mb-3 sm:rounded-2xl sm:px-4 ${barBorder} ${barBg}`}
-          style={{ WebkitBackdropFilter: "blur(20px)", backdropFilter: "blur(20px)", ...headerStyle }}
+          className={`relative z-20 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-xl border-0 px-3 py-2 backdrop-blur-2xl sm:mb-3 sm:rounded-2xl sm:px-4 ${barBg}`}
+          style={{
+            WebkitBackdropFilter: "blur(20px)",
+            backdropFilter: "blur(20px)",
+            ...(isGallery
+              ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }
+              : headerAccentStyle),
+          }}
         >
           {title ? (
             <h2
@@ -211,11 +249,11 @@ export default function ImmersiveFilePreviewShell({
           </button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:gap-4">
-          <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row lg:items-stretch lg:gap-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:gap-3">
+          <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row lg:items-stretch lg:gap-4">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div
-                className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center gap-3 lg:gap-4 ${hasBelowOnly ? "min-h-[min(200px,35dvh)]" : "min-h-0"}`}
+                className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center gap-2 lg:gap-3 ${hasBelowOnly ? "min-h-[min(200px,35dvh)]" : "min-h-0"}`}
               >
                 <div className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center ${mediaSlotMaxH}`}>
                   <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center px-0.5 sm:px-2">
@@ -224,18 +262,7 @@ export default function ImmersiveFilePreviewShell({
                 </div>
 
                 {toolsBottom ? (
-                  <div
-                    className={
-                      isGallery
-                        ? "w-full max-w-4xl shrink-0 rounded-xl border-2 border-white/88 bg-black/48 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
-                        : isDark
-                          ? "w-full max-w-4xl shrink-0 rounded-2xl border-0 bg-neutral-950/74 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
-                          : "w-full max-w-4xl shrink-0 rounded-2xl border-0 bg-white/82 px-3 py-3 shadow-md backdrop-blur-xl sm:px-4"
-                    }
-                    style={isGallery ? galleryRailShadow : appPanelOutlineStyle}
-                  >
-                    {toolsBottom}
-                  </div>
+                  <div className={toolsBarClass}>{toolsBottom}</div>
                 ) : null}
 
                 {toolsSide ? (
@@ -250,10 +277,7 @@ export default function ImmersiveFilePreviewShell({
               </div>
 
               {hasBelowOnly ? (
-                <div
-                  className={`${belowFoldClass} mt-2 max-h-[40dvh] shrink-0 overflow-y-auto lg:max-h-[36dvh]`}
-                  style={isGallery ? undefined : appPanelOutlineStyle}
-                >
+                <div className={`${belowFoldClass} mt-2 max-h-[40dvh] shrink-0 overflow-y-auto lg:max-h-[36dvh]`}>
                   {belowFold}
                 </div>
               ) : null}
@@ -261,16 +285,10 @@ export default function ImmersiveFilePreviewShell({
 
             {hasRight ? (
               <aside
-                className={
-                  isGallery
-                    ? `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border-2 border-white/88 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
-                    : isDark
-                      ? `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-neutral-950/76 shadow-lg backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
-                      : `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-white/82 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
-                }
-                style={isGallery ? galleryRailShadow : appPanelOutlineStyle}
+                className={`${rightRailOuter} ${railAccentClass}`}
+                style={!isGallery ? railAccentStyle : undefined}
               >
-                <div className="max-h-[min(42dvh,520px)] overflow-y-auto p-4 sm:p-5 lg:max-h-[calc(100dvh-5.5rem)]">
+                <div className="max-h-[min(42dvh,520px)] overflow-y-auto px-3 py-3 sm:px-3.5 sm:py-3.5 lg:max-h-[calc(100dvh-5.5rem)]">
                   {rightRail}
                 </div>
               </aside>

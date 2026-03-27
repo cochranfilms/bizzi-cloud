@@ -348,7 +348,7 @@ export default function FilePreviewModal({
         >
           <div className="flex max-h-[min(86dvh,calc(100dvh-7rem))] min-h-0 w-full flex-1 items-center justify-center overflow-auto">
             <div
-              className="inline-flex origin-center rounded-lg ring-2 ring-white transition-transform duration-150 ease-out dark:ring-neutral-950"
+              className="inline-flex origin-center transition-transform duration-150 ease-out"
               style={{
                 transform: `scale(${imageZoom})`,
               }}
@@ -357,7 +357,7 @@ export default function FilePreviewModal({
               <img
                 src={lowResPreviewUrl}
                 alt={file.name}
-                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-lg shadow-black/20 dark:shadow-black/40"
+                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-md object-contain shadow-md shadow-black/15 dark:shadow-black/35"
               />
             </div>
           </div>
@@ -409,13 +409,13 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "audio" && fullUrl) {
       mediaBody = (
-        <div className="w-full max-w-md rounded-xl border-2 border-white bg-white/85 p-4 shadow-md backdrop-blur-sm dark:border-neutral-950 dark:bg-neutral-900/70">
+        <div className="w-full max-w-md rounded-lg border border-neutral-200/80 bg-white/90 p-4 shadow-sm dark:border-neutral-600/50 dark:bg-neutral-900/75">
           <audio src={fullUrl} controls className="w-full" />
         </div>
       );
     } else if (previewType === "pdf" && fullUrl) {
       mediaBody = (
-        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-xl border-2 border-white bg-neutral-100/35 shadow-2xl backdrop-blur-sm dark:border-neutral-950 dark:bg-black/40">
+        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-lg border border-neutral-300/50 bg-neutral-100/25 shadow-lg dark:border-neutral-600/40 dark:bg-neutral-950/50">
           <iframe
             src={fullUrl}
             title={file.name}

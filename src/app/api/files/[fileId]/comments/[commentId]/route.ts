@@ -4,6 +4,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { canAccessBackupFileById } from "@/lib/file-access";
+import { canModerateFileComment } from "@/lib/file-comment-moderation";
 import { createNotification } from "@/lib/notification-service";
 import { getFileDisplayName } from "@/lib/file-access";
 import { NextResponse } from "next/server";
@@ -96,7 +97,9 @@ export async function DELETE(
   const docSnap = await ref.get();
   if (!docSnap.exists) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
   if (docSnap.data()?.fileId !== fileId) return NextResponse.json({ error: "Mismatch" }, { status: 400 });
-  if (docSnap.data()?.authorUserId !== auth.uid) {
+  const authorId = docSnap.data()?.authorUserId as string;
+  const canModerate = await canModerateFileComment(auth.uid, fileId);
+  if (authorId !== auth.uid && !canModerate) {
     return NextResponse.json({ error: "Can only delete your own comment" }, { status: 403 });
   }
 

@@ -586,6 +586,30 @@
       "collectionGroup": "file_comments",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "fileId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "file_comments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organization_id", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "file_comments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "personal_team_owner_id", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "file_comments",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "parentCommentId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
