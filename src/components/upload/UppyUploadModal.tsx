@@ -5,6 +5,7 @@ import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { getAuthToken } from "@/lib/auth-token";
 import {
   attachUppyLocalPreview,
   getUploadRelativePath,
@@ -128,7 +129,9 @@ export default function UppyUploadModal({
     }
 
     const getAuthHeaders = async () => {
-      const token = await (getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null));
+      // Cached token only — forcing refresh per batch hammered securetoken.googleapis.com during
+      // .fcpbundle-style uploads (thousands of small files), causing 429/400 and upload failures.
+      const token = await getAuthToken(false);
       return token ? { Authorization: `Bearer ${token}` } : {};
     };
 
@@ -287,7 +290,7 @@ export default function UppyUploadModal({
           null;
         if (metaDriveId && relativePath && sizeBytes) {
           try {
-            const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+            const token = await getAuthToken(false);
             if (!token) return;
             await fetch(`${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`, {
               method: "POST",

@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
-  const rl = checkRateLimit(`drive-item-counts:${uid}`, 120, 60_000);
+  const rl = checkRateLimit(`drive-item-counts:${uid}`, 300, 60_000);
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "Too many requests", retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) },

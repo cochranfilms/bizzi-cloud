@@ -430,7 +430,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
-  const rl = checkRateLimit(`files-filter:${uid}`, 120, 60_000); // 120 req/min per user
+  const rl = checkRateLimit(`files-filter:${uid}`, 300, 60_000); // burst-friendly during large uploads + UI refetch
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "Too many requests", retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) },
