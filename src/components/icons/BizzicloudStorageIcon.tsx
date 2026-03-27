@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Bizzi Cloud storage icon (cloud with lightning) - used inside Storage folder card.
- * Uses currentColor so it inherits parent text color.
+ * Bizzi Cloud storage icon (cloud with lightning) — used inside Storage folder card.
+ * Uses currentColor; viewBox is cropped so the glyph matches Lucide icon visual scale in FolderCard.
  */
 export default function BizzicloudStorageIcon({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 260 260"
+      viewBox="43 47 162 132"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}

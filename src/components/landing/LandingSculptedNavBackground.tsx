@@ -1,15 +1,27 @@
 /**
- * Single continuous white silhouette for the landing nav (no pseudo-element seams).
- * ViewBox is stretched with preserveAspectRatio="none" to the live nav box.
+ * Single SVG silhouette: sculpted “tab” carved into the hero — flat top mid‑bar,
+ * concave upper transitions (S‑curves) at both shoulders, deep pill bottom.
+ * Stretched with preserveAspectRatio="none" to the live nav box.
  */
-export const LANDING_SCULPTED_NAV_VIEWBOX = "0 0 1000 96";
+export const LANDING_SCULPTED_NAV_VIEWBOX = "0 0 1000 108";
 
-/** Symmetrical top transition + deep pill bottom; one closed path. */
+/**
+ * One closed path, CCW: deep pill base, flat top mid‑bar (y=0), quadratic “scoops”
+ * at each shoulder so blue can read as flowing into the S‑curve (reference style).
+ */
 export const LANDING_SCULPTED_NAV_PATH =
-  "M 58 96 H 942 C 984 96 1000 78 1000 56 L 1000 52 C 1000 24 976 0 926 0 H 74 C 24 0 0 24 0 52 L 0 56 C 0 78 16 96 58 96 Z";
+  "M 48 108 " +
+  "H 952 " +
+  "C 990 108 1000 88 1000 64 " +
+  "L 1000 52 " +
+  "Q 952 6 898 0 " +
+  "L 102 0 " +
+  "Q 48 6 0 52 " +
+  "L 0 64 " +
+  "C 0 88 10 108 48 108 " +
+  "Z";
 
 type LandingSculptedNavBackgroundProps = {
-  /** Extra classes on the SVG (e.g. drop-shadow). */
   className?: string;
 };
 

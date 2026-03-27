@@ -19,7 +19,7 @@ const glassNav =
   "border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl rounded-t-[1.75rem] rounded-b-[999px]";
 
 const landingIntegratedNavFrame =
-  "relative z-0 mx-auto w-[min(56rem,87%)] sm:w-[min(58rem,85%)] text-neutral-900";
+  "relative z-0 mx-auto min-h-[3.75rem] w-[min(52rem,82%)] text-neutral-900 sm:min-h-[4rem] sm:w-[min(54rem,80%)] md:w-[min(56rem,78%)]";
 
 function scrollToFeaturedWork() {
   const el = document.getElementById("featured-work");
@@ -57,7 +57,7 @@ export default function Header({ variant = "default" }: HeaderProps) {
       >
         {isLandingIntegrated && (
           <div
-            className="pointer-events-none absolute inset-0 z-0 drop-shadow-[0_12px_36px_rgba(15,23,42,0.09)]"
+            className="pointer-events-none absolute inset-0 z-0 drop-shadow-[0_18px_48px_rgba(15,23,42,0.07)]"
             aria-hidden
           >
             <LandingSculptedNavBackground />
@@ -66,7 +66,7 @@ export default function Header({ variant = "default" }: HeaderProps) {
         <div
           className={`relative z-[1] flex w-full items-center ${
             isLandingIntegrated
-              ? "gap-1.5 px-2.5 py-2.5 sm:gap-2 sm:px-5 sm:py-3 md:px-6 md:py-3"
+              ? "min-h-[inherit] gap-1.5 px-3 py-2.5 sm:gap-2 sm:px-6 sm:py-3 md:px-7 md:py-3.5"
               : "gap-2"
           }`}
         >
@@ -179,7 +179,7 @@ export default function Header({ variant = "default" }: HeaderProps) {
         <div
           className={
             isLandingIntegrated
-              ? "mx-auto mt-3 w-[min(56rem,87%)] overflow-hidden rounded-3xl border border-neutral-200/80 bg-white px-4 py-4 shadow-lg sm:w-[min(58rem,85%)] md:hidden"
+              ? "mx-auto mt-3 w-[min(52rem,82%)] overflow-hidden rounded-3xl border border-neutral-200/80 bg-white px-4 py-4 shadow-lg sm:w-[min(54rem,80%)] md:w-[min(56rem,78%)] md:hidden"
               : "mx-auto mt-3 max-w-5xl overflow-hidden rounded-3xl border border-white/55 bg-white/50 px-4 py-4 shadow-lg backdrop-blur-xl md:hidden"
           }
         >
