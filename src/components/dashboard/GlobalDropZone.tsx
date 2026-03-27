@@ -9,6 +9,10 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useAuth } from "@/context/AuthContext";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
+import {
+  pickStrictPersonalStorageDrive,
+  pickTeamWorkspaceStorageDrive,
+} from "@/lib/pick-storage-drive";
 
 /**
  * Global drag-and-drop zone for file uploads. Shows "Drop File to Upload" overlay
@@ -75,8 +79,12 @@ export default function GlobalDropZone() {
           pathname === "/desktop/app/files" ||
           (!!pathname?.startsWith("/team/") && pathname.includes("/files"));
 
-        // Home: always Storage drive root. All files: current drive + folder (or Storage if none).
-        const storageDrive = linkedDrives.find((d) => d.name === "Storage" || d.name === "Uploads");
+        // Home: Storage root. Prefer strict personal vs team pillar so uploads meter to the right workspace.
+        const teamOwnerFromPath =
+          typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
+        const storageDrive = teamOwnerFromPath
+          ? pickTeamWorkspaceStorageDrive(linkedDrives, teamOwnerFromPath)
+          : pickStrictPersonalStorageDrive(linkedDrives);
         const effectiveDriveId =
           storageDrive?.id ?? (await getOrCreateStorageDrive()).id;
         const driveId = isFilesView

@@ -1662,16 +1662,18 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               storage_used_bytes: number;
               storage_quota_bytes: number | null;
               is_organization_user: boolean;
+              storage_used_total_for_quota?: number;
             };
             const { storage_used_bytes, storage_quota_bytes, is_organization_user } = data;
+            const usedForQuota = data.storage_used_total_for_quota ?? storage_used_bytes;
             if (
               storage_quota_bytes !== null &&
-              storage_used_bytes + bytesTotal > storage_quota_bytes
+              usedForQuota + bytesTotal > storage_quota_bytes
             ) {
               setFileUploadProgress(null);
               setStorageQuotaExceeded({
                 attemptedBytes: bytesTotal,
-                usedBytes: storage_used_bytes,
+                usedBytes: usedForQuota,
                 quotaBytes: storage_quota_bytes,
                 isOrganizationUser: is_organization_user,
               });
@@ -1956,13 +1958,15 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const data = (await res.json()) as {
             storage_used_bytes: number;
             storage_quota_bytes: number | null;
+            storage_used_total_for_quota?: number;
           };
           const { storage_used_bytes, storage_quota_bytes } = data;
-          if (storage_quota_bytes !== null && storage_used_bytes + bytesTotal > storage_quota_bytes) {
+          const usedForQuota = data.storage_used_total_for_quota ?? storage_used_bytes;
+          if (storage_quota_bytes !== null && usedForQuota + bytesTotal > storage_quota_bytes) {
             setFileUploadProgress(null);
             setStorageQuotaExceeded({
               attemptedBytes: bytesTotal,
-              usedBytes: storage_used_bytes,
+              usedBytes: usedForQuota,
               quotaBytes: storage_quota_bytes,
               isOrganizationUser: false,
             });

@@ -19,28 +19,46 @@ export default function StorageBadge() {
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
 
-  const fetchPersonalProfile = useCallback(() => {
+  const fetchPersonalProfile = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;
-    const db = getFirebaseFirestore();
-    getDoc(doc(db, "profiles", user.uid)).then(async (snap) => {
-      if (snap.exists()) {
-        const d = snap.data();
-        setStorageUsed(d.storage_used_bytes ?? 0);
-        setStorageQuota(d.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
-      } else {
-        // New free user: ensure profile exists with 2GB quota
-        try {
-          const token = await getFirebaseAuth().currentUser?.getIdToken();
-          const base = typeof window !== "undefined" ? window.location.origin : "";
-          await fetch(`${base}/api/profile/ensure-free`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        } catch {
-          // Ignore - display will still show 2GB default
-        }
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken();
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/storage/status?context=personal`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          storage_used_bytes?: number;
+          storage_quota_bytes?: number | null;
+        };
+        setStorageUsed(data.storage_used_bytes ?? 0);
+        const q = data.storage_quota_bytes;
+        setStorageQuota(typeof q === "number" ? q : FREE_TIER_STORAGE_BYTES);
+        return;
       }
-    });
+    } catch {
+      // fall through to profile doc
+    }
+    const db = getFirebaseFirestore();
+    const snap = await getDoc(doc(db, "profiles", user.uid));
+    if (snap.exists()) {
+      const d = snap.data();
+      setStorageUsed(d.storage_used_bytes ?? 0);
+      setStorageQuota(d.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
+    } else {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken();
+        const base = typeof window !== "undefined" ? window.location.origin : "";
+        await fetch(`${base}/api/profile/ensure-free`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Ignore
+      }
+    }
   }, [user]);
 
   const fetchTeamWorkspaceStorage = useCallback(async () => {

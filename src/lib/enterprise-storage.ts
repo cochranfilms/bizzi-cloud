@@ -50,6 +50,23 @@ async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<numbe
   return used;
 }
 
+/** Active backup bytes billed to the personal-team container (explicit PTO on the file). */
+export async function sumTeamContainerBackupBytes(teamOwnerUid: string): Promise<number> {
+  const db = getAdminFirestore();
+  const snap = await db
+    .collection("backup_files")
+    .where("personal_team_owner_id", "==", teamOwnerUid)
+    .where("organization_id", "==", null)
+    .get();
+  let used = 0;
+  for (const docSnap of snap.docs) {
+    const data = docSnap.data();
+    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
+    used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+  }
+  return used;
+}
+
 /** Bytes that count toward this user's own subscription (excludes team-folder uploads). */
 async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
   const db = getAdminFirestore();
@@ -164,9 +181,15 @@ export async function checkUserCanUpload(
 }
 
 export interface StorageStatus {
+  /** Solo personal bytes (no team PTO on file). Shown as "Your storage" on /dashboard. */
   storage_used_bytes: number;
   storage_quota_bytes: number | null;
   is_organization_user: boolean;
+  /**
+   * Non-org: combined solo + personal-team-container bytes for plan limit checks.
+   * Clients should use this (when present) for pre-upload quota math, not storage_used_bytes.
+   */
+  storage_used_total_for_quota?: number;
 }
 
 /**
@@ -220,13 +243,15 @@ export async function getStorageStatus(
         ? profileQuota
         : FREE_TIER_STORAGE_BYTES;
 
-    const isTeamMember =
-      typeof profileData?.personal_team_owner_id === "string" &&
-      !!profileData.personal_team_owner_id;
-
-    usedBytes = isTeamMember
-      ? await sumSoloPersonalBackupBytes(uid)
-      : await sumPersonalBackupBytesForQuota(uid);
+    const soloUsed = await sumSoloPersonalBackupBytes(uid);
+    const totalForQuota = await sumPersonalBackupBytesForQuota(uid);
+    usedBytes = soloUsed;
+    return {
+      storage_used_bytes: usedBytes,
+      storage_quota_bytes: quotaBytes,
+      is_organization_user: !!orgId,
+      storage_used_total_for_quota: totalForQuota,
+    };
   }
 
   return {
@@ -237,9 +262,8 @@ export async function getStorageStatus(
 }
 
 /**
- * Storage bar for a personal-team workspace: team owner’s plan quota and all bytes that
- * count toward that quota (owner’s personal + team-container uploads). Used when a
- * member or owner is routed under `/team/[ownerId]`.
+ * Storage bar for `/team/[ownerId]`: same plan quota as the owner profile; used bytes are
+ * only files tagged with personal_team_owner_id (team-container scope), not solo personal.
  */
 export async function getPersonalTeamWorkspaceStorageDisplay(teamOwnerUid: string): Promise<{
   storage_used_bytes: number;
@@ -255,6 +279,6 @@ export async function getPersonalTeamWorkspaceStorageDisplay(teamOwnerUid: strin
     : typeof profileQuota === "number"
       ? profileQuota
       : FREE_TIER_STORAGE_BYTES;
-  const storage_used_bytes = await sumPersonalBackupBytesForQuota(teamOwnerUid);
+  const storage_used_bytes = await sumTeamContainerBackupBytes(teamOwnerUid);
   return { storage_used_bytes, storage_quota_bytes };
 }
