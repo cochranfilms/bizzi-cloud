@@ -48,6 +48,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const organizationId = url.searchParams.get("organization_id")?.trim() || null;
   const teamOwnerId = url.searchParams.get("team_owner_id")?.trim() || null;
+  const workspaceNarrowId = url.searchParams.get("workspace_id")?.trim() || null;
   const personal = url.searchParams.get("personal") === "1";
   const trashOnly = url.searchParams.get("deleted") === "only";
 
@@ -156,8 +157,19 @@ export async function GET(request: Request) {
 
   const accessibleWorkspaceIds = await getAccessibleWorkspaceIds(uid, orgId);
 
+  if (
+    workspaceNarrowId &&
+    !accessibleWorkspaceIds.includes(workspaceNarrowId)
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   async function countForDrive(driveId: string): Promise<number> {
-    if (accessibleWorkspaceIds.length === 0) {
+    const workspaceIdsForCount = workspaceNarrowId
+      ? [workspaceNarrowId]
+      : accessibleWorkspaceIds;
+
+    if (workspaceIdsForCount.length === 0) {
       const anyWorkspaces = await db
         .collection("workspaces")
         .where("organization_id", "==", orgId)
@@ -187,14 +199,14 @@ export async function GET(request: Request) {
       return trashOnly ? b.where("deleted_at", "!=", null) : b.where("deleted_at", "==", null);
     };
 
-    if (accessibleWorkspaceIds.length <= WORKSPACE_IN_LIMIT) {
-      const agg = await baseForBatch(accessibleWorkspaceIds).count().get();
+    if (workspaceIdsForCount.length <= WORKSPACE_IN_LIMIT) {
+      const agg = await baseForBatch(workspaceIdsForCount).count().get();
       return agg.data().count;
     }
 
     let total = 0;
-    for (let i = 0; i < accessibleWorkspaceIds.length; i += WORKSPACE_IN_LIMIT) {
-      const batch = accessibleWorkspaceIds.slice(i, i + WORKSPACE_IN_LIMIT);
+    for (let i = 0; i < workspaceIdsForCount.length; i += WORKSPACE_IN_LIMIT) {
+      const batch = workspaceIdsForCount.slice(i, i + WORKSPACE_IN_LIMIT);
       const agg = await baseForBatch(batch).count().get();
       total += agg.data().count;
     }

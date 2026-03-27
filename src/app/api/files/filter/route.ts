@@ -88,6 +88,7 @@ function parseFilters(searchParams: URLSearchParams) {
   const creativeProjects =
     searchParams.get("creative_projects") === "true" ||
     searchParams.get("creative_projects") === "1";
+  const workspaceId = searchParams.get("workspace_id")?.trim() || null;
   const VALID_SORTS: SortOption[] = ["newest", "oldest", "largest", "smallest", "name_asc", "name_desc"];
   const rawSort = (searchParams.get("sort") ?? "newest").split(/[:]/)[0]?.trim() || "newest";
   const sort = (VALID_SORTS.includes(rawSort as SortOption) ? rawSort : "newest") as SortOption;
@@ -137,6 +138,7 @@ function parseFilters(searchParams: URLSearchParams) {
     cursor,
     pageSize,
     creativeProjects,
+    workspaceId,
   };
 }
 
@@ -597,12 +599,21 @@ export async function GET(request: Request) {
     }
   }
 
+  /** When set, list/scoped queries only include this workspace (must be in the caller's accessible set). */
+  let workspaceIdsForQuery = accessibleWorkspaceIds;
+  if (orgFilter != null && filters.workspaceId) {
+    if (!accessibleWorkspaceIds.includes(filters.workspaceId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    workspaceIdsForQuery = [filters.workspaceId];
+  }
+
   let q: Query;
 
   if (orgFilter != null) {
     // Enterprise: workspace-based query (admin sees all; members see accessible workspaces only)
     const IN_LIMIT = 30; // Firestore "in" limit
-    if (accessibleWorkspaceIds.length === 0) {
+    if (workspaceIdsForQuery.length === 0) {
       // No accessible workspaces: could be new member or pre-migration org. Fall back to legacy userId for backward compat.
       const anyWorkspaces = await db
         .collection("workspaces")
@@ -625,17 +636,17 @@ export async function GET(request: Request) {
           cursor: null,
         });
       }
-    } else if (accessibleWorkspaceIds.length <= IN_LIMIT) {
+    } else if (workspaceIdsForQuery.length <= IN_LIMIT) {
       q = db
         .collection("backup_files")
         .where("organization_id", "==", orgFilter)
-        .where("workspace_id", "in", accessibleWorkspaceIds)
+        .where("workspace_id", "in", workspaceIdsForQuery)
         .where("deleted_at", "==", null);
-    } else {
+   } else {
       // Batch queries and merge (Phase 1: rare; most orgs have few workspaces)
       const batches = [];
-      for (let i = 0; i < accessibleWorkspaceIds.length; i += IN_LIMIT) {
-        const batch = accessibleWorkspaceIds.slice(i, i + IN_LIMIT);
+      for (let i = 0; i < workspaceIdsForQuery.length; i += IN_LIMIT) {
+        const batch = workspaceIdsForQuery.slice(i, i + IN_LIMIT);
         batches.push(
           db
             .collection("backup_files")

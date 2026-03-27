@@ -315,8 +315,11 @@ export default function FileGrid() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const isBizziCloudBaseDrive = (name: string) =>
-    name === "Storage" || name === "RAW" || name === "Gallery Media";
+  const teamAwareDriveName = (name: string) => name.replace(/^\[Team\]\s+/, "");
+  const isBizziCloudBaseDrive = (name: string) => {
+    const b = teamAwareDriveName(name);
+    return b === "Storage" || b === "RAW" || b === "Gallery Media";
+  };
   const {
     files: filteredFiles,
     loading: filtersLoading,
@@ -365,8 +368,10 @@ export default function FileGrid() {
     return list;
   }, [activeFilters, galleryTitleById, currentDrive, searchParams]);
 
-  const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
-    d.name === "Storage" || d.isCreatorRaw === true || d.name === "Gallery Media";
+  const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) => {
+    const b = teamAwareDriveName(d.name);
+    return b === "Storage" || d.isCreatorRaw === true || b === "Gallery Media";
+  };
 
   // Filter drives by power-up so users only see folders they've purchased
   const visibleDriveFolders = filterDriveFoldersByPowerUp(driveFolders, {
@@ -382,15 +387,17 @@ export default function FileGrid() {
       items: d.items,
       hideShare: false,
       driveId: d.id,
-      customIcon: d.isCreatorRaw ? Film : d.name === "Gallery Media" ? Images : undefined,
+      customIcon: d.isCreatorRaw ? Film : teamAwareDriveName(d.name) === "Gallery Media" ? Images : undefined,
       preventDelete: isSystemDrive(d),
       preventRename: isSystemDrive(d),
       preventMove: isSystemDrive(d),
       isSystemFolder: isSystemDrive(d),
     }))
     .sort((a, b) => {
-      const order = (name: string) =>
-        name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
+      const order = (name: string) => {
+        const b = teamAwareDriveName(name);
+        return b === "Storage" ? 0 : b === "RAW" ? 1 : b === "Gallery Media" ? 2 : 3;
+      };
       return order(a.name) - order(b.name);
     });
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
@@ -435,11 +442,21 @@ export default function FileGrid() {
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId, setCurrentDrivePath]);
 
-  const isGalleryMediaDrive =
-    !!currentDrive && linkedDrives.some((d) => d.id === currentDrive.id && d.name === "Gallery Media");
+  const currentDriveMeta = currentDrive
+    ? linkedDrives.find((d) => d.id === currentDrive.id)
+    : undefined;
+  const driveBaseName = currentDriveMeta
+    ? teamAwareDriveName(currentDriveMeta.name)
+    : "";
+  const isGalleryMediaDrive = !!currentDriveMeta && driveBaseName === "Gallery Media";
+  const isPathTreeDrive =
+    !!currentDrive &&
+    (isGalleryMediaDrive ||
+      driveBaseName === "Storage" ||
+      currentDriveMeta?.is_creator_raw === true);
 
   const { subfolderItems, displayedFiles } = (() => {
-    if (!currentDrive || !isGalleryMediaDrive) {
+    if (!currentDrive || !isPathTreeDrive) {
       return { subfolderItems: [] as FolderItem[], displayedFiles: driveFiles };
     }
     const prefix = currentDrivePath ? `${currentDrivePath}/` : "";
@@ -465,7 +482,7 @@ export default function FileGrid() {
         ([segment, count]) => ({
           name: segment === "favorites" ? "Favorites" : segment,
           type: "folder" as const,
-          key: `gallery-nested-${currentDrive.id}|${currentDrivePath}|${segment}`,
+          key: `path-nested-${currentDrive.id}|${currentDrivePath}|${segment}`,
           items: count,
           driveId: undefined,
           virtualFolder: true,
@@ -482,10 +499,10 @@ export default function FileGrid() {
     for (const f of driveFiles) {
       const parts = f.path.split("/").filter(Boolean);
       if (parts.length >= 2) {
-        const folderKey = f.galleryId ?? parts[0];
+        const folderKey = isGalleryMediaDrive ? (f.galleryId ?? parts[0]) : parts[0];
         const existing = seen.get(folderKey);
         const displayName =
-          f.galleryId && galleryTitleMap.has(f.galleryId)
+          isGalleryMediaDrive && f.galleryId && galleryTitleMap.has(f.galleryId)
             ? galleryTitleMap.get(f.galleryId)!
             : folderKey;
         if (existing) {
@@ -498,7 +515,7 @@ export default function FileGrid() {
     const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([folderKey, { count, displayName }]) => ({
       name: displayName,
       type: "folder" as const,
-      key: `gallery-subfolder-${currentDrive.id}|${folderKey}`,
+      key: `path-subfolder-${currentDrive.id}|${folderKey}`,
       items: count,
       driveId: undefined,
       virtualFolder: true,

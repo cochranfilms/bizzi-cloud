@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import {
@@ -86,6 +87,7 @@ export function useFilteredFiles(
 ): UseFilteredFilesResult {
   const { user } = useAuth();
   const { org } = useEnterprise();
+  const { selectedWorkspaceId } = useCurrentFolder();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -179,6 +181,9 @@ export function useFilteredFiles(
       if (isEnterprise && org?.id) {
         params.set("context", "enterprise");
         params.set("organization_id", org.id);
+        if (selectedWorkspaceId != null && selectedWorkspaceId !== "") {
+          params.set("workspace_id", selectedWorkspaceId);
+        }
       }
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
@@ -202,7 +207,7 @@ export function useFilteredFiles(
     } finally {
       setLoading(false);
     }
-  }, [user, driveIdForApi, isEnterprise, org?.id, teamOwnerFromPath]);
+  }, [user, driveIdForApi, isEnterprise, org?.id, teamOwnerFromPath, selectedWorkspaceId]);
 
   const searchQueryString = typeof searchParams?.toString === "function" ? searchParams.toString() : "";
 

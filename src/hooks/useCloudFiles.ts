@@ -15,6 +15,7 @@ import {
   updateDoc,
   serverTimestamp,
   writeBatch,
+  type QueryConstraint,
 } from "firebase/firestore";
 import {
   getFirebaseAuth,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import type { LinkedDrive } from "@/types/backup";
 import { usePathname } from "next/navigation";
@@ -129,6 +131,10 @@ function backupModifiedMs(data: DocumentData): number {
 }
 
 const TRASH_API_BATCH = 200;
+
+/** Drive detail views need the full tree; filter API is paginated (max 120/page). */
+const MAX_FILES_DRIVE_LIST = 25_000;
+const DRIVE_LIST_PAGE_SIZE = 120;
 
 async function reconcileMacosPackageForBackupFileClient(backupFileId: string): Promise<void> {
   const auth = getFirebaseAuth().currentUser;
@@ -299,6 +305,8 @@ async function fetchFilesFromFilterApi(
     dateTo?: string;
     /** NLE / interchange / creative project files + metadata (handled in post-filter). */
     creativeProjects?: boolean;
+    /** Enterprise: scope listing to one workspace (must be accessible to the user). */
+    workspaceId?: string | null;
   }
 ): Promise<{ files: RecentFile[]; nextCursor: string | null; hasMore: boolean }> {
   const token = await getUserIdToken(user, false);
@@ -313,6 +321,7 @@ async function fetchFilesFromFilterApi(
   if (options.dateFrom) params.set("date_from", options.dateFrom);
   if (options.dateTo) params.set("date_to", options.dateTo);
   if (options.creativeProjects) params.set("creative_projects", "true");
+  if (options.workspaceId) params.set("workspace_id", options.workspaceId);
   if (options.enterprise) {
     params.set("context", "enterprise");
     params.set("organization_id", options.enterprise.organizationId);
@@ -332,6 +341,40 @@ async function fetchFilesFromFilterApi(
     nextCursor: data.cursor ?? null,
     hasMore: data.hasMore === true,
   };
+}
+
+/** Walk filter API cursors until all files for the drive are loaded (caps at MAX_FILES_DRIVE_LIST). */
+async function fetchAllDriveFilesViaFilterApi(
+  user: User,
+  options: {
+    driveId: string;
+    teamOwnerUserId?: string | null;
+    enterprise?: { organizationId: string };
+    workspaceId?: string | null;
+  }
+): Promise<RecentFile[]> {
+  const collected: RecentFile[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < 500; page++) {
+    const { files, nextCursor, hasMore } = await fetchFilesFromFilterApi(user, {
+      driveId: options.driveId,
+      teamOwnerUserId: options.teamOwnerUserId,
+      enterprise: options.enterprise,
+      workspaceId: options.workspaceId,
+      pageSize: DRIVE_LIST_PAGE_SIZE,
+      cursor,
+    });
+    for (const f of files) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      collected.push(f);
+    }
+    if (collected.length >= MAX_FILES_DRIVE_LIST) break;
+    if (!hasMore || !nextCursor) break;
+    cursor = nextCursor;
+  }
+  return collected;
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
@@ -356,6 +399,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const { org, role: orgRole } = useEnterprise();
   const isEnterpriseContext = useIsEnterpriseContext();
   const teamRouteOwnerUid = useTeamRouteOwnerUid();
+  const { selectedWorkspaceId } = useCurrentFolder();
   const creatorOnly = options?.creatorOnly ?? false;
   const {
     linkedDrives,
@@ -430,15 +474,19 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
         const token = await getUserIdToken(user, false);
         const driveIdsParam = scoped.map((d) => d.id).join(",");
+        const wsQs =
+          selectedWorkspaceId != null && selectedWorkspaceId !== ""
+            ? `&workspace_id=${encodeURIComponent(selectedWorkspaceId)}`
+            : "";
 
         const countP = fetch(
-          `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}`,
+          `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}${wsQs}`,
           { headers: { Authorization: `Bearer ${token}` } }
         ).then(async (r) =>
           r.ok ? ((await r.json()) as { counts?: Record<string, number> }) : { counts: {} }
         );
         const recentP = fetch(
-          `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=120`,
+          `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=120${wsQs}`,
           { headers: { Authorization: `Bearer ${token}` } }
         ).then(async (r) =>
           r.ok ? ((await r.json()) as { files?: Record<string, unknown>[] }) : { files: [] }
@@ -560,6 +608,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     linkedDrives,
     teamRouteOwnerUid,
     backupDrivesLoading,
+    selectedWorkspaceId,
   ]);
 
   useEffect(() => {
@@ -698,38 +747,33 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const driveMeta = new Map(linkedDrives.map((d) => [d.id, d]));
       const drive = driveMeta.get(driveId);
       const driveNameById = new Map(linkedDrives.map((d) => [d.id, d.name]));
+      const workspaceArg =
+        selectedWorkspaceId != null && selectedWorkspaceId !== ""
+          ? selectedWorkspaceId
+          : null;
 
       if (drive?.organization_id) {
-        const token = await getUserIdToken(user, false);
-        const base = typeof window !== "undefined" ? window.location.origin : "";
-        const params = new URLSearchParams({
-          context: "enterprise",
-          organization_id: drive.organization_id,
-          drive_id: driveId,
-          sort: "newest",
-          page_size: "50",
+        const merged = await fetchAllDriveFilesViaFilterApi(user, {
+          driveId,
+          enterprise: { organizationId: drive.organization_id },
+          workspaceId: workspaceArg,
         });
-        const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return [];
-        const data = (await res.json()) as { files?: Record<string, unknown>[] };
-        return (data.files ?? []).map((raw) =>
-          apiFileToRecentFile(raw, driveNameById)
-        );
+        return merged.map((f) => ({
+          ...f,
+          driveName: drive?.name ?? driveNameById.get(f.driveId) ?? f.driveName,
+        }));
       }
 
-      const { files } = await fetchFilesFromFilterApi(user, {
+      const merged = await fetchAllDriveFilesViaFilterApi(user, {
         driveId,
         teamOwnerUserId: teamRouteOwnerUid,
-        pageSize: 50,
       });
-      return files.map((f) => ({
+      return merged.map((f) => ({
         ...f,
         driveName: drive?.name ?? f.driveName,
       }));
     },
-    [user, linkedDrives, teamRouteOwnerUid]
+    [user, linkedDrives, teamRouteOwnerUid, selectedWorkspaceId]
   );
 
   /** Fetches files uploaded to Storage in the past 7 days. Reference view—files live in Storage, not duplicated. */
@@ -768,6 +812,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 pageSize: 50,
                 cursor,
                 enterprise: { organizationId: drive.organization_id },
+                workspaceId:
+                  selectedWorkspaceId != null && selectedWorkspaceId !== ""
+                    ? selectedWorkspaceId
+                    : null,
                 dateFrom: dateFromDay,
                 dateTo: dateToDay,
               });
@@ -857,7 +905,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     if (runId !== recentUploadsFetchIdRef.current) return result;
     setRecentUploads(result);
     return result;
-  }, [user, linkedDrives, teamRouteOwnerUid, storageVersion]);
+  }, [user, linkedDrives, teamRouteOwnerUid, storageVersion, selectedWorkspaceId]);
 
   /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
   const subscribeToDriveFiles = useCallback(
@@ -866,13 +914,16 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const db = getFirebaseFirestore();
       const drive = linkedDrives.find((d) => d.id === driveId);
       if (drive?.organization_id) {
-        const q = query(
-          collection(db, "backup_files"),
+        const snapshotConstraints: QueryConstraint[] = [
           where("linked_drive_id", "==", driveId),
           where("organization_id", "==", drive.organization_id),
           where("deleted_at", "==", null),
-          orderBy("modified_at", "desc")
-        );
+        ];
+        if (selectedWorkspaceId != null && selectedWorkspaceId !== "") {
+          snapshotConstraints.push(where("workspace_id", "==", selectedWorkspaceId));
+        }
+        snapshotConstraints.push(orderBy("modified_at", "desc"));
+        const q = query(collection(db, "backup_files"), ...snapshotConstraints);
         return onSnapshot(q, (snap) => {
           const files: RecentFile[] = snap.docs
             .filter((d) => !d.data().deleted_at)
@@ -908,13 +959,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       let cancelled = false;
       const refresh = async () => {
         if (cancelled) return;
-        const { files } = await fetchFilesFromFilterApi(user, {
+        const merged = await fetchAllDriveFilesViaFilterApi(user, {
           driveId,
           teamOwnerUserId: teamRouteOwnerUid,
-          pageSize: 80,
         });
         onFiles(
-          files.map((f) => ({
+          merged.map((f) => ({
             ...f,
             driveName: drive?.name ?? f.driveName,
           }))
@@ -930,7 +980,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         if (tid != null) window.clearInterval(tid);
       };
     },
-    [user, linkedDrives, teamRouteOwnerUid]
+    [user, linkedDrives, teamRouteOwnerUid, selectedWorkspaceId]
   );
 
   /** Fetches RecentFile[] from backup_files by document IDs (default max 30, batched for Firestore 'in' limit of 10). */

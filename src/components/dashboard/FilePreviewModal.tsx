@@ -16,7 +16,7 @@ import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 import { downloadMacosPackageZipStreaming } from "@/lib/macos-package-zip-download";
-import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/file-access";
+import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/macos-package-synthetic-id";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
