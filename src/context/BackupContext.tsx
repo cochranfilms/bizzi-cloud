@@ -48,6 +48,7 @@ import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceed
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { getUploadRelativePath } from "@/lib/uppy-local-preview";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
@@ -1080,6 +1081,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   : new Date().toISOString(),
                 uploaded_at: new Date().toISOString(),
                 deleted_at: null,
+                lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
                 organization_id: drive.organization_id ?? null,
                 ...workspaceFields,
                 ...personalTeamFileFields(drive),
@@ -1776,6 +1778,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 : new Date().toISOString(),
               uploaded_at: new Date().toISOString(),
               deleted_at: null,
+              lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
               organization_id: drive.organization_id ?? null,
               ...workspaceFields,
               ...personalTeamFileFields(drive),
@@ -2038,6 +2041,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             modified_at: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
             uploaded_at: new Date().toISOString(),
             deleted_at: null,
+            lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
             organization_id: drive.organization_id ?? null,
             gallery_id: galleryId,
             ...workspaceFields,
@@ -2262,6 +2266,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 : new Date().toISOString(),
           uploaded_at: new Date().toISOString(),
           deleted_at: null,
+          lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
           organization_id: drive.organization_id ?? null,
           ...workspaceFields,
           ...personalTeamFileFields(drive),
