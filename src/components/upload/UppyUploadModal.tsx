@@ -155,6 +155,18 @@ export default function UppyUploadModal({
       id: "uppy-upload",
       autoProceed: false,
       allowMultipleUploadBatches: true,
+      // Uppy default ids use leaf name + size + mtime, not path. FCP bundles repeat names like
+      // "Frame 0 - 1023" / AppleDouble "._…" across many folders with identical size/mtime → false "duplicate" errors.
+      onBeforeFileAdded: (file) => {
+        const data = file.data;
+        if (data instanceof File) {
+          const wr = data.webkitRelativePath?.trim();
+          if (wr) {
+            return { ...file, id: `uppy-upload:${wr}` } as typeof file;
+          }
+        }
+        return undefined;
+      },
     });
 
     const awsS3Opts = {
