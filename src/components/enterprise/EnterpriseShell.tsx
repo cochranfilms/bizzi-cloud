@@ -20,8 +20,8 @@ export default function EnterpriseShell({
   children: React.ReactNode;
 }) {
   const { org, role } = useEnterprise();
-  const { cssVariables } = useDashboardAppearance();
-  const theme = org?.theme ?? "bizzi";
+  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
+  const theme = uiThemeOverride ?? org?.theme ?? "bizzi";
   const orgVars = getThemeVariables(theme);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 

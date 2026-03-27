@@ -5,7 +5,11 @@ import AddonGuard from "@/components/dashboard/AddonGuard";
 export default function CreatorPage() {
   return (
     <>
-      <TopBar title="Creator" settingsHref="/dashboard/creator/settings" />
+      <TopBar
+        title="Creator"
+        showLayoutSettings
+        settingsHref="/dashboard/creator/settings"
+      />
       <main className="flex-1 overflow-auto p-6">
         <AddonGuard
           require="editor"

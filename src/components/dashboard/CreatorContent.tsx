@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, Film, LayoutGrid, List } from "lucide-react";
+import { ChevronLeft, Film } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import FolderCard from "./FolderCard";
 import FileCard from "./FileCard";
+import FileListRow from "./FileListRow";
 import FilePreviewModal from "./FilePreviewModal";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import type { RecentFile } from "@/hooks/useCloudFiles";
@@ -15,11 +16,13 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import SectionTitle from "./SectionTitle";
 import { useAuth } from "@/context/AuthContext";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
+import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 const DRAG_THRESHOLD_PX = 5;
 
 export default function CreatorContent() {
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const { viewMode, cardSize, aspectRatio, showCardInfo, thumbnailScale } =
+    useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
@@ -130,6 +133,17 @@ export default function CreatorContent() {
       return 0;
     });
 
+  const gridColsClass =
+    viewMode === "thumbnail"
+      ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+      : cardSize === "small"
+        ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+        : cardSize === "large"
+          ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
+          : "sm:grid-cols-3 md:grid-cols-4";
+
+  const folderLayoutSize = viewMode === "thumbnail" ? "large" : cardSize;
+
   return (
     <div className="w-full space-y-0">
       {currentDrive && (
@@ -148,36 +162,8 @@ export default function CreatorContent() {
       )}
 
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <SectionTitle>
-            {currentDrive ? "Files" : "Folders"}
-          </SectionTitle>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              className={`rounded p-2 ${
-                viewMode === "grid"
-                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              }`}
-              aria-label="Grid view"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              className={`rounded p-2 ${
-                viewMode === "list"
-                  ? "bg-neutral-200 text-bizzi-blue dark:bg-neutral-700"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              }`}
-              aria-label="List view"
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
+        <div className="mb-5">
+          <SectionTitle>{currentDrive ? "Files" : "Folders"}</SectionTitle>
         </div>
 
         <DashboardRouteFade
@@ -186,21 +172,60 @@ export default function CreatorContent() {
         >
         {currentDrive ? (
           driveFiles.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {driveFiles.map((file) => (
-                <div key={file.id}>
-                  <FileCard
-                    file={file}
-                    onClick={() => setPreviewFile(file)}
-                    onDelete={async () => {
-                      await deleteFile(file.id);
-                      if (currentDrive) loadDriveFiles(currentDrive.id);
-                    }}
-                    onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
-                  />
-                </div>
-              ))}
-            </div>
+            viewMode === "list" ? (
+              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                      <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {driveFiles.map((file) => (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        onClick={() => setPreviewFile(file)}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          if (currentDrive) loadDriveFiles(currentDrive.id);
+                        }}
+                        onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className={`grid gap-4 ${gridColsClass}`}>
+                {driveFiles.map((file) => (
+                  <div key={file.id}>
+                    <FileCard
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        if (currentDrive) loadDriveFiles(currentDrive.id);
+                      }}
+                      onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
+                      thumbnailScale={thumbnailScale}
+                    />
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {currentDrive.id === creatorRawDriveId
@@ -209,13 +234,17 @@ export default function CreatorContent() {
             </div>
           )
         ) : folderItems.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {folderItems.map((item) => {
-              const drive = creatorDrives.find((d) => d.id === item.driveId);
-              return (
-                <div key={item.key}>
+          viewMode === "list" ? (
+            <div className="space-y-3">
+              {folderItems.map((item) => {
+                const drive = creatorDrives.find((d) => d.id === item.driveId);
+                return (
                   <FolderCard
+                    key={item.key}
                     item={item}
+                    layoutSize={folderLayoutSize}
+                    layoutAspectRatio={aspectRatio}
+                    showCardInfo={showCardInfo}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                     onDelete={
                       drive && !item.preventDelete
@@ -233,10 +262,42 @@ export default function CreatorContent() {
                         : undefined
                     }
                   />
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={`grid gap-4 ${gridColsClass}`}>
+              {folderItems.map((item) => {
+                const drive = creatorDrives.find((d) => d.id === item.driveId);
+                return (
+                  <div key={item.key}>
+                    <FolderCard
+                      item={item}
+                      layoutSize={folderLayoutSize}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
+                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      onDelete={
+                        drive && !item.preventDelete
+                          ? async () => {
+                              const msg =
+                                item.items === 0
+                                  ? `Delete "${item.name}"? This will remove the folder.`
+                                  : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                              const ok = await confirm({ message: msg, destructive: true });
+                              if (ok) {
+                                await deleteFolder({ id: drive.id, name: drive.name }, item.items);
+                                await refetch();
+                              }
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No folders yet. The RAW folder will appear once you visit this tab.

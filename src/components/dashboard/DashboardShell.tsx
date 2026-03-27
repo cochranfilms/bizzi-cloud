@@ -31,14 +31,16 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const { cssVariables } = useDashboardAppearance();
+  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
   const pathname = usePathname();
   const teamWs = usePersonalTeamWorkspace();
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
   const rightPanelBasePath = teamNavBase ?? "/dashboard";
   const commentsHref = teamNavBase ? `${teamNavBase}/comments` : undefined;
-  const teamThemeVars = teamWs ? getThemeVariables(teamWs.teamThemeId) : {};
+  const effectiveUiTheme =
+    uiThemeOverride ?? (teamWs ? teamWs.teamThemeId : "bizzi");
+  const themeVars = getThemeVariables(effectiveUiTheme);
   const stackedNavTop = teamWs ? "top-[6.25rem]" : "top-14";
   const mobilePanelBtnTop = teamWs ? "top-[7.25rem]" : "top-16";
 
@@ -52,8 +54,8 @@ export default function DashboardShell({
           className={`flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 ${
             teamWs ? "border-l-4 border-[var(--enterprise-primary)]" : ""
           }`}
-          data-team-theme={teamWs ? teamWs.teamThemeId : undefined}
-          style={{ ...teamThemeVars, ...cssVariables } as React.CSSProperties}
+          data-team-theme={effectiveUiTheme}
+          style={{ ...themeVars, ...cssVariables } as React.CSSProperties}
         >
         {/* Top navbar - main nav */}
         <TopNavbar />

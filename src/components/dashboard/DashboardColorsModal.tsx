@@ -5,7 +5,10 @@ import { createPortal } from "react-dom";
 import { X, RotateCcw } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { DASHBOARD_BACKGROUND_THEMES } from "@/lib/dashboard-appearance-themes";
+import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 
 const HEX_REGEX = /^#[0-9A-Fa-f]{6}$/;
 
@@ -21,9 +24,18 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
     setAccentColor,
     backgroundThemeId,
     setBackgroundThemeId,
+    uiThemeOverride,
+    setUiThemeId,
     resetToDefault,
+    workspaceKey,
   } = useDashboardAppearance();
+  const { org } = useEnterprise();
+  const teamWs = usePersonalTeamWorkspace();
   const [accentInput, setAccentInput] = useState(accentColor);
+
+  const inheritedUiTheme =
+    teamWs?.teamThemeId ?? org?.theme ?? "bizzi";
+  const selectedThemeId = uiThemeOverride ?? inheritedUiTheme;
 
   useEffect(() => {
     if (open) {
@@ -54,6 +66,7 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
   if (!open) return null;
 
   const isDark = theme === "dark";
+  const appearanceLocked = workspaceKey === "enterprise:pending";
 
   const content = (
     <div
@@ -65,7 +78,7 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
     >
       <div className="absolute inset-0 bg-black/50" aria-hidden />
       <div
-        className="relative z-10 w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+        className="relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
@@ -85,12 +98,51 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
           </button>
         </div>
         <div className="space-y-5 p-4">
+          {appearanceLocked && (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              Loading workspace… save is momentarily unavailable.
+            </p>
+          )}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Theme
+            </label>
+            <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+              Navigation and highlight colors for this workspace only. This device remembers your
+              choice per workspace.
+            </p>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+              {ENTERPRISE_THEMES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={appearanceLocked}
+                  onClick={() => setUiThemeId(t.id)}
+                  className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-2 transition-colors disabled:opacity-50 ${
+                    selectedThemeId === t.id
+                      ? "border-bizzi-blue bg-bizzi-blue/10 ring-2 ring-bizzi-blue/20 dark:border-bizzi-cyan dark:bg-bizzi-cyan/10 dark:ring-bizzi-cyan/25"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+                  }`}
+                  title={t.name}
+                >
+                  <div
+                    className="h-7 w-7 rounded-full"
+                    style={{ backgroundColor: t.primary }}
+                  />
+                  <span className="text-center text-[10px] font-medium leading-tight text-neutral-700 dark:text-neutral-300 sm:text-xs">
+                    {t.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Background
             </label>
             <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-              Choose a background color for your dashboard. Options adapt to light or dark theme.
+              Background for this workspace. Options adapt to light or dark theme.
             </p>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
               {DASHBOARD_BACKGROUND_THEMES.map((t) => {
@@ -100,8 +152,9 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
                   <button
                     key={t.id}
                     type="button"
+                    disabled={appearanceLocked}
                     onClick={() => setBackgroundThemeId(selected ? null : t.id)}
-                    className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors ${
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors disabled:opacity-50 ${
                       selected
                         ? "border-bizzi-blue ring-2 ring-bizzi-blue/20"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
@@ -124,19 +177,24 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
             <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Accent color
             </label>
+            <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+              Buttons and accents for this workspace (separate from theme highlights).
+            </p>
             <div className="flex gap-2">
               <input
                 type="color"
+                disabled={appearanceLocked}
                 value={HEX_REGEX.test(accentInput) ? accentInput : accentColor}
                 onChange={(e) => {
                   const v = e.target.value;
                   setAccentInput(v);
                   setAccentColor(v);
                 }}
-                className="h-10 w-14 cursor-pointer rounded border border-neutral-200 dark:border-neutral-700"
+                className="h-10 w-14 cursor-pointer rounded border border-neutral-200 disabled:opacity-50 dark:border-neutral-700"
               />
               <input
                 type="text"
+                disabled={appearanceLocked}
                 value={accentInput}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -144,17 +202,19 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
                   if (HEX_REGEX.test(v)) setAccentColor(v);
                 }}
                 placeholder="#00BFFF"
-                className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
               />
             </div>
           </div>
           <div className="flex justify-end">
             <button
               type="button"
+              disabled={appearanceLocked}
               onClick={() => {
                 resetToDefault();
+                setAccentInput("#00BFFF");
               }}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
             >
               <RotateCcw className="h-4 w-4" />
               Reset to default
@@ -165,7 +225,5 @@ export default function DashboardColorsModal({ open, onClose }: DashboardColorsM
     </div>
   );
 
-  return typeof document !== "undefined"
-    ? createPortal(content, document.body)
-    : null;
+  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
 }

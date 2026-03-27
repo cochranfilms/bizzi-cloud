@@ -82,7 +82,7 @@ export default function DesktopTopNavbar({
           onClick={onMountPanelToggle}
           className={`rounded-lg p-2 transition-colors ${
             mountPanelOpen
-              ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+              ? "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
               : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
           }`}
           title={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
@@ -104,7 +104,7 @@ export default function DesktopTopNavbar({
           className="object-contain"
         />
         <span className="font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-          Bizzi <span className="text-bizzi-blue">Cloud</span>
+          Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
         </span>
       </Link>
       </div>
@@ -112,7 +112,9 @@ export default function DesktopTopNavbar({
       <nav className="hidden md:flex items-center gap-0.5">
         {filteredItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (item.href === "/desktop/app" && pathname === "/desktop/app");
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/desktop/app" && pathname.startsWith(`${item.href}/`));
           const hasPowerupColor = isActive && item.activeBgColor;
           return (
             <Link
@@ -122,7 +124,7 @@ export default function DesktopTopNavbar({
                 hasPowerupColor
                   ? "font-medium text-white"
                   : isActive
-                    ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                    ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
                     : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
               }`}
               style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
@@ -145,7 +147,7 @@ export default function DesktopTopNavbar({
           placeholder="Search files..."
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
-          className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20"
+          className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500 dark:focus:border-[var(--enterprise-accent)] dark:focus:ring-[var(--enterprise-accent)]/20"
         />
       </div>
 
@@ -172,7 +174,9 @@ export default function DesktopTopNavbar({
         <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
           {filteredItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (item.href === "/desktop/app" && pathname === "/desktop/app");
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/desktop/app" && pathname.startsWith(`${item.href}/`));
             const hasPowerupColor = isActive && item.activeBgColor;
             return (
               <li key={item.href}>
@@ -183,7 +187,7 @@ export default function DesktopTopNavbar({
                     hasPowerupColor
                       ? "font-medium text-white"
                       : isActive
-                        ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
+                        ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
                         : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
                   style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}

@@ -1,26 +1,45 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+} from "react";
+import { usePathname } from "next/navigation";
 import { useTheme } from "@/context/ThemeContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import { getDashboardBackground } from "@/lib/dashboard-appearance-themes";
+import type { EnterpriseThemeId } from "@/types/enterprise";
+import {
+  deleteWorkspaceAppearance,
+  getDashboardWorkspaceKey,
+  migrateLegacyDashboardAppearanceKeys,
+  readAllWorkspaceAppearance,
+  removeLegacyGlobalAppearanceKeys,
+  writeWorkspaceAppearance,
+} from "@/lib/dashboard-workspace-appearance-storage";
 
-const STORAGE_ACCENT = "bizzi-dashboard-accent";
-const STORAGE_BACKGROUND = "bizzi-dashboard-background";
 const DEFAULT_ACCENT = "#00BFFF";
-const DEFAULT_ACCENT_HOVER = "#00D4FF";
 
 interface DashboardAppearanceContextType {
   accentColor: string;
   setAccentColor: (hex: string) => void;
   backgroundThemeId: string | null;
   setBackgroundThemeId: (id: string | null) => void;
+  /** Local theme override (Bizzi, Rose, …). Null = inherit org/team default or Bizzi for personal. */
+  uiThemeOverride: EnterpriseThemeId | null;
+  setUiThemeId: (id: EnterpriseThemeId | null) => void;
+  workspaceKey: string;
   cssVariables: React.CSSProperties;
   resetToDefault: () => void;
 }
 
-const DashboardAppearanceContext = createContext<DashboardAppearanceContextType | undefined>(
-  undefined
-);
+const DashboardAppearanceContext = createContext<
+  DashboardAppearanceContextType | undefined
+>(undefined);
 
 function lightenHex(hex: string, amount: number): string {
   const parsed = hex.replace(/^#/, "");
@@ -32,56 +51,89 @@ function lightenHex(hex: string, amount: number): string {
 
 export function DashboardAppearanceProvider({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
+  const pathname = usePathname();
+  const { org } = useEnterprise();
+  const enterpriseOrgId = org?.id ?? null;
+
+  const workspaceKey = useMemo(
+    () => getDashboardWorkspaceKey(pathname, enterpriseOrgId),
+    [pathname, enterpriseOrgId],
+  );
+
   const [accentColor, setAccentColorState] = useState<string>(DEFAULT_ACCENT);
   const [backgroundThemeId, setBackgroundThemeIdState] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [uiThemeOverride, setUiThemeOverrideState] =
+    useState<EnterpriseThemeId | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    if (typeof window === "undefined") return;
-    const storedAccent = localStorage.getItem(STORAGE_ACCENT);
-    const storedBg = localStorage.getItem(STORAGE_BACKGROUND);
-    if (storedAccent && /^#[0-9A-Fa-f]{6}$/.test(storedAccent)) {
-      setAccentColorState(storedAccent);
-    }
-    if (storedBg) {
-      setBackgroundThemeIdState(storedBg);
-    }
+    setHydrated(true);
+    migrateLegacyDashboardAppearanceKeys();
   }, []);
 
-  const setAccentColor = (hex: string) => {
-    setAccentColorState(hex);
-    if (/^#[0-9A-Fa-f]{6}$/.test(hex) && typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_ACCENT, hex);
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    if (workspaceKey === "enterprise:pending") {
+      setAccentColorState(DEFAULT_ACCENT);
+      setBackgroundThemeIdState(null);
+      setUiThemeOverrideState(null);
+      return;
     }
-  };
+    const slot = readAllWorkspaceAppearance()[workspaceKey] ?? {};
+    setAccentColorState(
+      slot.accent && /^#[0-9A-Fa-f]{6}$/.test(slot.accent) ? slot.accent : DEFAULT_ACCENT,
+    );
+    setBackgroundThemeIdState(
+      slot.background !== undefined ? slot.background : null,
+    );
+    setUiThemeOverrideState(
+      slot.uiTheme !== undefined ? slot.uiTheme : null,
+    );
+  }, [workspaceKey, hydrated]);
 
-  const setBackgroundThemeId = (id: string | null) => {
-    setBackgroundThemeIdState(id);
-    if (typeof window !== "undefined") {
-      if (id) {
-        localStorage.setItem(STORAGE_BACKGROUND, id);
-      } else {
-        localStorage.removeItem(STORAGE_BACKGROUND);
-      }
-    }
-  };
+  const setAccentColor = useCallback(
+    (hex: string) => {
+      setAccentColorState(hex);
+      if (workspaceKey === "enterprise:pending") return;
+      if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+      if (typeof window === "undefined") return;
+      writeWorkspaceAppearance(workspaceKey, { accent: hex });
+    },
+    [workspaceKey],
+  );
 
-  const resetToDefault = () => {
+  const setBackgroundThemeId = useCallback(
+    (id: string | null) => {
+      setBackgroundThemeIdState(id);
+      if (workspaceKey === "enterprise:pending") return;
+      if (typeof window === "undefined") return;
+      writeWorkspaceAppearance(workspaceKey, { background: id });
+    },
+    [workspaceKey],
+  );
+
+  const setUiThemeId = useCallback(
+    (id: EnterpriseThemeId | null) => {
+      setUiThemeOverrideState(id);
+      if (workspaceKey === "enterprise:pending") return;
+      if (typeof window === "undefined") return;
+      writeWorkspaceAppearance(workspaceKey, { uiTheme: id });
+    },
+    [workspaceKey],
+  );
+
+  const resetToDefault = useCallback(() => {
     setAccentColorState(DEFAULT_ACCENT);
     setBackgroundThemeIdState(null);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(STORAGE_ACCENT);
-      localStorage.removeItem(STORAGE_BACKGROUND);
-    }
-  };
+    setUiThemeOverrideState(null);
+    if (typeof window === "undefined" || workspaceKey === "enterprise:pending") return;
+    deleteWorkspaceAppearance(workspaceKey);
+    removeLegacyGlobalAppearanceKeys();
+  }, [workspaceKey]);
 
   const isDark = theme === "dark";
   const dashboardBg = getDashboardBackground(backgroundThemeId, isDark);
-  const accentHover = useMemo(
-    () => lightenHex(accentColor, 20),
-    [accentColor]
-  );
+  const accentHover = useMemo(() => lightenHex(accentColor, 20), [accentColor]);
 
   const sectionTitleBg = useMemo(() => {
     if (!/^#[0-9A-Fa-f]{6}$/.test(accentColor)) return "rgba(0, 191, 255, 0.2)";
@@ -111,6 +163,9 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       setAccentColor,
       backgroundThemeId,
       setBackgroundThemeId,
+      uiThemeOverride,
+      setUiThemeId,
+      workspaceKey,
       cssVariables,
       resetToDefault,
     }),
@@ -118,7 +173,13 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       accentColor,
       backgroundThemeId,
       cssVariables,
-    ]
+      uiThemeOverride,
+      workspaceKey,
+      setAccentColor,
+      setBackgroundThemeId,
+      setUiThemeId,
+      resetToDefault,
+    ],
   );
 
   return (

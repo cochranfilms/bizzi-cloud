@@ -57,6 +57,18 @@ const navItems: Array<{
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
+/** Home is only active on the workspace root, not on every child under /dashboard or /team/:id. */
+function isNavItemActive(
+  pathname: string | null,
+  resolvedHref: string,
+  itemHref: string,
+): boolean {
+  if (!pathname) return false;
+  if (pathname === resolvedHref) return true;
+  if (itemHref === "/dashboard") return false;
+  return pathname.startsWith(`${resolvedHref}/`);
+}
+
 export default function TopNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -84,17 +96,14 @@ export default function TopNavbar() {
     return true;
   });
 
-  const inactiveNavCls = teamNavBase && teamWs
-    ? "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white";
+  const inactiveNavCls =
+    "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white";
 
-  const activeNavCls = teamNavBase && teamWs
-    ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-    : "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan";
+  const activeNavCls =
+    "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]";
 
-  const searchFocusCls = teamNavBase && teamWs
-    ? "focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:focus:border-[var(--enterprise-accent)] dark:focus:ring-[var(--enterprise-accent)]/20"
-    : "focus:border-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/20 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20";
+  const searchFocusCls =
+    "focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:focus:border-[var(--enterprise-accent)] dark:focus:ring-[var(--enterprise-accent)]/20";
 
   const navRow = (
     <>
@@ -105,8 +114,7 @@ export default function TopNavbar() {
             teamNavBase && item.href === "/dashboard/settings"
               ? `${teamNavBase}/settings`
               : item.href.replace(/^\/dashboard/, navBase);
-          const isActive =
-            pathname === href || pathname?.startsWith(`${href}/`);
+          const isActive = isNavItemActive(pathname, href, item.href);
           const hasPowerupColor = isActive && item.activeBgColor;
           return (
             <Link
@@ -224,8 +232,7 @@ export default function TopNavbar() {
                 teamNavBase && item.href === "/dashboard/settings"
                   ? `${teamNavBase}/settings`
                   : item.href.replace(/^\/dashboard/, navBase);
-              const isActive =
-                pathname === href || pathname?.startsWith(`${href}/`);
+              const isActive = isNavItemActive(pathname, href, item.href);
               const hasPowerupColor = isActive && item.activeBgColor;
               return (
                 <li key={item.href}>
@@ -281,7 +288,7 @@ export default function TopNavbar() {
           className="object-contain"
         />
         <span className="font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-          Bizzi <span className="text-bizzi-blue">Cloud</span>
+          Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
         </span>
       </Link>
 
@@ -309,8 +316,7 @@ export default function TopNavbar() {
               teamNavBase && item.href === "/dashboard/settings"
                 ? `${teamNavBase}/settings`
                 : item.href.replace(/^\/dashboard/, navBase);
-            const isActive =
-              pathname === href || pathname?.startsWith(`${href}/`);
+            const isActive = isNavItemActive(pathname, href, item.href);
             const hasPowerupColor = isActive && item.activeBgColor;
             return (
               <li key={item.href}>

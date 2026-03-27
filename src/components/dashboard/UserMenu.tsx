@@ -57,7 +57,7 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
         onClick={() => setOpen(!open)}
         className={
           compact
-            ? "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-bizzi-blue text-sm font-medium text-white transition-opacity hover:opacity-90"
+            ? "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[var(--bizzi-accent)] text-sm font-medium text-white transition-opacity hover:opacity-90"
             : "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
         }
       >
@@ -76,7 +76,7 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
           )
         ) : (
           <>
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-bizzi-blue text-sm font-medium text-white">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--bizzi-accent)] text-sm font-medium text-white">
               {photoURL ? (
                 <Image
                   src={photoURL}

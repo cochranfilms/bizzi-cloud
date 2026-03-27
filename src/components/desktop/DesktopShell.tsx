@@ -5,6 +5,7 @@ import { PanelRight, HardDrive } from "lucide-react";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
+import { getThemeVariables } from "@/lib/enterprise-themes";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
@@ -30,7 +31,8 @@ export default function DesktopShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mountPanelOpen, setMountPanelOpen] = useState(true);
   const { hasEditor } = useEffectivePowerUps();
-  const { cssVariables } = useDashboardAppearance();
+  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
+  const themeVars = getThemeVariables(uiThemeOverride ?? "bizzi");
 
   return (
     <UppyUploadProvider>
@@ -38,7 +40,7 @@ export default function DesktopShell({
     <RightPanelContext.Provider value={{ rightPanelOpen, setRightPanelOpen }}>
       <div
         className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
-        style={cssVariables}
+        style={{ ...themeVars, ...cssVariables }}
       >
         <DesktopTopNavbar
           mountPanelOpen={hasEditor ? mountPanelOpen : false}
