@@ -29,8 +29,7 @@ import SectionTitle from "./SectionTitle";
 import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
-import { getAuthToken } from "@/lib/auth-token";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { getAuthToken, getCurrentUserIdToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -149,6 +148,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const {
     driveFolders,
     loading,
+    authQuotaExceeded,
     recentUploads,
     fetchRecentUploads,
     deleteFile,
@@ -281,7 +281,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     let cancelled = false;
     (async () => {
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const token = await getCurrentUserIdToken(false);
         if (!token || cancelled) return;
         const res = await fetch(`/api/files/${encodeURIComponent(fileIdFromUrl)}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -749,6 +749,25 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         srOnlyMessage="Loading your folders and subscription"
       >
       <div className="space-y-0">
+      {authQuotaExceeded ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <p className="font-medium">Temporarily can’t refresh cloud data</p>
+          <p className="mt-1 text-amber-800/90 dark:text-amber-200/90">
+            Firebase sign-in hit a short-term rate limit (often after many uploads or on busy networks). Wait a minute,
+            refresh the page, or try another network. Your files are not lost.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="mt-3 text-sm font-medium text-amber-900 underline hover:no-underline dark:text-amber-100"
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
         <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>

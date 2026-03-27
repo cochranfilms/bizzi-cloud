@@ -22,6 +22,12 @@ import {
   getFirebaseFirestore,
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
+import {
+  getCurrentUserIdToken,
+  getUserIdToken,
+  isFirebaseAuthQuotaExceededError,
+  registerFirebaseAuthQuotaCooldown,
+} from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -107,7 +113,7 @@ async function trashBackupFileIdsViaApi(fileIds: string[]): Promise<void> {
   if (fileIds.length === 0) return;
   const auth = getFirebaseAuth().currentUser;
   if (!auth) throw new Error("Not signed in");
-  const token = await auth.getIdToken(true);
+  const token = await getUserIdToken(auth, true);
   const base = typeof window !== "undefined" ? window.location.origin : "";
   for (let i = 0; i < fileIds.length; i += TRASH_API_BATCH) {
     const chunk = fileIds.slice(i, i + TRASH_API_BATCH);
@@ -235,7 +241,7 @@ async function fetchFilesFromFilterApi(
     enterprise?: { organizationId: string };
   }
 ): Promise<{ files: RecentFile[]; nextCursor: string | null; hasMore: boolean }> {
-  const token = await user.getIdToken(true);
+  const token = await getUserIdToken(user, false);
   const base = typeof window !== "undefined" ? window.location.origin : "";
   const params = new URLSearchParams({
     sort: "newest",
@@ -303,6 +309,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const [allFilesForTransfer, setAllFilesForTransfer] = useState<RecentFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAllFiles, setLoadingAllFiles] = useState(false);
+  const [authQuotaExceeded, setAuthQuotaExceeded] = useState(false);
   const hasInitiallyLoadedRef = useRef(false);
 
   const orgId = org?.id ?? null;
@@ -319,6 +326,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     let deferFolderReveal = false;
     try {
       if (!isBackgroundRefetch) setLoading(true);
+      setAuthQuotaExceeded(false);
       const db = getFirebaseFirestore();
       const scoped = filterScopedLinkedDrives(linkedDrives, {
         isEnterpriseContext,
@@ -355,7 +363,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
 
       if (isEnterpriseContext && orgId) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
-        const token = await user.getIdToken(true);
+        const token = await getUserIdToken(user, false);
         const driveIdsParam = scoped.map((d) => d.id).join(",");
 
         const [countRes, recentRes] = await Promise.all([
@@ -394,7 +402,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         setRecentFiles(recent);
       } else if (teamRouteOwnerUid && scoped.length > 0) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
-        const token = await user.getIdToken(true);
+        const token = await getUserIdToken(user, false);
         const driveIdsParam = scoped.map((d) => d.id).join(",");
         const ownerParam = encodeURIComponent(teamRouteOwnerUid);
 
@@ -460,8 +468,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       }
     } catch (err) {
       console.error("useCloudFiles:", err);
-      setDriveFolders([]);
-      setRecentFiles([]);
+      if (isFirebaseAuthQuotaExceededError(err)) {
+        registerFirebaseAuthQuotaCooldown();
+        setAuthQuotaExceeded(true);
+      } else {
+        setDriveFolders([]);
+        setRecentFiles([]);
+      }
     } finally {
       hasInitiallyLoadedRef.current = true;
       if (!deferFolderReveal) {
@@ -503,7 +516,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
 
       if (isEnterpriseContext && orgId) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
-        const token = await user.getIdToken(true);
+        const token = await getUserIdToken(user, false);
         const collected: RecentFile[] = [];
         let cursor: string | null = null;
         while (collected.length < 500) {
@@ -616,7 +629,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const driveNameById = new Map(linkedDrives.map((d) => [d.id, d.name]));
 
       if (drive?.organization_id) {
-        const token = await user.getIdToken(true);
+        const token = await getUserIdToken(user, false);
         const base = typeof window !== "undefined" ? window.location.origin : "";
         const params = new URLSearchParams({
           context: "enterprise",
@@ -785,7 +798,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       };
       void refresh();
       const tid =
-        typeof window !== "undefined" ? window.setInterval(() => void refresh(), 5000) : null;
+        typeof window !== "undefined"
+          ? window.setInterval(() => void refresh(), 20_000)
+          : null;
       return () => {
         cancelled = true;
         if (tid != null) window.clearInterval(tid);
@@ -917,7 +932,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const recalculateStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;
     try {
-      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      const token = await getCurrentUserIdToken(false);
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/storage/recalculate`, {
         method: "POST",
@@ -975,7 +990,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const permanentlyDeleteFile = useCallback(
     async (fileId: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      const token = await getCurrentUserIdToken(true);
       if (!token) return;
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/backup/permanent-delete`, {
@@ -1217,7 +1232,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     let countMap: Record<string, number> = {};
     if (isEnterpriseContext && orgId && drivesInContext.length > 0) {
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      const token = await user.getIdToken(true);
+      const token = await getUserIdToken(user, false);
       const driveIdsParam = drivesInContext.map((d) => d.id).join(",");
       const countRes = await fetch(
         `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}&deleted=only`,
@@ -1308,7 +1323,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const permanentlyDeleteDrive = useCallback(
     async (driveId: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      const token = await getCurrentUserIdToken(true);
       if (!token) return;
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const res = await fetch(`${base}/api/backup/permanent-delete`, {
@@ -1336,6 +1351,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     recentFiles,
     recentUploads,
     fetchRecentUploads,
+    /** True when Firebase Auth token quota was exceeded on last refetch (transient; try again later). */
+    authQuotaExceeded,
     allFilesForTransfer,
     loading,
     loadingAllFiles,

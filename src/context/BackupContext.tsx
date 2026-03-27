@@ -39,6 +39,7 @@ import {
   getFirebaseAuth,
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
+import { getCurrentUserIdToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -912,7 +913,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
         if (toUpload.length > 0) {
           failStep = "upload auth (pre-flight)";
-          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const idToken = await getCurrentUserIdToken(false);
           if (!idToken) throw new Error("Not authenticated. Sign out and back in, then try again.");
           const preflight = await fetch("/api/backup/upload-url", {
             method: "POST",
@@ -984,7 +985,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               const contentHash =
                 file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
               const idToken =
-                await getFirebaseAuth().currentUser?.getIdToken(true);
+                await getCurrentUserIdToken(false);
               if (!idToken) throw new Error("Not authenticated. Sign in again.");
 
               let objectKey: string;
@@ -1612,7 +1613,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
       // Pre-check storage: only cap is remaining space; show modal if over quota
       try {
-        const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const idToken = await getCurrentUserIdToken(false);
         if (idToken) {
           const base = typeof window !== "undefined" ? window.location.origin : "";
           const contextParam = isEnterpriseContext ? "?context=enterprise" : "?context=personal";
@@ -1653,7 +1654,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
         let resolvedWorkspaceId: string | null = null;
         if (isEnterpriseContext && org?.id) {
-          const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const idToken = await getCurrentUserIdToken(false);
           if (idToken) {
             try {
               const params = new URLSearchParams({
@@ -1705,7 +1706,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
         const fileById = new Map(filesToUpload.map((f, i) => [fileItems[i].id, f]));
         const manager = new UploadManager({
-          getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
+          getIdToken: () => getCurrentUserIdToken(false),
           getUserId: () => user?.uid ?? null,
           onProgress: (ev) => {
             bytesSynced = completedBytesRef.current + ev.bytesLoaded;
@@ -1719,7 +1720,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             if (!file) return;
             completedBytesRef.current += file.size;
             bytesSynced = completedBytesRef.current;
-            const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+            const idToken = await getCurrentUserIdToken(false);
             const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
               linked_drive_id: drive.id,
               userId: user.uid,
@@ -1844,7 +1845,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           setStorageVersion((v) => v + 1);
         }, 2000);
         try {
-          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const token = await getCurrentUserIdToken(false);
           const base = typeof window !== "undefined" ? window.location.origin : "";
           await fetch(`${base}/api/storage/recalculate`, {
             method: "POST",
@@ -1898,7 +1899,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           typeof window !== "undefined" ? `${window.location.origin}/api/storage/status` : "",
           {
             headers: {
-              Authorization: `Bearer ${await getFirebaseAuth().currentUser?.getIdToken(true)}`,
+              Authorization: `Bearer ${await getCurrentUserIdToken(false)}`,
             },
           }
         );
@@ -1957,7 +1958,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
       const fileById = new Map(files.map((f, i) => [fileItems[i].id, f]));
       const manager = new UploadManager({
-        getIdToken: () => getFirebaseAuth().currentUser?.getIdToken(true) ?? Promise.resolve(null),
+        getIdToken: () => getCurrentUserIdToken(false),
         getUserId: () => user?.uid ?? null,
         onProgress: (ev) => {
           bytesSynced = completedBytesRef.current + ev.bytesLoaded;
@@ -1982,7 +1983,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
           const safeName = uniqueNames[fileIndex] ?? file.name;
           const relativePath = `${galleryId}/${safeName}`;
-          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const token = await getCurrentUserIdToken(false);
           const workspaceFields = await getWorkspaceFieldsForOrgDrive(
             drive,
             token ?? null,
@@ -2005,8 +2006,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             ...workspaceFields,
             ...personalTeamFileFields(drive),
           });
-          getFirebaseAuth()
-            .currentUser?.getIdToken(true)
+          getCurrentUserIdToken(false)
             .then((token) =>
               token
                 ? fetch("/api/files/extract-metadata", {
@@ -2023,8 +2023,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 : Promise.resolve()
             );
           updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
-          getFirebaseAuth()
-            .currentUser?.getIdToken(true)
+          getCurrentUserIdToken(false)
             .then((token) =>
               fetch(`${base}/api/galleries/${galleryId}/assets`, {
                 method: "POST",
@@ -2082,7 +2081,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }, 2000);
 
       try {
-        const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const token = await getCurrentUserIdToken(false);
         const base = typeof window !== "undefined" ? window.location.origin : "";
         await fetch(`${base}/api/storage/recalculate`, {
           method: "POST",
@@ -2131,7 +2130,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       try {
         const contentHash =
           file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
-        const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+        const idToken = await getCurrentUserIdToken(false);
         if (!idToken) throw new Error("Not authenticated. Sign in again.");
 
         let objectKey: string;
@@ -2252,7 +2251,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         setTimeout(() => setSyncProgress(null), 2000);
         // Recalculate storage first so profile is updated, then bump version to refresh UI
         try {
-          const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+          const token = await getCurrentUserIdToken(false);
           const base = typeof window !== "undefined" ? window.location.origin : "";
           await fetch(`${base}/api/storage/recalculate`, {
             method: "POST",
