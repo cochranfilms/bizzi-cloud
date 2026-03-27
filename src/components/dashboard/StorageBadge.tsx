@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { useBackup } from "@/context/BackupContext";
 import { useAuth } from "@/context/AuthContext";
@@ -14,8 +15,11 @@ export default function StorageBadge() {
   const [recalculating, setRecalculating] = useState(false);
   const { storageVersion } = useBackup();
   const { user } = useAuth();
+  const pathname = usePathname();
+  const teamOwnerFromPath =
+    typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
 
-  const fetchProfile = useCallback(() => {
+  const fetchPersonalProfile = useCallback(() => {
     if (!isFirebaseConfigured() || !user) return;
     const db = getFirebaseFirestore();
     getDoc(doc(db, "profiles", user.uid)).then(async (snap) => {
@@ -39,18 +43,53 @@ export default function StorageBadge() {
     });
   }, [user]);
 
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile, storageVersion]);
+  const fetchTeamWorkspaceStorage = useCallback(async () => {
+    if (!isFirebaseConfigured() || !user || !teamOwnerFromPath) return;
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken();
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/storage/personal-team-workspace?team_owner_id=${encodeURIComponent(teamOwnerFromPath)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        storage_used_bytes?: number;
+        storage_quota_bytes?: number;
+      };
+      setStorageUsed(data.storage_used_bytes ?? 0);
+      setStorageQuota(data.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
+    } catch {
+      // keep previous values
+    }
+  }, [user, teamOwnerFromPath]);
+
+  const refresh = useCallback(() => {
+    if (teamOwnerFromPath) void fetchTeamWorkspaceStorage();
+    else fetchPersonalProfile();
+  }, [teamOwnerFromPath, fetchTeamWorkspaceStorage, fetchPersonalProfile]);
 
   useEffect(() => {
-    const handler = () => fetchProfile();
+    refresh();
+  }, [refresh, storageVersion]);
+
+  useEffect(() => {
+    const handler = () => refresh();
     window.addEventListener("subscription-updated", handler);
     return () => window.removeEventListener("subscription-updated", handler);
-  }, [fetchProfile]);
+  }, [refresh]);
 
   const recalculateStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;
+    if (teamOwnerFromPath) {
+      setRecalculating(true);
+      try {
+        await fetchTeamWorkspaceStorage();
+      } finally {
+        setRecalculating(false);
+      }
+      return;
+    }
     setRecalculating(true);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
@@ -67,12 +106,12 @@ export default function StorageBadge() {
     } finally {
       setRecalculating(false);
     }
-  }, [user]);
+  }, [user, teamOwnerFromPath, fetchTeamWorkspaceStorage]);
 
   return (
     <div className="mb-3 rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">
-        Your storage
+        {teamOwnerFromPath ? "Team workspace storage" : "Your storage"}
       </p>
       <p className="text-sm font-medium text-neutral-900 dark:text-white">
         {formatBytes(storageUsed)} of {formatBytes(storageQuota)} used

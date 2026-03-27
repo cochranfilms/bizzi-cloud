@@ -231,3 +231,26 @@ export async function getStorageStatus(
     is_organization_user: !!orgId,
   };
 }
+
+/**
+ * Storage bar for a personal-team workspace: team owner’s plan quota and all bytes that
+ * count toward that quota (owner’s personal + team-container uploads). Used when a
+ * member or owner is routed under `/team/[ownerId]`.
+ */
+export async function getPersonalTeamWorkspaceStorageDisplay(teamOwnerUid: string): Promise<{
+  storage_used_bytes: number;
+  storage_quota_bytes: number;
+}> {
+  const db = getAdminFirestore();
+  const profileSnap = await db.collection("profiles").doc(teamOwnerUid).get();
+  const profileData = profileSnap.data();
+  const profileBillingPastDue = profileData?.billing_status === "past_due";
+  const profileQuota = profileData?.storage_quota_bytes;
+  const storage_quota_bytes = profileBillingPastDue
+    ? FREE_TIER_STORAGE_BYTES
+    : typeof profileQuota === "number"
+      ? profileQuota
+      : FREE_TIER_STORAGE_BYTES;
+  const storage_used_bytes = await sumPersonalBackupBytesForQuota(teamOwnerUid);
+  return { storage_used_bytes, storage_quota_bytes };
+}

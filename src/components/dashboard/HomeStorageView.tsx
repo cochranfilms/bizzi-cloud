@@ -212,9 +212,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const isEnterpriseHome = basePath === "/enterprise";
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
 
-  const isStorageDrive = (d: { name: string }) => d.name === "Storage";
+  const teamAwareBaseName = (name: string) => name.replace(/^\[Team\]\s+/, "");
+  const isStorageDrive = (d: { name: string }) => teamAwareBaseName(d.name) === "Storage";
   const isRawDrive = (d: { isCreatorRaw?: boolean }) => d.isCreatorRaw === true;
-  const isGalleryMediaDrive = (d: { name: string }) => d.name === "Gallery Media";
+  const isGalleryMediaDrive = (d: { name: string }) => teamAwareBaseName(d.name) === "Gallery Media";
   const isSystemDrive = (d: { name: string; isCreatorRaw?: boolean }) =>
     isStorageDrive(d) || isRawDrive(d) || isGalleryMediaDrive(d);
 
@@ -233,8 +234,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       isSystemFolder: isSystemDrive(d),
     }))
     .sort((a, b) => {
-      const order = (name: string) =>
-        name === "Storage" ? 0 : name === "RAW" ? 1 : name === "Gallery Media" ? 2 : 3;
+      const order = (name: string) => {
+        const base = teamAwareBaseName(name);
+        return base === "Storage" ? 0 : base === "RAW" ? 1 : base === "Gallery Media" ? 2 : 3;
+      };
       return order(a.name) - order(b.name);
     });
 
@@ -304,9 +307,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     };
   }, [fileIdFromUrl, router]);
 
-  // Load recent uploads (Storage files from past 72h) on mount and when storage changes
+  // Load recent uploads (Storage files from past 7 days) on mount and when storage changes
   useEffect(() => {
-    if (linkedDrives.some((d) => d.name === "Storage" || d.name === "Uploads")) {
+    if (
+      linkedDrives.some((d) => {
+        const n = d.name.replace(/^\[Team\]\s+/, "");
+        return n === "Storage" || n === "Uploads";
+      })
+    ) {
       fetchRecentUploads();
     }
   }, [fetchRecentUploads, storageVersion, linkedDrives]);
@@ -331,9 +339,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       (!getOrCreateCreatorRawDrive && isPersonalHome && !skipEnsureForTeamMember)
     )
       return;
-    const hasStorage = driveFolders.some((d) => d.name === "Storage");
+    const hasStorage = driveFolders.some((d) => teamAwareBaseName(d.name) === "Storage");
     const hasRaw = driveFolders.some((d) => d.isCreatorRaw);
-    const hasGalleryMedia = driveFolders.some((d) => d.name === "Gallery Media");
+    const hasGalleryMedia = driveFolders.some((d) => teamAwareBaseName(d.name) === "Gallery Media");
     const needsGalleryMedia = !hasGalleryMedia && hasGallerySuite;
 
     if (basePath === "/enterprise") {
@@ -1126,7 +1134,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             Newly created folders will appear here.
           </p>
         )}
-        {(visibleSystemDrives.some((d) => d.name === "Storage") || linkedDrives.some((d) => d.name === "Storage")) && (
+        {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
+          linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
           <>
             <SectionTitle as="h3" className="mb-3 text-xs font-medium">
               Recent Uploads
@@ -1209,7 +1218,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               )
             ) : (
               <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-                Files uploaded to Storage in the past 72 hours will appear here.
+                Files uploaded to Storage in the past 7 days will appear here. (Upload time counts, not camera file dates.)
               </p>
             )}
           </>

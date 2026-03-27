@@ -239,6 +239,9 @@ async function fetchFilesFromFilterApi(
     pageSize?: number;
     cursor?: string | null;
     enterprise?: { organizationId: string };
+    /** When set with dateTo, filter uses upload time and sorts by uploaded_at (ingest order). */
+    dateFrom?: string;
+    dateTo?: string;
   }
 ): Promise<{ files: RecentFile[]; nextCursor: string | null; hasMore: boolean }> {
   const token = await getUserIdToken(user, false);
@@ -250,6 +253,8 @@ async function fetchFilesFromFilterApi(
   if (options.driveId) params.set("drive_id", options.driveId);
   if (options.teamOwnerUserId) params.set("team_owner_id", options.teamOwnerUserId);
   if (options.cursor) params.set("cursor", options.cursor);
+  if (options.dateFrom) params.set("date_from", options.dateFrom);
+  if (options.dateTo) params.set("date_to", options.dateTo);
   if (options.enterprise) {
     params.set("context", "enterprise");
     params.set("organization_id", options.enterprise.organizationId);
@@ -661,10 +666,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     [user, linkedDrives, teamRouteOwnerUid]
   );
 
-  /** Fetches files uploaded to Storage in the past 72 hours. Reference view—files live in Storage, not duplicated. */
+  /** Fetches files uploaded to Storage in the past 7 days. Reference view—files live in Storage, not duplicated. */
   const fetchRecentUploads = useCallback(async (): Promise<RecentFile[]> => {
     if (!isFirebaseConfigured() || !user) return [];
-    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    const recentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const dateFromDay = recentCutoff.slice(0, 10);
+    const dateToDay = new Date().toISOString().slice(0, 10);
     const storageDriveIds = linkedDrives
       .filter((d) => {
         const n = d.name.replace(/^\[Team\]\s+/, "");
@@ -692,6 +699,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 pageSize: 50,
                 cursor,
                 enterprise: { organizationId: drive.organization_id },
+                dateFrom: dateFromDay,
+                dateTo: dateToDay,
               });
             } else {
               pageResult = await fetchFilesFromFilterApi(user, {
@@ -699,22 +708,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 teamOwnerUserId: teamRouteOwnerUid,
                 pageSize: 50,
                 cursor,
+                dateFrom: dateFromDay,
+                dateTo: dateToDay,
               });
             }
             const { files: rows, nextCursor, hasMore } = pageResult;
             for (const row of rows) {
               const dateStr = recentUploadRecencyIso(row);
-              if (!dateStr || dateStr < seventyTwoHoursAgo) continue;
+              if (!dateStr || dateStr < recentCutoff) continue;
               batch.push({
                 ...row,
                 driveName: drive?.name ?? row.driveName ?? "Storage",
               });
             }
-            const lastRow = rows[rows.length - 1];
-            const lastRec = lastRow ? recentUploadRecencyIso(lastRow) : null;
             if (!hasMore || !nextCursor || rows.length === 0) break;
-            // Newest-first: once the oldest item in this page is outside the window, older pages won't qualify.
-            if (!lastRec || lastRec < seventyTwoHoursAgo) break;
             cursor = nextCursor;
           }
         } catch {

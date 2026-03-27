@@ -30,6 +30,19 @@ const MAX_FETCH_FOR_POST_FILTER = 200;
 
 type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc" | "name_desc";
 
+/** When filtering by date range, rank by upload time so “Recent” matches real ingest order (not camera mtime). */
+function timeRankFieldForSort(filters: {
+  sort: SortOption;
+  dateFrom?: string;
+  dateTo?: string;
+}): "modified_at" | "uploaded_at" {
+  const hasDate = !!(filters.dateFrom || filters.dateTo);
+  if (hasDate && (filters.sort === "newest" || filters.sort === "oldest")) {
+    return "uploaded_at";
+  }
+  return "modified_at";
+}
+
 function parseFilters(searchParams: URLSearchParams) {
   const context = searchParams.get("context") ?? undefined;
   const organizationId = searchParams.get("organization_id")?.trim() || null;
@@ -163,6 +176,16 @@ type FiltersWithIds = ReturnType<typeof parseFilters> & {
   commentedFileIds?: Set<string>;
 };
 
+/** Calendar day (yyyy-mm-dd) for date presets: upload time first, then file mtime, then row created. */
+function filterItemCalendarDay(item: Record<string, unknown>): string | undefined {
+  const day = (raw: unknown): string | undefined => {
+    if (typeof raw === "string") return raw.slice(0, 10);
+    const r = raw as { toDate?: () => Date } | undefined;
+    return r?.toDate?.()?.toISOString?.()?.slice(0, 10);
+  };
+  return day(item.uploaded_at) ?? day(item.modified_at) ?? day(item.created_at);
+}
+
 /** Apply in-memory filters that Firestore cannot handle */
 function passesPostFilters(
   item: Record<string, unknown>,
@@ -206,17 +229,12 @@ function passesPostFilters(
     if (!hasAll) return false;
   }
   if (filters.starred && !(item.is_starred as boolean)) return false;
-  const getDateStr = (raw: unknown): string | undefined => {
-    if (typeof raw === "string") return raw.slice(0, 10);
-    const r = raw as { toDate?: () => Date } | undefined;
-    return r?.toDate?.()?.toISOString?.()?.slice(0, 10);
-  };
   if (filters.dateFrom) {
-    const m = getDateStr(item.modified_at ?? item.created_at);
+    const m = filterItemCalendarDay(item);
     if (!m || m < filters.dateFrom) return false;
   }
   if (filters.dateTo) {
-    const m = getDateStr(item.modified_at ?? item.created_at);
+    const m = filterItemCalendarDay(item);
     if (!m || m > filters.dateTo) return false;
   }
   if (filters.sizeMin != null && filters.sizeMin >= 0) {
@@ -611,7 +629,7 @@ export async function GET(request: Request) {
       const allDocs = results.flatMap((s) => s.docs);
       const orderField =
         filters.sort === "newest" || filters.sort === "oldest"
-          ? "modified_at"
+          ? timeRankFieldForSort(filters)
           : filters.sort === "largest" || filters.sort === "smallest"
             ? "size_bytes"
             : "relative_path";
@@ -652,7 +670,9 @@ export async function GET(request: Request) {
         !!filters.lens ||
         !!filters.editedStatus ||
         !!filters.shared ||
-        !!filters.commented;
+        !!filters.commented ||
+        !!filters.dateFrom ||
+        !!filters.dateTo;
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -711,7 +731,7 @@ export async function GET(request: Request) {
       const allDocs = results.flatMap((s) => s.docs);
       const orderFieldEarly =
         filters.sort === "newest" || filters.sort === "oldest"
-          ? "modified_at"
+          ? timeRankFieldForSort(filters)
           : filters.sort === "largest" || filters.sort === "smallest"
             ? "size_bytes"
             : "relative_path";
@@ -759,7 +779,9 @@ export async function GET(request: Request) {
         !!filters.lens ||
         !!filters.editedStatus ||
         !!filters.shared ||
-        !!filters.commented;
+        !!filters.commented ||
+        !!filters.dateFrom ||
+        !!filters.dateTo;
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -848,7 +870,7 @@ export async function GET(request: Request) {
   })();
   const orderField =
     filters.sort === "newest" || filters.sort === "oldest"
-      ? "modified_at"
+      ? timeRankFieldForSort(filters)
       : filters.sort === "largest" || filters.sort === "smallest"
         ? "size_bytes"
         : "relative_path";
@@ -856,14 +878,12 @@ export async function GET(request: Request) {
     filters.sort === "oldest" || filters.sort === "smallest" || filters.sort === "name_asc"
       ? "asc"
       : "desc";
-  if (orderField === "modified_at" && (filters.dateFrom || filters.dateTo)) {
-    if (filters.dateFrom) q = q.where("modified_at", ">=", filters.dateFrom);
-    if (filters.dateTo) q = q.where("modified_at", "<=", filters.dateTo);
-  } else if (orderField === "size_bytes" && (filters.sizeMin != null || filters.sizeMax != null)) {
+  if (orderField === "size_bytes" && (filters.sizeMin != null || filters.sizeMax != null)) {
     if (filters.sizeMin != null && filters.sizeMin >= 0) q = q.where("size_bytes", ">=", filters.sizeMin);
     if (filters.sizeMax != null && filters.sizeMax > 0) q = q.where("size_bytes", "<=", filters.sizeMax);
   }
   q = q.orderBy(orderField, orderDir);
+  const hasDateRangeFilter = !!(filters.dateFrom || filters.dateTo);
   const needsPostFilter =
     !!filters.resolution ||
     !!filters.codec ||
@@ -886,7 +906,7 @@ export async function GET(request: Request) {
     !!filters.editedStatus ||
     !!filters.shared ||
     !!filters.commented ||
-    (orderField !== "modified_at" && (!!filters.dateFrom || !!filters.dateTo)) ||
+    hasDateRangeFilter ||
     (orderField !== "size_bytes" && ((filters.sizeMin != null && filters.sizeMin >= 0) || (filters.sizeMax != null && filters.sizeMax > 0)));
   const fetchLimit = needsPostFilter ? MAX_FETCH_FOR_POST_FILTER : filters.pageSize;
 
