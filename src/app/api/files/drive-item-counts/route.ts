@@ -1,12 +1,15 @@
 /**
  * GET /api/files/drive-item-counts
  * Per-drive file counts using Admin SDK and the same access rules as /api/files/filter.
- * Active vs trash uses lifecycle_state (not deleted_at). Trash counts = restorable rows only (trashed).
+ * Personal/team drives: counts walk non-org rows and apply the same lifecycle + scope rules as filter
+ * (so legacy rows without lifecycle_state still match). Enterprise path still uses lifecycle_state queries.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   BACKUP_LIFECYCLE_ACTIVE,
   BACKUP_LIFECYCLE_TRASHED,
+  isBackupFileActiveForListing,
+  resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
@@ -14,13 +17,55 @@ import {
   getAccessibleWorkspaceIds,
   userHasActiveOrganizationSeat,
 } from "@/lib/workspace-access";
-import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
+import {
+  fileBelongsToPersonalTeamContainer,
+  isPersonalScopeDriveDoc,
+  isPersonalScopeFileDoc,
+  isTeamContainerDriveDoc,
+} from "@/lib/backup-scope";
+import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 
 const WORKSPACE_IN_LIMIT = 30;
+const PERSONAL_DRIVE_COUNT_PAGE = 500;
 
 function lifecycleStateForDriveCount(trashOnly: boolean): string {
   return trashOnly ? BACKUP_LIFECYCLE_TRASHED : BACKUP_LIFECYCLE_ACTIVE;
+}
+
+/** Non-org files on a drive: matches filter API (lifecycle resolved in memory for legacy docs). */
+async function countNonOrgDriveFilesByLifecycle(
+  db: Firestore,
+  driveId: string,
+  trashOnly: boolean,
+  fileScope: (data: Record<string, unknown>) => boolean
+): Promise<number> {
+  const coll = db.collection("backup_files");
+  let total = 0;
+  let cursor: QueryDocumentSnapshot | undefined;
+  for (;;) {
+    let q = coll
+      .where("linked_drive_id", "==", driveId)
+      .where("organization_id", "==", null)
+      .orderBy("uploaded_at", "desc")
+      .limit(PERSONAL_DRIVE_COUNT_PAGE);
+    if (cursor) q = q.startAfter(cursor);
+    const snap = await q.get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) {
+      const d = doc.data() as Record<string, unknown>;
+      if (!fileScope(d)) continue;
+      if (trashOnly) {
+        if (resolveBackupFileLifecycleState(d) !== BACKUP_LIFECYCLE_TRASHED) continue;
+      } else if (!isBackupFileActiveForListing(d)) {
+        continue;
+      }
+      total += 1;
+    }
+    if (snap.docs.length < PERSONAL_DRIVE_COUNT_PAGE) break;
+    cursor = snap.docs[snap.docs.length - 1];
+  }
+  return total;
 }
 
 export async function GET(request: Request) {
@@ -85,16 +130,21 @@ export async function GET(request: Request) {
         const driveSnap = await db.collection("linked_drives").doc(driveId).get();
         const data = driveSnap.data();
         const owner = (data?.userId ?? data?.user_id) as string | undefined;
-        if (!data || owner !== uid || data.organization_id) {
+        if (
+          !data ||
+          owner !== uid ||
+          data.organization_id ||
+          !isPersonalScopeDriveDoc(data as Record<string, unknown>)
+        ) {
           counts[driveId] = 0;
           return;
         }
-        const coll = db.collection("backup_files");
-        const q = coll
-          .where("linked_drive_id", "==", driveId)
-          .where("lifecycle_state", "==", ls);
-        const agg = await q.count().get();
-        counts[driveId] = agg.data().count;
+        counts[driveId] = await countNonOrgDriveFilesByLifecycle(
+          db,
+          driveId,
+          trashOnly,
+          isPersonalScopeFileDoc
+        );
       })
     );
     return NextResponse.json({ counts });
@@ -140,10 +190,12 @@ export async function GET(request: Request) {
           counts[driveId] = 0;
           return;
         }
-        const coll = db.collection("backup_files");
-        const q = coll.where("linked_drive_id", "==", driveId).where("lifecycle_state", "==", ls);
-        const agg = await q.count().get();
-        counts[driveId] = agg.data().count;
+        counts[driveId] = await countNonOrgDriveFilesByLifecycle(
+          db,
+          driveId,
+          trashOnly,
+          (d) => fileBelongsToPersonalTeamContainer(d, teamOwnerId)
+        );
       })
     );
     return NextResponse.json({ counts });

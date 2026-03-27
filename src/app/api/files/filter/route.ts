@@ -809,7 +809,7 @@ export async function GET(request: Request) {
       q = db
         .collection("backup_files")
         .where("linked_drive_id", "in", idList)
-        .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
+        .where("organization_id", "==", null);
     } else {
       const batches = [];
       for (let i = 0; i < idList.length; i += PERSONAL_DRIVE_IN_LIMIT) {
@@ -818,7 +818,7 @@ export async function GET(request: Request) {
           db
             .collection("backup_files")
             .where("linked_drive_id", "in", batch)
-            .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+            .where("organization_id", "==", null)
             .limit(MAX_FETCH_FOR_POST_FILTER * 2)
             .get()
         );

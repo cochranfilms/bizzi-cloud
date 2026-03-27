@@ -36,11 +36,14 @@ async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<numbe
       .where("organization_id", "==", null)
       .get(),
   ]);
+  const seen = new Set<string>();
   let used = 0;
   for (const snap of [asOwner, asTeamHost]) {
     for (const docSnap of snap.docs) {
+      if (seen.has(docSnap.id)) continue;
       const data = docSnap.data();
       if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
+      seen.add(docSnap.id);
       used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   }

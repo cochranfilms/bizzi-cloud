@@ -25,7 +25,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
-import { isTeamContainerDriveDoc } from "@/lib/backup-scope";
+import { isPersonalScopeDriveDoc, isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import type { LinkedDrive } from "@/types/backup";
 import { enumerateFiles } from "@/lib/sync-engine";
 import { UploadManager, type QueuedFile } from "@/lib/upload-manager";
@@ -1185,21 +1185,24 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             last_synced_at: new Date().toISOString(),
           });
 
-          const profileRef = doc(db, "profiles", uid);
-          const profileSnap = await getDoc(profileRef);
-          const current = profileSnap.exists()
-            ? (profileSnap.data().storage_used_bytes ?? 0) + bytesSynced
-            : bytesSynced;
-          await setDoc(
-            profileRef,
-            {
-              userId: uid,
-              email: currentUser.email ?? null,
-              storage_used_bytes: current,
-              storage_quota_bytes: FREE_TIER_STORAGE_BYTES,
-            },
-            { merge: true }
-          );
+          const driveForScope = drive as unknown as Record<string, unknown>;
+          if (isPersonalScopeDriveDoc(driveForScope)) {
+            const profileRef = doc(db, "profiles", uid);
+            const profileSnap = await getDoc(profileRef);
+            const current = profileSnap.exists()
+              ? (profileSnap.data().storage_used_bytes ?? 0) + bytesSynced
+              : bytesSynced;
+            await setDoc(
+              profileRef,
+              {
+                userId: uid,
+                email: currentUser.email ?? null,
+                storage_used_bytes: current,
+                storage_quota_bytes: FREE_TIER_STORAGE_BYTES,
+              },
+              { merge: true }
+            );
+          }
         }
 
         setSyncProgress((prev) =>

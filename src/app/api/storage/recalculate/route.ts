@@ -1,4 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { isPersonalScopeFileDoc } from "@/lib/backup-scope";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
 
   const db = getAdminFirestore();
 
-  // Sum size_bytes from all non-deleted backup_files for this user
+  // Profile storage bar = solo personal scope (not org, not personal-team container attribution).
   const filesSnap = await db
     .collection("backup_files")
     .where("userId", "==", uid)
@@ -55,8 +57,9 @@ export async function POST(request: Request) {
 
   let totalBytes = 0;
   for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (data.deleted_at) continue; // Exclude soft-deleted files
+    const data = docSnap.data() as Record<string, unknown>;
+    if (!isBackupFileActiveForListing(data)) continue;
+    if (!isPersonalScopeFileDoc(data)) continue;
     totalBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
   }
 
