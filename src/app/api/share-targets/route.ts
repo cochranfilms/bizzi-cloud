@@ -142,7 +142,7 @@ export async function GET(request: Request) {
       kind: "enterprise_workspace",
       id: shareWsId,
       label: orgName,
-      subtitle: "Organization · All members",
+      subtitle: "Org · All members",
       hrefHint: "/enterprise/shared",
     });
   }

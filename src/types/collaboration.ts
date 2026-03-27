@@ -79,6 +79,10 @@ export interface Notification {
     workspaceShareName?: string;
     workspaceTargetKey?: string;
     shareToken?: string;
+    /** Where members see the share (personal team Shared vs enterprise Shared) */
+    shareInboxScopeLabel?: string;
+    /** Where the content lives (personal vs org private drive), to disambiguate for admins */
+    shareSourceLabel?: string;
   } | null;
 }
 

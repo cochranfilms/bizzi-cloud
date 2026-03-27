@@ -1,7 +1,7 @@
 <!--
   EmailJS: EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE
   Params: to_email, sender_name, sender_photo_url, file_names_html, share_title, share_url, logo_url,
-          scope_label, workspace_name, cta_url
+          scope_label, workspace_name, cta_url, share_context_detail (inbox tab + source; may be empty)
   Subject (EmailJS dashboard): {{sender_name}} shared {{share_title}} with {{workspace_name}} ({{scope_label}})
 -->
 <!DOCTYPE html>
@@ -36,6 +36,7 @@
   </div>
   <h1>{{sender_name}} shared content with {{workspace_name}}</h1>
   <p class="meta">Scope: {{scope_label}} — you are receiving this as an organization or team admin.</p>
+  <p class="meta">{{share_context_detail}}</p>
   <p>Hello,</p>
   <p>{{sender_name}} shared the following with <strong>{{workspace_name}}</strong> on BizziCloud. Seat members were notified in the app.</p>
 

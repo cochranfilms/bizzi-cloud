@@ -87,6 +87,8 @@ export interface ShareWorkspaceAdminEmailParams {
   scope_label: string;
   workspace_name: string;
   cta_url: string;
+  /** Inbox route + source drive (optional; empty string if unused in template) */
+  share_context_detail?: string;
 }
 
 /**
@@ -689,6 +691,7 @@ export async function sendWorkspaceShareAdminNotificationEmail(params: {
   scopeLabel: string;
   workspaceName: string;
   ctaUrl: string;
+  shareContextDetail?: string;
 }): Promise<void> {
   if (!getShareWorkspaceConfig() || !params.toEmail?.trim()) return;
 
@@ -735,6 +738,7 @@ export async function sendWorkspaceShareAdminNotificationEmail(params: {
       scope_label: params.scopeLabel,
       workspace_name: params.workspaceName,
       cta_url: params.ctaUrl,
+      share_context_detail: params.shareContextDetail ?? "",
     });
   } catch (err) {
     console.error("[EmailJS] Workspace share admin email error:", err);

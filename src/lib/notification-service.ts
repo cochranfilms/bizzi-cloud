@@ -327,6 +327,8 @@ export async function createWorkspaceShareNotifications(params: {
   workspaceTargetKey: string;
   kind: WorkspaceShareTargetKind;
   targetId: string;
+  shareInboxScopeLabel?: string;
+  shareSourceLabel?: string | null;
 }): Promise<void> {
   const db = getAdminFirestore();
   const recipientUids = await getUserIdsForWorkspaceShareInbox(
@@ -349,6 +351,8 @@ export async function createWorkspaceShareNotifications(params: {
       workspaceShareName: params.workspaceShareName,
       workspaceTargetKey: params.workspaceTargetKey,
       shareToken: params.folderShareId,
+      shareInboxScopeLabel: params.shareInboxScopeLabel,
+      shareSourceLabel: params.shareSourceLabel ?? undefined,
     }).filter(([, v]) => v !== undefined)
   ) as NonNullable<Notification["metadata"]>;
 

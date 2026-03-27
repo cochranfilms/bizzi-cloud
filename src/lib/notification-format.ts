@@ -28,11 +28,15 @@ export function formatNotificationMessage(
       return `${actor} hearted your video`;
     case "file_shared": {
       const wsName = metadata?.workspaceShareName?.trim();
+      const inbox = metadata?.shareInboxScopeLabel?.trim();
+      const src = metadata?.shareSourceLabel?.trim();
+      const itemLabel =
+        fileCount > 1 ? `${fileCount} files` : folderName ?? fileName;
       if (wsName) {
-        if (fileCount > 1) {
-          return `${actor} shared ${fileCount} files with ${wsName}`;
-        }
-        return `${actor} shared ${folderName ?? fileName} with ${wsName}`;
+        const parts = [`${actor} shared ${itemLabel} with ${wsName}`];
+        if (inbox) parts.push(inbox);
+        if (src) parts.push(src);
+        return parts.join(" · ");
       }
       if (fileCount > 1) {
         return `${actor} shared ${fileCount} files with you`;

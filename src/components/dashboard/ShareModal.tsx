@@ -522,18 +522,44 @@ export default function ShareModal({
   );
 
   const handleClose = useCallback(async () => {
-    const token = shareToken ?? initialShareToken ?? null;
+    if (loading) return;
+
+    let token = shareToken ?? initialShareToken ?? null;
+
+    if (recipientTab === "workspace" && !initialShareToken) {
+      if (!workspaceTarget) {
+        setNameError("Select a team or organization workspace first.");
+        return;
+      }
+      if (!shareName.trim()) {
+        setNameError("Please name your share before closing.");
+        return;
+      }
+      const canCreate =
+        Boolean(linkedDriveId) ||
+        (Array.isArray(referencedFileIds) && referencedFileIds.length > 0);
+      if (!canCreate) {
+        setError("Nothing to share (missing folder or file context).");
+        return;
+      }
+      if (!token) {
+        const created = await ensureShare();
+        if (!created) return;
+        token = created;
+      }
+    }
+
     const nameChanged =
       token &&
       user &&
       shareName.trim().length > 0 &&
       shareName.trim() !== folderName.trim();
 
-    if (nameChanged) {
+    if (nameChanged && token) {
       setLoading(true);
       try {
         const authToken = await user.getIdToken();
-        const res = await fetch(`/api/shares/${encodeURIComponent(token!)}`, {
+        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -563,6 +589,12 @@ export default function ShareModal({
     shareName,
     folderName,
     shareVersion,
+    loading,
+    recipientTab,
+    workspaceTarget,
+    linkedDriveId,
+    referencedFileIds,
+    ensureShare,
   ]);
 
   if (!open) return null;

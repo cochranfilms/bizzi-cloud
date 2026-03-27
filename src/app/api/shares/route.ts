@@ -65,6 +65,13 @@ async function workspaceDisplayContext(
   const ws = wsSnap.data()!;
   const orgId = ws.organization_id as string;
   const wsType = (ws.workspace_type as WorkspaceType) ?? "private";
+  if (wsType === "org_shared" && orgId) {
+    const orgSnap = await db.collection("organizations").doc(orgId).get();
+    const orgName = (orgSnap.data()?.name as string | undefined)?.trim();
+    if (orgName) {
+      return { name: orgName, scopeLabel: "Org", organizationId: orgId };
+    }
+  }
   return {
     name: ((ws.name as string) ?? "Workspace").trim() || "Workspace",
     scopeLabel: scopeLabelForWorkspaceType(wsType),
@@ -101,6 +108,10 @@ function appBaseUrl(): string {
   return "https://www.bizzicloud.io";
 }
 
+function workspaceShareInboxLabel(kind: WorkspaceShareTargetKind): string {
+  return kind === "personal_team" ? "Personal team · Shared tab" : "Org · Shared tab";
+}
+
 async function deliverShareNotificationsAndEmail(params: {
   db: Firestore;
   uid: string;
@@ -113,6 +124,8 @@ async function deliverShareNotificationsAndEmail(params: {
   fileIds: string[];
   invitedEmails: string[];
   permission: string;
+  /** Where the shared files live (personal vs org private), for notification disambiguation */
+  shareSourceLabel?: string | null;
 }): Promise<void> {
   const actorDisplayName = await resolveActorDisplayNameForShare(params.uid, params.email);
   if (params.recipientMode === "email" && params.invitedEmails.length > 0) {
@@ -159,6 +172,8 @@ async function deliverShareNotificationsAndEmail(params: {
       workspaceTargetKey: workspaceTargetKey(params.workspaceKind, params.workspaceTargetId),
       kind: params.workspaceKind,
       targetId: params.workspaceTargetId,
+      shareInboxScopeLabel: workspaceShareInboxLabel(params.workspaceKind),
+      shareSourceLabel: params.shareSourceLabel ?? null,
     });
     let adminEmail: string | null = null;
     if (params.workspaceKind === "enterprise_workspace" && ctx.organizationId) {
@@ -175,6 +190,13 @@ async function deliverShareNotificationsAndEmail(params: {
       params.workspaceKind === "personal_team"
         ? `${base}/team/${params.workspaceTargetId}/shared`
         : `${base}/enterprise/shared`;
+    const shareContextDetail = [
+      workspaceShareInboxLabel(params.workspaceKind),
+      params.shareSourceLabel?.trim() || null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
     await sendWorkspaceShareAdminNotificationEmail({
       toEmail: adminEmail,
       sharedByUserId: params.uid,
@@ -185,6 +207,7 @@ async function deliverShareNotificationsAndEmail(params: {
       scopeLabel: ctx.scopeLabel,
       workspaceName: ctx.name,
       ctaUrl,
+      shareContextDetail: shareContextDetail || undefined,
     });
   }
 }
@@ -682,6 +705,7 @@ export async function POST(request: Request) {
       fileIds: uniqueIds,
       invitedEmails: (shareData.invited_emails as string[]) ?? [],
       permission,
+      shareSourceLabel: recipientMode === "workspace" ? "From your files" : null,
     });
 
     logActivityEvent({
@@ -728,6 +752,19 @@ export async function POST(request: Request) {
   const driveUserId = driveData?.userId ?? driveData?.user_id;
   if (driveUserId !== uid) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  let shareSourceLabelForWorkspace: string | null = null;
+  if (recipientMode === "workspace") {
+    const driveOrgId = driveData?.organization_id as string | undefined;
+    if (!driveOrgId) {
+      shareSourceLabelForWorkspace = "From personal workspace";
+    } else {
+      const orgSnap = await db.collection("organizations").doc(driveOrgId).get();
+      const on =
+        (orgSnap.data()?.name as string | undefined)?.trim() || "Org";
+      shareSourceLabelForWorkspace = `From private workspace · ${on}`;
+    }
   }
 
   let backupFileIdToStore: string | null = null;
@@ -865,6 +902,7 @@ export async function POST(request: Request) {
     fileIds: fileIdsStd,
     invitedEmails: (shareData.invited_emails as string[]) ?? [],
     permission,
+    shareSourceLabel: shareSourceLabelForWorkspace,
   });
 
   return NextResponse.json({
