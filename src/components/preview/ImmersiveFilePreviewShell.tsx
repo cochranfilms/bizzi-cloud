@@ -1,13 +1,25 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { useMemo, useEffect, useLayoutEffect, useState, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
+import { useThemeResolved } from "@/context/ThemeContext";
+import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
+import { useEnterpriseOptional } from "@/context/EnterpriseContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
+import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
 
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
 
-const BACKDROP_FILTER = "blur(24px) saturate(1.12)";
+const BACKDROP_BLUR = "blur(44px) saturate(1.06)";
+
+function workspaceChromeShadow(outlineHex: string, innerAccent: string): CSSProperties {
+  return {
+    boxShadow: `0 0 0 1px ${innerAccent}, 0 0 0 3px ${outlineHex}`,
+  };
+}
 
 export interface ImmersiveFilePreviewShellProps {
   onClose: () => void;
@@ -42,6 +54,35 @@ export default function ImmersiveFilePreviewShell({
   belowFold,
   variant = "app",
 }: ImmersiveFilePreviewShellProps) {
+  const pathname = usePathname();
+  const theme = useThemeResolved();
+  const isDark = theme === "dark";
+  const appearance = useDashboardAppearanceOptional();
+  const enterprise = useEnterpriseOptional();
+  const teamWs = usePersonalTeamWorkspace();
+
+  const workspaceAccent = useMemo(
+    () =>
+      resolveImmersiveWorkspaceAccent({
+        pathname,
+        orgTheme: enterprise?.org?.theme ?? enterprise?.organization?.theme,
+        teamThemeId: teamWs?.teamThemeId,
+        dashboardAccentHex: appearance?.accentColor ?? "#00BFFF",
+      }),
+    [
+      pathname,
+      enterprise?.org?.theme,
+      enterprise?.organization?.theme,
+      teamWs?.teamThemeId,
+      appearance?.accentColor,
+    ]
+  );
+
+  const appOutlineLight = "#ffffff";
+  const appOutlineDark = "#0a0a0a";
+  const appOutline = isDark ? appOutlineDark : appOutlineLight;
+  const appPanelOutlineStyle = workspaceChromeShadow(appOutline, workspaceAccent);
+
   const [mountEl, setMountEl] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
     setMountEl(document.body);
@@ -64,14 +105,43 @@ export default function ImmersiveFilePreviewShell({
   }, [onClose]);
 
   const isGallery = variant === "gallery";
-  const barBorder = isGallery ? "border-white/10" : "border-neutral-200/25 dark:border-white/10";
-  const barBg = isGallery ? "bg-black/50" : "bg-white/88 dark:bg-black/50";
-  const titleClass = isGallery ? "text-white/95" : "text-neutral-900 dark:text-white/95";
+
+  /** Dimmed scrim: stronger blur + opacity so dashboard behind reads as background only. */
+  const backdropTint = isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)";
+  const backdropStyle: CSSProperties = {
+    WebkitBackdropFilter: BACKDROP_BLUR,
+    backdropFilter: BACKDROP_BLUR,
+    backgroundColor: backdropTint,
+  };
+
+  const galleryRailShadow = workspaceChromeShadow("rgba(255,255,255,0.92)", workspaceAccent);
+
+  /** Gallery uses visible borders; app chrome uses `workspaceChromeShadow` only (no double outline). */
+  const barBorder = isGallery ? "border-2 border-white/90" : "border-0";
+
+  const barBg = isGallery
+    ? "bg-black/52"
+    : isDark
+      ? "bg-neutral-950/76"
+      : "bg-white/80";
+
+  const titleClass = isGallery
+    ? "text-white/95"
+    : isDark
+      ? "text-white"
+      : "text-neutral-950";
+
   const closeBtn = isGallery
     ? "text-white/90 hover:bg-white/15"
-    : "text-neutral-700 hover:bg-neutral-900/10 dark:text-white/90 dark:hover:bg-white/10";
-  const asideDivider =
-    isGallery ? "border-white/10" : "border-neutral-200/50 dark:border-white/10";
+    : isDark
+      ? "text-white/90 hover:bg-white/10"
+      : "text-neutral-900 hover:bg-neutral-900/10";
+
+  const asideDivider = isGallery
+    ? "border-white/15"
+    : isDark
+      ? "border-neutral-800"
+      : "border-neutral-200";
 
   const hasRight = !!rightRail;
   const hasBelowOnly = !!belowFold && !hasRight;
@@ -85,8 +155,14 @@ export default function ImmersiveFilePreviewShell({
       : "max-h-[min(82dvh,calc(100dvh-6.5rem))] sm:max-h-[min(84dvh,calc(100dvh-7rem))]";
 
   const belowFoldClass = isGallery
-    ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border border-white/10 bg-black/40 px-1 pt-6 shadow-[0_8px_40px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-black/45 sm:mt-4 sm:px-2 sm:pt-8"
-    : "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border border-neutral-200/40 bg-white/90 pt-6 shadow-sm dark:border-white/10 dark:bg-neutral-950/70 dark:backdrop-blur-md sm:mt-4 sm:pt-8";
+    ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-xl border-2 border-white/88 bg-black/45 px-1 pt-6 shadow-[0_8px_40px_rgba(0,0,0,0.35)] sm:mt-4 sm:px-2 sm:pt-8"
+    : isDark
+      ? "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border-0 bg-neutral-950/72 pt-6 shadow-lg backdrop-blur-xl sm:mt-4 sm:pt-8"
+      : "relative z-10 mx-auto mt-2 w-full max-w-3xl shrink-0 rounded-2xl border-0 bg-white/80 pt-6 shadow-md backdrop-blur-xl sm:mt-4 sm:pt-8";
+
+  const headerStyle: CSSProperties | undefined = isGallery
+    ? workspaceChromeShadow("rgba(255,255,255,0.9)", workspaceAccent)
+    : appPanelOutlineStyle;
 
   const shell = (
     <div
@@ -98,11 +174,8 @@ export default function ImmersiveFilePreviewShell({
     >
       <button
         type="button"
-        className="absolute inset-0 z-0 cursor-zoom-out border-0 bg-neutral-950/70 p-0 dark:bg-black/72 md:bg-neutral-950/65"
-        style={{
-          WebkitBackdropFilter: BACKDROP_FILTER,
-          backdropFilter: BACKDROP_FILTER,
-        }}
+        className="absolute inset-0 z-0 cursor-zoom-out border-0 p-0"
+        style={backdropStyle}
         aria-label="Close preview"
         onClick={onClose}
       />
@@ -112,8 +185,8 @@ export default function ImmersiveFilePreviewShell({
         onClick={(e) => e.stopPropagation()}
       >
         <header
-          className={`relative z-20 mb-2 flex min-h-12 shrink-0 items-center gap-3 border-b px-0 py-2.5 backdrop-blur-2xl sm:mb-3 ${barBorder} ${barBg}`}
-          style={{ WebkitBackdropFilter: "blur(20px)", backdropFilter: "blur(20px)" }}
+          className={`relative z-20 mb-2 flex min-h-12 shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 backdrop-blur-2xl sm:mb-3 sm:rounded-2xl sm:px-4 ${barBorder} ${barBg}`}
+          style={{ WebkitBackdropFilter: "blur(20px)", backdropFilter: "blur(20px)", ...headerStyle }}
         >
           {title ? (
             <h2
@@ -154,9 +227,12 @@ export default function ImmersiveFilePreviewShell({
                   <div
                     className={
                       isGallery
-                        ? "w-full max-w-4xl shrink-0 rounded-xl border border-white/12 bg-black/45 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
-                        : "w-full max-w-4xl shrink-0 rounded-2xl border border-neutral-200/60 bg-white/90 px-3 py-3 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-neutral-950/65 sm:px-4"
+                        ? "w-full max-w-4xl shrink-0 rounded-xl border-2 border-white/88 bg-black/48 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
+                        : isDark
+                          ? "w-full max-w-4xl shrink-0 rounded-2xl border-0 bg-neutral-950/74 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
+                          : "w-full max-w-4xl shrink-0 rounded-2xl border-0 bg-white/82 px-3 py-3 shadow-md backdrop-blur-xl sm:px-4"
                     }
+                    style={isGallery ? galleryRailShadow : appPanelOutlineStyle}
                   >
                     {toolsBottom}
                   </div>
@@ -174,7 +250,10 @@ export default function ImmersiveFilePreviewShell({
               </div>
 
               {hasBelowOnly ? (
-                <div className={`${belowFoldClass} mt-2 max-h-[40dvh] shrink-0 overflow-y-auto lg:max-h-[36dvh]`}>
+                <div
+                  className={`${belowFoldClass} mt-2 max-h-[40dvh] shrink-0 overflow-y-auto lg:max-h-[36dvh]`}
+                  style={isGallery ? undefined : appPanelOutlineStyle}
+                >
                   {belowFold}
                 </div>
               ) : null}
@@ -184,9 +263,12 @@ export default function ImmersiveFilePreviewShell({
               <aside
                 className={
                   isGallery
-                    ? `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-white/12 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl dark:border-white/10 dark:bg-black/50 sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:border-l lg:pl-5`
-                    : `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border border-neutral-200/55 bg-white/92 shadow-md backdrop-blur-xl dark:border-white/10 dark:bg-neutral-950/72 sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:border-l lg:pl-5`
+                    ? `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border-2 border-white/88 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
+                    : isDark
+                      ? `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-neutral-950/76 shadow-lg backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
+                      : `mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-white/82 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(22rem,32vw)] lg:max-w-md lg:flex-shrink-0 lg:pl-5`
                 }
+                style={isGallery ? galleryRailShadow : appPanelOutlineStyle}
               >
                 <div className="max-h-[min(42dvh,520px)] overflow-y-auto p-4 sm:p-5 lg:max-h-[calc(100dvh-5.5rem)]">
                   {rightRail}

@@ -10,6 +10,7 @@ interface CommentItemProps {
   onEdit: (commentId: string, body: string) => Promise<boolean>;
   onDelete: (commentId: string) => Promise<boolean>;
   onReply?: (parentCommentId: string, body: string) => Promise<unknown>;
+  immersiveChrome?: boolean;
 }
 
 export default function CommentItem({
@@ -18,6 +19,7 @@ export default function CommentItem({
   onEdit,
   onDelete,
   onReply,
+  immersiveChrome = false,
 }: CommentItemProps) {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(comment.body);
@@ -25,7 +27,13 @@ export default function CommentItem({
 
   if (comment.isDeleted) {
     return (
-      <div className="py-2 text-sm italic text-neutral-500 dark:text-neutral-400">
+      <div
+        className={
+          immersiveChrome
+            ? "py-2 text-sm italic text-neutral-600 dark:text-neutral-300"
+            : "py-2 text-sm italic text-neutral-500 dark:text-neutral-400"
+        }
+      >
         [deleted]
       </div>
     );
@@ -41,7 +49,11 @@ export default function CommentItem({
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value.slice(0, 2000))}
                 rows={2}
-                className="min-h-[4rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-bizzi-blue focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
+                className={
+                  immersiveChrome
+                    ? "min-h-[4rem] w-full resize-y rounded-lg border-2 border-neutral-800 bg-white px-3 py-2 text-sm text-neutral-950 focus:border-bizzi-blue focus:outline-none dark:border-white/45 dark:bg-neutral-950/55 dark:text-white"
+                    : "min-h-[4rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-bizzi-blue focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
+                }
               />
               <div className="flex flex-col gap-1">
                 <button
@@ -67,11 +79,23 @@ export default function CommentItem({
               </div>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-neutral-200">
+            <p
+              className={
+                immersiveChrome
+                  ? "whitespace-pre-wrap break-words text-sm text-neutral-950 dark:text-white"
+                  : "whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-neutral-200"
+              }
+            >
               {comment.body}
             </p>
           )}
-          <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+          <p
+            className={
+              immersiveChrome
+                ? "mt-0.5 text-xs text-neutral-700 dark:text-neutral-300"
+                : "mt-0.5 text-xs text-neutral-500 dark:text-neutral-400"
+            }
+          >
             {isOwn ? "You" : "Author"}
             {comment.isEdited && " · Edited"}
           </p>
@@ -81,7 +105,11 @@ export default function CommentItem({
             <button
               type="button"
               onClick={() => setMenuOpen(!menuOpen)}
-              className="rounded p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-800"
+              className={
+                immersiveChrome
+                  ? "rounded p-1 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-900/10 group-hover:opacity-100 dark:text-neutral-300 dark:hover:bg-white/10"
+                  : "rounded p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-800"
+              }
               aria-label="Comment options"
             >
               <MoreHorizontal className="h-4 w-4" />

@@ -288,7 +288,14 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const isEnterpriseContext = useIsEnterpriseContext();
   const teamRouteOwnerUid = useTeamRouteOwnerUid();
   const creatorOnly = options?.creatorOnly ?? false;
-  const { linkedDrives, storageVersion, bumpStorageVersion, unlinkDrive, fetchDrives } = useBackup();
+  const {
+    linkedDrives,
+    storageVersion,
+    bumpStorageVersion,
+    unlinkDrive,
+    fetchDrives,
+    loading: backupDrivesLoading,
+  } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [recentUploads, setRecentUploads] = useState<RecentFile[]>([]);
@@ -309,6 +316,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     }
 
     const isBackgroundRefetch = hasInitiallyLoadedRef.current;
+    let deferFolderReveal = false;
     try {
       if (!isBackgroundRefetch) setLoading(true);
       const db = getFirebaseFirestore();
@@ -318,6 +326,19 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         creatorOnly,
         teamRouteOwnerUid,
       });
+
+      // Match team workspace: do not paint an empty folder grid while linked_drives are still loading.
+      // Enterprise used to flash empty→full when org + drives resolved out of sync.
+      const awaitingWorkspaceDrives =
+        backupDrivesLoading &&
+        scoped.length === 0 &&
+        ((isEnterpriseContext && !!orgId) ||
+          (!!teamRouteOwnerUid && !isEnterpriseContext));
+      if (awaitingWorkspaceDrives) {
+        deferFolderReveal = true;
+        return;
+      }
+
       const driveMap = new Map(
         scoped.map((d) => [
           d.id,
@@ -443,9 +464,19 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       setRecentFiles([]);
     } finally {
       hasInitiallyLoadedRef.current = true;
-      setLoading(false);
+      if (!deferFolderReveal) {
+        setLoading(false);
+      }
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]);
+  }, [
+    user,
+    isEnterpriseContext,
+    orgId,
+    creatorOnly,
+    linkedDrives,
+    teamRouteOwnerUid,
+    backupDrivesLoading,
+  ]);
 
   useEffect(() => {
     fetchCloudFiles();

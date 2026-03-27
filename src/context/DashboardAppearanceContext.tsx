@@ -135,3 +135,9 @@ export function useDashboardAppearance() {
   }
   return context;
 }
+
+/** For portaled UI (e.g. immersive preview) that may render on routes without this provider. */
+export function useDashboardAppearanceOptional(): DashboardAppearanceContextType | null {
+  const context = useContext(DashboardAppearanceContext);
+  return context === undefined ? null : context;
+}

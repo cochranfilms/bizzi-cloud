@@ -495,6 +495,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Enterprise: org filters linked_drives. Until org resolves, do not apply the "no org" filter
+    // (would show wrong/empty drives then swap — harsh flash on dashboard).
+    if (isEnterpriseContext && !teamRouteOwnerUid && !org?.id) {
+      setLinkedDrives([]);
+      setLoading(true);
+      return;
+    }
+
     try {
       setError(null);
 
@@ -663,7 +671,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       };
     };
 
-    if (!isEnterpriseContext && teamRouteOwnerUid) {
+    // Team owner: real-time Firestore listener is allowed by rules (userId == auth).
+    // Seat members: the same query fails client security rules ("insufficient permissions");
+    // they rely on fetchDrives → /api/personal-team/team-drives only.
+    if (!isEnterpriseContext && teamRouteOwnerUid && user.uid === teamRouteOwnerUid) {
       const qTeam = query(
         collection(db, "linked_drives"),
         where("userId", "==", teamRouteOwnerUid),
@@ -687,6 +698,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
+    // Seat member on /team/{owner}: only fetchDrives (API) may load owner's team drives; do not
+    // subscribe to userId == member (that list is personal drives and would replace the team list).
+    if (!isEnterpriseContext && teamRouteOwnerUid && user.uid !== teamRouteOwnerUid) {
+      return () => {};
+    }
+
     const q = query(
       collection(db, "linked_drives"),
       where("userId", "==", user.uid),
@@ -696,6 +713,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       q,
       (snap) => {
         const orgIdLocal = org?.id ?? null;
+        if (isEnterpriseContext && !orgIdLocal) {
+          return;
+        }
         const drives: LinkedDrive[] = [];
         for (const d of snap.docs) {
           const data = d.data();

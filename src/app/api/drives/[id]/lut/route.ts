@@ -6,6 +6,10 @@
  * DELETE: remove entry
  */
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
+import {
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team-constants";
 import { validateLutFileForUpload } from "@/lib/creative-lut/parse-lut";
 import { MAX_LUTS_PER_SCOPE } from "@/types/creative-lut";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
@@ -15,9 +19,12 @@ import { randomUUID } from "crypto";
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const STORAGE_PREFIX = (driveId: string) => `drives/${driveId}/lut`;
 
-async function requireDriveOwner(
+type LutAccessMode = "read" | "write";
+
+async function requireRawDriveLutAccess(
   request: Request,
-  driveId: string
+  driveId: string,
+  mode: LutAccessMode
 ): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -37,13 +44,31 @@ async function requireDriveOwner(
     return NextResponse.json({ error: "Drive not found" }, { status: 404 });
   }
   const drive = driveSnap.data()!;
-  if (drive.userId !== uid) {
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  }
   if (!drive.is_creator_raw) {
     return NextResponse.json({ error: "LUT management is only for Creator RAW drives" }, { status: 400 });
   }
-  return { uid };
+
+  const ownerUid = drive.userId as string;
+  if (uid === ownerUid) {
+    return { uid };
+  }
+
+  if (
+    mode === "read" &&
+    !drive.organization_id &&
+    drive.personal_team_owner_id === ownerUid
+  ) {
+    const seatSnap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .doc(personalTeamSeatDocId(ownerUid, uid))
+      .get();
+    const st = seatSnap.data()?.status as string | undefined;
+    if (seatSnap.exists && (st === "active" || st === "cold_storage")) {
+      return { uid };
+    }
+  }
+
+  return NextResponse.json({ error: "Access denied" }, { status: 403 });
 }
 
 async function refreshSignedUrl(storagePath: string): Promise<string> {
@@ -63,7 +88,7 @@ export async function GET(
   const { id: driveId } = await params;
   if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireDriveOwner(request, driveId);
+  const auth = await requireRawDriveLutAccess(request, driveId, "read");
   if (auth instanceof NextResponse) return auth;
 
   const db = getAdminFirestore();
@@ -108,7 +133,7 @@ export async function POST(
   const { id: driveId } = await params;
   if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireDriveOwner(request, driveId);
+  const auth = await requireRawDriveLutAccess(request, driveId, "write");
   if (auth instanceof NextResponse) return auth;
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -309,7 +334,7 @@ export async function PATCH(
   const { id: driveId } = await params;
   if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireDriveOwner(request, driveId);
+  const auth = await requireRawDriveLutAccess(request, driveId, "write");
   if (auth instanceof NextResponse) return auth;
 
   let body: Record<string, unknown>;
@@ -369,7 +394,7 @@ export async function DELETE(
   const { id: driveId } = await params;
   if (!driveId) return NextResponse.json({ error: "Drive ID required" }, { status: 400 });
 
-  const auth = await requireDriveOwner(request, driveId);
+  const auth = await requireRawDriveLutAccess(request, driveId, "write");
   if (auth instanceof NextResponse) return auth;
 
   let body: { entry_id?: string };

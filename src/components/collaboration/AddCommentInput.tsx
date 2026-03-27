@@ -9,6 +9,8 @@ interface AddCommentInputProps {
   onCancel?: () => void;
   showCancel?: boolean;
   autoFocus?: boolean;
+  /** High-contrast chrome on glass/frosted immersive panels */
+  immersiveChrome?: boolean;
 }
 
 export default function AddCommentInput({
@@ -17,6 +19,7 @@ export default function AddCommentInput({
   onCancel,
   showCancel = false,
   autoFocus = false,
+  immersiveChrome = false,
 }: AddCommentInputProps) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -56,7 +59,11 @@ export default function AddCommentInput({
         placeholder={placeholder}
         rows={2}
         disabled={submitting}
-        className="min-h-[4rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm text-neutral-900 placeholder-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/20 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20"
+        className={
+          immersiveChrome
+            ? "min-h-[4rem] w-full resize-y rounded-lg border-2 border-neutral-800 bg-white px-3 py-2.5 text-sm text-neutral-950 placeholder-neutral-500 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/25 disabled:opacity-50 dark:border-white/45 dark:bg-neutral-950/55 dark:text-white dark:placeholder-neutral-400 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/25"
+            : "min-h-[4rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm text-neutral-900 placeholder-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/20 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20"
+        }
       />
       <div className="flex flex-col gap-1">
         <button

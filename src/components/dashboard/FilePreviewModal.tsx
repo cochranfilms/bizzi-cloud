@@ -348,7 +348,7 @@ export default function FilePreviewModal({
         >
           <div className="flex max-h-[min(86dvh,calc(100dvh-7rem))] min-h-0 w-full flex-1 items-center justify-center overflow-auto">
             <div
-              className="inline-flex origin-center transition-transform duration-150 ease-out"
+              className="inline-flex origin-center rounded-lg ring-2 ring-white transition-transform duration-150 ease-out dark:ring-neutral-950"
               style={{
                 transform: `scale(${imageZoom})`,
               }}
@@ -409,13 +409,13 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "audio" && fullUrl) {
       mediaBody = (
-        <div className="w-full max-w-md rounded-xl border border-neutral-200/60 bg-white/80 p-4 shadow-md backdrop-blur-sm dark:border-white/10 dark:bg-neutral-900/60">
+        <div className="w-full max-w-md rounded-xl border-2 border-white bg-white/85 p-4 shadow-md backdrop-blur-sm dark:border-neutral-950 dark:bg-neutral-900/70">
           <audio src={fullUrl} controls className="w-full" />
         </div>
       );
     } else if (previewType === "pdf" && fullUrl) {
       mediaBody = (
-        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-xl border border-neutral-200/55 bg-neutral-200/20 shadow-2xl dark:border-white/10 dark:bg-black/35">
+        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-xl border-2 border-white bg-neutral-100/35 shadow-2xl backdrop-blur-sm dark:border-neutral-950 dark:bg-black/40">
           <iframe
             src={fullUrl}
             title={file.name}
@@ -469,11 +469,8 @@ export default function FilePreviewModal({
       mediaFooter={mediaFooter}
       rightRail={
         file.id ? (
-          <div className="flex h-full min-h-0 flex-col gap-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              Comments
-            </p>
-            <FileCommentsPanel fileId={file.id} />
+          <div className="flex h-full min-h-0 flex-col">
+            <FileCommentsPanel fileId={file.id} immersiveChrome />
           </div>
         ) : null
       }

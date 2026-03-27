@@ -169,6 +169,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getOrCreateStorageDrive,
     getOrCreateCreatorRawDrive,
     getOrCreateGalleryDrive,
+    loading: backupDrivesLoading,
   } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const {
@@ -710,11 +711,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
   // Enterprise org add-ons come from `useEffectivePowerUps`, not the signed-in user's personal subscription.
   // Waiting on personal `subscriptionLoading` only delayed the folder grid without benefit.
+  // Align folder fade with linked_drives resolution (same idea as team: no empty grid before drives exist).
   const homeViewReady =
     !loading &&
-    (isEnterpriseHome ? true : !subscriptionLoading) &&
     !powerUpContextLoading &&
-    pinnedContentReady;
+    pinnedContentReady &&
+    (isEnterpriseHome ? !backupDrivesLoading : !subscriptionLoading);
 
   const showDragRect =
     dragState?.isActive &&

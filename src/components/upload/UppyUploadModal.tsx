@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
 import { getFirebaseAuth } from "@/lib/firebase/client";
-import { Upload, ChevronUp, ChevronDown, X, Loader2, Check, AlertCircle } from "lucide-react";
+import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
  * We track failed files and surface them so users can retry from the Dashboard. */
@@ -20,6 +20,23 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function resumeUploadIfNeeded(uppy: Uppy): void {
+  const { currentUploads, files } = uppy.getState();
+  if (Object.keys(currentUploads).length > 0) {
+    uppy.upload().catch(() => {});
+    return;
+  }
+  const anyInFlight = Object.values(files).some(
+    (f) =>
+      f.progress?.uploadStarted != null &&
+      !f.progress?.uploadComplete &&
+      !f.error
+  );
+  if (anyInFlight) {
+    uppy.upload().catch(() => {});
+  }
+}
+
 interface UppyUploadModalProps {
   open: boolean;
   onClose: () => void;
@@ -30,7 +47,8 @@ interface UppyUploadModalProps {
   scopeLabel?: string | null;
   driveName?: string | null;
   galleryId?: string | null;
-  initialFiles?: File[] | null;
+  pendingFiles: File[];
+  onPendingFilesConsumed: () => void;
   onUploadComplete?: () => void;
 }
 
@@ -44,10 +62,14 @@ export default function UppyUploadModal({
   scopeLabel = null,
   driveName = null,
   galleryId = null,
-  initialFiles = null,
+  pendingFiles,
+  onPendingFilesConsumed,
   onUploadComplete,
 }: UppyUploadModalProps) {
   const uppyRef = useRef<Uppy | null>(null);
+  const onUploadCompleteRef = useRef(onUploadComplete);
+  onUploadCompleteRef.current = onUploadComplete;
+
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [progress, setProgress] = useState({
@@ -71,10 +93,10 @@ export default function UppyUploadModal({
       return token ? { Authorization: `Bearer ${token}` } : {};
     };
 
-    // No file type restrictions — Storage accepts all formats (video, photo, document, archives, etc.)
     const uppy = new Uppy({
       id: "uppy-upload",
       autoProceed: false,
+      allowMultipleUploadBatches: true,
     });
 
     const awsS3Opts = {
@@ -123,6 +145,7 @@ export default function UppyUploadModal({
             null,
         },
       });
+      queueMicrotask(() => resumeUploadIfNeeded(uppy));
     });
 
     const updateProgress = () => {
@@ -167,11 +190,10 @@ export default function UppyUploadModal({
     uppy.on("upload-error", updateProgress);
     uppy.on("upload-success", async (file) => {
       if (!file) return;
-      // Files ≤5MB use presigned PUT — no server callback; we must create backup_files here
       const size = file.size ?? 0;
       if (size > 0 && size <= 5 * 1024 * 1024) {
         const meta = file.meta ?? {};
-        const driveId = meta.driveId ?? meta.drive_id;
+        const metaDriveId = meta.driveId ?? meta.drive_id;
         const relativePath = meta.relativePath ?? meta.relative_path ?? file.name ?? "";
         const sizeBytes = meta.sizeBytes ?? meta.size_bytes ?? size;
         const contentType = file.type ?? meta.contentType ?? "application/octet-stream";
@@ -179,7 +201,7 @@ export default function UppyUploadModal({
           (file.data instanceof File ? file.data.lastModified : null) ??
           meta.lastModified ??
           null;
-        if (driveId && relativePath && sizeBytes) {
+        if (metaDriveId && relativePath && sizeBytes) {
           try {
             const token = await getFirebaseAuth().currentUser?.getIdToken(true);
             if (!token) return;
@@ -190,7 +212,7 @@ export default function UppyUploadModal({
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
-                driveId,
+                driveId: metaDriveId,
                 relativePath,
                 sizeBytes: Number(sizeBytes),
                 contentType,
@@ -205,20 +227,12 @@ export default function UppyUploadModal({
         }
       }
       updateProgress();
-      onUploadComplete?.();
+      onUploadCompleteRef.current?.();
     });
     uppy.on("complete", () => {
       updateProgress();
-      onUploadComplete?.();
+      onUploadCompleteRef.current?.();
     });
-
-    if (initialFiles?.length) {
-      try {
-        initialFiles.forEach((f) => uppy.addFile({ name: f.name, data: f }));
-      } catch {
-        // ignore
-      }
-    }
 
     uppyRef.current = uppy;
     setReady(true);
@@ -229,7 +243,26 @@ export default function UppyUploadModal({
       uppyRef.current = null;
       setReady(false);
     };
-  }, [open, driveId, pathPrefix, workspaceId, galleryId, initialFiles, onUploadComplete]);
+  }, [open, driveId, pathPrefix, workspaceId, galleryId]);
+
+  const consumePending = useCallback(() => {
+    onPendingFilesConsumed();
+  }, [onPendingFilesConsumed]);
+
+  useEffect(() => {
+    if (!open || !ready || !uppyRef.current || pendingFiles.length === 0) return;
+    const uppy = uppyRef.current;
+    for (const f of pendingFiles) {
+      try {
+        uppy.addFile({ name: f.name, data: f });
+      } catch {
+        // ignore restriction / duplicate
+      }
+    }
+    consumePending();
+    setExpanded(true);
+    queueMicrotask(() => resumeUploadIfNeeded(uppy));
+  }, [open, ready, pendingFiles, consumePending]);
 
   if (!open) return null;
 

@@ -198,8 +198,8 @@ export default function GlobalDropZone() {
     >
       <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-white/50 bg-white/10 px-12 py-10">
         <Upload className="h-16 w-16 text-white" strokeWidth={1.5} />
-        <p className="text-xl font-semibold text-white">Drop File to Upload</p>
-        <p className="text-sm text-white/80">Release to open the uploader</p>
+        <p className="text-xl font-semibold text-white">Drop files to upload</p>
+        <p className="text-sm text-white/80">Release to add them to the uploader (multiple files supported)</p>
       </div>
     </div>
   );

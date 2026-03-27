@@ -60,3 +60,21 @@ export function useTheme() {
   }
   return context;
 }
+
+/**
+ * Theme for UI that must work without ThemeProvider (e.g. portaled preview on public pages).
+ * After mount, falls back to `document.documentElement` .dark class if no provider.
+ */
+export function useThemeResolved(): Theme {
+  const ctx = useContext(ThemeContext);
+  const [domFallback, setDomFallback] = useState<Theme>("light");
+
+  useEffect(() => {
+    if (ctx !== undefined) return;
+    setDomFallback(
+      document.documentElement.classList.contains("dark") ? "dark" : "light"
+    );
+  }, [ctx]);
+
+  return ctx?.theme ?? domFallback;
+}

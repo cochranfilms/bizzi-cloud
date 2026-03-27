@@ -9,6 +9,8 @@ import type { Comment } from "@/types/collaboration";
 interface FileCommentsPanelProps {
   fileId: string;
   className?: string;
+  /** Readable text/borders on immersive file preview glass panels */
+  immersiveChrome?: boolean;
 }
 
 function CommentReplyList({
@@ -17,17 +19,25 @@ function CommentReplyList({
   currentUserId,
   onEdit,
   onDelete,
+  immersiveChrome,
 }: {
   comments: Comment[];
   parentId: string;
   currentUserId: string;
   onEdit: (id: string, body: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
+  immersiveChrome?: boolean;
 }) {
   const replies = comments.filter((c) => c.parentCommentId === parentId);
   if (replies.length === 0) return null;
   return (
-    <div className="ml-6 mt-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-700">
+    <div
+      className={
+        immersiveChrome
+          ? "ml-6 mt-2 border-l-2 border-neutral-700 pl-4 dark:border-white/35"
+          : "ml-6 mt-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-700"
+      }
+    >
       {replies.map((r) => (
         <CommentItem
           key={r.id}
@@ -35,13 +45,18 @@ function CommentReplyList({
           isOwn={r.authorUserId === currentUserId}
           onEdit={onEdit}
           onDelete={onDelete}
+          immersiveChrome={immersiveChrome}
         />
       ))}
     </div>
   );
 }
 
-export default function FileCommentsPanel({ fileId, className = "" }: FileCommentsPanelProps) {
+export default function FileCommentsPanel({
+  fileId,
+  className = "",
+  immersiveChrome = false,
+}: FileCommentsPanelProps) {
   const { user } = useAuth();
   const {
     comments,
@@ -61,7 +76,13 @@ export default function FileCommentsPanel({ fileId, className = "" }: FileCommen
 
   return (
     <div className={`flex flex-col ${className}`}>
-      <h3 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+      <h3
+        className={
+          immersiveChrome
+            ? "mb-3 text-xs font-medium uppercase tracking-wide text-neutral-800 dark:text-neutral-200"
+            : "mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-300"
+        }
+      >
         Comments
       </h3>
 
@@ -70,21 +91,46 @@ export default function FileCommentsPanel({ fileId, className = "" }: FileCommen
           onSubmit={handleAdd}
           placeholder="Add a comment…"
           autoFocus={false}
+          immersiveChrome={immersiveChrome}
         />
       ) : (
-        <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+        <p
+          className={
+            immersiveChrome
+              ? "py-4 text-sm text-neutral-700 dark:text-neutral-300"
+              : "py-4 text-sm text-neutral-500 dark:text-neutral-400"
+          }
+        >
           Sign in to add a comment.
         </p>
       )}
 
       <div className="mt-4 min-h-[4rem]">
         {loading ? (
-          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+          <p
+            className={
+              immersiveChrome
+                ? "py-4 text-sm text-neutral-700 dark:text-neutral-300"
+                : "py-4 text-sm text-neutral-500 dark:text-neutral-400"
+            }
+          >
             Loading comments…
           </p>
         ) : topLevel.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-neutral-200 py-8 text-center dark:border-neutral-700">
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <div
+            className={
+              immersiveChrome
+                ? "rounded-lg border border-dashed border-neutral-800 py-8 text-center dark:border-white/50"
+                : "rounded-lg border border-dashed border-neutral-200 py-8 text-center dark:border-neutral-700"
+            }
+          >
+            <p
+              className={
+                immersiveChrome
+                  ? "text-sm text-neutral-800 dark:text-neutral-200"
+                  : "text-sm text-neutral-500 dark:text-neutral-400"
+              }
+            >
               No comments yet. Be the first to comment!
             </p>
           </div>
@@ -97,6 +143,7 @@ export default function FileCommentsPanel({ fileId, className = "" }: FileCommen
                   isOwn={c.authorUserId === currentUserId}
                   onEdit={editComment}
                   onDelete={deleteComment}
+                  immersiveChrome={immersiveChrome}
                 />
                 <CommentReplyList
                   comments={comments}
@@ -104,6 +151,7 @@ export default function FileCommentsPanel({ fileId, className = "" }: FileCommen
                   currentUserId={currentUserId}
                   onEdit={editComment}
                   onDelete={deleteComment}
+                  immersiveChrome={immersiveChrome}
                 />
               </li>
             ))}

@@ -3,6 +3,10 @@ import { FieldPath } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey } from "@/lib/b2";
 import {
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team-constants";
+import {
   getEffectiveStorageLifecycle,
   storageLifecycleBlocksAccess,
   personalStatusBlocksAccess,
@@ -164,19 +168,59 @@ export async function verifyBackupFileAccessWithGalleryFallback(
     if (gallerySnap.data()?.photographer_id === uid) return true;
   }
 
-  // Linked drive fallback: file in backup_files (any userId) but in user's linked drive
+  // Linked drive fallback: personal drives for uid, or team-container drives with an active seat
   const byKeySnap = await db
     .collection("backup_files")
     .where("object_key", "==", objectKey)
     .limit(5)
     .get();
 
-  if (!byKeySnap.empty) {
-    const driveIds = await getUserLinkedDriveIds(db, uid);
-    for (const doc of byKeySnap.docs) {
+  let proxyDocs: QueryDocumentSnapshot[] = [];
+  if (objectKey.startsWith("proxies/") && objectKey.endsWith(".mp4")) {
+    const byProxySnap = await db
+      .collection("backup_files")
+      .where("proxy_object_key", "==", objectKey)
+      .limit(10)
+      .get();
+    proxyDocs = byProxySnap.docs;
+  }
+
+  const seen = new Set<string>();
+  const candidates: QueryDocumentSnapshot[] = [];
+  for (const doc of [...byKeySnap.docs, ...proxyDocs]) {
+    if (seen.has(doc.id)) continue;
+    seen.add(doc.id);
+    candidates.push(doc);
+  }
+
+  if (candidates.length > 0) {
+    const personalDriveIds = await getUserLinkedDriveIds(db, uid);
+    for (const doc of candidates) {
       const d = doc.data();
       if (d.deleted_at) continue;
-      if (driveIds.has((d.linked_drive_id as string) ?? "")) return true;
+      const driveId = (d.linked_drive_id as string) ?? "";
+      if (personalDriveIds.has(driveId)) return true;
+
+      if (!driveId) continue;
+      const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+      if (!driveSnap.exists) continue;
+      const drive = driveSnap.data()!;
+      if (drive.deleted_at) continue;
+      if (drive.organization_id) continue;
+      const ownerUid = drive.userId as string | undefined;
+      const pto = drive.personal_team_owner_id as string | undefined | null;
+      if (
+        ownerUid &&
+        pto === ownerUid &&
+        uid !== ownerUid
+      ) {
+        const seatSnap = await db
+          .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+          .doc(personalTeamSeatDocId(ownerUid, uid))
+          .get();
+        const st = seatSnap.data()?.status as string | undefined;
+        if (seatSnap.exists && (st === "active" || st === "cold_storage")) return true;
+      }
     }
   }
 
