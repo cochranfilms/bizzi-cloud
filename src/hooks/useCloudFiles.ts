@@ -357,6 +357,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const [loadingAllFiles, setLoadingAllFiles] = useState(false);
   const [authQuotaExceeded, setAuthQuotaExceeded] = useState(false);
   const hasInitiallyLoadedRef = useRef(false);
+  /** Discards overlapping fetchRecentUploads results (e.g. rapid storageVersion bumps). */
+  const recentUploadsFetchIdRef = useRef(0);
 
   const orgId = org?.id ?? null;
 
@@ -710,6 +712,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   /** Fetches files uploaded to Storage in the past 7 days. Reference view—files live in Storage, not duplicated. */
   const fetchRecentUploads = useCallback(async (): Promise<RecentFile[]> => {
     if (!isFirebaseConfigured() || !user) return [];
+    const runId = ++recentUploadsFetchIdRef.current;
     const recentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const dateFromDay = recentCutoff.slice(0, 10);
     const dateToDay = new Date().toISOString().slice(0, 10);
@@ -721,56 +724,57 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       .map((d) => d.id);
     if (storageDriveIds.length === 0) return [];
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
-    const maxPagesPerDrive = 12;
-    const perDrive = await Promise.all(
-      storageDriveIds.map(async (driveId) => {
-        const drive = driveMap.get(driveId);
-        const batch: RecentFile[] = [];
-        try {
-          let cursor: string | null = null;
-          for (let page = 0; page < maxPagesPerDrive; page++) {
-            let pageResult: {
-              files: RecentFile[];
-              nextCursor: string | null;
-              hasMore: boolean;
-            };
-            if (drive?.organization_id) {
-              pageResult = await fetchFilesFromFilterApi(user, {
-                driveId,
-                pageSize: 50,
-                cursor,
-                enterprise: { organizationId: drive.organization_id },
-                dateFrom: dateFromDay,
-                dateTo: dateToDay,
-              });
-            } else {
-              pageResult = await fetchFilesFromFilterApi(user, {
-                driveId,
-                teamOwnerUserId: teamRouteOwnerUid,
-                pageSize: 50,
-                cursor,
-                dateFrom: dateFromDay,
-                dateTo: dateToDay,
-              });
-            }
-            const { files: rows, nextCursor, hasMore } = pageResult;
-            for (const row of rows) {
-              const dateStr = recentUploadRecencyIso(row);
-              if (!dateStr || dateStr < recentCutoff) continue;
-              batch.push({
-                ...row,
-                driveName: drive?.name ?? row.driveName ?? "Storage",
-              });
-            }
-            if (!hasMore || !nextCursor || rows.length === 0) break;
-            cursor = nextCursor;
+    /** UI only shows 24 rows; a few pages per drive is enough without loading every bundle member. */
+    const maxPagesPerDrive = 4;
+    const perDrive: RecentFile[][] = [];
+    for (const driveId of storageDriveIds) {
+      if (runId !== recentUploadsFetchIdRef.current) return [];
+      const drive = driveMap.get(driveId);
+      const batch: RecentFile[] = [];
+      try {
+        let cursor: string | null = null;
+        for (let page = 0; page < maxPagesPerDrive; page++) {
+          let pageResult: {
+            files: RecentFile[];
+            nextCursor: string | null;
+            hasMore: boolean;
+          };
+          if (drive?.organization_id) {
+            pageResult = await fetchFilesFromFilterApi(user, {
+              driveId,
+              pageSize: 50,
+              cursor,
+              enterprise: { organizationId: drive.organization_id },
+              dateFrom: dateFromDay,
+              dateTo: dateToDay,
+            });
+          } else {
+            pageResult = await fetchFilesFromFilterApi(user, {
+              driveId,
+              teamOwnerUserId: teamRouteOwnerUid,
+              pageSize: 50,
+              cursor,
+              dateFrom: dateFromDay,
+              dateTo: dateToDay,
+            });
           }
-        } catch {
-          // skip this drive
+          const { files: rows, nextCursor, hasMore } = pageResult;
+          for (const row of rows) {
+            const dateStr = recentUploadRecencyIso(row);
+            if (!dateStr || dateStr < recentCutoff) continue;
+            batch.push({
+              ...row,
+              driveName: drive?.name ?? row.driveName ?? "Storage",
+            });
+          }
+          if (!hasMore || !nextCursor || rows.length === 0) break;
+          cursor = nextCursor;
         }
-        return batch;
-      })
-    );
+      } catch {
+        // skip this drive
+      }
+      perDrive.push(batch);
+    }
     const all = perDrive.flat();
     all.sort((a, b) => {
       const ta = new Date(recentUploadRecencyIso(a) ?? 0).getTime();
@@ -783,6 +787,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const activePkgIds = new Set<string>();
     if (token) {
       for (const driveId of storageDriveIds) {
+        if (runId !== recentUploadsFetchIdRef.current) return [];
         const drive = driveMap.get(driveId);
         const driveName = drive?.name ?? "Storage";
         try {
@@ -816,6 +821,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const dedup = new Map<string, RecentFile>();
     for (const f of merged) dedup.set(f.id, f);
     const result = [...dedup.values()].slice(0, 24);
+    if (runId !== recentUploadsFetchIdRef.current) return result;
     setRecentUploads(result);
     return result;
   }, [user, linkedDrives, teamRouteOwnerUid]);

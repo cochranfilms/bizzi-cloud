@@ -308,7 +308,9 @@ export default function UppyUploadModal({
         }
       }
       updateProgress();
-      onUploadCompleteRef.current?.();
+      // Intentionally do NOT call onUploadComplete here: it bumps storageVersion and
+      // refetches dashboard data. Per-file callbacks during large folder uploads (e.g.
+      // .fcpbundle) cause thousands of concurrent API requests and ERR_INSUFFICIENT_RESOURCES.
     });
     uppy.on("complete", () => {
       updateProgress();
