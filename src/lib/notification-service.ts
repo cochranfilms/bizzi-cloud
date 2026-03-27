@@ -1,6 +1,7 @@
 import type { Notification, NotificationType } from "@/types/collaboration";
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
+import { inferNotificationRoutingBucket } from "./notification-routing";
 import { formatNotificationMessage } from "./notification-format";
 import { getFileDisplayName } from "./file-access";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team-constants";
@@ -60,6 +61,11 @@ export async function createNotification(input: CreateNotificationInput): Promis
 
   const message = formatNotificationMessage(input.type, actorDisplayName, metadata);
 
+  const routingBucket = inferNotificationRoutingBucket({
+    type: input.type,
+    metadata: metadata as Record<string, unknown>,
+  });
+
   const doc = await db.collection("notifications").add({
     recipientUserId: input.recipientUserId,
     actorUserId: input.actorUserId,
@@ -70,6 +76,7 @@ export async function createNotification(input: CreateNotificationInput): Promis
     message,
     isRead: false,
     createdAt: now,
+    routingBucket,
     metadata,
   });
 
@@ -251,6 +258,7 @@ export async function createShareNotifications(params: {
       message,
       isRead: false,
       createdAt: now,
+      routingBucket: "consumer",
       metadata: Object.fromEntries(
         Object.entries({
           fileName,
@@ -329,15 +337,25 @@ export async function createWorkspaceShareNotifications(params: {
   targetId: string;
   shareInboxScopeLabel?: string;
   shareSourceLabel?: string | null;
+  targetOrganizationId?: string | null;
 }): Promise<void> {
   const db = getAdminFirestore();
-  const recipientUids = await getUserIdsForWorkspaceShareInbox(
+  const inboxUids = await getUserIdsForWorkspaceShareInbox(
     db,
     params.kind,
     params.targetId,
     params.sharedByUserId
   );
-  if (recipientUids.length === 0) return;
+  const recipientSet = new Set(inboxUids);
+  recipientSet.add(params.sharedByUserId);
+  const recipientUids = Array.from(recipientSet);
+
+  const routingBucket =
+    params.kind === "personal_team"
+      ? `team:${params.targetId}`
+      : params.targetOrganizationId?.trim()
+        ? `enterprise:${params.targetOrganizationId.trim()}`
+        : "consumer";
 
   const fileCount = params.fileIds.length;
   const fileName =
@@ -353,6 +371,7 @@ export async function createWorkspaceShareNotifications(params: {
       shareToken: params.folderShareId,
       shareInboxScopeLabel: params.shareInboxScopeLabel,
       shareSourceLabel: params.shareSourceLabel ?? undefined,
+      targetOrganizationId: params.targetOrganizationId?.trim() || undefined,
     }).filter(([, v]) => v !== undefined)
   ) as NonNullable<Notification["metadata"]>;
 
@@ -372,6 +391,7 @@ export async function createWorkspaceShareNotifications(params: {
       message,
       isRead: false,
       createdAt: now,
+      routingBucket,
       metadata,
     });
   }

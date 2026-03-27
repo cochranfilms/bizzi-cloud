@@ -13,6 +13,8 @@ export interface SharedItem {
   modifiedAt?: string;
   /** When set, card links to this URL (e.g. share link) */
   href?: string;
+  /** Team vs org workspace share — uses live --bizzi-accent */
+  shareDestination?: "team" | "organization";
 }
 
 interface SharedItemCardProps {
@@ -23,11 +25,24 @@ interface SharedItemCardProps {
 }
 
 const cardClassName =
-  "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
+  "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 pt-7 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
 
 export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: SharedItemCardProps) {
+  const dest = item.shareDestination;
+
   const content = (
     <>
+      {dest && (
+        <span
+          className="pointer-events-none absolute right-2 top-2 z-10 rounded border bg-white/95 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide shadow-sm dark:bg-neutral-900/95"
+          style={{
+            color: "var(--bizzi-accent)",
+            borderColor: "var(--bizzi-accent)",
+          }}
+        >
+          {dest === "team" ? "Team" : "Organization"}
+        </span>
+      )}
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
         {item.type === "folder" ? (
           <Folder className="h-8 w-8" />
@@ -57,7 +72,7 @@ export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: Shar
     <div className="relative">
       {content}
       {isOwned && (onEdit || onDelete) && (
-        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute left-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {onEdit && (
             <button
               type="button"

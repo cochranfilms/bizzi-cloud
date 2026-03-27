@@ -18,6 +18,8 @@ export interface ShareListItem {
   recipient_mode?: string;
   workspace_target?: { kind: string; id: string };
   workspace_target_key?: string;
+  /** Workspace-targeted shares: badge for Sent list */
+  share_destination?: "team" | "organization";
 }
 
 export interface SharesListQuery {
@@ -35,6 +37,16 @@ export interface UseSharesResult {
   refetch: () => Promise<void>;
   /** Delete a share (owner only). Removes the share record; original files stay. */
   deleteShare: (token: string) => Promise<void>;
+}
+
+function destinationFromShareRow(s: {
+  recipient_mode?: string;
+  workspace_target?: { kind: string; id: string };
+}): "team" | "organization" | undefined {
+  if (s.recipient_mode !== "workspace" || !s.workspace_target?.kind) return undefined;
+  if (s.workspace_target.kind === "personal_team") return "team";
+  if (s.workspace_target.kind === "enterprise_workspace") return "organization";
+  return undefined;
 }
 
 export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
@@ -103,6 +115,7 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         recipient_mode: s.recipient_mode,
         workspace_target: s.workspace_target,
         workspace_target_key: s.workspace_target_key,
+        share_destination: destinationFromShareRow(s),
       });
       const mapInvited = (s: {
         id: string;

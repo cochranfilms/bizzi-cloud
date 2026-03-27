@@ -174,6 +174,7 @@ async function deliverShareNotificationsAndEmail(params: {
       targetId: params.workspaceTargetId,
       shareInboxScopeLabel: workspaceShareInboxLabel(params.workspaceKind),
       shareSourceLabel: params.shareSourceLabel ?? null,
+      targetOrganizationId: ctx.organizationId,
     });
     let adminEmail: string | null = null;
     if (params.workspaceKind === "enterprise_workspace" && ctx.organizationId) {
@@ -346,6 +347,7 @@ export async function GET(request: Request) {
     recipient_mode?: string;
     workspace_target?: { kind: string; id: string };
     workspace_target_key?: string;
+    share_ui_origin?: string;
   };
 
   const owned: ShareItem[] = [];
@@ -353,19 +355,35 @@ export async function GET(request: Request) {
   for (const d of ownedSnap.docs) {
     const raw = d.data();
     const mode = getRecipientModeFromDoc(raw as Record<string, unknown>);
-    if (listContext === "personal" && mode === "workspace") continue;
+    const suo = raw.share_ui_origin as string | undefined;
+    const shareOrigin: "dashboard" | "personal_team" | "enterprise" | null =
+      suo === "dashboard" || suo === "personal_team" || suo === "enterprise" ? suo : null;
+
+    if (listContext === "personal") {
+      if (shareOrigin === "personal_team" || shareOrigin === "enterprise") continue;
+    }
     if (listContext === "workspace") {
       if (mode !== "workspace") continue;
       const key = raw.workspace_target_key as string | undefined;
       if (listWorkspaceKindParam && listWorkspaceIdParam) {
         const want = workspaceTargetKey(listWorkspaceKindParam, listWorkspaceIdParam);
         if (key !== want) continue;
+        const fromPersonalHome =
+          shareOrigin === "dashboard" || (shareOrigin === null && mode === "workspace");
+        if (listWorkspaceKindParam === "personal_team" && fromPersonalHome) {
+          continue;
+        }
       } else if (listOrganizationIdParam) {
         const accessible = await getAccessibleWorkspaceIds(uid, listOrganizationIdParam);
         const keys = new Set(
           accessible.map((wid) => workspaceTargetKey("enterprise_workspace", wid))
         );
         if (!key || !keys.has(key)) continue;
+        const fromOutsideEnterpriseUi =
+          shareOrigin === "dashboard" ||
+          shareOrigin === "personal_team" ||
+          (shareOrigin === null && mode === "workspace");
+        if (fromOutsideEnterpriseUi) continue;
       } else continue;
     }
 
@@ -384,6 +402,7 @@ export async function GET(request: Request) {
       recipient_mode: hydrated.recipient_mode,
       workspace_target: hydrated.workspace_target,
       workspace_target_key: hydrated.workspace_target_key,
+      share_ui_origin: (raw.share_ui_origin as string | undefined) ?? undefined,
     });
   }
 
@@ -537,7 +556,13 @@ export async function POST(request: Request) {
     folder_name: folderName,
     recipient_mode: recipientModeBody,
     workspace_target: workspaceTargetBody,
+    share_ui_origin: shareUiOriginBody,
   } = body;
+
+  const shareUiOrigin: "dashboard" | "personal_team" | "enterprise" =
+    shareUiOriginBody === "personal_team" || shareUiOriginBody === "enterprise"
+      ? shareUiOriginBody
+      : "dashboard";
 
   const recipientMode: "email" | "workspace" =
     recipientModeBody === "workspace" ? "workspace" : "email";
@@ -684,6 +709,7 @@ export async function POST(request: Request) {
       invited_emails: recipientMode === "workspace" ? [] : invitedEmailsNormalized,
       version: 1,
       recipient_mode: recipientMode,
+      share_ui_origin: shareUiOrigin,
     };
     if (recipientMode === "workspace" && workspaceKind && workspaceTargetId && workspaceTargetKeyValue) {
       shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };
@@ -865,6 +891,7 @@ export async function POST(request: Request) {
     invited_emails: recipientMode === "workspace" ? [] : invitedEmailsNormalized,
     version: 1,
     recipient_mode: recipientMode,
+    share_ui_origin: shareUiOrigin,
   };
   if (recipientMode === "workspace" && workspaceKind && workspaceTargetId && workspaceTargetKeyValue) {
     shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };

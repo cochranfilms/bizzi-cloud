@@ -83,6 +83,8 @@ export interface Notification {
     shareInboxScopeLabel?: string;
     /** Where the content lives (personal vs org private drive), to disambiguate for admins */
     shareSourceLabel?: string;
+    /** Enterprise workspace shares: org id for notification routing */
+    targetOrganizationId?: string;
   } | null;
 }
 

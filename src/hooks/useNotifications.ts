@@ -8,7 +8,7 @@ import type { Notification } from "@/types/collaboration";
 
 const POLL_INTERVAL_MS = 30_000;
 
-export function useUnreadCount() {
+export function useUnreadCount(routing: string = "consumer") {
   const { user } = useAuth();
   const isVisible = usePageVisibility();
   const [count, setCount] = useState(0);
@@ -27,7 +27,8 @@ export function useUnreadCount() {
       return;
     }
     try {
-      const res = await fetch("/api/notifications/count", {
+      const qs = new URLSearchParams({ routing: routing || "consumer" });
+      const res = await fetch(`/api/notifications/count?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -39,7 +40,7 @@ export function useUnreadCount() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, routing]);
 
   useEffect(() => {
     fetchCount();
@@ -55,11 +56,14 @@ export function useNotifications(options?: {
   limit?: number;
   unreadOnly?: boolean;
   pollInterval?: number;
+  /** consumer | team:{ownerId} | enterprise:{orgId} */
+  routing?: string;
 }) {
   const { user } = useAuth();
   const limit = options?.limit ?? 20;
   const unreadOnly = options?.unreadOnly ?? false;
   const pollInterval = options?.pollInterval ?? POLL_INTERVAL_MS;
+  const routing = options?.routing ?? "consumer";
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -78,6 +82,7 @@ export function useNotifications(options?: {
       const params = new URLSearchParams({
         limit: String(limit),
         unreadOnly: String(unreadOnly),
+        routing: routing || "consumer",
       });
       if (cursor) params.set("cursor", cursor);
       try {
@@ -99,7 +104,7 @@ export function useNotifications(options?: {
         setLoading(false);
       }
     },
-    [user, limit, unreadOnly]
+    [user, limit, unreadOnly, routing]
   );
 
   const isVisible = usePageVisibility();
@@ -110,7 +115,7 @@ export function useNotifications(options?: {
     if (!isVisible) return;
     const interval = setInterval(() => fetchPage(null), pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPage, pollInterval, isVisible]);
+  }, [fetchPage, pollInterval, isVisible, routing]);
 
   const loadMore = useCallback(() => {
     if (nextCursor && hasMore) fetchPage(nextCursor);

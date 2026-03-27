@@ -71,6 +71,7 @@ export default function SharedGrid() {
       href: s.share_url,
       isOwned: true as const,
       invitedEmails: s.invited_emails,
+      shareDestination: s.share_destination,
     }));
   }, [owned]);
 
@@ -313,7 +314,15 @@ export default function SharedGrid() {
                     {filteredOwnedItems.map((item) => (
                       <SharedItemCard
                         key={item.key}
-                        item={item}
+                        item={{
+                          name: item.name,
+                          type: item.type,
+                          key: item.key,
+                          sharedBy: item.sharedBy,
+                          permission: item.permission,
+                          href: item.href,
+                          shareDestination: item.shareDestination,
+                        }}
                         isOwned
                         onEdit={(e) => (
                           e.preventDefault(),
@@ -349,9 +358,24 @@ export default function SharedGrid() {
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-neutral-900 dark:text-white">
-                              {item.name}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="truncate font-medium text-neutral-900 dark:text-white">
+                                {item.name}
+                              </p>
+                              {item.shareDestination && (
+                                <span
+                                  className="flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                  style={{
+                                    color: "var(--bizzi-accent)",
+                                    borderColor: "var(--bizzi-accent)",
+                                  }}
+                                >
+                                  {item.shareDestination === "team"
+                                    ? "Team"
+                                    : "Organization"}
+                                </span>
+                              )}
+                            </div>
                             <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
                               Shared by {item.sharedBy} ·{" "}
                               {item.permission === "edit"

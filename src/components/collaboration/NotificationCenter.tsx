@@ -29,6 +29,7 @@ import type { Notification } from "@/types/collaboration";
 interface NotificationCenterProps {
   onClose: () => void;
   onRefreshBadge?: () => void;
+  routing: string;
 }
 
 function NotificationIcon({ type }: { type: Notification["type"] }) {
@@ -219,6 +220,7 @@ function formatTimeAgo(iso: string): string {
 export default function NotificationCenter({
   onClose,
   onRefreshBadge,
+  routing,
 }: NotificationCenterProps) {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -234,7 +236,7 @@ export default function NotificationCenter({
     hasMore,
     loadMore,
     refresh,
-  } = useNotifications({ limit: 15 });
+  } = useNotifications({ limit: 15, routing });
 
   const handleMarkRead = useCallback(
     async (id: string) => {

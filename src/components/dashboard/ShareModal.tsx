@@ -7,6 +7,13 @@ import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2 } from
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 
+function shareUiOriginFromPath(path: string): "dashboard" | "personal_team" | "enterprise" {
+  if (path.startsWith("/enterprise")) return "enterprise";
+  if (/^\/team\/[^/]+/.test(path)) return "personal_team";
+  if (/^\/desktop\/app\/team\/[^/]+/.test(path)) return "personal_team";
+  return "dashboard";
+}
+
 interface ShareModalProps {
   open: boolean;
   onClose: () => void;
@@ -305,6 +312,7 @@ export default function ShareModal({
         access_level: accessLevel,
         invited_emails: recipientTab === "workspace" ? [] : invitedEmails,
         recipient_mode: recipientTab === "workspace" ? "workspace" : "email",
+        share_ui_origin: shareUiOriginFromPath(pathname),
       };
       if (recipientTab === "workspace" && workspaceTarget) {
         body.workspace_target = { kind: workspaceTarget.kind, id: workspaceTarget.id };
@@ -350,6 +358,7 @@ export default function ShareModal({
     shareName,
     recipientTab,
     workspaceTarget,
+    pathname,
   ]);
 
   const copyLink = useCallback(async () => {

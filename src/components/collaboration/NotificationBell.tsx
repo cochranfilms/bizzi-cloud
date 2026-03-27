@@ -1,14 +1,23 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { clientNotificationRouting } from "@/lib/notification-routing-client";
 import UnreadBadge from "./UnreadBadge";
 import NotificationCenter from "./NotificationCenter";
 
 export default function NotificationBell() {
+  const pathname = usePathname();
+  const { org } = useEnterprise();
+  const routing = useMemo(
+    () => clientNotificationRouting(pathname ?? "", org?.id ?? null),
+    [pathname, org?.id]
+  );
   const [open, setOpen] = useState(false);
-  const { count, refresh } = useUnreadCount();
+  const { count, refresh } = useUnreadCount(routing);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +45,7 @@ export default function NotificationBell() {
         <NotificationCenter
           onClose={() => setOpen(false)}
           onRefreshBadge={refresh}
+          routing={routing}
         />
       )}
     </div>

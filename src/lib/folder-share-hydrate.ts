@@ -14,6 +14,7 @@ export type HydratedShareItem = {
   recipient_mode?: string;
   workspace_target?: { kind: string; id: string };
   workspace_target_key?: string;
+  share_ui_origin?: string;
 };
 
 /**
@@ -81,6 +82,10 @@ export async function hydrateFolderShareDoc(
     if (wt?.kind && wt?.id) out.workspace_target = { kind: wt.kind, id: wt.id };
   } else {
     out.recipient_mode = "email";
+  }
+  const suo = data.share_ui_origin as string | undefined;
+  if (suo === "dashboard" || suo === "personal_team" || suo === "enterprise") {
+    out.share_ui_origin = suo;
   }
   return out;
 }

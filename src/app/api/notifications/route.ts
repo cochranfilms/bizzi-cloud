@@ -1,10 +1,16 @@
 /**
  * GET /api/notifications - List notifications for current user (paginated).
- * Query: ?limit=20&cursor=docId&unreadOnly=false
+ * Query: ?limit=20&cursor=docId&unreadOnly=false&routing=consumer|team:{uid}|enterprise:{orgId}
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { ensureNotificationMessage } from "@/lib/notification-format";
+import {
+  inferNotificationRoutingBucket,
+  notificationVisibleForRouting,
+} from "@/lib/notification-routing";
 import { NextResponse } from "next/server";
+
+const MAX_SCAN = 400;
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -23,22 +29,22 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "20", 10), 1), 50);
   const cursor = url.searchParams.get("cursor") ?? null;
   const unreadOnly = url.searchParams.get("unreadOnly") === "true";
+  const routing = (url.searchParams.get("routing") ?? "consumer").trim() || "consumer";
 
   const db = getAdminFirestore();
-  let q = db
-    .collection("notifications")
-    .where("recipientUserId", "==", uid)
-    .orderBy("createdAt", "desc")
-    .limit(limit + 1);
 
-  if (unreadOnly) {
-    q = db
-      .collection("notifications")
-      .where("recipientUserId", "==", uid)
-      .where("isRead", "==", false)
-      .orderBy("createdAt", "desc")
-      .limit(limit + 1);
-  }
+  let q = unreadOnly
+    ? db
+        .collection("notifications")
+        .where("recipientUserId", "==", uid)
+        .where("isRead", "==", false)
+        .orderBy("createdAt", "desc")
+        .limit(MAX_SCAN)
+    : db
+        .collection("notifications")
+        .where("recipientUserId", "==", uid)
+        .orderBy("createdAt", "desc")
+        .limit(MAX_SCAN);
 
   if (cursor) {
     const cursorDoc = await db.collection("notifications").doc(cursor).get();
@@ -48,10 +54,22 @@ export async function GET(request: Request) {
   }
 
   const snap = await q.get();
-  const docs = snap.docs.slice(0, limit);
-  const hasMore = snap.docs.length > limit;
+  const matched = snap.docs.filter((d) => {
+    const data = d.data();
+    const bucket = inferNotificationRoutingBucket({
+      type: data.type,
+      routingBucket: data.routingBucket,
+      metadata: data.metadata as Record<string, unknown> | null,
+    });
+    return notificationVisibleForRouting(bucket, routing);
+  });
 
-  const notifications = docs.map((d) => {
+  const slice = matched.slice(0, limit);
+  const hasMore = matched.length > limit || snap.docs.length >= MAX_SCAN;
+  const nextCursor =
+    hasMore && snap.docs.length > 0 ? snap.docs[snap.docs.length - 1].id : null;
+
+  const notifications = slice.map((d) => {
     const data = d.data();
     const n = {
       id: d.id,
@@ -71,7 +89,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     notifications,
-    nextCursor: hasMore ? docs[docs.length - 1].id : null,
+    nextCursor,
     hasMore,
   });
 }
