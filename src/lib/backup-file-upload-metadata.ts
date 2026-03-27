@@ -78,20 +78,6 @@ export async function resolveBackupUploadMetadata(
     (driveData?.userId as string | undefined) ?? (driveData?.user_id as string | undefined);
 
   if (driveUid === uid) {
-    const ownsTeam = await db
-      .collection("personal_team_seats")
-      .where("team_owner_user_id", "==", uid)
-      .limit(1)
-      .get();
-    if (!ownsTeam.empty) {
-      return {
-        uploaderEmail,
-        containerType: "personal_team",
-        containerId: uid,
-        personalTeamOwnerId: uid,
-        roleAtUpload: "admin",
-      };
-    }
     return {
       uploaderEmail,
       containerType: "personal",
