@@ -20,8 +20,8 @@ export default function Home() {
     <div className="min-h-screen" style={{ background: LANDING_PAGE_GRADIENT }}>
       <HomePageStructuredData />
       <main>
+        <Header variant="landingIntegrated" />
         <LandingHeroShell>
-          <Header variant="landingIntegrated" />
           <Hero />
         </LandingHeroShell>
         <Suspense fallback={null}>

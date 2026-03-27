@@ -205,40 +205,4 @@
     border-top-left-radius: 1.375rem;
     box-shadow: -0.6875rem -0.6875rem 0 0.6875rem rgba(255, 255, 255, 0.45);
   }
-
-  /**
-   * Solid sculpted bar: large concave fillets where white meets the hero shell,
-   * flat top (flush with shell), deep pill bottom. --fillet scales with clamp().
-   */
-  .landing-nav-sculpted {
-    position: relative;
-    isolation: isolate;
-    --fillet: clamp(1.35rem, 3.5vw, 3.125rem);
-    --fillet-half: calc(var(--fillet) * 0.5);
-    border-top-width: 0;
-    border-bottom-left-radius: 999px;
-    border-bottom-right-radius: 999px;
-  }
-  .landing-nav-sculpted::before,
-  .landing-nav-sculpted::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    width: var(--fillet);
-    height: var(--fillet);
-    background: transparent;
-    pointer-events: none;
-    z-index: 0;
-  }
-  .landing-nav-sculpted::before {
-    left: calc(-1 * var(--fillet));
-    border-top-right-radius: var(--fillet);
-    box-shadow: var(--fillet-half) calc(-1 * var(--fillet-half)) 0 var(--fillet-half) #ffffff;
-  }
-  .landing-nav-sculpted::after {
-    right: calc(-1 * var(--fillet));
-    border-top-left-radius: var(--fillet);
-    box-shadow: calc(-1 * var(--fillet-half)) calc(-1 * var(--fillet-half)) 0 var(--fillet-half)
-      #ffffff;
-  }
 }

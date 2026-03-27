@@ -8,7 +8,7 @@ export default function Hero() {
   const isSignedIn = !!user && !loading;
 
   return (
-    <section className="relative flex min-h-[min(85vh,920px)] flex-col items-center justify-center px-4 pb-16 pt-8 text-center sm:px-6 sm:pb-24 sm:pt-10 md:pb-28">
+    <section className="relative flex min-h-[min(85vh,920px)] flex-col items-center justify-center px-4 pb-16 pt-6 text-center sm:px-6 sm:pb-24 sm:pt-8 md:pb-28">
       <div className="relative z-10 max-w-3xl mx-auto w-full">
         <div
           className="inline-flex items-center gap-2 rounded-full border border-white/55 bg-white/35 px-3.5 py-1.5 sm:px-4 text-[11px] sm:text-xs font-semibold uppercase tracking-widest text-bizzi-navy/90 backdrop-blur-md shadow-sm mb-6 sm:mb-8"

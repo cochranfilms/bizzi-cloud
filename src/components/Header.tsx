@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { smoothScrollToElement } from "@/lib/smooth-scroll";
+import LandingSculptedNavBackground from "@/components/landing/LandingSculptedNavBackground";
 
 const navLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "/", label: "Home" },
@@ -17,8 +18,8 @@ const navLinks: { href: string; label: string; external?: boolean }[] = [
 const glassNav =
   "border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl rounded-t-[1.75rem] rounded-b-[999px]";
 
-const landingIntegratedNav =
-  "landing-nav-sculpted mx-auto w-[min(56rem,87%)] sm:w-[min(58rem,85%)] border border-neutral-200/70 bg-white text-neutral-900 shadow-[0_14px_44px_rgba(15,23,42,0.07)]";
+const landingIntegratedNavFrame =
+  "relative z-0 mx-auto w-[min(56rem,87%)] sm:w-[min(58rem,85%)] text-neutral-900";
 
 function scrollToFeaturedWork() {
   const el = document.getElementById("featured-work");
@@ -42,20 +43,32 @@ export default function Header({ variant = "default" }: HeaderProps) {
     <header
       className={
         isLandingIntegrated
-          ? "sticky top-0 z-50 w-full px-3 pb-2 pt-0 sm:px-5 sm:pb-2.5 md:px-6 lg:px-8"
+          ? "sticky top-0 z-50 w-full bg-transparent px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5 sm:pb-2.5 md:px-6 lg:px-8"
           : "sticky top-0 z-50 w-full px-4 sm:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-3 sm:pb-4"
       }
     >
       <nav
         className={
           isLandingIntegrated
-            ? `${landingIntegratedNav} px-2.5 py-2.5 sm:px-5 sm:py-3 md:px-6 md:py-3`
+            ? `${landingIntegratedNavFrame}`
             : `landing-nav-slab mx-auto max-w-5xl ${glassNav} px-3 py-2 sm:px-6 sm:py-2.5`
         }
         aria-label="Main"
       >
+        {isLandingIntegrated && (
+          <div
+            className="pointer-events-none absolute inset-0 z-0 drop-shadow-[0_12px_36px_rgba(15,23,42,0.09)]"
+            aria-hidden
+          >
+            <LandingSculptedNavBackground />
+          </div>
+        )}
         <div
-          className={`relative z-10 flex w-full items-center ${isLandingIntegrated ? "gap-1.5 sm:gap-2" : "gap-2"}`}
+          className={`relative z-[1] flex w-full items-center ${
+            isLandingIntegrated
+              ? "gap-1.5 px-2.5 py-2.5 sm:gap-2 sm:px-5 sm:py-3 md:px-6 md:py-3"
+              : "gap-2"
+          }`}
         >
         <Link
           href="/"
@@ -141,7 +154,11 @@ export default function Header({ variant = "default" }: HeaderProps) {
 
           <button
             type="button"
-            className={`md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/40 text-neutral-800 backdrop-blur-sm ${mobileMenuOpen ? "ring-2 ring-bizzi-blue/30" : ""}`}
+            className={`md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border text-neutral-800 backdrop-blur-sm ${
+              isLandingIntegrated
+                ? `border-neutral-200/85 bg-white/95 ${mobileMenuOpen ? "ring-2 ring-bizzi-blue/25" : ""}`
+                : `border-white/50 bg-white/40 ${mobileMenuOpen ? "ring-2 ring-bizzi-blue/30" : ""}`
+            }`}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-expanded={mobileMenuOpen}
             aria-label="Toggle menu"
