@@ -550,8 +550,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         const oid = data.organization_id ?? null;
         if (isEnterpriseContext && orgId ? oid !== orgId : !!oid) continue;
         if (!isEnterpriseContext && !teamRouteOwnerUid) {
-          const pto = data.personal_team_owner_id as string | undefined;
-          if (pto && pto !== user.uid) continue;
+          if (data.personal_team_owner_id) continue;
         }
         let name = data.name as string;
         if (name === "Uploads") {
@@ -734,8 +733,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const oid = data.organization_id ?? null;
           if (isEnterpriseContext && orgIdLocal ? oid !== orgIdLocal : !!oid) continue;
           if (!isEnterpriseContext && !teamRouteOwnerUid) {
-            const pto = data.personal_team_owner_id as string | undefined;
-            if (pto && pto !== user.uid) continue;
+            if (data.personal_team_owner_id) continue;
           }
           const ld = mapDoc(d as QueryDocumentSnapshot);
           if (ld) drives.push(ld);
