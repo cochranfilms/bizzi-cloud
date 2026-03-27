@@ -200,7 +200,7 @@ export default function FolderCard({
           <div
             className={`flex items-center justify-center rounded-xl ${sizeClasses.icon} ${
               isSystemFolder
-                ? "bg-white/20 text-white dark:bg-white/25 dark:text-bizzi-cyan"
+                ? "bg-white/20 text-white shadow-none dark:bg-white/92 dark:text-neutral-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.22)]"
                 : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
             }`}
           >
@@ -227,7 +227,7 @@ export default function FolderCard({
         </h3>
         {showCardInfo && (
           <p
-            className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-bizzi-cyan/90" : "text-neutral-500 dark:text-neutral-400"}`}
+            className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-white/80" : "text-neutral-500 dark:text-neutral-400"}`}
           >
             {item.items} {item.items === 1 ? "item" : "items"}
           </p>

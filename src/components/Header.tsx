@@ -17,32 +17,60 @@ const navLinks: { href: string; label: string; external?: boolean }[] = [
 const glassNav =
   "border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl rounded-t-[1.75rem] rounded-b-[999px]";
 
+const landingIntegratedNav =
+  "landing-nav-sculpted mx-auto w-[min(56rem,87%)] sm:w-[min(58rem,85%)] border border-neutral-200/70 bg-white text-neutral-900 shadow-[0_14px_44px_rgba(15,23,42,0.07)]";
+
 function scrollToFeaturedWork() {
   const el = document.getElementById("featured-work");
   if (!el) return;
   void smoothScrollToElement(el);
 }
 
-export default function Header() {
+type HeaderProps = {
+  variant?: "default" | "landingIntegrated";
+};
+
+export default function Header({ variant = "default" }: HeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, loading } = useAuth();
   const isSignedIn = !!user && !loading;
 
+  const isLandingIntegrated = variant === "landingIntegrated";
+
   return (
-    <header className="sticky top-0 z-50 w-full px-4 sm:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-3 sm:pb-4">
+    <header
+      className={
+        isLandingIntegrated
+          ? "sticky top-0 z-50 w-full px-3 pb-2 pt-0 sm:px-5 sm:pb-2.5 md:px-6 lg:px-8"
+          : "sticky top-0 z-50 w-full px-4 sm:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-3 sm:pb-4"
+      }
+    >
       <nav
-        className={`landing-nav-slab mx-auto max-w-5xl ${glassNav} px-3 py-2 sm:px-6 sm:py-2.5`}
+        className={
+          isLandingIntegrated
+            ? `${landingIntegratedNav} px-2.5 py-2.5 sm:px-5 sm:py-3 md:px-6 md:py-3`
+            : `landing-nav-slab mx-auto max-w-5xl ${glassNav} px-3 py-2 sm:px-6 sm:py-2.5`
+        }
         aria-label="Main"
       >
-        <div className="relative z-10 flex w-full items-center gap-2">
-        <Link href="/" className="flex shrink-0 items-center gap-2 rounded-full py-1 pr-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 ring-1 ring-neutral-900/10 shadow-sm">
+        <div
+          className={`relative z-10 flex w-full items-center ${isLandingIntegrated ? "gap-1.5 sm:gap-2" : "gap-2"}`}
+        >
+        <Link
+          href="/"
+          className={`flex shrink-0 items-center gap-2 rounded-full py-1 pr-2 ${isLandingIntegrated ? "pl-0.5" : ""}`}
+        >
+          <span
+            className={`flex items-center justify-center rounded-full bg-white ring-1 ring-neutral-900/10 shadow-sm ${
+              isLandingIntegrated ? "h-10 w-10 sm:h-11 sm:w-11" : "h-9 w-9"
+            }`}
+          >
             <Image
               src="/logo.png"
               alt=""
-              width={22}
-              height={22}
+              width={isLandingIntegrated ? 24 : 22}
+              height={isLandingIntegrated ? 24 : 22}
               className="object-contain"
             />
           </span>
@@ -84,7 +112,9 @@ export default function Header() {
           </li>
         </ul>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+        <div
+          className={`ml-auto flex shrink-0 items-center gap-2 sm:gap-3 ${isLandingIntegrated ? "pr-0.5 sm:pr-1" : ""}`}
+        >
           {!isSignedIn && (
             <Link
               href="/login"
@@ -130,7 +160,11 @@ export default function Header() {
 
       {mobileMenuOpen && (
         <div
-          className={`mx-auto mt-3 max-w-5xl overflow-hidden rounded-3xl border border-white/55 bg-white/50 px-4 py-4 shadow-lg backdrop-blur-xl md:hidden`}
+          className={
+            isLandingIntegrated
+              ? "mx-auto mt-3 w-[min(56rem,87%)] overflow-hidden rounded-3xl border border-neutral-200/80 bg-white px-4 py-4 shadow-lg sm:w-[min(58rem,85%)] md:hidden"
+              : "mx-auto mt-3 max-w-5xl overflow-hidden rounded-3xl border border-white/55 bg-white/50 px-4 py-4 shadow-lg backdrop-blur-xl md:hidden"
+          }
         >
           <ul className="flex flex-col gap-1">
             {navLinks.map((link) => (
