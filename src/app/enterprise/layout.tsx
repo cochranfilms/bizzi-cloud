@@ -21,7 +21,7 @@ export default function EnterpriseLayout({
         <SubscriptionProvider>
           <BackupProvider>
             <CurrentFolderProvider>
-              <DashboardAuthGuard>
+              <DashboardAuthGuard skipFade>
                 <ConfirmProvider>
                   <DashboardAppearanceProvider>
                     <LayoutSettingsProvider>

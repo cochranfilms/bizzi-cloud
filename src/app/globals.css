@@ -4,6 +4,11 @@
 
 /* Mobile-first: touch-friendly tap targets, safe area insets */
 @layer base {
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
   html {
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;

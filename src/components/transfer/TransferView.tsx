@@ -37,7 +37,7 @@ function TransferFileRow({
   password?: string | null;
   onRecordView: (fileId: string) => void;
   onPreview: (file: TransferFile) => void;
-  onDownload: (fileId: string) => void;
+  onDownload: (fileId: string) => void | Promise<void>;
 }) {
   const thumbnailUrl = useTransferThumbnail(slug, file.objectKey, file.name, { size: "thumb" });
   const videoThumbnailUrl = useTransferVideoThumbnail(slug, file.objectKey, file.name);
@@ -148,6 +148,7 @@ export default function TransferView({ slug }: TransferViewProps) {
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState("");
+  const [fileDownloadError, setFileDownloadError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   const [previewFile, setPreviewFile] = useState<TransferFile | null>(null);
 
@@ -257,11 +258,6 @@ export default function TransferView({ slug }: TransferViewProps) {
     recordView(transfer.slug, fileId);
   };
 
-  const handleFileDownload = (fileId: string) => {
-    if (!transfer) return;
-    recordDownload(transfer.slug, fileId);
-  };
-
   const downloadOne = useCallback(
     async (file: TransferFile) => {
       const key = file.objectKey ?? file.backupFileId;
@@ -289,6 +285,23 @@ export default function TransferView({ slug }: TransferViewProps) {
       recordDownload(slug, file.id);
     },
     [slug, transfer?.hasPassword, unlocked, password, recordDownload]
+  );
+
+  const handleFileDownload = useCallback(
+    async (fileId: string) => {
+      if (!transfer) return;
+      const file = transfer.files.find((f) => f.id === fileId);
+      if (!file) return;
+      setFileDownloadError(null);
+      try {
+        await downloadOne(file);
+      } catch (err) {
+        setFileDownloadError(
+          err instanceof Error ? err.message : "Download failed"
+        );
+      }
+    },
+    [transfer, downloadOne]
   );
 
   const handleDownloadAll = useCallback(async () => {
@@ -428,6 +441,15 @@ export default function TransferView({ slug }: TransferViewProps) {
           </p>
         </div>
 
+        {fileDownloadError && (
+          <p
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+            role="alert"
+          >
+            {fileDownloadError}
+          </p>
+        )}
+
         {transfer.permission !== "view" &&
           transfer.files.some((f) => f.objectKey ?? f.backupFileId) && (
           <div className="mb-6 flex justify-center">
@@ -453,7 +475,9 @@ export default function TransferView({ slug }: TransferViewProps) {
               password={transfer.hasPassword && unlocked ? password : undefined}
               onRecordView={handleFileView}
               onPreview={setPreviewFile}
-              onDownload={handleFileDownload}
+              onDownload={(id) => {
+                void handleFileDownload(id);
+              }}
             />
           ))}
         </div>

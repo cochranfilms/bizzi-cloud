@@ -7,6 +7,7 @@ import KeyFeaturesPills from "@/components/landing/KeyFeaturesPills";
 import HowItWorks from "@/components/landing/HowItWorks";
 import PricingSection from "@/components/PricingSection";
 import TrustedByTeams from "@/components/landing/TrustedByTeams";
+import ScrollReveal from "@/components/landing/ScrollReveal";
 import FAQ from "@/components/landing/FAQ";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
@@ -23,18 +24,34 @@ export default function Home() {
       </Suspense>
       <main>
         <Hero />
-        <TrustedByBrands />
-        <KeyFeaturesPills />
-        <div id="features">
-          <HowItWorks />
-        </div>
+        <ScrollReveal variant="fade-up">
+          <TrustedByBrands />
+        </ScrollReveal>
+        <ScrollReveal variant="tilt-in">
+          <KeyFeaturesPills />
+        </ScrollReveal>
+        <ScrollReveal variant="fade">
+          <div id="features">
+            <HowItWorks />
+          </div>
+        </ScrollReveal>
         <Suspense fallback={null}>
-          <PricingSection />
+          <ScrollReveal variant="fade-scale">
+            <PricingSection />
+          </ScrollReveal>
         </Suspense>
-        <TrustedByTeams />
-        <FAQ />
-        <CTA />
-        <Footer />
+        <ScrollReveal variant="fade-up">
+          <TrustedByTeams />
+        </ScrollReveal>
+        <ScrollReveal variant="fade-up" delayMs={80}>
+          <FAQ />
+        </ScrollReveal>
+        <ScrollReveal variant="tilt-in">
+          <CTA />
+        </ScrollReveal>
+        <ScrollReveal variant="fade">
+          <Footer />
+        </ScrollReveal>
       </main>
     </div>
   );

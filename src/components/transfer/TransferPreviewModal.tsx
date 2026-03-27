@@ -28,7 +28,8 @@ interface TransferPreviewModalProps {
   password?: string | null;
   /** When "view", hide download button. When "downloadable", show it. */
   permission?: "view" | "downloadable";
-  onDownload?: (fileId: string) => void;
+  /** Perform file download (signed URL + trigger save). May be async. */
+  onDownload?: (fileId: string) => void | Promise<void>;
 }
 
 export default function TransferPreviewModal({
@@ -146,35 +147,16 @@ export default function TransferPreviewModal({
   const handleDownload = useCallback(async () => {
     if (!file || permission !== "downloadable") return;
     setDownloading(true);
+    setError(null);
     try {
-      onDownload?.(file.id);
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const res = await fetch(`${base}/api/transfers/${slug}/download`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file_id: file.id,
-          object_key: file.objectKey,
-          name: file.name,
-          password: password || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? data?.message ?? "Download failed");
-      }
-      const { url } = await res.json();
-      const a = document.createElement("a");
-      a.href = url.startsWith("/") ? `${window.location.origin}${url}` : url;
-      a.download = file.name;
-      a.rel = "noopener noreferrer";
-      a.click();
+      await onDownload?.(file.id);
     } catch (err) {
       console.error("Download error:", err);
+      setError(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloading(false);
     }
-  }, [slug, file, password, permission, onDownload]);
+  }, [file, permission, onDownload]);
 
   if (!file) return null;
 

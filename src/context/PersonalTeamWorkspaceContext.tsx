@@ -209,9 +209,10 @@ export function PersonalTeamWorkspaceProvider({
 
         const db = getFirebaseFirestore();
         const seatId = personalTeamSeatDocId(teamOwnerUid, user.uid);
-        const seatSnap = await getDoc(
-          doc(db, "personal_team_seats", seatId)
-        );
+        const [seatSnap, app] = await Promise.all([
+          getDoc(doc(db, "personal_team_seats", seatId)),
+          loadTeamWorkspaceAppearance(teamOwnerUid),
+        ]);
         const st = seatSnap.data()?.status as string | undefined;
         if (
           !seatSnap.exists() ||
@@ -223,7 +224,6 @@ export function PersonalTeamWorkspaceProvider({
           return;
         }
         const level = seatSnap.data()?.seat_access_level as string | undefined;
-        const app = await loadTeamWorkspaceAppearance(teamOwnerUid);
         if (cancelled) return;
         setTeamName(app.name);
         setTeamLogoUrl(app.logoUrl);

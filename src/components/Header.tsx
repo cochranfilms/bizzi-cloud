@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { smoothScrollToElement } from "@/lib/smooth-scroll";
 
 const navLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "/", label: "Home" },
@@ -13,33 +14,20 @@ const navLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "#faq", label: "Contact" },
 ];
 
-const pagesItems: { href: string; label: string; external?: boolean }[] = [
-  { href: "/desktop", label: "Download for Desktop" },
-  { href: "#features", label: "Features" },
-  { href: "https://www.bizzibytestorage.com/", label: "Shop SSDs", external: true },
-];
-
 const glassNav =
   "border border-white/55 bg-white/45 shadow-[0_8px_32px_rgba(31,56,92,0.08)] backdrop-blur-xl rounded-t-[1.75rem] rounded-b-[999px]";
+
+function scrollToFeaturedWork() {
+  const el = document.getElementById("featured-work");
+  if (!el) return;
+  void smoothScrollToElement(el);
+}
 
 export default function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [pagesOpen, setPagesOpen] = useState(false);
-  const pagesRef = useRef<HTMLLIElement>(null);
   const { user, loading } = useAuth();
   const isSignedIn = !!user && !loading;
-
-  useEffect(() => {
-    if (!pagesOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (pagesRef.current && !pagesRef.current.contains(e.target as Node)) {
-        setPagesOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [pagesOpen]);
 
   return (
     <header className="sticky top-0 z-50 w-full px-4 sm:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-3 sm:pb-4">
@@ -80,45 +68,19 @@ export default function Header() {
               </Link>
             </li>
           ))}
-          <li className="relative" ref={pagesRef}>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-sm font-medium text-neutral-700 hover:text-neutral-950 transition-colors whitespace-nowrap"
-              aria-expanded={pagesOpen}
-              aria-haspopup="true"
-              onClick={() => setPagesOpen((o) => !o)}
+          <li>
+            <Link
+              href="/#featured-work"
+              className="text-sm font-medium text-neutral-700 hover:text-neutral-950 transition-colors whitespace-nowrap"
+              onClick={(e) => {
+                if (pathname === "/") {
+                  e.preventDefault();
+                  scrollToFeaturedWork();
+                }
+              }}
             >
-              Pages
-              <svg
-                className={`h-3.5 w-3.5 opacity-70 transition-transform ${pagesOpen ? "rotate-180" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {pagesOpen && (
-              <div
-                className="absolute left-1/2 top-full z-50 mt-3 w-56 -translate-x-1/2 rounded-2xl border border-white/60 bg-white/80 py-2 shadow-lg backdrop-blur-xl md:left-0 md:translate-x-0"
-                role="menu"
-              >
-                {pagesItems.map((item) => (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    target={item.external ? "_blank" : undefined}
-                    rel={item.external ? "noopener noreferrer" : undefined}
-                    className="block px-4 py-2.5 text-sm text-neutral-700 hover:bg-white/60 hover:text-neutral-950 transition-colors"
-                    role="menuitem"
-                    onClick={() => setPagesOpen(false)}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            )}
+              Featured Work
+            </Link>
           </li>
         </ul>
 
@@ -184,22 +146,21 @@ export default function Header() {
                 </Link>
               </li>
             ))}
-            <li className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              Pages
+            <li>
+              <Link
+                href="/#featured-work"
+                className="block rounded-xl px-3 py-2.5 text-sm font-medium text-neutral-800 hover:bg-white/60"
+                onClick={(e) => {
+                  setMobileMenuOpen(false);
+                  if (pathname === "/") {
+                    e.preventDefault();
+                    window.setTimeout(() => scrollToFeaturedWork(), 120);
+                  }
+                }}
+              >
+                Featured Work
+              </Link>
             </li>
-            {pagesItems.map((item) => (
-              <li key={item.label}>
-                <Link
-                  href={item.href}
-                  target={item.external ? "_blank" : undefined}
-                  rel={item.external ? "noopener noreferrer" : undefined}
-                  className="block rounded-xl px-3 py-2.5 text-sm text-neutral-700 hover:bg-white/60"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              </li>
-            ))}
             {!isSignedIn && (
               <li className="mt-2 border-t border-white/50 pt-3">
                 <Link

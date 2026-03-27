@@ -32,9 +32,16 @@ export default function TrustedByTeams() {
   }, []);
 
   return (
-    <section className="overflow-hidden py-12 md:py-16">
+    <section
+      id="featured-work"
+      aria-labelledby="featured-work-heading"
+      className="scroll-mt-28 overflow-hidden py-12 md:py-16 md:scroll-mt-32"
+    >
       <div className="mb-8 text-center">
-        <h2 className="text-xl font-semibold text-bizzi-navy md:text-2xl">
+        <h2
+          id="featured-work-heading"
+          className="text-xl font-semibold text-bizzi-navy md:text-2xl"
+        >
           Trusted by creative teams
         </h2>
       </div>

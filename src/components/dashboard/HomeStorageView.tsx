@@ -208,6 +208,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
 
   const filesHref = `${basePath}/files`;
+  const isEnterpriseHome = basePath === "/enterprise";
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
 
   const isStorageDrive = (d: { name: string }) => d.name === "Storage";
@@ -707,8 +708,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
   const pinnedContentReady =
     !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
+  // Enterprise org add-ons come from `useEffectivePowerUps`, not the signed-in user's personal subscription.
+  // Waiting on personal `subscriptionLoading` only delayed the folder grid without benefit.
   const homeViewReady =
-    !loading && !subscriptionLoading && !powerUpContextLoading && pinnedContentReady;
+    !loading &&
+    (isEnterpriseHome ? true : !subscriptionLoading) &&
+    !powerUpContextLoading &&
+    pinnedContentReady;
 
   const showDragRect =
     dragState?.isActive &&

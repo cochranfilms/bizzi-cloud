@@ -4,12 +4,17 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
-import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
+import DashboardRouteFade, {
+  DashboardLoadingPlaceholder,
+} from "@/components/dashboard/DashboardRouteFade";
 
 export default function DashboardAuthGuard({
   children,
+  /** When true, only run auth + account checks (no fade). Use under another route fade (e.g. enterprise org gate) to avoid stacked fades. */
+  skipFade = false,
 }: {
   children: React.ReactNode;
+  skipFade?: boolean;
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -50,13 +55,25 @@ export default function DashboardAuthGuard({
   const ready = !loading && !!user && statusChecked;
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950">
-      <DashboardRouteFade
-        ready={ready}
-        srOnlyMessage="Loading dashboard"
-        placeholderClassName="min-h-screen rounded-none"
-      >
-        {ready ? children : null}
-      </DashboardRouteFade>
+      {skipFade ? (
+        <>
+          {!ready && (
+            <DashboardLoadingPlaceholder
+              srOnlyMessage="Loading dashboard"
+              placeholderClassName="min-h-screen rounded-none"
+            />
+          )}
+          {ready ? children : null}
+        </>
+      ) : (
+        <DashboardRouteFade
+          ready={ready}
+          srOnlyMessage="Loading dashboard"
+          placeholderClassName="min-h-screen rounded-none"
+        >
+          {ready ? children : null}
+        </DashboardRouteFade>
+      )}
     </div>
   );
 }

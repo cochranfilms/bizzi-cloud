@@ -84,14 +84,17 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
         }
       }
 
-      const seatsSnap = await getDocs(
-        query(
-          collection(db, "organization_seats"),
-          where("user_id", "==", user.uid),
-          where("status", "==", "active"),
-          limit(20)
-        )
+      const seatsQuery = query(
+        collection(db, "organization_seats"),
+        where("user_id", "==", user.uid),
+        where("status", "==", "active"),
+        limit(20)
       );
+      const profileRef = doc(db, "profiles", user.uid);
+      const [seatsSnap, profileSnap] = await Promise.all([
+        getDocs(seatsQuery),
+        getDoc(profileRef),
+      ]);
       const seatOrgIds = [
         ...new Set(
           seatsSnap.docs
@@ -99,9 +102,6 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
             .filter((id): id is string => typeof id === "string" && id.length > 0)
         ),
       ];
-
-      const profileRef = doc(db, "profiles", user.uid);
-      const profileSnap = await getDoc(profileRef);
       const profileData = profileSnap.data();
       const profileOrgId = profileData?.organization_id as string | undefined;
 
@@ -129,11 +129,14 @@ export function EnterpriseProvider({ children }: { children: React.ReactNode }) 
       }
 
       const seatDocId = `${chosenOrgId}_${user.uid}`;
-      const seatSnap = await getDoc(doc(db, "organization_seats", seatDocId));
-      const roleFromSeat = (seatSnap.data()?.role as OrganizationRole | undefined) ?? "member";
-
+      const seatRef = doc(db, "organization_seats", seatDocId);
       const orgRef = doc(db, "organizations", chosenOrgId);
-      const orgSnap = await getDoc(orgRef);
+      const [seatSnap, orgSnap] = await Promise.all([
+        getDoc(seatRef),
+        getDoc(orgRef),
+      ]);
+      const roleFromSeat =
+        (seatSnap.data()?.role as OrganizationRole | undefined) ?? "member";
 
       if (!orgSnap.exists()) {
         setOrganization(null);
