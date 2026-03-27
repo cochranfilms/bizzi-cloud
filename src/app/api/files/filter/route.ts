@@ -24,6 +24,7 @@ import {
   isTeamContainerDriveDoc,
 } from "@/lib/backup-scope";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { isCreativeProjectFilterMatch } from "@/lib/creative-file-registry";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -84,6 +85,9 @@ function parseFilters(searchParams: URLSearchParams) {
   const editedStatus = searchParams.get("edited_status") ?? undefined;
   const shared = searchParams.get("shared");
   const commented = searchParams.get("commented");
+  const creativeProjects =
+    searchParams.get("creative_projects") === "true" ||
+    searchParams.get("creative_projects") === "1";
   const VALID_SORTS: SortOption[] = ["newest", "oldest", "largest", "smallest", "name_asc", "name_desc"];
   const rawSort = (searchParams.get("sort") ?? "newest").split(/[:]/)[0]?.trim() || "newest";
   const sort = (VALID_SORTS.includes(rawSort as SortOption) ? rawSort : "newest") as SortOption;
@@ -132,6 +136,7 @@ function parseFilters(searchParams: URLSearchParams) {
     sort,
     cursor,
     pageSize,
+    creativeProjects,
   };
 }
 
@@ -341,6 +346,9 @@ function passesPostFilters(
     const at = String((item.asset_type as string) ?? "").toLowerCase();
     if (at !== String(filters.assetType).toLowerCase()) return false;
   }
+  if (filters.creativeProjects) {
+    if (!isCreativeProjectFilterMatch(item)) return false;
+  }
   return true;
 }
 
@@ -393,6 +401,10 @@ function toFileResponse(
       null,
     macos_package_id: (d.macos_package_id as string | undefined) ?? null,
     proxyStatus: d.proxy_status ?? null,
+    handlingModel: (d.handling_model as string | undefined) ?? null,
+    creativeApp: (d.creative_app as string | undefined) ?? null,
+    creativeDisplayLabel: (d.creative_display_label as string | undefined) ?? null,
+    projectFileType: (d.project_file_type as string | undefined) ?? null,
   };
   if (options?.includeAdminFields) {
     base.owner_user_id = d.owner_user_id ?? d.userId ?? null;
@@ -681,7 +693,8 @@ export async function GET(request: Request) {
         !!filters.shared ||
         !!filters.commented ||
         !!filters.dateFrom ||
-        !!filters.dateTo;
+        !!filters.dateTo ||
+        !!filters.creativeProjects;
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -790,7 +803,8 @@ export async function GET(request: Request) {
         !!filters.shared ||
         !!filters.commented ||
         !!filters.dateFrom ||
-        !!filters.dateTo;
+        !!filters.dateTo ||
+        !!filters.creativeProjects;
       if (batchNeedsPostFilter) {
         filteredDocs = filteredDocs.filter((doc) => {
           const item = { ...doc.data(), id: doc.id } as Record<string, unknown>;
@@ -916,6 +930,7 @@ export async function GET(request: Request) {
     !!filters.shared ||
     !!filters.commented ||
     hasDateRangeFilter ||
+    !!filters.creativeProjects ||
     (orderField !== "size_bytes" && ((filters.sizeMin != null && filters.sizeMin >= 0) || (filters.sizeMax != null && filters.sizeMax > 0)));
   const fetchLimit = needsPostFilter ? MAX_FETCH_FOR_POST_FILTER : filters.pageSize;
 

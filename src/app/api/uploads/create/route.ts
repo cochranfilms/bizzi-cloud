@@ -83,10 +83,14 @@ async function handleCreate(request: Request) {
     !relativePath ||
     typeof relativePath !== "string" ||
     typeof sizeBytes !== "number" ||
-    sizeBytes <= 0
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
   ) {
     return NextResponse.json(
-      { error: "drive_id, relative_path, and size_bytes are required" },
+      {
+        error:
+          "drive_id, relative_path, and size_bytes are required (0 allowed for empty files)",
+      },
       { status: 400 }
     );
   }

@@ -42,13 +42,14 @@ function formatDate(iso: string | null): string {
   });
 }
 
-function getFileType(
-  name: string,
-  contentType?: string | null,
-  assetType?: string | null
-): string {
+function getFileType(file: RecentFile): string {
+  const name = file.name;
+  const contentType = file.contentType;
+  const assetType = file.assetType;
+  if (file.creativeDisplayLabel?.trim()) return file.creativeDisplayLabel.trim();
   if (assetType === "macos_package") return "macOS package";
-  if (assetType === "project_file" || isProjectFile(name)) return "Project File";
+  if (file.macosPackageLabel?.trim()) return file.macosPackageLabel.trim();
+  if (assetType === "project_file" || isProjectFile(name)) return "Project file";
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (GALLERY_VIDEO_EXT.test(name.toLowerCase()) || contentType?.startsWith("video/")) return ext || "Video";
   if (GALLERY_IMAGE_EXT.test(name) || contentType?.startsWith("image/")) return ext || "Image";
@@ -247,7 +248,7 @@ export default function FileListRow({
           </div>
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {getFileType(file.name, file.contentType, file.assetType)}
+          {getFileType(file)}
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
           {formatBytes(file.size)}

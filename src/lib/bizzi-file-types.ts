@@ -16,7 +16,7 @@ export const VIDEO_EXTENSIONS = [
 /** Image/photo extensions — media_type "photo", Sharp may extract metadata. */
 export const IMAGE_EXTENSIONS = [
   "jpg", "jpeg", "png", "webp", "gif", "tiff", "tif", "bmp", "heic", "heif", "svg",
-  "psd", "psb", "ai", "dng", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "raf",
+  "dng", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "raf",
   "orf", "rw2", "pef", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mos", "mef", "mrw",
   "erf", "kdc", "dcr", "bay", "cap", "eip", "crw",
 ] as const;
@@ -28,7 +28,7 @@ export const IMAGE_EXTENSIONS = [
 export const DOCUMENT_EXTENSIONS = [
   "pdf", "doc", "docx", "txt", "rtf", "md", "csv", "xls", "xlsx", "ods",
   "ppt", "pptx", "key", "odp", "json", "xml", "html", "htm", "css", "js", "ts", "cts",
-  "prproj", "fcpxml", "drp", "drt", "srt", "vtt", "stl", "ass", "ssa", "lrc",
+  "prproj", "fcpxml", "drp", "drt", "lrcat", "srt", "vtt", "stl", "ass", "ssa", "lrc",
   "zip", "xmp", "ale", "edl", "aaf", "omf",
 ] as const;
 
@@ -39,6 +39,8 @@ export const DOCUMENT_EXTENSIONS = [
 export const PROJECT_EXTENSIONS = [
   "fcpbundle", "fcpproject", "fcpevent", "fcpxml",
   "prproj", "premiereproject", "aep", "mogrt",
+  "psd", "psb", "ai",
+  "lrcat", "lrdata",
   "drp", "dra", "drt",
   "otio", "xml", "edl", "aaf",
   "srt", "vtt", "cube", "cdl", "ale",

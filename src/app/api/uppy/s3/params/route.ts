@@ -32,7 +32,8 @@ export async function GET(request: Request) {
 
   const driveId = metadata.driveId ?? metadata.drive_id;
   const relativePath = metadata.relativePath ?? metadata.relative_path ?? filename;
-  const sizeBytes = parseInt(metadata.sizeBytes ?? metadata.size_bytes ?? "0", 10);
+  const sizeBytesRaw = metadata.sizeBytes ?? metadata.size_bytes ?? "0";
+  const sizeBytes = parseInt(String(sizeBytesRaw), 10);
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -51,9 +52,17 @@ export async function GET(request: Request) {
     }
   }
 
-  if (!driveId || !relativePath || !sizeBytes || sizeBytes <= 0) {
+  if (
+    !driveId ||
+    !relativePath ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
+  ) {
     return NextResponse.json(
-      { error: "metadata must include driveId, relativePath, sizeBytes" },
+      {
+        error:
+          "metadata must include driveId, relativePath, and sizeBytes (0 allowed for empty files)",
+      },
       { status: 400 }
     );
   }

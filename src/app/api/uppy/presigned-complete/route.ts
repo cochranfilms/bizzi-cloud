@@ -12,6 +12,7 @@ import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 import { NextResponse } from "next/server";
 
@@ -53,9 +54,18 @@ export async function POST(request: Request) {
 
   const workspaceIdFromBody = workspaceIdParam ?? workspaceIdLegacy;
 
-  if (!driveId || !relativePath || typeof sizeBytes !== "number" || sizeBytes <= 0) {
+  if (
+    !driveId ||
+    !relativePath ||
+    typeof sizeBytes !== "number" ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
+  ) {
     return NextResponse.json(
-      { error: "driveId, relativePath, and sizeBytes are required" },
+      {
+        error:
+          "driveId, relativePath, and sizeBytes are required (0 allowed for empty files)",
+      },
       { status: 400 }
     );
   }
@@ -160,6 +170,7 @@ export async function POST(request: Request) {
     personal_team_owner_id: personalTeamOwnerId,
     role_at_upload: roleAtUpload,
     ...macosPackageFirestoreFieldsFromRelativePath(safePath),
+    ...creativeFirestoreFieldsFromRelativePath(safePath),
   });
 
   try {

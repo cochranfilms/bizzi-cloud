@@ -15,6 +15,7 @@ import { createMuxAssetFromBackup } from "@/lib/mux";
 import { isVideoFile } from "@/lib/bizzi-file-types";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 
 const isDevAuthBypass = () =>
@@ -198,6 +199,7 @@ export async function POST(
     personal_team_owner_id: uploadMeta.personalTeamOwnerId,
     role_at_upload: uploadMeta.roleAtUpload,
     ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
+    ...creativeFirestoreFieldsFromRelativePath(relativePath),
   });
 
   try {

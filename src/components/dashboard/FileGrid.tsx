@@ -886,7 +886,8 @@ export default function FileGrid() {
 
     try {
       let didUnlinkCurrentDrive = false;
-      const allFileIdsToDelete = expandMacosPackageRowIds(fileIds, driveFiles, macosPackagesForFolder);
+      /** Trash API expands `macos-pkg:*` server-side (client only loads a page of drive files). */
+      const allFileIdsToDelete = [...new Set(fileIds)];
 
       for (const key of folderKeys) {
         if (key.startsWith("gallery-subfolder-")) {
@@ -937,7 +938,6 @@ export default function FileGrid() {
     refetch,
     loadDriveFiles,
     confirm,
-    macosPackagesForFolder,
   ]);
 
   const handleBulkMove = useCallback(() => {
@@ -1499,19 +1499,14 @@ export default function FileGrid() {
                           onDelete={
                             isPkg
                               ? async () => {
-                                  const ids = expandMacosPackageRowIds(
-                                    [file.id],
-                                    driveFiles,
-                                    macosPackagesForFolder
-                                  );
-                                  if (ids.length === 0) return;
+                                  const n = file.macosPackageFileCount ?? "all";
                                   const ok = await confirm({
-                                    message: `Move package "${file.name}" (${ids.length} files) to trash? You can restore from Deleted files.`,
+                                    message: `Move package "${file.name}" (${n} files) to trash? You can restore from Deleted files.`,
                                     destructive: true,
                                     confirmLabel: "Move to trash",
                                   });
                                   if (!ok) return;
-                                  await deleteFiles(ids);
+                                  await deleteFiles([file.id]);
                                   if (currentDrive) loadDriveFiles(currentDrive.id);
                                 }
                               : async () => {
@@ -1600,19 +1595,14 @@ export default function FileGrid() {
                       onDelete={
                         isPkg
                           ? async () => {
-                              const ids = expandMacosPackageRowIds(
-                                [file.id],
-                                driveFiles,
-                                macosPackagesForFolder
-                              );
-                              if (ids.length === 0) return;
+                              const n = file.macosPackageFileCount ?? "all";
                               const ok = await confirm({
-                                message: `Move package "${file.name}" (${ids.length} files) to trash? You can restore from Deleted files.`,
+                                message: `Move package "${file.name}" (${n} files) to trash? You can restore from Deleted files.`,
                                 destructive: true,
                                 confirmLabel: "Move to trash",
                               });
                               if (!ok) return;
-                              await deleteFiles(ids);
+                              await deleteFiles([file.id]);
                               if (currentDrive) loadDriveFiles(currentDrive.id);
                             }
                           : async () => {

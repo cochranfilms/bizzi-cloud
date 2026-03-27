@@ -324,6 +324,7 @@ export default function FileCard({
           </h3>
           <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
             {formatBytes(file.size)} · {file.driveName}
+            {file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}
           </p>
           {isMacosPackage ? (
             <p className="mt-0.5 text-left text-xs text-neutral-500 dark:text-neutral-400">

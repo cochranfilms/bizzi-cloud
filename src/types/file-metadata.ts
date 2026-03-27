@@ -55,8 +55,12 @@ export interface FileMetadataFields {
   media_type?: MediaType | null;
   /** Finer-grained classification for project files, archives, etc. */
   asset_type?: AssetType | null;
-  /** NLE app: final_cut_pro, premiere_pro, davinci_resolve, after_effects, interchange, archive, unknown_project */
+  /** Fine-grained id from creative registry, e.g. premiere_prproj, fcp_xml */
   project_file_type?: string | null;
+  /** package_container | single_project_file | project_support_file | archive_container | normal_media_asset */
+  handling_model?: string | null;
+  creative_app?: string | null;
+  creative_display_label?: string | null;
   /** When false, UI should show "Preview not supported" instead of attempting preview. */
   preview_supported?: boolean | null;
   created_at?: string | null;

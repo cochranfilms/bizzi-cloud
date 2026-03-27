@@ -39,6 +39,10 @@ import type {
   QueryDocumentSnapshot,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
+import {
+  recentFileFromMacosPackageListEntry,
+  type MacosPackageListEntry,
+} from "@/lib/macos-package-display";
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
@@ -207,6 +211,11 @@ export interface RecentFile {
   macosPackageId?: string | null;
   macosPackageFileCount?: number | null;
   macosPackageLabel?: string | null;
+  /** Creative registry (Projects, labels) */
+  handlingModel?: string | null;
+  creativeApp?: string | null;
+  creativeDisplayLabel?: string | null;
+  projectFileType?: string | null;
 }
 
 /** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
@@ -252,6 +261,10 @@ export function apiFileToRecentFile(
     video_codec: (raw.video_codec as string) ?? null,
     width: (raw.width as number) ?? null,
     height: (raw.height as number) ?? null,
+    handlingModel: (raw.handlingModel as string) ?? null,
+    creativeApp: (raw.creativeApp as string) ?? null,
+    creativeDisplayLabel: (raw.creativeDisplayLabel as string) ?? null,
+    projectFileType: (raw.projectFileType as string) ?? null,
   };
 }
 
@@ -267,6 +280,8 @@ async function fetchFilesFromFilterApi(
     /** When set with dateTo, filter uses upload time and sorts by uploaded_at (ingest order). */
     dateFrom?: string;
     dateTo?: string;
+    /** NLE / interchange / creative project files + metadata (handled in post-filter). */
+    creativeProjects?: boolean;
   }
 ): Promise<{ files: RecentFile[]; nextCursor: string | null; hasMore: boolean }> {
   const token = await getUserIdToken(user, false);
@@ -280,6 +295,7 @@ async function fetchFilesFromFilterApi(
   if (options.cursor) params.set("cursor", options.cursor);
   if (options.dateFrom) params.set("date_from", options.dateFrom);
   if (options.dateTo) params.set("date_to", options.dateTo);
+  if (options.creativeProjects) params.set("creative_projects", "true");
   if (options.enterprise) {
     params.set("context", "enterprise");
     params.set("organization_id", options.enterprise.organizationId);
@@ -761,8 +777,44 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       const tb = new Date(recentUploadRecencyIso(b) ?? 0).getTime();
       return tb - ta;
     });
+    const token = await getUserIdToken(user, false);
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const synthetics: RecentFile[] = [];
+    const activePkgIds = new Set<string>();
+    if (token) {
+      for (const driveId of storageDriveIds) {
+        const drive = driveMap.get(driveId);
+        const driveName = drive?.name ?? "Storage";
+        try {
+          const pres = await fetch(
+            `${base}/api/packages/list?drive_id=${encodeURIComponent(driveId)}&folder_path=`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (!pres.ok) continue;
+          const pdata = (await pres.json()) as { packages?: MacosPackageListEntry[] };
+          for (const p of pdata.packages ?? []) {
+            const la = p.last_activity_at;
+            if (!la || la < recentCutoff) continue;
+            synthetics.push(recentFileFromMacosPackageListEntry(p, driveId, driveName));
+            activePkgIds.add(p.id);
+          }
+        } catch {
+          /* ignore package list errors */
+        }
+      }
+    }
+    const merged: RecentFile[] = [...synthetics];
+    for (const f of all) {
+      if (f.macosPackageId && activePkgIds.has(f.macosPackageId)) continue;
+      merged.push(f);
+    }
+    merged.sort((a, b) => {
+      const ta = new Date(recentUploadRecencyIso(a) ?? 0).getTime();
+      const tb = new Date(recentUploadRecencyIso(b) ?? 0).getTime();
+      return tb - ta;
+    });
     const dedup = new Map<string, RecentFile>();
-    for (const f of all) dedup.set(f.id, f);
+    for (const f of merged) dedup.set(f.id, f);
     const result = [...dedup.values()].slice(0, 24);
     setRecentUploads(result);
     return result;

@@ -15,6 +15,7 @@ import {
 } from "@/lib/personal-team";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
@@ -228,6 +229,7 @@ export async function POST(request: Request) {
     personal_team_owner_id: teamOwnerForFile,
     role_at_upload: uploadMeta.roleAtUpload,
     ...macosPackageFirestoreFieldsFromRelativePath(safePath),
+    ...creativeFirestoreFieldsFromRelativePath(safePath),
   });
 
   try {

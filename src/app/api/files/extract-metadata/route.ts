@@ -23,10 +23,12 @@ import {
   isDocumentFile,
   isVideoFile,
   isImageFile,
-  isProjectFile,
   isArchiveFile,
-  getProjectFileType,
 } from "@/lib/bizzi-file-types";
+import {
+  classifyCreativeFileFromRelativePath,
+  shouldSkipVideoProbeForCreativePath,
+} from "@/lib/creative-file-registry";
 
 /** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
 export const maxDuration = 300;
@@ -131,11 +133,12 @@ export async function POST(request: Request) {
   const isGenericType =
     !contentType || contentType === "application/octet-stream" || contentType === "binary/octet-stream";
   const isDocument = isDocumentFile(fileName);
-  const isProject = isProjectFile(fileName);
+  const creative = classifyCreativeFileFromRelativePath(relativePath);
   const isArchive = isArchiveFile(fileName);
+  const skipProbeCreative = shouldSkipVideoProbeForCreativePath(relativePath);
   const shouldProbeForVideo =
     !isDocument &&
-    !isProject &&
+    !skipProbeCreative &&
     !isArchive &&
     (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName))) &&
     !!ffmpegPath;
@@ -145,12 +148,19 @@ export async function POST(request: Request) {
     uploader_id: uid,
   };
 
-  if (isProject) {
-    const projectType = getProjectFileType(fileName);
-    updates.asset_type = "project_file";
-    if (projectType) updates.project_file_type = projectType;
-    updates.preview_supported = false;
-  } else if (isArchive && !isProject) {
+  if (creative.handling_model !== "normal_media_asset") {
+    updates.handling_model = creative.handling_model;
+    updates.creative_app = creative.creative_app;
+    updates.creative_display_label = creative.creative_display_label;
+    if (creative.project_file_type) updates.project_file_type = creative.project_file_type;
+    if (creative.handling_model === "archive_container") {
+      updates.asset_type = "archive";
+      updates.preview_supported = false;
+    } else {
+      updates.asset_type = "project_file";
+      updates.preview_supported = false;
+    }
+  } else if (isArchive) {
     updates.asset_type = "archive";
     updates.preview_supported = false;
   }

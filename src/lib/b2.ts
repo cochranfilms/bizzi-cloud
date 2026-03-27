@@ -70,6 +70,15 @@ export interface AdaptivePartPlan {
  * Keeps total parts under 10,000. Optimized for 8K/BRAW and very large files.
  */
 export function computeAdaptivePartPlan(fileSizeBytes: number): AdaptivePartPlan {
+  /** Final Cut and other apps use 0-byte placeholders (e.g. `.lock`, `__Sync__`). Multipart needs ≥1 part. */
+  if (fileSizeBytes === 0) {
+    return {
+      partSize: 8 * 1024 * 1024,
+      totalParts: 1,
+      recommendedConcurrency: 1,
+    };
+  }
+
   let partSize: number;
   let concurrency: number;
   if (fileSizeBytes < 250 * 1024 * 1024) {
