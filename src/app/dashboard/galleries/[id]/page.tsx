@@ -138,7 +138,7 @@ export default function GalleryDetailPage() {
   const galleriesRoot = `${navBase}/galleries`;
   const id = params?.id as string;
   const { user } = useAuth();
-  const { recentFiles } = useCloudFiles();
+  const { recentFiles, refetch: refetchCloudFiles } = useCloudFiles();
 
   const [gallery, setGallery] = useState<GalleryData | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
@@ -151,6 +151,12 @@ export default function GalleryDetailPage() {
   const [settingFeatured, setSettingFeatured] = useState<string | null>(null);
   const [removingAssetId, setRemovingAssetId] = useState<string | null>(null);
   const isVideoGallery = gallery?.gallery_type === "video";
+  const isTeamRoute =
+    typeof pathname === "string" && pathname.startsWith("/team/");
+
+  useEffect(() => {
+    if (showAddModal) void refetchCloudFiles();
+  }, [showAddModal, refetchCloudFiles]);
 
   const handleRemoveAsset = async (assetId: string, fileName: string) => {
     if (!user || !id) return;
@@ -583,11 +589,15 @@ export default function GalleryDetailPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
                 {isVideoGallery
-                  ? "Choose from your recent video files (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
-                  : "Choose from your recent photos (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."}
+                  ? isTeamRoute
+                    ? "Choose from recent videos in this team workspace (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
+                    : "Choose from your recent video files (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
+                  : isTeamRoute
+                    ? "Choose from recent photos in this team workspace (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."
+                    : "Choose from your recent photos (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."}
               </p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                {filesEligibleForFromFiles.slice(0, 50).map((f) => (
+                {filesEligibleForFromFiles.slice(0, 120).map((f) => (
                     <AddFileButton
                       key={f.id}
                       file={f}

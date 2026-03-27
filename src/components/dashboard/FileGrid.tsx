@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import { CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
-const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 
+import { DND_MOVE_MIME, getMovePayloadFromDragSource } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
@@ -564,21 +564,21 @@ export default function FileGrid() {
   }, []);
 
   const currentDriveId = currentDrive?.id;
-  const hasSelection = selectedFileIds.size + selectedFolderKeys.size > 0;
-
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
-      if (!hasSelection) return;
-      e.dataTransfer.setData(
-        DND_MOVE_TYPE,
-        JSON.stringify({
-          fileIds: Array.from(selectedFileIds),
-          folderKeys: Array.from(selectedFolderKeys),
-        })
+      const payload = getMovePayloadFromDragSource(
+        e.currentTarget as HTMLElement,
+        selectedFileIds,
+        selectedFolderKeys
       );
+      if (!payload || payload.fileIds.length + payload.folderKeys.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData(DND_MOVE_MIME, JSON.stringify(payload));
       e.dataTransfer.effectAllowed = "move";
     },
-    [hasSelection, selectedFileIds, selectedFolderKeys]
+    [selectedFileIds, selectedFolderKeys]
   );
 
   const handleMouseDown = useCallback(
@@ -815,7 +815,7 @@ export default function FileGrid() {
   const handleDropOnFolder = useCallback(
     async (targetDriveId: string, e: React.DragEvent) => {
       try {
-        const raw = e.dataTransfer.getData(DND_MOVE_TYPE);
+        const raw = e.dataTransfer.getData(DND_MOVE_MIME);
         if (!raw) return;
         const data = JSON.parse(raw) as { fileIds: string[]; folderKeys: string[] };
         const { fileIds, folderKeys } = data;
@@ -1012,6 +1012,13 @@ export default function FileGrid() {
                 <tbody data-selectable-grid>
                   {pinnedFolderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const driveId = item.driveId ?? "";
+                    const isFolderInSelection = selectedFolderKeys.has(item.key);
+                    const isDropTarget =
+                      !!driveId &&
+                      !isFolderInSelection &&
+                      linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
                     return (
                       <FolderListRow
                         key={item.key}
@@ -1037,6 +1044,10 @@ export default function FileGrid() {
                         selectable={!!drive && !item.preventDelete}
                         selected={selectedFolderKeys.has(item.key)}
                         onSelect={() => toggleFolderSelection(item.key)}
+                        isDropTarget={isDropTarget}
+                        onItemsDropped={handleDropOnFolder}
+                        draggable={canDragFolder}
+                        onDragStart={handleDragStart}
                       />
                     );
                   })}
@@ -1054,6 +1065,8 @@ export default function FileGrid() {
                       selectable
                       selected={selectedFileIds.has(file.id)}
                       onSelect={() => toggleFileSelection(file.id)}
+                      draggable={!!file.driveId}
+                      onDragStart={handleDragStart}
                     />
                   ))}
                 </tbody>
@@ -1067,18 +1080,18 @@ export default function FileGrid() {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 const isDropTarget =
                   !!driveId &&
-                  hasSelection &&
                   !isFolderInSelection &&
                   linkedDrives.some((d) => d.id === driveId);
+                const canDragFolder = !!item.driveId && !item.preventMove;
                 return (
                   <div
                     key={item.key}
                     data-selectable-item
                     data-item-type="folder"
                     data-item-key={item.key}
-                    draggable={isFolderInSelection && hasSelection}
+                    draggable={canDragFolder}
                     onDragStart={handleDragStart}
-                    className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                   >
                     <FolderCard
                       item={item}
@@ -1116,9 +1129,9 @@ export default function FileGrid() {
                   data-selectable-item
                   data-item-type="file"
                   data-item-id={file.id}
-                  draggable={selectedFileIds.has(file.id) && hasSelection}
+                  draggable={!!file.driveId}
                   onDragStart={handleDragStart}
-                  className={selectedFileIds.has(file.id) && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
                 >
                   <FileCard
                     file={file}
@@ -1255,20 +1268,25 @@ export default function FileGrid() {
                         </td>
                       </tr>
                     )}
-                    {showFolders && subfolderItems.map((item) => (
-                      <FolderListRow
-                        key={item.key}
-                        item={item}
-                        onClick={() => {
-                          setCurrentDrivePath(item.pathPrefix ?? item.name);
-                          setSelectedFileIds(new Set());
-                          setSelectedFolderKeys(new Set());
-                        }}
-                        selectable={!!item.driveId || !!item.virtualFolder}
-                        selected={selectedFolderKeys.has(item.key)}
-                        onSelect={() => toggleFolderSelection(item.key)}
-                      />
-                    ))}
+                    {showFolders && subfolderItems.map((item) => {
+                      const canDragFolder = !!item.driveId && !item.preventMove;
+                      return (
+                        <FolderListRow
+                          key={item.key}
+                          item={item}
+                          onClick={() => {
+                            setCurrentDrivePath(item.pathPrefix ?? item.name);
+                            setSelectedFileIds(new Set());
+                            setSelectedFolderKeys(new Set());
+                          }}
+                          selectable={!!item.driveId || !!item.virtualFolder}
+                          selected={selectedFolderKeys.has(item.key)}
+                          onSelect={() => toggleFolderSelection(item.key)}
+                          draggable={canDragFolder}
+                          onDragStart={handleDragStart}
+                        />
+                      );
+                    })}
                     {filesToShow.map((file) => (
                       <FileListRow
                         key={file.id}
@@ -1282,6 +1300,8 @@ export default function FileGrid() {
                         selected={selectedFileIds.has(file.id)}
                         onSelect={() => toggleFileSelection(file.id)}
                         onAfterRename={() => currentDrive && loadDriveFiles(currentDrive.id)}
+                        draggable={!!file.driveId}
+                        onDragStart={handleDragStart}
                       />
                     ))}
                   </tbody>
@@ -1302,15 +1322,16 @@ export default function FileGrid() {
               )}
               {showFolders && subfolderItems.map((item) => {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
+                const canDragFolder = !!item.driveId && !item.preventMove;
                 return (
                   <div
                     key={item.key}
                     data-selectable-item
                     data-item-type="folder"
                     data-item-key={item.key}
-                    draggable={isFolderInSelection && hasSelection}
+                    draggable={canDragFolder}
                     onDragStart={handleDragStart}
-                    className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                   >
                     <FolderCard
                       item={item}
@@ -1335,9 +1356,9 @@ export default function FileGrid() {
                   data-selectable-item
                   data-item-type="file"
                   data-item-id={file.id}
-                  draggable={selectedFileIds.has(file.id) && hasSelection}
+                  draggable={!!file.driveId}
                   onDragStart={handleDragStart}
-                  className={selectedFileIds.has(file.id) && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
                 >
                   <FileCard
                     file={file}
@@ -1391,7 +1412,13 @@ export default function FileGrid() {
                       <tbody data-selectable-grid>
                         {folderItems.map((item) => {
                           const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-                          const driveId = drive?.id;
+                          const driveId = item.driveId ?? drive?.id ?? "";
+                          const isFolderInSelection = selectedFolderKeys.has(item.key);
+                          const isDropTarget =
+                            !!driveId &&
+                            !isFolderInSelection &&
+                            linkedDrives.some((d) => d.id === driveId);
+                          const canDragFolder = !!item.driveId && !item.preventMove;
                           return (
                             <FolderListRow
                               key={item.key}
@@ -1417,6 +1444,10 @@ export default function FileGrid() {
                               selectable={!!drive && !item.preventDelete}
                               selected={selectedFolderKeys.has(item.key)}
                               onSelect={() => toggleFolderSelection(item.key)}
+                              isDropTarget={isDropTarget}
+                              onItemsDropped={handleDropOnFolder}
+                              draggable={canDragFolder}
+                              onDragStart={handleDragStart}
                             />
                           );
                         })}
@@ -1430,22 +1461,22 @@ export default function FileGrid() {
                 >
                   {folderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-                    const driveId = drive?.id;
+                    const driveId = item.driveId ?? drive?.id ?? "";
                     const isFolderInSelection = selectedFolderKeys.has(item.key);
                     const isDropTarget =
                       !!driveId &&
-                      hasSelection &&
                       !isFolderInSelection &&
                       linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
                     return (
                       <div
                         key={item.key}
                         data-selectable-item
                         data-item-type="folder"
                         data-item-key={item.key}
-                        draggable={isFolderInSelection && hasSelection}
+                        draggable={canDragFolder}
                         onDragStart={handleDragStart}
-                        className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                        className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                       >
                         <FolderCard
                           item={item}
@@ -1513,6 +1544,8 @@ export default function FileGrid() {
                             selectable
                             selected={selectedFileIds.has(file.id)}
                             onSelect={() => toggleFileSelection(file.id)}
+                            draggable={!!file.driveId}
+                            onDragStart={handleDragStart}
                           />
                         ))}
                       </tbody>
@@ -1537,9 +1570,9 @@ export default function FileGrid() {
                       data-selectable-item
                       data-item-type="file"
                       data-item-id={file.id}
-                      draggable={selectedFileIds.has(file.id) && hasSelection}
+                      draggable={!!file.driveId}
                       onDragStart={handleDragStart}
-                      className={selectedFileIds.has(file.id) && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                      className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
                     >
                       <FileCard
                         file={file}
@@ -1600,6 +1633,8 @@ export default function FileGrid() {
                           await deleteFile(file.id);
                           refreshHearted();
                         }}
+                        draggable={!!file.driveId}
+                        onDragStart={handleDragStart}
                       />
                     ))}
                   </tbody>
@@ -1608,19 +1643,28 @@ export default function FileGrid() {
             ) : (
               <div data-selectable-grid className={`relative grid gap-4 ${gridColsClass}`}>
                 {heartedFiles.map((file) => (
-                  <FileCard
+                  <div
                     key={file.id}
-                    file={file}
-                    onClick={() => setPreviewFile(file)}
-                    onDelete={async () => {
-                      await deleteFile(file.id);
-                      refreshHearted();
-                    }}
-                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                    layoutAspectRatio={aspectRatio}
-                    thumbnailScale={thumbnailScale}
-                    showCardInfo={showCardInfo}
-                  />
+                    data-selectable-item
+                    data-item-type="file"
+                    data-item-id={file.id}
+                    draggable={!!file.driveId}
+                    onDragStart={handleDragStart}
+                    className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
+                  >
+                    <FileCard
+                      file={file}
+                      onClick={() => setPreviewFile(file)}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        refreshHearted();
+                      }}
+                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
+                      layoutAspectRatio={aspectRatio}
+                      thumbnailScale={thumbnailScale}
+                      showCardInfo={showCardInfo}
+                    />
+                  </div>
                 ))}
               </div>
             )}

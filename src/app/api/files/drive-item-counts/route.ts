@@ -48,19 +48,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const organizationId = url.searchParams.get("organization_id")?.trim() || null;
   const teamOwnerId = url.searchParams.get("team_owner_id")?.trim() || null;
-  if (organizationId && teamOwnerId) {
-    return NextResponse.json(
-      { error: "Specify organization_id or team_owner_id, not both" },
-      { status: 400 }
-    );
-  }
-  if (!organizationId && !teamOwnerId) {
-    return NextResponse.json(
-      { error: "organization_id or team_owner_id required" },
-      { status: 400 }
-    );
-  }
-
+  const personal = url.searchParams.get("personal") === "1";
   const trashOnly = url.searchParams.get("deleted") === "only";
 
   const driveIdsParam = url.searchParams.get("drive_ids")?.trim();
@@ -73,6 +61,48 @@ export async function GET(request: Request) {
   }
 
   const db = getAdminFirestore();
+
+  /** Personal-account drives (no org): avoids client getCountFromServer failed-precondition on trash counts. */
+  if (personal) {
+    if (organizationId || teamOwnerId) {
+      return NextResponse.json(
+        { error: "Do not pass organization_id or team_owner_id with personal=1" },
+        { status: 400 }
+      );
+    }
+    const counts: Record<string, number> = {};
+    await Promise.all(
+      driveIds.map(async (driveId) => {
+        const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+        const data = driveSnap.data();
+        const owner = (data?.userId ?? data?.user_id) as string | undefined;
+        if (!data || owner !== uid || data.organization_id) {
+          counts[driveId] = 0;
+          return;
+        }
+        const coll = db.collection("backup_files");
+        const q = trashOnly
+          ? coll.where("linked_drive_id", "==", driveId).where("deleted_at", "!=", null)
+          : coll.where("linked_drive_id", "==", driveId).where("deleted_at", "==", null);
+        const agg = await q.count().get();
+        counts[driveId] = agg.data().count;
+      })
+    );
+    return NextResponse.json({ counts });
+  }
+
+  if (organizationId && teamOwnerId) {
+    return NextResponse.json(
+      { error: "Specify organization_id or team_owner_id, not both" },
+      { status: 400 }
+    );
+  }
+  if (!organizationId && !teamOwnerId) {
+    return NextResponse.json(
+      { error: "organization_id or team_owner_id required" },
+      { status: 400 }
+    );
+  }
 
   if (teamOwnerId) {
     if (uid !== teamOwnerId) {

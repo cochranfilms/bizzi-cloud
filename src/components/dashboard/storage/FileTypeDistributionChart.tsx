@@ -70,7 +70,7 @@ export default function FileTypeDistributionChart({
 
   return (
     <div
-      className="min-w-0 w-full rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900"
+      className="w-full min-w-[200px] rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900"
       role="img"
       aria-label={`Storage by type: ${data.map((d) => `${d.name} ${formatBytes(d.value)}`).join(", ")}`}
     >

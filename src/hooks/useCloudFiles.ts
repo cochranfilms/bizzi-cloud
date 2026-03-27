@@ -200,7 +200,8 @@ function recentUploadRecencyIso(file: RecentFile): string | null {
   return null;
 }
 
-function apiFileToRecentFile(
+/** Maps /api/files/filter row to RecentFile (also used by gallery "From files" refetch). */
+export function apiFileToRecentFile(
   raw: Record<string, unknown>,
   driveNameById: Map<string, string>
 ): RecentFile {
@@ -377,7 +378,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             { headers: { Authorization: `Bearer ${token}` } }
           ),
           fetch(
-            `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=50`,
+            `${base}/api/files/filter?context=enterprise&organization_id=${encodeURIComponent(orgId)}&sort=newest&page_size=120`,
             { headers: { Authorization: `Bearer ${token}` } }
           ),
         ]);
@@ -403,7 +404,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
-          .slice(0, 24);
+          .slice(0, 120);
         setRecentFiles(recent);
       } else if (teamRouteOwnerUid && scoped.length > 0) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -417,7 +418,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             { headers: { Authorization: `Bearer ${token}` } }
           ),
           fetch(
-            `${base}/api/files/filter?team_owner_id=${ownerParam}&sort=newest&page_size=50`,
+            `${base}/api/files/filter?team_owner_id=${ownerParam}&sort=newest&page_size=120`,
             { headers: { Authorization: `Bearer ${token}` } }
           ),
         ]);
@@ -443,7 +444,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
-          .slice(0, 24);
+          .slice(0, 120);
         setRecentFiles(recent);
       } else {
         const [folders, recentList] = await Promise.all([
@@ -464,8 +465,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             })
           ),
           (async (): Promise<RecentFile[]> => {
-            const { files: list } = await fetchFilesFromFilterApi(user, { pageSize: 50 });
-            return list.filter((r) => driveIds.has(r.driveId)).slice(0, 24);
+            const { files: list } = await fetchFilesFromFilterApi(user, { pageSize: 120 });
+            return list.filter((r) => driveIds.has(r.driveId)).slice(0, 120);
           })(),
         ]);
         setDriveFolders(folders);
@@ -1237,14 +1238,17 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     });
 
     let countMap: Record<string, number> = {};
-    if (isEnterpriseContext && orgId && drivesInContext.length > 0) {
+    if (drivesInContext.length > 0) {
       const base = typeof window !== "undefined" ? window.location.origin : "";
       const token = await getUserIdToken(user, false);
       const driveIdsParam = drivesInContext.map((d) => d.id).join(",");
-      const countRes = await fetch(
-        `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}&deleted=only`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const countUrl =
+        isEnterpriseContext && orgId
+          ? `${base}/api/files/drive-item-counts?organization_id=${encodeURIComponent(orgId)}&drive_ids=${encodeURIComponent(driveIdsParam)}&deleted=only`
+          : `${base}/api/files/drive-item-counts?personal=1&drive_ids=${encodeURIComponent(driveIdsParam)}&deleted=only`;
+      const countRes = await fetch(countUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (countRes.ok) {
         const countData = (await countRes.json()) as { counts?: Record<string, number> };
         countMap = countData.counts ?? {};
@@ -1254,27 +1258,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     const result: DeletedDrive[] = [];
     for (const d of drivesInContext) {
       const data = d.data();
-      const oid = data.organization_id ?? null;
-      let items: number;
-      if (isEnterpriseContext && orgId) {
-        items = countMap[d.id] ?? 0;
-      } else {
-        const countSnap = await getCountFromServer(
-          oid
-            ? query(
-                collection(db, "backup_files"),
-                where("linked_drive_id", "==", d.id),
-                where("organization_id", "==", oid),
-                where("deleted_at", "!=", null)
-              )
-            : query(
-                collection(db, "backup_files"),
-                where("linked_drive_id", "==", d.id),
-                where("deleted_at", "!=", null)
-              )
-        );
-        items = countSnap.data().count;
-      }
+      const items = countMap[d.id] ?? 0;
       const deletedAt = data.deleted_at?.toDate?.()
         ? data.deleted_at.toDate().toISOString()
         : typeof data.deleted_at === "string"

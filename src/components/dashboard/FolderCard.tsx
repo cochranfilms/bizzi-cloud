@@ -6,6 +6,7 @@ import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import { useCallback, useState } from "react";
+import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
 import RenameModal from "./RenameModal";
@@ -112,6 +113,7 @@ export default function FolderCard({
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
       if (!isDropTarget || !onItemsDropped) return;
+      if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "move";

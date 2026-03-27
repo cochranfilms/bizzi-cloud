@@ -92,6 +92,8 @@ interface FileListRowProps {
   onSelect?: () => void;
   selectable?: boolean;
   onAfterRename?: () => void;
+  draggable?: boolean;
+  onDragStart?: React.DragEventHandler<HTMLTableRowElement>;
 }
 
 export default function FileListRow({
@@ -102,6 +104,8 @@ export default function FileListRow({
   onSelect,
   selectable = false,
   onAfterRename,
+  draggable = false,
+  onDragStart,
 }: FileListRowProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -148,6 +152,8 @@ export default function FileListRow({
         data-selectable-item
         data-item-type="file"
         data-item-id={file.id}
+        draggable={draggable}
+        onDragStart={onDragStart}
         role={canPreview ? "button" : undefined}
         tabIndex={canPreview ? 0 : undefined}
         onClick={canPreview ? onClick : undefined}
@@ -163,7 +169,9 @@ export default function FileListRow({
         }
         className={`border-b border-neutral-100 transition-colors last:border-0 ${
           canPreview ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
-        } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""}`}
+        } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
+          draggable ? "cursor-grab active:cursor-grabbing" : ""
+        }`}
       >
         <td className="w-10 px-3 py-2">
           {selectable && onSelect ? (

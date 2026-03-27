@@ -12,6 +12,7 @@ import {
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
   type CompletedPart,
+  type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -125,18 +126,26 @@ export async function createPresignedPartUrlsBatch(
  */
 const SSE_B2_HEADER = { ServerSideEncryption: "AES256" as const };
 
+/**
+ * Presigned PUT for single-chunk uploads. When `contentType` is omitted, the signature does not
+ * bind Content-Type so the client may omit it — avoids B2/AWS 403 when the browser sends a
+ * different type than Uppy requested (common for folders, .fcpbundle, or empty file.type).
+ */
 export async function createPresignedUploadUrl(
   objectKey: string,
-  contentType: string,
+  contentType: string | undefined,
   expiresIn = 3600
 ): Promise<string> {
   const client = getB2Client();
-  const command = new PutObjectCommand({
+  const input: PutObjectCommandInput = {
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
-    ContentType: contentType,
     ...SSE_B2_HEADER,
-  });
+  };
+  if (contentType && contentType.trim() !== "") {
+    input.ContentType = contentType;
+  }
+  const command = new PutObjectCommand(input);
   return getSignedUrl(client, command, { expiresIn });
 }
 

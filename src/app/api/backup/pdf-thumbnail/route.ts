@@ -35,7 +35,8 @@ const isDevAuthBypass = () =>
 
 const PDF_EXT = /\.pdf$/i;
 const THUMB_SIZE = 256;
-const PDF_MAX_BYTES = 15 * 1024 * 1024; // 15 MB - enough for most documents
+/** Max PDF size to load for first-page rasterization (Vercel memory/time). */
+const PDF_MAX_BYTES = 52 * 1024 * 1024;
 
 function isPdfFile(name: string): boolean {
   return PDF_EXT.test(name.toLowerCase());
@@ -144,6 +145,12 @@ async function handlePdfThumbnail(request: Request) {
     const isNotFound =
       typeof msg === "string" &&
       (msg.includes("NoSuchKey") || msg.includes("NotFound") || msg.includes("not found"));
+    const tooLarge =
+      typeof msg === "string" &&
+      (msg.includes("too large") || msg.includes("Object too large"));
+    if (tooLarge) {
+      return new NextResponse("PDF too large for thumbnail", { status: 413 });
+    }
     console.error("[pdf-thumbnail] Error:", msg, stack ?? err);
 
     return new NextResponse(

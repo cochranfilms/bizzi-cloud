@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, Folder } from "lucide-react";
 import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import type { FolderItem } from "./FolderCard";
@@ -15,6 +15,7 @@ import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 
 interface FolderListRowProps {
   item: FolderItem;
@@ -25,6 +26,8 @@ interface FolderListRowProps {
   selectable?: boolean;
   isDropTarget?: boolean;
   onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
+  draggable?: boolean;
+  onDragStart?: React.DragEventHandler<HTMLTableRowElement>;
 }
 
 export default function FolderListRow({
@@ -36,6 +39,8 @@ export default function FolderListRow({
   selectable = false,
   isDropTarget = false,
   onItemsDropped,
+  draggable = false,
+  onDragStart,
 }: FolderListRowProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -67,12 +72,48 @@ export default function FolderListRow({
       ? BizzicloudStorageIcon
       : Folder;
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent<HTMLTableRowElement>) => {
+      if (!isDropTarget || !onItemsDropped) return;
+      if (!Array.from(e.dataTransfer.types).includes(DND_MOVE_MIME)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      setIsDragOver(true);
+    },
+    [isDropTarget, onItemsDropped]
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLTableRowElement>) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLTableRowElement>) => {
+      setIsDragOver(false);
+      if (!isDropTarget || !onItemsDropped || !item.driveId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onItemsDropped(item.driveId, e);
+    },
+    [isDropTarget, onItemsDropped, item.driveId]
+  );
+
   return (
     <>
       <tr
         data-selectable-item
         data-item-type="folder"
         data-item-key={item.key}
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragOver={isDropTarget ? handleDragOver : undefined}
+        onDragLeave={isDropTarget ? handleDragLeave : undefined}
+        onDrop={isDropTarget ? handleDrop : undefined}
         role={canNavigate ? "button" : undefined}
         tabIndex={canNavigate ? 0 : undefined}
         onClick={canNavigate ? onClick : undefined}
@@ -88,7 +129,11 @@ export default function FolderListRow({
         }
         className={`border-b border-neutral-100 transition-colors last:border-0 ${
           canNavigate ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
-        } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""}`}
+        } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
+          draggable ? "cursor-grab active:cursor-grabbing" : ""
+        } ${
+          isDragOver ? "bg-bizzi-blue/10 ring-1 ring-inset ring-bizzi-blue/40 dark:bg-bizzi-blue/15" : ""
+        }`}
       >
         <td className="w-10 px-3 py-2">
           {selectable && onSelect ? (

@@ -11,6 +11,7 @@ import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import type { GalleryAssetOrigin } from "@/types/gallery";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { canLinkBackupFileToGallery } from "@/lib/gallery-asset-link-access";
 
 function getMediaType(name: string): "image" | "video" {
   return GALLERY_VIDEO_EXT.test(name) ? "video" : GALLERY_IMAGE_EXT.test(name) ? "image" : "image";
@@ -96,7 +97,7 @@ export async function POST(
   const added: { id: string; backup_file_id: string; name: string }[] = [];
 
   for (const { id: backupFileId, data: fileData } of fileRows) {
-    if (fileData.userId !== uid || fileData.deleted_at) continue;
+    if (!(await canLinkBackupFileToGallery(uid, fileData, galleryRow))) continue;
 
     const path = (fileData.relative_path ?? "") as string;
     const name = path.split("/").filter(Boolean).pop() ?? path ?? "file";

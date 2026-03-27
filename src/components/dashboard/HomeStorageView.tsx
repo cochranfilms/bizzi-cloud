@@ -33,8 +33,8 @@ import { getAuthToken, getCurrentUserIdToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 
 const DRAG_THRESHOLD_PX = 5;
-const DND_MOVE_TYPE = "application/x-bizzi-move-items";
 
+import { DND_MOVE_MIME, getMovePayloadFromDragSource } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 
 function BulkActionBar({
@@ -426,21 +426,21 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
 
-  const hasSelection = selectedFileIds.size + selectedFolderKeys.size > 0;
-
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
-      if (!hasSelection) return;
-      e.dataTransfer.setData(
-        DND_MOVE_TYPE,
-        JSON.stringify({
-          fileIds: Array.from(selectedFileIds),
-          folderKeys: Array.from(selectedFolderKeys),
-        })
+      const payload = getMovePayloadFromDragSource(
+        e.currentTarget as HTMLElement,
+        selectedFileIds,
+        selectedFolderKeys
       );
+      if (!payload || payload.fileIds.length + payload.folderKeys.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData(DND_MOVE_MIME, JSON.stringify(payload));
       e.dataTransfer.effectAllowed = "move";
     },
-    [hasSelection, selectedFileIds, selectedFolderKeys]
+    [selectedFileIds, selectedFolderKeys]
   );
 
   const handleMouseDown = useCallback(
@@ -648,7 +648,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const handleDropOnFolder = useCallback(
     async (targetDriveId: string, e: React.DragEvent) => {
       try {
-        const raw = e.dataTransfer.getData(DND_MOVE_TYPE);
+        const raw = e.dataTransfer.getData(DND_MOVE_MIME);
         if (!raw) return;
         const data = JSON.parse(raw) as { fileIds: string[]; folderKeys: string[] };
         const { fileIds, folderKeys } = data;
@@ -791,18 +791,18 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               const isFolderInSelection = selectedFolderKeys.has(item.key);
               const isDropTarget =
                 !!driveId &&
-                hasSelection &&
                 !isFolderInSelection &&
                 linkedDrives.some((d) => d.id === driveId);
+              const canDragFolder = !!item.driveId && !item.preventMove;
               return (
                 <div
                   key={item.key}
                   data-selectable-item
                   data-item-type="folder"
                   data-item-key={item.key}
-                  draggable={isFolderInSelection && hasSelection}
+                  draggable={canDragFolder}
                   onDragStart={handleDragStart}
-                  className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                 >
                   <FolderCard
                     item={item}
@@ -866,6 +866,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 <tbody data-selectable-grid>
                   {pinnedFolderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const driveId = item.driveId ?? "";
+                    const isFolderInSelection = selectedFolderKeys.has(item.key);
+                    const isDropTarget =
+                      !!driveId &&
+                      !isFolderInSelection &&
+                      linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
                     return (
                       <FolderListRow
                         key={item.key}
@@ -892,6 +899,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         selectable={!!drive && !item.preventDelete}
                         selected={selectedFolderKeys.has(item.key)}
                         onSelect={() => toggleFolderSelection(item.key)}
+                        isDropTarget={isDropTarget}
+                        onItemsDropped={handleDropOnFolder}
+                        draggable={canDragFolder}
+                        onDragStart={handleDragStart}
                       />
                     );
                   })}
@@ -909,6 +920,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       selectable
                       selected={selectedFileIds.has(file.id)}
                       onSelect={() => toggleFileSelection(file.id)}
+                      draggable={!!file.driveId}
+                      onDragStart={handleDragStart}
                     />
                   ))}
                 </tbody>
@@ -932,18 +945,18 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 const isDropTarget =
                   !!driveId &&
-                  hasSelection &&
                   !isFolderInSelection &&
                   linkedDrives.some((d) => d.id === driveId);
+                const canDragFolder = !!item.driveId && !item.preventMove;
                 return (
                   <div
                     key={item.key}
                     data-selectable-item
                     data-item-type="folder"
                     data-item-key={item.key}
-                    draggable={isFolderInSelection && hasSelection}
+                    draggable={canDragFolder}
                     onDragStart={handleDragStart}
-                    className={isFolderInSelection && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                   >
                     <FolderCard
                       item={item}
@@ -982,9 +995,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   data-selectable-item
                   data-item-type="file"
                   data-item-id={file.id}
-                  draggable={selectedFileIds.has(file.id) && hasSelection}
+                  draggable={!!file.driveId}
                   onDragStart={handleDragStart}
-                  className={selectedFileIds.has(file.id) && hasSelection ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
                 >
                   <FileCard
                     file={file}
@@ -1038,6 +1051,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 <tbody data-selectable-grid>
                   {driveFolderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const driveId = item.driveId ?? "";
+                    const isFolderInSelection = selectedFolderKeys.has(item.key);
+                    const isDropTarget =
+                      !!driveId &&
+                      !isFolderInSelection &&
+                      linkedDrives.some((d) => d.id === driveId);
+                    const canDragFolder = !!item.driveId && !item.preventMove;
                     return (
                       <FolderListRow
                         key={item.key}
@@ -1062,6 +1082,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         selectable={!!drive && !item.preventDelete}
                         selected={selectedFolderKeys.has(item.key)}
                         onSelect={() => toggleFolderSelection(item.key)}
+                        isDropTarget={isDropTarget}
+                        onItemsDropped={handleDropOnFolder}
+                        draggable={canDragFolder}
+                        onDragStart={handleDragStart}
                       />
                     );
                   })}
@@ -1086,17 +1110,18 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               const isFolderInSelection = selectedFolderKeys.has(item.key);
               const isDropTarget =
                 !!driveId &&
-                hasSelection &&
                 !isFolderInSelection &&
                 linkedDrives.some((d) => d.id === driveId);
+              const canDragFolder = !!item.driveId && !item.preventMove;
               return (
                 <div
                   key={item.key}
                   data-selectable-item
                   data-item-type="folder"
                   data-item-key={item.key}
-                  draggable={isFolderInSelection && hasSelection}
+                  draggable={canDragFolder}
                   onDragStart={handleDragStart}
+                  className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
                 >
                   <FolderCard
                     item={item}
@@ -1172,6 +1197,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           selectable
                           selected={selectedFileIds.has(file.id)}
                           onSelect={() => toggleFileSelection(file.id)}
+                          draggable={!!file.driveId}
+                          onDragStart={handleDragStart}
                         />
                       ))}
                     </tbody>
@@ -1195,6 +1222,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     data-selectable-item
                     data-item-type="file"
                     data-item-id={file.id}
+                    draggable={!!file.driveId}
+                    onDragStart={handleDragStart}
+                    className={!!file.driveId ? "cursor-grab active:cursor-grabbing" : undefined}
                   >
                     <FileCard
                       file={file}

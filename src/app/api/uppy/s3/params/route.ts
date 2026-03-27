@@ -68,16 +68,15 @@ export async function GET(request: Request) {
   }
 
   const objectKey = `backups/${uid}/${driveId}/${safePath}`;
-  const contentType = type || "application/octet-stream";
-
+  // Do not bind Content-Type in the presigned URL — mismatches (e.g. FCP bundles, octet-stream)
+  // cause net::ERR_ACCESS_DENIED from B2. Multipart path still sets a type on CreateMultipartUpload.
   try {
-    const url = await createPresignedUploadUrl(objectKey, contentType, 3600);
+    const url = await createPresignedUploadUrl(objectKey, undefined, 3600);
     return NextResponse.json({
       method: "PUT",
       url,
       fields: {},
       headers: {
-        "Content-Type": contentType,
         "x-amz-server-side-encryption": "AES256",
       },
     });

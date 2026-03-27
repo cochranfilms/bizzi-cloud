@@ -5,6 +5,11 @@ import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import {
+  attachUppyLocalPreview,
+  getUploadRelativePath,
+  revokeUppyPreview,
+} from "@/lib/uppy-local-preview";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -119,15 +124,21 @@ export default function UppyUploadModal({
 
     const usedNames = new Map<string, number>();
     uppy.on("file-added", (file) => {
-      let uniqueName = file.name;
+      const fileData = file.data instanceof File ? file.data : null;
+      const webkitRel = fileData ? getUploadRelativePath(fileData, file.name) : file.name;
+
+      let uniqueName = webkitRel;
       if (pathPrefix && galleryId) {
-        const key = file.name;
+        const key = webkitRel;
         const n = usedNames.get(key) ?? 0;
         usedNames.set(key, n + 1);
         if (n > 0) {
-          const base = file.name.replace(/\.([^.]+)$/, "");
-          const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
-          uniqueName = `${base} (${n})${ext}`;
+          const segments = webkitRel.split("/");
+          const leaf = segments.pop() ?? file.name;
+          const base = leaf.replace(/\.([^.]+)$/, "");
+          const ext = leaf.includes(".") ? leaf.slice(leaf.lastIndexOf(".")) : "";
+          const renamedLeaf = `${base} (${n})${ext}`;
+          uniqueName = [...segments, renamedLeaf].filter(Boolean).join("/");
         }
       }
       const relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
@@ -145,7 +156,16 @@ export default function UppyUploadModal({
             null,
         },
       });
+      if (fileData) {
+        void attachUppyLocalPreview((preview) => {
+          uppy.setFileState(file.id, { preview });
+        }, fileData);
+      }
       queueMicrotask(() => resumeUploadIfNeeded(uppy));
+    });
+
+    uppy.on("file-removed", (removed) => {
+      revokeUppyPreview(removed.preview);
     });
 
     const updateProgress = () => {
@@ -385,11 +405,12 @@ export default function UppyUploadModal({
       {/* Expanded: Uppy Dashboard */}
       {expanded && ready && uppyRef.current && (
         <div className="border-t border-neutral-100 dark:border-neutral-800">
-          <Dashboard
-            uppy={uppyRef.current}
-            proudlyDisplayPoweredByUppy={false}
-            height={380}
-          />
+          <p className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+            Previews: images, RAW (when the browser can decode them), and a still frame for videos.
+            Final Cut libraries: drop the <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">.fcpbundle</code>{" "}
+            folder (or pick the folder if your browser offers &quot;Upload folder&quot;) so all files keep their paths.
+          </p>
+          <Dashboard uppy={uppyRef.current} proudlyDisplayPoweredByUppy={false} height={380} />
         </div>
       )}
     </div>
