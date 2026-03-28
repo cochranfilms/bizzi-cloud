@@ -13,10 +13,8 @@ import {
 } from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
-import {
-  getAccessibleWorkspaceIds,
-  userHasActiveOrganizationSeat,
-} from "@/lib/workspace-access";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
 import {
   fileBelongsToPersonalTeamContainer,
   fileVisibleOnPersonalDashboard,
@@ -202,10 +200,8 @@ export async function GET(request: Request) {
   }
 
   const orgId = organizationId as string;
-  const profileSnap = await db.collection("profiles").doc(uid).get();
-  const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-  const hasSeat = await userHasActiveOrganizationSeat(uid, orgId);
-  if (profileOrgId !== orgId && !hasSeat) {
+  const access = await resolveEnterpriseAccess(uid, orgId, db);
+  if (!access.canAccessEnterprise) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

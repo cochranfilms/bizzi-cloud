@@ -5,6 +5,7 @@
  * Fixes enterprise users who joined before we created drives on accept-invite.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { ensureDefaultDrivesForOrgUser } from "@/lib/ensure-default-drives";
 import { NextResponse } from "next/server";
 
@@ -31,6 +32,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Not an organization member" },
       { status: 400 }
+    );
+  }
+
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.canAccessEnterprise) {
+    return NextResponse.json(
+      { error: "Not a member of this organization" },
+      { status: 403 }
     );
   }
 

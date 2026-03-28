@@ -1,4 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 
 /** GET - List pending invites for the current user's email. */
@@ -25,6 +27,22 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: "Invalid or expired token" },
       { status: 401 }
+    );
+  }
+
+  const listRl = await checkInviteRateLimit("pending_invites_list", uid, 40, 60_000);
+  if (!listRl.ok) {
+    logEnterpriseSecurityEvent("invite_rate_limited", {
+      uid,
+      kind: "pending_invites_list",
+      retryAfterSec: listRl.retryAfterSec,
+    });
+    return NextResponse.json(
+      {
+        error: "Too many requests. Try again in a moment.",
+        retry_after_sec: listRl.retryAfterSec,
+      },
+      { status: 429, headers: { "Retry-After": String(listRl.retryAfterSec) } }
     );
   }
 

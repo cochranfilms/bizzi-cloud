@@ -1,4 +1,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { hashInviteToken } from "@/lib/invite-token";
 import { sendOrgSeatInviteEmail } from "@/lib/emailjs";
 import { createOrgSeatInviteNotification } from "@/lib/notification-service";
@@ -57,21 +60,41 @@ export async function POST(request: Request) {
 
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const orgId = profileSnap.data()?.organization_id as string | undefined;
-  const orgRole = profileSnap.data()?.organization_role as string | undefined;
 
-  if (!orgId || orgRole !== "admin") {
+  if (!orgId) {
     return NextResponse.json(
       { error: "Only organization admins can invite members" },
       { status: 403 }
     );
   }
 
-  const seatId = `${orgId}_${uid}`;
-  const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-  if (!seatSnap.exists || seatSnap.data()?.role !== "admin") {
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.isAdmin) {
+    logEnterpriseSecurityEvent("enterprise_admin_denied", {
+      uid,
+      orgId,
+      route: "enterprise/invite",
+    });
     return NextResponse.json(
       { error: "Only organization admins can invite members" },
       { status: 403 }
+    );
+  }
+
+  const rate = await checkInviteRateLimit("enterprise_invite", uid, 12, 60_000);
+  if (!rate.ok) {
+    logEnterpriseSecurityEvent("invite_rate_limited", {
+      uid,
+      orgId,
+      kind: "enterprise_invite",
+      retryAfterSec: rate.retryAfterSec,
+    });
+    return NextResponse.json(
+      {
+        error: "Too many invites. Try again in a moment.",
+        retry_after_sec: rate.retryAfterSec,
+      },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSec) } }
     );
   }
 

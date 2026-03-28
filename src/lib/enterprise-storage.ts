@@ -12,10 +12,12 @@ import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
 import { isBackupFileActiveForListing } from "./backup-file-lifecycle";
+import { sumActiveUserOrgBackupBytes } from "./backup-file-storage-bytes";
 import {
   billingKeyForOrg,
   billingKeyForUser,
   sumPendingReservationBytes,
+  sumPendingReservationBytesForRequestingUser,
 } from "./storage-quota-reservations";
 import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
 
@@ -257,6 +259,43 @@ export async function checkUserCanUpload(
       quota_bytes: snap.quota_bytes,
       additional_bytes: additionalBytes,
     });
+  }
+
+  const orgIdForSeat = snap.organization_id;
+  if (
+    orgIdForSeat &&
+    snap.quota_subject_uid === uid
+  ) {
+    const db = getAdminFirestore();
+    const seatSnap = await db
+      .collection("organization_seats")
+      .doc(`${orgIdForSeat}_${uid}`)
+      .get();
+    const seatQuota = seatSnap.data()?.storage_quota_bytes;
+    if (typeof seatQuota === "number") {
+      const seatUsed = await sumActiveUserOrgBackupBytes(db, uid, orgIdForSeat);
+      const seatReserved = await sumPendingReservationBytesForRequestingUser(
+        billingKeyForOrg(orgIdForSeat),
+        uid
+      );
+      const seatEffective = seatUsed + seatReserved;
+      if (seatEffective + additionalBytes > seatQuota) {
+        throw new StorageQuotaDeniedError(
+          "Your seat storage allocation is full. Ask an org admin to raise your allocation or free space.",
+          {
+            requesting_user_id: uid,
+            billing_subject_user_id: null,
+            organization_id: orgIdForSeat,
+            usage_scope: "enterprise_workspace",
+            file_used_bytes: seatUsed,
+            reserved_bytes: seatReserved,
+            effective_billable_bytes_for_enforcement: seatEffective,
+            quota_bytes: seatQuota,
+            additional_bytes: additionalBytes,
+          }
+        );
+      }
+    }
   }
 }
 

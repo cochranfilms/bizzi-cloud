@@ -5,6 +5,7 @@
  * TODO: For accounts with 100k+ files, consider pre-aggregation.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { NextResponse } from "next/server";
 import { aggregateFiles } from "@/lib/analytics/aggregate";
 
@@ -56,6 +57,16 @@ export async function GET(request: Request) {
 
   const useEnterprise = context === "enterprise" && profileOrgId;
   const orgId = useEnterprise ? profileOrgId : null;
+
+  if (orgId && !isDevAuthBypass()) {
+    const access = await resolveEnterpriseAccess(uid, orgId);
+    if (!access.canAccessEnterprise) {
+      return NextResponse.json(
+        { error: "Not a member of this organization" },
+        { status: 403 }
+      );
+    }
+  }
 
   let quotaBytes: number | null;
   if (orgId) {

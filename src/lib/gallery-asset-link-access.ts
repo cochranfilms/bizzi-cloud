@@ -5,7 +5,8 @@
 import type { DocumentData } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { GalleryManagementDoc } from "@/lib/gallery-owner-access";
-import { getAccessibleWorkspaceIds, userHasActiveOrganizationSeat } from "@/lib/workspace-access";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
 
 export async function canLinkBackupFileToGallery(
   uid: string,
@@ -23,10 +24,8 @@ export async function canLinkBackupFileToGallery(
     const fileOrg = fileData.organization_id;
     if (fileOrg !== galleryOrg) return false;
     const db = getAdminFirestore();
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    const hasSeat = await userHasActiveOrganizationSeat(uid, galleryOrg);
-    if (profileOrgId !== galleryOrg && !hasSeat) return false;
+    const access = await resolveEnterpriseAccess(uid, galleryOrg, db);
+    if (!access.canAccessEnterprise) return false;
 
     const wsId = fileData.workspace_id as string | undefined;
     if (wsId) {

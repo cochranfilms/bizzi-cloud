@@ -73,7 +73,7 @@ export default function EnterpriseStorageBadge() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
-      <p className="text-xs text-neutral-600 dark:text-neutral-400">Organization storage</p>
+      <p className="text-xs text-neutral-600 dark:text-neutral-400">Organization storage (shared pool)</p>
       <p className="text-sm font-medium text-neutral-900 dark:text-white">
         {formatBytes(billableUsed)} of {quotaLabel} used
         {reserved > 0 ? (
@@ -91,6 +91,9 @@ export default function EnterpriseStorageBadge() {
           <li>Org billable (files): {formatBytes(billableUsed)}</li>
           <li>Reserved: {formatBytes(reserved)}</li>
           <li>Enforcement total: {formatBytes(billableUsed + reserved)}</li>
+          <li className="pt-1 text-neutral-500">
+            Per-seat allocations (if set) cap your uploads separately—see Seats &amp; invites.
+          </li>
         </ul>
       </details>
       <div className="mt-auto pt-3">

@@ -1,4 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { findPendingSeatByToken } from "@/lib/invite-lookup";
 import { ensureDefaultDrivesForOrgUser } from "@/lib/ensure-default-drives";
 import { NextResponse } from "next/server";
@@ -34,6 +36,22 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Invalid or expired token" },
       { status: 401 }
+    );
+  }
+
+  const acceptRl = await checkInviteRateLimit("accept_invite", uid, 25, 60_000);
+  if (!acceptRl.ok) {
+    logEnterpriseSecurityEvent("invite_rate_limited", {
+      uid,
+      kind: "accept_invite",
+      retryAfterSec: acceptRl.retryAfterSec,
+    });
+    return NextResponse.json(
+      {
+        error: "Too many requests. Try again in a moment.",
+        retry_after_sec: acceptRl.retryAfterSec,
+      },
+      { status: 429, headers: { "Retry-After": String(acceptRl.retryAfterSec) } }
     );
   }
 
@@ -215,6 +233,12 @@ export async function POST(request: Request) {
     console.error("[accept-invite] Failed to create default drives:", err);
     // Don't fail the request - user can create drives manually
   }
+
+  logEnterpriseSecurityEvent("invite_accepted", {
+    uid,
+    orgId,
+    via_invite_token: Boolean(inviteToken),
+  });
 
   return NextResponse.json({
     success: true,

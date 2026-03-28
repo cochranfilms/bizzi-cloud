@@ -6,6 +6,7 @@
  * Query: ?limit=50
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { hydrateCollaborationFileForApiResponse, resolveCollaborationFileContext } from "@/lib/file-access";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team-constants";
 import { NextResponse } from "next/server";
@@ -63,13 +64,10 @@ export async function POST(request: Request) {
     const orgId = data?.organization_id as string | undefined;
     const pto = data?.personal_team_owner_id as string | undefined;
     const isOwner = ownerId === auth.uid;
-    const isOrgAdmin =
-      orgId &&
-      (await db
-        .collection("organization_seats")
-        .doc(`${orgId}_${auth.uid}`)
-        .get()).exists &&
-      (await db.collection("organization_seats").doc(`${orgId}_${auth.uid}`).get()).data()?.role === "admin";
+    const orgAccess = orgId
+      ? await resolveEnterpriseAccess(auth.uid, orgId, db)
+      : null;
+    const isOrgAdmin = Boolean(orgAccess?.isAdmin);
     const isTeamContainer =
       !orgId && typeof pto === "string" && pto.length > 0 && ownerId === pto;
     let isTeamSeatMember = false;

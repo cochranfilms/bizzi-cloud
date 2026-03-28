@@ -3,6 +3,8 @@
  * Returns workspaces the user can access for the given org drive (upload / file flows).
  */
 import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { getWorkspacesForNormalUpload } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
 
@@ -36,6 +38,20 @@ export async function GET(request: Request) {
 
   if (!driveId) {
     return NextResponse.json({ workspaces: [] });
+  }
+
+  const access = await resolveEnterpriseAccess(uid, organizationId);
+  if (!access.canAccessEnterprise) {
+    logEnterpriseSecurityEvent("workspace_list_denied", {
+      uid,
+      orgId: organizationId,
+      route: "workspaces/list",
+      denialReason: access.denialReason,
+    });
+    return NextResponse.json(
+      { error: "Not a member of this organization" },
+      { status: 403 }
+    );
   }
 
   const accessibleIds = await getWorkspacesForNormalUpload(uid, organizationId, driveId);

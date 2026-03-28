@@ -17,7 +17,7 @@ import {
   resolveMediaModeFromCreateBody,
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
-import { userHasActiveOrganizationSeat } from "@/lib/workspace-access";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
 
 function isNonOrgGalleryOid(oid: unknown): boolean {
@@ -63,10 +63,8 @@ export async function GET(request: Request) {
 
   let snap;
   if (context === "enterprise" && organizationId) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
-    if (profileOrgId !== organizationId && !hasSeat) {
+    const access = await resolveEnterpriseAccess(uid, organizationId, db);
+    if (!access.canAccessEnterprise) {
       return NextResponse.json({ error: "Unauthorized to list this organization's galleries" }, { status: 403 });
     }
     snap = await db
@@ -238,10 +236,8 @@ export async function POST(request: Request) {
       ? bodyOrgId.trim()
       : null;
   if (organizationId) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
-    if (profileOrgId !== organizationId && !hasSeat) {
+    const access = await resolveEnterpriseAccess(uid, organizationId, db);
+    if (!access.canAccessEnterprise) {
       return NextResponse.json({ error: "Unauthorized to create gallery for this organization" }, { status: 403 });
     }
   }

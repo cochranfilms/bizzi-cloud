@@ -1,4 +1,5 @@
 import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import {
   getPersonalDashboardStorageDisplay,
   getEnterpriseWorkspaceStorageSummary,
@@ -41,6 +42,16 @@ export async function GET(request: Request) {
     const profileSnap = await db.collection("profiles").doc(uid).get();
     const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
     const useEnterprise = context === "enterprise" && profileOrgId;
+
+    if (useEnterprise && profileOrgId) {
+      const access = await resolveEnterpriseAccess(uid, profileOrgId);
+      if (!access.canAccessEnterprise) {
+        return NextResponse.json(
+          { error: "Not a member of this organization" },
+          { status: 403 }
+        );
+      }
+    }
 
     const summary = useEnterprise
       ? await getEnterpriseWorkspaceStorageSummary(profileOrgId!, uid)

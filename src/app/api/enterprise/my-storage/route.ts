@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import {
   getEnterpriseWorkspaceStorageSummary,
   deprecatedStorageFieldsFromSummary,
@@ -38,6 +39,14 @@ export async function GET(request: Request) {
   if (!orgId) {
     return NextResponse.json(
       { error: "You are not in an organization" },
+      { status: 403 }
+    );
+  }
+
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.canAccessEnterprise) {
+    return NextResponse.json(
+      { error: "Not a member of this organization" },
       { status: 403 }
     );
   }

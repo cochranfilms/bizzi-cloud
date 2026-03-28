@@ -3,23 +3,25 @@
  * Used by file listing APIs and canAccessBackupFileById.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import type { Workspace, WorkspaceType } from "@/types/workspace";
 
-/** Check if user is org admin */
+/** Active org admin only (pending seats never count). */
 export async function isOrgAdmin(uid: string, organizationId: string): Promise<boolean> {
   const db = getAdminFirestore();
   const seatSnap = await db.collection("organization_seats").doc(`${organizationId}_${uid}`).get();
-  return seatSnap.exists && (seatSnap.data()?.role === "admin");
+  if (!seatSnap.exists) return false;
+  const d = seatSnap.data();
+  return d?.status === "active" && d?.role === "admin";
 }
 
-/** Active organization membership (any role), for APIs when profile.organization_id may be stale. */
+/** Active organization membership (any role). Prefer inline `resolveEnterpriseAccess` in new code. */
 export async function userHasActiveOrganizationSeat(
   uid: string,
   organizationId: string
 ): Promise<boolean> {
-  const db = getAdminFirestore();
-  const seatSnap = await db.collection("organization_seats").doc(`${organizationId}_${uid}`).get();
-  return seatSnap.exists && seatSnap.data()?.status === "active";
+  const access = await resolveEnterpriseAccess(uid, organizationId);
+  return access.canAccessEnterprise;
 }
 
 /** Check if user can write to a workspace (upload, create, update, delete). */
@@ -172,6 +174,11 @@ export async function getWorkspacesForNormalUpload(
   driveId: string
 ): Promise<string[]> {
   const db = getAdminFirestore();
+
+  const access = await resolveEnterpriseAccess(uid, organizationId, db);
+  if (!access.canAccessEnterprise) {
+    return [];
+  }
 
   const driveSnap = await db.collection("linked_drives").doc(driveId).get();
   if (!driveSnap.exists) return [];

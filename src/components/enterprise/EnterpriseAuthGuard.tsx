@@ -72,9 +72,9 @@ export default function EnterpriseAuthGuard({
         ready={contentReady}
         srOnlyMessage={
           retrying
-            ? "Loading organization"
+            ? "Syncing organization membership"
             : !org && !authLoading && !orgLoading && !retrying
-              ? "Redirecting"
+              ? "Redirecting: no active organization seat found. If you just joined, try again in a moment."
               : "Loading enterprise workspace"
         }
         placeholderClassName="min-h-screen rounded-none"

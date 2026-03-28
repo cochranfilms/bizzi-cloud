@@ -63,10 +63,6 @@ export default function EnterpriseSeatsPage() {
     return `${gb.toFixed(0)} GB`;
   };
 
-  /** Admin/owner shows org total; others show their seat quota from dropdown */
-  const getDisplayQuota = (seat: Seat) =>
-    seat.role === "admin" ? (org?.storage_quota_bytes ?? null) : (seat.storage_quota_bytes ?? null);
-
   const handleStorageChange = async (seatId: string, newQuota: number | null) => {
     if (!isAdmin) return;
     setUpdatingStorageId(seatId);
@@ -84,6 +80,7 @@ export default function EnterpriseSeatsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to update storage");
       await fetchSeats();
+      await refetch();
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to update storage");
     } finally {
@@ -154,6 +151,7 @@ export default function EnterpriseSeatsPage() {
       }
       setInviteEmail("");
       await fetchSeats();
+      await refetch();
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to invite");
     } finally {
@@ -186,6 +184,7 @@ export default function EnterpriseSeatsPage() {
         throw new Error(data.error ?? "Failed to remove");
       }
       await fetchSeats();
+      await refetch();
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to remove");
     } finally {
@@ -210,6 +209,7 @@ export default function EnterpriseSeatsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to promote");
       await fetchSeats();
+      await refetch();
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to promote");
     } finally {
@@ -373,6 +373,12 @@ export default function EnterpriseSeatsPage() {
               <Users className="h-5 w-5 text-[var(--enterprise-primary)]" />
               Members ({seats.length})
             </h2>
+            <p className="mb-4 text-xs text-neutral-600 dark:text-neutral-400">
+              The organization has one shared storage pool (total quota). Each member can also have a{" "}
+              <strong className="font-medium text-neutral-700 dark:text-neutral-300">seat allocation</strong>{" "}
+              that limits how much that person can upload; uploads stop at the allocation even if the org
+              still has headroom—unless the seat is set to Unlimited.
+            </p>
 
             {seats.length === 0 ? (
               <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">

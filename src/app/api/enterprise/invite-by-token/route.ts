@@ -1,5 +1,8 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { findPendingSeatByToken } from "@/lib/invite-lookup";
+import { hashInviteToken } from "@/lib/invite-token";
 import { NextResponse } from "next/server";
 
 /**
@@ -14,6 +17,23 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: "Token is required" },
       { status: 400 }
+    );
+  }
+
+  const tokenKey = hashInviteToken(token).slice(0, 24);
+  const lookupRl = await checkInviteRateLimit("invite_by_token", tokenKey, 45, 60_000);
+  if (!lookupRl.ok) {
+    logEnterpriseSecurityEvent("invite_rate_limited", {
+      kind: "invite_by_token",
+      tokenKeyPrefix: tokenKey,
+      retryAfterSec: lookupRl.retryAfterSec,
+    });
+    return NextResponse.json(
+      {
+        error: "Too many requests. Try again in a moment.",
+        retry_after_sec: lookupRl.retryAfterSec,
+      },
+      { status: 429, headers: { "Retry-After": String(lookupRl.retryAfterSec) } }
     );
   }
 

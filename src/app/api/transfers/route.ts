@@ -1,10 +1,13 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
+import { canAccessBackupFileById } from "@/lib/file-access";
 import { hashSecret } from "@/lib/gallery-access";
 import { sendTransferEmailToClient } from "@/lib/emailjs";
 import { createTransferNotification } from "@/lib/notification-service";
+import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import { NextResponse } from "next/server";
-import { userHasActiveOrganizationSeat } from "@/lib/workspace-access";
 
 async function requireAuthTransfer(
   request: Request
@@ -71,10 +74,8 @@ export async function GET(request: Request) {
   let docs: QueryDocumentSnapshot[];
 
   if (context === "enterprise" && organizationId) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    const hasSeat = await userHasActiveOrganizationSeat(uid, organizationId);
-    if (profileOrgId !== organizationId && !hasSeat) {
+    const access = await resolveEnterpriseAccess(uid, organizationId);
+    if (!access.canAccessEnterprise) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
     const snap = await db.collection("transfers").where("user_id", "==", uid).get();
@@ -215,6 +216,76 @@ export async function POST(request: Request) {
         if (!seatSnap.exists || (st !== "active" && st !== "cold_storage")) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
+      }
+    }
+  }
+
+  if (organizationIdToStore) {
+    const access = await resolveEnterpriseAccess(uid, organizationIdToStore);
+    if (!access.canAccessEnterprise) {
+      logEnterpriseSecurityEvent("transfer_org_validation_failed", {
+        uid,
+        orgId: organizationIdToStore,
+        reason: access.denialReason ?? "not_member",
+      });
+      return NextResponse.json({ error: "Not a member of this organization" }, { status: 403 });
+    }
+
+    let userEmail: string | undefined;
+    try {
+      userEmail = (await getAdminAuth().getUser(uid)).email ?? undefined;
+    } catch {
+      userEmail = undefined;
+    }
+
+    for (const f of files) {
+      const bid =
+        typeof f.backupFileId === "string" && f.backupFileId.trim()
+          ? f.backupFileId.trim()
+          : null;
+      if (!bid) {
+        logEnterpriseSecurityEvent("transfer_org_validation_failed", {
+          uid,
+          orgId: organizationIdToStore,
+          reason: "enterprise_transfer_requires_backupFileId_per_file",
+        });
+        return NextResponse.json(
+          { error: "Each file must include backupFileId for organization transfers" },
+          { status: 400 }
+        );
+      }
+      const fileSnap = await db.collection("backup_files").doc(bid).get();
+      if (!fileSnap.exists) {
+        logEnterpriseSecurityEvent("transfer_org_validation_failed", {
+          uid,
+          orgId: organizationIdToStore,
+          fileId: bid,
+          reason: "file_not_found",
+        });
+        return NextResponse.json({ error: "Invalid file reference" }, { status: 400 });
+      }
+      const fd = fileSnap.data() as Record<string, unknown>;
+      if ((fd.organization_id as string | undefined) !== organizationIdToStore) {
+        logEnterpriseSecurityEvent("transfer_org_validation_failed", {
+          uid,
+          orgId: organizationIdToStore,
+          fileId: bid,
+          reason: "file_org_mismatch",
+        });
+        return NextResponse.json({ error: "File is not in this organization" }, { status: 403 });
+      }
+      if (!isBackupFileActiveForListing(fd)) {
+        return NextResponse.json({ error: "File is not available for transfer" }, { status: 400 });
+      }
+      const allowed = await canAccessBackupFileById(uid, bid, userEmail);
+      if (!allowed) {
+        logEnterpriseSecurityEvent("transfer_org_validation_failed", {
+          uid,
+          orgId: organizationIdToStore,
+          fileId: bid,
+          reason: "no_file_access",
+        });
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }
   }

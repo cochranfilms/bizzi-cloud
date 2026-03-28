@@ -4,6 +4,7 @@
  * If sole admin: rejects with message to transfer ownership or add another admin first.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { suggestIdentityDeletionAfterOrgLeave } from "@/lib/identity-scope";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
       organization_id: FieldValue.delete(),
       organization_role: FieldValue.delete(),
     });
+    logEnterpriseSecurityEvent("org_leave", { uid, orgId, repaired_profile_only: true });
     return NextResponse.json({ ok: true });
   }
 
@@ -83,6 +85,8 @@ export async function POST(request: Request) {
     organization_id: FieldValue.delete(),
     organization_role: FieldValue.delete(),
   });
+
+  logEnterpriseSecurityEvent("org_leave", { uid, orgId });
 
   const personalStatus = profileData?.personal_status as string | undefined;
 

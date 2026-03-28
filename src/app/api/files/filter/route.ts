@@ -10,11 +10,8 @@ import type {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
-import {
-  getAccessibleWorkspaceIds,
-  isOrgAdmin,
-  userHasActiveOrganizationSeat,
-} from "@/lib/workspace-access";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
 import { resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
 import {
@@ -561,10 +558,8 @@ export async function GET(request: Request) {
   // Scope drives and files by context: enterprise = org only, personal = org_id null
   let orgFilter: string | null = null;
   if (filters.context === "enterprise" && filters.organizationId) {
-    const profileSnap = await db.collection("profiles").doc(uid).get();
-    const profileOrgId = profileSnap.data()?.organization_id as string | undefined;
-    const hasSeat = await userHasActiveOrganizationSeat(uid, filters.organizationId);
-    if (profileOrgId !== filters.organizationId && !hasSeat) {
+    const access = await resolveEnterpriseAccess(uid, filters.organizationId, db);
+    if (!access.canAccessEnterprise) {
       return NextResponse.json(
         { error: "Unauthorized to access this organization's files" },
         { status: 403 }
@@ -781,7 +776,7 @@ export async function GET(request: Request) {
       const page = filteredDocs.slice(0, filters.pageSize);
       const lastDoc = page[page.length - 1];
       const hasMore = filteredDocs.length > filters.pageSize;
-      const includeAdminFieldsBatch = await isOrgAdmin(uid, orgFilter);
+      const includeAdminFieldsBatch = (await resolveEnterpriseAccess(uid, orgFilter, db)).isAdmin;
       const files = page.map((d) =>
         toFileResponse(d as import("firebase-admin/firestore").QueryDocumentSnapshot, driveMap, {
           includeAdminFields: includeAdminFieldsBatch,
@@ -1059,7 +1054,8 @@ export async function GET(request: Request) {
   const lastDoc = page[page.length - 1];
   const hasMore = filteredDocs.length > filters.pageSize;
 
-  const includeAdminFields = orgFilter != null && (await isOrgAdmin(uid, orgFilter));
+  const includeAdminFields =
+    orgFilter != null && (await resolveEnterpriseAccess(uid, orgFilter, db)).isAdmin;
   const files = page.map((d) => toFileResponse(d, driveMap, { includeAdminFields }));
 
   return NextResponse.json({

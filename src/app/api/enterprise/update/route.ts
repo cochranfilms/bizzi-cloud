@@ -1,4 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 
@@ -49,20 +51,21 @@ export async function PATCH(request: Request) {
   const db = getAdminFirestore();
 
   const profileSnap = await db.collection("profiles").doc(uid).get();
-  const profileData = profileSnap.data();
-  const orgId = profileData?.organization_id as string | undefined;
-  const orgRole = profileData?.organization_role as string | undefined;
-
-  if (!orgId || orgRole !== "admin") {
+  const orgId = profileSnap.data()?.organization_id as string | undefined;
+  if (!orgId) {
     return NextResponse.json(
       { error: "You must be an organization admin to update settings" },
       { status: 403 }
     );
   }
 
-  const seatId = `${orgId}_${uid}`;
-  const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-  if (!seatSnap.exists || seatSnap.data()?.role !== "admin") {
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.isAdmin) {
+    logEnterpriseSecurityEvent("enterprise_admin_denied", {
+      uid,
+      orgId,
+      route: "enterprise/update",
+    });
     return NextResponse.json(
       { error: "You must be an organization admin to update settings" },
       { status: 403 }
@@ -70,6 +73,7 @@ export async function PATCH(request: Request) {
   }
 
   const updates: Record<string, unknown> = {};
+  const profileData = profileSnap.data();
 
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();

@@ -62,7 +62,15 @@ export default function PendingInvitesBanner() {
         },
         body: JSON.stringify({ organization_id: orgId }),
       });
+      const data = (await res.json().catch(() => ({}))) as { organization_id?: string };
       if (res.ok) {
+        if (typeof data.organization_id === "string" && typeof window !== "undefined") {
+          try {
+            window.sessionStorage.setItem("bizzi-enterprise-org", data.organization_id);
+          } catch {
+            // ignore
+          }
+        }
         router.push("/enterprise");
         router.refresh();
       }

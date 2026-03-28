@@ -1,4 +1,6 @@
 import { getAdminFirestore, getAdminStorage, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -32,18 +34,21 @@ export async function POST(request: Request) {
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
   const orgId = profileData?.organization_id as string | undefined;
-  const orgRole = profileData?.organization_role as string | undefined;
 
-  if (!orgId || orgRole !== "admin") {
+  if (!orgId) {
     return NextResponse.json(
       { error: "You must be an organization admin to upload a logo" },
       { status: 403 }
     );
   }
 
-  const seatId = `${orgId}_${uid}`;
-  const seatSnap = await db.collection("organization_seats").doc(seatId).get();
-  if (!seatSnap.exists || seatSnap.data()?.role !== "admin") {
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.isAdmin) {
+    logEnterpriseSecurityEvent("enterprise_admin_denied", {
+      uid,
+      orgId,
+      route: "enterprise/logo",
+    });
     return NextResponse.json(
       { error: "You must be an organization admin to upload a logo" },
       { status: 403 }

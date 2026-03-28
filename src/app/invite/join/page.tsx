@@ -66,8 +66,15 @@ function InviteJoinContent() {
         },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = (await res.json()) as { error?: string; organization_id?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to accept invite.");
+      if (typeof data.organization_id === "string" && typeof window !== "undefined") {
+        try {
+          window.sessionStorage.setItem("bizzi-enterprise-org", data.organization_id);
+        } catch {
+          // ignore
+        }
+      }
       router.push("/enterprise");
       router.refresh();
     } catch (err) {

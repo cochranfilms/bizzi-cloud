@@ -44,6 +44,27 @@ export async function sumPendingReservationBytes(billingKey: string): Promise<nu
   return sum;
 }
 
+/** Pending bytes for one uploader on a shared billing key (e.g. org pool). Filters in memory; same query as org-wide sum. */
+export async function sumPendingReservationBytesForRequestingUser(
+  billingKey: string,
+  requestingUserId: string
+): Promise<number> {
+  const db = getAdminFirestore();
+  const snap = await db
+    .collection(STORAGE_QUOTA_RESERVATIONS_COLLECTION)
+    .where("billing_key", "==", billingKey)
+    .where("status", "==", "pending")
+    .get();
+  let sum = 0;
+  for (const d of snap.docs) {
+    const row = d.data();
+    if (isPendingExpired(row)) continue;
+    if ((row.requesting_user_id as string | undefined) !== requestingUserId) continue;
+    sum += typeof row.bytes === "number" ? row.bytes : 0;
+  }
+  return sum;
+}
+
 export interface CreatePendingReservationParams {
   billing_key: string;
   /** File-backed used (from snapshot); may be slightly stale outside transaction. */

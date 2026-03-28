@@ -6,6 +6,8 @@
  */
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
 import { getOrgSharedUploadTarget } from "@/lib/org-pillar-drives";
 import { visibilityScopeFromWorkspaceType, scopeLabelFromScope } from "@/lib/workspace-visibility";
@@ -15,9 +17,24 @@ import { NextResponse } from "next/server";
 
 function getDriveType(driveData: { name?: string; is_creator_raw?: boolean }): "storage" | "raw" | "gallery" {
   if (driveData?.is_creator_raw === true) return "raw";
-  const name = (driveData?.name ?? "").toLowerCase();
+  const name = (driveData.name ?? "").toLowerCase();
   if (name.includes("gallery")) return "gallery";
   return "storage";
+}
+
+function deny(
+  uid: string,
+  organizationId: string,
+  reason: string,
+  status: number
+): NextResponse {
+  logEnterpriseSecurityEvent("default_for_drive_denied", {
+    uid,
+    orgId: organizationId,
+    route: "workspaces/default-for-drive",
+    reason,
+  });
+  return NextResponse.json({ error: "Forbidden" }, { status });
 }
 
 export async function GET(request: Request) {
@@ -49,16 +66,34 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
 
+  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  if (!driveSnap.exists || driveSnap.data()?.deleted_at) {
+    return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+  }
+  const driveData = driveSnap.data()!;
+  const driveOrgId = driveData.organization_id as string | undefined;
+  if (driveOrgId !== organizationId) {
+    return deny(uid, organizationId, "drive_org_mismatch", 403);
+  }
+
+  const access = await resolveEnterpriseAccess(uid, organizationId);
+  if (!access.canAccessEnterprise) {
+    return deny(uid, organizationId, access.denialReason ?? "not_member", 403);
+  }
+
   if (workspaceIdParam) {
     const canWrite = await userCanWriteWorkspace(uid, workspaceIdParam);
     if (!canWrite) {
-      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+      return deny(uid, organizationId, "no_write_workspace", 403);
     }
     const wsSnap = await db.collection("workspaces").doc(workspaceIdParam).get();
     if (!wsSnap.exists) {
       return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
     }
     const data = wsSnap.data();
+    if ((data?.organization_id as string | undefined) !== organizationId) {
+      return deny(uid, organizationId, "workspace_org_mismatch", 403);
+    }
     const wsDriveId = (data?.drive_id as string) ?? driveId;
     const wsType = (data?.workspace_type as string) ?? "private";
     const wsDriveType = (data?.drive_type as string) ?? "storage";
@@ -68,10 +103,11 @@ export async function GET(request: Request) {
       null
     );
     let driveName = "Drive";
-    const driveSnap = await db.collection("linked_drives").doc(wsDriveId).get();
-    if (driveSnap.exists) {
-      const dn = driveSnap.data()?.name;
-      driveName = dn === "RAW" || driveSnap.data()?.is_creator_raw ? "RAW" : (dn ?? "Drive");
+    const wsDriveSnap = await db.collection("linked_drives").doc(wsDriveId).get();
+    if (wsDriveSnap.exists) {
+      const dn = wsDriveSnap.data()?.name;
+      driveName =
+        dn === "RAW" || wsDriveSnap.data()?.is_creator_raw ? "RAW" : (dn ?? "Drive");
     }
     return NextResponse.json({
       workspace_id: workspaceIdParam,
@@ -111,9 +147,11 @@ export async function GET(request: Request) {
     });
   }
 
-  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
-  const driveData = driveSnap.exists ? driveSnap.data() : {};
-  const driveType = getDriveType(driveData ?? {});
+  const driveType = getDriveType(driveData);
+  const driveUserId = (driveData.userId ?? driveData.user_id) as string | undefined;
+  if (driveUserId !== uid) {
+    return deny(uid, organizationId, "private_requires_own_drive", 403);
+  }
 
   const workspaceId = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId);
   if (!workspaceId) {

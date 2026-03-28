@@ -1,4 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
+import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { SEAT_STORAGE_TIERS } from "@/lib/enterprise-storage";
@@ -58,9 +60,21 @@ export async function PATCH(
 
   const profileSnap = await db.collection("profiles").doc(adminUid).get();
   const orgId = profileSnap.data()?.organization_id as string | undefined;
-  const orgRole = profileSnap.data()?.organization_role as string | undefined;
 
-  if (!orgId || orgRole !== "admin") {
+  if (!orgId) {
+    return NextResponse.json(
+      { error: "Only organization admins can update seat storage" },
+      { status: 403 }
+    );
+  }
+
+  const adminAccess = await resolveEnterpriseAccess(adminUid, orgId);
+  if (!adminAccess.isAdmin) {
+    logEnterpriseSecurityEvent("enterprise_admin_denied", {
+      uid: adminUid,
+      orgId,
+      route: "enterprise/seats PATCH",
+    });
     return NextResponse.json(
       { error: "Only organization admins can update seat storage" },
       { status: 403 }
@@ -109,6 +123,14 @@ export async function PATCH(
       await orgRef.update({ created_by: targetUserId });
     }
     await db.collection("organization_seats").doc(seatId).update({ role: newRole });
+    logEnterpriseSecurityEvent("seat_role_changed", {
+      orgId,
+      actorUid: adminUid,
+      seatId,
+      targetUserId: targetUserId ?? null,
+      previousRole: targetRole,
+      newRole,
+    });
     if (targetUserId) {
       await db.collection("profiles").doc(targetUserId).update({
         organization_role: newRole,
@@ -248,9 +270,21 @@ export async function DELETE(
 
   const profileSnap = await db.collection("profiles").doc(adminUid).get();
   const orgId = profileSnap.data()?.organization_id as string | undefined;
-  const orgRole = profileSnap.data()?.organization_role as string | undefined;
 
-  if (!orgId || orgRole !== "admin") {
+  if (!orgId) {
+    return NextResponse.json(
+      { error: "Only organization admins can remove seats" },
+      { status: 403 }
+    );
+  }
+
+  const deleteAdminAccess = await resolveEnterpriseAccess(adminUid, orgId);
+  if (!deleteAdminAccess.isAdmin) {
+    logEnterpriseSecurityEvent("enterprise_admin_denied", {
+      uid: adminUid,
+      orgId,
+      route: "enterprise/seats DELETE",
+    });
     return NextResponse.json(
       { error: "Only organization admins can remove seats" },
       { status: 403 }
@@ -316,6 +350,13 @@ export async function DELETE(
   }
 
   await seatRef.delete();
+
+  logEnterpriseSecurityEvent("seat_removed", {
+    orgId,
+    actorUid: adminUid,
+    seatId,
+    removedUserId: removedUserId ?? null,
+  });
 
   if (removedUserId && removedUserId.length > 0) {
     const profileRef = db.collection("profiles").doc(removedUserId);

@@ -6,6 +6,7 @@
  * - scope=organization + organization_id: org activity (user must have seat)
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { NextResponse } from "next/server";
 
 const DEFAULT_LIMIT = 50;
@@ -43,11 +44,8 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
-    const seatSnap = await db
-      .collection("organization_seats")
-      .doc(`${organizationId}_${uid}`)
-      .get();
-    if (!seatSnap.exists) {
+    const access = await resolveEnterpriseAccess(uid, organizationId);
+    if (!access.canAccessEnterprise) {
       return NextResponse.json({ error: "Not a member of this organization" }, { status: 403 });
     }
 

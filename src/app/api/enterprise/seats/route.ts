@@ -1,5 +1,6 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { sumActiveUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { NextResponse } from "next/server";
 
 /** GET - List all seats in the user's organization. */
@@ -34,6 +35,14 @@ export async function GET(request: Request) {
   if (!orgId) {
     return NextResponse.json(
       { error: "You are not in an organization" },
+      { status: 403 }
+    );
+  }
+
+  const access = await resolveEnterpriseAccess(uid, orgId);
+  if (!access.canAccessEnterprise) {
+    return NextResponse.json(
+      { error: "Not a member of this organization" },
       { status: 403 }
     );
   }
