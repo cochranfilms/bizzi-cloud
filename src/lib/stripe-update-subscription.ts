@@ -29,6 +29,10 @@ import {
   getResolvedStorageAddonIdFromItem,
   subscriptionItemIsAdditionalStorage,
 } from "@/lib/stripe-storage-from-subscription";
+import {
+  buildSubscriptionReceiptDisplay,
+  type SubscriptionReceiptDisplay,
+} from "@/lib/stripe-subscription-line-items";
 
 const VALID_PLAN_IDS = ["solo", "indie", "video", "production"];
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
@@ -340,16 +344,27 @@ export async function updateSubscriptionWithProration(
 
   const li = updatedSubscription.latest_invoice;
   const invId = typeof li === "string" ? li : li?.id ?? null;
+  const changeSummary = `Plan: ${planId} · Billing: ${billingToUse}`;
+
+  let receipt: SubscriptionReceiptDisplay | undefined;
   if (invId) {
+    try {
+      const fullInvoice = await stripe.invoices.retrieve(invId, {
+        expand: ["lines.data", "customer"],
+      });
+      receipt = buildSubscriptionReceiptDisplay(fullInvoice, changeSummary, "subscription_update");
+    } catch (e) {
+      console.error("[Stripe update-subscription] in-app receipt invoice retrieve:", e);
+    }
     void sendSubscriptionReceiptForInvoiceId({
       uid,
       invoiceId: invId,
-      changeSummary: `Plan: ${planId} · Billing: ${billingToUse}`,
+      changeSummary,
       source: "subscription_update",
     }).catch((e) => console.error("[Stripe update-subscription] receipt email:", e));
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(receipt ? { ok: true, receipt } : { ok: true });
 }
 
 function isStripePaymentFailure(err: unknown): boolean {

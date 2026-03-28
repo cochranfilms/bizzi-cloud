@@ -9,6 +9,23 @@ export type SubscriptionPreviewLineItem = {
   isProration: boolean;
 };
 
+/** Source of receipt copy (matches email footers). */
+export type SubscriptionReceiptSource = "subscription_update" | "checkout";
+
+/** In-app success dialog + email — same totals and lines as the receipt email. */
+export type SubscriptionReceiptDisplay = {
+  changeSummary: string;
+  lineItems: Array<{
+    description: string;
+    amountCents: number;
+    isProration: boolean;
+  }>;
+  totalAmount: string;
+  amountStatusLine: string;
+  prorationNote: string;
+  invoiceId: string;
+};
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -67,4 +84,51 @@ export function buildSubscriptionLineItemsPlain(items: SubscriptionPreviewLineIt
     lines.push("");
   }
   return lines.join("\n").trimEnd();
+}
+
+/** Builds receipt fields shared by EmailJS and the post-update success modal. */
+export function buildSubscriptionReceiptDisplay(
+  invoice: Stripe.Invoice,
+  changeSummary: string,
+  source: SubscriptionReceiptSource
+): SubscriptionReceiptDisplay {
+  const lineRows = lineItemsFromStripeInvoice(invoice);
+  const amountPaid = invoice.amount_paid ?? 0;
+  const amountDueOpen = invoice.amount_due ?? 0;
+  const displayTotalCents =
+    amountPaid > 0
+      ? amountPaid
+      : amountDueOpen !== 0
+        ? Math.abs(amountDueOpen)
+        : invoice.total ?? 0;
+
+  let prorationNote: string;
+  if (lineRows.some((r) => r.isProration)) {
+    prorationNote =
+      "Amounts include proration for the remainder of your current billing period.";
+  } else if (source === "checkout") {
+    prorationNote = "This receipt reflects your initial subscription purchase (secure checkout).";
+  } else {
+    prorationNote = "Subscription totals reflect your selected plan and add-ons.";
+  }
+
+  const amountStatusLine =
+    amountPaid > 0
+      ? `${formatUsdFromCents(amountPaid)} charged to your card on file.`
+      : amountDueOpen < 0
+        ? `A credit of ${formatUsdFromCents(Math.abs(amountDueOpen))} was applied to your account.`
+        : "No additional amount was due for this change.";
+
+  return {
+    changeSummary,
+    lineItems: lineRows.map((r) => ({
+      description: r.isProration ? `Proration · ${r.description}` : r.description,
+      amountCents: r.amountCents,
+      isProration: r.isProration,
+    })),
+    totalAmount: formatUsdFromCents(displayTotalCents),
+    amountStatusLine,
+    prorationNote,
+    invoiceId: invoice.number ?? invoice.id,
+  };
 }

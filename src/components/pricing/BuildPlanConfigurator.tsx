@@ -28,8 +28,11 @@ import {
   type TeamSeatCounts,
 } from "@/lib/team-seat-pricing";
 import { PLAN_STORAGE_BYTES } from "@/lib/plan-constants";
-import type { SubscriptionPreviewLineItem } from "@/lib/stripe-subscription-line-items";
-import { AlertTriangle, Check, Loader2, Minus, Plus } from "lucide-react";
+import type {
+  SubscriptionPreviewLineItem,
+  SubscriptionReceiptDisplay,
+} from "@/lib/stripe-subscription-line-items";
+import { AlertTriangle, Check, Loader2, Mail, Minus, Plus } from "lucide-react";
 
 export type PlanBuilderCheckoutPayload = {
   planId: string;
@@ -141,6 +144,8 @@ export default function BuildPlanConfigurator({
     storageLabel: string | null;
     amountCents: number | null;
     isCredit: boolean | null;
+    /** Itemized invoice snapshot; matches the receipt email when present */
+    receipt: SubscriptionReceiptDisplay | null;
   } | null>(null);
   const [restoreRequirements, setRestoreRequirements] = useState<{
     totalBytesUsed: number;
@@ -450,6 +455,7 @@ export default function BuildPlanConfigurator({
       });
       const data = (await res.json()) as {
         ok?: boolean;
+        receipt?: SubscriptionReceiptDisplay;
         url?: string;
         error?: string;
         code?: string;
@@ -469,6 +475,7 @@ export default function BuildPlanConfigurator({
           storageLabel,
           amountCents: displayAmount?.cents ?? null,
           isCredit: displayAmount?.isCredit ?? null,
+          receipt: data.receipt ?? null,
         });
         setSuccessModalOpen(true);
         return;
@@ -1196,29 +1203,96 @@ export default function BuildPlanConfigurator({
 
       {isDashboard && successModalOpen && successDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="max-h-[min(90dvh,40rem)] w-full max-w-lg overflow-y-auto rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
               <Check className="h-6 w-6 text-green-600 dark:text-green-400" strokeWidth={2.5} />
             </div>
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              Plan updated successfully
+              {successDetails.receipt ? "Your subscription was updated" : "Plan updated successfully"}
             </h3>
-            <div className="mt-4 space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
-              <p>
-                <strong className="text-neutral-900 dark:text-white">{successDetails.planLabel}</strong>
-                {successDetails.addons.length > 0 && <> · {successDetails.addons.join(", ")}</>}
-                {successDetails.storageLabel && <> · {successDetails.storageLabel}</>}
-              </p>
-              {successDetails.amountCents !== null && (
-                <p className="font-medium text-green-600 dark:text-green-400">
-                  {successDetails.isCredit ? (
-                    <>{formatCents(successDetails.amountCents)} credit applied to your account</>
-                  ) : (
-                    <>{formatCents(successDetails.amountCents)} charged to your card on file (prorated)</>
-                  )}
+
+            {successDetails.receipt ? (
+              <div className="mt-4 space-y-4 text-sm">
+                <p className="text-neutral-600 dark:text-neutral-400">
+                  {successDetails.receipt.changeSummary}
                 </p>
-              )}
-            </div>
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-900/50 dark:bg-green-950/40">
+                  <p className="text-base font-semibold text-green-800 dark:text-green-200">
+                    Total: {successDetails.receipt.totalAmount}
+                  </p>
+                  <p className="mt-1 text-green-700 dark:text-green-300/90">
+                    {successDetails.receipt.amountStatusLine}
+                  </p>
+                </div>
+                <p className="text-neutral-500 dark:text-neutral-400">
+                  {successDetails.receipt.prorationNote}
+                </p>
+                {successDetails.receipt.lineItems.length > 0 ? (
+                  <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-600">
+                    <table className="w-full min-w-[280px] border-collapse text-left text-xs sm:text-sm">
+                      <thead>
+                        <tr className="border-b-2 border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800/80">
+                          <th className="px-3 py-2 font-semibold text-neutral-800 dark:text-neutral-200">
+                            Description
+                          </th>
+                          <th className="whitespace-nowrap px-3 py-2 text-right font-semibold text-neutral-800 dark:text-neutral-200">
+                            Amount
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {successDetails.receipt.lineItems.map((row, idx) => (
+                          <tr
+                            key={`${row.description}-${idx}`}
+                            className="border-b border-neutral-100 dark:border-neutral-700/80"
+                          >
+                            <td className="px-3 py-2 text-neutral-700 dark:text-neutral-300">
+                              {row.description}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-neutral-900 dark:text-white">
+                              {formatCents(row.amountCents)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-neutral-500 dark:text-neutral-400">No line items on this invoice.</p>
+                )}
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Reference: Invoice {successDetails.receipt.invoiceId}
+                </p>
+                <div className="flex items-start gap-2 rounded-lg bg-neutral-100 px-3 py-2.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                  <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-neutral-500" aria-hidden />
+                  <span>
+                    The same breakdown was emailed to your billing address so you have it for your
+                    records.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+                <p>
+                  <strong className="text-neutral-900 dark:text-white">{successDetails.planLabel}</strong>
+                  {successDetails.addons.length > 0 && <> · {successDetails.addons.join(", ")}</>}
+                  {successDetails.storageLabel && <> · {successDetails.storageLabel}</>}
+                </p>
+                {successDetails.amountCents !== null && (
+                  <p className="font-medium text-green-600 dark:text-green-400">
+                    {successDetails.isCredit ? (
+                      <>{formatCents(successDetails.amountCents)} credit applied to your account</>
+                    ) : (
+                      <>{formatCents(successDetails.amountCents)} charged to your card on file (prorated)</>
+                    )}
+                  </p>
+                )}
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  If you don&apos;t see itemized lines here, check your email for a full receipt.
+                </p>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => {
