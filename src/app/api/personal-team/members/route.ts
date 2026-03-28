@@ -14,6 +14,12 @@ import {
   emptyTeamSeatCounts,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
+import { sumActiveUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { sumTeamContainerBackupBytes } from "@/lib/enterprise-storage";
+import {
+  sumPersonalTeamFixedSeatAllocations,
+  teamOwnerPoolBytes,
+} from "@/lib/personal-team-seat-storage";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -56,6 +62,9 @@ export async function GET(request: Request) {
     seat_access_level: string;
     status: string;
     invited_email: string | null;
+    quota_mode?: string;
+    storage_quota_bytes: number | null;
+    storage_used_bytes: number;
   }> = [];
 
   for (const d of snap.docs) {
@@ -70,6 +79,10 @@ export async function GET(request: Request) {
         /* deleted user — keep invited_email */
       }
     }
+    let storage_used_bytes = 0;
+    if (memberUserId && ((data.status as string) ?? "") === "active") {
+      storage_used_bytes = await sumActiveUserPersonalTeamBackupBytes(db, memberUserId, uid);
+    }
     members.push({
       id: d.id,
       member_user_id: memberUserId,
@@ -77,6 +90,10 @@ export async function GET(request: Request) {
       seat_access_level: (data.seat_access_level as string) ?? "none",
       status: (data.status as string) ?? "active",
       invited_email: typeof data.invited_email === "string" ? data.invited_email : null,
+      quota_mode: data.quota_mode as string | undefined,
+      storage_quota_bytes:
+        (data.storage_quota_bytes as number | null | undefined) ?? null,
+      storage_used_bytes,
     });
   }
 
@@ -93,6 +110,9 @@ export async function GET(request: Request) {
       invited_email: (data.invited_email as string) ?? "",
       seat_access_level: (data.seat_access_level as string) ?? "none",
       created_at: data.created_at ?? null,
+      quota_mode: (data.quota_mode as string | undefined) ?? "org_unlimited",
+      storage_quota_bytes:
+        (data.storage_quota_bytes as number | null | undefined) ?? null,
     };
   });
 
@@ -115,6 +135,9 @@ export async function GET(request: Request) {
   }
 
   const planId = (pdata?.plan_id as string) ?? "free";
+  const team_quota_bytes = teamOwnerPoolBytes(pdata);
+  const team_used_bytes = await sumTeamContainerBackupBytes(uid);
+  const numeric_allocated_seat_bytes = await sumPersonalTeamFixedSeatAllocations(uid);
 
   return NextResponse.json({
     members,
@@ -130,6 +153,13 @@ export async function GET(request: Request) {
       },
       plan_id: planId,
       plan_label: PLAN_LABELS[planId] ?? planId,
+      team_quota_bytes,
+      team_used_bytes,
+      numeric_allocated_seat_bytes,
+      remaining_numeric_allocatable_bytes: Math.max(
+        0,
+        team_quota_bytes - numeric_allocated_seat_bytes
+      ),
     },
   });
 }

@@ -13,6 +13,7 @@ export type NotificationType =
   | "gallery_invite"
   | "org_seat_invite"
   | "personal_team_added"
+  | "personal_team_invited"
   | "personal_team_joined_owner"
   | "personal_team_you_were_removed"
   | "personal_team_member_left_owner"

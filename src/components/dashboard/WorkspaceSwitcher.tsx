@@ -93,14 +93,26 @@ export default function WorkspaceSwitcher() {
     if (!open) setTeamsSubOpen(false);
   }, [open]);
 
-  const memberOnlyTeams =
-    workspaces?.personalTeams?.filter((t) => t.membershipKind === "member") ?? [];
-  const ownedPersonalTeamRows =
-    workspaces?.personalTeams?.filter((t) => t.membershipKind === "owned") ?? [];
-  const useNestedTeamsMenu = memberOnlyTeams.length >= 2;
+  /** When 2+ personal teams (owned and/or member), collapse them under one "Teams" row + submenu. */
+  const personalTeams = workspaces?.personalTeams ?? [];
+  const useNestedTeamsMenu = personalTeams.length >= 2;
 
-  function renderPersonalTeamRow(t: PersonalTeamWs, opts?: { nested?: boolean }) {
+  const [supportsHover, setSupportsHover] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setSupportsHover(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  function renderPersonalTeamRow(
+    t: PersonalTeamWs,
+    opts?: { nested?: boolean; nestedIndent?: boolean }
+  ) {
     const nested = opts?.nested ?? false;
+    const indent = nested && (opts?.nestedIndent ?? true);
     const tp = getThemeById(t.theme).primary;
     const teamRowActive = activeTeamOwnerId === t.ownerUserId;
     return (
@@ -109,7 +121,7 @@ export default function WorkspaceSwitcher() {
         href={`/team/${t.ownerUserId}`}
         onClick={() => setOpen(false)}
         className={`flex items-center gap-2 py-2 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-white/10 ${
-          nested ? "pl-8 pr-3" : "px-3"
+          indent ? "pl-8 pr-3" : "px-3"
         } ${teamRowActive ? "font-medium" : ""}`}
         style={{
           color: tp,
@@ -209,7 +221,7 @@ export default function WorkspaceSwitcher() {
         <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-[100] mt-1 max-w-[min(20rem,calc(100vw-1.5rem))] min-w-[200px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 max-sm:left-0 max-sm:right-0 max-sm:min-w-0 max-sm:max-w-none">
+        <div className="absolute right-0 top-full z-[100] mt-1 max-w-[min(20rem,calc(100vw-1.5rem))] min-w-[200px] overflow-visible rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 max-sm:left-0 max-sm:right-0 max-sm:min-w-0 max-sm:max-w-none">
           {workspaces?.personal && (
             <Link
               href="/dashboard"
@@ -232,27 +244,50 @@ export default function WorkspaceSwitcher() {
             </Link>
           )}
           {useNestedTeamsMenu ? (
-            <>
-              {ownedPersonalTeamRows.map((t) => renderPersonalTeamRow(t))}
-              <div className="border-t border-neutral-100 dark:border-neutral-700/80">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setTeamsSubOpen((v) => !v);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/10"
-                >
-                  <Users className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan" />
-                  <span className="flex-1">Teams</span>
-                  <ChevronRight
-                    className={`h-4 w-4 shrink-0 transition-transform ${teamsSubOpen ? "rotate-90" : ""}`}
-                  />
-                </button>
-                {teamsSubOpen ? memberOnlyTeams.map((t) => renderPersonalTeamRow(t, { nested: true })) : null}
+            <div
+              className="relative border-t border-neutral-100 dark:border-neutral-700/80"
+              onMouseEnter={() => {
+                if (supportsHover) setTeamsSubOpen(true);
+              }}
+              onMouseLeave={() => {
+                if (supportsHover) setTeamsSubOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!supportsHover) setTeamsSubOpen((v) => !v);
+                }}
+                aria-expanded={teamsSubOpen}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/10 max-sm:min-h-[44px]"
+              >
+                <Users className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan" />
+                <span className="flex-1">Teams</span>
+                <ChevronRight
+                  className={`h-4 w-4 shrink-0 sm:opacity-70 max-sm:transition-transform ${
+                    teamsSubOpen ? "max-sm:rotate-90" : ""
+                  }`}
+                />
+              </button>
+              {/* Mobile / coarse pointer: inline accordion */}
+              <div
+                className={`sm:hidden ${teamsSubOpen ? "block border-t border-neutral-100 dark:border-neutral-700/60" : "hidden"}`}
+              >
+                {personalTeams.map((t) =>
+                  renderPersonalTeamRow(t, { nested: true, nestedIndent: true })
+                )}
               </div>
-            </>
+              {/* Desktop / hover: flyout to the right (same wrapper keeps hover hit target) */}
+              {teamsSubOpen && (
+                <div className="hidden min-w-[14rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-600 dark:bg-neutral-800 sm:absolute sm:left-full sm:top-0 sm:z-[110] sm:ml-0.5 sm:block sm:pl-0.5">
+                  {personalTeams.map((t) =>
+                    renderPersonalTeamRow(t, { nested: true, nestedIndent: false })
+                  )}
+                </div>
+              )}
+            </div>
           ) : (
             workspaces?.personalTeams?.map((t) => renderPersonalTeamRow(t))
           )}

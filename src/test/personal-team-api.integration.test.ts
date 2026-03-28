@@ -186,7 +186,7 @@ describe("POST /api/personal-team/invite cap (3 non-owned teams)", () => {
 });
 
 describe("POST /api/personal-team/invite success (existing user)", () => {
-  it("creates active seat when capacity and plan allow", async () => {
+  it("creates pending email invite (no active seat) when capacity and plan allow", async () => {
     const db = testHarness.db!;
     db.seedDoc("profiles", U.admin4, videoTeamProfile());
     db.seedDoc("profiles", U.memberNew, videoTeamProfile({ display_name: "New" }));
@@ -212,12 +212,15 @@ describe("POST /api/personal-team/invite success (existing user)", () => {
       })
     );
     expect(res.status).toBe(200);
-    const j = (await res.json()) as { ok?: boolean; member_user_id?: string };
+    const j = (await res.json()) as { ok?: boolean; pending_invite?: boolean; invite_id?: string };
     expect(j.ok).toBe(true);
-    expect(j.member_user_id).toBe(U.memberNew);
+    expect(j.pending_invite).toBe(true);
+    expect(j.invite_id).toBeTruthy();
     const seatKey = `${PERSONAL_TEAM_SEATS_COLLECTION}/${personalTeamSeatDocId(U.admin4, U.memberNew)}`;
-    const seat = db.raw.get(seatKey);
-    expect(seat?.status).toBe("active");
+    expect(db.raw.has(seatKey)).toBe(false);
+    const inv = db.raw.get(`${PERSONAL_TEAM_INVITES_COLLECTION}/${j.invite_id}`);
+    expect(inv?.status).toBe("pending");
+    expect(inv?.quota_mode).toBe("org_unlimited");
   });
 });
 

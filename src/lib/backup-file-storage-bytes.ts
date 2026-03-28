@@ -47,3 +47,18 @@ export async function sumActiveUserOrgBackupBytes(
     .get();
   return sumActiveBytesFromSnapshot(snap.docs);
 }
+
+/** Per-member personal-team uploads: this user's files in the owner's team container. */
+export async function sumActiveUserPersonalTeamBackupBytes(
+  db: Firestore,
+  userId: string,
+  teamOwnerUid: string
+): Promise<number> {
+  const snap = await db
+    .collection("backup_files")
+    .where("userId", "==", userId)
+    .where("personal_team_owner_id", "==", teamOwnerUid)
+    .where("organization_id", "==", null)
+    .get();
+  return sumActiveBytesFromSnapshot(snap.docs);
+}

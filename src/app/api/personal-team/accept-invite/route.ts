@@ -99,6 +99,11 @@ export async function POST(request: Request) {
   }
   const seatLevel = levelRaw as PersonalTeamSeatAccess;
 
+  const invitedStorageBytes = inv.storage_quota_bytes;
+  const storage_quota_bytes =
+    typeof invitedStorageBytes === "number" ? invitedStorageBytes : null;
+  const quota_mode = storage_quota_bytes === null ? "org_unlimited" : "fixed";
+
   if (memberUid === teamOwnerUid) {
     return NextResponse.json({ error: "Invalid invite." }, { status: 400 });
   }
@@ -170,6 +175,8 @@ export async function POST(request: Request) {
       seat_access_level: seatLevel,
       status: "active",
       invited_email: invitedEmail,
+      storage_quota_bytes,
+      quota_mode,
       created_at: now,
       updated_at: now,
     },

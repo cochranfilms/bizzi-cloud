@@ -18,6 +18,11 @@ import {
   ensurePersonalTeamRecord,
   wouldExceedNonOwnedTeamCap,
 } from "@/lib/personal-team-auth";
+import { isProductSeatTierByte } from "@/lib/enterprise-constants";
+import {
+  sumPersonalTeamFixedSeatAllocations,
+  teamOwnerPoolBytes,
+} from "@/lib/personal-team-seat-storage";
 import {
   isPersonalTeamSeatAccess,
   personalTeamSeatAccessSummary,
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
   const { uid: adminUid, email: adminEmailFromToken } = auth;
 
-  let body: { email?: string; seat_access_level?: string };
+  let body: { email?: string; seat_access_level?: string; storage_quota_bytes?: number | null };
   try {
     body = await request.json();
   } catch {
@@ -99,6 +104,24 @@ export async function POST(request: Request) {
   const email =
     typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const levelRaw = typeof body.seat_access_level === "string" ? body.seat_access_level : "";
+
+  let inviteStorage: { storage_quota_bytes: number | null; quota_mode: "fixed" | "org_unlimited" };
+  if (body.storage_quota_bytes === undefined || body.storage_quota_bytes === null) {
+    inviteStorage = { storage_quota_bytes: null, quota_mode: "org_unlimited" };
+  } else if (
+    typeof body.storage_quota_bytes === "number" &&
+    isProductSeatTierByte(body.storage_quota_bytes)
+  ) {
+    inviteStorage = { storage_quota_bytes: body.storage_quota_bytes, quota_mode: "fixed" };
+  } else {
+    return NextResponse.json(
+      {
+        error:
+          "storage_quota_bytes must be a supported tier (50GB–10TB) or null (Unlimited within team pool)",
+      },
+      { status: 400 }
+    );
+  }
   if (!email || !email.includes("@")) {
     return NextResponse.json({ error: "Valid email required" }, { status: 400 });
   }
@@ -160,6 +183,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: capErr }, { status: 400 });
   }
 
+  if (inviteStorage.quota_mode === "fixed" && typeof inviteStorage.storage_quota_bytes === "number") {
+    const pool = teamOwnerPoolBytes(adminData);
+    const allocated = await sumPersonalTeamFixedSeatAllocations(adminUid);
+    if (allocated + inviteStorage.storage_quota_bytes > pool) {
+      const poolTb = (pool / (1024 ** 4)).toFixed(1);
+      return NextResponse.json(
+        {
+          error: `Total fixed seat allocation would exceed your team storage pool (${poolTb} TB). ${(
+            allocated / (1024 ** 4)
+          ).toFixed(1)} TB is already allocated to other members or pending invites.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const inviterName =
     (adminData.display_name as string)?.trim() ||
     (adminData.displayName as string)?.trim() ||
@@ -208,73 +247,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "This user is already on your team." }, { status: 400 });
       }
     }
-
-    const docId = personalTeamSeatDocId(adminUid, memberUid);
-    const seatRef = db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId);
-    const now = FieldValue.serverTimestamp();
-    const dashUrl = `${appBaseUrl()}/dashboard`;
-    try {
-      await sendTeamInviteMail({
-        toEmail: email,
-        inviterName,
-        seatLevel,
-        ctaUrl: dashUrl,
-        ctaLabel: "Open your Bizzi dashboard",
-      });
-    } catch (err) {
-      console.error("[personal-team/invite] EmailJS failed:", err);
-      return NextResponse.json(
-        {
-          error:
-            "Failed to send invite email. Check EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE and EmailJS dashboard.",
-        },
-        { status: 500 }
-      );
-    }
-
-    await seatRef.set(
-      {
-        team_id: adminUid,
-        team_owner_user_id: adminUid,
-        member_user_id: memberUid,
-        seat_access_level: seatLevel,
-        status: "active",
-        invited_email: email,
-        created_at: now,
-        updated_at: now,
-      },
-      { merge: true }
-    );
-
-    await writeAuditLog({
-      action: "personal_team_invite_created",
-      uid: adminUid,
-      ip: getClientIp(request),
-      metadata: {
-        route: "POST /api/personal-team/invite",
-        result: "allowed",
-        target_user_id: memberUid,
-        team_owner_user_id: adminUid,
-        seat_access_level: seatLevel,
-      },
-    });
-
-    const ownerLabel = await getActorDisplayName(db, adminUid);
-    await createNotification({
-      recipientUserId: memberUid,
-      actorUserId: adminUid,
-      type: "personal_team_added",
-      metadata: {
-        actorDisplayName: ownerLabel,
-        teamOwnerUserId: adminUid,
-      },
-    }).catch((err) => console.error("[personal-team/invite] notification:", err));
-
-    return NextResponse.json({
-      ok: true,
-      member_user_id: memberUid,
-      pending_invite: false,
-    });
   }
 
   const inviteToken = crypto.randomUUID();
@@ -289,9 +261,13 @@ export async function POST(request: Request) {
     seat_access_level: seatLevel,
     invite_token_hash: inviteTokenHash,
     status: "pending",
+    storage_quota_bytes: inviteStorage.storage_quota_bytes,
+    quota_mode: inviteStorage.quota_mode,
     created_at: now,
     updated_at: now,
   });
+
+  const ctaLabel = memberUid ? "Accept invitation" : "Create account and join your team";
 
   try {
     await sendTeamInviteMail({
@@ -299,7 +275,7 @@ export async function POST(request: Request) {
       inviterName,
       seatLevel,
       ctaUrl: inviteLink,
-      ctaLabel: "Create account and join your team",
+      ctaLabel,
     });
   } catch (err) {
     console.error("[personal-team/invite] EmailJS failed (pending):", err);
@@ -323,8 +299,22 @@ export async function POST(request: Request) {
       pending_invite_id: pendingId,
       team_owner_user_id: adminUid,
       seat_access_level: seatLevel,
+      known_existing_user: !!memberUid,
     },
   });
+
+  if (memberUid) {
+    const ownerLabel = await getActorDisplayName(db, adminUid);
+    await createNotification({
+      recipientUserId: memberUid,
+      actorUserId: adminUid,
+      type: "personal_team_invited",
+      metadata: {
+        actorDisplayName: ownerLabel,
+        teamOwnerUserId: adminUid,
+      },
+    }).catch((err) => console.error("[personal-team/invite] notification:", err));
+  }
 
   return NextResponse.json({
     ok: true,

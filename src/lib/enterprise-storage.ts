@@ -12,7 +12,11 @@ import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
 import { isBackupFileActiveForListing } from "./backup-file-lifecycle";
-import { sumActiveUserOrgBackupBytes } from "./backup-file-storage-bytes";
+import {
+  sumActiveUserOrgBackupBytes,
+  sumActiveUserPersonalTeamBackupBytes,
+} from "./backup-file-storage-bytes";
+import { seatNumericCapForEnforcement } from "./org-seat-quota";
 import {
   billingKeyForOrg,
   billingKeyForUser,
@@ -21,7 +25,6 @@ import {
 } from "./storage-quota-reservations";
 import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
 import { logEnterpriseSecurityEvent } from "./enterprise-security-log";
-import { seatNumericCapForEnforcement } from "./org-seat-quota";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -311,6 +314,54 @@ export async function checkUserCanUpload(
             billing_subject_user_id: null,
             organization_id: orgIdForSeat,
             usage_scope: "enterprise_workspace",
+            file_used_bytes: seatUsed,
+            reserved_bytes: seatReserved,
+            effective_billable_bytes_for_enforcement: seatEffective,
+            quota_bytes: seatQuota,
+            additional_bytes: additionalBytes,
+            denial_reason: "seat_allocation",
+            remaining_bytes: remaining,
+          }
+        );
+      }
+    }
+  }
+
+  if (!snap.organization_id && snap.quota_subject_uid !== uid) {
+    const teamOwnerUid = snap.quota_subject_uid;
+    const db = getAdminFirestore();
+    const seatSnap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .doc(personalTeamSeatDocId(teamOwnerUid, uid))
+      .get();
+    const seatQuota = seatNumericCapForEnforcement(
+      seatSnap.data() as Record<string, unknown> | undefined
+    );
+    if (typeof seatQuota === "number") {
+      const seatUsed = await sumActiveUserPersonalTeamBackupBytes(db, uid, teamOwnerUid);
+      const seatReserved = await sumPendingReservationBytesForRequestingUser(
+        billingKeyForUser(teamOwnerUid),
+        uid
+      );
+      const seatEffective = seatUsed + seatReserved;
+      if (seatEffective + additionalBytes > seatQuota) {
+        const remaining = Math.max(0, seatQuota - seatEffective);
+        logEnterpriseSecurityEvent("storage_quota_denied", {
+          denial_reason: "seat_allocation",
+          requesting_user_id: uid,
+          organization_id: null,
+          personal_team_owner_user_id: teamOwnerUid,
+          additional_bytes: additionalBytes,
+          effective_billable_bytes_for_enforcement: seatEffective,
+          quota_bytes: seatQuota,
+        });
+        throw new StorageQuotaDeniedError(
+          "This upload would exceed your storage allocation for this team. Ask your team admin to raise your cap or free space.",
+          {
+            requesting_user_id: uid,
+            billing_subject_user_id: null,
+            organization_id: null,
+            usage_scope: "personal_team_workspace",
             file_used_bytes: seatUsed,
             reserved_bytes: seatReserved,
             effective_billable_bytes_for_enforcement: seatEffective,

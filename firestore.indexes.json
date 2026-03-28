@@ -1927,6 +1927,24 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "personal_team_owner_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "organization_id",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "macos_package_id",
           "order": "ASCENDING"
         },

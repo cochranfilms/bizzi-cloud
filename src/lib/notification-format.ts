@@ -58,6 +58,8 @@ export function formatNotificationMessage(
     }
     case "personal_team_added":
       return `${actor} added you to their team`;
+    case "personal_team_invited":
+      return `${actor} invited you to join their team — accept using the link in your email`;
     case "personal_team_joined_owner": {
       const joiner = metadata?.newMemberDisplayName ?? actor;
       return `${joiner} joined your team`;

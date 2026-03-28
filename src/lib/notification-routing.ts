@@ -18,6 +18,7 @@ const ORG_TYPES = new Set<string>([
 
 const TEAM_TYPES = new Set<string>([
   "personal_team_added",
+  "personal_team_invited",
   "personal_team_joined_owner",
   "personal_team_you_were_removed",
   "personal_team_member_left_owner",

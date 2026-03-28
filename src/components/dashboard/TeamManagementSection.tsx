@@ -13,6 +13,26 @@ import {
   sumExtraTeamSeats,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
+import { PRODUCT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-constants";
+
+const STORAGE_TIER_LABELS = [
+  "50 GB",
+  "100 GB",
+  "250 GB",
+  "500 GB",
+  "1 TB",
+  "2 TB",
+  "5 TB",
+  "10 TB",
+] as const;
+
+const BASE_MEMBER_STORAGE_OPTIONS = [
+  ...PRODUCT_SEAT_STORAGE_BYTES.map((value, i) => ({
+    label: STORAGE_TIER_LABELS[i] ?? `${value}`,
+    value: value as number,
+  })),
+  { label: "Unlimited (team pool)", value: null as null },
+] as const;
 
 type MemberApi = {
   id: string;
@@ -20,12 +40,17 @@ type MemberApi = {
   email: string;
   seat_access_level: string;
   status: string;
+  quota_mode?: string;
+  storage_quota_bytes: number | null;
+  storage_used_bytes: number;
 };
 
 type PendingInviteApi = {
   id: string;
   invited_email: string;
   seat_access_level: string;
+  quota_mode?: string;
+  storage_quota_bytes: number | null;
 };
 
 type OverviewApi = {
@@ -34,6 +59,10 @@ type OverviewApi = {
   available: { none: number; gallery: number; editor: number; fullframe: number };
   plan_id: string;
   plan_label: string;
+  team_quota_bytes?: number;
+  team_used_bytes?: number;
+  numeric_allocated_seat_bytes?: number;
+  remaining_numeric_allocatable_bytes?: number;
 };
 
 function statusLabel(status: string): string {
@@ -56,6 +85,22 @@ function accessLevelLabel(level: string | undefined): string {
     return PERSONAL_TEAM_SEAT_ACCESS_LABELS[level as PersonalTeamSeatAccess];
   }
   return level ?? "—";
+}
+
+function formatStorage(bytes: number | null): string {
+  if (bytes === null) return "Unlimited (team pool)";
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1024) return `${(gb / 1024).toFixed(1)} TB`;
+  return `${gb.toFixed(0)} GB`;
+}
+
+function selectStorageOptions(currentBytes: number | null) {
+  const tierSet = new Set<number>([...PRODUCT_SEAT_STORAGE_BYTES]);
+  const hasCustom = typeof currentBytes === "number" && !tierSet.has(currentBytes);
+  const extra = hasCustom
+    ? [{ label: `Current (${formatStorage(currentBytes)})`, value: currentBytes as number }]
+    : [];
+  return [...extra, ...BASE_MEMBER_STORAGE_OPTIONS] as { label: string; value: number | null }[];
 }
 
 /** Shown when the user has seat memberships on others’ personal teams (leave per team). */
@@ -226,7 +271,9 @@ export function TeamManagementSection() {
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLevel, setInviteLevel] = useState<PersonalTeamSeatAccess>("none");
+  const [inviteStorageBytes, setInviteStorageBytes] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [updatingStorageSeatId, setUpdatingStorageSeatId] = useState<string | null>(null);
   const [inviteMsg, setInviteMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [removeTarget, setRemoveTarget] = useState<MemberApi | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -286,6 +333,7 @@ export function TeamManagementSection() {
         body: JSON.stringify({
           email: inviteEmail.trim(),
           seat_access_level: inviteLevel,
+          storage_quota_bytes: inviteStorageBytes,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -295,10 +343,7 @@ export function TeamManagementSection() {
       }
       setInviteMsg({
         type: "ok",
-        text:
-          (data.pending_invite as boolean)
-            ? "Invite sent. They’ll get an email to create an account and join."
-            : "Teammate added. They’ve been emailed with next steps.",
+        text: "Invite sent. They must accept the invite (link in email) before they’re added to the team.",
       });
       setInviteEmail("");
       await refetchSubscription();
@@ -307,6 +352,33 @@ export function TeamManagementSection() {
       setInviteMsg({ type: "err", text: "Invite failed" });
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleMemberStorageChange = async (seatId: string, newQuota: number | null) => {
+    if (!user) return;
+    setUpdatingStorageSeatId(seatId);
+    setInviteMsg(null);
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken();
+      const res = await fetch(`/api/personal-team/seats/${encodeURIComponent(seatId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ storage_quota_bytes: newQuota }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteMsg({ type: "err", text: (data.error as string) ?? "Could not update storage" });
+        return;
+      }
+      await loadTeam();
+    } catch {
+      setInviteMsg({ type: "err", text: "Could not update storage" });
+    } finally {
+      setUpdatingStorageSeatId(null);
     }
   };
 
@@ -370,6 +442,12 @@ export function TeamManagementSection() {
         Manage your <strong className="text-neutral-900 dark:text-white">personal team seats</strong>, invite
         members, assign seat access, and share storage. This is <strong>not</strong> an Organization.
       </p>
+      <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+        Your plan provides one <strong className="text-neutral-900 dark:text-white">shared team storage pool</strong>
+        {" "}(total quota). Each member can have a fixed cap or{" "}
+        <strong className="text-neutral-900 dark:text-white">unlimited use within that pool</strong>. Uploads are
+        blocked if either the pool or the member limit is reached.
+      </p>
 
       <div className="mb-6 rounded-lg border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Team overview</h3>
@@ -399,6 +477,20 @@ export function TeamManagementSection() {
             Storage is shared from your subscription; only you can buy more. Teammates keep their own
             personal Bizzi billing.
           </li>
+          {typeof overview?.team_quota_bytes === "number" && (
+            <li className="text-xs text-neutral-500">
+              Pool: <strong>{formatStorage(overview.team_quota_bytes)}</strong> total · used{" "}
+              <strong>{formatStorage(overview.team_used_bytes ?? 0)}</strong>
+              {typeof overview.numeric_allocated_seat_bytes === "number" &&
+              overview.numeric_allocated_seat_bytes > 0 ? (
+                <>
+                  {" "}
+                  · <strong>{formatStorage(overview.numeric_allocated_seat_bytes)}</strong> allocated to
+                  fixed caps (pending invites included)
+                </>
+              ) : null}
+            </li>
+          )}
         </ul>
       </div>
 
@@ -431,7 +523,10 @@ export function TeamManagementSection() {
           <Mail className="h-4 w-4 text-bizzi-blue" />
           Invite member
         </h3>
-        <form onSubmit={(e) => void handleInvite(e)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <form
+          onSubmit={(e) => void handleInvite(e)}
+          className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end"
+        >
           <div className="min-w-0 flex-1">
             <label htmlFor="team-invite-email" className="mb-1 block text-xs text-neutral-500">
               Email
@@ -460,6 +555,29 @@ export function TeamManagementSection() {
               <option value="gallery">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.gallery}</option>
               <option value="editor">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.editor}</option>
               <option value="fullframe">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.fullframe}</option>
+            </select>
+          </div>
+          <div className="sm:w-56">
+            <label htmlFor="team-invite-storage" className="mb-1 block text-xs text-neutral-500">
+              Member storage cap
+            </label>
+            <select
+              id="team-invite-storage"
+              value={inviteStorageBytes === null ? "" : String(inviteStorageBytes)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setInviteStorageBytes(v === "" ? null : Number(v));
+              }}
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+            >
+              {BASE_MEMBER_STORAGE_OPTIONS.map((opt) => (
+                <option
+                  key={opt.label}
+                  value={opt.value === null ? "" : String(opt.value)}
+                >
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
           <button
@@ -501,10 +619,11 @@ export function TeamManagementSection() {
           <Loader2 className="h-6 w-6 animate-spin text-bizzi-blue" />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
-            <table className="w-full min-w-[480px] text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/80">
                 <tr>
                   <th className="p-3 font-medium">Email</th>
+                  <th className="whitespace-nowrap p-3 font-medium">Pool storage</th>
                   <th className="p-3 font-medium">Access</th>
                   <th className="p-3 font-medium">Status</th>
                   <th className="p-3 font-medium w-24" />
@@ -514,38 +633,78 @@ export function TeamManagementSection() {
                 {pendingInvites.map((p) => (
                   <tr key={p.id} className="border-b border-neutral-100 dark:border-neutral-800">
                     <td className="p-3">{p.invited_email}</td>
+                    <td className="p-3 text-neutral-600 dark:text-neutral-400">
+                      <span className="text-neutral-500">—</span>
+                      <span className="mt-1 block text-xs">
+                        Cap: {formatStorage(p.storage_quota_bytes ?? null)}
+                      </span>
+                    </td>
                     <td className="p-3">
                       {PERSONAL_TEAM_SEAT_ACCESS_LABELS[p.seat_access_level as PersonalTeamSeatAccess] ??
                         p.seat_access_level}
                     </td>
-                    <td className="p-3">Invited (pending signup)</td>
+                    <td className="p-3">Pending</td>
                     <td className="p-3" />
                   </tr>
                 ))}
-                {members.map((m) => (
-                  <tr key={m.id} className="border-b border-neutral-100 dark:border-neutral-800">
-                    <td className="p-3">{m.email || "—"}</td>
-                    <td className="p-3">
-                      {PERSONAL_TEAM_SEAT_ACCESS_LABELS[m.seat_access_level as PersonalTeamSeatAccess] ??
-                        m.seat_access_level}
-                    </td>
-                    <td className="p-3">{statusLabel(m.status)}</td>
-                    <td className="p-3">
-                      {(m.status === "active" || m.status === "invited") && (
-                        <button
-                          type="button"
-                          onClick={() => setRemoveTarget(m)}
-                          className="text-red-600 hover:underline dark:text-red-400"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {members.map((m) => {
+                  const cap = m.storage_quota_bytes ?? null;
+                  const usageLabel = `${formatStorage(m.storage_used_bytes)} of ${formatStorage(cap)} used`;
+                  return (
+                    <tr key={m.id} className="border-b border-neutral-100 dark:border-neutral-800">
+                      <td className="p-3">{m.email || "—"}</td>
+                      <td className="p-3">
+                        {m.status === "active" ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                              {usageLabel}
+                            </span>
+                            <select
+                              aria-label={`Storage cap for ${m.email}`}
+                              disabled={updatingStorageSeatId === m.id}
+                              value={cap === null ? "" : String(cap)}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                void handleMemberStorageChange(m.id, v === "" ? null : Number(v));
+                              }}
+                              className="max-w-[11rem] rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                            >
+                              {selectStorageOptions(cap).map((opt) => (
+                                <option
+                                  key={`${opt.label}-${opt.value ?? "u"}`}
+                                  value={opt.value === null ? "" : String(opt.value)}
+                                >
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-neutral-500">{usageLabel}</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {PERSONAL_TEAM_SEAT_ACCESS_LABELS[m.seat_access_level as PersonalTeamSeatAccess] ??
+                          m.seat_access_level}
+                      </td>
+                      <td className="p-3">{statusLabel(m.status)}</td>
+                      <td className="p-3">
+                        {(m.status === "active" || m.status === "invited") && (
+                          <button
+                            type="button"
+                            onClick={() => setRemoveTarget(m)}
+                            className="text-red-600 hover:underline dark:text-red-400"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {pendingInvites.length === 0 && members.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-neutral-500">
+                    <td colSpan={5} className="p-6 text-center text-neutral-500">
                       No members yet.
                     </td>
                   </tr>
