@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, FileIcon, Loader2, Film, FolderInput, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, FileIcon, FolderInput, ZoomIn, ZoomOut } from "lucide-react";
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
 import { useHearts } from "@/hooks/useHearts";
@@ -10,6 +10,7 @@ import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
+import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 import { useThemeResolved } from "@/context/ThemeContext";
@@ -93,6 +94,10 @@ export default function FilePreviewModal({
   const [error, setError] = useState<string | null>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
   const [imageZoom, setImageZoom] = useState(1);
+  const [imagePreviewOpaque, setImagePreviewOpaque] = useState(false);
+  const [videoDecodeVisible, setVideoDecodeVisible] = useState(false);
+  const [pdfFrameVisible, setPdfFrameVisible] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
   const imageZoomHostRef = useRef<HTMLDivElement | null>(null);
 
   const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
@@ -109,6 +114,10 @@ export default function FilePreviewModal({
     file?.name ?? "",
     "preview"
   );
+  const videoPosterUrl = useVideoThumbnail(file?.objectKey, file?.name ?? "", {
+    enabled: !!file?.objectKey && previewType === "video",
+    isVideo: true,
+  });
 
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
@@ -167,6 +176,24 @@ export default function FilePreviewModal({
   useEffect(() => {
     setImageZoom(1);
   }, [file?.id, previewType]);
+
+  useEffect(() => {
+    setImagePreviewOpaque(false);
+    setVideoDecodeVisible(false);
+    setPdfFrameVisible(false);
+    setAudioReady(false);
+  }, [file?.id]);
+
+  useEffect(() => {
+    setVideoDecodeVisible(false);
+  }, [fullUrl, videoStreamUrl]);
+
+  useEffect(() => {
+    if (!lowResPreviewUrl) return;
+    const probe = new window.Image();
+    probe.src = lowResPreviewUrl;
+    if (probe.complete) setImagePreviewOpaque(true);
+  }, [lowResPreviewUrl, file?.id]);
 
   useEffect(() => {
     const el = imageZoomHostRef.current;
@@ -328,29 +355,7 @@ export default function FilePreviewModal({
   let mediaBody: ReactNode = null;
   let mediaFooter: ReactNode = null;
 
-  if (loading && !(previewType === "image" && lowResPreviewUrl)) {
-    mediaBody = (
-      <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-4 py-10">
-        <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
-        <p className="text-sm text-neutral-600 dark:text-neutral-300">Loading preview…</p>
-      </div>
-    );
-  } else if (previewType === "video" && videoProcessing && !error) {
-    mediaBody = (
-      <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-6 py-12">
-        <div className="relative">
-          <Film className="h-16 w-16 text-bizzi-blue/60" />
-          <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-bizzi-blue" />
-        </div>
-        <div className="max-w-sm space-y-2 text-center">
-          <p className="text-base font-medium text-neutral-900 dark:text-white">Video is processing</p>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Your video is being prepared for streaming. Check back in a moment to preview.
-          </p>
-        </div>
-      </div>
-    );
-  } else if (error) {
+  if (error) {
     mediaBody = (
       <div className="flex min-h-[12rem] flex-col items-center justify-center gap-3 text-red-600 dark:text-red-400">
         <FileIcon className="h-12 w-12" />
@@ -365,6 +370,58 @@ export default function FilePreviewModal({
         </button>
       </div>
     );
+  } else if (previewType === "video" && videoProcessing && !error) {
+    mediaBody = (
+      <div className="relative flex h-full min-h-[min(42dvh,360px)] w-full flex-1 flex-col items-center justify-center">
+        {videoPosterUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
+            <img
+              src={videoPosterUrl}
+              alt=""
+              className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-lg shadow-black/25 dark:shadow-black/50"
+            />
+            <p className="mt-4 max-w-sm px-4 text-center text-sm text-neutral-600 dark:text-neutral-400">
+              Preparing playback…
+            </p>
+          </>
+        ) : (
+          <div
+            className="h-full min-h-[min(36dvh,280px)] w-full max-w-[min(92vw,100%)] rounded-lg bg-neutral-950/88 dark:bg-black/90"
+            aria-hidden
+          />
+        )}
+      </div>
+    );
+  } else if (loading && !(previewType === "image" && lowResPreviewUrl)) {
+    if (previewType === "video") {
+      mediaBody = (
+        <div className="relative flex h-full min-h-[min(42dvh,360px)] w-full flex-1 items-center justify-center">
+          {videoPosterUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
+              <img
+                src={videoPosterUrl}
+                alt=""
+                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-md shadow-black/20 opacity-95"
+              />
+            </>
+          ) : (
+            <div
+              className="h-full min-h-[min(36dvh,280px)] w-full max-w-[min(92vw,100%)] rounded-lg bg-neutral-950/88 dark:bg-black/90"
+              aria-hidden
+            />
+          )}
+        </div>
+      );
+    } else {
+      mediaBody = (
+        <div
+          className="flex h-full min-h-[min(32dvh,240px)] w-full flex-1 items-center justify-center rounded-xl bg-neutral-200/20 dark:bg-white/[0.06]"
+          aria-hidden
+        />
+      );
+    }
   } else if (
     (previewType === "image" && lowResPreviewUrl) ||
     (previewType === "video" && fullUrl && !videoProcessing) ||
@@ -388,7 +445,8 @@ export default function FilePreviewModal({
               <img
                 src={lowResPreviewUrl}
                 alt={file.name}
-                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-md object-contain shadow-md shadow-black/15 dark:shadow-black/35"
+                onLoad={() => setImagePreviewOpaque(true)}
+                className={`max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-md object-contain shadow-md shadow-black/15 transition-opacity duration-300 ease-out dark:shadow-black/35 ${imagePreviewOpaque ? "opacity-100" : "opacity-0"}`}
               />
             </div>
           </div>
@@ -426,30 +484,59 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "video" && fullUrl) {
       mediaBody = (
-        <VideoWithLUT
-          src={fullUrl}
-          streamUrl={videoStreamUrl}
-          className=""
-          showLUTOption={showLUT}
-          lutSource={lutSource}
-          lutOptions={lutOptions}
-          onLutChange={setLutEnabled}
-          frameless
-          sideBySideLut={showLUT}
-        />
+        <div className="relative flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center">
+          {videoPosterUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
+              <img
+                src={videoPosterUrl}
+                alt=""
+                aria-hidden
+                className={`pointer-events-none absolute left-1/2 top-1/2 max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] -translate-x-1/2 -translate-y-1/2 rounded-lg object-contain transition-opacity duration-500 ease-out ${videoDecodeVisible ? "opacity-0" : "opacity-100"}`}
+              />
+            </>
+          ) : null}
+          <div
+            className={`relative z-10 flex h-full w-full min-h-0 flex-1 items-center justify-center transition-opacity duration-500 ease-out ${videoDecodeVisible ? "opacity-100" : "opacity-0"}`}
+          >
+            <VideoWithLUT
+              src={fullUrl}
+              streamUrl={videoStreamUrl}
+              className=""
+              showLUTOption={showLUT}
+              lutSource={lutSource}
+              lutOptions={lutOptions}
+              onLutChange={setLutEnabled}
+              frameless
+              sideBySideLut={showLUT}
+              onDisplayReady={() => setVideoDecodeVisible(true)}
+            />
+          </div>
+        </div>
       );
     } else if (previewType === "audio" && fullUrl) {
       mediaBody = (
-        <div className="w-full max-w-md rounded-lg border border-neutral-200/80 bg-white/90 p-4 shadow-sm dark:border-neutral-600/50 dark:bg-neutral-900/75">
-          <audio src={fullUrl} controls className="w-full" />
+        <div
+          className={`w-full max-w-md rounded-lg border border-neutral-200/80 bg-white/90 p-4 shadow-sm transition-opacity duration-300 ease-out dark:border-neutral-600/50 dark:bg-neutral-900/75 ${audioReady ? "opacity-100" : "opacity-0"}`}
+        >
+          <audio
+            src={fullUrl}
+            controls
+            className="w-full"
+            onLoadedData={() => setAudioReady(true)}
+            onCanPlay={() => setAudioReady(true)}
+          />
         </div>
       );
     } else if (previewType === "pdf" && fullUrl) {
       mediaBody = (
-        <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-lg border border-neutral-300/50 bg-neutral-100/25 shadow-lg dark:border-neutral-600/40 dark:bg-neutral-950/50">
+        <div
+          className={`flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-lg border border-neutral-300/50 bg-neutral-100/25 shadow-lg transition-opacity duration-300 ease-out dark:border-neutral-600/40 dark:bg-neutral-950/50 ${pdfFrameVisible ? "opacity-100" : "opacity-0"}`}
+        >
           <iframe
             src={fullUrl}
             title={file.name}
+            onLoad={() => setPdfFrameVisible(true)}
             className="h-full min-h-[480px] w-full flex-1 border-0 bg-white dark:bg-neutral-950"
           />
         </div>

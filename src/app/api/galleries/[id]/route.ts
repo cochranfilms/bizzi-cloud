@@ -14,6 +14,7 @@ import {
   applyMacosPackageDelta,
   mergeMacosPackageTrashDeltasInto,
 } from "@/lib/macos-package-container-admin";
+import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -167,14 +168,16 @@ export async function PATCH(
   }
   // Video gallery specific fields
   if (body.delivery_mode !== undefined) updates.delivery_mode = body.delivery_mode ?? null;
-  if (body.download_policy !== undefined) updates.download_policy = body.download_policy ?? null;
+  if (body.download_policy !== undefined) {
+    updates.download_policy = normalizeVideoDownloadPolicyForStorage(
+      body.download_policy ?? undefined
+    );
+  }
   if (body.allow_comments !== undefined) updates.allow_comments = body.allow_comments;
   if (body.allow_favorites !== undefined) updates.allow_favorites = body.allow_favorites;
   if (body.allow_timestamp_comments !== undefined) updates.allow_timestamp_comments = body.allow_timestamp_comments;
   if (body.allow_original_downloads !== undefined) updates.allow_original_downloads = body.allow_original_downloads;
   if (body.allow_proxy_downloads !== undefined) updates.allow_proxy_downloads = body.allow_proxy_downloads;
-  if (body.revision_limit_enabled !== undefined) updates.revision_limit_enabled = body.revision_limit_enabled;
-  if (body.revision_limit_count !== undefined) updates.revision_limit_count = body.revision_limit_count ?? null;
   if (body.invoice_mode !== undefined) updates.invoice_mode = body.invoice_mode ?? null;
   if (body.invoice_url !== undefined) updates.invoice_url = body.invoice_url ?? null;
   if (body.invoice_label !== undefined) updates.invoice_label = body.invoice_label ?? null;

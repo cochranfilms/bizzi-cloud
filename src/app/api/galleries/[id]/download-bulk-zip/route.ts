@@ -14,6 +14,7 @@ import {
 } from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
 
 const MAX_ITEMS = 50;
 
@@ -129,21 +130,22 @@ export async function POST(
   const galleryType = g.gallery_type === "video" ? "video" : "photo";
 
   if (!isOwner) {
+    const invoiceRequired = g.invoice_required_for_download === true;
+    const invoiceStatus = g.invoice_status ?? "none";
+    if (invoiceRequired && invoiceStatus !== "paid") {
+      return NextResponse.json(
+        {
+          error: "invoice_required",
+          message: "Payment is required before downloads are available.",
+          invoice_url: g.invoice_url ?? null,
+        },
+        { status: 403 }
+      );
+    }
+
     if (galleryType === "video") {
-      const invoiceRequired = g.invoice_required_for_download === true;
-      const invoiceStatus = g.invoice_status ?? "none";
-      if (invoiceRequired && invoiceStatus !== "paid") {
-        return NextResponse.json(
-          {
-            error: "invoice_required",
-            message: "Payment is required before downloads are available.",
-            invoice_url: g.invoice_url ?? null,
-          },
-          { status: 403 }
-        );
-      }
       const downloadPolicy = g.download_policy ?? "none";
-      if (downloadPolicy === "none") {
+      if (!videoGalleryAllowsClientFileDownloads(downloadPolicy)) {
         return NextResponse.json(
           {
             error: "download_disabled",
@@ -201,14 +203,13 @@ export async function POST(
     .where("is_visible", "==", true)
     .get();
 
-  const objectKeyToAsset = new Map<string, { name: string; is_downloadable: boolean }>();
+  const objectKeyToAsset = new Map<string, { name: string }>();
   for (const doc of assetsSnap.docs) {
     const d = doc.data();
     const key = d.object_key as string;
     if (key) {
       objectKeyToAsset.set(key, {
         name: (d.name as string) ?? "download",
-        is_downloadable: d.is_downloadable === true,
       });
     }
   }
@@ -221,18 +222,6 @@ export async function POST(
         { error: `Asset not found or not visible: ${raw.object_key}` },
         { status: 403 }
       );
-    }
-    if (!isOwner && galleryType === "video") {
-      const downloadPolicy = g.download_policy ?? "none";
-      if (downloadPolicy === "selected_assets" && !asset.is_downloadable) {
-        return NextResponse.json(
-          {
-            error: "download_disabled",
-            message: "One or more assets are not available for download.",
-          },
-          { status: 403 }
-        );
-      }
     }
     items.push({ object_key: raw.object_key, name: asset.name || raw.name });
   }

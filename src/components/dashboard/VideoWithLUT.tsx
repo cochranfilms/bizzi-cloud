@@ -53,6 +53,8 @@ interface VideoWithLUTProps {
   frameless?: boolean;
   /** With showLUTOption, place LUT toolbar beside the video on large screens */
   sideBySideLut?: boolean;
+  /** Fired once when the video has decoded frames and dimensions (for preview fade-in). */
+  onDisplayReady?: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -77,11 +79,13 @@ export default function VideoWithLUT({
   segmentLoopSeconds = null,
   frameless = false,
   sideBySideLut = false,
+  onDisplayReady,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const displayReadyFiredRef = useRef(false);
   const videoSrc = streamUrl ?? src;
 
   const defaultSony = "sony_rec709";
@@ -406,6 +410,32 @@ export default function VideoWithLUT({
     return () => video.removeEventListener("error", handleVideoError);
   }, [videoSrc, handleVideoError]);
 
+  const fireDisplayReady = useCallback(() => {
+    if (!onDisplayReady || displayReadyFiredRef.current) return;
+    const v = videoRef.current;
+    if (!v || v.readyState < 2) return;
+    if (v.videoWidth <= 0 || v.videoHeight <= 0) return;
+    displayReadyFiredRef.current = true;
+    onDisplayReady();
+  }, [onDisplayReady]);
+
+  useEffect(() => {
+    displayReadyFiredRef.current = false;
+  }, [videoSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    const onReady = () => fireDisplayReady();
+    video.addEventListener("loadeddata", onReady);
+    video.addEventListener("canplay", onReady);
+    if (video.readyState >= 2) queueMicrotask(onReady);
+    return () => {
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("canplay", onReady);
+    };
+  }, [videoSrc, fireDisplayReady]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
@@ -473,7 +503,7 @@ export default function VideoWithLUT({
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
       : frameless
-        ? { minHeight: 0, maxHeight: "100%" }
+        ? { minHeight: 0, maxHeight: "100%", width: "100%", height: "100%" }
         : {
             maxHeight: "70vh",
             aspectRatio: "16 / 9",
@@ -488,7 +518,7 @@ export default function VideoWithLUT({
   const videoShellClass = frameless
     ? compactPreview
       ? "rounded-lg bg-black"
-      : "rounded-lg bg-black mx-auto max-h-full max-w-full w-fit min-h-0 min-w-0"
+      : "rounded-lg bg-black mx-auto flex h-full min-h-0 w-full max-h-full max-w-full items-center justify-center overflow-hidden"
     : compactPreview
       ? "rounded-lg bg-neutral-200 dark:bg-black"
       : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
@@ -512,11 +542,11 @@ export default function VideoWithLUT({
           muted={compactPreview ? true : undefined}
           autoPlay={compactPreview ? true : undefined}
           style={videoStyle}
-          className={
-            compactPreview
-              ? `h-full w-full object-cover ${className ?? ""}`
-              : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
-          }
+        className={
+          compactPreview
+            ? `h-full w-full object-cover ${className ?? ""}`
+            : `max-h-full max-w-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "h-auto w-auto max-w-[100vw] max-h-[70vh] w-full" : "h-auto w-auto max-h-full"}`
+        }
         />
         {previewOn && currentLutSource && (
           <canvas

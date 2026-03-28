@@ -3,6 +3,13 @@
  * Mux pulls the file from our B2, transcodes, and delivers via HLS.
  */
 
+import {
+  FieldValue,
+  Timestamp,
+  type DocumentData,
+  type DocumentSnapshot,
+} from "firebase-admin/firestore";
+
 const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
 const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
 
@@ -125,9 +132,41 @@ async function waitForPlaybackId(
   throw new Error("Mux playback ID not ready in time");
 }
 
+/** How long a concurrent create-asset request waits for another instance to finish (race from dual extract-metadata). */
+const MUX_CLAIM_TTL_MS = 5 * 60 * 1000;
+const MUX_FOLLOWER_POLL_MS = 400;
+const MUX_FOLLOWER_MAX_WAIT_MS = 120 * 1000;
+
+function snapshotMuxIds(data: DocumentData | undefined): {
+  assetId: string;
+  playbackId: string;
+} | null {
+  if (!data) return null;
+  const assetId = data.mux_asset_id;
+  if (typeof assetId !== "string" || assetId.length === 0) return null;
+  const playbackId = data.mux_playback_id;
+  return { assetId, playbackId: typeof playbackId === "string" ? playbackId : "" };
+}
+
+async function waitForMuxDoc(
+  getDoc: () => Promise<DocumentSnapshot>
+): Promise<{ assetId: string; playbackId: string } | null> {
+  const deadline = Date.now() + MUX_FOLLOWER_MAX_WAIT_MS;
+  while (Date.now() < deadline) {
+    const snap = await getDoc();
+    const ids = snapshotMuxIds(snap.data());
+    if (ids) return ids;
+    await new Promise((r) => setTimeout(r, MUX_FOLLOWER_POLL_MS));
+  }
+  return null;
+}
+
 /**
  * Create Mux asset from a backup file. Generates presigned B2 URL and submits to Mux.
  * Call this after upload complete for video files.
+ *
+ * Uses a Firestore claim so concurrent callers (e.g. server extract-metadata + client extract-metadata)
+ * cannot each create a separate Mux asset for the same backup_file_id.
  */
 export async function createMuxAssetFromBackup(
   objectKey: string,
@@ -139,25 +178,75 @@ export async function createMuxAssetFromBackup(
   const { createPresignedDownloadUrl } = await import("@/lib/b2");
   const { getAdminFirestore } = await import("@/lib/firebase-admin");
 
-  const presignedUrl = await createPresignedDownloadUrl(objectKey, 7200);
+  const db = getAdminFirestore();
+  const ref = db.collection("backup_files").doc(backupFileId);
 
-  // Mux passthrough max 255 chars; backupFileId is enough for lookup
+  const initial = await ref.get();
+  if (!initial.exists) return null;
+  const fast = snapshotMuxIds(initial.data());
+  if (fast) return fast;
+
+  type TxOutcome =
+    | { kind: "missing" }
+    | { kind: "done"; assetId: string; playbackId: string }
+    | { kind: "leader" }
+    | { kind: "follower" };
+
+  const outcome = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists) return { kind: "missing" } as TxOutcome;
+    const d = snap.data()!;
+    const done = snapshotMuxIds(d);
+    if (done) return { kind: "done", ...done } as TxOutcome;
+
+    const claimAt = d.mux_create_claim_at as Timestamp | undefined;
+    const now = Date.now();
+    if (claimAt) {
+      const age = now - claimAt.toMillis();
+      if (age < MUX_CLAIM_TTL_MS) {
+        return { kind: "follower" } as TxOutcome;
+      }
+    }
+
+    t.update(ref, { mux_create_claim_at: FieldValue.serverTimestamp() });
+    return { kind: "leader" } as TxOutcome;
+  });
+
+  if (outcome.kind === "missing") return null;
+  if (outcome.kind === "done") {
+    return { assetId: outcome.assetId, playbackId: outcome.playbackId };
+  }
+
+  if (outcome.kind === "follower") {
+    const waited = await waitForMuxDoc(() => ref.get());
+    if (waited) return waited;
+    throw new Error("Mux asset creation did not complete in time (concurrent request may have failed)");
+  }
+
+  const presignedUrl = await createPresignedDownloadUrl(objectKey, 7200);
   const passthrough = `bf=${backupFileId}`.slice(0, 255);
 
-  const result = await createMuxAssetFromUrl(presignedUrl, {
-    passthrough,
-    playbackPolicy: "public",
-  });
+  try {
+    const result = await createMuxAssetFromUrl(presignedUrl, {
+      passthrough,
+      playbackPolicy: "public",
+    });
 
-  const db = getAdminFirestore();
-  const now = new Date().toISOString();
-  await db.collection("backup_files").doc(backupFileId).update({
-    mux_asset_id: result.assetId,
-    mux_playback_id: result.playbackId,
-    mux_status: result.status,
-    mux_created_at: now,
-    updated_at: now,
-  });
+    const nowIso = new Date().toISOString();
+    await ref.update({
+      mux_asset_id: result.assetId,
+      mux_playback_id: result.playbackId,
+      mux_status: result.status,
+      mux_created_at: nowIso,
+      updated_at: nowIso,
+      mux_create_claim_at: FieldValue.delete(),
+    });
 
-  return { assetId: result.assetId, playbackId: result.playbackId };
+    return { assetId: result.assetId, playbackId: result.playbackId };
+  } catch (err) {
+    await ref
+      .update({ mux_create_claim_at: FieldValue.delete() })
+      .catch(() => {});
+    throw err;
+  }
 }

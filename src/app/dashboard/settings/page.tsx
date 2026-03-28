@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
@@ -581,8 +582,10 @@ function PrivacySection() {
           </div>
         </div>
       </div>
-      {deleteModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+      {deleteModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
           <div className="max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
               {hasEnterpriseAccess ? "Delete personal account" : "Delete account"}
@@ -643,8 +646,9 @@ function PrivacySection() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </section>
   );
 }
@@ -1065,13 +1069,15 @@ function SubscriptionSection() {
         </DashboardRouteFade>
       </div>
 
-      {powerUpWarningModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="powerup-warning-title"
-        >
+      {powerUpWarningModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="powerup-warning-title"
+          >
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex gap-3">
               <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
@@ -1104,8 +1110,9 @@ function SubscriptionSection() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </section>
   );
 }

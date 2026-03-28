@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -558,8 +559,10 @@ export default function EnterpriseGalleryDetailPage() {
         </DashboardRouteFade>
       </main>
 
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+      {showAddModal &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-700">
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
@@ -631,8 +634,9 @@ export default function EnterpriseGalleryDetailPage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }

@@ -140,7 +140,8 @@ interface GallerySettingsFormProps {
     invoice_label?: string | null;
     invoice_status?: string | null;
     invoice_required_for_download?: boolean;
-    /** Video gallery */
+    /** Video: client file downloads only when `all_assets` */
+    download_policy?: string | null;
     gallery_type?: "photo" | "video";
     featured_video_asset_id?: string | null;
     media_mode?: "final" | "raw";
@@ -298,6 +299,10 @@ export default function GallerySettingsForm({
   );
   const [markingPaid, setMarkingPaid] = useState(false);
 
+  const [videoDownloadPolicy, setVideoDownloadPolicy] = useState<"none" | "all_assets">(() =>
+    initialData.download_policy === "all_assets" ? "all_assets" : "none"
+  );
+
   const [mediaMode, setMediaMode] = useState<"final" | "raw">(() =>
     normalizeGalleryMediaMode({
       media_mode: initialData.media_mode,
@@ -313,6 +318,12 @@ export default function GallerySettingsForm({
       })
     );
   }, [initialData.media_mode, initialData.source_format]);
+
+  useEffect(() => {
+    setVideoDownloadPolicy(
+      initialData.download_policy === "all_assets" ? "all_assets" : "none"
+    );
+  }, [initialData.download_policy]);
 
   const handleMarkAsPaid = useCallback(async () => {
     if (!user) return;
@@ -484,6 +495,9 @@ export default function GallerySettingsForm({
         invoice_required_for_download: invoiceRequiredForDownload,
         media_mode: mediaMode,
       };
+      if (isVideoGallery) {
+        body.download_policy = videoDownloadPolicy;
+      }
       if (accessMode === "password" && password) body.password = password;
 
       const res = await fetch(`/api/galleries/${galleryId}`, {
@@ -565,6 +579,51 @@ export default function GallerySettingsForm({
           and viewing.
         </p>
       </section>
+
+      {isVideoGallery && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+            Video download policy
+          </h2>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Control whether clients can download video files, or only stream previews in the gallery.
+          </p>
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+              <input
+                type="radio"
+                name="settings_video_download_policy"
+                checked={videoDownloadPolicy === "none"}
+                onChange={() => setVideoDownloadPolicy("none")}
+                className="mt-1"
+              />
+              <div>
+                <span className="font-medium text-neutral-900 dark:text-white">Preview only</span>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Streaming and on-page preview only — no file downloads
+                </p>
+              </div>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+              <input
+                type="radio"
+                name="settings_video_download_policy"
+                checked={videoDownloadPolicy === "all_assets"}
+                onChange={() => setVideoDownloadPolicy("all_assets")}
+                className="mt-1"
+              />
+              <div>
+                <span className="font-medium text-neutral-900 dark:text-white">
+                  All videos downloadable
+                </span>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Clients can download every video (subject to download options and invoice below)
+                </p>
+              </div>
+            </label>
+          </div>
+        </section>
+      )}
 
       {/* Cover photo */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
@@ -1052,7 +1111,7 @@ export default function GallerySettingsForm({
         </div>
       </section>
 
-      {/* Invoice (video galleries) */}
+      {/* Invoice — photo & video galleries */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Invoice & payment

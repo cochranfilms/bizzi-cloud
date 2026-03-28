@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Image as ImageIcon, Film } from "lucide-react";
 import type { GalleryType } from "@/types/gallery";
 
@@ -23,7 +24,6 @@ interface CreateGalleryModalProps {
     download_policy?: string;
     allow_comments?: boolean;
     allow_favorites?: boolean;
-    revision_limit_count?: number;
     invoice_url?: string;
     invoice_label?: string;
     invoice_required_for_download?: boolean;
@@ -70,15 +70,17 @@ const FINAL_RAW_VIDEO = [
 ] as const;
 
 const VIDEO_DELIVERY_MODES = [
-  { value: "video_review", label: "Video review", desc: "Watch, comment, heart, request revisions" },
+  { value: "video_review", label: "Video review", desc: "Watch, comment, and heart favorites" },
   { value: "standard_client_gallery", label: "Client delivery", desc: "Showcase and approved download" },
 ] as const;
 
 const VIDEO_DOWNLOAD_POLICIES = [
-  { value: "none", label: "No downloads", desc: "Preview only, no file delivery" },
-  { value: "preview_only", label: "Preview only", desc: "Optimized preview sources" },
-  { value: "selected_assets", label: "Selected assets", desc: "Only creator-chosen videos" },
-  { value: "all_assets", label: "All videos", desc: "All videos downloadable" },
+  {
+    value: "none",
+    label: "Preview only",
+    desc: "Streaming and on-page preview only — no file downloads",
+  },
+  { value: "all_assets", label: "All videos downloadable", desc: "Clients can download every video" },
 ] as const;
 
 function TypeSelectionStep({
@@ -133,7 +135,7 @@ function TypeSelectionStep({
           <div>
             <h4 className="font-semibold text-neutral-900 dark:text-white">Video Gallery</h4>
             <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-              Deliver videos for review, comments, favorites, preview playback, revisions, and optional invoice-based approval.
+              Deliver videos for review, comments, favorites, preview playback, and optional invoice-based download gating.
             </p>
             <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-500">
               Best for: wedding films, reel reviews, client delivery
@@ -174,7 +176,6 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
   const [downloadPolicy, setDownloadPolicy] = useState<string>("none");
   const [allowComments, setAllowComments] = useState(true);
   const [allowFavorites, setAllowFavorites] = useState(true);
-  const [revisionLimitCount, setRevisionLimitCount] = useState(2);
   const [invoiceUrl, setInvoiceUrl] = useState("");
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [invoiceRequiredForDownload, setInvoiceRequiredForDownload] = useState(false);
@@ -202,14 +203,18 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
       };
       const photoExtras =
         galleryType === "photo"
-          ? { media_mode: mediaMode }
+          ? {
+              media_mode: mediaMode,
+              invoice_url: invoiceUrl.trim() || undefined,
+              invoice_label: invoiceLabel.trim() || undefined,
+              invoice_required_for_download: invoiceRequiredForDownload,
+            }
           : {
               media_mode: mediaMode,
               delivery_mode: deliveryMode,
               download_policy: downloadPolicy,
               allow_comments: allowComments,
               allow_favorites: allowFavorites,
-              revision_limit_count: revisionLimitCount,
               invoice_url: invoiceUrl.trim() || undefined,
               invoice_label: invoiceLabel.trim() || undefined,
               invoice_required_for_download: invoiceRequiredForDownload,
@@ -230,7 +235,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
   };
 
   if (step === "type") {
-    return (
+    const stepType = (
       <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/50">
         <div className="flex min-h-full items-center justify-center px-4 pt-[max(3rem,calc(1.25rem+env(safe-area-inset-top,0px)))] pb-[max(3rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] sm:px-6 sm:pt-14 sm:pb-14 md:pt-16 md:pb-16">
           <div className="my-auto w-full max-w-3xl rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
@@ -255,9 +260,12 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
         </div>
       </div>
     );
+    return typeof document !== "undefined"
+      ? createPortal(stepType, document.body)
+      : null;
   }
 
-  return (
+  const formStep = (
     <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/50">
       <div className="flex min-h-full items-center justify-center px-4 pt-[max(3rem,calc(1.25rem+env(safe-area-inset-top,0px)))] pb-[max(3rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] sm:px-6 sm:pt-14 sm:pb-14 md:pt-16 md:pb-16">
         <div className="my-auto flex w-full max-w-3xl max-h-[calc(100dvh-7rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col rounded-xl border border-neutral-200 bg-white shadow-xl sm:max-h-[calc(100dvh-8rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] dark:border-neutral-700">
@@ -553,22 +561,17 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                     <span className="text-sm">Allow favorites</span>
                   </label>
                 </div>
+              </>
+            )}
+
+            {(galleryType === "photo" || galleryType === "video") && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Invoicing (optional)
+                </h3>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    Revision rounds (optional)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={revisionLimitCount}
-                    onChange={(e) => setRevisionLimitCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    Invoice URL (optional)
+                    Invoice URL
                   </label>
                   <input
                     type="url"
@@ -583,7 +586,7 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    Invoice label (optional)
+                    Invoice label
                   </label>
                   <input
                     type="text"
@@ -601,19 +604,22 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                   />
                   <span className="text-sm">Gate downloads until invoice is paid</span>
                 </label>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    Client review instructions (optional)
-                  </label>
-                  <textarea
-                    value={clientReviewInstructions}
-                    onChange={(e) => setClientReviewInstructions(e.target.value)}
-                    placeholder="How should clients leave feedback?"
-                    rows={2}
-                    className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 placeholder-neutral-400 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                  />
-                </div>
-              </>
+              </div>
+            )}
+
+            {galleryType === "video" && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Client review instructions (optional)
+                </label>
+                <textarea
+                  value={clientReviewInstructions}
+                  onChange={(e) => setClientReviewInstructions(e.target.value)}
+                  placeholder="How should clients leave feedback?"
+                  rows={2}
+                  className="w-full rounded-lg border border-neutral-200 px-4 py-2 text-neutral-900 placeholder-neutral-400 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                />
+              </div>
             )}
 
             <div>
@@ -660,4 +666,5 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(formStep, document.body) : null;
 }

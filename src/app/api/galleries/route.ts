@@ -18,6 +18,7 @@ import {
 } from "@/lib/gallery-media-mode";
 import { NextResponse } from "next/server";
 import { userHasActiveOrganizationSeat } from "@/lib/workspace-access";
+import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
 
 function isNonOrgGalleryOid(oid: unknown): boolean {
   return oid === null || oid === undefined || oid === "";
@@ -206,8 +207,6 @@ export async function POST(request: Request) {
     allow_timestamp_comments,
     allow_original_downloads,
     allow_proxy_downloads,
-    revision_limit_enabled,
-    revision_limit_count,
     invoice_mode,
     invoice_url,
     invoice_label,
@@ -312,19 +311,21 @@ export async function POST(request: Request) {
     updated_at: now,
   };
 
+  const normalizedVideoDownloadPolicy = normalizeVideoDownloadPolicyForStorage(
+    typeof download_policy === "string" ? download_policy : undefined
+  );
+
   const videoSettings =
     galleryType === "video"
       ? {
           ...DEFAULT_VIDEO_GALLERY_SETTINGS,
           delivery_mode: delivery_mode ?? DEFAULT_VIDEO_GALLERY_SETTINGS.delivery_mode,
-          download_policy: download_policy ?? DEFAULT_VIDEO_GALLERY_SETTINGS.download_policy,
+          download_policy: normalizedVideoDownloadPolicy,
           allow_comments: allow_comments ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_comments,
           allow_favorites: allow_favorites ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_favorites,
           allow_timestamp_comments: allow_timestamp_comments ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_timestamp_comments,
           allow_original_downloads: allow_original_downloads ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_original_downloads,
           allow_proxy_downloads: allow_proxy_downloads ?? DEFAULT_VIDEO_GALLERY_SETTINGS.allow_proxy_downloads,
-          revision_limit_enabled: revision_limit_enabled ?? DEFAULT_VIDEO_GALLERY_SETTINGS.revision_limit_enabled,
-          revision_limit_count: revision_limit_count ?? DEFAULT_VIDEO_GALLERY_SETTINGS.revision_limit_count,
           invoice_mode: invoice_mode ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_mode,
           invoice_url: invoice_url ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_url,
           invoice_label: invoice_label ?? DEFAULT_VIDEO_GALLERY_SETTINGS.invoice_label,
@@ -336,7 +337,18 @@ export async function POST(request: Request) {
         }
       : {};
 
-  const galleryData = { ...baseGalleryData, ...videoSettings };
+  const photoInvoiceSettings =
+    galleryType === "photo"
+      ? {
+          invoice_mode: invoice_mode ?? null,
+          invoice_url: invoice_url ?? null,
+          invoice_label: invoice_label ?? null,
+          invoice_status: invoice_status ?? "none",
+          invoice_required_for_download: invoice_required_for_download === true,
+        }
+      : {};
+
+  const galleryData = { ...baseGalleryData, ...videoSettings, ...photoInvoiceSettings };
 
   const ref = await db.collection("galleries").add(galleryData);
 

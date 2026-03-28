@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap } from "lucide-react";
 import type { CreateTransferInput, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
@@ -422,8 +423,8 @@ export default function CreateTransferModal({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex min-h-screen items-start justify-center overflow-y-auto p-4 pt-16 pb-8 sm:items-center sm:pt-4">
+  const modal = (
+    <div className="fixed inset-0 z-[100] flex min-h-screen items-start justify-center overflow-y-auto p-4 pt-16 pb-8 sm:items-center sm:pt-4">
       <div className="fixed inset-0 bg-black/50" aria-hidden />
       <div
         className="relative z-10 my-4 flex max-h-[calc(100vh-6rem)] sm:max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 sm:my-0"
@@ -916,4 +917,6 @@ export default function CreateTransferModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 }

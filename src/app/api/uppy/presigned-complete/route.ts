@@ -7,7 +7,6 @@
 import { isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { isVideoFile } from "@/lib/bizzi-file-types";
 import { logActivityEvent } from "@/lib/activity-log";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
@@ -199,12 +198,7 @@ export async function POST(request: Request) {
     }),
   }).catch(() => {});
 
-  if (isVideoFile(safePath)) {
-    const { createMuxAssetFromBackup } = await import("@/lib/mux");
-    createMuxAssetFromBackup(objectKey, safePath, fileRef.id).catch((err) => {
-      console.error("[presigned-complete] Mux create failed:", err);
-    });
-  }
+  // Mux: single path via extract-metadata → /api/mux/create-asset (avoid duplicate Mux assets)
 
   if (galleryId) {
     try {

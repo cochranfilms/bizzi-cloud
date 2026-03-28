@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Users, Loader2, UserMinus, Mail, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -113,43 +114,46 @@ export function MemberTeamCard() {
       </button>
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      {confirmOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-            <div className="flex gap-3">
-              <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
-              <div>
-                <h3 className="font-semibold text-neutral-900 dark:text-white">Leave this team?</h3>
-                <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-                  Files you uploaded in the team space will be moved to cold storage. You will lose team
-                  access.
-                </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmOpen(false)}
-                    className="rounded-lg border border-neutral-200 px-4 py-2 text-sm dark:border-neutral-600"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={leaving}
-                    onClick={() => void handleLeave()}
-                    className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    {leaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Leave team"}
-                  </button>
+      {confirmOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="flex gap-3">
+                <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
+                <div>
+                  <h3 className="font-semibold text-neutral-900 dark:text-white">Leave this team?</h3>
+                  <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+                    Files you uploaded in the team space will be moved to cold storage. You will lose team
+                    access.
+                  </p>
+                  <div className="mt-6 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmOpen(false)}
+                      className="rounded-lg border border-neutral-200 px-4 py-2 text-sm dark:border-neutral-600"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leaving}
+                      onClick={() => void handleLeave()}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                    >
+                      {leaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Leave team"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }
@@ -506,12 +510,14 @@ export function TeamManagementSection() {
         </Link>
       </div>
 
-      {removeTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-        >
+      {removeTarget &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+          >
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
             <h3 className="font-semibold text-neutral-900 dark:text-white">Remove member?</h3>
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
@@ -535,8 +541,9 @@ export function TeamManagementSection() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </section>
   );
 }

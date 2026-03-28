@@ -16,8 +16,6 @@ export const DEFAULT_VIDEO_GALLERY_SETTINGS = {
   allow_timestamp_comments: false,
   allow_original_downloads: false,
   allow_proxy_downloads: true,
-  revision_limit_enabled: false,
-  revision_limit_count: 2,
   invoice_mode: null as "external_link" | "manual" | null,
   invoice_url: null as string | null,
   invoice_label: null as string | null,

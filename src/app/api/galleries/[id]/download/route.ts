@@ -14,6 +14,7 @@ import {
 } from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
 
 export async function POST(
   request: Request,
@@ -92,36 +93,26 @@ export async function POST(
   const galleryType = g.gallery_type === "video" ? "video" : "photo";
 
   if (!isOwner) {
-    // Video gallery: invoice gating and download_policy
+    const invoiceRequired = g.invoice_required_for_download === true;
+    const invoiceStatus = g.invoice_status ?? "none";
+    if (invoiceRequired && invoiceStatus !== "paid") {
+      return NextResponse.json(
+        {
+          error: "invoice_required",
+          message: "Payment is required before downloads are available.",
+          invoice_url: g.invoice_url ?? null,
+        },
+        { status: 403 }
+      );
+    }
+
     if (galleryType === "video") {
-      const invoiceRequired = g.invoice_required_for_download === true;
-      const invoiceStatus = g.invoice_status ?? "none";
-      if (invoiceRequired && invoiceStatus !== "paid") {
-        return NextResponse.json(
-          {
-            error: "invoice_required",
-            message: "Payment is required before downloads are available.",
-            invoice_url: g.invoice_url ?? null,
-          },
-          { status: 403 }
-        );
-      }
       const downloadPolicy = g.download_policy ?? "none";
-      if (downloadPolicy === "none") {
+      if (!videoGalleryAllowsClientFileDownloads(downloadPolicy)) {
         return NextResponse.json(
           { error: "download_disabled", message: "Downloads are not enabled for this video gallery." },
           { status: 403 }
         );
-      }
-      if (downloadPolicy === "selected_assets") {
-        const assetData = assetSnap.docs[0]?.data();
-        const isDownloadable = assetData?.is_downloadable === true;
-        if (!isDownloadable) {
-          return NextResponse.json(
-            { error: "download_disabled", message: "This asset is not available for download." },
-            { status: 403 }
-          );
-        }
       }
     }
 

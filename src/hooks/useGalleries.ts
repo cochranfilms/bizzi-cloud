@@ -100,8 +100,6 @@ export function useGalleries(options?: { basePath?: string }) {
       allow_timestamp_comments?: boolean;
       allow_original_downloads?: boolean;
       allow_proxy_downloads?: boolean;
-      revision_limit_enabled?: boolean;
-      revision_limit_count?: number;
       invoice_mode?: "external_link" | "manual" | null;
       invoice_url?: string | null;
       invoice_label?: string | null;

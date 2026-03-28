@@ -203,8 +203,6 @@ export async function GET(
       invoice_status: g.invoice_status ?? "none",
       client_review_instructions: g.client_review_instructions ?? null,
       workflow_status: g.workflow_status ?? null,
-      revision_limit_enabled: g.revision_limit_enabled ?? false,
-      revision_limit_count: g.revision_limit_count ?? null,
       viewer_lut_preferences,
     },
     collections,

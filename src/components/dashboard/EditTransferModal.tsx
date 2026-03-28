@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Lock, Calendar, Download, File } from "lucide-react";
 import type { Transfer, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
@@ -77,8 +78,8 @@ export default function EditTransferModal({
 
   if (!open || !transfer) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex min-h-screen items-start justify-center overflow-y-auto p-4 pt-16 pb-8 sm:items-center sm:pt-4">
+  const modal = (
+    <div className="fixed inset-0 z-[100] flex min-h-screen items-start justify-center overflow-y-auto p-4 pt-16 pb-8 sm:items-center sm:pt-4">
       <div
         className="fixed inset-0 bg-black/50"
         onClick={handleClose}
@@ -209,4 +210,6 @@ export default function EditTransferModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 }

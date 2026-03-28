@@ -2,7 +2,7 @@
  * Uppy S3 Multipart API — Complete multipart upload.
  * POST /api/uppy/s3/multipart/[uploadId]/complete?key=...
  * Body: { parts: [{ PartNumber, ETag }] }
- * Also creates backup_files, triggers metadata extraction, and Mux for videos.
+ * Also creates backup_files and triggers metadata extraction (Mux via extract-metadata for videos).
  */
 import { completeMultipartUpload, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
@@ -11,8 +11,6 @@ import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { NextResponse } from "next/server";
 import { logActivityEvent } from "@/lib/activity-log";
-import { createMuxAssetFromBackup } from "@/lib/mux";
-import { isVideoFile } from "@/lib/bizzi-file-types";
 import { resolveBackupUploadMetadata } from "@/lib/backup-file-upload-metadata";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
@@ -229,11 +227,7 @@ export async function POST(
     }).catch(() => {});
   }
 
-  if (isVideoFile(relativePath)) {
-    createMuxAssetFromBackup(objectKey, relativePath, fileRef.id).catch((err) => {
-      console.error("[uppy complete] Mux create failed:", err);
-    });
-  }
+  // Mux: single path via extract-metadata → /api/mux/create-asset (avoid duplicate Mux assets)
 
   // If this was a gallery upload, add the new file to gallery assets
   const galleryId = data.galleryId ?? null;

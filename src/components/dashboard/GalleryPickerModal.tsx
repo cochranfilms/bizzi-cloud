@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Loader2, ImageIcon } from "lucide-react";
 import { useGalleries } from "@/hooks/useGalleries";
 
@@ -35,7 +36,7 @@ export default function GalleryPickerModal({
   const fileCount = files.length;
   const fileLabel = fileCount === 1 ? "1 file" : `${fileCount} files`;
 
-  return (
+  const modal = (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -119,4 +120,6 @@ export default function GalleryPickerModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 }

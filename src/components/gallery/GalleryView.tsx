@@ -39,6 +39,7 @@ import {
 } from "@/lib/gallery-viewer-lut-state";
 import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
@@ -220,9 +221,9 @@ function SaveFavoritesModal({
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
-  if (savedListId && shareUrl) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+  const modal =
+    savedListId && shareUrl ? (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
             Favorites saved
@@ -264,11 +265,8 @@ function SaveFavoritesModal({
           </div>
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    ) : (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
           Save favorites list
@@ -324,6 +322,8 @@ function SaveFavoritesModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 }
 
 function PreviewModal({
@@ -1764,6 +1764,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
   const isDarkBg = bgTheme.textTone === "light";
 
+  const invoiceBlocksDownload =
+    !!(gallery.invoice_required_for_download && gallery.invoice_status !== "paid");
+  const videoAllowsFileDownloads =
+    gallery.gallery_type !== "video" ||
+    videoGalleryAllowsClientFileDownloads(gallery.download_policy);
+  const clientMayDownloadFiles = videoAllowsFileDownloads && !invoiceBlocksDownload;
+
   const coverObjectPosition = getCoverObjectPosition({
     cover_focal_x: gallery.cover_focal_x,
     cover_focal_y: gallery.cover_focal_y,
@@ -2058,7 +2065,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               )}
             {gallery.download_settings?.allow_full_gallery_download &&
               assets.length > 0 &&
-              !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
+              clientMayDownloadFiles && (
                 <button
                   type="button"
                   onClick={handleDownloadAll}
@@ -2426,16 +2433,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   fetchPreviewComments(asset.id);
                 }}
                 onDownload={
-                  gallery.download_settings?.allow_single_download &&
-                  !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid")
+                  gallery.download_settings?.allow_single_download && clientMayDownloadFiles
                     ? () => handleDownload(asset)
                     : undefined
                 }
                 onFavoriteToggle={() => toggleFavorite(asset.id)}
                 isFavorited={selectedFavorites.has(asset.id)}
                 canDownload={
-                  !!gallery.download_settings?.allow_single_download &&
-                  !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid")
+                  !!gallery.download_settings?.allow_single_download && clientMayDownloadFiles
                 }
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
@@ -2466,8 +2471,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {selectedFavorites.size} selected
             </span>
             <div className="flex flex-col gap-2">
-              {gallery.download_settings?.allow_selected_download &&
-                !(gallery.invoice_required_for_download && gallery.invoice_status !== "paid") && (
+              {gallery.download_settings?.allow_selected_download && clientMayDownloadFiles && (
                 <button
                   type="button"
                   onClick={handleDownloadSelected}

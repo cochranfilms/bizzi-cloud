@@ -132,12 +132,13 @@ export type CoverPosition =
   | "bottom left"
   | "bottom right";
 
-/** Download policy for video galleries – stricter than photos */
-export type VideoDownloadPolicy =
-  | "none"           // No downloads at all
-  | "preview_only"   // Optimized preview sources only
-  | "selected_assets" // Only creator-chosen assets
-  | "all_assets";    // All videos downloadable
+/**
+ * Download policy for video galleries.
+ * - `none`: preview / streaming only, no file delivery
+ * - `all_assets`: full gallery downloads allowed (subject to download_settings + invoice)
+ * Legacy stored values `preview_only` | `selected_assets` should be read as unknown until migrated; APIs normalize on write.
+ */
+export type VideoDownloadPolicy = "none" | "all_assets";
 
 /** Main gallery document (Firestore: galleries) */
 export interface Gallery {
@@ -198,8 +199,6 @@ export interface Gallery {
   allow_timestamp_comments?: boolean;
   allow_original_downloads?: boolean;
   allow_proxy_downloads?: boolean;
-  revision_limit_enabled?: boolean;
-  revision_limit_count?: number;
   invoice_mode?: "external_link" | "manual" | "future_native" | null;
   invoice_url?: string | null;
   invoice_label?: string | null;
@@ -339,8 +338,6 @@ export interface CreateGalleryInput {
   allow_timestamp_comments?: boolean;
   allow_original_downloads?: boolean;
   allow_proxy_downloads?: boolean;
-  revision_limit_enabled?: boolean;
-  revision_limit_count?: number;
   invoice_mode?: "external_link" | "manual" | null;
   invoice_url?: string | null;
   invoice_label?: string | null;
@@ -389,8 +386,6 @@ export interface GalleryPublicPayload {
     invoice_status?: InvoiceStatus | null;
     client_review_instructions?: string | null;
     workflow_status?: VideoWorkflowStatus | null;
-    revision_limit_enabled?: boolean;
-    revision_limit_count?: number;
   };
   collections: GalleryCollection[];
   assets: GalleryAssetPublic[];

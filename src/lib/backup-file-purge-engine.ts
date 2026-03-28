@@ -1,5 +1,5 @@
 /**
- * Single implementation for physically removing a backup_files row (+ conditional B2 cleanup).
+ * Single implementation for physically removing a backup_files row (+ Mux + conditional B2 cleanup).
  * Used by deletion_jobs worker so user-initiated permanent delete and cron trash-expiry share behavior.
  */
 import type { Firestore } from "firebase-admin/firestore";
@@ -10,6 +10,7 @@ import {
   isB2Configured,
 } from "@/lib/b2";
 import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
+import { deleteMuxAsset } from "@/lib/mux";
 
 export async function purgeBackupFilePhysicalAdmin(db: Firestore, fileId: string): Promise<void> {
   const ref = db.collection("backup_files").doc(fileId);
@@ -18,6 +19,14 @@ export async function purgeBackupFilePhysicalAdmin(db: Firestore, fileId: string
   const data = snap.data()!;
 
   await applyMacosPackageStatsForActiveBackupFileRemoval(db, data);
+
+  const muxId = data.mux_asset_id as string | undefined;
+  if (typeof muxId === "string" && muxId.length > 0) {
+    const ok = await deleteMuxAsset(muxId);
+    if (!ok) {
+      console.error("[purge-backup-file] Mux delete failed or skipped:", muxId);
+    }
+  }
 
   const objectKey = (data.object_key as string) ?? "";
   if (objectKey && isB2Configured()) {

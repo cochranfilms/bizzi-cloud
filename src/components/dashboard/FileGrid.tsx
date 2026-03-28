@@ -2260,43 +2260,46 @@ export default function FileGrid() {
         />
       )}
 
-      {packageInfoId ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="macos-package-info-title"
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setPackageInfoId(null)}
-        >
-          <div
-            className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3
-                id="macos-package-info-title"
-                className="text-lg font-semibold text-neutral-900 dark:text-white"
+      {packageInfoId && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="macos-package-info-title"
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+              onClick={() => setPackageInfoId(null)}
+            >
+              <div
+                className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+                onClick={(e) => e.stopPropagation()}
               >
-                Package info
-              </h3>
-              <button
-                type="button"
-                className="rounded-lg px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                onClick={() => setPackageInfoId(null)}
-              >
-                Close
-              </button>
-            </div>
-            {packageInfoLoading ? (
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
-            ) : (
-              <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs text-neutral-700 dark:text-neutral-300">
-                {JSON.stringify(packageInfoJson, null, 2)}
-              </pre>
-            )}
-          </div>
-        </div>
-      ) : null}
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3
+                    id="macos-package-info-title"
+                    className="text-lg font-semibold text-neutral-900 dark:text-white"
+                  >
+                    Package info
+                  </h3>
+                  <button
+                    type="button"
+                    className="rounded-lg px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                    onClick={() => setPackageInfoId(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+                {packageInfoLoading ? (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
+                ) : (
+                  <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs text-neutral-700 dark:text-neutral-300">
+                    {JSON.stringify(packageInfoJson, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <FilePreviewModal
         file={previewFile}
