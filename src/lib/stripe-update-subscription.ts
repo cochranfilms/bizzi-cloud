@@ -350,8 +350,23 @@ export async function updateSubscriptionWithProration(
   const li = updatedSubscription.latest_invoice;
   const expandedInv =
     li && typeof li === "object" ? (li as Stripe.Invoice) : null;
-  const invId = typeof li === "string" ? li : expandedInv?.id ?? null;
+  let invId = typeof li === "string" ? li : expandedInv?.id ?? null;
   const changeSummary = `Plan: ${planId} · Billing: ${billingToUse}`;
+
+  if (!invId) {
+    try {
+      const listed = await stripe.invoices.list({
+        subscription: stripeSubscriptionId,
+        limit: 10,
+      });
+      if (listed.data.length > 0) {
+        const sorted = [...listed.data].sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+        invId = sorted[0]?.id ?? null;
+      }
+    } catch (e) {
+      console.error("[Stripe update-subscription] invoice list fallback:", e);
+    }
+  }
 
   let receipt: SubscriptionReceiptDisplay | undefined;
   if (expandedInv) {
@@ -363,9 +378,16 @@ export async function updateSubscriptionWithProration(
   }
   if (!receipt && invId) {
     try {
-      const fullInvoice = await stripe.invoices.retrieve(invId, {
-        expand: ["lines.data", "customer", "subscription"],
-      });
+      let fullInvoice: Stripe.Invoice;
+      try {
+        fullInvoice = await stripe.invoices.retrieve(invId, {
+          expand: ["lines.data", "customer", "subscription", "payment_intent.latest_charge"],
+        });
+      } catch {
+        fullInvoice = await stripe.invoices.retrieve(invId, {
+          expand: ["lines.data", "customer", "subscription"],
+        });
+      }
       receipt = buildSubscriptionReceiptDisplay(fullInvoice, changeSummary, "subscription_update");
     } catch (e) {
       console.error("[Stripe update-subscription] in-app receipt invoice retrieve:", e);

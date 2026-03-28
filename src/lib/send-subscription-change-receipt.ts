@@ -21,15 +21,80 @@ function manageBillingSettingsUrl(): string {
 }
 
 /**
- * Consumer billing receipts: prefer Firebase (subscription owner / caller), not Stripe customer_email
- * alone (often a seat invite). `knownSubscriptionId` fixes invoices that omit `subscription` on retrieve.
+ * Receipt recipient order (aligns with Stripe charge.succeeded payer / cardholder):
+ * 1. Payment charge billing_details.email (e.g. info@… on the Visa that paid)
+ * 2. invoice.customer_email, Stripe Customer.email
+ * 3. Firebase: checkout = metadata.userId then caller; in-app = caller then metadata; Firestore profile by sub id
  *
- * Order: in-app updates — caller first (person who applied, almost always billing owner), then metadata.userId,
- * Firestore, Stripe. Checkout — metadata.userId first (webhook uid matches), then caller, Firestore, Stripe.
+ * `knownSubscriptionId` loads subscription metadata when invoice omits `subscription`.
  */
 type InvoiceWithSubscription = Stripe.Invoice & {
   subscription?: string | Stripe.Subscription | null;
+  payment_intent?: string | Stripe.PaymentIntent | null;
+  charge?: string | Stripe.Charge | null;
 };
+
+function emailFromStripeCharge(ch: Stripe.Charge | null | undefined): string | null {
+  const em = ch?.billing_details?.email?.trim();
+  return em || null;
+}
+
+/** Email typed on the payment method for this invoice — matches Dashboard charge.succeeded. */
+async function extractPayerEmailFromInvoice(
+  stripe: Stripe,
+  invoice: Stripe.Invoice
+): Promise<string | null> {
+  const piRaw = (invoice as InvoiceWithSubscription).payment_intent;
+  if (piRaw && typeof piRaw === "object") {
+    const pi = piRaw as Stripe.PaymentIntent;
+    const lc = pi.latest_charge;
+    if (lc && typeof lc === "object") {
+      const e = emailFromStripeCharge(lc as Stripe.Charge);
+      if (e) return e;
+    }
+    if (typeof lc === "string" && lc.length > 0) {
+      try {
+        const ch = await stripe.charges.retrieve(lc);
+        const e = emailFromStripeCharge(ch);
+        if (e) return e;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (typeof piRaw === "string" && piRaw.length > 0) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(piRaw, { expand: ["latest_charge"] });
+      const e = emailFromStripeCharge(
+        typeof pi.latest_charge === "object" ? (pi.latest_charge as Stripe.Charge) : null
+      );
+      if (e) return e;
+      if (typeof pi.latest_charge === "string") {
+        const ch = await stripe.charges.retrieve(pi.latest_charge);
+        const e2 = emailFromStripeCharge(ch);
+        if (e2) return e2;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const legacy = (invoice as InvoiceWithSubscription).charge;
+  if (legacy && typeof legacy === "object") {
+    const e = emailFromStripeCharge(legacy as Stripe.Charge);
+    if (e) return e;
+  }
+  if (typeof legacy === "string") {
+    try {
+      const ch = await stripe.charges.retrieve(legacy);
+      return emailFromStripeCharge(ch);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return null;
+}
 
 async function resolveSubscriptionReceiptRecipientEmail(params: {
   invoice: Stripe.Invoice;
@@ -39,6 +104,20 @@ async function resolveSubscriptionReceiptRecipientEmail(params: {
 }): Promise<string | null> {
   const { invoice, callerUid, source, knownSubscriptionId } = params;
   const stripe = getStripeInstance();
+
+  const payerEmail = await extractPayerEmailFromInvoice(stripe, invoice);
+  if (payerEmail) return payerEmail;
+
+  const fromInvoice = invoice.customer_email?.trim();
+  if (fromInvoice) return fromInvoice;
+  const cust = invoice.customer;
+  if (cust && typeof cust === "object") {
+    const c = cust as Stripe.Customer & { deleted?: boolean };
+    if (!c.deleted) {
+      const fromCustomer = c.email?.trim();
+      if (fromCustomer) return fromCustomer;
+    }
+  }
 
   let subscription: Stripe.Subscription | null = null;
   const rawSub = (invoice as InvoiceWithSubscription).subscription;
@@ -85,17 +164,6 @@ async function resolveSubscriptionReceiptRecipientEmail(params: {
     }
   }
 
-  const fromInvoice = invoice.customer_email?.trim();
-  if (fromInvoice) return fromInvoice;
-  const cust = invoice.customer;
-  if (cust && typeof cust === "object") {
-    const c = cust as Stripe.Customer & { deleted?: boolean };
-    if (!c.deleted) {
-      const fromCustomer = c.email?.trim();
-      if (fromCustomer) return fromCustomer;
-    }
-  }
-
   return null;
 }
 
@@ -134,9 +202,16 @@ export async function sendSubscriptionReceiptForInvoiceId(options: {
   subscriptionId?: string | null;
 }): Promise<void> {
   const stripe = getStripeInstance();
-  const receiptInvoice = await stripe.invoices.retrieve(options.invoiceId, {
-    expand: ["lines.data", "customer", "subscription"],
-  });
+  let receiptInvoice: Stripe.Invoice;
+  try {
+    receiptInvoice = await stripe.invoices.retrieve(options.invoiceId, {
+      expand: ["lines.data", "customer", "subscription", "payment_intent.latest_charge"],
+    });
+  } catch {
+    receiptInvoice = await stripe.invoices.retrieve(options.invoiceId, {
+      expand: ["lines.data", "customer", "subscription"],
+    });
+  }
   const toEmail = await resolveSubscriptionReceiptRecipientEmail({
     invoice: receiptInvoice,
     callerUid: options.uid,
@@ -158,15 +233,25 @@ export async function sendSubscriptionReceiptForInvoiceId(options: {
   const lineItemsPlain = buildSubscriptionLineItemsPlain(lineRows);
   const display = buildSubscriptionReceiptDisplay(receiptInvoice, options.changeSummary, options.source);
 
-  await sendSubscriptionChangeReceiptEmail({
-    to_email: toEmail,
-    change_summary: display.changeSummary,
-    line_items_plain: lineItemsPlain,
-    line_items_html: lineItemsHtml,
-    total_amount: display.totalAmount,
-    amount_status_line: display.amountStatusLine,
-    proration_note: display.prorationNote,
-    invoice_id: display.invoiceId,
-    manage_billing_url: manageBillingSettingsUrl(),
-  });
+  try {
+    await sendSubscriptionChangeReceiptEmail({
+      to_email: toEmail,
+      change_summary: display.changeSummary,
+      line_items_plain: lineItemsPlain,
+      line_items_html: lineItemsHtml,
+      total_amount: display.totalAmount,
+      amount_status_line: display.amountStatusLine,
+      proration_note: display.prorationNote,
+      invoice_id: display.invoiceId,
+      manage_billing_url: manageBillingSettingsUrl(),
+    });
+  } catch (err) {
+    console.error(
+      "[subscription receipt] EmailJS send failed for invoice",
+      options.invoiceId,
+      "to",
+      toEmail,
+      err
+    );
+  }
 }
