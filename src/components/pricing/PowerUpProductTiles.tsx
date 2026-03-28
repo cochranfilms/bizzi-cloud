@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useId, useState } from "react";
-import type { MouseEvent } from "react";
+import type { KeyboardEvent } from "react";
 
 const TILE_SUMMARIES: Record<string, readonly string[]> = {
   gallery: [
@@ -150,16 +150,14 @@ export default function PowerUpProductTiles({ addons }: PowerUpProductTilesProps
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const sectionHintId = useId();
 
-  const togglePin = useCallback((id: string, e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const togglePin = useCallback((id: string) => {
     setPinnedId((cur) => (cur === id ? null : id));
   }, []);
 
   return (
     <>
       <p id={sectionHintId} className="sr-only">
-        Hover a tile or use the plus control to read a short feature summary.
+        Hover a tile to see highlights. Click or press Enter to keep the summary open.
       </p>
       <div className="grid gap-10 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 lg:gap-10">
         {addons.map((addon) => {
@@ -174,21 +172,26 @@ export default function PowerUpProductTiles({ addons }: PowerUpProductTilesProps
               className="flex min-w-0 flex-col items-center text-center"
             >
             <div
-              className="group relative w-full max-w-[340px] overflow-hidden rounded-[2.25rem] shadow-[0_22px_50px_-18px_rgba(15,23,42,0.35)] ring-1 ring-black/[0.06] motion-reduce:transition-none dark:ring-white/10 sm:max-w-none"
+              role="button"
+              tabIndex={0}
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              aria-describedby={sectionHintId}
+              className="group relative w-full max-w-[340px] cursor-pointer overflow-hidden rounded-[2.25rem] shadow-md ring-1 ring-black/[0.08] outline-none transition-shadow motion-reduce:transition-none hover:shadow-lg focus-visible:shadow-lg focus-visible:ring-2 focus-visible:ring-neutral-400 dark:ring-white/12 dark:focus-visible:ring-neutral-500 sm:max-w-none"
               style={{ aspectRatio: "1 / 1.08" }}
+              onClick={() => togglePin(addon.id)}
+              onKeyDown={(e: KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  togglePin(addon.id);
+                }
+              }}
             >
-              <div
-                className="absolute inset-0 scale-105 motion-reduce:scale-100"
-                style={{ background: gradient }}
-              />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_120%,rgba(255,255,255,0.35),transparent_55%)] opacity-90 motion-reduce:opacity-100" />
+              <div className="absolute inset-0" style={{ background: gradient }} />
 
               <div className="absolute inset-0 flex items-center justify-center pb-6 pt-4 pointer-events-none">
-                <div className="rounded-full bg-white/15 p-7 shadow-inner backdrop-blur-[2px] ring-1 ring-white/25">
-                  <TileGlyph
-                    id={addon.id}
-                    className="h-14 w-14 text-white drop-shadow-md sm:h-16 sm:w-16"
-                  />
+                <div className="rounded-full bg-white/[0.16] p-7 ring-1 ring-white/22">
+                  <TileGlyph id={addon.id} className="h-14 w-14 text-white sm:h-16 sm:w-16" />
                 </div>
               </div>
 
@@ -196,46 +199,33 @@ export default function PowerUpProductTiles({ addons }: PowerUpProductTilesProps
                 id={panelId}
                 role="region"
                 aria-label={`${addon.name} highlights`}
-                className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-300 ease-out motion-reduce:transition-none ${
+                className={`absolute inset-0 flex items-center justify-center p-6 transition-opacity duration-300 ease-out motion-reduce:transition-none ${
                   expanded
-                    ? "opacity-100 backdrop-blur-md"
-                    : "pointer-events-none opacity-0 backdrop-blur-none group-hover:pointer-events-auto group-hover:opacity-100 group-hover:backdrop-blur-md group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:backdrop-blur-md"
+                    ? "opacity-100"
+                    : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100"
                 } ${expanded ? "pointer-events-auto" : ""}`}
                 style={{
-                  background: `linear-gradient(145deg, ${addon.accentColor}55, rgba(255,255,255,0.22))`,
+                  background: `linear-gradient(165deg, color-mix(in srgb, ${addon.accentColor} 72%, #020617) 0%, rgb(15 23 42 / 0.94) 100%)`,
                 }}
               >
                 <ul
-                  className={`w-full max-w-[220px] space-y-2.5 text-left text-[13px] font-medium leading-snug text-white drop-shadow-sm transition duration-300 motion-reduce:transition-none sm:text-sm ${
+                  className={`w-full max-w-[236px] space-y-3 text-left text-[13px] font-semibold leading-relaxed tracking-[0.02em] text-white antialiased transition-all duration-300 ease-out motion-reduce:transition-none sm:text-sm sm:group-hover:text-[1.0625rem] group-hover:max-w-[268px] group-hover:text-base group-hover:font-bold group-hover:tracking-wide group-focus-visible:text-base group-focus-visible:font-bold sm:group-focus-visible:text-[1.0625rem] ${
                     expanded
-                      ? "translate-y-0 opacity-100"
-                      : "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                      ? "translate-y-0 text-base font-bold opacity-100 sm:text-[1.0625rem]"
+                      : "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100"
                   }`}
                 >
                   {summary.map((line) => (
-                    <li key={line} className="flex gap-2.5">
-                      <span className="mt-[0.35em] h-1 w-1 shrink-0 rounded-full bg-white/90" />
-                      <span>{line}</span>
+                    <li key={line} className="flex gap-3 transition-[gap] duration-300 group-hover:gap-3.5">
+                      <span
+                        className="mt-[0.42em] h-1.5 w-1.5 shrink-0 rounded-full bg-white ring-1 ring-white/35"
+                        aria-hidden
+                      />
+                      <span className="min-w-0 text-pretty">{line}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-controls={panelId}
-                aria-describedby={sectionHintId}
-                className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-neutral-950 text-lg font-light leading-none text-white shadow-lg transition-transform hover:scale-105 active:scale-95 motion-reduce:transition-none dark:bg-white dark:text-neutral-950"
-                onClick={(e) => togglePin(addon.id, e)}
-              >
-                <span className="sr-only">
-                  {expanded ? "Hide" : "Show"} {addon.name} summary
-                </span>
-                <span aria-hidden className="relative -top-px">
-                  +
-                </span>
-              </button>
             </div>
 
             <h4 className="mt-8 max-w-[280px] text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-[1.35rem]">
