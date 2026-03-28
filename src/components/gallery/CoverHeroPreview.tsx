@@ -10,8 +10,17 @@ import {
   type CoverTitleAlignment,
 } from "@/lib/gallery-cover-display";
 
-const PREVIEW_FRAME_MOBILE_H = 560;
-const PREVIEW_FRAME_DESKTOP_H = 400;
+/** Default sizes for embedded settings editor (compact, card-friendly). */
+const COMPACT_DESKTOP_FRAME_H = 210;
+const COMPACT_MOBILE_FRAME_H = 200;
+const COMPACT_MOBILE_FRAME_W = 168;
+const COMPACT_DESKTOP_MAX_W = 420;
+
+/** Larger preview when not embedded in a narrow form card. */
+const DEFAULT_DESKTOP_FRAME_H = 400;
+const DEFAULT_MOBILE_FRAME_H = 560;
+const DEFAULT_MOBILE_FRAME_W = 390;
+const DEFAULT_DESKTOP_MAX_W = 960;
 
 export interface CoverHeroPreviewProps {
   imageUrl: string | null;
@@ -26,6 +35,8 @@ export interface CoverHeroPreviewProps {
   eventDate?: string | null;
   accentColor: string;
   interactive?: boolean;
+  /** Smaller shells for gallery settings card (default true). */
+  compact?: boolean;
 }
 
 function InteractiveCoverMedia({
@@ -87,30 +98,30 @@ function InteractiveCoverMedia({
   }, []);
 
   return (
-      <div ref={containerRef} className="relative h-full w-full">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt=""
-          className="h-full w-full select-none object-cover"
-          style={{
-            objectPosition: `${focalX}% ${focalY}%`,
-            pointerEvents: "none",
-          }}
-          draggable={false}
+    <div ref={containerRef} className="relative h-full w-full">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={imageUrl}
+        alt=""
+        className="h-full w-full select-none object-cover"
+        style={{
+          objectPosition: `${focalX}% ${focalY}%`,
+          pointerEvents: "none",
+        }}
+        draggable={false}
+      />
+      {interactive && onFocalChange ? (
+        <div
+          role="presentation"
+          className={`absolute inset-0 touch-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          style={{ pointerEvents: "auto" }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
         />
-        {interactive && onFocalChange ? (
-          <div
-            role="presentation"
-            className={`absolute inset-0 touch-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
-            style={{ pointerEvents: "auto" }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-          />
-        ) : null}
-      </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -127,20 +138,54 @@ export default function CoverHeroPreview({
   eventDate,
   accentColor,
   interactive = true,
+  compact = true,
 }: CoverHeroPreviewProps) {
   const layout = getCoverHeroContentLayout(titleAlignment);
   const minPct = getPreviewHeroMinHeightPercent(heroPreset, previewMode);
 
-  const frameH =
-    previewMode === "mobile" ? PREVIEW_FRAME_MOBILE_H : PREVIEW_FRAME_DESKTOP_H;
-  const frameW = previewMode === "mobile" ? "390px" : "100%";
-  const maxW = previewMode === "mobile" ? "390px" : "960px";
+  const isMobile = previewMode === "mobile";
+  const frameH = compact
+    ? isMobile
+      ? COMPACT_MOBILE_FRAME_H
+      : COMPACT_DESKTOP_FRAME_H
+    : isMobile
+      ? DEFAULT_MOBILE_FRAME_H
+      : DEFAULT_DESKTOP_FRAME_H;
+  const frameW = compact
+    ? isMobile
+      ? `${COMPACT_MOBILE_FRAME_W}px`
+      : "100%"
+    : isMobile
+      ? `${DEFAULT_MOBILE_FRAME_W}px`
+      : "100%";
+  const maxW = compact
+    ? isMobile
+      ? COMPACT_MOBILE_FRAME_W
+      : COMPACT_DESKTOP_MAX_W
+    : isMobile
+      ? DEFAULT_MOBILE_FRAME_W
+      : DEFAULT_DESKTOP_MAX_W;
+
+  const shellPad = compact ? "!py-6 !px-3 sm:!px-4" : "!py-12";
+  const titleClass = compact
+    ? `${layout.titleClassName} text-base font-semibold leading-snug`
+    : `${layout.titleClassName} text-2xl sm:text-3xl`;
+  const dateClass = compact
+    ? "text-[9px] font-medium uppercase tracking-widest text-white/90"
+    : "text-[10px] font-medium uppercase tracking-widest text-white/90 sm:text-xs";
+  const buttonClass = compact
+    ? "pointer-events-none rounded-lg px-4 py-2 text-xs font-medium text-white opacity-90"
+    : "pointer-events-none rounded-xl px-6 py-2.5 text-sm font-medium text-white opacity-90 sm:px-8 sm:py-4 sm:text-lg";
 
   if (!imageUrl) {
     return (
       <div
-        className="flex items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-100 text-sm text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-        style={{ height: frameH, width: frameW, maxWidth: maxW }}
+        className="flex w-full items-center justify-center rounded-xl border border-dashed border-neutral-300/90 bg-neutral-100/80 px-2 text-center text-xs text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-400"
+        style={{
+          height: frameH,
+          width: frameW,
+          maxWidth: maxW,
+        }}
       >
         Select a cover photo to preview
       </div>
@@ -149,7 +194,7 @@ export default function CoverHeroPreview({
 
   return (
     <div
-      className="mx-auto overflow-hidden rounded-lg border border-neutral-200 shadow-sm dark:border-neutral-600"
+      className="w-full overflow-hidden rounded-xl border border-neutral-200/90 bg-neutral-950 shadow-sm dark:border-neutral-600/80"
       style={{
         height: frameH,
         width: frameW,
@@ -161,7 +206,7 @@ export default function CoverHeroPreview({
         overlayOpacity={overlayOpacity}
         overlayMode="solid"
         titleAlignment={titleAlignment}
-        sectionClassName="!py-12"
+        sectionClassName={shellPad}
         media={
           <InteractiveCoverMedia
             imageUrl={imageUrl}
@@ -173,7 +218,7 @@ export default function CoverHeroPreview({
         }
       >
         {eventDate ? (
-          <p className="text-[10px] font-medium uppercase tracking-widest text-white/90 sm:text-xs">
+          <p className={dateClass}>
             {new Date(eventDate).toLocaleDateString(undefined, {
               month: "long",
               day: "numeric",
@@ -181,15 +226,12 @@ export default function CoverHeroPreview({
             })}
           </p>
         ) : null}
-        <h2
-          className={`${layout.titleClassName} text-2xl sm:text-3xl`}
-          style={{ fontFamily: COVER_HERO_TITLE_FONT_FAMILY }}
-        >
+        <h2 className={titleClass} style={{ fontFamily: COVER_HERO_TITLE_FONT_FAMILY }}>
           {galleryTitle || "Gallery title"}
         </h2>
         <button
           type="button"
-          className="pointer-events-none rounded-xl px-6 py-2.5 text-sm font-medium text-white opacity-90 sm:px-8 sm:py-4 sm:text-lg"
+          className={buttonClass}
           style={{ backgroundColor: accentColor }}
           tabIndex={-1}
         >

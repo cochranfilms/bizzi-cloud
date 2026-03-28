@@ -11,7 +11,6 @@ import {
   MessageCircle,
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
-import SyncDriveButton from "./SyncDriveButton";
 
 const quickAccessItems = (basePath: string) => [
   { href: `${basePath}/hearts`, label: "Hearts", icon: Heart },
@@ -109,19 +108,11 @@ export default function RightPanel({
         </Link>
       </div>
 
-      {/* Storage - in main area above Backup */}
-      <div className="flex-1 min-h-0 overflow-auto border-b border-neutral-200 dark:border-neutral-800">
-        <div className="p-4 h-full">
+      {/* Storage — fills sidebar below shortcuts (single panel, no split with sync) */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col p-4">
           {storageComponent ?? <StorageBadge />}
         </div>
-      </div>
-
-      {/* Backup / Sync - fills remaining space */}
-      <div className="flex flex-1 flex-col border-t border-neutral-200 p-4 dark:border-neutral-800">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Backup
-        </h3>
-        <SyncDriveButton />
       </div>
     </aside>
   );

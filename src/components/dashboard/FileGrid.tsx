@@ -1853,7 +1853,7 @@ export default function FileGrid() {
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {isGalleryMediaDrive
                 ? "No gallery media yet. Upload photos in a gallery to see them organized by gallery here."
-                : "No files in this drive yet. Sync to add files."}
+                : "No files in this drive yet. Use New → File Upload to add files."}
             </div>
           )
         ) : activeTab === "recents" ? (
@@ -2098,12 +2098,12 @@ export default function FileGrid() {
                 <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
                   {hasFilters
                     ? "No files match your filters. Try adjusting or clearing filters."
-                    : "No files yet. Upload or sync from Backup, then refresh."}
+                    : "No files yet. Use New → File Upload, or refresh after uploading."}
                 </div>
               )}
             {!loading && !useFilteredScoped && folderItems.length === 0 && filesToShow.length === 0 && (
               <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                No files yet. Click Sync in the Backup section to sync a drive.
+                No files yet. Use New → File Upload to add files to this drive.
               </div>
             )}
           </>

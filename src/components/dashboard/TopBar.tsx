@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Upload, FolderPlus, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
+import { Plus, Upload, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -27,7 +27,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
-  const [folderUploading, setFolderUploading] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [createSharedFolderOpen, setCreateSharedFolderOpen] = useState(false);
   const [shareModalData, setShareModalData] = useState<{
@@ -51,12 +50,9 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     uploadFiles,
     uploadFilesToGallery,
     fileUploadProgress,
-    uploadFolder,
     createFolder,
     fileUploadError,
     clearFileUploadError,
-    fsAccessSupported,
-    syncProgress,
     creatorRawDriveId,
     getOrCreateStorageDrive,
     bumpStorageVersion,
@@ -69,13 +65,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const isGalleryMediaDrive = Boolean(
     currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
   );
-
-  const formatBytes = (n: number) => {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -163,26 +152,10 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     setCreateFolderOpen(true);
   };
 
-  const handleFolderUploadClick = async () => {
-    setNewDropdownOpen(false);
-    if (!fsAccessSupported) return;
-    setFolderUploading(true);
-    try {
-      await uploadFolder();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setFolderUploading(false);
-    }
-  };
-
   const handleSharedFolderClick = () => {
     setNewDropdownOpen(false);
     setCreateSharedFolderOpen(true);
   };
-
-  const showSyncProgress =
-    syncProgress?.status === "in_progress" && syncProgress.bytesTotal > 0;
 
   return (
     <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
@@ -237,10 +210,10 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
             <button
               type="button"
               onClick={() => setNewDropdownOpen((o) => !o)}
-              disabled={fileUploading || folderUploading || (fileUploadProgress?.status === "in_progress")}
+              disabled={fileUploading || fileUploadProgress?.status === "in_progress"}
               className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 sm:px-4 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70 touch-manipulation"
             >
-              {(fileUploading || folderUploading) ? (
+              {fileUploading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Plus className="h-4 w-4" />
@@ -268,24 +241,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                   <Upload className="h-4 w-4 flex-shrink-0" />
                   File Upload
                 </button>
-                {!isRawFolder && (
-                  <button
-                    type="button"
-                    onClick={handleFolderUploadClick}
-                    disabled={folderUploading || !fsAccessSupported || isEnterpriseFilesNoDrive}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                    title={
-                      isEnterpriseFilesNoDrive
-                        ? "Select a drive first"
-                        : !fsAccessSupported
-                          ? "Folder upload requires Chrome or Edge"
-                          : undefined
-                    }
-                  >
-                    <FolderPlus className="h-4 w-4 flex-shrink-0" />
-                    Folder Upload
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={handleSharedFolderClick}
@@ -311,27 +266,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
       </div>
       </div>
       </div>
-
-      {showSyncProgress && syncProgress && (
-        <div className="border-t border-neutral-100 px-4 pb-2 pt-1 md:px-6 dark:border-neutral-800">
-          <div className="flex items-center justify-between gap-3">
-            <span className="truncate text-xs text-neutral-600 dark:text-neutral-400">
-              {syncProgress.currentFile}
-            </span>
-            <span className="shrink-0 text-xs font-medium text-neutral-700 dark:text-neutral-300">
-              {formatBytes(syncProgress.bytesSynced)} / {formatBytes(syncProgress.bytesTotal)}
-            </span>
-          </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
-            <div
-              className="h-full rounded-full bg-bizzi-blue transition-all duration-150"
-              style={{
-                width: `${Math.min(100, (syncProgress.bytesSynced / syncProgress.bytesTotal) * 100)}%`,
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       <CreateTransferModal
         open={transferModalOpen}

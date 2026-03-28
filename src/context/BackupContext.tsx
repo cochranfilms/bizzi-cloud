@@ -26,14 +26,12 @@ import {
 } from "firebase/firestore";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { isPersonalScopeDriveDoc, isTeamContainerDriveDoc } from "@/lib/backup-scope";
-import type { LinkedDrive } from "@/types/backup";
-import { enumerateFiles } from "@/lib/sync-engine";
+import type { LinkedDrive, FileUploadProgress, FileUploadItem } from "@/types/backup";
 import { UploadManager, type QueuedFile } from "@/lib/upload-manager";
 import {
   useFileSystemAccess,
   isFileSystemAccessSupported,
 } from "@/hooks/useFileSystemAccess";
-import type { SyncProgress, FileUploadProgress, FileUploadItem } from "@/types/backup";
 import {
   getFirebaseFirestore,
   getFirebaseAuth,
@@ -59,10 +57,8 @@ interface BackupContextValue {
   linkedDrives: LinkedDrive[];
   loading: boolean;
   error: string | null;
-  /** Error from single-file upload (New → File Upload). Shown near the upload trigger, not at Sync. */
+  /** Error from single-file upload (New → File Upload). Shown near the upload trigger. */
   fileUploadError: string | null;
-  syncProgress: SyncProgress | null;
-  isSyncing: boolean;
   storageVersion: number;
   /** Call after delete/restore/permanent-delete to refresh storage display */
   bumpStorageVersion: () => void;
@@ -71,8 +67,6 @@ interface BackupContextValue {
     name: string,
     handle: FileSystemDirectoryHandle
   ) => Promise<LinkedDrive>;
-  startSync: (drive: LinkedDrive) => Promise<void>;
-  cancelSync: () => void;
   pickDirectory: () => Promise<FileSystemDirectoryHandle>;
   unlinkDrive: (drive: LinkedDrive) => Promise<void>;
   uploadSingleFile: (file: File, targetDriveId?: string) => Promise<void>;
@@ -87,7 +81,6 @@ interface BackupContextValue {
   /** Cancel a specific file's upload and remove any partial chunks from Backblaze. */
   cancelFileUpload: (fileId: string) => void;
   fileUploadProgress: FileUploadProgress | null;
-  uploadFolder: () => Promise<void>;
   clearFileUploadError: () => void;
   fsAccessSupported: boolean;
   /** Create a new empty folder (linked drive). */
@@ -514,9 +507,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null);
   const [storageVersion, setStorageVersion] = useState(0);
   const [fileUploadProgress, setFileUploadProgress] =
     useState<FileUploadProgress | null>(null);
@@ -847,567 +837,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     [user, isEnterpriseContext, org, teamRouteOwnerUid, requestPermission, saveHandleToStore]
   );
 
-  const startSync = useCallback(
-    async (drive: LinkedDrive) => {
-      const currentUser = user;
-      if (!currentUser) {
-        setError("Please sign in to sync.");
-        return;
-      }
-      const uid = currentUser.uid;
-      if (!isFileSystemAccessSupported()) {
-        setError("File System Access API is not supported. Use Chrome or Edge.");
-        return;
-      }
-      if (!isFirebaseConfigured()) {
-        setError("Firebase not configured.");
-        return;
-      }
-
-      const stored = await getStoredHandleByDrive(drive.id);
-      if (!stored) {
-        setError(
-          "Drive not found locally. Please select the drive again by clicking Sync."
-        );
-        return;
-      }
-
-      const permission = await requestPermission(stored.handle);
-      if (permission !== "granted") {
-        setError("Permission denied. Please grant access when prompted.");
-        return;
-      }
-
-      const controller = new AbortController();
-      setAbortController(controller);
-      setError(null);
-      setSyncProgress({
-        snapshotId: "",
-        status: "in_progress",
-        filesTotal: 0,
-        filesCompleted: 0,
-        bytesTotal: 0,
-        bytesSynced: 0,
-        currentFile: null,
-      });
-
-      const db = getFirebaseFirestore();
-      let failStep = "";
-
-      try {
-        failStep = "create backup snapshot";
-        const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
-          linked_drive_id: drive.id,
-          userId: uid,
-          status: "in_progress",
-          files_count: 0,
-          bytes_synced: 0,
-          started_at: new Date(),
-        });
-        const snapshotId = snapshotRef.id;
-
-        const files: {
-          file: File;
-          relativePath: string;
-          modifiedAt: number | null;
-        }[] = [];
-        let bytesTotal = 0;
-
-        for await (const entry of enumerateFiles(stored.handle)) {
-          if (controller.signal.aborted) break;
-          files.push({
-            file: entry.file,
-            relativePath: entry.relativePath,
-            modifiedAt: entry.modifiedAt,
-          });
-          bytesTotal += entry.size;
-        }
-
-        failStep = "query backup snapshots";
-        const existingSnap = await getDocs(
-          query(
-            collection(db, "backup_snapshots"),
-            where("userId", "==", uid),
-            where("linked_drive_id", "==", drive.id),
-            where("status", "==", "completed"),
-            orderBy("completed_at", "desc"),
-            limit(1)
-          )
-        );
-        const existingFiles: { relative_path: string; modified_at: string | null }[] = [];
-        if (!existingSnap.empty) {
-          failStep = "query backup files";
-          const filesSnap = await getDocs(
-            query(
-              collection(db, "backup_files"),
-              where("backup_snapshot_id", "==", existingSnap.docs[0].id)
-            )
-          );
-          filesSnap.docs.forEach((d) => {
-            const d2 = d.data();
-            existingFiles.push({
-              relative_path: d2.relative_path,
-              modified_at: d2.modified_at ?? null,
-            });
-          });
-        }
-        const existingMap = new Map(
-          existingFiles.map((f) => [
-            f.relative_path,
-            f.modified_at ? new Date(f.modified_at).getTime() : null,
-          ])
-        );
-
-        const toUpload = files.filter((f) => {
-          const existingMtime = existingMap.get(f.relativePath);
-          if (existingMtime === undefined) return true;
-          if (f.modifiedAt === null) return existingMtime === null;
-          if (existingMtime === null) return true;
-          return f.modifiedAt > existingMtime;
-        });
-
-        setSyncProgress({
-          snapshotId,
-          status: "in_progress",
-          filesTotal: toUpload.length,
-          filesCompleted: 0,
-          bytesTotal: toUpload.reduce((acc, f) => acc + f.file.size, 0),
-          bytesSynced: 0,
-          currentFile: toUpload[0]?.relativePath ?? null,
-        });
-
-        if (toUpload.length > 0) {
-          failStep = "upload auth (pre-flight)";
-          const idToken = await getCurrentUserIdToken(false);
-          if (!idToken) throw new Error("Not authenticated. Sign out and back in, then try again.");
-          const preflight = await fetch("/api/backup/upload-url", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              drive_id: drive.id,
-              relative_path: toUpload[0].relativePath,
-              content_type: toUpload[0].file.type || "application/octet-stream",
-              user_id: uid,
-              validate_only: true,
-            }),
-          });
-          if (!preflight.ok) {
-            const data = await preflight.json().catch(() => ({}));
-            const fallback =
-              preflight.status === 401
-                ? "Upload auth failed. Production: set FIREBASE_SERVICE_ACCOUNT_JSON in Vercel. Check /api/backup/auth-status for config."
-                : `Upload auth failed: ${preflight.status}`;
-            throw new Error(data?.error ?? fallback);
-          }
-        }
-
-        const state = {
-          bytesSynced: 0,
-          filesCompleted: 0,
-          failedFiles: [] as string[],
-        };
-        const progressState = {
-          completedBytes: 0,
-          inFlight: new Map<number, number>(),
-          lastReport: 0,
-        };
-
-        const reportSyncProgress = (currentFile: string | null) => {
-          const now = Date.now();
-          if (now - progressState.lastReport < 80) return;
-          progressState.lastReport = now;
-          const inFlightSum = [...progressState.inFlight.values()].reduce((a, b) => a + b, 0);
-          const bytesSynced = progressState.completedBytes + inFlightSum;
-          setSyncProgress((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  bytesSynced,
-                  filesCompleted: state.filesCompleted,
-                  currentFile,
-                }
-              : null
-          );
-        };
-
-        const MAX_RETRIES = 2;
-
-        async function uploadOne(
-          item: (typeof toUpload)[0],
-          index: number
-        ): Promise<void> {
-          if (controller.signal.aborted) return;
-          const { file, relativePath, modifiedAt } = item;
-          const contentType = file.type || "application/octet-stream";
-
-          let lastError: string | null = null;
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            if (controller.signal.aborted) return;
-            let pendingReservationId: string | null = null;
-            let idTokenForRelease: string | null = null;
-            try {
-              const contentHash =
-                file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
-              const idToken =
-                await getCurrentUserIdToken(false);
-              if (!idToken) throw new Error("Not authenticated. Sign in again.");
-              idTokenForRelease = idToken;
-
-              let objectKey: string;
-              if (file.size > MULTIPART_THRESHOLD) {
-                progressState.inFlight.set(index, 0);
-                const res = await uploadWithMultipart(
-                  file,
-                  drive.id,
-                  relativePath,
-                  contentType,
-                  contentHash,
-                  idToken,
-                  uid,
-                  controller.signal,
-                  (loaded) => {
-                    progressState.inFlight.set(index, loaded);
-                    reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
-                  }
-                );
-                objectKey = res.objectKey;
-                // Reservation committed server-side in multipart-complete.
-                pendingReservationId = null;
-              } else {
-                const urlRes = await fetch("/api/backup/upload-url", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${idToken}`,
-                  },
-                  body: JSON.stringify({
-                    drive_id: drive.id,
-                    relative_path: relativePath,
-                    content_type: contentType,
-                    content_hash: contentHash,
-                    user_id: uid,
-                    size_bytes: file.size,
-                  }),
-                });
-                if (!urlRes.ok) {
-                  const data = await urlRes.json().catch(() => ({}));
-                  if (urlRes.status === 503) {
-                    throw new Error(
-                      data?.error ??
-                        "Backblaze B2 is not configured. All backup storage uses B2."
-                    );
-                  }
-                  if (urlRes.status === 403 && data?.storage_denial) {
-                    const sd = data.storage_denial as {
-                      quota_bytes: number;
-                      effective_billable_bytes_for_enforcement: number;
-                      usage_scope: string;
-                      requesting_user_id?: string;
-                      billing_subject_user_id?: string | null;
-                      organization_id?: string | null;
-                      reserved_bytes?: number;
-                    };
-                    setFileUploadProgress(null);
-                    setStorageQuotaExceeded({
-                      attemptedBytes: file.size,
-                      usedBytes: sd.effective_billable_bytes_for_enforcement,
-                      quotaBytes: sd.quota_bytes,
-                      isOrganizationUser: sd.usage_scope === "enterprise_workspace",
-                      storage_denial: {
-                        usage_scope: sd.usage_scope,
-                        requesting_user_id: sd.requesting_user_id ?? "",
-                        billing_subject_user_id: sd.billing_subject_user_id ?? null,
-                        organization_id: sd.organization_id ?? null,
-                        effective_billable_bytes_for_enforcement:
-                          sd.effective_billable_bytes_for_enforcement,
-                        reserved_bytes: sd.reserved_bytes ?? 0,
-                      },
-                    });
-                    const e = new Error(
-                      typeof data.error === "string"
-                        ? data.error
-                        : "Storage limit reached"
-                    ) as Error & { storage_denial?: unknown };
-                    e.storage_denial = data.storage_denial;
-                    throw e;
-                  }
-                  throw new Error(data?.error ?? "Failed to get upload URL");
-                }
-                const res = (await urlRes.json()) as {
-                  objectKey: string;
-                  uploadUrl?: string | null;
-                  alreadyExists?: boolean;
-                  reservation_id?: string | null;
-                };
-                objectKey = res.objectKey;
-                pendingReservationId =
-                  typeof res.reservation_id === "string" ? res.reservation_id : null;
-                if (!res.alreadyExists && res.uploadUrl) {
-                  progressState.inFlight.set(index, 0);
-                  try {
-                    await putWithProgress(
-                      file,
-                      res.uploadUrl,
-                      contentType,
-                      {
-                        signal: controller.signal,
-                        sseRequired: true,
-                        onProgress: (loaded) => {
-                          progressState.inFlight.set(index, loaded);
-                          reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
-                        },
-                      }
-                    );
-                  } catch (putErr) {
-                    await releaseStorageReservationClient(pendingReservationId, idToken);
-                    throw putErr;
-                  }
-                }
-              }
-
-              progressState.inFlight.delete(index);
-              progressState.completedBytes += file.size;
-
-              const workspaceFields = await getWorkspaceFieldsForOrgDrive(
-                drive,
-                idToken ?? null,
-                uid,
-                selectedWorkspaceId
-              );
-              const fileRef = await addDoc(collection(db, "backup_files"), {
-                backup_snapshot_id: snapshotId,
-                linked_drive_id: drive.id,
-                userId: uid,
-                relative_path: relativePath,
-                object_key: objectKey,
-                size_bytes: file.size,
-                content_type: contentType,
-                modified_at: modifiedAt
-                  ? new Date(modifiedAt).toISOString()
-                  : new Date().toISOString(),
-                uploaded_at: new Date().toISOString(),
-                deleted_at: null,
-                lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
-                organization_id: drive.organization_id ?? null,
-                ...workspaceFields,
-                ...personalTeamFileFields(drive),
-                ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
-              });
-              if (idToken) {
-                fetch("/api/files/extract-metadata", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${idToken}`,
-                  },
-                  body: JSON.stringify({
-                    backup_file_id: fileRef.id,
-                    object_key: objectKey,
-                  }),
-                }).catch(() => {});
-                fetch("/api/packages/link-backup-file", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${idToken}`,
-                  },
-                  body: JSON.stringify({ backup_file_id: fileRef.id }),
-                }).catch(() => {});
-              }
-
-              if (file.size <= MULTIPART_THRESHOLD) {
-                await commitStorageReservationClient(pendingReservationId, idToken);
-              }
-              pendingReservationId = null;
-
-              if (VIDEO_EXT.test(relativePath)) {
-                fetch("/api/backup/generate-proxy", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${idToken}`,
-                  },
-                  body: JSON.stringify({
-                    object_key: objectKey,
-                    name: relativePath,
-                    queue: true,
-                  }),
-                }).catch(() => {});
-              }
-
-              state.bytesSynced += file.size;
-              state.filesCompleted++;
-              progressState.lastReport = 0; // Force immediate update on completion
-              reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
-              lastError = null;
-              break;
-            } catch (err) {
-              await releaseStorageReservationClient(
-                pendingReservationId,
-                idTokenForRelease
-              );
-              const denial = err as Error & { storage_denial?: Record<string, unknown> };
-              if (denial.storage_denial && typeof denial.storage_denial === "object") {
-                const sd = denial.storage_denial as {
-                  quota_bytes: number;
-                  effective_billable_bytes_for_enforcement: number;
-                  usage_scope: string;
-                  requesting_user_id?: string;
-                  billing_subject_user_id?: string | null;
-                  organization_id?: string | null;
-                  reserved_bytes?: number;
-                };
-                setFileUploadProgress(null);
-                setStorageQuotaExceeded({
-                  attemptedBytes: file.size,
-                  usedBytes: sd.effective_billable_bytes_for_enforcement,
-                  quotaBytes: sd.quota_bytes,
-                  isOrganizationUser: sd.usage_scope === "enterprise_workspace",
-                  storage_denial: {
-                    usage_scope: sd.usage_scope,
-                    requesting_user_id: sd.requesting_user_id ?? "",
-                    billing_subject_user_id: sd.billing_subject_user_id ?? null,
-                    organization_id: sd.organization_id ?? null,
-                    effective_billable_bytes_for_enforcement:
-                      sd.effective_billable_bytes_for_enforcement,
-                    reserved_bytes: sd.reserved_bytes ?? 0,
-                  },
-                });
-              }
-              lastError =
-                err instanceof Error ? err.message : "Upload failed";
-            }
-            if (attempt < MAX_RETRIES) {
-              await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-            }
-          }
-          if (lastError) {
-            state.failedFiles.push(`${relativePath}: ${lastError}`);
-          }
-        }
-
-        // Run uploads with concurrency limit
-        let nextIndex = 0;
-        async function worker(): Promise<void> {
-          while (nextIndex < toUpload.length && !controller.signal.aborted) {
-            const i = nextIndex++;
-            await uploadOne(toUpload[i], i);
-          }
-        }
-        const workers = Array.from(
-          { length: Math.min(UPLOAD_CONCURRENCY, toUpload.length) },
-          () => worker()
-        );
-        await Promise.all(workers);
-
-        const { bytesSynced, filesCompleted } = state;
-        const failedFiles = state.failedFiles;
-
-        const completeError =
-          controller.signal.aborted
-            ? "Cancelled"
-            : failedFiles.length > 0
-              ? `${failedFiles.length} file(s) failed`
-              : null;
-
-        failStep = "update backup snapshot";
-        await updateDoc(doc(db, "backup_snapshots", snapshotId), {
-          status:
-            controller.signal.aborted || failedFiles.length > 0
-              ? "failed"
-              : "completed",
-          files_count: filesCompleted,
-          bytes_synced: bytesSynced,
-          error_message: completeError,
-          completed_at: new Date(),
-        });
-
-        if (!controller.signal.aborted && failedFiles.length === 0) {
-          failStep = "update drive / profile";
-          await updateDoc(doc(db, "linked_drives", drive.id), {
-            last_synced_at: new Date().toISOString(),
-          });
-
-          const driveForScope = drive as unknown as Record<string, unknown>;
-          if (isPersonalScopeDriveDoc(driveForScope)) {
-            const profileRef = doc(db, "profiles", uid);
-            const profileSnap = await getDoc(profileRef);
-            const current = profileSnap.exists()
-              ? (profileSnap.data().storage_used_bytes ?? 0) + bytesSynced
-              : bytesSynced;
-            await setDoc(
-              profileRef,
-              {
-                userId: uid,
-                email: currentUser.email ?? null,
-                storage_used_bytes: current,
-                storage_quota_bytes: FREE_TIER_STORAGE_BYTES,
-              },
-              { merge: true }
-            );
-          }
-        }
-
-        setSyncProgress((prev) =>
-          prev
-            ? {
-                ...prev,
-                status:
-                  controller.signal.aborted || failedFiles.length > 0
-                    ? "failed"
-                    : "completed",
-                filesCompleted,
-                bytesSynced,
-                currentFile: null,
-                error:
-                  controller.signal.aborted
-                    ? "Cancelled"
-                    : failedFiles.length > 0
-                      ? `${failedFiles.length} file(s) failed to upload`
-                      : undefined,
-              }
-            : null
-        );
-
-        if (!controller.signal.aborted) {
-          fetchDrives();
-          setStorageVersion((v) => v + 1);
-        }
-      } catch (err) {
-        const raw = err instanceof Error ? err.message : "Sync failed";
-        const permHint =
-          raw.toLowerCase().includes("insufficient") ||
-          raw.toLowerCase().includes("permission denied");
-        const message = permHint
-          ? failStep
-            ? `[${failStep}] ${raw} — Deploy rules: firebase deploy --only firestore:rules (confirm project: firebase use)`
-            : `${raw} — Deploy rules: firebase deploy --only firestore:rules (confirm project: firebase use)`
-          : raw;
-        setError(message);
-        setSyncProgress((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: "failed",
-                error: message,
-              }
-            : null
-        );
-      } finally {
-        setAbortController(null);
-      }
-    },
-    [user, requestPermission, getStoredHandleByDrive, fetchDrives, selectedWorkspaceId]
-  );
-
-  const cancelSync = useCallback(() => {
-    if (abortController) {
-      abortController.abort();
-    }
-  }, [abortController]);
 
   const pickDirectory = useCallback(async () => pickDir(), [pickDir]);
 
@@ -2321,208 +1750,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     [uploadFiles]
   );
 
-  const _uploadSingleFileLegacy = useCallback(
-    async (file: File, targetDriveId?: string) => {
-      if (!isFirebaseConfigured() || !user) {
-        setError("Please sign in to upload.");
-        return;
-      }
-      setError(null);
-      setFileUploadError(null);
-
-      const drive = targetDriveId
-        ? (linkedDrives.find((d) => d.id === targetDriveId) ?? await getOrCreateStorageDrive())
-        : await getOrCreateStorageDrive();
-      const db = getFirebaseFirestore();
-      const relativePath = file.name;
-      const contentType = file.type || "application/octet-stream";
-
-      setSyncProgress({
-        snapshotId: "",
-        status: "in_progress",
-        filesTotal: 1,
-        filesCompleted: 0,
-        bytesTotal: file.size,
-        bytesSynced: 0,
-        currentFile: file.name,
-      });
-
-      let legacyPendingReservationId: string | null = null;
-      try {
-        const contentHash =
-          file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
-        const idToken = await getCurrentUserIdToken(false);
-        if (!idToken) throw new Error("Not authenticated. Sign in again.");
-
-        let objectKey: string;
-        if (file.size > MULTIPART_THRESHOLD) {
-          const res = await uploadWithMultipart(
-            file,
-            drive.id,
-            relativePath,
-            contentType,
-            contentHash,
-            idToken,
-            user.uid,
-            undefined,
-            (loaded) => {
-              setSyncProgress((prev) =>
-                prev ? { ...prev, bytesSynced: loaded } : null
-              );
-            }
-          );
-          objectKey = res.objectKey;
-          legacyPendingReservationId = null;
-        } else {
-          const urlRes = await fetch("/api/backup/upload-url", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              drive_id: drive.id,
-              relative_path: relativePath,
-              content_type: contentType,
-              content_hash: contentHash,
-              user_id: user.uid,
-              size_bytes: file.size,
-            }),
-          });
-          if (!urlRes.ok) {
-            const data = await urlRes.json().catch(() => ({}));
-            throw new Error(data?.error ?? "Failed to get upload URL");
-          }
-          const presign = (await urlRes.json()) as {
-            uploadUrl?: string | null;
-            objectKey: string;
-            alreadyExists?: boolean;
-            reservation_id?: string | null;
-          };
-          const { uploadUrl, objectKey: ok, alreadyExists } = presign;
-          objectKey = ok;
-          legacyPendingReservationId =
-            typeof presign.reservation_id === "string" ? presign.reservation_id : null;
-          if (!alreadyExists && uploadUrl) {
-            try {
-              await putWithProgress(file, uploadUrl, contentType, {
-                sseRequired: true,
-                onProgress: (loaded) => {
-                  setSyncProgress((prev) =>
-                    prev ? { ...prev, bytesSynced: loaded } : null
-                  );
-                },
-              });
-            } catch (putErr) {
-              await releaseStorageReservationClient(legacyPendingReservationId, idToken);
-              throw putErr;
-            }
-          }
-        }
-        const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
-          linked_drive_id: drive.id,
-          userId: user.uid,
-          status: "completed",
-          files_count: 1,
-          bytes_synced: file.size,
-          completed_at: new Date(),
-        });
-        const workspaceFields = await getWorkspaceFieldsForOrgDrive(
-          drive,
-          idToken ?? null,
-          user.uid,
-          selectedWorkspaceId
-        );
-        const fileRef = await addDoc(collection(db, "backup_files"), {
-          backup_snapshot_id: snapshotRef.id,
-          linked_drive_id: drive.id,
-          userId: user.uid,
-          relative_path: relativePath,
-          object_key: objectKey,
-          size_bytes: file.size,
-          content_type: contentType,
-              modified_at: file.lastModified
-                ? new Date(file.lastModified).toISOString()
-                : new Date().toISOString(),
-          uploaded_at: new Date().toISOString(),
-          deleted_at: null,
-          lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
-          organization_id: drive.organization_id ?? null,
-          ...workspaceFields,
-          ...personalTeamFileFields(drive),
-          ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
-        });
-        if (file.size <= MULTIPART_THRESHOLD) {
-          await commitStorageReservationClient(legacyPendingReservationId, idToken);
-        }
-        legacyPendingReservationId = null;
-        if (idToken) {
-          fetch("/api/files/extract-metadata", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              backup_file_id: fileRef.id,
-              object_key: objectKey,
-            }),
-          }).catch(() => {});
-          fetch("/api/packages/link-backup-file", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ backup_file_id: fileRef.id }),
-          }).catch(() => {});
-        }
-        if (VIDEO_EXT.test(relativePath)) {
-          fetch("/api/backup/generate-proxy", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              object_key: objectKey,
-              name: relativePath,
-              queue: true,
-            }),
-          }).catch(() => {});
-        }
-        await updateDoc(doc(db, "linked_drives", drive.id), {
-          last_synced_at: new Date().toISOString(),
-        });
-        setSyncProgress((prev) =>
-          prev ? { ...prev, status: "completed", bytesSynced: file.size } : null
-        );
-        setTimeout(() => setSyncProgress(null), 2000);
-        // Recalculate storage first so profile is updated, then bump version to refresh UI
-        try {
-          const token = await getCurrentUserIdToken(false);
-          const base = typeof window !== "undefined" ? window.location.origin : "";
-          await fetch(`${base}/api/storage/recalculate`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        } catch {
-          // Non-fatal; storage will refresh on next manual action
-        }
-        setStorageVersion((v) => v + 1);
-      } catch (err) {
-        const idTok = await getCurrentUserIdToken(false).catch(() => null);
-        await releaseStorageReservationClient(legacyPendingReservationId, idTok);
-        const msg =
-          err instanceof Error
-            ? err.message || (err as Error & { name?: string }).name || "Upload failed"
-            : "Upload failed";
-        setFileUploadError(msg);
-        setSyncProgress(null);
-      }
-    },
-    [user, getOrCreateStorageDrive, linkedDrives, selectedWorkspaceId]
-  );
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);
 
@@ -2531,16 +1758,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const uploadFolder = useCallback(async () => {
-    if (!fsAccessSupported) return;
-    try {
-      const handle = await pickDir();
-      const drive = await linkDrive(handle.name, handle);
-      await startSync(drive);
-    } catch (err) {
-      console.error(err);
-    }
-  }, [fsAccessSupported, pickDir, linkDrive, startSync]);
 
   const value = useMemo<BackupContextValue>(
     () => ({
@@ -2548,21 +1765,16 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       loading,
       error,
       fileUploadError,
-      syncProgress,
-      isSyncing: !!abortController,
       storageVersion,
       bumpStorageVersion,
       fetchDrives,
       linkDrive,
-      startSync,
-      cancelSync,
       pickDirectory,
       unlinkDrive,
       uploadSingleFile,
       uploadFiles,
       cancelFileUpload,
       fileUploadProgress,
-      uploadFolder,
       clearFileUploadError,
       fsAccessSupported,
       createFolder,
@@ -2576,21 +1788,16 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       linkedDrives,
       loading,
       error,
-      syncProgress,
-      abortController,
       storageVersion,
       bumpStorageVersion,
       fetchDrives,
       linkDrive,
-      startSync,
-      cancelSync,
       pickDirectory,
       unlinkDrive,
       uploadSingleFile,
       uploadFiles,
       cancelFileUpload,
       fileUploadProgress,
-      uploadFolder,
       clearFileUploadError,
       fileUploadError,
       fsAccessSupported,

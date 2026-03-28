@@ -65,17 +65,6 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   project_id?: string | null;
 }
 
-export interface SyncProgress {
-  snapshotId: string;
-  status: "in_progress" | "completed" | "failed";
-  filesTotal: number;
-  filesCompleted: number;
-  bytesTotal: number;
-  bytesSynced: number;
-  currentFile: string | null;
-  error?: string;
-}
-
 /** Per-file state for New button multi-file uploads. */
 export interface FileUploadItem {
   id: string;

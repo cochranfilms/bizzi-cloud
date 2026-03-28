@@ -812,71 +812,59 @@ export default function GallerySettingsForm({
               </div>
             </div>
             {coverAssetId && (
-              <div className="space-y-3">
-                <div>
-                  <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              <div className="rounded-xl border border-neutral-200/90 bg-gradient-to-b from-neutral-50/90 to-neutral-100/40 p-4 dark:border-neutral-600/70 dark:from-neutral-900/40 dark:to-neutral-950/30">
+                <div className="border-b border-neutral-200/80 pb-3 dark:border-neutral-600/60">
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
                     Live preview
-                  </span>
-                  <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                    Adjust cover position: drag the image to reposition what clients see (this is
-                    framing, not a permanent crop). Use the quick positions below for common layouts.
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                    Drag the image to reposition the cover (same framing clients see). Use shortcuts
+                    below for quick alignment.
                   </p>
-                  <div className="mb-3 flex flex-wrap gap-1 lg:hidden">
-                    <button
-                      type="button"
-                      onClick={() => setCoverPreviewTab("desktop")}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
-                        coverPreviewTab === "desktop"
-                          ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
-                          : "border-neutral-200 dark:border-neutral-600"
-                      }`}
-                    >
-                      Desktop
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCoverPreviewTab("mobile")}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
-                        coverPreviewTab === "mobile"
-                          ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
-                          : "border-neutral-200 dark:border-neutral-600"
-                      }`}
-                    >
-                      Mobile
-                    </button>
-                  </div>
+                </div>
+
+                <div className="pt-3">
                   {rawPreviewUnavailable ? (
                     <div className="rounded-lg border border-neutral-200 dark:border-neutral-600">
                       <RawPreviewPlaceholder fileName={coverAssetForPreview?.name ?? ""} />
                     </div>
                   ) : (
                     <>
-                      <div className="hidden gap-6 lg:grid lg:grid-cols-2">
-                        <div>
-                          <p className="mb-2 text-center text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                            Desktop preview
-                          </p>
-                          <CoverHeroPreview
-                            imageUrl={coverHeroPreviewUrl}
-                            focalX={coverFocalX}
-                            focalY={coverFocalY}
-                            onFocalChange={(x, y) => {
-                              setCoverFocalX(x);
-                              setCoverFocalY(y);
-                            }}
-                            overlayOpacity={coverOverlayOpacity}
-                            titleAlignment={coverTitleAlignment}
-                            heroPreset={coverHeroHeight}
-                            previewMode="desktop"
-                            galleryTitle={title}
-                            eventDate={eventDate || null}
-                            accentColor={accentColor}
-                          />
+                      {/* Narrow viewports: segmented control + single preview */}
+                      <div className="md:hidden">
+                        <div
+                          className="mb-3 inline-flex rounded-lg border border-neutral-200/90 bg-white p-0.5 shadow-sm dark:border-neutral-600 dark:bg-neutral-800/80"
+                          role="tablist"
+                          aria-label="Preview device"
+                        >
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={coverPreviewTab === "desktop"}
+                            onClick={() => setCoverPreviewTab("desktop")}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                              coverPreviewTab === "desktop"
+                                ? "bg-neutral-900 text-white shadow dark:bg-white dark:text-neutral-900"
+                                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                            }`}
+                          >
+                            Desktop
+                          </button>
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={coverPreviewTab === "mobile"}
+                            onClick={() => setCoverPreviewTab("mobile")}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                              coverPreviewTab === "mobile"
+                                ? "bg-neutral-900 text-white shadow dark:bg-white dark:text-neutral-900"
+                                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                            }`}
+                          >
+                            Mobile
+                          </button>
                         </div>
-                        <div>
-                          <p className="mb-2 text-center text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                            Mobile preview
-                          </p>
+                        <div className="flex justify-center">
                           <CoverHeroPreview
                             imageUrl={coverHeroPreviewUrl}
                             focalX={coverFocalX}
@@ -888,36 +876,74 @@ export default function GallerySettingsForm({
                             overlayOpacity={coverOverlayOpacity}
                             titleAlignment={coverTitleAlignment}
                             heroPreset={coverHeroHeight}
-                            previewMode="mobile"
+                            previewMode={coverPreviewTab}
                             galleryTitle={title}
                             eventDate={eventDate || null}
                             accentColor={accentColor}
+                            compact
                           />
                         </div>
                       </div>
-                      <div className="lg:hidden">
-                        <CoverHeroPreview
-                          imageUrl={coverHeroPreviewUrl}
-                          focalX={coverFocalX}
-                          focalY={coverFocalY}
-                          onFocalChange={(x, y) => {
-                            setCoverFocalX(x);
-                            setCoverFocalY(y);
-                          }}
-                          overlayOpacity={coverOverlayOpacity}
-                          titleAlignment={coverTitleAlignment}
-                          heroPreset={coverHeroHeight}
-                          previewMode={coverPreviewTab}
-                          galleryTitle={title}
-                          eventDate={eventDate || null}
-                          accentColor={accentColor}
-                        />
+
+                      {/* md+: dual preview — row when wide enough, else stacked */}
+                      <div className="hidden md:block">
+                        <div className="flex flex-col items-center gap-5 min-[960px]:flex-row min-[960px]:items-start min-[960px]:justify-center min-[960px]:gap-6">
+                          <div className="w-full min-w-0 flex-1 max-w-[430px]">
+                            <p className="mb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-300 min-[960px]:text-left">
+                              Desktop
+                            </p>
+                            <div className="flex justify-center min-[960px]:justify-start">
+                              <CoverHeroPreview
+                                imageUrl={coverHeroPreviewUrl}
+                                focalX={coverFocalX}
+                                focalY={coverFocalY}
+                                onFocalChange={(x, y) => {
+                                  setCoverFocalX(x);
+                                  setCoverFocalY(y);
+                                }}
+                                overlayOpacity={coverOverlayOpacity}
+                                titleAlignment={coverTitleAlignment}
+                                heroPreset={coverHeroHeight}
+                                previewMode="desktop"
+                                galleryTitle={title}
+                                eventDate={eventDate || null}
+                                accentColor={accentColor}
+                                compact
+                              />
+                            </div>
+                          </div>
+                          <div className="shrink-0 opacity-[0.92]">
+                            <p className="mb-2 text-center text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500 min-[960px]:text-left">
+                              Mobile
+                            </p>
+                            <div className="flex justify-center min-[960px]:justify-start">
+                              <CoverHeroPreview
+                                imageUrl={coverHeroPreviewUrl}
+                                focalX={coverFocalX}
+                                focalY={coverFocalY}
+                                onFocalChange={(x, y) => {
+                                  setCoverFocalX(x);
+                                  setCoverFocalY(y);
+                                }}
+                                overlayOpacity={coverOverlayOpacity}
+                                titleAlignment={coverTitleAlignment}
+                                heroPreset={coverHeroHeight}
+                                previewMode="mobile"
+                                galleryTitle={title}
+                                eventDate={eventDate || null}
+                                accentColor={accentColor}
+                                compact
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}
                 </div>
-                <div>
-                  <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+
+                <div className="mt-4 border-t border-neutral-200/80 pt-3 dark:border-neutral-600/60">
+                  <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     Position shortcuts
                   </span>
                   <div className="flex flex-wrap gap-1">
@@ -929,14 +955,14 @@ export default function GallerySettingsForm({
                           setCoverFocalX(x);
                           setCoverFocalY(y);
                         }}
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        className="rounded-md border border-neutral-200/90 bg-white px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800/90 dark:text-neutral-300 dark:hover:bg-neutral-700"
                       >
                         {label}
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    Position: {Math.round(coverFocalX)}%, {Math.round(coverFocalY)}%
+                  <p className="mt-1.5 text-[11px] text-neutral-400 dark:text-neutral-500">
+                    Focal point: {Math.round(coverFocalX)}%, {Math.round(coverFocalY)}%
                   </p>
                 </div>
               </div>

@@ -72,7 +72,7 @@ export default function EnterpriseStorageBadge() {
   const quotaLabel = quota === null ? "Unlimited" : formatBytes(quota);
 
   return (
-    <div className="mb-3 rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-800">
+    <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">Organization storage</p>
       <p className="text-sm font-medium text-neutral-900 dark:text-white">
         {formatBytes(billableUsed)} of {quotaLabel} used
@@ -93,14 +93,16 @@ export default function EnterpriseStorageBadge() {
           <li>Enforcement total: {formatBytes(billableUsed + reserved)}</li>
         </ul>
       </details>
-      <button
-        type="button"
-        onClick={recalculateStorage}
-        disabled={recalculating}
-        className="mt-1.5 text-xs text-neutral-500 underline hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 disabled:opacity-50"
-      >
-        {recalculating ? "Updating…" : "Refresh storage"}
-      </button>
+      <div className="mt-auto pt-3">
+        <button
+          type="button"
+          onClick={recalculateStorage}
+          disabled={recalculating}
+          className="text-xs text-neutral-500 underline hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 disabled:opacity-50"
+        >
+          {recalculating ? "Updating…" : "Refresh storage"}
+        </button>
+      </div>
     </div>
   );
 }
