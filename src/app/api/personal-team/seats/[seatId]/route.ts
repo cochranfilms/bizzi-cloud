@@ -6,11 +6,7 @@ import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 import { isProductSeatTierByte } from "@/lib/enterprise-constants";
-import {
-  sumPersonalTeamFixedSeatAllocations,
-  teamOwnerPoolBytes,
-} from "@/lib/personal-team-seat-storage";
-import { seatNumericCapForEnforcement } from "@/lib/org-seat-quota";
+import { validateProposedFixedSeatCap } from "@/lib/personal-team-pool-accounting";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -87,27 +83,14 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid seat" }, { status: 400 });
   }
 
-  const prevCap = seatNumericCapForEnforcement(seat as Record<string, unknown>);
   const newCap = newQuota === null ? null : newQuota;
-  const pool = teamOwnerPoolBytes(adminData);
-  const allocatedExcluding = await sumPersonalTeamFixedSeatAllocations(adminUid, {
-    excludeSeatDocId: seatId,
-  });
-  const newAllocated = newCap === null ? allocatedExcluding : allocatedExcluding + newCap;
-  if (newAllocated > pool) {
-    const poolTb = (pool / (1024 ** 4)).toFixed(1);
-    return NextResponse.json(
-      {
-        error: `Total fixed seat allocation would exceed your team storage pool (${poolTb} TB). ${(
-          allocatedExcluding / (1024 ** 4)
-        ).toFixed(1)} TB is already allocated to other members or pending invites${
-          typeof prevCap === "number"
-            ? ` (this member currently holds ${(prevCap / (1024 ** 4)).toFixed(1)} TB)`
-            : ""
-        }.`,
-      },
-      { status: 400 }
-    );
+  if (typeof newCap === "number") {
+    const capCheck = await validateProposedFixedSeatCap(adminUid, adminData, newCap, {
+      excludeSeatDocId: seatId,
+    });
+    if (!capCheck.ok) {
+      return NextResponse.json({ error: capCheck.error }, { status: 400 });
+    }
   }
 
   const quota_mode = newQuota === null ? "org_unlimited" : "fixed";

@@ -25,6 +25,7 @@ import {
 } from "./storage-quota-reservations";
 import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
 import { logEnterpriseSecurityEvent } from "./enterprise-security-log";
+import { adminPurchasedTeamPoolBytes } from "./profile-purchased-storage-bytes";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -177,13 +178,7 @@ export async function getUploadBillingSnapshot(
       usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
     }
   } else {
-    const profileBillingPastDue = profileData?.billing_status === "past_due";
-    const profileQuota = profileData?.storage_quota_bytes;
-    quotaBytes = profileBillingPastDue
-      ? FREE_TIER_STORAGE_BYTES
-      : typeof profileQuota === "number"
-        ? profileQuota
-        : FREE_TIER_STORAGE_BYTES;
+    quotaBytes = adminPurchasedTeamPoolBytes(profileData as Record<string, unknown> | undefined);
 
     usedBytes = await sumPersonalBackupBytesForQuota(quotaSubjectUid);
   }
@@ -247,6 +242,10 @@ export async function checkUserCanUpload(
   const reserved = await sumPendingReservationBytes(snap.billing_key);
   const effective = snap.file_used_bytes + reserved;
 
+  // Personal (non-org) quota_subject billing includes solo files + hosted personal-team
+  // container for that uid. For team drives, quota_subject is the team owner, so
+  // file_used_bytes is the whole account billable total; the cap is the owner's purchased
+  // plan — same hard ceiling for admin + all members (see personal-team-pool-accounting).
   if (snap.quota_bytes !== null && effective + additionalBytes > snap.quota_bytes) {
     const { msg, scope } = buildQuotaDeniedMessage(
       snap.organization_id,

@@ -25,6 +25,7 @@ import {
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
 import { seatNumericCapForEnforcement } from "@/lib/org-seat-quota";
+import { adminPurchasedTeamPoolBytes } from "@/lib/profile-purchased-storage-bytes";
 import type { StorageDisplaySummary } from "@/types/storage-display";
 
 function effectiveRemaining(quota: number | null, effective: number): number | null {
@@ -38,13 +39,8 @@ export async function getPersonalDashboardStorageDisplay(
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(viewerUid).get();
   const profileData = profileSnap.data();
+  const quota_bytes = adminPurchasedTeamPoolBytes(profileData as Record<string, unknown> | undefined);
   const profileBillingPastDue = profileData?.billing_status === "past_due";
-  const profileQuota = profileData?.storage_quota_bytes;
-  const quota_bytes = profileBillingPastDue
-    ? FREE_TIER_STORAGE_BYTES
-    : typeof profileQuota === "number"
-      ? profileQuota
-      : FREE_TIER_STORAGE_BYTES;
 
   const personal_solo_bytes = await sumSoloPersonalBackupBytes(viewerUid);
   const billable_used_bytes = await sumPersonalBackupBytesForQuota(viewerUid);
@@ -85,13 +81,7 @@ async function getPersonalTeamOwnerPoolContext(ownerUid: string): Promise<{
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(ownerUid).get();
   const profileData = profileSnap.data();
-  const profileBillingPastDue = profileData?.billing_status === "past_due";
-  const profileQuota = profileData?.storage_quota_bytes;
-  const quota_bytes = profileBillingPastDue
-    ? FREE_TIER_STORAGE_BYTES
-    : typeof profileQuota === "number"
-      ? profileQuota
-      : FREE_TIER_STORAGE_BYTES;
+  const quota_bytes = adminPurchasedTeamPoolBytes(profileData as Record<string, unknown> | undefined);
 
   const team_workspace_bytes = await sumTeamContainerBackupBytes(ownerUid);
   const billable_used_bytes = await sumPersonalBackupBytesForQuota(ownerUid);

@@ -19,10 +19,7 @@ import {
   wouldExceedNonOwnedTeamCap,
 } from "@/lib/personal-team-auth";
 import { isProductSeatTierByte } from "@/lib/enterprise-constants";
-import {
-  sumPersonalTeamFixedSeatAllocations,
-  teamOwnerPoolBytes,
-} from "@/lib/personal-team-seat-storage";
+import { validateProposedFixedSeatCap } from "@/lib/personal-team-pool-accounting";
 import {
   isPersonalTeamSeatAccess,
   personalTeamSeatAccessSummary,
@@ -184,18 +181,13 @@ export async function POST(request: Request) {
   }
 
   if (inviteStorage.quota_mode === "fixed" && typeof inviteStorage.storage_quota_bytes === "number") {
-    const pool = teamOwnerPoolBytes(adminData);
-    const allocated = await sumPersonalTeamFixedSeatAllocations(adminUid);
-    if (allocated + inviteStorage.storage_quota_bytes > pool) {
-      const poolTb = (pool / (1024 ** 4)).toFixed(1);
-      return NextResponse.json(
-        {
-          error: `Total fixed seat allocation would exceed your team storage pool (${poolTb} TB). ${(
-            allocated / (1024 ** 4)
-          ).toFixed(1)} TB is already allocated to other members or pending invites.`,
-        },
-        { status: 400 }
-      );
+    const capCheck = await validateProposedFixedSeatCap(
+      adminUid,
+      adminData,
+      inviteStorage.storage_quota_bytes
+    );
+    if (!capCheck.ok) {
+      return NextResponse.json({ error: capCheck.error }, { status: 400 });
     }
   }
 

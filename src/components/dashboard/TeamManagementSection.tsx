@@ -61,9 +61,30 @@ type OverviewApi = {
   plan_label: string;
   team_quota_bytes?: number;
   team_used_bytes?: number;
+  total_plan_billable_bytes?: number;
+  fixed_cap_allocated_bytes?: number;
+  fixed_cap_reserved_pending_invites_bytes?: number;
   numeric_allocated_seat_bytes?: number;
   remaining_numeric_allocatable_bytes?: number;
+  remaining_fixed_cap_allocatable_bytes?: number;
+  remaining_team_workspace_headroom_bytes?: number;
+  remaining_plan_headroom_bytes?: number;
 };
+
+function maxBytesForNewFixedCap(overview: OverviewApi | null): number {
+  if (!overview) return 0;
+  const v =
+    overview.remaining_fixed_cap_allocatable_bytes ??
+    overview.remaining_numeric_allocatable_bytes ??
+    0;
+  return Math.max(0, v);
+}
+
+function maxBytesForMemberSeatEdit(m: MemberApi, overview: OverviewApi | null): number {
+  const reclaim =
+    typeof m.storage_quota_bytes === "number" ? m.storage_quota_bytes : 0;
+  return maxBytesForNewFixedCap(overview) + reclaim;
+}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -422,6 +443,7 @@ export function TeamManagementSection() {
   }
 
   const activeMembers = members.filter((m) => m.status === "active" || m.status === "invited");
+  const inviteFixedCapBudget = maxBytesForNewFixedCap(overview);
   const usedTotal =
     (overview?.used.none ?? 0) +
     (overview?.used.gallery ?? 0) +
@@ -443,10 +465,11 @@ export function TeamManagementSection() {
         members, assign seat access, and share storage. This is <strong>not</strong> an Organization.
       </p>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        Your plan provides one <strong className="text-neutral-900 dark:text-white">shared team storage pool</strong>
-        {" "}(total quota). Each member can have a fixed cap or{" "}
-        <strong className="text-neutral-900 dark:text-white">unlimited use within that pool</strong>. Uploads are
-        blocked if either the pool or the member limit is reached.
+        <strong className="text-neutral-900 dark:text-white">Team pool</strong> means everyone shares{" "}
+        <strong className="text-neutral-900 dark:text-white">your purchased storage</strong>
+        — not extra space. Fixed caps reserve slices of that same pool; “Unlimited (team pool)” still
+        uses your plan and cannot exceed your total. Combined usage (you + all members, team folder +
+        your personal files on this account) can never go above your plan.
       </p>
 
       <div className="mb-6 rounded-lg border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
@@ -474,21 +497,55 @@ export function TeamManagementSection() {
             )}
           </li>
           <li className="text-xs text-neutral-500">
-            Storage is shared from your subscription; only you can buy more. Teammates keep their own
-            personal Bizzi billing.
+            Only you can buy more plan storage. Teammates keep their own personal Bizzi billing for
+            accounts that aren’t on this team.
           </li>
           {typeof overview?.team_quota_bytes === "number" && (
-            <li className="text-xs text-neutral-500">
-              Pool: <strong>{formatStorage(overview.team_quota_bytes)}</strong> total · used{" "}
-              <strong>{formatStorage(overview.team_used_bytes ?? 0)}</strong>
-              {typeof overview.numeric_allocated_seat_bytes === "number" &&
-              overview.numeric_allocated_seat_bytes > 0 ? (
-                <>
-                  {" "}
-                  · <strong>{formatStorage(overview.numeric_allocated_seat_bytes)}</strong> allocated to
-                  fixed caps (pending invites included)
-                </>
-              ) : null}
+            <li className="space-y-1 text-xs text-neutral-500">
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Purchased plan (ceiling):</strong>{" "}
+                {formatStorage(overview.team_quota_bytes)}
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Team folder used:</strong>{" "}
+                {formatStorage(overview.team_used_bytes ?? 0)} (files in this team workspace only)
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Account billable total (owner):</strong>{" "}
+                {formatStorage(overview.total_plan_billable_bytes ?? 0)} (personal solo + hosted team — hard
+                ceiling for uploads)
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Fixed caps on seats:</strong>{" "}
+                {formatStorage(overview.fixed_cap_allocated_bytes ?? 0)}
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Reserved on pending invites:</strong>{" "}
+                {formatStorage(overview.fixed_cap_reserved_pending_invites_bytes ?? 0)}
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">
+                  Fixed-cap assignable headroom:
+                </strong>{" "}
+                {formatStorage(overview.remaining_fixed_cap_allocatable_bytes ?? 0)}{" "}
+                <span className="font-normal text-neutral-500">
+                  (budget for fixed tiers on seats + pending invites; unlimited seats do not reserve this)
+                </span>
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Team-folder usable headroom:</strong>{" "}
+                {formatStorage(overview.remaining_team_workspace_headroom_bytes ?? 0)}{" "}
+                <span className="font-normal text-neutral-500">
+                  (purchased plan minus team-workspace uploads only; excludes your personal solo files)
+                </span>
+              </div>
+              <div>
+                <strong className="text-neutral-700 dark:text-neutral-300">Owner plan headroom (uploads):</strong>{" "}
+                {formatStorage(overview.remaining_plan_headroom_bytes ?? 0)}{" "}
+                <span className="font-normal text-neutral-500">
+                  (purchased plan minus full billable total — same gate as uploads)
+                </span>
+              </div>
             </li>
           )}
         </ul>
@@ -570,14 +627,22 @@ export function TeamManagementSection() {
               }}
               className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
             >
-              {BASE_MEMBER_STORAGE_OPTIONS.map((opt) => (
-                <option
-                  key={opt.label}
-                  value={opt.value === null ? "" : String(opt.value)}
-                >
-                  {opt.label}
-                </option>
-              ))}
+              {BASE_MEMBER_STORAGE_OPTIONS.map((opt) => {
+                const overBudget =
+                  opt.value !== null &&
+                  typeof opt.value === "number" &&
+                  opt.value > inviteFixedCapBudget;
+                return (
+                  <option
+                    key={opt.label}
+                    value={opt.value === null ? "" : String(opt.value)}
+                    disabled={overBudget}
+                  >
+                    {opt.label}
+                    {overBudget ? " (exceeds fixed-cap assignable budget)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <button
@@ -602,6 +667,9 @@ export function TeamManagementSection() {
               {inviteLevel === "editor" && overview.available.editor}
               {inviteLevel === "fullframe" && overview.available.fullframe}
             </strong>
+            {" · "}
+            Max fixed tier for invites: <strong>{formatStorage(inviteFixedCapBudget)}</strong>{" "}
+            <span className="text-neutral-500">(assignable fixed-cap budget)</span>
           </p>
         )}
         {inviteMsg && (
@@ -650,6 +718,7 @@ export function TeamManagementSection() {
                 {members.map((m) => {
                   const cap = m.storage_quota_bytes ?? null;
                   const usageLabel = `${formatStorage(m.storage_used_bytes)} of ${formatStorage(cap)} used`;
+                  const memberCapBudget = maxBytesForMemberSeatEdit(m, overview);
                   return (
                     <tr key={m.id} className="border-b border-neutral-100 dark:border-neutral-800">
                       <td className="p-3">{m.email || "—"}</td>
@@ -669,14 +738,22 @@ export function TeamManagementSection() {
                               }}
                               className="max-w-[11rem] rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
                             >
-                              {selectStorageOptions(cap).map((opt) => (
-                                <option
-                                  key={`${opt.label}-${opt.value ?? "u"}`}
-                                  value={opt.value === null ? "" : String(opt.value)}
-                                >
-                                  {opt.label}
-                                </option>
-                              ))}
+                              {selectStorageOptions(cap).map((opt) => {
+                                const overBudget =
+                                  opt.value !== null &&
+                                  typeof opt.value === "number" &&
+                                  opt.value > memberCapBudget;
+                                return (
+                                  <option
+                                    key={`${opt.label}-${opt.value ?? "u"}`}
+                                    value={opt.value === null ? "" : String(opt.value)}
+                                    disabled={overBudget}
+                                  >
+                                    {opt.label}
+                                    {overBudget ? " (exceeds fixed-cap assignable budget)" : ""}
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
                         ) : (

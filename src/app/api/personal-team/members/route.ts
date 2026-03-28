@@ -15,11 +15,7 @@ import {
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 import { sumActiveUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
-import { sumTeamContainerBackupBytes } from "@/lib/enterprise-storage";
-import {
-  sumPersonalTeamFixedSeatAllocations,
-  teamOwnerPoolBytes,
-} from "@/lib/personal-team-seat-storage";
+import { getPersonalTeamPoolAccounting } from "@/lib/personal-team-pool-accounting";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -135,9 +131,7 @@ export async function GET(request: Request) {
   }
 
   const planId = (pdata?.plan_id as string) ?? "free";
-  const team_quota_bytes = teamOwnerPoolBytes(pdata);
-  const team_used_bytes = await sumTeamContainerBackupBytes(uid);
-  const numeric_allocated_seat_bytes = await sumPersonalTeamFixedSeatAllocations(uid);
+  const acct = await getPersonalTeamPoolAccounting(uid, pdata);
 
   return NextResponse.json({
     members,
@@ -153,13 +147,16 @@ export async function GET(request: Request) {
       },
       plan_id: planId,
       plan_label: PLAN_LABELS[planId] ?? planId,
-      team_quota_bytes,
-      team_used_bytes,
-      numeric_allocated_seat_bytes,
-      remaining_numeric_allocatable_bytes: Math.max(
-        0,
-        team_quota_bytes - numeric_allocated_seat_bytes
-      ),
+      team_quota_bytes: acct.admin_purchased_pool_bytes,
+      team_used_bytes: acct.total_team_scoped_used_bytes,
+      total_plan_billable_bytes: acct.total_billable_used_bytes,
+      fixed_cap_allocated_bytes: acct.total_fixed_cap_allocated_bytes,
+      fixed_cap_reserved_pending_invites_bytes: acct.total_fixed_cap_reserved_bytes,
+      numeric_allocated_seat_bytes: acct.total_fixed_caps_combined_bytes,
+      remaining_numeric_allocatable_bytes: acct.remaining_fixed_cap_allocatable_bytes,
+      remaining_fixed_cap_allocatable_bytes: acct.remaining_fixed_cap_allocatable_bytes,
+      remaining_team_workspace_headroom_bytes: acct.remaining_team_workspace_headroom_bytes,
+      remaining_plan_headroom_bytes: acct.remaining_plan_headroom_bytes,
     },
   });
 }
