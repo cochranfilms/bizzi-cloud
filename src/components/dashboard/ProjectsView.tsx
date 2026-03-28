@@ -222,6 +222,15 @@ export default function ProjectsView({
       ? "team"
       : "personal";
   const teamOwnerUserId = teamOwnerFromPath(pathname ?? null);
+  const storageDisplayContext = useMemo(() => {
+    if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+      return { locationScope: "enterprise" as const };
+    }
+    if (typeof pathname === "string" && /^\/team\//.test(pathname)) {
+      return { locationScope: "team" as const };
+    }
+    return { locationScope: "personal" as const };
+  }, [pathname]);
 
   const [rows, setRows] = useState<RecentFile[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -521,12 +530,13 @@ export default function ProjectsView({
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                <th className="w-10 px-3 py-3" />
+                <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Folder</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
               </tr>
             </thead>
             <tbody data-selectable-grid>
@@ -534,6 +544,8 @@ export default function ProjectsView({
                 <FileListRow
                   key={file.id}
                   file={file}
+                  columnMode="projects"
+                  displayContext={storageDisplayContext}
                   onClick={() => setPreviewFile(file)}
                   selectable
                   selected={selectedFileIds.has(file.id)}

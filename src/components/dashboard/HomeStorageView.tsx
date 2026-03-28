@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Check, Download, Film, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
@@ -146,7 +146,17 @@ interface HomeStorageViewProps {
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
   const { user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const storageDisplayContext = useMemo(() => {
+    if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+      return { locationScope: "enterprise" as const };
+    }
+    if (typeof pathname === "string" && /^\/team\//.test(pathname)) {
+      return { locationScope: "team" as const };
+    }
+    return { locationScope: "personal" as const };
+  }, [pathname]);
   const {
     driveFolders,
     loading,
@@ -986,7 +996,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1007,6 +1017,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       <FolderListRow
                         key={item.key}
                         item={item}
+                        displayContext={storageDisplayContext}
                         onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                         onDelete={
                           drive && !item.preventDelete
@@ -1042,6 +1053,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       <FileListRow
                         key={file.id}
                         file={file}
+                        displayContext={storageDisplayContext}
                         onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
                         onDelete={async () => {
                           await deleteFile(file.id);
@@ -1190,7 +1202,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1211,6 +1223,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       <FolderListRow
                         key={item.key}
                         item={item}
+                        displayContext={storageDisplayContext}
                         onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                         onDelete={
                           drive && !item.preventDelete
@@ -1326,7 +1339,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                         <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1340,6 +1353,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           <FileListRow
                             key={file.id}
                             file={file}
+                            displayContext={storageDisplayContext}
                             onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
                             onDelete={async () => {
                               await deleteFile(file.id);

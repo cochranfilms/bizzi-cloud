@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Film } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import FolderCard from "./FolderCard";
@@ -52,11 +52,13 @@ export default function CreatorContent() {
     (d) => d.creator_section && d.is_org_shared !== true
   );
 
+  const storageDisplayContext = useMemo(() => ({ locationScope: "personal" as const }), []);
+
   const loadDriveFiles = useCallback(
     async (driveId: string, options?: { silent?: boolean }) => {
       if (!options?.silent) setDriveFilesLoading(true);
       try {
-        const files = await fetchDriveFiles(driveId);
+        const { files } = await fetchDriveFiles(driveId);
         setDriveFiles(files);
       } catch {
         setDriveFiles([]);
@@ -183,7 +185,7 @@ export default function CreatorContent() {
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -195,6 +197,7 @@ export default function CreatorContent() {
                       <FileListRow
                         key={file.id}
                         file={file}
+                        displayContext={storageDisplayContext}
                         onClick={() => setPreviewFile(file)}
                         onDelete={async () => {
                           await deleteFile(file.id);

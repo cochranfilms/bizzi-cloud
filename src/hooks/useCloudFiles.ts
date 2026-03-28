@@ -218,6 +218,12 @@ export interface RecentFile {
   modifiedAt: string | null;
   driveId: string;
   driveName: string;
+  /** Ingest / Firestore created_at (ISO) — display fallback for modified */
+  createdAt?: string | null;
+  /** Proxy transcode duration (seconds) when original duration missing */
+  proxyDurationSec?: number | null;
+  /** backup_files media_type */
+  mediaType?: string | null;
   /** MIME type from upload - persists across rename, used for video thumbnail detection */
   contentType?: string | null;
   /** Finer-grained classification: project_file, archive, etc. */
@@ -273,6 +279,12 @@ export function apiFileToRecentFile(
     objectKey: String(raw.objectKey ?? ""),
     size: Number(raw.size ?? 0),
     modifiedAt: (raw.modifiedAt as string) ?? null,
+    createdAt: (raw.createdAt as string) ?? null,
+    proxyDurationSec:
+      raw.proxyDurationSec != null && Number.isFinite(raw.proxyDurationSec as number)
+        ? (raw.proxyDurationSec as number)
+        : null,
+    mediaType: (raw.mediaType as string) ?? null,
     driveId,
     driveName: String(
       raw.driveName ?? driveNameById.get(driveId) ?? "Unknown drive"
@@ -359,10 +371,11 @@ async function fetchAllDriveFilesViaFilterApi(
     enterprise?: { organizationId: string };
     workspaceId?: string | null;
   }
-): Promise<RecentFile[]> {
+): Promise<{ files: RecentFile[]; listTruncated: boolean }> {
   const collected: RecentFile[] = [];
   const seen = new Set<string>();
   let cursor: string | null = null;
+  let listTruncated = false;
   for (let page = 0; page < 500; page++) {
     const { files, nextCursor, hasMore } = await fetchFilesFromFilterApi(user, {
       driveId: options.driveId,
@@ -377,11 +390,14 @@ async function fetchAllDriveFilesViaFilterApi(
       seen.add(f.id);
       collected.push(f);
     }
-    if (collected.length >= MAX_FILES_DRIVE_LIST) break;
+    if (collected.length >= MAX_FILES_DRIVE_LIST) {
+      listTruncated = true;
+      break;
+    }
     if (!hasMore || !nextCursor) break;
     cursor = nextCursor;
   }
-  return collected;
+  return { files: collected, listTruncated };
 }
 
 /** True when pathname is under /enterprise (enterprise storage context). */
@@ -750,8 +766,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]);
 
   const fetchDriveFiles = useCallback(
-    async (driveId: string): Promise<RecentFile[]> => {
-      if (!isFirebaseConfigured() || !user) return [];
+    async (
+      driveId: string
+    ): Promise<{ files: RecentFile[]; listTruncated: boolean }> => {
+      if (!isFirebaseConfigured() || !user) return { files: [], listTruncated: false };
       const driveMeta = new Map(linkedDrives.map((d) => [d.id, d]));
       const drive = driveMeta.get(driveId);
       const driveNameById = new Map(linkedDrives.map((d) => [d.id, d.name]));
@@ -761,25 +779,31 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           : null;
 
       if (drive?.organization_id) {
-        const merged = await fetchAllDriveFilesViaFilterApi(user, {
+        const { files: merged, listTruncated } = await fetchAllDriveFilesViaFilterApi(user, {
           driveId,
           enterprise: { organizationId: drive.organization_id },
           workspaceId: workspaceArg,
         });
-        return merged.map((f) => ({
-          ...f,
-          driveName: drive?.name ?? driveNameById.get(f.driveId) ?? f.driveName,
-        }));
+        return {
+          files: merged.map((f) => ({
+            ...f,
+            driveName: drive?.name ?? driveNameById.get(f.driveId) ?? f.driveName,
+          })),
+          listTruncated,
+        };
       }
 
-      const merged = await fetchAllDriveFilesViaFilterApi(user, {
+      const { files: merged, listTruncated } = await fetchAllDriveFilesViaFilterApi(user, {
         driveId,
         teamOwnerUserId: teamRouteOwnerUid,
       });
-      return merged.map((f) => ({
-        ...f,
-        driveName: drive?.name ?? f.driveName,
-      }));
+      return {
+        files: merged.map((f) => ({
+          ...f,
+          driveName: drive?.name ?? f.driveName,
+        })),
+        listTruncated,
+      };
     },
     [user, linkedDrives, teamRouteOwnerUid, selectedWorkspaceId]
   );
@@ -973,7 +997,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       let cancelled = false;
       const refresh = async () => {
         if (cancelled) return;
-        const merged = await fetchAllDriveFilesViaFilterApi(user, {
+        const { files: merged } = await fetchAllDriveFilesViaFilterApi(user, {
           driveId,
           teamOwnerUserId: teamRouteOwnerUid,
         });

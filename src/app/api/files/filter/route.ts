@@ -435,6 +435,15 @@ function toFileResponse(
       : typeof d.uploaded_at === "string"
         ? d.uploaded_at
         : null,
+    createdAt: d.created_at?.toDate?.()
+      ? d.created_at.toDate().toISOString()
+      : typeof d.created_at === "string"
+        ? d.created_at
+        : null,
+    proxyDurationSec:
+      typeof d.proxy_duration_sec === "number" && Number.isFinite(d.proxy_duration_sec)
+        ? d.proxy_duration_sec
+        : null,
     driveId: d.linked_drive_id,
     driveName: driveMap.get(d.linked_drive_id as string) ?? "Unknown",
     contentType: d.content_type ?? null,

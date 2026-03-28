@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Check, Folder } from "lucide-react";
 import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
 import type { FolderItem } from "./FolderCard";
@@ -16,19 +16,10 @@ import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
-
-/** Em dash for columns that don’t apply to folders (media technical fields, etc.). */
-function FolderListNaCell() {
-  return (
-    <span
-      className="text-neutral-400 dark:text-neutral-500"
-      title="Not applicable for folders"
-      aria-label="Not applicable for folders"
-    >
-      —
-    </span>
-  );
-}
+import type { RecentFile } from "@/hooks/useCloudFiles";
+import type { DisplayContext } from "@/lib/metadata-display";
+import type { FolderRollupCoverage } from "@/lib/metadata-display";
+import { buildFolderDisplayMetadata } from "@/lib/metadata-display";
 
 interface FolderListRowProps {
   item: FolderItem;
@@ -41,6 +32,15 @@ interface FolderListRowProps {
   onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
   draggable?: boolean;
   onDragStart?: React.DragEventHandler<HTMLTableRowElement>;
+  /** Virtual-folder rollup; omit for drive rows (count-only display). */
+  folderRollup?: {
+    descendants: RecentFile[];
+    coverage: FolderRollupCoverage;
+  };
+  displayContext?: DisplayContext;
+  /** Location when browsing inside a drive (virtual folders). */
+  currentDriveName?: string | null;
+  columnMode?: "full" | "projects";
 }
 
 export default function FolderListRow({
@@ -54,7 +54,26 @@ export default function FolderListRow({
   onItemsDropped,
   draggable = false,
   onDragStart,
+  folderRollup,
+  displayContext,
+  currentDriveName,
+  columnMode = "full",
 }: FolderListRowProps) {
+  const rollup = folderRollup ?? {
+    descendants: [] as RecentFile[],
+    coverage: "none" as FolderRollupCoverage,
+  };
+  const display = useMemo(
+    () =>
+      buildFolderDisplayMetadata({
+        item,
+        coverage: rollup.coverage,
+        descendants: rollup.descendants,
+        context: displayContext,
+        currentDriveName: currentDriveName ?? null,
+      }),
+    [item, rollup.coverage, rollup.descendants, displayContext, currentDriveName]
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -173,25 +192,46 @@ export default function FolderListRow({
             </span>
           </div>
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">Folder</td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {item.items} {item.items === 1 ? "item" : "items"}
+          {display.typeLabel}
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <FolderListNaCell />
+          {display.sizeLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <FolderListNaCell />
+        <td
+          className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+          title={display.tooltips?.modified}
+        >
+          {display.modifiedLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <FolderListNaCell />
+        <td
+          className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+          title={display.tooltips?.location}
+        >
+          {display.locationLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <FolderListNaCell />
-        </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          <FolderListNaCell />
-        </td>
+        {columnMode === "full" ? (
+          <>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.resolution}
+            >
+              {display.resolutionLabel}
+            </td>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.duration}
+            >
+              {display.durationLabel}
+            </td>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.codec}
+            >
+              {display.codecLabel}
+            </td>
+          </>
+        ) : null}
         <td className="px-4 py-2">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {(onDelete || (!item.hideShare && item.driveId)) && (

@@ -53,6 +53,8 @@ import {
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
+import { filterFilesForVirtualFolder } from "@/lib/metadata-display";
+import type { FolderRollupCoverage } from "@/lib/metadata-display";
 
 function recentFileFromMacosPackageListEntry(
   pkg: MacosPackageListEntry,
@@ -230,6 +232,7 @@ export default function FileGrid() {
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
+  const [driveListTruncated, setDriveListTruncated] = useState(false);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const {
     driveFolders,
@@ -621,14 +624,26 @@ export default function FileGrid() {
     });
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
+  const storageDisplayContext = useMemo(() => {
+    if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+      return { locationScope: "enterprise" as const };
+    }
+    if (typeof pathname === "string" && /^\/team\//.test(pathname)) {
+      return { locationScope: "team" as const };
+    }
+    return { locationScope: "personal" as const };
+  }, [pathname]);
+
   const loadDriveFiles = useCallback(
     async (driveId: string, options?: { silent?: boolean }) => {
       if (!options?.silent) setDriveFilesLoading(true);
       try {
-        const files = await fetchDriveFiles(driveId);
+        const { files, listTruncated } = await fetchDriveFiles(driveId);
         setDriveFiles(files);
+        setDriveListTruncated(listTruncated);
       } catch {
         setDriveFiles([]);
+        setDriveListTruncated(false);
       } finally {
         setDriveFilesLoading(false);
       }
@@ -657,6 +672,7 @@ export default function FileGrid() {
     setCurrentDrive(null);
     setCurrentDrivePath("");
     setDriveFiles([]);
+    setDriveListTruncated(false);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId, setCurrentDrivePath]);
@@ -674,7 +690,7 @@ export default function FileGrid() {
       driveBaseName === "Storage" ||
       currentDriveMeta?.is_creator_raw === true);
 
-  const { subfolderItems, displayedFiles } = (() => {
+  const { subfolderItems, displayedFiles } = useMemo(() => {
     if (!currentDrive || !isPathTreeDrive) {
       return { subfolderItems: [] as FolderItem[], displayedFiles: driveFiles };
     }
@@ -683,8 +699,6 @@ export default function FileGrid() {
       ? driveFiles.filter((f) => f.path.startsWith(prefix))
       : driveFiles;
     if (currentDrivePath) {
-      // Inside a gallery folder: show nested subfolders (e.g. "favorites") and files at this level
-      const pathSegments = currentDrivePath.split("/").filter(Boolean);
       const nextSegmentCounts = new Map<string, number>();
       const directFiles: typeof driveFiles = [];
       for (const f of filesInView) {
@@ -731,21 +745,53 @@ export default function FileGrid() {
         }
       }
     }
-    const subfolderItems: FolderItem[] = Array.from(seen.entries()).map(([folderKey, { count, displayName }]) => ({
-      name: displayName,
-      type: "folder" as const,
-      key: `path-subfolder-${currentDrive.id}|${folderKey}`,
-      items: count,
-      driveId: undefined,
-      virtualFolder: true,
-      hideShare: true,
-      preventDelete: true,
-      preventRename: true,
-      pathPrefix: folderKey,
-    }));
+    const subfolderList: FolderItem[] = Array.from(seen.entries()).map(
+      ([folderKey, { count, displayName }]) => ({
+        name: displayName,
+        type: "folder" as const,
+        key: `path-subfolder-${currentDrive.id}|${folderKey}`,
+        items: count,
+        driveId: undefined,
+        virtualFolder: true,
+        hideShare: true,
+        preventDelete: true,
+        preventRename: true,
+        pathPrefix: folderKey,
+      })
+    );
     const rootFiles = driveFiles.filter((f) => !f.path.includes("/"));
-    return { subfolderItems, displayedFiles: rootFiles };
-  })();
+    return { subfolderItems: subfolderList, displayedFiles: rootFiles };
+  }, [
+    currentDrive,
+    isPathTreeDrive,
+    driveFiles,
+    currentDrivePath,
+    isGalleryMediaDrive,
+    galleries,
+  ]);
+
+  const virtualFolderRollupByKey = useMemo(() => {
+    const map = new Map<string, { descendants: RecentFile[]; coverage: FolderRollupCoverage }>();
+    if (!currentDrive || !isPathTreeDrive) return map;
+    const coverage: FolderRollupCoverage = driveListTruncated ? "partial" : "full";
+    for (const item of subfolderItems) {
+      if (!item.virtualFolder || item.pathPrefix == null) continue;
+      const descendants = filterFilesForVirtualFolder(driveFiles, item.pathPrefix, {
+        isGalleryMediaDrive,
+        currentDrivePath,
+      });
+      map.set(item.key, { descendants, coverage });
+    }
+    return map;
+  }, [
+    currentDrive,
+    isPathTreeDrive,
+    subfolderItems,
+    driveFiles,
+    driveListTruncated,
+    isGalleryMediaDrive,
+    currentDrivePath,
+  ]);
 
   useEffect(() => {
     if (!currentDrive || useFilteredScoped) {
@@ -1421,7 +1467,7 @@ export default function FileGrid() {
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                     <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1442,6 +1488,7 @@ export default function FileGrid() {
                       <FolderListRow
                         key={item.key}
                         item={item}
+                        displayContext={storageDisplayContext}
                         onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                         onDelete={
                           drive && !item.preventDelete
@@ -1474,6 +1521,7 @@ export default function FileGrid() {
                     <FileListRow
                       key={file.id}
                       file={file}
+                      displayContext={storageDisplayContext}
                       onClick={() => setPreviewFile(file)}
                       onDelete={async () => {
                         await deleteFile(file.id);
@@ -1671,7 +1719,7 @@ export default function FileGrid() {
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1695,6 +1743,9 @@ export default function FileGrid() {
                         <FolderListRow
                           key={item.key}
                           item={item}
+                          displayContext={storageDisplayContext}
+                          folderRollup={virtualFolderRollupByKey.get(item.key)}
+                          currentDriveName={currentDrive?.name ?? null}
                           onClick={() => {
                             setCurrentDrivePath(item.pathPrefix ?? item.name);
                             setSelectedFileIds(new Set());
@@ -1714,6 +1765,7 @@ export default function FileGrid() {
                         <FileListRow
                           key={file.id}
                           file={file}
+                          displayContext={storageDisplayContext}
                           onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
                           onDelete={
                             isPkg
@@ -1876,7 +1928,7 @@ export default function FileGrid() {
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -1897,6 +1949,7 @@ export default function FileGrid() {
                             <FolderListRow
                               key={item.key}
                               item={item}
+                              displayContext={storageDisplayContext}
                               onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                               onDelete={
                                 drive && !item.preventDelete
@@ -2002,7 +2055,7 @@ export default function FileGrid() {
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                          <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                           <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -2014,6 +2067,7 @@ export default function FileGrid() {
                           <FileListRow
                             key={file.id}
                             file={file}
+                            displayContext={storageDisplayContext}
                             onClick={() => setPreviewFile(file)}
                             onDelete={async () => {
                               await deleteFile(file.id);
@@ -2130,7 +2184,7 @@ export default function FileGrid() {
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                      <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -2142,6 +2196,7 @@ export default function FileGrid() {
                       <FileListRow
                         key={file.id}
                         file={file}
+                        displayContext={storageDisplayContext}
                         onClick={() => setPreviewFile(file)}
                         onDelete={async () => {
                           await deleteFile(file.id);

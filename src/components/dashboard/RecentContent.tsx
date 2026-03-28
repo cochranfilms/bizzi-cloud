@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
 import FilePreviewModal from "./FilePreviewModal";
@@ -43,6 +43,16 @@ function toFolderItem(item: RecentOpenItem): FolderItem | null {
 
 export default function RecentContent({ basePath = "/dashboard" }: { basePath?: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const storageDisplayContext = useMemo(() => {
+    if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+      return { locationScope: "enterprise" as const };
+    }
+    if (typeof pathname === "string" && /^\/team\//.test(pathname)) {
+      return { locationScope: "team" as const };
+    }
+    return { locationScope: "personal" as const };
+  }, [pathname]);
   const { items, loading, refresh } = useRecentOpens();
   const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -77,7 +87,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -89,6 +99,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
                 <FolderListRow
                   key={item.key}
                   item={item}
+                  displayContext={storageDisplayContext}
                   onClick={() => item.driveId && openFolder(item.driveId)}
                 />
               ))}
@@ -96,6 +107,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
                 <FileListRow
                   key={file.id}
                   file={file}
+                  displayContext={storageDisplayContext}
                   onClick={() => setPreviewFile(file)}
                   onDelete={async () => {
                     await deleteFile(file.id);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
 import FilePreviewModal from "./FilePreviewModal";
@@ -11,6 +12,16 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import DashboardRouteFade from "./DashboardRouteFade";
 
 export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: string }) {
+  const pathname = usePathname();
+  const storageDisplayContext = useMemo(() => {
+    if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+      return { locationScope: "enterprise" as const };
+    }
+    if (typeof pathname === "string" && /^\/team\//.test(pathname)) {
+      return { locationScope: "team" as const };
+    }
+    return { locationScope: "personal" as const };
+  }, [pathname]);
   const { files, loading, loadingMore, hasMore, loadMore, refresh } = useHeartedFiles();
   const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -38,7 +49,7 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Owner</th>
+                <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
                 <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
@@ -50,6 +61,7 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
                 <FileListRow
                   key={file.id}
                   file={file}
+                  displayContext={storageDisplayContext}
                   onClick={() => setPreviewFile(file)}
                   onDelete={async () => {
                     await deleteFile(file.id);

@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import { Archive, Check, Download, FileIcon, Film, FolderInput, Info } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import type { DisplayContext } from "@/lib/metadata-display";
+import { buildDisplayMetadata, classifyFileKind } from "@/lib/metadata-display";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
@@ -23,59 +25,6 @@ import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function getFileType(file: RecentFile): string {
-  const name = file.name;
-  const contentType = file.contentType;
-  const assetType = file.assetType;
-  if (file.creativeDisplayLabel?.trim()) return file.creativeDisplayLabel.trim();
-  if (assetType === "macos_package") return "macOS package";
-  if (file.macosPackageLabel?.trim()) return file.macosPackageLabel.trim();
-  if (assetType === "project_file" || isProjectFile(name)) return "Project file";
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (GALLERY_VIDEO_EXT.test(name.toLowerCase()) || contentType?.startsWith("video/")) return ext || "Video";
-  if (GALLERY_IMAGE_EXT.test(name) || contentType?.startsWith("image/")) return ext || "Image";
-  if (/\.pdf$/i.test(name) || contentType === "application/pdf") return "PDF";
-  return ext || "File";
-}
-
-function formatDuration(sec: number | null | undefined): string {
-  if (sec == null || sec <= 0) return "—";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function formatResolution(
-  w: number | null | undefined,
-  h: number | null | undefined,
-  resolution_w?: number | null,
-  resolution_h?: number | null
-): string {
-  const rw = resolution_w ?? w;
-  const rh = resolution_h ?? h;
-  if (rw != null && rh != null && rw > 0 && rh > 0) return `${rw}×${rh}`;
-  return "—";
-}
 
 function isVideoFile(name: string) {
   return GALLERY_VIDEO_EXT.test(name.toLowerCase());
@@ -100,6 +49,10 @@ interface FileListRowProps {
   /** macOS package (.fcpbundle) row: download full ZIP restore */
   onDownloadPackage?: () => void;
   onPackageInfo?: () => void;
+  /** Workspace / route hints for Location column */
+  displayContext?: DisplayContext;
+  /** Projects list: hide resolution, duration, codec columns */
+  columnMode?: "full" | "projects";
 }
 
 export default function FileListRow({
@@ -114,7 +67,13 @@ export default function FileListRow({
   onDragStart,
   onDownloadPackage,
   onPackageInfo,
+  displayContext,
+  columnMode = "full",
 }: FileListRowProps) {
+  const display = useMemo(
+    () => buildDisplayMetadata(file, displayContext),
+    [file, displayContext]
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -144,7 +103,10 @@ export default function FileListRow({
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
   const isImage = isImageFile(file.name);
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
-  const isProject = file.assetType === "project_file" || isProjectFile(file.name);
+  const isProject =
+    file.assetType === "project_file" ||
+    isProjectFile(file.name) ||
+    classifyFileKind(file) === "project";
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isPdf,
   });
@@ -251,31 +213,45 @@ export default function FileListRow({
           </div>
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {getFileType(file)}
+          {display.typeLabel}
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {formatBytes(file.size)}
+          {display.sizeLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {formatDate(file.modifiedAt)}
+        <td
+          className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+          title={display.tooltips?.modified}
+        >
+          {display.modifiedLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {file.driveName}
+        <td
+          className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+          title={display.tooltips?.location}
+        >
+          {display.locationLabel}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {formatResolution(
-            file.width,
-            file.height,
-            file.resolution_w,
-            file.resolution_h
-          )}
-        </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {isVideo ? formatDuration(file.duration_sec) : "—"}
-        </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
-          {file.video_codec ?? "—"}
-        </td>
+        {columnMode === "full" ? (
+          <>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.resolution}
+            >
+              {display.resolutionLabel}
+            </td>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.duration}
+            >
+              {display.durationLabel}
+            </td>
+            <td
+              className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400"
+              title={display.tooltips?.codec}
+            >
+              {display.codecLabel}
+            </td>
+          </>
+        ) : null}
         <td className="px-4 py-2">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {(isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||

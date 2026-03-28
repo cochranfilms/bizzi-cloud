@@ -13,6 +13,10 @@ import {
 export const SETTINGS_HERO_VIEWPORT_DESKTOP = { width: 1280, height: 720 } as const;
 export const SETTINGS_HERO_VIEWPORT_MOBILE = { width: 390, height: 844 } as const;
 
+/** Fixed display widths for the settings editor stage (“trustworthy” size, capped by card via max-width 100%). */
+export const COVER_SETTINGS_STAGE_DESKTOP_PX = 880;
+export const COVER_SETTINGS_STAGE_MOBILE_PX = 360;
+
 function InteractiveCoverMedia({
   imageUrl,
   objectPosition,
@@ -139,7 +143,7 @@ function GalleryCoverHeroSettingsPreviewWithImage({
   businessName,
   welcomeMessage,
   prePageInstructions,
-  maxDisplayWidth = 640,
+  maxDisplayWidth = COVER_SETTINGS_STAGE_DESKTOP_PX,
   interactive = true,
 }: GalleryCoverHeroSettingsPreviewProps & { imageUrl: string }) {
   const vp =
@@ -224,7 +228,7 @@ function GalleryCoverHeroSettingsPreviewWithImage({
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-neutral-200/90 bg-neutral-100/50 shadow-sm dark:border-neutral-600/80 dark:bg-neutral-900/40"
+      className="overflow-hidden rounded-xl border border-neutral-200/90 shadow-md ring-1 ring-black/[0.04] dark:border-neutral-600 dark:ring-white/[0.06]"
       style={{
         width: contentSize.w * scale,
         height: contentSize.h * scale,
@@ -251,12 +255,12 @@ function GalleryCoverHeroSettingsPreviewWithImage({
 export default function GalleryCoverHeroSettingsPreview(
   props: GalleryCoverHeroSettingsPreviewProps
 ) {
-  const { imageUrl, maxDisplayWidth = 640 } = props;
+  const { imageUrl, maxDisplayWidth = COVER_SETTINGS_STAGE_DESKTOP_PX } = props;
 
   if (!imageUrl) {
     return (
       <div
-        className="mx-auto flex min-h-[120px] w-full max-w-[min(720px,100%)] items-center justify-center rounded-xl border border-dashed border-neutral-300/90 bg-neutral-100/80 px-4 text-center text-xs text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-400"
+        className="mx-auto flex min-h-[120px] w-full max-w-[min(880px,100%)] items-center justify-center rounded-xl border border-dashed border-neutral-300/90 bg-neutral-50/80 px-4 text-center text-xs text-neutral-500 dark:border-neutral-600 dark:bg-neutral-900/40 dark:text-neutral-400"
       >
         Select a cover photo to preview
       </div>
