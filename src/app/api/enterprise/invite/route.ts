@@ -8,6 +8,12 @@ import { createOrgSeatInviteNotification } from "@/lib/notification-service";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import {
+  countActiveSeatsForOrg,
+  countPendingInvitesForOrg,
+  emailHasPendingInviteForOrg,
+  ORGANIZATION_INVITES_COLLECTION,
+} from "@/lib/organization-invites";
 
 /** POST - Invite a user to the organization by email. */
 export async function POST(request: Request) {
@@ -109,22 +115,32 @@ export async function POST(request: Request) {
     );
   }
 
-  const existingSeatsSnap = await db
-    .collection("organization_seats")
-    .where("organization_id", "==", orgId)
-    .get();
+  const activeCount = await countActiveSeatsForOrg(db, orgId);
+  const pendingInviteCount = await countPendingInvitesForOrg(db, orgId);
 
-  if (existingSeatsSnap.size >= maxSeats) {
+  if (activeCount + pendingInviteCount >= maxSeats) {
     return NextResponse.json(
       { error: "Organization has reached its seat limit" },
       { status: 400 }
     );
   }
 
-  const existingByEmail = existingSeatsSnap.docs.find(
-    (d) => (d.data().email as string)?.toLowerCase() === email
-  );
-  if (existingByEmail) {
+  const activeEmailSnap = await db
+    .collection("organization_seats")
+    .where("organization_id", "==", orgId)
+    .where("email", "==", email)
+    .where("status", "==", "active")
+    .limit(1)
+    .get();
+
+  if (!activeEmailSnap.empty) {
+    return NextResponse.json(
+      { error: "This email is already invited or a member" },
+      { status: 400 }
+    );
+  }
+
+  if (await emailHasPendingInviteForOrg(db, orgId, email)) {
     return NextResponse.json(
       { error: "This email is already invited or a member" },
       { status: 400 }
@@ -140,21 +156,19 @@ export async function POST(request: Request) {
 
   const inviteToken = crypto.randomUUID();
   const inviteTokenHash = hashInviteToken(inviteToken);
-  const pendingId = `${orgId}_invite_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const inviteId = `${orgId}_inv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const now = FieldValue.serverTimestamp();
 
-  await db.collection("organization_seats").doc(pendingId).set({
+  await db.collection(ORGANIZATION_INVITES_COLLECTION).doc(inviteId).set({
     organization_id: orgId,
-    user_id: "",
-    role: "member",
     email,
-    display_name: null,
-    invited_at: now,
-    accepted_at: null,
+    role: "member",
     status: "pending",
     invited_by: uid,
+    invited_at: now,
     invite_token_hash: inviteTokenHash,
-    storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
+    intended_quota_mode: "fixed",
+    intended_storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
   });
 
   const baseUrl =
@@ -190,7 +204,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // In-app notification for invitees who already have a BizziCloud account
   createOrgSeatInviteNotification({
     inviteeEmail: email,
     invitedByUserId: uid,

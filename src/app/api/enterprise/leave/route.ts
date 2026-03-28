@@ -8,6 +8,7 @@ import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { suggestIdentityDeletionAfterOrgLeave } from "@/lib/identity-scope";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -80,6 +81,8 @@ export async function POST(request: Request) {
   }
 
   await db.collection("organization_seats").doc(seatId).delete();
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   await db.collection("profiles").doc(uid).update({
     organization_id: FieldValue.delete(),

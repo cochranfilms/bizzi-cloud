@@ -3,7 +3,10 @@ import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { SEAT_STORAGE_TIERS } from "@/lib/enterprise-storage";
+import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { isProductSeatTierByte } from "@/lib/enterprise-constants";
+import { seatNumericCapForEnforcement } from "@/lib/org-seat-quota";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 import {
   createNotification,
   formatStorageQuotaSummary,
@@ -122,7 +125,17 @@ export async function PATCH(
       const orgRef = db.collection("organizations").doc(orgId);
       await orgRef.update({ created_by: targetUserId });
     }
-    await db.collection("organization_seats").doc(seatId).update({ role: newRole });
+    const prevBytes = seatSnap.data()?.storage_quota_bytes;
+    const quotaUpdate =
+      newRole === "admin"
+        ? { role: newRole, quota_mode: "org_unlimited", storage_quota_bytes: null }
+        : {
+            role: newRole,
+            quota_mode: "fixed",
+            storage_quota_bytes:
+              typeof prevBytes === "number" ? prevBytes : DEFAULT_SEAT_STORAGE_BYTES,
+          };
+    await db.collection("organization_seats").doc(seatId).update(quotaUpdate);
     logEnterpriseSecurityEvent("seat_role_changed", {
       orgId,
       actorUid: adminUid,
@@ -152,20 +165,20 @@ export async function PATCH(
         },
       }).catch((err) => console.error("[enterprise/seats PATCH role] notification:", err));
     }
+    await syncOrganizationSeatAllocationSummary(db, orgId);
     return NextResponse.json({ success: true });
   }
 
   const newQuota = body.storage_quota_bytes;
-  const validTiers = Object.values(SEAT_STORAGE_TIERS);
   const isValid =
     newQuota === null ||
-    (typeof newQuota === "number" && validTiers.includes(newQuota as number));
+    (typeof newQuota === "number" && isProductSeatTierByte(newQuota));
 
   if (!isValid) {
     return NextResponse.json(
       {
         error:
-          "storage_quota_bytes must be 100GB, 500GB, 1TB, 2TB, or null (Unlimited)",
+          "storage_quota_bytes must be a supported tier (50GB–10TB) or null (Unlimited within org pool)",
       },
       { status: 400 }
     );
@@ -174,13 +187,14 @@ export async function PATCH(
   const seatsSnap = await db
     .collection("organization_seats")
     .where("organization_id", "==", orgId)
+    .where("status", "==", "active")
     .get();
 
   let allocatedTotal = 0;
   for (const d of seatsSnap.docs) {
     if (d.id === seatId) continue;
-    const q = d.data().storage_quota_bytes;
-    if (typeof q === "number") allocatedTotal += q;
+    const cap = seatNumericCapForEnforcement(d.data() as Record<string, unknown>);
+    if (typeof cap === "number") allocatedTotal += cap;
   }
 
   const orgSnap = await db.collection("organizations").doc(orgId).get();
@@ -195,9 +209,9 @@ export async function PATCH(
     const orgTb = (orgQuota / (1024 ** 4)).toFixed(0);
     return NextResponse.json(
       {
-        error: `Total allocation would exceed org storage (${orgTb} TB). ${(
+        error: `Total fixed seat allocation would exceed the organization pool (${orgTb} TB). ${(
           allocatedTotal / (1024 ** 4)
-        ).toFixed(1)} TB already allocated.`,
+        ).toFixed(1)} TB already allocated to other members.`,
       },
       { status: 400 }
     );
@@ -206,10 +220,24 @@ export async function PATCH(
   const seatRef = db.collection("organization_seats").doc(seatId);
   const seatBefore = await seatRef.get();
   const seatUserId = seatBefore.data()?.user_id as string | undefined;
+  const prevQuota = seatBefore.data()?.storage_quota_bytes as number | null | undefined;
+  const quota_mode = newQuota === null ? "org_unlimited" : "fixed";
   await seatRef.set(
-    { storage_quota_bytes: newQuota },
+    { storage_quota_bytes: newQuota, quota_mode },
     { merge: true }
   );
+
+  logEnterpriseSecurityEvent("seat_storage_quota_changed", {
+    orgId,
+    actorUid: adminUid,
+    seatId,
+    targetUserId: seatUserId ?? null,
+    previous_storage_quota_bytes: prevQuota ?? null,
+    new_storage_quota_bytes: newQuota,
+    quota_mode,
+  });
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   if (seatUserId && seatUserId !== adminUid) {
     const orgName = (orgSnap.data()?.name as string) ?? "Organization";
@@ -350,6 +378,8 @@ export async function DELETE(
   }
 
   await seatRef.delete();
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   logEnterpriseSecurityEvent("seat_removed", {
     orgId,

@@ -143,6 +143,10 @@ service cloud.firestore {
           || (exists(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid))
             && get(/databases/$(database)/documents/organization_seats/$(resource.data.organization_id + '_' + request.auth.uid)).data.role == 'admin'));
     }
+    /** Pending invites — only Admin SDK / API routes may read or write. */
+    match /organization_invites/{inviteId} {
+      allow read, write: if false;
+    }
     match /cold_storage_files/{doc} {
       allow read, write: if false;
     }

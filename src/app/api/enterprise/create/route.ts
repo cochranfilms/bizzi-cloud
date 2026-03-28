@@ -2,10 +2,8 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { EnterpriseThemeId } from "@/types/enterprise";
-import {
-  ENTERPRISE_ORG_STORAGE_BYTES,
-  DEFAULT_SEAT_STORAGE_BYTES,
-} from "@/lib/enterprise-storage";
+import { ENTERPRISE_ORG_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -91,7 +89,8 @@ export async function POST(request: Request) {
     invited_at: now,
     accepted_at: now,
     status: "active",
-    storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
+    quota_mode: "org_unlimited",
+    storage_quota_bytes: null,
   });
 
   const profileRef = db.collection("profiles").doc(uid);
@@ -105,6 +104,8 @@ export async function POST(request: Request) {
   );
 
   await batch.commit();
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   return NextResponse.json({
     organization_id: orgId,

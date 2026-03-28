@@ -32,6 +32,7 @@ import {
   getOrganizationAdminUserIds,
 } from "@/lib/notification-service";
 import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
+import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -736,16 +737,26 @@ export async function POST(request: Request) {
       }
 
       const orgName = (orgData.name as string) ?? "Organization";
-      const seatsSnap = await db
-        .collection("organization_seats")
+      let ownerEmail: string | undefined;
+      const invSnap = await db
+        .collection(ORGANIZATION_INVITES_COLLECTION)
         .where("organization_id", "==", orgId)
         .where("role", "==", "admin")
         .where("status", "==", "pending")
         .limit(1)
         .get();
-
-      const ownerEmail =
-        seatsSnap.docs[0]?.data()?.email as string | undefined;
+      if (!invSnap.empty) {
+        ownerEmail = invSnap.docs[0].data()?.email as string | undefined;
+      } else {
+        const seatsSnap = await db
+          .collection("organization_seats")
+          .where("organization_id", "==", orgId)
+          .where("role", "==", "admin")
+          .where("status", "==", "pending")
+          .limit(1)
+          .get();
+        ownerEmail = seatsSnap.docs[0]?.data()?.email as string | undefined;
+      }
       if (!ownerEmail) {
         console.error("[Stripe webhook] invoice.paid: no pending admin seat for org", orgId, "- ensure webhook has invoice.paid enabled");
         return NextResponse.json({ received: true });

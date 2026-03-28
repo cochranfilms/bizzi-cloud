@@ -3,6 +3,8 @@ export type StorageUsageScopeForDenial =
   | "personal_team_workspace"
   | "enterprise_workspace";
 
+export type StorageQuotaDenialReason = "organization_pool" | "seat_allocation";
+
 export type StorageQuotaDenialPayload = {
   requesting_user_id: string;
   billing_subject_user_id: string | null;
@@ -13,6 +15,9 @@ export type StorageQuotaDenialPayload = {
   effective_billable_bytes_for_enforcement: number;
   quota_bytes: number;
   additional_bytes: number;
+  denial_reason?: StorageQuotaDenialReason;
+  /** Byte headroom before the attempted upload (same basis as quota_bytes for this denial). */
+  remaining_bytes?: number;
 };
 
 export class StorageQuotaDeniedError extends Error {

@@ -9,7 +9,7 @@ import { hashInviteToken } from "@/lib/invite-token";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import type { EnterpriseThemeId } from "@/types/enterprise";
-import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 import { ENTERPRISE_SEAT_PRICE } from "@/lib/enterprise-pricing";
 import Stripe from "stripe";
 import { getStripeInstance } from "@/lib/stripe";
@@ -205,18 +205,16 @@ export async function POST(request: Request) {
     invite_token: inviteToken,
   });
 
-  await db.collection("organization_seats").doc(pendingId).set({
+  await db.collection(ORGANIZATION_INVITES_COLLECTION).doc(pendingId).set({
     organization_id: orgId,
-    user_id: "",
+    email: ownerEmail.toLowerCase(),
     role: "admin",
-    email: ownerEmail,
-    display_name: null,
-    invited_at: now,
-    accepted_at: null,
     status: "pending",
     invited_by: authResult.uid,
+    invited_at: now,
     invite_token_hash: inviteTokenHash,
-    storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
+    intended_quota_mode: "org_unlimited",
+    intended_storage_quota_bytes: null,
   });
 
   // Send subscription payment email via EmailJS

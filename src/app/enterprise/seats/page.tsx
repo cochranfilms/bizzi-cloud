@@ -8,6 +8,27 @@ import { useAuth } from "@/context/AuthContext";
 import { Users, UserPlus, Loader2, Trash2, HardDrive, AlertCircle, Shield } from "lucide-react";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import { useConfirm } from "@/hooks/useConfirm";
+import { PRODUCT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-constants";
+
+const STORAGE_TIER_LABELS = [
+  "50 GB",
+  "100 GB",
+  "250 GB",
+  "500 GB",
+  "1 TB",
+  "2 TB",
+  "5 TB",
+  "10 TB",
+] as const;
+
+const BASE_STORAGE_OPTIONS = [
+  ...PRODUCT_SEAT_STORAGE_BYTES.map((value, i) => ({
+    label: STORAGE_TIER_LABELS[i] ?? `${value}`,
+    value: value as number,
+  })),
+  { label: "Unlimited (org pool)", value: null as null },
+] as const;
+
 interface Seat {
   id: string;
   organization_id: string;
@@ -16,17 +37,38 @@ interface Seat {
   email: string;
   display_name: string | null;
   status: string;
+  quota_mode?: string;
   invited_at: string | null;
   accepted_at: string | null;
   storage_quota_bytes: number | null;
   storage_used_bytes: number;
 }
 
+type PendingInviteRow = {
+  id: string;
+  email: string;
+  role: string;
+  invited_at: string | null;
+  source: string;
+};
+
+type AllocationSummary = {
+  org_quota_bytes: number | null;
+  org_used_bytes: number | null;
+  numeric_allocated_seat_bytes: number | null;
+  active_seat_count: number;
+  fixed_quota_seat_count: number | null;
+  unlimited_seat_count: number | null;
+  remaining_numeric_allocatable_bytes: number | null;
+};
+
 export default function EnterpriseSeatsPage() {
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
   const { confirm } = useConfirm();
   const [seats, setSeats] = useState<Seat[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([]);
+  const [allocationSummary, setAllocationSummary] = useState<AllocationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -42,25 +84,27 @@ export default function EnterpriseSeatsPage() {
   const isAdmin = role === "admin";
 
   const maxSeats = org?.max_seats;
-  const usedSeats = seats.length;
+  const usedSeats = seats.length + pendingInvites.length;
   const hasSeatLimit = typeof maxSeats === "number" && maxSeats >= 1;
   const seatsRemaining = hasSeatLimit ? Math.max(0, maxSeats - usedSeats) : null;
   const atSeatLimit = hasSeatLimit && usedSeats >= maxSeats;
   const needsSeatLimit = !hasSeatLimit;
 
-  const STORAGE_OPTIONS = [
-    { label: "100 GB", value: 100 * 1024 * 1024 * 1024 },
-    { label: "500 GB", value: 500 * 1024 * 1024 * 1024 },
-    { label: "1 TB", value: 1024 * 1024 * 1024 * 1024 },
-    { label: "2 TB", value: 2 * 1024 * 1024 * 1024 * 1024 },
-    { label: "Unlimited", value: null },
-  ] as const;
-
   const formatStorage = (bytes: number | null) => {
-    if (bytes === null) return "Unlimited";
+    if (bytes === null) return "Unlimited (org pool)";
     const gb = bytes / (1024 ** 3);
     if (gb >= 1024) return `${(gb / 1024).toFixed(0)} TB`;
     return `${gb.toFixed(0)} GB`;
+  };
+
+  const selectOptionsForSeat = (seat: Seat) => {
+    const cur = seat.storage_quota_bytes;
+    const tierSet = new Set<number>([...PRODUCT_SEAT_STORAGE_BYTES]);
+    const hasCustom = typeof cur === "number" && !tierSet.has(cur);
+    const extra = hasCustom
+      ? [{ label: `Current (${formatStorage(cur)})`, value: cur as number }]
+      : [];
+    return [...extra, ...BASE_STORAGE_OPTIONS] as { label: string; value: number | null }[];
   };
 
   const handleStorageChange = async (seatId: string, newQuota: number | null) => {
@@ -103,6 +147,8 @@ export default function EnterpriseSeatsPage() {
       if (!res.ok) throw new Error("Failed to load seats");
       const data = await res.json();
       setSeats(data.seats ?? []);
+      setPendingInvites(data.pending_invites ?? []);
+      setAllocationSummary(data.allocation_summary ?? null);
     } catch {
       setSeats([]);
     } finally {
@@ -368,16 +414,73 @@ export default function EnterpriseSeatsPage() {
             </section>
           )}
 
+          {isAdmin && allocationSummary ? (
+            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+              <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                Organization pool
+              </h2>
+              <ul className="space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+                <li>
+                  Total:{" "}
+                  {allocationSummary.org_quota_bytes != null
+                    ? `${(allocationSummary.org_quota_bytes / 1024 ** 4).toFixed(0)} TB`
+                    : "—"}
+                </li>
+                <li>
+                  Used:{" "}
+                  {allocationSummary.org_used_bytes != null
+                    ? `${(allocationSummary.org_used_bytes / 1024 ** 4).toFixed(2)} TB`
+                    : "—"}
+                </li>
+                <li>
+                  Fixed seat caps allocated:{" "}
+                  {allocationSummary.numeric_allocated_seat_bytes != null
+                    ? `${(allocationSummary.numeric_allocated_seat_bytes / 1024 ** 4).toFixed(2)} TB`
+                    : "—"}
+                </li>
+                <li>
+                  Unallocated (numeric headroom):{" "}
+                  {allocationSummary.remaining_numeric_allocatable_bytes != null
+                    ? `${(allocationSummary.remaining_numeric_allocatable_bytes / 1024 ** 4).toFixed(2)} TB`
+                    : "—"}
+                </li>
+                <li className="text-xs text-neutral-500">
+                  Only <strong className="font-medium">active members</strong> count toward fixed-cap totals;
+                  pending invites do not reserve pool capacity.
+                </li>
+              </ul>
+            </section>
+          ) : null}
+
+          {isAdmin && pendingInvites.length > 0 ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-6 dark:border-amber-800 dark:bg-amber-950/30">
+              <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                Pending invites ({pendingInvites.length})
+              </h2>
+              <ul className="divide-y divide-amber-200 dark:divide-amber-900">
+                {pendingInvites.map((inv) => (
+                  <li key={inv.id} className="py-2 text-sm">
+                    <span className="font-medium text-neutral-900 dark:text-white">{inv.email}</span>
+                    <span className="ml-2 text-neutral-500">
+                      {inv.role === "admin" ? "Owner invite" : "Member"}
+                      {inv.source === "legacy_organization_seats" ? " (legacy)" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
               <Users className="h-5 w-5 text-[var(--enterprise-primary)]" />
               Members ({seats.length})
             </h2>
             <p className="mb-4 text-xs text-neutral-600 dark:text-neutral-400">
-              The organization has one shared storage pool (total quota). Each member can also have a{" "}
-              <strong className="font-medium text-neutral-700 dark:text-neutral-300">seat allocation</strong>{" "}
-              that limits how much that person can upload; uploads stop at the allocation even if the org
-              still has headroom—unless the seat is set to Unlimited.
+              The organization has one shared storage pool (total quota). Each member has a{" "}
+              <strong className="font-medium text-neutral-700 dark:text-neutral-300">seat policy</strong>
+              : either a fixed cap or unlimited <em>within that pool</em>. Uploads are blocked if either the
+              pool or the member&apos;s cap would be exceeded.
             </p>
 
             {seats.length === 0 ? (
@@ -398,10 +501,7 @@ export default function EnterpriseSeatsPage() {
                     !isPending &&
                     promotingId !== seat.id;
 
-                  const isOwner = seat.role === "admin";
-                  const displayQuotaBytes = isOwner
-                    ? (org?.storage_quota_bytes ?? null)
-                    : (seat.storage_quota_bytes ?? null);
+                  const displayQuotaBytes = seat.storage_quota_bytes ?? null;
                   return (
                     <li
                       key={seat.id}
@@ -427,9 +527,7 @@ export default function EnterpriseSeatsPage() {
                         <p className="mt-0.5 flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                           <HardDrive className="h-3.5 w-3.5" />
                           {(() => {
-                            const used = isOwner
-                              ? (org?.storage_used_bytes ?? seat.storage_used_bytes ?? 0)
-                              : (seat.storage_used_bytes ?? 0);
+                            const used = seat.storage_used_bytes ?? 0;
                             return used / (1024 ** 3) >= 1024
                               ? `${(used / (1024 ** 4)).toFixed(1)} TB`
                               : `${(used / (1024 ** 3)).toFixed(1)} GB`;
@@ -438,45 +536,39 @@ export default function EnterpriseSeatsPage() {
                         </p>
                       </div>
                       {isAdmin && (
-                        <div className="flex w-28 shrink-0 items-center justify-end gap-2">
-                          {isOwner ? (
-                            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {formatStorage(displayQuotaBytes)}
-                            </span>
-                          ) : (
-                            <>
-                              <select
-                                value={
-                                  seat.storage_quota_bytes === null
-                                    ? "unlimited"
-                                    : String(seat.storage_quota_bytes)
-                                }
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  const quota =
-                                    v === "unlimited"
-                                      ? null
-                                      : (STORAGE_OPTIONS.find((o) => String(o.value) === v)
-                                          ?.value ?? null);
-                                  if (quota !== undefined) handleStorageChange(seat.id, quota);
-                                }}
-                                disabled={updatingStorageId === seat.id}
-                                className="w-full min-w-0 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                              >
-                                {STORAGE_OPTIONS.map((opt) => (
-                                  <option
-                                    key={opt.label}
-                                    value={opt.value === null ? "unlimited" : String(opt.value)}
-                                  >
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                              {updatingStorageId === seat.id && (
-                                <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
-                              )}
-                            </>
-                          )}
+                        <div className="flex w-36 shrink-0 items-center justify-end gap-2">
+                          <>
+                            <select
+                              value={
+                                seat.storage_quota_bytes === null
+                                  ? "unlimited"
+                                  : String(seat.storage_quota_bytes)
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const quota =
+                                  v === "unlimited"
+                                    ? null
+                                    : (selectOptionsForSeat(seat).find((o) => String(o.value) === v)
+                                        ?.value ?? null);
+                                if (quota !== undefined) handleStorageChange(seat.id, quota);
+                              }}
+                              disabled={updatingStorageId === seat.id || isPending}
+                              className="w-full min-w-0 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                            >
+                              {selectOptionsForSeat(seat).map((opt) => (
+                                <option
+                                  key={`${opt.label}-${opt.value ?? "u"}`}
+                                  value={opt.value === null ? "unlimited" : String(opt.value)}
+                                >
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            {updatingStorageId === seat.id && (
+                              <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                            )}
+                          </>
                         </div>
                       )}
                       <div className="flex w-10 shrink-0 justify-end">

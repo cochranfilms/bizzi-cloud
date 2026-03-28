@@ -4,6 +4,7 @@ import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 
 /**
  * Recalculates storage_used_bytes for an organization from backup_files
@@ -117,6 +118,8 @@ export async function POST(request: Request) {
     new_storage_used_bytes: totalBytes,
     storage_quota_bytes: storageQuota,
   });
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   return NextResponse.json({
     storage_used_bytes: totalBytes,

@@ -20,6 +20,8 @@ import {
   sumPendingReservationBytesForRequestingUser,
 } from "./storage-quota-reservations";
 import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
+import { logEnterpriseSecurityEvent } from "./enterprise-security-log";
+import { seatNumericCapForEnforcement } from "./org-seat-quota";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -204,7 +206,7 @@ function buildQuotaDeniedMessage(
     return {
       scope: "enterprise_workspace",
       msg:
-        "This organization has reached its storage limit. Contact your organization admin to upgrade storage.",
+        "This upload would exceed your organization’s shared storage pool. Free space or ask an admin to upgrade.",
     };
   }
   if (quotaSubjectUid !== requestingUid) {
@@ -248,6 +250,15 @@ export async function checkUserCanUpload(
       snap.quota_subject_uid,
       uid
     );
+    const remaining = Math.max(0, snap.quota_bytes - effective);
+    logEnterpriseSecurityEvent("storage_quota_denied", {
+      denial_reason: "organization_pool",
+      requesting_user_id: uid,
+      organization_id: snap.organization_id,
+      additional_bytes: additionalBytes,
+      effective_billable_bytes_for_enforcement: effective,
+      quota_bytes: snap.quota_bytes,
+    });
     throw new StorageQuotaDeniedError(msg, {
       requesting_user_id: uid,
       billing_subject_user_id: snap.organization_id ? null : snap.quota_subject_uid,
@@ -258,6 +269,8 @@ export async function checkUserCanUpload(
       effective_billable_bytes_for_enforcement: effective,
       quota_bytes: snap.quota_bytes,
       additional_bytes: additionalBytes,
+      denial_reason: "organization_pool",
+      remaining_bytes: remaining,
     });
   }
 
@@ -271,7 +284,9 @@ export async function checkUserCanUpload(
       .collection("organization_seats")
       .doc(`${orgIdForSeat}_${uid}`)
       .get();
-    const seatQuota = seatSnap.data()?.storage_quota_bytes;
+    const seatQuota = seatNumericCapForEnforcement(
+      seatSnap.data() as Record<string, unknown> | undefined
+    );
     if (typeof seatQuota === "number") {
       const seatUsed = await sumActiveUserOrgBackupBytes(db, uid, orgIdForSeat);
       const seatReserved = await sumPendingReservationBytesForRequestingUser(
@@ -280,8 +295,17 @@ export async function checkUserCanUpload(
       );
       const seatEffective = seatUsed + seatReserved;
       if (seatEffective + additionalBytes > seatQuota) {
+        const remaining = Math.max(0, seatQuota - seatEffective);
+        logEnterpriseSecurityEvent("storage_quota_denied", {
+          denial_reason: "seat_allocation",
+          requesting_user_id: uid,
+          organization_id: orgIdForSeat,
+          additional_bytes: additionalBytes,
+          effective_billable_bytes_for_enforcement: seatEffective,
+          quota_bytes: seatQuota,
+        });
         throw new StorageQuotaDeniedError(
-          "Your seat storage allocation is full. Ask an org admin to raise your allocation or free space.",
+          "This upload would exceed your seat allocation for this organization. Ask an admin to raise your cap or free space.",
           {
             requesting_user_id: uid,
             billing_subject_user_id: null,
@@ -292,6 +316,8 @@ export async function checkUserCanUpload(
             effective_billable_bytes_for_enforcement: seatEffective,
             quota_bytes: seatQuota,
             additional_bytes: additionalBytes,
+            denial_reason: "seat_allocation",
+            remaining_bytes: remaining,
           }
         );
       }

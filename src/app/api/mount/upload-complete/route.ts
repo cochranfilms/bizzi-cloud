@@ -4,7 +4,12 @@
  * Used when user adds a file to the mounted drive.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import type { DocumentReference } from "firebase-admin/firestore";
+import {
+  commitStorageReservation,
+  reserveStorageIncrease,
+  releaseStorageReservation,
+} from "@/lib/storage-quota-service";
 import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
@@ -80,8 +85,15 @@ export async function POST(request: Request) {
   }
 
   const size = typeof sizeBytes === "number" && sizeBytes >= 0 ? sizeBytes : 0;
+  let reservationId: string | null = null;
   try {
-    await checkUserCanUpload(uid, size, typeof driveId === "string" ? driveId : undefined);
+    const r = await reserveStorageIncrease(
+      uid,
+      size,
+      typeof driveId === "string" ? driveId : undefined,
+      typeof objectKey === "string" ? objectKey : null
+    );
+    reservationId = r.reservation_id;
   } catch (err) {
     const q = storageQuotaErrorJson(err);
     if (q) return NextResponse.json(q.body, { status: q.status });
@@ -212,30 +224,44 @@ export async function POST(request: Request) {
     completed_at: now,
   });
 
-  const fileRef = await db.collection("backup_files").add({
-    backup_snapshot_id: snapshotRef.id,
-    linked_drive_id: driveIdStr,
-    userId: uid,
-    relative_path: safePath,
-    object_key: objectKey,
-    size_bytes: size,
-    content_type: typeof contentType === "string" ? contentType : "application/octet-stream",
-    modified_at: now,
-    uploaded_at: now,
-    deleted_at: null,
-    lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
-    organization_id: organizationId,
-    workspace_id: workspaceIdResolved,
-    visibility_scope: visibilityScope,
-    owner_user_id: uid,
-    uploader_email: uploadMeta.uploaderEmail,
-    container_type: uploadMeta.containerType,
-    container_id: uploadMeta.containerId,
-    personal_team_owner_id: teamOwnerForFile,
-    role_at_upload: uploadMeta.roleAtUpload,
-    ...macosPackageFirestoreFieldsFromRelativePath(safePath),
-    ...creativeFirestoreFieldsFromRelativePath(safePath),
-  });
+  let fileRef: DocumentReference;
+  try {
+    fileRef = await db.collection("backup_files").add({
+      backup_snapshot_id: snapshotRef.id,
+      linked_drive_id: driveIdStr,
+      userId: uid,
+      relative_path: safePath,
+      object_key: objectKey,
+      size_bytes: size,
+      content_type: typeof contentType === "string" ? contentType : "application/octet-stream",
+      modified_at: now,
+      uploaded_at: now,
+      deleted_at: null,
+      lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
+      organization_id: organizationId,
+      workspace_id: workspaceIdResolved,
+      visibility_scope: visibilityScope,
+      owner_user_id: uid,
+      uploader_email: uploadMeta.uploaderEmail,
+      container_type: uploadMeta.containerType,
+      container_id: uploadMeta.containerId,
+      personal_team_owner_id: teamOwnerForFile,
+      role_at_upload: uploadMeta.roleAtUpload,
+      ...macosPackageFirestoreFieldsFromRelativePath(safePath),
+      ...creativeFirestoreFieldsFromRelativePath(safePath),
+    });
+  } catch (err) {
+    if (reservationId) {
+      await releaseStorageReservation(reservationId, "finalize_failed").catch(() => {});
+    }
+    throw err;
+  }
+
+  if (reservationId) {
+    await commitStorageReservation(reservationId).catch((err) =>
+      console.error("[mount upload-complete] commit reservation:", err)
+    );
+  }
 
   try {
     await linkBackupFileToMacosPackageContainer(db, fileRef.id);

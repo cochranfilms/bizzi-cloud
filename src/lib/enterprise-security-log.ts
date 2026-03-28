@@ -13,6 +13,9 @@ export type EnterpriseSecurityEventName =
   | "recalculate_org_executed"
   | "seat_role_changed"
   | "seat_removed"
+  | "seat_storage_quota_changed"
+  | "storage_quota_denied"
+  | "duplicate_active_seat"
   | "org_leave"
   | "invite_accepted"
   | "invite_rate_limited";
@@ -26,7 +29,12 @@ export function logEnterpriseSecurityEvent(
     ts: new Date().toISOString(),
     ...payload,
   });
-  if (event === "recalculate_org_executed" || event === "invite_accepted" || event === "seat_role_changed") {
+  if (
+    event === "recalculate_org_executed" ||
+    event === "invite_accepted" ||
+    event === "seat_role_changed" ||
+    event === "seat_storage_quota_changed"
+  ) {
     console.info(line);
   } else {
     console.warn(line);

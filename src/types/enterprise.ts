@@ -1,3 +1,5 @@
+import type { OrganizationSeatQuotaMode } from "@/lib/enterprise-constants";
+
 /** Enterprise theme preset IDs. */
 export type EnterpriseThemeId =
   | "bizzi"
@@ -21,6 +23,11 @@ export interface Organization {
   theme: EnterpriseThemeId;
   storage_quota_bytes: number;
   storage_used_bytes?: number;
+  /** Derived: sum of numeric fixed seat caps (not authoritative for enforcement). */
+  numeric_allocated_seat_bytes?: number;
+  active_seat_count?: number;
+  fixed_quota_seat_count?: number;
+  unlimited_seat_count?: number;
   max_seats?: number | null;
   /** Power-up add-ons included in the subscription (e.g. ["gallery"], ["editor"], ["fullframe"]) */
   addon_ids?: string[];
@@ -41,7 +48,8 @@ export interface OrganizationSeat {
   invited_at: string;
   accepted_at?: string | null;
   status: SeatStatus;
-  /** Per-seat storage limit in bytes. null = Unlimited. */
+  quota_mode?: OrganizationSeatQuotaMode;
+  /** Per-seat cap when quota_mode is fixed; null when org_unlimited. */
   storage_quota_bytes?: SeatStorageQuotaBytes;
 }
 

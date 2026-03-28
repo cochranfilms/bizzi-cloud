@@ -8,6 +8,7 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import { getStripeInstance } from "@/lib/stripe";
 import { sendSignupLinkEmail } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
+import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 
 export async function POST(
   request: Request,
@@ -59,18 +60,29 @@ export async function POST(
     );
   }
 
-  const seatsSnap = await db
-    .collection("organization_seats")
+  let ownerEmail: string | undefined;
+  const invSnap = await db
+    .collection(ORGANIZATION_INVITES_COLLECTION)
     .where("organization_id", "==", orgId)
     .where("role", "==", "admin")
     .where("status", "==", "pending")
     .limit(1)
     .get();
-
-  const ownerEmail = seatsSnap.docs[0]?.data()?.email as string | undefined;
+  if (!invSnap.empty) {
+    ownerEmail = invSnap.docs[0].data()?.email as string | undefined;
+  } else {
+    const seatsSnap = await db
+      .collection("organization_seats")
+      .where("organization_id", "==", orgId)
+      .where("role", "==", "admin")
+      .where("status", "==", "pending")
+      .limit(1)
+      .get();
+    ownerEmail = seatsSnap.docs[0]?.data()?.email as string | undefined;
+  }
   if (!ownerEmail) {
     return NextResponse.json(
-      { error: "No pending admin seat found. Owner may have already accepted." },
+      { error: "No pending owner invite found. Owner may have already accepted." },
       { status: 400 }
     );
   }

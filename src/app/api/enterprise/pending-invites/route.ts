@@ -2,6 +2,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
+import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 
 /** GET - List pending invites for the current user's email. */
 export async function GET(request: Request) {
@@ -57,27 +58,59 @@ export async function GET(request: Request) {
     return NextResponse.json({ invites: [] });
   }
 
-  const pendingSnap = await db
-    .collection("organization_seats")
-    .where("email", "==", email.toLowerCase())
-    .where("status", "==", "pending")
-    .get();
+  const emailLower = email.toLowerCase();
 
-  const invites = await Promise.all(
-    pendingSnap.docs.map(async (docSnap) => {
+  const [invSnap, legacySnap] = await Promise.all([
+    db
+      .collection(ORGANIZATION_INVITES_COLLECTION)
+      .where("email", "==", emailLower)
+      .where("status", "==", "pending")
+      .get(),
+    db
+      .collection("organization_seats")
+      .where("email", "==", emailLower)
+      .where("status", "==", "pending")
+      .get(),
+  ]);
+
+  const orgIds = new Set<string>();
+  for (const d of [...invSnap.docs, ...legacySnap.docs]) {
+    const oid = d.data().organization_id as string | undefined;
+    if (oid) orgIds.add(oid);
+  }
+
+  const orgNames = new Map<string, string>();
+  await Promise.all(
+    [...orgIds].map(async (orgId) => {
+      const orgSnap = await db.collection("organizations").doc(orgId).get();
+      orgNames.set(orgId, orgSnap.exists ? (orgSnap.data()?.name as string) ?? "" : "");
+    })
+  );
+
+  const invites = [
+    ...invSnap.docs.map((docSnap) => {
       const d = docSnap.data();
       const orgId = d.organization_id as string;
-      const orgSnap = await db.collection("organizations").doc(orgId).get();
-      const orgName = orgSnap.exists ? (orgSnap.data()?.name as string) ?? "" : "";
       return {
         seat_id: docSnap.id,
         organization_id: orgId,
-        organization_name: orgName,
+        organization_name: orgNames.get(orgId) ?? "",
         email: d.email,
         invited_at: d.invited_at?.toDate?.()?.toISOString() ?? null,
       };
-    })
-  );
+    }),
+    ...legacySnap.docs.map((docSnap) => {
+      const d = docSnap.data();
+      const orgId = d.organization_id as string;
+      return {
+        seat_id: docSnap.id,
+        organization_id: orgId,
+        organization_name: orgNames.get(orgId) ?? "",
+        email: d.email,
+        invited_at: d.invited_at?.toDate?.()?.toISOString() ?? null,
+      };
+    }),
+  ];
 
   return NextResponse.json({ invites });
 }

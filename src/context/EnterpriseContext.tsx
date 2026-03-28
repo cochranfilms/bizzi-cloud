@@ -47,6 +47,16 @@ function parseOrgFromFirestore(
     theme: (data.theme as Organization["theme"]) ?? "bizzi",
     storage_quota_bytes: data.storage_quota_bytes ?? 0,
     storage_used_bytes: data.storage_used_bytes ?? 0,
+    numeric_allocated_seat_bytes:
+      typeof data.numeric_allocated_seat_bytes === "number"
+        ? data.numeric_allocated_seat_bytes
+        : undefined,
+    active_seat_count:
+      typeof data.active_seat_count === "number" ? data.active_seat_count : undefined,
+    fixed_quota_seat_count:
+      typeof data.fixed_quota_seat_count === "number" ? data.fixed_quota_seat_count : undefined,
+    unlimited_seat_count:
+      typeof data.unlimited_seat_count === "number" ? data.unlimited_seat_count : undefined,
     max_seats: data.max_seats ?? null,
     addon_ids: addonIds.length > 0 ? addonIds : undefined,
     created_at: created_at ? created_at.toISOString() : "",

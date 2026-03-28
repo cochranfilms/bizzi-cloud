@@ -7,6 +7,7 @@ import { getAdminAuth, getAdminFirestore } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 import { writeAuditLog } from "@/lib/audit-log";
 import {
   PERSONAL_TEAM_SEATS_COLLECTION,
@@ -439,7 +440,8 @@ async function restoreOrgColdStorage(
   let seatsCreated = 0;
   for (let i = 0; i < seatsToCreate.length; i++) {
     const { uid, email, role } = seatsToCreate[i];
-    const seatId = `${orgId}_${uid}_${Date.now()}_${i}`;
+    const seatId = `${orgId}_${uid}`;
+    const isAdmin = role === "admin";
     await db.collection("organization_seats").doc(seatId).set({
       organization_id: orgId,
       user_id: uid,
@@ -449,7 +451,8 @@ async function restoreOrgColdStorage(
       invited_at: now.toISOString(),
       accepted_at: now.toISOString(),
       status: "active",
-      storage_quota_bytes: DEFAULT_SEAT_STORAGE_BYTES,
+      quota_mode: isAdmin ? "org_unlimited" : "fixed",
+      storage_quota_bytes: isAdmin ? null : DEFAULT_SEAT_STORAGE_BYTES,
     });
     seatsCreated++;
 
@@ -474,6 +477,10 @@ async function restoreOrgColdStorage(
     orgUpdate.stripe_subscription_id = stripeSubscriptionId;
   }
   await db.collection("organizations").doc(orgId).update(orgUpdate);
+
+  if (seatsCreated > 0) {
+    await syncOrganizationSeatAllocationSummary(db, orgId);
+  }
 
   const orgNameRestored =
     (files[0]?.org_name as string | undefined) ??

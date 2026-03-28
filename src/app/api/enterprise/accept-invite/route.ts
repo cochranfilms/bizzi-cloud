@@ -1,7 +1,12 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkInviteRateLimit } from "@/lib/enterprise-invite-rate-limit";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
-import { findPendingSeatByToken } from "@/lib/invite-lookup";
+import {
+  findPendingInvitesByOrgAndEmail,
+  findPendingOrgInviteByToken,
+} from "@/lib/organization-invites";
+import { assertAtMostOneActiveSeatPerUser } from "@/lib/org-seat-integrity";
+import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 import { ensureDefaultDrivesForOrgUser } from "@/lib/ensure-default-drives";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
@@ -11,6 +16,30 @@ import {
   getActorDisplayName,
   getOrganizationAdminUserIds,
 } from "@/lib/notification-service";
+import { DEFAULT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-storage";
+import type { OrganizationSeatQuotaMode } from "@/lib/enterprise-constants";
+
+function seatFieldsFromPending(
+  pending: Record<string, unknown>,
+  acceptedRole: "admin" | "member"
+): { quota_mode: OrganizationSeatQuotaMode; storage_quota_bytes: number | null } {
+  if (acceptedRole === "admin") {
+    return { quota_mode: "org_unlimited", storage_quota_bytes: null };
+  }
+  const intendedMode = pending.intended_quota_mode as string | undefined;
+  const intendedBytes = pending.intended_storage_quota_bytes;
+  const legacyBytes = pending.storage_quota_bytes;
+  if (intendedMode === "org_unlimited") {
+    return { quota_mode: "org_unlimited", storage_quota_bytes: null };
+  }
+  const bytes =
+    typeof intendedBytes === "number"
+      ? intendedBytes
+      : typeof legacyBytes === "number"
+        ? legacyBytes
+        : DEFAULT_SEAT_STORAGE_BYTES;
+  return { quota_mode: "fixed", storage_quota_bytes: bytes };
+}
 
 /** POST - Accept a pending invite to join an organization. */
 export async function POST(request: Request) {
@@ -74,7 +103,7 @@ export async function POST(request: Request) {
   let pendingDocs: QueryDocumentSnapshot[];
 
   if (inviteToken) {
-    const pendingSeat = await findPendingSeatByToken(db, inviteToken);
+    const pendingSeat = await findPendingOrgInviteByToken(db, inviteToken);
 
     if (pendingSeat) {
       const seatData = pendingSeat.data();
@@ -88,21 +117,14 @@ export async function POST(request: Request) {
       orgId = seatData.organization_id as string;
       pendingDocs = [pendingSeat];
     } else if (orgIdParam && email) {
-      const emailSnap = await db
-        .collection("organization_seats")
-        .where("organization_id", "==", orgIdParam)
-        .where("email", "==", email.toLowerCase())
-        .where("status", "==", "pending")
-        .get();
-      if (!emailSnap.empty) {
-        orgId = orgIdParam;
-        pendingDocs = emailSnap.docs;
-      } else {
+      pendingDocs = await findPendingInvitesByOrgAndEmail(db, orgIdParam, email.toLowerCase());
+      if (pendingDocs.length === 0) {
         return NextResponse.json(
           { error: "Invite not found or already accepted" },
           { status: 404 }
         );
       }
+      orgId = orgIdParam;
     } else {
       return NextResponse.json(
         { error: "Invite not found or already accepted" },
@@ -111,13 +133,11 @@ export async function POST(request: Request) {
     }
   } else if (orgIdParam) {
     orgId = orgIdParam;
-    const orgSnap = await db
-      .collection("organization_seats")
-      .where("organization_id", "==", orgId)
-      .where("email", "==", (email ?? "").toLowerCase())
-      .where("status", "==", "pending")
-      .get();
-    pendingDocs = orgSnap.docs;
+    pendingDocs = await findPendingInvitesByOrgAndEmail(
+      db,
+      orgId,
+      (email ?? "").toLowerCase()
+    );
   } else {
     return NextResponse.json(
       { error: "organization_id or invite_token is required" },
@@ -157,13 +177,31 @@ export async function POST(request: Request) {
       }
     } else {
       return NextResponse.json(
-        { error: "You already belong to another organization. You can only be in one organization at a time." },
+        {
+          error:
+            "You already belong to another organization. You can only be in one organization at a time.",
+        },
         { status: 400 }
       );
     }
   }
 
   const seatId = `${orgId}_${uid}`;
+  const existingSeat = await db.collection("organization_seats").doc(seatId).get();
+  if (existingSeat.exists && existingSeat.data()?.status === "active") {
+    return NextResponse.json(
+      { error: "You already belong to this organization" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await assertAtMostOneActiveSeatPerUser(db, orgId, uid);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Seat data error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+
   const now = FieldValue.serverTimestamp();
 
   const batch = db.batch();
@@ -174,6 +212,10 @@ export async function POST(request: Request) {
 
   const acceptedRole =
     (pendingSeatData.role === "admin" ? "admin" : "member") as "admin" | "member";
+  const { quota_mode, storage_quota_bytes } = seatFieldsFromPending(
+    pendingSeatData as Record<string, unknown>,
+    acceptedRole
+  );
   const seatRef = db.collection("organization_seats").doc(seatId);
   batch.set(seatRef, {
     organization_id: orgId,
@@ -184,11 +226,8 @@ export async function POST(request: Request) {
     invited_at: now,
     accepted_at: now,
     status: "active",
-    storage_quota_bytes:
-      typeof pendingSeatData.storage_quota_bytes === "number" ||
-      pendingSeatData.storage_quota_bytes === null
-        ? pendingSeatData.storage_quota_bytes
-        : 1024 * 1024 * 1024 * 1024,
+    quota_mode,
+    storage_quota_bytes,
   });
 
   const profileRef = db.collection("profiles").doc(uid);
@@ -202,6 +241,8 @@ export async function POST(request: Request) {
   );
 
   await batch.commit();
+
+  await syncOrganizationSeatAllocationSummary(db, orgId);
 
   const orgSnapForNotify = await db.collection("organizations").doc(orgId).get();
   const orgNameNotify = (orgSnapForNotify.data()?.name as string) ?? "Organization";
@@ -223,7 +264,6 @@ export async function POST(request: Request) {
     )
   );
 
-  // Create default drives (Storage, RAW, Gallery Media) for enterprise user based on org add-ons
   const orgAddonIds = Array.isArray(orgSnapForNotify.data()?.addon_ids)
     ? (orgSnapForNotify.data()?.addon_ids as string[])
     : [];
@@ -231,7 +271,6 @@ export async function POST(request: Request) {
     await ensureDefaultDrivesForOrgUser(uid, orgId, orgAddonIds);
   } catch (err) {
     console.error("[accept-invite] Failed to create default drives:", err);
-    // Don't fail the request - user can create drives manually
   }
 
   logEnterpriseSecurityEvent("invite_accepted", {
