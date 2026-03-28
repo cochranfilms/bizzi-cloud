@@ -529,18 +529,20 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
   ]);
 
   const doBulkPermanentDelete = useCallback(
-    async (fileIds: string[], folderIds: string[]) => {
+    async (fileIds: string[], folderIds: string[], options?: { skipConfirm?: boolean }) => {
       if (fileIds.length === 0 && folderIds.length === 0) return;
-      const fileCount = fileIds.length;
-      const folderCount = folderIds.length;
-      const msg =
-        fileCount > 0 && folderCount > 0
-          ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"} and ${folderCount} folder${folderCount === 1 ? "" : "s"}? This cannot be undone.`
-          : fileCount > 0
-            ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"}? This cannot be undone.`
-            : `Permanently delete ${folderCount} folder${folderCount === 1 ? "" : "s"} and their contents? This cannot be undone.`;
-      const ok = await confirm({ message: msg, destructive: true });
-      if (!ok) return;
+      if (!options?.skipConfirm) {
+        const fileCount = fileIds.length;
+        const folderCount = folderIds.length;
+        const msg =
+          fileCount > 0 && folderCount > 0
+            ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"} and ${folderCount} folder${folderCount === 1 ? "" : "s"}? This cannot be undone.`
+            : fileCount > 0
+              ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"}? This cannot be undone.`
+              : `Permanently delete ${folderCount} folder${folderCount === 1 ? "" : "s"} and their contents? This cannot be undone.`;
+        const ok = await confirm({ message: msg, destructive: true });
+        if (!ok) return;
+      }
       setDeletingBulk(true);
       try {
         const fileSet = new Set(fileIds);
@@ -598,7 +600,8 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     if (!ok) return;
     await doBulkPermanentDelete(
       deletedFiles.map((f) => f.id),
-      deletedDrives.map((d) => d.id)
+      deletedDrives.map((d) => d.id),
+      { skipConfirm: true }
     );
     clearSelection();
   }, [deletedFiles, deletedDrives, doBulkPermanentDelete, clearSelection, confirm]);
