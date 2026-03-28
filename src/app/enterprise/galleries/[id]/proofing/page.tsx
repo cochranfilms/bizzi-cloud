@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,7 +10,6 @@ import {
   Copy,
   Check,
   Loader2,
-  Film,
   Download,
   FolderPlus,
 } from "lucide-react";
@@ -21,13 +19,9 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
-import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
-import ImageWithLUT from "@/components/gallery/ImageWithLUT";
-import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
-import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
+import { ProofingAssetCell } from "@/components/gallery/ProofingAssetCell";
 import type { ViewGalleryLike } from "@/lib/gallery-dashboard-lut-preview";
 import { resolveProofingGridLutMirror } from "@/lib/gallery-viewer-lut-state";
-import { isRawFile } from "@/lib/gallery-file-types";
 
 interface FavoritesList {
   id: string;
@@ -55,164 +49,6 @@ interface GalleryAsset {
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
-
-const HOVER_HIDE_DELAY_MS = 350;
-
-function ProofingAssetCell({
-  galleryId,
-  asset,
-  lutMirror,
-}: {
-  galleryId: string;
-  asset: GalleryAsset;
-  lutMirror: ReturnType<typeof resolveProofingGridLutMirror>;
-}) {
-  const { previewLutSource, lutWorkflowActive, lutGradeMixPercent } = lutMirror;
-  const [isHovered, setIsHovered] = useState(false);
-  const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
-  const cellRef = useRef<HTMLTableCellElement>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const objectKey = asset.object_key ?? "";
-  const isImage = IMAGE_EXT.test(asset.name);
-  const isVideo = VIDEO_EXT.test(asset.name);
-  const { url: previewUrl, rawPreviewUnavailable } = useGalleryThumbnail(
-    galleryId,
-    objectKey,
-    asset.name,
-    {
-      enabled: (isImage || isVideo) && isHovered,
-      size: "medium",
-    }
-  );
-
-  const showLutPopup =
-    isImage &&
-    !!previewUrl &&
-    !rawPreviewUnavailable &&
-    lutWorkflowActive &&
-    !!previewLutSource &&
-    isRawFile(asset.name);
-
-  const clearHideTimeout = () => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-  };
-
-  const scheduleHide = () => {
-    clearHideTimeout();
-    hideTimeoutRef.current = setTimeout(() => setIsHovered(false), HOVER_HIDE_DELAY_MS);
-  };
-
-  const handleMouseEnter = () => {
-    clearHideTimeout();
-    setIsHovered(true);
-  };
-
-  useEffect(() => {
-    return () => clearHideTimeout();
-  }, []);
-
-  useEffect(() => {
-    if (!isHovered || !cellRef.current) {
-      setCoords(null);
-      return;
-    }
-    const updatePos = () => {
-      if (cellRef.current) {
-        const rect = cellRef.current.getBoundingClientRect();
-        setCoords({ x: rect.left, y: rect.top + rect.height / 2 });
-      }
-    };
-    updatePos();
-    window.addEventListener("scroll", updatePos, true);
-    window.addEventListener("resize", updatePos);
-    return () => {
-      window.removeEventListener("scroll", updatePos, true);
-      window.removeEventListener("resize", updatePos);
-    };
-  }, [isHovered]);
-
-  const popup = isHovered && (isImage || isVideo) && coords && typeof document !== "undefined" && createPortal(
-    <div
-      className="fixed z-[100] -translate-y-1/2"
-      style={{
-        left: Math.min(coords.x + 12, window.innerWidth - 300),
-        top: coords.y,
-        width: 280,
-        height: 280,
-      }}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={scheduleHide}
-    >
-      <div
-        className="h-full w-full overflow-hidden rounded-xl border-2 border-white bg-neutral-900 shadow-2xl ring-2 ring-neutral-500/30"
-        style={{ animation: "proofing-popup 0.15s ease-out" }}
-      >
-        {rawPreviewUnavailable && isImage ? (
-          <div className="h-full overflow-y-auto p-1">
-            <RawPreviewPlaceholder fileName={asset.name} className="min-h-0 text-[9px]" />
-          </div>
-        ) : showLutPopup ? (
-          <ImageWithLUT
-            imageUrl={previewUrl}
-            lutUrl={previewLutSource}
-            lutEnabled
-            className="h-full w-full"
-            objectFit="contain"
-            tileLayout="grid"
-            gradeMixPercent={lutGradeMixPercent}
-          />
-        ) : previewUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={previewUrl}
-            alt=""
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-800">
-            {isVideo ? (
-              <Film className="h-12 w-12 text-neutral-500" />
-            ) : (
-              <Loader2 className="h-10 w-10 animate-spin text-neutral-500" />
-            )}
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body
-  );
-
-  return (
-    <td ref={cellRef} className="px-4 py-3">
-      <div
-        className="flex items-center gap-3"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={scheduleHide}
-      >
-        <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
-          <GalleryAssetThumbnail
-            galleryId={galleryId}
-            objectKey={objectKey}
-            name={asset.name}
-            mediaType={asset.media_type ?? "image"}
-            className="h-10 w-10"
-            enabled
-            lutWorkflowActive={lutWorkflowActive}
-            previewLutSource={previewLutSource}
-            lutGradeMixPercent={lutGradeMixPercent}
-          />
-        </div>
-        <span className="truncate font-mono text-xs text-neutral-600 dark:text-neutral-400">
-          {asset.name}
-        </span>
-      </div>
-      {popup}
-    </td>
-  );
-}
 
 export default function GalleryProofingPage() {
   const params = useParams();
