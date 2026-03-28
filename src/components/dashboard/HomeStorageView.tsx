@@ -71,7 +71,12 @@ function BulkActionBar({
   const downloadTitle = selectedFileCount > 50 ? "Download supports up to 50 files at once" : undefined;
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+    <div
+      className="fixed left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+      style={{
+        bottom: "max(8rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))",
+      }}
+    >
       <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
         {label} selected
       </span>
@@ -348,6 +353,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       return order(a.name) - order(b.name);
     });
   }, [baseFolderItems, linkedDrives, driveFolders]);
+
+  /** Narrow columns on phones so base folder tiles stay short (no full-width 16:9 giants). */
+  const baseFolderMobileGridClass = useMemo(() => {
+    const n = displayBaseFolderItems.length;
+    if (n <= 1) return "max-sm:grid-cols-1";
+    if (n === 2) return "max-sm:grid-cols-2";
+    return "max-sm:grid-cols-3";
+  }, [displayBaseFolderItems.length]);
 
   const driveFolderItems = folderItems.filter((f) => {
     const drive = driveFolders.find((d) => d.id === f.driveId);
@@ -931,14 +944,16 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         </div>
       ) : null}
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
-      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <SectionTitle className="mb-4">Bizzi Cloud Base</SectionTitle>
+      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
+        <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
         {displayBaseFolderItems.length > 0 ? (
           <div
-            className="flex justify-center w-full max-w-4xl mx-auto"
+            className="mx-auto flex w-full max-w-4xl justify-center"
             style={{ ["--folder-count" as string]: displayBaseFolderItems.length }}
           >
-            <div className="grid grid-cols-1 gap-4 max-w-full sm:grid-cols-[repeat(var(--folder-count),minmax(260px,320px))]">
+            <div
+              className={`grid w-full max-w-full gap-2 ${baseFolderMobileGridClass} sm:grid-cols-[repeat(var(--folder-count),minmax(260px,320px))] sm:gap-4`}
+            >
             {displayBaseFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
@@ -963,7 +978,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
                     onClick={() => item.driveId && openDrive(item.driveId, item.name)}
-                    layoutSize="large"
+                    layoutSize="medium"
                     layoutAspectRatio="video"
                     showCardInfo={true}
                     onDelete={
@@ -997,8 +1012,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </section>
 
       {/* Section 2: Pinned */}
-      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <SectionTitle className="mb-4">Pinned</SectionTitle>
+      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
+        <SectionTitle className="mb-3 sm:mb-4">Pinned</SectionTitle>
         {hasPinned ? (
           viewMode === "list" ? (
             <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
@@ -1203,7 +1218,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </section>
 
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
-      <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
+      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
         {driveFolderItems.length > 0 ? (
           viewMode === "list" ? (
@@ -1458,7 +1473,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {moveNotice ? (
         <div
           role="status"
-          className="fixed bottom-24 left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
+          className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
         >
           <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden />
           <span className="text-left">{moveNotice}</span>

@@ -23,6 +23,14 @@ interface ItemActionsMenuProps {
 
 const MENU_MIN_WIDTH_PX = 160;
 
+const HIDDEN_OFFSCREEN: React.CSSProperties = {
+  position: "fixed",
+  left: -9999,
+  top: 0,
+  visibility: "hidden",
+  pointerEvents: "none",
+};
+
 export default function ItemActionsMenu({
   actions,
   ariaLabel = "Actions",
@@ -33,19 +41,78 @@ export default function ItemActionsMenu({
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalMenuRef = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
 
   useLayoutEffect(() => {
-    if (!open || !triggerRef.current) {
-      setMenuPos(null);
+    if (!open) {
+      setMenuStyle(null);
       return;
     }
-    const r = triggerRef.current.getBoundingClientRect();
-    const left = alignRight
-      ? Math.min(window.innerWidth - MENU_MIN_WIDTH_PX - 8, Math.max(8, r.right - MENU_MIN_WIDTH_PX))
-      : Math.min(window.innerWidth - MENU_MIN_WIDTH_PX - 8, Math.max(8, r.left));
-    setMenuPos({ top: r.bottom + 4, left });
-  }, [open, alignRight]);
+
+    const place = () => {
+      const trigger = triggerRef.current;
+      const menu = portalMenuRef.current;
+      if (!trigger || !menu) return;
+
+      const r = trigger.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const edge = 8;
+      const left = alignRight
+        ? Math.min(vw - MENU_MIN_WIDTH_PX - edge, Math.max(edge, r.right - MENU_MIN_WIDTH_PX))
+        : Math.min(vw - MENU_MIN_WIDTH_PX - edge, Math.max(edge, r.left));
+
+      const h = menu.getBoundingClientRect().height;
+      const gap = 4;
+      const spaceBelow = vh - r.bottom - edge;
+      const spaceAbove = r.top - edge;
+      const preferBelow = h <= spaceBelow || spaceBelow >= spaceAbove;
+
+      const base: React.CSSProperties = {
+        left,
+        visibility: "visible",
+        right: "auto",
+      };
+
+      let next: React.CSSProperties;
+
+      if (preferBelow) {
+        const top = r.bottom + gap;
+        const maxH = vh - top - edge;
+        if (h > maxH) {
+          next = {
+            ...base,
+            top,
+            bottom: "auto",
+            maxHeight: Math.max(96, maxH),
+            overflowY: "auto",
+          };
+        } else {
+          next = { ...base, top, bottom: "auto", maxHeight: undefined, overflowY: undefined };
+        }
+      } else {
+        const bottom = vh - r.top + gap;
+        const maxH = r.top - edge - gap;
+        if (h > maxH) {
+          next = {
+            ...base,
+            bottom,
+            top: "auto",
+            maxHeight: Math.max(96, maxH),
+            overflowY: "auto",
+          };
+        } else {
+          next = { ...base, bottom, top: "auto", maxHeight: undefined, overflowY: undefined };
+        }
+      }
+
+      setMenuStyle(next);
+    };
+
+    place();
+    const id = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(id);
+  }, [open, alignRight, actions.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,13 +143,12 @@ export default function ItemActionsMenu({
 
   const menuEl =
     open &&
-    menuPos &&
     typeof document !== "undefined" &&
     createPortal(
       <div
         ref={portalMenuRef}
         className="fixed z-[200] min-w-[140px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
-        style={{ top: menuPos.top, left: menuPos.left }}
+        style={menuStyle ?? HIDDEN_OFFSCREEN}
         role="menu"
       >
         {actions.map((action) => (

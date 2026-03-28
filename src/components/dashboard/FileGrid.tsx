@@ -141,7 +141,12 @@ function BulkActionBar({
   const downloadTitle = selectedFileCount > 50 ? "Download supports up to 50 files at once" : undefined;
 
   return (
-    <div className="fixed bottom-4 left-3 right-3 z-50 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg sm:bottom-6 sm:left-1/2 sm:right-auto sm:w-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-4 sm:px-5 sm:py-3 dark:border-neutral-700 dark:bg-neutral-900">
+    <div
+      className="fixed left-3 right-3 z-50 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg sm:left-1/2 sm:right-auto sm:w-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-4 sm:px-5 sm:py-3 dark:border-neutral-700 dark:bg-neutral-900"
+      style={{
+        bottom: "max(8rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))",
+      }}
+    >
       <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
         {label} selected
       </span>
@@ -2260,7 +2265,7 @@ export default function FileGrid() {
         {moveNotice ? (
           <div
             role="status"
-            className="fixed bottom-24 left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
+            className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
           >
             <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden />
             <span className="text-left">{moveNotice}</span>

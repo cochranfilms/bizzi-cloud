@@ -147,8 +147,15 @@ export default function FolderCard({
   const useThumbChrome = presentation === "thumbnail" && !isSystemFolder;
   const sizeClasses = SIZE_CLASSES[layoutSize];
   const aspectClass = getCardAspectClass(layoutAspectRatio ?? "landscape");
+  /** Full-width 16:9 tiles are huge on phones; base folders use a compact row on small screens. */
+  const aspectShell = isSystemFolder ? "max-sm:aspect-auto sm:aspect-video" : aspectClass;
+  const systemMobileShell = isSystemFolder
+    ? "max-sm:min-h-0 max-sm:flex-row max-sm:items-center max-sm:justify-start max-sm:gap-0 max-sm:py-3 max-sm:pl-3 max-sm:pr-[3.5rem] max-sm:!p-3"
+    : "";
+  const iconBoxClass = `${sizeClasses.icon} max-sm:!h-12 max-sm:!w-12`;
+  const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-5 max-sm:!w-5`;
 
-  const defaultGridShell = `group relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${sizeClasses.padding} ${aspectClass} ${
+  const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
     isSystemFolder
       ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
       : selected
@@ -159,14 +166,14 @@ export default function FolderCard({
   } ${
     canNavigate && !selected
       ? isSystemFolder
-        ? "cursor-pointer hover:ring-2 hover:ring-white/30 dark:hover:ring-bizzi-cyan/40"
+        ? "cursor-pointer hover:ring-2 hover:ring-white/30 active:opacity-95 dark:hover:ring-bizzi-cyan/40"
         : "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
       : canNavigate && selected
         ? "cursor-pointer"
         : ""
   }`;
 
-  const thumbBrowseShell = `group relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${
+  const thumbBrowseShell = `group touch-manipulation relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${
     selected
       ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
       : isDragOver
@@ -236,17 +243,17 @@ export default function FolderCard({
             <div
               className={`relative w-full shrink-0 overflow-hidden ${aspectClass} rounded-xl bg-gradient-to-br from-neutral-100 via-neutral-50 to-neutral-200/85 dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-950/90`}
             >
-              <div className="relative flex min-h-[5rem] flex-col items-center justify-center gap-0.5 px-3 py-6">
+                <div className="relative flex min-h-[5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[4.5rem] max-sm:py-4">
                 <div className="relative">
                   <div
-                    className={`flex items-center justify-center rounded-2xl ${sizeClasses.icon} bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan`}
+                    className={`flex items-center justify-center rounded-2xl ${iconBoxClass} bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan`}
                   >
                     {item.customIcon ? (
-                      <item.customIcon className={sizeClasses.iconInner} />
+                      <item.customIcon className={iconInnerClass} />
                     ) : item.name === "Storage" || item.name === "Uploads" ? (
-                      <BizzicloudStorageIcon className={sizeClasses.iconInner} />
+                      <BizzicloudStorageIcon className={iconInnerClass} />
                     ) : (
-                      <Folder className={sizeClasses.iconInner} />
+                      <Folder className={iconInnerClass} />
                     )}
                   </div>
                   {item.isShared && (
@@ -291,46 +298,68 @@ export default function FolderCard({
           </>
         ) : (
           <>
-            <div className={`relative ${layoutSize === "small" ? "mb-2" : "mb-3"}`}>
-              <div
-                className={`flex items-center justify-center rounded-xl ${sizeClasses.icon} ${
-                  isSystemFolder
-                    ? "bg-white/20 text-white shadow-none dark:bg-white/92 dark:text-neutral-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.22)]"
-                    : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
-                }`}
-              >
-                {item.customIcon ? (
-                  <item.customIcon className={sizeClasses.iconInner} />
-                ) : item.name === "Storage" || item.name === "Uploads" ? (
-                  <BizzicloudStorageIcon className={sizeClasses.iconInner} />
-                ) : (
-                  <Folder className={sizeClasses.iconInner} />
-                )}
-              </div>
-              {item.isShared && (
-                <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1">
-                  <Share2 className="h-3 w-3 text-white" />
-                </div>
-              )}
-            </div>
-            <h3
-              className={`mb-1 w-full truncate text-center font-medium ${sizeClasses.text} ${
-                isSystemFolder ? "text-white dark:text-white" : "text-neutral-900 dark:text-white"
+            <div
+              className={`flex w-full flex-col items-center justify-center ${
+                isSystemFolder ? "max-sm:flex-row max-sm:items-center max-sm:gap-3 max-sm:text-left" : ""
               }`}
             >
-              {item.name}
-            </h3>
-            {showCardInfo && (
-              <p
-                className={`text-xs ${isSystemFolder ? "text-white/90 dark:text-white/80" : "text-neutral-500 dark:text-neutral-400"}`}
+              <div
+                className={`relative ${layoutSize === "small" ? "mb-2" : "mb-3"} ${
+                  isSystemFolder ? "max-sm:mb-0 max-sm:shrink-0" : ""
+                }`}
               >
-                {itemCountLine}
-              </p>
-            )}
+                <div
+                  className={`flex items-center justify-center rounded-xl ${iconBoxClass} ${
+                    isSystemFolder
+                      ? "bg-white/20 text-white shadow-none dark:bg-white/92 dark:text-neutral-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.22)]"
+                      : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
+                  }`}
+                >
+                  {item.customIcon ? (
+                    <item.customIcon className={iconInnerClass} />
+                  ) : item.name === "Storage" || item.name === "Uploads" ? (
+                    <BizzicloudStorageIcon className={iconInnerClass} />
+                  ) : (
+                    <Folder className={iconInnerClass} />
+                  )}
+                </div>
+                {item.isShared && (
+                  <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1">
+                    <Share2 className="h-3 w-3 text-white" />
+                  </div>
+                )}
+              </div>
+              <div
+                className={`min-w-0 flex-1 ${
+                  isSystemFolder ? "max-sm:text-left sm:text-center" : "text-center"
+                }`}
+              >
+                <h3
+                  className={`mb-1 w-full truncate text-center font-medium ${sizeClasses.text} ${
+                    isSystemFolder
+                      ? "text-white max-sm:text-left max-sm:text-base dark:text-white sm:text-center"
+                      : "text-neutral-900 dark:text-white"
+                  }`}
+                >
+                  {item.name}
+                </h3>
+                {showCardInfo && (
+                  <p
+                    className={`${
+                      isSystemFolder
+                        ? "text-xs font-semibold text-white max-sm:text-sm dark:text-white"
+                        : "text-xs text-neutral-500 dark:text-neutral-400"
+                    }`}
+                  >
+                    {itemCountLine}
+                  </p>
+                )}
+              </div>
+            </div>
           </>
         )}
         <div
-          className={`absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${useThumbChrome ? "z-20 rounded-md bg-black/35 p-0.5 backdrop-blur-sm group-hover:bg-black/50" : ""}`}
+          className={`absolute right-2 top-2 z-30 flex items-center gap-0.5 transition-opacity max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${useThumbChrome ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm sm:group-hover:bg-black/50" : isSystemFolder ? "max-sm:rounded-md max-sm:bg-black/15 max-sm:p-0.5 max-sm:backdrop-blur-sm" : ""}`}
         >
           {!item.hideShare && (
             <button

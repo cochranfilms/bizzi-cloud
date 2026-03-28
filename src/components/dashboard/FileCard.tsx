@@ -180,7 +180,7 @@ export default function FileCard({
   const captionSecondary = fileThumbCaptionSecondary(file, isMacosPackage);
 
   const rootShell = isThumb
-    ? `group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
+    ? `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
         selected
           ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
           : "ring-1 ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
@@ -191,7 +191,7 @@ export default function FileCard({
             ? "cursor-pointer"
             : ""
       }`
-    : `group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
+    : `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
         selected
           ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
@@ -261,7 +261,7 @@ export default function FileCard({
       {((isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||
         (!isMacosPackage && (onDelete || file.driveId))) && (
         <div
-          className={`absolute right-2 top-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 ${isThumb ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm group-hover:bg-black/50" : ""}`}
+          className={`absolute right-2 top-2 z-20 transition-opacity max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${isThumb ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm sm:group-hover:bg-black/50" : "max-sm:rounded-md max-sm:bg-neutral-100/90 max-sm:p-0.5 max-sm:dark:bg-neutral-800/90"}`}
         >
           <ItemActionsMenu
             actions={
