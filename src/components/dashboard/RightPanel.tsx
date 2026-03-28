@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import {
   Heart,
   Clock,
@@ -9,8 +11,16 @@ import {
   Activity,
   Share2,
   MessageCircle,
+  FolderOpen,
+  Settings,
+  Users,
+  Palette,
+  Headphones,
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
+import DashboardColorsModal from "./DashboardColorsModal";
+import SupportTicketModal from "./SupportTicketModal";
+import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 
 const quickAccessItems = (basePath: string) => [
   { href: `${basePath}/hearts`, label: "Hearts", icon: Heart },
@@ -28,6 +38,45 @@ interface RightPanelProps {
   storageComponent?: React.ReactNode;
 }
 
+function EnterpriseSidebarCard({
+  href,
+  label,
+  Icon,
+  pathname,
+  onMobileClose,
+}: {
+  href: string;
+  label: string;
+  Icon: LucideIcon;
+  pathname: string;
+  onMobileClose?: () => void;
+}) {
+  const isActive = pathname === href;
+  return (
+    <li>
+      <Link
+        href={href}
+        onClick={onMobileClose}
+        className={`flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm font-medium transition-colors dark:bg-neutral-900 ${
+          isActive
+            ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
+            : "border-neutral-200 text-neutral-800 hover:border-[var(--enterprise-primary)] hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-[var(--enterprise-primary)] dark:hover:bg-neutral-800/80"
+        }`}
+      >
+        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+const quickAccessActionClass = {
+  idle:
+    "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white",
+  active:
+    "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan",
+} as const;
+
 export default function RightPanel({
   onMobileClose,
   basePath = "/dashboard",
@@ -35,85 +84,205 @@ export default function RightPanel({
   storageComponent,
 }: RightPanelProps) {
   const pathname = usePathname();
+  const [colorsModalOpen, setColorsModalOpen] = useState(false);
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
   const items = quickAccessItems(basePath);
+  const enterpriseCtx = useEnterpriseOptional();
+  const org = enterpriseCtx?.org ?? enterpriseCtx?.organization ?? null;
+  const isEnterprisePanel = basePath === "/enterprise" && enterpriseCtx !== null;
+  const isAdmin = enterpriseCtx?.role === "admin";
+
+  if (isEnterprisePanel) {
+    const orgLabel = org?.name?.trim() || "your organization";
+
+    return (
+      <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 p-4 dark:border-neutral-800">
+            <h3 className="mb-1 text-sm font-semibold text-neutral-900 dark:text-white">
+              Control Center
+            </h3>
+            <p className="mb-4 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+              Organization storage is shared by everyone in {orgLabel}. Your admin may also set a{" "}
+              <strong className="font-medium text-neutral-700 dark:text-neutral-300">
+                per-seat upload cap
+              </strong>{" "}
+              so individual usage stays within an allocation—even when the org pool has free space.
+            </p>
+            <ul className="space-y-2">
+              <EnterpriseSidebarCard
+                href={`${basePath}/files`}
+                label="Files"
+                Icon={FolderOpen}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
+              <EnterpriseSidebarCard
+                href={`${basePath}/activity`}
+                label="Activity"
+                Icon={Activity}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
+              <EnterpriseSidebarCard
+                href={`${basePath}/settings`}
+                label="Organization settings"
+                Icon={Settings}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
+              {isAdmin ? (
+                <EnterpriseSidebarCard
+                  href={`${basePath}/seats`}
+                  label="Seats & invites"
+                  Icon={Users}
+                  pathname={pathname}
+                  onMobileClose={onMobileClose}
+                />
+              ) : null}
+              {items.map((item) => (
+                <EnterpriseSidebarCard
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  Icon={item.icon}
+                  pathname={pathname}
+                  onMobileClose={onMobileClose}
+                />
+              ))}
+              {commentsHref ? (
+                <EnterpriseSidebarCard
+                  href={commentsHref}
+                  label="Comments"
+                  Icon={MessageCircle}
+                  pathname={pathname}
+                  onMobileClose={onMobileClose}
+                />
+              ) : null}
+              <EnterpriseSidebarCard
+                href={`${basePath}/shared`}
+                label="Shared with you"
+                Icon={Share2}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
+            </ul>
+          </div>
+          <div className="flex min-h-0 flex-shrink-0 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col p-4">
+              {storageComponent ?? <StorageBadge />}
+            </div>
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
-      {/* Quick access */}
-      <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Quick access
-        </h3>
-        <ul className="space-y-0.5">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <li key={item.href}>
+    <>
+      <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
+        {/* Quick access */}
+        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            Quick access
+          </h3>
+          <ul className="space-y-0.5">
+            {items.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onMobileClose}
+                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      isActive ? quickAccessActionClass.active : quickAccessActionClass.idle
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+            {commentsHref ? (
+              <li key={commentsHref}>
                 <Link
-                  href={item.href}
+                  href={commentsHref}
                   onClick={onMobileClose}
                   className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    isActive
-                      ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                      : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    pathname === commentsHref
+                      ? quickAccessActionClass.active
+                      : quickAccessActionClass.idle
                   }`}
                 >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
-                  {item.label}
+                  <MessageCircle className="h-4 w-4 flex-shrink-0" />
+                  Comments
                 </Link>
               </li>
-            );
-          })}
-          {commentsHref ? (
-            <li key={commentsHref}>
-              <Link
-                href={commentsHref}
-                onClick={onMobileClose}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname === commentsHref
-                    ? "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan"
-                    : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-                }`}
+            ) : null}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  onMobileClose?.();
+                  setColorsModalOpen(true);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${quickAccessActionClass.idle}`}
               >
-                <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                Comments
-              </Link>
+                <Palette className="h-4 w-4 flex-shrink-0" />
+                Customize dashboard
+              </button>
             </li>
-          ) : null}
-        </ul>
-      </div>
-
-      {/* Activity */}
-      <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-        <Link
-          href={`${basePath}/activity`}
-          onClick={onMobileClose}
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          <Activity className="h-4 w-4" />
-          Activity
-        </Link>
-      </div>
-
-      {/* Shared shortcut */}
-      <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-        <Link
-          href={`${basePath}/shared`}
-          onClick={onMobileClose}
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          <Share2 className="h-4 w-4" />
-          Shared with you
-        </Link>
-      </div>
-
-      {/* Storage — fills sidebar below shortcuts (single panel, no split with sync) */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col p-4">
-          {storageComponent ?? <StorageBadge />}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  onMobileClose?.();
+                  setSupportModalOpen(true);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${quickAccessActionClass.idle}`}
+              >
+                <Headphones className="h-4 w-4 flex-shrink-0" />
+                Support ticket
+              </button>
+            </li>
+          </ul>
         </div>
-      </div>
-    </aside>
+
+        {/* Activity */}
+        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+          <Link
+            href={`${basePath}/activity`}
+            onClick={onMobileClose}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <Activity className="h-4 w-4" />
+            Activity
+          </Link>
+        </div>
+
+        {/* Shared shortcut */}
+        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
+          <Link
+            href={`${basePath}/shared`}
+            onClick={onMobileClose}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <Share2 className="h-4 w-4" />
+            Shared with you
+          </Link>
+        </div>
+
+        {/* Storage — fills sidebar below shortcuts (single panel, no split with sync) */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col p-4">
+            {storageComponent ?? <StorageBadge />}
+          </div>
+        </div>
+      </aside>
+      <DashboardColorsModal open={colorsModalOpen} onClose={() => setColorsModalOpen(false)} />
+      <SupportTicketModal isOpen={supportModalOpen} onClose={() => setSupportModalOpen(false)} />
+    </>
   );
 }

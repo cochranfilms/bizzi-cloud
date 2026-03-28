@@ -27,6 +27,11 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
+  /** These actions live in the right Quick access rail for personal, desktop, and hosted team workspaces. */
+  const customizeAndSupportInQuickAccess =
+    (pathname?.startsWith("/dashboard") ?? false) ||
+    (pathname?.startsWith("/desktop/app") ?? false) ||
+    /^\/team\/[^/]+/.test(pathname ?? "");
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { org } = useEnterprise();
@@ -164,28 +169,32 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
               )}
               {theme === "dark" ? "Light theme" : "Dark theme"}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setColorsModalOpen(true);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-            >
-              <Palette className="h-4 w-4" />
-              Customize dashboard
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setSupportModalOpen(true);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
-            >
-              <Headphones className="h-4 w-4" />
-              Support ticket
-            </button>
+            {!customizeAndSupportInQuickAccess ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setColorsModalOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  <Palette className="h-4 w-4" />
+                  Customize dashboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setSupportModalOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  <Headphones className="h-4 w-4" />
+                  Support ticket
+                </button>
+              </>
+            ) : null}
             <Link
               href="/privacy"
               onClick={() => setOpen(false)}

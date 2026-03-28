@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
 import { getAuthToken } from "@/lib/auth-token";
 
 export interface RecentOpenItem {
@@ -19,17 +21,46 @@ export interface RecentOpenItem {
   openedAt: string;
 }
 
+function buildRecentOpensScope(pathname: string | null, organizationId: string | null | undefined) {
+  if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
+    if (!organizationId) return null;
+    return {
+      context: "enterprise" as const,
+      organizationId,
+    };
+  }
+  if (typeof pathname === "string") {
+    const teamMatch = /^\/team\/([^/]+)/.exec(pathname);
+    if (teamMatch) {
+      return { context: "team" as const, teamOwnerId: teamMatch[1] };
+    }
+  }
+  return { context: "personal" as const };
+}
+
 export function useRecentOpens() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const { org } = useEnterprise();
   const [items, setItems] = useState<RecentOpenItem[]>([]);
   const [loading, setLoading] = useState(true);
   const hasLoadedOnceRef = useRef(false);
+
+  const scope = useMemo(
+    () => buildRecentOpensScope(pathname, org?.id),
+    [pathname, org?.id]
+  );
 
   const fetchItems = useCallback(async () => {
     if (!user) {
       setItems([]);
       hasLoadedOnceRef.current = false;
       setLoading(false);
+      return;
+    }
+    if (pathname?.startsWith("/enterprise") && scope === null) {
+      setItems([]);
+      setLoading(true);
       return;
     }
     const token = await getAuthToken();
@@ -39,7 +70,13 @@ export function useRecentOpens() {
     }
     if (!hasLoadedOnceRef.current) setLoading(true);
     try {
-      const res = await fetch("/api/recent-opens?limit=50", {
+      const params = new URLSearchParams({ limit: "50" });
+      if (scope) {
+        params.set("context", scope.context);
+        if (scope.context === "enterprise") params.set("organization_id", scope.organizationId);
+        if (scope.context === "team") params.set("team_owner_id", scope.teamOwnerId);
+      }
+      const res = await fetch(`/api/recent-opens?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -52,10 +89,10 @@ export function useRecentOpens() {
       hasLoadedOnceRef.current = true;
       setLoading(false);
     }
-  }, [user]);
+  }, [user, pathname, scope]);
 
   useEffect(() => {
-    fetchItems();
+    void fetchItems();
   }, [fetchItems]);
 
   return { items, loading, refresh: fetchItems };
