@@ -44,7 +44,7 @@ function toFolderItem(item: RecentOpenItem): FolderItem | null {
 export default function RecentContent({ basePath = "/dashboard" }: { basePath?: string }) {
   const router = useRouter();
   const { items, loading, refresh } = useRecentOpens();
-  const { viewMode, cardSize, aspectRatio, showCardInfo } = useLayoutSettings();
+  const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const { deleteFile } = useCloudFiles();
 
@@ -68,7 +68,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
         </p>
       </div>
       ) : viewMode === "list" ? (
-        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -108,7 +108,9 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
         </div>
       ) : (
         <div
-          className={`grid gap-4 ${
+          className={`grid ${
+            viewMode === "thumbnail" ? "gap-3" : "gap-4"
+          } ${
             viewMode === "thumbnail"
               ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
               : cardSize === "small"
@@ -126,6 +128,7 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
               layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
               layoutAspectRatio={aspectRatio}
               showCardInfo={showCardInfo}
+              presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
             />
           ))}
           {files.map((file) => (
@@ -139,7 +142,9 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
               }}
               layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
               layoutAspectRatio={aspectRatio}
+              thumbnailScale={thumbnailScale}
               showCardInfo={showCardInfo}
+              presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
             />
           ))}
         </div>

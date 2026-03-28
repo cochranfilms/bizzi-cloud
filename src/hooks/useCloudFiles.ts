@@ -958,6 +958,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 galleryId: data.gallery_id ?? null,
                 proxyStatus: data.proxy_status ?? null,
                 macosPackageId: (data.macos_package_id as string) ?? null,
+                resolution_w: data.resolution_w != null ? Number(data.resolution_w) : null,
+                resolution_h: data.resolution_h != null ? Number(data.resolution_h) : null,
+                duration_sec: data.duration_sec != null ? Number(data.duration_sec) : null,
+                video_codec: (data.video_codec as string) ?? null,
+                width: data.width != null ? Number(data.width) : null,
+                height: data.height != null ? Number(data.height) : null,
               };
             });
           onFiles(files);
@@ -1035,6 +1041,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             contentType: data.content_type ?? null,
             assetType: data.asset_type ?? null,
             galleryId: data.gallery_id ?? null,
+            resolution_w: data.resolution_w != null ? Number(data.resolution_w) : null,
+            resolution_h: data.resolution_h != null ? Number(data.resolution_h) : null,
+            duration_sec: data.duration_sec != null ? Number(data.duration_sec) : null,
+            video_codec: (data.video_codec as string) ?? null,
+            width: data.width != null ? Number(data.width) : null,
+            height: data.height != null ? Number(data.height) : null,
           });
         });
       }

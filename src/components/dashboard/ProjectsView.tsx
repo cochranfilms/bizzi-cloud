@@ -11,6 +11,7 @@ import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
 import FilePreviewModal from "./FilePreviewModal";
 import { useLayoutSettings, type ViewMode, type CardSize, type AspectRatio } from "@/context/LayoutSettingsContext";
+import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import {
   expandMacosPackageRowIds,
   mergeDriveFilesWithMacosPackages,
@@ -34,7 +35,7 @@ const MAX_PAGES = 15;
 function ProjectsFilesSkeleton({
   viewMode,
   cardSize,
-  aspectRatio: _aspectRatio,
+  aspectRatio,
 }: {
   viewMode: ViewMode;
   cardSize: CardSize;
@@ -72,10 +73,10 @@ function ProjectsFilesSkeleton({
           : "sm:grid-cols-3 md:grid-cols-4";
   const thumbCount = viewMode === "thumbnail" ? 8 : 10;
   return (
-    <div className={`grid gap-4 ${gridCols}`} aria-busy="true" aria-label="Loading project files">
+    <div className={`grid ${viewMode === "thumbnail" ? "gap-3" : "gap-4"} ${gridCols}`} aria-busy="true" aria-label="Loading project files">
       {Array.from({ length: thumbCount }).map((_, i) => (
         <div key={i} className="flex min-w-0 flex-col gap-2">
-          <div className={`aspect-video w-full rounded-xl ${pulse}`} />
+          <div className={`w-full rounded-xl ${pulse} ${getCardAspectClass(aspectRatio)}`} />
           <div className={`h-3 w-[85%] ${pulse}`} />
           <div className={`h-3 w-[55%] ${pulse}`} />
         </div>
@@ -213,6 +214,7 @@ export default function ProjectsView({
     thumbnailScale,
     showCardInfo,
   } = useLayoutSettings();
+  const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
 
   const ctx: ProjectsContext = pathname?.startsWith("/enterprise")
     ? "enterprise"
@@ -515,7 +517,7 @@ export default function ProjectsView({
           (.drp), or other project files to Storage — they will appear here for this workspace.
         </p>
       ) : viewMode === "list" ? (
-        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -546,7 +548,7 @@ export default function ProjectsView({
       ) : (
         <div
           data-selectable-grid
-          className={`grid gap-4 ${
+          className={`grid ${gridGapClass} ${
             viewMode === "thumbnail"
               ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
               : cardSize === "small"
@@ -576,6 +578,7 @@ export default function ProjectsView({
                 layoutAspectRatio={aspectRatio}
                 thumbnailScale={thumbnailScale}
                 showCardInfo={showCardInfo}
+                presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
               />
             </div>
           ))}

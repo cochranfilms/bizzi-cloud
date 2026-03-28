@@ -182,6 +182,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     thumbnailScale,
     showCardInfo,
   } = useLayoutSettings();
+  const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
   const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -976,7 +977,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <SectionTitle className="mb-4">Pinned</SectionTitle>
         {hasPinned ? (
           viewMode === "list" ? (
-            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1065,7 +1066,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             </div>
           ) : (
           <div
-            className={`grid gap-4 ${
+            className={`grid ${gridGapClass} ${
               viewMode === "thumbnail"
                 ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
@@ -1121,6 +1122,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       selectable={!!drive && !item.preventDelete}
                       selected={selectedFolderKeys.has(item.key)}
                       onSelect={() => toggleFolderSelection(item.key)}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 );
@@ -1160,6 +1162,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       layoutAspectRatio={aspectRatio}
                       thumbnailScale={thumbnailScale}
                       showCardInfo={showCardInfo}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 );
@@ -1178,7 +1181,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
         {driveFolderItems.length > 0 ? (
           viewMode === "list" ? (
-            <div className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="mb-6 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1240,7 +1243,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             </div>
           ) : (
           <div
-            className={`mb-6 grid gap-4 ${
+            className={`mb-6 grid ${gridGapClass} ${
               viewMode === "thumbnail"
                 ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                 : cardSize === "small"
@@ -1294,6 +1297,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     selectable={!!drive && !item.preventDelete}
                     selected={selectedFolderKeys.has(item.key)}
                     onSelect={() => toggleFolderSelection(item.key)}
+                    presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                   />
                 </div>
               );
@@ -1313,7 +1317,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             </SectionTitle>
             {recentUploads.length > 0 ? (
               viewMode === "list" ? (
-                <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1360,7 +1364,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 </div>
               ) : (
               <div
-                className={`grid gap-4 ${
+                className={`grid ${gridGapClass} ${
                   viewMode === "thumbnail"
                     ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                     : cardSize === "small"
@@ -1405,6 +1409,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         layoutAspectRatio={aspectRatio}
                         thumbnailScale={thumbnailScale}
                         showCardInfo={showCardInfo}
+                        presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                       />
                     </div>
                   );

@@ -114,13 +114,15 @@ export default function LayoutSettingsBar({
           }}
         />
       )}
-      <OptionGroup
-        label="Size"
-        value={cardSize}
-        options={["small", "medium", "large"] as CardSize[]}
-        onChange={setCardSize}
-        renderOption={(opt) => opt.charAt(0).toUpperCase()}
-      />
+      {viewMode !== "thumbnail" && (
+        <OptionGroup
+          label="Size"
+          value={cardSize}
+          options={["small", "medium", "large"] as CardSize[]}
+          onChange={setCardSize}
+          renderOption={(opt) => opt.charAt(0).toUpperCase()}
+        />
+      )}
       <OptionGroup
         label="Ratio"
         value={aspectRatio}

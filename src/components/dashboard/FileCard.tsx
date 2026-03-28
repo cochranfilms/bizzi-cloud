@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Archive, Check, Download, FileIcon, Film, Info, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
+import type { CardPresentation } from "@/lib/card-presentation";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
@@ -48,6 +49,8 @@ interface FileCardProps {
   onPackageInfo?: () => void;
   /** Final Cut library / package: open drive folder to package root (e.g. double-click in All Files). */
   onMacosPackageNavigate?: () => void;
+  /** Thumbnail browse mode: media-first chrome and caption overlay */
+  presentation?: CardPresentation;
 }
 
 function formatBytes(bytes: number): string {
@@ -76,6 +79,28 @@ function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
 
+function formatDurationThumb(sec: number | null | undefined): string {
+  if (sec == null || sec <= 0) return "";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function fileThumbCaptionSecondary(file: RecentFile, isMacosPackage: boolean): string {
+  if (isMacosPackage) {
+    if (file.macosPackageFileCount != null) return `${file.macosPackageFileCount} files`;
+    return file.macosPackageLabel?.trim() || "Package";
+  }
+  const dur = formatDurationThumb(file.duration_sec);
+  const rw = file.resolution_w;
+  const rh = file.resolution_h;
+  const res = rw != null && rh != null && rw > 0 && rh > 0 ? `${rw}×${rh}` : "";
+  if (dur && res) return `${dur} · ${res}`;
+  if (dur) return dur;
+  if (res) return res;
+  return `${formatBytes(file.size)}`;
+}
+
 // Scaled so largest never exceeds former medium; large = former medium
 const FILE_SIZE_CLASSES = {
   small: { padding: "p-3", icon: "h-8 w-8", iconInner: "h-4 w-4", text: "text-xs" },
@@ -98,7 +123,9 @@ export default function FileCard({
   onDownloadPackage,
   onPackageInfo,
   onMacosPackageNavigate,
+  presentation = "default",
 }: FileCardProps) {
+  const isThumb = presentation === "thumbnail";
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -150,12 +177,21 @@ export default function FileCard({
   };
 
   const sizeLine = `${formatBytes(file.size)} · ${file.driveName}${file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}`;
+  const captionSecondary = fileThumbCaptionSecondary(file, isMacosPackage);
 
-  return (
-    <div
-      ref={cardRef}
-      title={!showCardInfo ? file.name : undefined}
-      className={`group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
+  const rootShell = isThumb
+    ? `group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
+        selected
+          ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
+          : "ring-1 ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
+      } ${
+        canPreview && !selected
+          ? "cursor-pointer hover:ring-neutral-300 hover:shadow-sm dark:hover:ring-neutral-600"
+          : canPreview && selected
+            ? "cursor-pointer"
+            : ""
+      }`
+    : `group relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
         selected
           ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
@@ -165,9 +201,16 @@ export default function FileCard({
           : canPreview && selected
             ? "cursor-pointer"
             : ""
-      }`}
+      }`;
+
+  return (
+    <div
+      ref={cardRef}
+      title={!showCardInfo ? file.name : undefined}
+      className={rootShell}
       role={canPreview ? "button" : undefined}
       tabIndex={canPreview ? 0 : undefined}
+      aria-label={canPreview && isThumb && !showCardInfo ? file.name : undefined}
       onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
       onDoubleClick={
         isMacosPackage && onMacosPackageNavigate
@@ -196,20 +239,30 @@ export default function FileCard({
             e.stopPropagation();
             onSelect();
           }}
-          className={`absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-700 ${
+          className={`absolute left-2 top-2 z-20 flex items-center justify-center rounded-md border-2 transition-colors ${
+            isThumb
+              ? "h-5 w-5 border-white/60 bg-black/40 backdrop-blur-sm hover:bg-black/55 dark:border-white/50"
+              : "h-6 w-6 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+          } ${
             selected
               ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue"
-              : "border-neutral-300 bg-transparent dark:border-neutral-600"
+              : isThumb
+                ? "border-white/60 bg-black/35"
+                : "border-neutral-300 bg-transparent dark:border-neutral-600"
           }`}
           aria-label={selected ? "Deselect" : "Select"}
           aria-pressed={selected}
         >
-          {selected && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
+          {selected && (
+            <Check className={`${isThumb ? "h-3 w-3" : "h-3.5 w-3.5"} text-white stroke-[3]`} />
+          )}
         </button>
       )}
       {((isMacosPackage && (onDownloadPackage || onPackageInfo || onDelete)) ||
         (!isMacosPackage && (onDelete || file.driveId))) && (
-        <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
+        <div
+          className={`absolute right-2 top-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 ${isThumb ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm group-hover:bg-black/50" : ""}`}
+        >
           <ItemActionsMenu
             actions={
               isMacosPackage
@@ -335,8 +388,51 @@ export default function FileCard({
             <FileIcon className={sizeClasses.iconInner} />
           </div>
         )}
+        {isThumb && showCardInfo ? (
+          <>
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] bg-gradient-to-t from-black/85 via-black/40 to-transparent pt-14 pb-0"
+              aria-hidden
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] space-y-0.5 px-3 pb-2.5 pt-2">
+              <p
+                className="truncate text-left text-sm font-medium text-white drop-shadow-md"
+                title={file.name}
+              >
+                {file.name}
+              </p>
+              <p
+                className="truncate text-left text-[11px] text-white/90 drop-shadow"
+                title={captionSecondary}
+              >
+                {captionSecondary}
+              </p>
+            </div>
+          </>
+        ) : null}
+        {isThumb && !showCardInfo ? (
+          <div className="absolute inset-x-0 bottom-0 z-[2] px-3 pb-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+            <p className="truncate text-left text-xs font-medium text-white drop-shadow-md">{file.name}</p>
+          </div>
+        ) : null}
+        {isThumb && showHeartRow ? (
+          <div
+            className={`absolute bottom-2 right-2 z-20 rounded-full bg-black/45 p-1 shadow-sm backdrop-blur-sm dark:bg-black/55 ${!showCardInfo ? "opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <HeartButton
+              count={hearts.count}
+              hasHearted={hearts.hasHearted}
+              loading={hearts.loading}
+              onToggle={hearts.toggle}
+              size="sm"
+              showCount
+            />
+          </div>
+        ) : null}
       </div>
-      {showCardInfo && (
+      {!isThumb && showCardInfo && (
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${sizeClasses.padding} pt-2`}
         >

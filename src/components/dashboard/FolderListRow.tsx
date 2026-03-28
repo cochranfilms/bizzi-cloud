@@ -17,6 +17,19 @@ import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 
+/** Em dash for columns that don’t apply to folders (media technical fields, etc.). */
+function FolderListNaCell() {
+  return (
+    <span
+      className="text-neutral-400 dark:text-neutral-500"
+      title="Not applicable for folders"
+      aria-label="Not applicable for folders"
+    >
+      —
+    </span>
+  );
+}
+
 interface FolderListRowProps {
   item: FolderItem;
   onClick?: () => void;
@@ -164,11 +177,21 @@ export default function FolderListRow({
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
           {item.items} {item.items === 1 ? "item" : "items"}
         </td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">—</td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">—</td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">—</td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">—</td>
-        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">—</td>
+        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <FolderListNaCell />
+        </td>
+        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <FolderListNaCell />
+        </td>
+        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <FolderListNaCell />
+        </td>
+        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <FolderListNaCell />
+        </td>
+        <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <FolderListNaCell />
+        </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {(onDelete || (!item.hideShare && item.driveId)) && (

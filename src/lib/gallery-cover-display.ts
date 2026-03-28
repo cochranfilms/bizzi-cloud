@@ -83,6 +83,13 @@ export function getLiveHeroHeightCssVars(preset: HeroHeightPreset): {
 
 export type CoverTitleAlignment = "left" | "center" | "right";
 
+/**
+ * `responsive`: production — uses `sm:` title size (matches wide browser viewport).
+ * `mobileViewport`: forces narrow-viewport title sizing (no `sm:`) so previews match real phones
+ * even when the settings page itself is open on a wide monitor.
+ */
+export type CoverHeroTypographyScope = "responsive" | "mobileViewport";
+
 export interface CoverHeroContentLayout {
   /** Inner stack: flex + gap + alignment + text align */
   stackClassName: string;
@@ -97,7 +104,8 @@ export function getCoverHeroSectionPaddingClass(): string {
 }
 
 export function getCoverHeroContentLayout(
-  alignment: CoverTitleAlignment | null | undefined
+  alignment: CoverTitleAlignment | null | undefined,
+  typographyScope: CoverHeroTypographyScope = "responsive"
 ): CoverHeroContentLayout {
   const baseStack =
     "relative z-10 flex w-full max-w-6xl flex-col gap-6 text-white";
@@ -112,12 +120,36 @@ export function getCoverHeroContentLayout(
     default:
       stackClassName = `${baseStack} items-center text-center`;
   }
+  const titleClassName =
+    typographyScope === "mobileViewport"
+      ? "max-w-3xl text-4xl font-semibold"
+      : "max-w-3xl text-4xl font-semibold sm:text-5xl";
   return {
     stackClassName,
-    titleClassName: "max-w-3xl text-4xl font-semibold sm:text-5xl",
+    titleClassName,
     welcomeClassName: "max-w-xl text-lg text-white/90",
     instructionsClassName: "max-w-md text-sm text-white/75",
   };
+}
+
+/**
+ * Hero min-height in px for a simulated viewport height (mirrors vh/dvh rules from presets).
+ * Used by settings preview so banner height matches production math inside a fake viewport.
+ */
+export function getSimulatedHeroMinHeightPx(
+  preset: HeroHeightPreset,
+  device: "desktop" | "mobile",
+  simulatedViewportHeightPx: number
+): number {
+  const row = HERO_HEIGHT_PRESETS[preset];
+  const rule = device === "mobile" ? row.mobile : row.desktop;
+  const t = rule.trim();
+  const m = /^([\d.]+)\s*(vh|dvh|svh|lvh)$/i.exec(t);
+  if (!m) {
+    return Math.round(simulatedViewportHeightPx * 0.55);
+  }
+  const pct = parseFloat(m[1]) / 100;
+  return Math.round(simulatedViewportHeightPx * pct);
 }
 
 /** Title font stack used on the live gallery hero */

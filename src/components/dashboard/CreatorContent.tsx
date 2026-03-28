@@ -23,6 +23,7 @@ const DRAG_THRESHOLD_PX = 5;
 export default function CreatorContent() {
   const { viewMode, cardSize, aspectRatio, showCardInfo, thumbnailScale } =
     useLayoutSettings();
+  const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
@@ -173,7 +174,7 @@ export default function CreatorContent() {
         {currentDrive ? (
           driveFiles.length > 0 ? (
             viewMode === "list" ? (
-              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -206,7 +207,7 @@ export default function CreatorContent() {
                 </table>
               </div>
             ) : (
-              <div className={`grid gap-4 ${gridColsClass}`}>
+              <div className={`grid ${gridGapClass} ${gridColsClass}`}>
                 {driveFiles.map((file) => (
                   <div key={file.id} className="h-full min-h-0">
                     <FileCard
@@ -221,6 +222,7 @@ export default function CreatorContent() {
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
                       thumbnailScale={thumbnailScale}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 ))}
@@ -266,7 +268,7 @@ export default function CreatorContent() {
               })}
             </div>
           ) : (
-            <div className={`grid gap-4 ${gridColsClass}`}>
+            <div className={`grid ${gridGapClass} ${gridColsClass}`}>
               {folderItems.map((item) => {
                 const drive = creatorDrives.find((d) => d.id === item.driveId);
                 return (
@@ -276,6 +278,7 @@ export default function CreatorContent() {
                       layoutSize={folderLayoutSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                       onClick={() => item.driveId && openDrive(item.driveId, item.name)}
                       onDelete={
                         drive && !item.preventDelete

@@ -21,10 +21,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
-import CoverHeroShell from "@/components/gallery/CoverHeroShell";
+import GalleryCoverHero from "@/components/gallery/GalleryCoverHero";
 import {
-  COVER_HERO_TITLE_FONT_FAMILY,
-  getCoverHeroContentLayout,
   resolveCoverHeroPreset,
   resolveCoverObjectPosition,
 } from "@/lib/gallery-cover-display";
@@ -1783,7 +1781,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     cover_position: gallery.cover_position,
   });
   const resolvedHeroPreset = resolveCoverHeroPreset(gallery.cover_hero_height);
-  const heroContentLayout = getCoverHeroContentLayout(gallery.cover_title_alignment);
 
   const heroImageLutActive =
     lutWorkflowActive &&
@@ -1855,12 +1852,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       </header>
 
       {heroHasMediaBackdrop ? (
-        <CoverHeroShell
+        <GalleryCoverHero
           sectionId="gallery-hero"
           heightMode={{ kind: "live", preset: resolvedHeroPreset }}
           overlayOpacity={gallery.cover_overlay_opacity}
           overlayMode="solid"
           titleAlignment={gallery.cover_title_alignment ?? "center"}
+          typographyScope="responsive"
           media={
             featuredVideoStreamUrl ? (
               heroVideoLutActive ? (
@@ -1907,52 +1905,15 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               />
             )
           }
-        >
-          {gallery.event_date && (
-            <p className="text-xs font-medium uppercase tracking-widest text-white/90">
-              {new Date(gallery.event_date).toLocaleDateString(undefined, {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
-          )}
-          {(gallery.branding.logo_url || gallery.branding.business_name) && (
-            <div className="flex items-center gap-2">
-              {gallery.branding.logo_url && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={gallery.branding.logo_url}
-                  alt=""
-                  className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
-                />
-              )}
-              <span className="text-sm font-medium uppercase tracking-wider text-white/95">
-                {gallery.branding.business_name || ""}
-              </span>
-            </div>
-          )}
-          <h1
-            className={heroContentLayout.titleClassName}
-            style={{ fontFamily: COVER_HERO_TITLE_FONT_FAMILY }}
-          >
-            {gallery.title}
-          </h1>
-          {gallery.branding.welcome_message && (
-            <p className={heroContentLayout.welcomeClassName}>{gallery.branding.welcome_message}</p>
-          )}
-          {prePageInstructions && (
-            <p className={heroContentLayout.instructionsClassName}>{prePageInstructions}</p>
-          )}
-          <button
-            type="button"
-            onClick={scrollToGalleryContent}
-            className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
-            style={{ backgroundColor: accent }}
-          >
-            View gallery
-          </button>
-        </CoverHeroShell>
+          eventDate={gallery.event_date}
+          logoUrl={gallery.branding.logo_url ?? null}
+          businessName={gallery.branding.business_name ?? null}
+          welcomeMessage={gallery.branding.welcome_message ?? null}
+          prePageInstructions={prePageInstructions || null}
+          galleryTitle={gallery.title}
+          accentColor={accent}
+          onViewGallery={scrollToGalleryContent}
+        />
       ) : (
         <section
           id="gallery-hero"

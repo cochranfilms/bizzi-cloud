@@ -4,6 +4,7 @@ import {
   getCoverHeroContentLayout,
   getCoverOverlayBackground,
   getPreviewHeroMinHeightPercent,
+  getSimulatedHeroMinHeightPx,
   resolveCoverHeroPreset,
   resolveCoverObjectPosition,
 } from "@/lib/gallery-cover-display";
@@ -108,5 +109,21 @@ describe("getCoverHeroContentLayout", () => {
     expect(c.titleClassName).toContain("max-w-3xl");
     expect(c.welcomeClassName).toContain("max-w-xl");
     expect(c.instructionsClassName).toContain("max-w-md");
+  });
+
+  it("mobileViewport omits sm:text-5xl for narrow preview accuracy", () => {
+    const c = getCoverHeroContentLayout("center", "mobileViewport");
+    expect(c.titleClassName).not.toContain("sm:text-5xl");
+  });
+});
+
+describe("getSimulatedHeroMinHeightPx", () => {
+  it("scales vh rule by simulated viewport height", () => {
+    expect(getSimulatedHeroMinHeightPx("medium", "desktop", 720)).toBe(396);
+    expect(getSimulatedHeroMinHeightPx("medium", "mobile", 844)).toBe(506);
+  });
+
+  it("fullscreen uses full simulated height", () => {
+    expect(getSimulatedHeroMinHeightPx("fullscreen", "mobile", 844)).toBe(844);
   });
 });

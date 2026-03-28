@@ -20,7 +20,7 @@ import LUTLibrarySection from "@/components/creative-lut/LUTLibrarySection";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import type { HeroHeightPreset } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
-import CoverHeroPreview from "@/components/gallery/CoverHeroPreview";
+import GalleryCoverHeroSettingsPreview from "@/components/gallery/GalleryCoverHeroSettingsPreview";
 import { resolveCoverHeroPreset } from "@/lib/gallery-cover-display";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import {
@@ -818,8 +818,8 @@ export default function GallerySettingsForm({
                     Live preview
                   </h3>
                   <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-                    Drag the image to reposition the cover (same framing clients see). Use shortcuts
-                    below for quick alignment.
+                    Same hero as your public gallery, scaled to fit: drag the image to reposition. Use
+                    shortcuts below for quick alignment.
                   </p>
                 </div>
 
@@ -865,10 +865,12 @@ export default function GallerySettingsForm({
                           </button>
                         </div>
                         <div className="flex justify-center">
-                          <CoverHeroPreview
+                          <GalleryCoverHeroSettingsPreview
+                            device={coverPreviewTab}
                             imageUrl={coverHeroPreviewUrl}
                             focalX={coverFocalX}
                             focalY={coverFocalY}
+                            coverPosition={(initialData.cover_position as string | undefined) ?? null}
                             onFocalChange={(x, y) => {
                               setCoverFocalX(x);
                               setCoverFocalY(y);
@@ -876,11 +878,14 @@ export default function GallerySettingsForm({
                             overlayOpacity={coverOverlayOpacity}
                             titleAlignment={coverTitleAlignment}
                             heroPreset={coverHeroHeight}
-                            previewMode={coverPreviewTab}
                             galleryTitle={title}
                             eventDate={eventDate || null}
                             accentColor={accentColor}
-                            compact
+                            logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
+                            businessName={businessName.trim() || null}
+                            welcomeMessage={welcomeMessage.trim() || null}
+                            prePageInstructions={prePageInstructions.trim() || null}
+                            maxDisplayWidth={coverPreviewTab === "desktop" ? 380 : 300}
                           />
                         </div>
                       </div>
@@ -893,10 +898,12 @@ export default function GallerySettingsForm({
                               Desktop
                             </p>
                             <div className="flex justify-center min-[960px]:justify-start">
-                              <CoverHeroPreview
+                              <GalleryCoverHeroSettingsPreview
+                                device="desktop"
                                 imageUrl={coverHeroPreviewUrl}
                                 focalX={coverFocalX}
                                 focalY={coverFocalY}
+                                coverPosition={(initialData.cover_position as string | undefined) ?? null}
                                 onFocalChange={(x, y) => {
                                   setCoverFocalX(x);
                                   setCoverFocalY(y);
@@ -904,11 +911,14 @@ export default function GallerySettingsForm({
                                 overlayOpacity={coverOverlayOpacity}
                                 titleAlignment={coverTitleAlignment}
                                 heroPreset={coverHeroHeight}
-                                previewMode="desktop"
                                 galleryTitle={title}
                                 eventDate={eventDate || null}
                                 accentColor={accentColor}
-                                compact
+                                logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
+                                businessName={businessName.trim() || null}
+                                welcomeMessage={welcomeMessage.trim() || null}
+                                prePageInstructions={prePageInstructions.trim() || null}
+                                maxDisplayWidth={400}
                               />
                             </div>
                           </div>
@@ -917,10 +927,12 @@ export default function GallerySettingsForm({
                               Mobile
                             </p>
                             <div className="flex justify-center min-[960px]:justify-start">
-                              <CoverHeroPreview
+                              <GalleryCoverHeroSettingsPreview
+                                device="mobile"
                                 imageUrl={coverHeroPreviewUrl}
                                 focalX={coverFocalX}
                                 focalY={coverFocalY}
+                                coverPosition={(initialData.cover_position as string | undefined) ?? null}
                                 onFocalChange={(x, y) => {
                                   setCoverFocalX(x);
                                   setCoverFocalY(y);
@@ -928,11 +940,14 @@ export default function GallerySettingsForm({
                                 overlayOpacity={coverOverlayOpacity}
                                 titleAlignment={coverTitleAlignment}
                                 heroPreset={coverHeroHeight}
-                                previewMode="mobile"
                                 galleryTitle={title}
                                 eventDate={eventDate || null}
                                 accentColor={accentColor}
-                                compact
+                                logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
+                                businessName={businessName.trim() || null}
+                                welcomeMessage={welcomeMessage.trim() || null}
+                                prePageInstructions={prePageInstructions.trim() || null}
+                                maxDisplayWidth={260}
                               />
                             </div>
                           </div>

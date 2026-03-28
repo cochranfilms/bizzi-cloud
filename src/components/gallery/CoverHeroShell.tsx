@@ -4,23 +4,22 @@ import type { CSSProperties, ReactNode } from "react";
 import type { HeroHeightPreset } from "@/lib/cover-constants";
 import {
   clampCoverOverlayOpacity,
-  getCoverHeroContentLayout,
   getCoverHeroSectionPaddingClass,
   getCoverOverlayBackground,
-  type CoverOverlayMode,
-  type CoverTitleAlignment,
   getLiveHeroHeightCssVars,
+  type CoverHeroContentLayout,
+  type CoverOverlayMode,
 } from "@/lib/gallery-cover-display";
 
 export type CoverHeroHeightMode =
   | { kind: "live"; preset: HeroHeightPreset }
-  | { kind: "preview"; minHeightPercent: string };
+  | { kind: "preview"; minHeightPx: number };
 
 export interface CoverHeroShellProps {
   heightMode: CoverHeroHeightMode;
+  contentLayout: CoverHeroContentLayout;
   overlayOpacity: number | null | undefined;
   overlayMode?: CoverOverlayMode;
-  titleAlignment: CoverTitleAlignment | null | undefined;
   media: ReactNode;
   children: ReactNode;
   sectionId?: string;
@@ -34,16 +33,15 @@ function cx(...parts: Array<string | false | undefined>) {
 
 export default function CoverHeroShell({
   heightMode,
+  contentLayout,
   overlayOpacity,
   overlayMode = "solid",
-  titleAlignment,
   media,
   children,
   sectionId,
   ariaLabel = "Gallery cover",
   sectionClassName,
 }: CoverHeroShellProps) {
-  const layout = getCoverHeroContentLayout(titleAlignment);
   const padding = getCoverHeroSectionPaddingClass();
   const o = clampCoverOverlayOpacity(overlayOpacity ?? 50);
 
@@ -52,7 +50,7 @@ export default function CoverHeroShell({
       ? ({
           ...getLiveHeroHeightCssVars(heightMode.preset),
         } as CSSProperties)
-      : ({ minHeight: heightMode.minHeightPercent } as CSSProperties);
+      : ({ minHeight: `${heightMode.minHeightPx}px` } as CSSProperties);
 
   return (
     <section
@@ -73,7 +71,7 @@ export default function CoverHeroShell({
           style={{ background: getCoverOverlayBackground(o, overlayMode) }}
         />
       </div>
-      <div className={layout.stackClassName}>{children}</div>
+      <div className={contentLayout.stackClassName}>{children}</div>
     </section>
   );
 }

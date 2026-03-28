@@ -224,6 +224,7 @@ export default function FileGrid() {
         : cardSize === "large"
           ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
           : "sm:grid-cols-3 md:grid-cols-4";
+  const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
   const listColSpan = 10;
   const [activeTab, setActiveTab] = useState<"recents" | "hearts">("recents");
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
@@ -1411,7 +1412,7 @@ export default function FileGrid() {
             compact
           >
           {viewMode === "list" ? (
-            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1491,7 +1492,7 @@ export default function FileGrid() {
               </table>
             </div>
           ) : (
-            <div className={`grid gap-4 ${gridColsClass}`}>
+            <div className={`grid ${gridGapClass} ${gridColsClass}`}>
               {pinnedFolderItems.map((item) => {
                 const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                 const driveId = item.driveId ?? "";
@@ -1537,6 +1538,7 @@ export default function FileGrid() {
                       selectable={!!drive && !item.preventDelete}
                       selected={selectedFolderKeys.has(item.key)}
                       onSelect={() => toggleFolderSelection(item.key)}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 );
@@ -1567,6 +1569,7 @@ export default function FileGrid() {
                     layoutAspectRatio={aspectRatio}
                     thumbnailScale={thumbnailScale}
                     showCardInfo={showCardInfo}
+                    presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                   />
                 </div>
               ))}
@@ -1659,7 +1662,7 @@ export default function FileGrid() {
           </div>
         ) : useFilteredScoped || subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 ? (
             viewMode === "list" ? (
-              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1751,7 +1754,7 @@ export default function FileGrid() {
             ) : (
             <div
               data-selectable-grid
-              className={`relative grid gap-4 ${gridColsClass}`}
+              className={`relative grid ${gridGapClass} ${gridColsClass}`}
             >
               {useFilteredScoped && filtersLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
@@ -1787,6 +1790,7 @@ export default function FileGrid() {
                       layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 );
@@ -1843,6 +1847,7 @@ export default function FileGrid() {
                           ? () => navigateIntoMacosPackage(file)
                           : undefined
                       }
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 );
@@ -1862,7 +1867,7 @@ export default function FileGrid() {
               <>
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Your synced drives</h3>
                 {viewMode === "list" ? (
-                  <div className="mb-8 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                  <div className="mb-8 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -1926,7 +1931,7 @@ export default function FileGrid() {
                 ) : (
                 <div
                   data-selectable-grid
-                  className={`mb-8 grid gap-4 ${gridColsClass}`}
+                  className={`mb-8 grid ${gridGapClass} ${gridColsClass}`}
                 >
                   {folderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
@@ -1973,6 +1978,7 @@ export default function FileGrid() {
                           selectable={!!drive && !item.preventDelete}
                           selected={selectedFolderKeys.has(item.key)}
                           onSelect={() => toggleFolderSelection(item.key)}
+                          presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                         />
                       </div>
                     );
@@ -1987,7 +1993,7 @@ export default function FileGrid() {
                   {useFilteredScoped ? "Files" : "Recently synced files"}
                 </h3>
                 {viewMode === "list" ? (
-                  <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                  <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -2025,7 +2031,7 @@ export default function FileGrid() {
                 ) : (
                 <div
                   data-selectable-grid
-                  className={`relative grid gap-4 ${gridColsClass}`}
+                  className={`relative grid ${gridGapClass} ${gridColsClass}`}
                 >
                   {useFilteredScoped && filtersLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
@@ -2083,6 +2089,7 @@ export default function FileGrid() {
                           onMacosPackageNavigate={
                             isPkg ? () => navigateIntoMacosPackage(file) : undefined
                           }
+                          presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                         />
                       </div>
                     );
@@ -2114,7 +2121,7 @@ export default function FileGrid() {
         ) : (
           <>
             {viewMode === "list" ? (
-              <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 dark:border-neutral-700">
@@ -2148,7 +2155,7 @@ export default function FileGrid() {
                 </table>
               </div>
             ) : (
-              <div data-selectable-grid className={`relative grid gap-4 ${gridColsClass}`}>
+              <div data-selectable-grid className={`relative grid ${gridGapClass} ${gridColsClass}`}>
                 {heartedFiles.map((file) => (
                   <div
                     key={file.id}
@@ -2170,6 +2177,7 @@ export default function FileGrid() {
                       layoutAspectRatio={aspectRatio}
                       thumbnailScale={thumbnailScale}
                       showCardInfo={showCardInfo}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
                     />
                   </div>
                 ))}
