@@ -9,6 +9,7 @@ import {
   ListObjectsV2Command,
   CreateMultipartUploadCommand,
   UploadPartCommand,
+  ListPartsCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
   type CompletedPart,
@@ -192,6 +193,45 @@ export async function createPresignedPartUrl(
     PartNumber: partNumber,
   });
   return getSignedUrl(client, command, { expiresIn });
+}
+
+/**
+ * List uploaded parts for an in-progress multipart upload (S3 ListParts).
+ * Required for Uppy resume: client clears chunk memory after each part; resume must
+ * reconcile with storage, not Firestore (partEtags are only written on complete).
+ */
+export async function listMultipartUploadParts(
+  objectKey: string,
+  uploadId: string
+): Promise<{ PartNumber: number; ETag: string }[]> {
+  const client = getB2Client();
+  const out: { PartNumber: number; ETag: string }[] = [];
+  let partNumberMarker: string | undefined;
+
+  for (;;) {
+    const response = await client.send(
+      new ListPartsCommand({
+        Bucket: B2_BUCKET_NAME!,
+        Key: objectKey,
+        UploadId: uploadId,
+        ...(partNumberMarker != null ? { PartNumberMarker: partNumberMarker } : {}),
+      })
+    );
+
+    for (const p of response.Parts ?? []) {
+      if (p.PartNumber != null && p.ETag) {
+        const etag = String(p.ETag).replace(/^"|"$/g, "");
+        out.push({ PartNumber: p.PartNumber, ETag: etag });
+      }
+    }
+
+    if (!response.IsTruncated) break;
+    const next = response.NextPartNumberMarker;
+    if (next == null) break;
+    partNumberMarker = String(next);
+  }
+
+  return out;
 }
 
 /** Abort multipart upload and remove any uploaded parts from B2. */

@@ -3,7 +3,7 @@
  * GET  /api/uppy/s3/multipart/[uploadId]?key=... → list uploaded parts
  * DELETE /api/uppy/s3/multipart/[uploadId]?key=... → abort upload
  */
-import { abortMultipartUpload, isB2Configured } from "@/lib/b2";
+import { abortMultipartUpload, isB2Configured, listMultipartUploadParts } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -82,13 +82,19 @@ export async function GET(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const partEtags = (session.data.partEtags as Record<number, string>) ?? {};
-  const parts = Object.entries(partEtags).map(([num, etag]) => ({
-    PartNumber: parseInt(num, 10),
-    ETag: etag,
-  }));
-
-  return NextResponse.json(parts);
+  const objectKey = session.data.objectKey as string;
+  try {
+    const parts = await listMultipartUploadParts(objectKey, uploadId);
+    return NextResponse.json(parts);
+  } catch (err) {
+    console.error("[uppy list parts] B2 ListParts failed:", err);
+    const partEtags = (session.data.partEtags as Record<number, string>) ?? {};
+    const fallback = Object.entries(partEtags).map(([num, etag]) => ({
+      PartNumber: parseInt(num, 10),
+      ETag: etag,
+    }));
+    return NextResponse.json(fallback);
+  }
 }
 
 export async function DELETE(
