@@ -27,10 +27,11 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isEnterprise = pathname?.startsWith("/enterprise") ?? false;
-  /** These actions live in the right Quick access rail for personal, desktop, and hosted team workspaces. */
+  /** These actions live in the right rail (Quick access or Control Center) for dashboard, desktop, team, and enterprise. */
   const customizeAndSupportInQuickAccess =
     (pathname?.startsWith("/dashboard") ?? false) ||
     (pathname?.startsWith("/desktop/app") ?? false) ||
+    (pathname?.startsWith("/enterprise") ?? false) ||
     /^\/team\/[^/]+/.test(pathname ?? "");
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();

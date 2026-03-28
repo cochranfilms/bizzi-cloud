@@ -38,6 +38,9 @@ interface RightPanelProps {
   storageComponent?: React.ReactNode;
 }
 
+const enterpriseCardIdle =
+  "border-neutral-200 text-neutral-800 hover:border-[var(--enterprise-primary)] hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-[var(--enterprise-primary)] dark:hover:bg-neutral-800/80";
+
 function EnterpriseSidebarCard({
   href,
   label,
@@ -60,12 +63,35 @@ function EnterpriseSidebarCard({
         className={`flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm font-medium transition-colors dark:bg-neutral-900 ${
           isActive
             ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
-            : "border-neutral-200 text-neutral-800 hover:border-[var(--enterprise-primary)] hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-[var(--enterprise-primary)] dark:hover:bg-neutral-800/80"
+            : enterpriseCardIdle
         }`}
       >
         <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
         {label}
       </Link>
+    </li>
+  );
+}
+
+function EnterpriseSidebarActionButton({
+  label,
+  Icon,
+  onClick,
+}: {
+  label: string;
+  Icon: LucideIcon;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm font-medium transition-colors dark:bg-neutral-900 ${enterpriseCardIdle}`}
+      >
+        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+        {label}
+      </button>
     </li>
   );
 }
@@ -88,93 +114,96 @@ export default function RightPanel({
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const items = quickAccessItems(basePath);
   const enterpriseCtx = useEnterpriseOptional();
-  const org = enterpriseCtx?.org ?? enterpriseCtx?.organization ?? null;
   const isEnterprisePanel = basePath === "/enterprise" && enterpriseCtx !== null;
   const isAdmin = enterpriseCtx?.role === "admin";
 
   if (isEnterprisePanel) {
-    const orgLabel = org?.name?.trim() || "your organization";
-
     return (
-      <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 p-4 dark:border-neutral-800">
-            <h3 className="mb-1 text-sm font-semibold text-neutral-900 dark:text-white">
-              Control Center
-            </h3>
-            <p className="mb-4 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
-              Organization storage is shared by everyone in {orgLabel}. Your admin may also set a{" "}
-              <strong className="font-medium text-neutral-700 dark:text-neutral-300">
-                per-seat upload cap
-              </strong>{" "}
-              so individual usage stays within an allocation—even when the org pool has free space.
-            </p>
-            <ul className="space-y-2">
-              <EnterpriseSidebarCard
-                href={`${basePath}/files`}
-                label="Files"
-                Icon={FolderOpen}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-              <EnterpriseSidebarCard
-                href={`${basePath}/activity`}
-                label="Activity"
-                Icon={Activity}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-              <EnterpriseSidebarCard
-                href={`${basePath}/settings`}
-                label="Organization settings"
-                Icon={Settings}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-              {isAdmin ? (
+      <>
+        <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 p-4 dark:border-neutral-800">
+              <h3 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-white">
+                Control Center
+              </h3>
+              <ul className="space-y-2">
                 <EnterpriseSidebarCard
-                  href={`${basePath}/seats`}
-                  label="Seats & invites"
-                  Icon={Users}
+                  href={`${basePath}/files`}
+                  label="Files"
+                  Icon={FolderOpen}
                   pathname={pathname}
                   onMobileClose={onMobileClose}
                 />
-              ) : null}
-              {items.map((item) => (
                 <EnterpriseSidebarCard
-                  key={item.href}
-                  href={item.href}
-                  label={item.label}
-                  Icon={item.icon}
+                  href={`${basePath}/activity`}
+                  label="Activity"
+                  Icon={Activity}
                   pathname={pathname}
                   onMobileClose={onMobileClose}
                 />
-              ))}
-              {commentsHref ? (
                 <EnterpriseSidebarCard
-                  href={commentsHref}
-                  label="Comments"
-                  Icon={MessageCircle}
+                  href={`${basePath}/settings`}
+                  label="Organization settings"
+                  Icon={Settings}
                   pathname={pathname}
                   onMobileClose={onMobileClose}
                 />
-              ) : null}
-              <EnterpriseSidebarCard
-                href={`${basePath}/shared`}
-                label="Shared with you"
-                Icon={Share2}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-            </ul>
-          </div>
-          <div className="flex min-h-0 flex-shrink-0 flex-col overflow-hidden">
-            <div className="flex min-h-0 flex-1 flex-col p-4">
-              {storageComponent ?? <StorageBadge />}
+                {isAdmin ? (
+                  <EnterpriseSidebarCard
+                    href={`${basePath}/seats`}
+                    label="Seats & invites"
+                    Icon={Users}
+                    pathname={pathname}
+                    onMobileClose={onMobileClose}
+                  />
+                ) : null}
+                {items.map((item) => (
+                  <EnterpriseSidebarCard
+                    key={item.href}
+                    href={item.href}
+                    label={item.label}
+                    Icon={item.icon}
+                    pathname={pathname}
+                    onMobileClose={onMobileClose}
+                  />
+                ))}
+                {commentsHref ? (
+                  <EnterpriseSidebarCard
+                    href={commentsHref}
+                    label="Comments"
+                    Icon={MessageCircle}
+                    pathname={pathname}
+                    onMobileClose={onMobileClose}
+                  />
+                ) : null}
+                <EnterpriseSidebarActionButton
+                  label="Customize dashboard"
+                  Icon={Palette}
+                  onClick={() => {
+                    onMobileClose?.();
+                    setColorsModalOpen(true);
+                  }}
+                />
+                <EnterpriseSidebarActionButton
+                  label="Support ticket"
+                  Icon={Headphones}
+                  onClick={() => {
+                    onMobileClose?.();
+                    setSupportModalOpen(true);
+                  }}
+                />
+              </ul>
+            </div>
+            <div className="flex min-h-0 flex-shrink-0 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col p-4">
+                {storageComponent ?? <StorageBadge />}
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+        <DashboardColorsModal open={colorsModalOpen} onClose={() => setColorsModalOpen(false)} />
+        <SupportTicketModal isOpen={supportModalOpen} onClose={() => setSupportModalOpen(false)} />
+      </>
     );
   }
 
