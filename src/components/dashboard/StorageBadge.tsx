@@ -13,6 +13,7 @@ type StorageStatusPayload = {
   workspace_used_bytes?: number;
   billable_used_bytes?: number;
   reserved_bytes?: number;
+  /** Viewer-relative cap enforcement (e.g. seat effective for team members). */
   effective_billable_bytes_for_enforcement?: number;
   quota_bytes?: number | null;
   remaining_bytes?: number | null;
@@ -35,6 +36,7 @@ export default function StorageBadge() {
   const [breakdown, setBreakdown] = useState<
     NonNullable<StorageStatusPayload["breakdown"]>
   >({});
+  const [effectiveEnforcement, setEffectiveEnforcement] = useState(0);
   const [recalculating, setRecalculating] = useState(false);
   const { storageVersion } = useBackup();
   const { user } = useAuth();
@@ -47,15 +49,27 @@ export default function StorageBadge() {
       typeof data.billable_used_bytes === "number"
         ? data.billable_used_bytes
         : (data._deprecated?.storage_used_bytes ?? 0);
-    const q =
-      data.quota_bytes ?? data._deprecated?.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES;
+    const explicitQuota = data.quota_bytes;
+    let q: number | null;
+    if (explicitQuota === null) {
+      q = null;
+    } else if (typeof explicitQuota === "number") {
+      q = explicitQuota;
+    } else {
+      const dep = data._deprecated?.storage_quota_bytes;
+      q = typeof dep === "number" ? dep : FREE_TIER_STORAGE_BYTES;
+    }
     setBillableUsed(bill);
-    setQuota(typeof q === "number" ? q : null);
+    setQuota(q);
     setWorkspaceUsed(
       typeof data.workspace_used_bytes === "number" ? data.workspace_used_bytes : bill
     );
     setReserved(typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0);
     setBreakdown(data.breakdown ?? {});
+    const eff = data.effective_billable_bytes_for_enforcement;
+    setEffectiveEnforcement(
+      typeof eff === "number" ? eff : bill + (typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0)
+    );
   }, []);
 
   const fetchPersonalProfile = useCallback(async () => {
@@ -160,7 +174,14 @@ export default function StorageBadge() {
     }
   }, [user, teamOwnerFromPath, fetchTeamWorkspaceStorage, fetchPersonalProfile]);
 
-  const quotaLabel = quota === null ? "Unlimited" : formatBytes(quota);
+  const quotaLabel =
+    quota === null
+      ? teamOwnerFromPath
+        ? "Unlimited (team pool)"
+        : "Unlimited"
+      : formatBytes(quota);
+  const viewerIsTeamOwner =
+    Boolean(user && teamOwnerFromPath && user.uid === teamOwnerFromPath);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
@@ -184,21 +205,33 @@ export default function StorageBadge() {
             workspace: {formatBytes(breakdown.hosted_team_container_bytes ?? 0)}
           </p>
         )}
-      {teamOwnerFromPath && (
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-          This folder counts toward the team owner&apos;s plan ({formatBytes(billableUsed)} total
-          billable).
-        </p>
-      )}
+      {teamOwnerFromPath &&
+        (viewerIsTeamOwner ? (
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            This team workspace uses storage from your plan ({formatBytes(billableUsed)} total
+            billable on your account).
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Your uploads in this workspace count toward the cap your team admin set. The
+            team&apos;s plan has {formatBytes(billableUsed)} total billable (all members and the
+            owner combined).
+          </p>
+        ))}
       <details className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
         <summary className="cursor-pointer select-none hover:text-neutral-700 dark:hover:text-neutral-300">
           Details
         </summary>
         <ul className="mt-1.5 list-inside list-disc space-y-0.5 pl-0.5">
           <li>Workspace slice: {formatBytes(workspaceUsed)}</li>
-          <li>Billable (files): {formatBytes(billableUsed)}</li>
+          <li>
+            {teamOwnerFromPath && !viewerIsTeamOwner
+              ? "Team owner account billable (all workspaces)"
+              : "Billable (files)"}
+            : {formatBytes(billableUsed)}
+          </li>
           <li>Reserved: {formatBytes(reserved)}</li>
-          <li>Enforcement total: {formatBytes(billableUsed + reserved)}</li>
+          <li>Enforcement total: {formatBytes(effectiveEnforcement)}</li>
         </ul>
       </details>
       <div className="mt-auto pt-3">
