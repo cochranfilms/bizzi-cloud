@@ -1,8 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Save, Check, Loader2, Image as ImageIcon, CreditCard, Film, Mail } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  Save,
+  Check,
+  Loader2,
+  Image as ImageIcon,
+  CreditCard,
+  Film,
+  Mail,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
@@ -12,7 +22,13 @@ import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import {
+  galleryProfileDetailDescription,
+  galleryProfileTitle,
+} from "@/lib/gallery-profile-copy";
+import { buildGalleryHealthAdvisories } from "@/lib/gallery-owner-health-advisories";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
+import ConfirmModal from "@/components/dashboard/ConfirmModal";
 
 function CoverFocalPointEditorSection({
   galleryId,
@@ -303,21 +319,32 @@ export default function GallerySettingsForm({
     initialData.download_policy === "all_assets" ? "all_assets" : "none"
   );
 
-  const [mediaMode, setMediaMode] = useState<"final" | "raw">(() =>
-    normalizeGalleryMediaMode({
-      media_mode: initialData.media_mode,
-      source_format: initialData.source_format,
-    })
+  const normalizedInitialMediaMode = normalizeGalleryMediaMode({
+    media_mode: initialData.media_mode,
+    source_format: initialData.source_format,
+  });
+
+  const [mediaMode, setMediaMode] = useState<"final" | "raw">(() => normalizedInitialMediaMode);
+  const [committedMediaMode, setCommittedMediaMode] = useState<"final" | "raw">(
+    () => normalizedInitialMediaMode
   );
+  const [totalAssetCount, setTotalAssetCount] = useState(0);
+  const [showProfileChangePanel, setShowProfileChangePanel] = useState(false);
+  const [profileConfirmOpen, setProfileConfirmOpen] = useState(false);
+  const [pendingMediaMode, setPendingMediaMode] = useState<"final" | "raw" | null>(null);
+  const [profileSavedNotice, setProfileSavedNotice] = useState(false);
+  const [assetNamesForHealth, setAssetNamesForHealth] = useState<string[]>([]);
 
   useEffect(() => {
-    setMediaMode(
-      normalizeGalleryMediaMode({
-        media_mode: initialData.media_mode,
-        source_format: initialData.source_format,
-      })
-    );
+    const next = normalizeGalleryMediaMode({
+      media_mode: initialData.media_mode,
+      source_format: initialData.source_format,
+    });
+    setMediaMode(next);
+    setCommittedMediaMode(next);
   }, [initialData.media_mode, initialData.source_format]);
+
+  const profileDirty = mediaMode !== committedMediaMode;
 
   useEffect(() => {
     setVideoDownloadPolicy(
@@ -362,6 +389,36 @@ export default function GallerySettingsForm({
   const isVideoGallery = initialData.gallery_type === "video";
   const isRawGallery = mediaMode === "raw";
 
+  const profileKind = isVideoGallery ? "video" : "photo";
+  const currentProfileTitle = galleryProfileTitle(profileKind, mediaMode);
+  const committedProfileTitle = galleryProfileTitle(profileKind, committedMediaMode);
+
+  const settingsHealthNotes = useMemo(
+    () =>
+      buildGalleryHealthAdvisories({
+        kind: isVideoGallery ? "video" : "photo",
+        mediaMode: committedMediaMode,
+        assetNames: assetNamesForHealth,
+        lutLibraryCount:
+          !isVideoGallery && committedMediaMode === "raw" ? lutLibrary.length : undefined,
+      }),
+    [assetNamesForHealth, committedMediaMode, isVideoGallery, lutLibrary.length]
+  );
+
+  const requestMediaModeChange = (next: "final" | "raw") => {
+    if (next === mediaMode) return;
+    if (next === committedMediaMode) {
+      setMediaMode(next);
+      return;
+    }
+    if (totalAssetCount === 0) {
+      setMediaMode(next);
+      return;
+    }
+    setPendingMediaMode(next);
+    setProfileConfirmOpen(true);
+  };
+
   const [coverAssets, setCoverAssets] = useState<
     { id: string; name: string; object_key: string; media_type: string }[]
   >([]);
@@ -381,9 +438,16 @@ export default function GallerySettingsForm({
       });
       if (!res.ok) return;
       const data = await res.json();
-      const assets = (data.assets ?? []).filter(
-        (a: { media_type: string; name: string }) =>
-          a.media_type === "image" || GALLERY_IMAGE_EXT.test(a.name ?? "")
+      const rawList = (data.assets ?? []) as {
+        id: string;
+        name: string;
+        object_key: string;
+        media_type: string;
+      }[];
+      setTotalAssetCount(rawList.length);
+      setAssetNamesForHealth(rawList.map((a) => a.name).filter(Boolean));
+      const assets = rawList.filter(
+        (a) => a.media_type === "image" || GALLERY_IMAGE_EXT.test(a.name ?? "")
       );
       setCoverAssets(assets);
     } finally {
@@ -443,6 +507,7 @@ export default function GallerySettingsForm({
     if (!user) return;
     setSaving(true);
     setError(null);
+    const hadProfileDirty = mediaMode !== committedMediaMode;
     try {
       const token = await user.getIdToken();
       const version = versionRef.current;
@@ -518,10 +583,15 @@ export default function GallerySettingsForm({
         }
         throw new Error(data.error ?? "Failed to save");
       }
+      setCommittedMediaMode(mediaMode);
       setSaved(true);
       setPassword("");
       versionRef.current += 1;
       onRefetch?.();
+      if (hadProfileDirty) {
+        setProfileSavedNotice(true);
+        setTimeout(() => setProfileSavedNotice(false), 4500);
+      }
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -531,6 +601,7 @@ export default function GallerySettingsForm({
   };
 
   return (
+    <>
     <form
       onSubmit={(e) => {
         e.preventDefault();
@@ -545,39 +616,97 @@ export default function GallerySettingsForm({
       )}
 
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-        <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+        <h2 className="mb-3 text-lg font-semibold text-neutral-900 dark:text-white">
           Gallery profile
         </h2>
-        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          {isVideoGallery ? "Video" : "Photo"} ·{" "}
-          <span className="font-medium text-neutral-700 dark:text-neutral-300">
-            {mediaMode === "raw" ? "RAW (source review)" : "Final (delivery)"}
-          </span>
-        </p>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="radio"
-              name="media_mode_settings"
-              checked={mediaMode === "final"}
-              onChange={() => setMediaMode("final")}
-            />
-            <span className="text-sm text-neutral-800 dark:text-neutral-200">Final</span>
-          </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="radio"
-              name="media_mode_settings"
-              checked={mediaMode === "raw"}
-              onChange={() => setMediaMode("raw")}
-            />
-            <span className="text-sm text-neutral-800 dark:text-neutral-200">RAW</span>
-          </label>
+        <div className="rounded-lg border border-bizzi-blue/20 bg-bizzi-blue/[0.04] px-4 py-3 dark:border-bizzi-cyan/25 dark:bg-bizzi-cyan/[0.06]">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-bizzi-blue dark:text-bizzi-cyan">
+            Current profile
+          </p>
+          <p className="mt-1 text-base font-semibold text-neutral-900 dark:text-white">
+            {currentProfileTitle}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            {galleryProfileDetailDescription(profileKind, mediaMode)}
+          </p>
+          <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-500">
+            This profile was set when the gallery was created. You can change it below if your workflow
+            shifts; branding, downloads, and other settings on this page refine how the gallery behaves.
+          </p>
         </div>
-        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-          RAW enables creative LUT preview tools in this gallery. Final is optimized for clean delivery
-          and viewing.
-        </p>
+
+        {settingsHealthNotes.length > 0 && (
+          <ul className="mt-4 list-inside list-disc space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+            {settingsHealthNotes.map((note, i) => (
+              <li key={i}>{note}</li>
+            ))}
+          </ul>
+        )}
+
+        {profileDirty && (
+          <div
+            className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+            role="status"
+          >
+            Gallery profile change not saved — click <strong>Save changes</strong> at the bottom to
+            apply. Until then, visitors still see the saved profile ({committedProfileTitle}).
+          </div>
+        )}
+
+        <div className="mt-5">
+          <button
+            type="button"
+            onClick={() => setShowProfileChangePanel((o) => !o)}
+            className="flex w-full items-center justify-between rounded-lg border border-neutral-200 px-4 py-3 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800/80 sm:w-auto sm:min-w-[220px]"
+          >
+            <span>Change gallery profile</span>
+            {showProfileChangePanel ? (
+              <ChevronUp className="h-4 w-4 shrink-0" />
+            ) : (
+              <ChevronDown className="h-4 w-4 shrink-0" />
+            )}
+          </button>
+
+          {showProfileChangePanel && (
+            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-600 dark:bg-neutral-800/40">
+              <h3 className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Change profile
+              </h3>
+              <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-500">
+                {isVideoGallery
+                  ? "Switch between delivery-focused and source-style video review."
+                  : "Switch between delivery-ready photos and source RAW review with optional LUT preview."}{" "}
+                {totalAssetCount > 0
+                  ? "You will be asked to confirm because this gallery already has assets."
+                  : null}
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="media_mode_settings"
+                    checked={mediaMode === "final"}
+                    onChange={() => requestMediaModeChange("final")}
+                  />
+                  <span className="text-sm text-neutral-800 dark:text-neutral-200">Final</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="media_mode_settings"
+                    checked={mediaMode === "raw"}
+                    onChange={() => requestMediaModeChange("raw")}
+                  />
+                  <span className="text-sm text-neutral-800 dark:text-neutral-200">RAW</span>
+                </label>
+              </div>
+              <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                RAW enables creative LUT preview tools in this gallery. Final is optimized for clean
+                delivery and viewing.
+              </p>
+            </div>
+          )}
+        </div>
       </section>
 
       {isVideoGallery && (
@@ -1405,10 +1534,19 @@ export default function GallerySettingsForm({
             Creative LUT
           </h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            LUT preview is available in RAW galleries. Switch this gallery to RAW under Gallery profile
-            above to upload LUTs and enable on screen preview (preview only; originals unchanged).
+            LUT preview is available in RAW galleries. Use <strong>Change gallery profile</strong> above
+            to switch to RAW, then upload LUTs for on-screen preview (preview only; originals unchanged).
           </p>
         </section>
+      )}
+
+      {profileSavedNotice && (
+        <div
+          className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-200"
+          role="status"
+        >
+          Gallery profile updated. Visitors to the public gallery will see the new profile.
+        </div>
       )}
 
       <div className="flex justify-end">
@@ -1428,5 +1566,27 @@ export default function GallerySettingsForm({
         </button>
       </div>
     </form>
+
+    <ConfirmModal
+      open={profileConfirmOpen}
+      onClose={() => {
+        setProfileConfirmOpen(false);
+        setPendingMediaMode(null);
+      }}
+      onConfirm={() => {
+        if (pendingMediaMode != null) setMediaMode(pendingMediaMode);
+        setPendingMediaMode(null);
+        setProfileConfirmOpen(false);
+      }}
+      title="Change gallery profile?"
+      message={
+        pendingMediaMode === "raw"
+          ? "Switching to RAW enables source-review behavior and LUT preview tools for clients on supported files. Preview behavior and placeholders may change. Your stored files are not deleted.\n\nAny LUT configuration you add remains in your account; if you switch back to Final later, LUT preview may be hidden from clients while settings can stay saved."
+          : "Switching to Final moves the gallery to a delivery-focused viewing workflow. RAW-specific preview tools and client LUT options will no longer apply in the public gallery. Your stored files are not deleted.\n\nLUT configuration may remain stored but unused while the gallery is in Final mode."
+      }
+      confirmLabel="Change profile"
+      cancelLabel="Cancel"
+    />
+    </>
   );
 }

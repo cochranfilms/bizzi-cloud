@@ -33,6 +33,8 @@ import { isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
+import GalleryOwnerProfileBanner from "@/components/gallery/GalleryOwnerProfileBanner";
+import GalleryDetailHealthAdvisories from "@/components/gallery/GalleryDetailHealthAdvisories";
 
 const BASE_PATH = "/enterprise";
 
@@ -414,6 +416,21 @@ export default function EnterpriseGalleryDetailPage() {
               </a>
             </div>
           </div>
+
+          <GalleryOwnerProfileBanner
+            galleryType={isVideoGallery ? "video" : "photo"}
+            mediaMode={gallery?.media_mode === "raw" ? "raw" : "final"}
+          />
+
+          {assets.length > 0 && (
+            <GalleryDetailHealthAdvisories
+              galleryId={id}
+              settingsHref={`${BASE_PATH}/galleries/${id}/settings`}
+              galleryType={isVideoGallery ? "video" : "photo"}
+              mediaMode={gallery?.media_mode === "raw" ? "raw" : "final"}
+              assets={assets}
+            />
+          )}
 
           <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-700">

@@ -10,6 +10,7 @@ import {
   isGalleryVideo,
 } from "@/lib/gallery-file-types";
 import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
+import { galleryUploadHelperPhoto, galleryUploadHelperVideo } from "@/lib/gallery-profile-copy";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
@@ -124,8 +125,17 @@ export default function GalleryUploadZone({
       ? "MP4, MOV, WebM, M4V, AVI, MKV, and other supported video formats"
       : "JPEG, PNG, GIF, WebP, RAW (ARW, CR2, CR3, NEF, DNG, etc.)";
 
+  const persistentHelper =
+    galleryType === "video"
+      ? galleryUploadHelperVideo(mediaMode)
+      : galleryUploadHelperPhoto(mediaMode);
+
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50/90 px-4 py-3 text-sm leading-relaxed text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-300">
+        <p className="font-medium text-neutral-800 dark:text-neutral-200">Upload guidance</p>
+        <p className="mt-1 text-neutral-600 dark:text-neutral-400">{persistentHelper}</p>
+      </div>
       {hint && (
         <div
           role="status"

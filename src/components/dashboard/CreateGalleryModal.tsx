@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Image as ImageIcon, Film } from "lucide-react";
+import { X, Image as ImageIcon, Film, Aperture } from "lucide-react";
 import type { GalleryType } from "@/types/gallery";
 
 interface CreateGalleryModalProps {
@@ -421,31 +421,57 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                   Gallery profile
                 </label>
                 <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                  Final means edited, delivery ready, preview friendly media. RAW means original camera
-                  files or workflows that need special preview (LUT review, etc.).
+                  This is the main product choice for photo galleries. Pick the profile that matches how
+                  you are delivering work — you can adjust later in settings if needed.
                 </p>
-                <div className="space-y-2">
-                  {FINAL_RAW_PHOTO.map((s) => (
-                    <label
-                      key={s.value}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
-                    >
-                      <input
-                        type="radio"
-                        name="media_mode_photo"
-                        value={s.value}
-                        checked={mediaMode === s.value}
-                        onChange={() => setMediaMode(s.value)}
-                        className="mt-1"
-                      />
-                      <div>
-                        <span className="font-medium text-neutral-900 dark:text-white">
-                          {s.label}
-                        </span>
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{s.desc}</p>
-                      </div>
-                    </label>
-                  ))}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {FINAL_RAW_PHOTO.map((s) => {
+                    const selected = mediaMode === s.value;
+                    const Icon = s.value === "final" ? ImageIcon : Aperture;
+                    return (
+                      <label
+                        key={s.value}
+                        className={`relative flex cursor-pointer flex-col gap-2 rounded-xl border-2 p-4 transition-colors dark:border-neutral-600 ${
+                          selected
+                            ? "border-bizzi-blue bg-bizzi-blue/[0.07] shadow-sm ring-2 ring-bizzi-blue/25 dark:border-bizzi-cyan dark:bg-bizzi-cyan/10 dark:ring-bizzi-cyan/25"
+                            : "border-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-500"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="media_mode_photo"
+                          value={s.value}
+                          checked={selected}
+                          onChange={() => setMediaMode(s.value)}
+                          className="sr-only"
+                        />
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                              selected
+                                ? "bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+                                : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                            }`}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-semibold text-neutral-900 dark:text-white">
+                              {s.label}
+                            </span>
+                            <p className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                              {s.desc}
+                            </p>
+                          </div>
+                        </div>
+                        {selected && (
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-bizzi-blue dark:text-bizzi-cyan">
+                            Selected
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -456,31 +482,57 @@ export default function CreateGalleryModal({ onClose, onCreate }: CreateGalleryM
                   Gallery profile
                 </label>
                 <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-                  Final is for deliverable exports. RAW is for source or log footage where on screen LUT
-                  preview may help during review.
+                  Choose how this video gallery should behave for clients — delivery-ready vs
+                  source-style review (including optional LUT preview on RAW-style workflows).
                 </p>
-                <div className="space-y-2">
-                  {FINAL_RAW_VIDEO.map((s) => (
-                    <label
-                      key={s.value}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
-                    >
-                      <input
-                        type="radio"
-                        name="media_mode_video"
-                        value={s.value}
-                        checked={mediaMode === s.value}
-                        onChange={() => setMediaMode(s.value)}
-                        className="mt-1"
-                      />
-                      <div>
-                        <span className="font-medium text-neutral-900 dark:text-white">
-                          {s.label}
-                        </span>
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{s.desc}</p>
-                      </div>
-                    </label>
-                  ))}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {FINAL_RAW_VIDEO.map((s) => {
+                    const selected = mediaMode === s.value;
+                    const Icon = s.value === "final" ? Film : Aperture;
+                    return (
+                      <label
+                        key={s.value}
+                        className={`relative flex cursor-pointer flex-col gap-2 rounded-xl border-2 p-4 transition-colors dark:border-neutral-600 ${
+                          selected
+                            ? "border-violet-500 bg-violet-500/[0.07] shadow-sm ring-2 ring-violet-500/25 dark:border-violet-400 dark:bg-violet-500/10 dark:ring-violet-400/20"
+                            : "border-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-500"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="media_mode_video"
+                          value={s.value}
+                          checked={selected}
+                          onChange={() => setMediaMode(s.value)}
+                          className="sr-only"
+                        />
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                              selected
+                                ? "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-200"
+                                : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                            }`}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-semibold text-neutral-900 dark:text-white">
+                              {s.label}
+                            </span>
+                            <p className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                              {s.desc}
+                            </p>
+                          </div>
+                        </div>
+                        {selected && (
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+                            Selected
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -118,7 +118,7 @@ export default function ConfirmModal({
               />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              <p className="whitespace-pre-line text-sm text-neutral-600 dark:text-neutral-400">
                 {message}
               </p>
             </div>
