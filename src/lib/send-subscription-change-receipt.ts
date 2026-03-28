@@ -21,37 +21,53 @@ function manageBillingSettingsUrl(): string {
 }
 
 /**
- * Consumer billing receipts must go to the Firebase account that owns the subscription (team admin),
- * not necessarily Stripe's customer_email (often a seat member's address).
+ * Consumer billing receipts: prefer Firebase (subscription owner / caller), not Stripe customer_email
+ * alone (often a seat invite). `knownSubscriptionId` fixes invoices that omit `subscription` on retrieve.
  *
- * Priority: subscription.metadata.userId → API caller uid → Firestore profile by subscription id → Stripe email.
+ * Order: in-app updates — caller first (person who applied, almost always billing owner), then metadata.userId,
+ * Firestore, Stripe. Checkout — metadata.userId first (webhook uid matches), then caller, Firestore, Stripe.
  */
 type InvoiceWithSubscription = Stripe.Invoice & {
   subscription?: string | Stripe.Subscription | null;
 };
 
-async function resolveSubscriptionReceiptRecipientEmail(
-  invoice: Stripe.Invoice,
-  callerUid: string
-): Promise<string | null> {
+async function resolveSubscriptionReceiptRecipientEmail(params: {
+  invoice: Stripe.Invoice;
+  callerUid: string;
+  source: SubscriptionReceiptSource;
+  knownSubscriptionId?: string | null;
+}): Promise<string | null> {
+  const { invoice, callerUid, source, knownSubscriptionId } = params;
   const stripe = getStripeInstance();
 
   let subscription: Stripe.Subscription | null = null;
   const rawSub = (invoice as InvoiceWithSubscription).subscription;
-  if (typeof rawSub === "string") {
+  const subIdFromInvoice =
+    typeof rawSub === "string"
+      ? rawSub
+      : rawSub && typeof rawSub === "object"
+        ? (rawSub as Stripe.Subscription & { deleted?: boolean }).deleted
+          ? null
+          : (rawSub as Stripe.Subscription).id
+        : null;
+  const subIdToLoad = (knownSubscriptionId?.trim() || subIdFromInvoice || "").trim() || null;
+
+  if (subIdToLoad) {
     try {
-      subscription = await stripe.subscriptions.retrieve(rawSub);
+      subscription = await stripe.subscriptions.retrieve(subIdToLoad);
     } catch {
       subscription = null;
     }
-  } else if (rawSub && typeof rawSub === "object") {
-    const s = rawSub as Stripe.Subscription & { deleted?: boolean };
-    if (!s.deleted) subscription = s;
   }
 
   const metaUid =
     typeof subscription?.metadata?.userId === "string" ? subscription.metadata.userId.trim() : "";
-  const uidsToTry = [...new Set([metaUid, callerUid].filter(Boolean))];
+
+  const uidOrder =
+    source === "checkout"
+      ? [metaUid, callerUid]
+      : [callerUid, metaUid];
+  const uidsToTry = [...new Set(uidOrder.filter(Boolean))];
 
   for (const uid of uidsToTry) {
     const user = await getAdminAuth().getUser(uid).catch(() => null);
@@ -59,8 +75,7 @@ async function resolveSubscriptionReceiptRecipientEmail(
     if (email) return email;
   }
 
-  const subId =
-    subscription?.id ?? (typeof rawSub === "string" ? rawSub : null);
+  const subId = subscription?.id ?? subIdToLoad;
   if (subId) {
     const ownerUid = await findConsumerProfileUidByStripeSubscriptionId(subId);
     if (ownerUid) {
@@ -88,12 +103,20 @@ async function findConsumerProfileUidByStripeSubscriptionId(
   subscriptionId: string
 ): Promise<string | null> {
   const db = getAdminFirestore();
-  const snap = await db
+  const byString = await db
     .collection("profiles")
     .where("stripe_subscription_id", "==", subscriptionId)
     .limit(1)
     .get();
-  if (!snap.empty) return snap.docs[0].id;
+  if (!byString.empty) return byString.docs[0].id;
+
+  /** Legacy shape: stripe_subscription_id: { id: "sub_..." } */
+  const byNested = await db
+    .collection("profiles")
+    .where("stripe_subscription_id.id", "==", subscriptionId)
+    .limit(1)
+    .get();
+  if (!byNested.empty) return byNested.docs[0].id;
 
   return null;
 }
@@ -107,12 +130,19 @@ export async function sendSubscriptionReceiptForInvoiceId(options: {
   invoiceId: string;
   changeSummary: string;
   source: SubscriptionReceiptSource;
+  /** When set, used to load subscription metadata if the invoice omits `subscription` */
+  subscriptionId?: string | null;
 }): Promise<void> {
   const stripe = getStripeInstance();
   const receiptInvoice = await stripe.invoices.retrieve(options.invoiceId, {
     expand: ["lines.data", "customer", "subscription"],
   });
-  const toEmail = await resolveSubscriptionReceiptRecipientEmail(receiptInvoice, options.uid);
+  const toEmail = await resolveSubscriptionReceiptRecipientEmail({
+    invoice: receiptInvoice,
+    callerUid: options.uid,
+    source: options.source,
+    knownSubscriptionId: options.subscriptionId ?? null,
+  });
   if (!toEmail) {
     console.warn(
       "[subscription receipt] skipped: no billing recipient email for invoice",

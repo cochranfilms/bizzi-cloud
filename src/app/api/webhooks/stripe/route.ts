@@ -674,6 +674,7 @@ export async function POST(request: Request) {
             invoiceId: invoice.id,
             changeSummary: `Plan: ${metaPlan} · Billing: ${metaBilling}`,
             source: "checkout",
+            subscriptionId,
           }).catch((err) =>
             console.error("[Stripe webhook] invoice.paid: subscription receipt email failed:", err)
           );

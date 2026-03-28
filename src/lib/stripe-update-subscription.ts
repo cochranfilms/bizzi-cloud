@@ -335,32 +335,50 @@ export async function updateSubscriptionWithProration(
   let updatedSubscription: Stripe.Subscription;
   try {
     updatedSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-      expand: ["latest_invoice"],
+      expand: ["latest_invoice.lines.data", "latest_invoice.customer"],
     });
   } catch (e) {
     console.error("[Stripe update-subscription] retrieve after update:", e);
-    return NextResponse.json({ ok: true });
+    try {
+      updatedSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    } catch (e2) {
+      console.error("[Stripe update-subscription] subscription retrieve retry:", e2);
+      return NextResponse.json({ ok: true });
+    }
   }
 
   const li = updatedSubscription.latest_invoice;
-  const invId = typeof li === "string" ? li : li?.id ?? null;
+  const expandedInv =
+    li && typeof li === "object" ? (li as Stripe.Invoice) : null;
+  const invId = typeof li === "string" ? li : expandedInv?.id ?? null;
   const changeSummary = `Plan: ${planId} · Billing: ${billingToUse}`;
 
   let receipt: SubscriptionReceiptDisplay | undefined;
-  if (invId) {
+  if (expandedInv) {
+    try {
+      receipt = buildSubscriptionReceiptDisplay(expandedInv, changeSummary, "subscription_update");
+    } catch (e) {
+      console.error("[Stripe update-subscription] receipt from expanded invoice:", e);
+    }
+  }
+  if (!receipt && invId) {
     try {
       const fullInvoice = await stripe.invoices.retrieve(invId, {
-        expand: ["lines.data", "customer"],
+        expand: ["lines.data", "customer", "subscription"],
       });
       receipt = buildSubscriptionReceiptDisplay(fullInvoice, changeSummary, "subscription_update");
     } catch (e) {
       console.error("[Stripe update-subscription] in-app receipt invoice retrieve:", e);
     }
+  }
+
+  if (invId) {
     void sendSubscriptionReceiptForInvoiceId({
       uid,
       invoiceId: invId,
       changeSummary,
       source: "subscription_update",
+      subscriptionId: stripeSubscriptionId,
     }).catch((e) => console.error("[Stripe update-subscription] receipt email:", e));
   }
 
