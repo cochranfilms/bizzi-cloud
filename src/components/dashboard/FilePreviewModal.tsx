@@ -432,23 +432,21 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "video" && fullUrl) {
       mediaBody = (
-        <div className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center">
-          <div
-            className={`transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"}`}
-          >
-            <VideoWithLUT
-              src={fullUrl}
-              streamUrl={videoStreamUrl}
-              className=""
-              showLUTOption={showLUT}
-              lutSource={lutSource}
-              lutOptions={lutOptions}
-              onLutChange={setLutEnabled}
-              frameless
-              sideBySideLut={showLUT}
-              onDisplayReady={() => setVideoMediaVisible(true)}
-            />
-          </div>
+        <div
+          className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"}`}
+        >
+          <VideoWithLUT
+            src={fullUrl}
+            streamUrl={videoStreamUrl}
+            className=""
+            showLUTOption={showLUT}
+            lutSource={lutSource}
+            lutOptions={lutOptions}
+            onLutChange={setLutEnabled}
+            frameless
+            sideBySideLut={showLUT}
+            onDisplayReady={() => setVideoMediaVisible(true)}
+          />
         </div>
       );
     } else if (previewType === "audio" && fullUrl) {
