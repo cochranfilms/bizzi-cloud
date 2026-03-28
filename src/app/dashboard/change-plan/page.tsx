@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import TopBar from "@/components/dashboard/TopBar";
 import BuildPlanConfigurator from "@/components/pricing/BuildPlanConfigurator";
 import { useAuth } from "@/context/AuthContext";
@@ -20,9 +21,15 @@ export default function ChangePlanPage() {
     refetch,
   } = useSubscription();
 
+  /** After first profile load, keep BuildPlanConfigurator mounted during refetch so success modal state is not cleared. */
+  const [initialSubscriptionLoadDone, setInitialSubscriptionLoadDone] = useState(false);
+  useEffect(() => {
+    if (!subLoading) setInitialSubscriptionLoadDone(true);
+  }, [subLoading]);
+
   if (!user) return null;
 
-  if (subLoading) {
+  if (subLoading && !initialSubscriptionLoadDone) {
     return (
       <>
         <TopBar title="Change Plan" />

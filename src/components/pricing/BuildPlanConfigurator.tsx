@@ -462,8 +462,6 @@ export default function BuildPlanConfigurator({
         updatePaymentMethod?: string;
       };
       if (res.ok && data.ok) {
-        refetchSubscription();
-        window.dispatchEvent(new CustomEvent("subscription-updated"));
         const planLabel = PLAN_LABELS[selectedPlanId] ?? selectedPlanId;
         const addons = selectedAddonIds.map((id) => ADDON_LABELS[id] ?? id);
         const storageLabel = selectedStorageAddonId
@@ -478,6 +476,11 @@ export default function BuildPlanConfigurator({
           receipt: data.receipt ?? null,
         });
         setSuccessModalOpen(true);
+        /** Defer refetch: SubscriptionContext sets loading=true and would unmount this tree on /dashboard/change-plan before the fix there; also yields a paint for the modal. */
+        queueMicrotask(() => {
+          refetchSubscription();
+          window.dispatchEvent(new CustomEvent("subscription-updated"));
+        });
         return;
       }
       if (res.status === 500 && data.error) {
