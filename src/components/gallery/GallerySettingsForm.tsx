@@ -826,9 +826,19 @@ export default function GallerySettingsForm({
                     Cover preview
                   </h3>
                   <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-                    Same hero as your public page. Drag inside the frame to reposition the image (focal
-                    framing, not cropping). Use Desktop or Mobile to preview how the banner reads on
-                    each.
+                    {coverHeroHeight === "fullscreen" ? (
+                      <>
+                        Same hero as your public page. Fullscreen height fills the browser (100dvh), modeled
+                        here at a typical 1080p-wide viewport so the crop matches what clients see. Use
+                        Desktop or Mobile to check composition. Position shortcuts stay off for fullscreen.
+                      </>
+                    ) : (
+                      <>
+                        Same hero as your public page. Drag inside the frame or use shortcuts below to
+                        set the focal point (framing, not destructive cropping). Use Desktop or Mobile to
+                        preview each.
+                      </>
+                    )}
                   </p>
                 </div>
 
@@ -881,10 +891,14 @@ export default function GallerySettingsForm({
                           focalX={coverFocalX}
                           focalY={coverFocalY}
                           coverPosition={(initialData.cover_position as string | undefined) ?? null}
-                          onFocalChange={(x, y) => {
-                            setCoverFocalX(x);
-                            setCoverFocalY(y);
-                          }}
+                          onFocalChange={
+                            coverHeroHeight === "fullscreen"
+                              ? undefined
+                              : (x, y) => {
+                                  setCoverFocalX(x);
+                                  setCoverFocalY(y);
+                                }
+                          }
                           overlayOpacity={coverOverlayOpacity}
                           titleAlignment={coverTitleAlignment}
                           heroPreset={coverHeroHeight}
@@ -900,35 +914,38 @@ export default function GallerySettingsForm({
                               ? COVER_SETTINGS_STAGE_DESKTOP_PX
                               : COVER_SETTINGS_STAGE_MOBILE_PX
                           }
+                          interactive={coverHeroHeight !== "fullscreen"}
                         />
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="mt-4 border-t border-neutral-200/80 pt-3 dark:border-neutral-600/60">
-                  <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Position shortcuts
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {COVER_FOCAL_PRESETS.map(({ label, x, y }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => {
-                          setCoverFocalX(x);
-                          setCoverFocalY(y);
-                        }}
-                        className="rounded-md border border-neutral-200/90 bg-white px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800/90 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                      >
-                        {label}
-                      </button>
-                    ))}
+                {coverHeroHeight !== "fullscreen" ? (
+                  <div className="mt-4 border-t border-neutral-200/80 pt-3 dark:border-neutral-600/60">
+                    <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      Position shortcuts
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {COVER_FOCAL_PRESETS.map(({ label, x, y }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => {
+                            setCoverFocalX(x);
+                            setCoverFocalY(y);
+                          }}
+                          className="rounded-md border border-neutral-200/90 bg-white px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800/90 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-neutral-400 dark:text-neutral-500">
+                      Focal point: {Math.round(coverFocalX)}%, {Math.round(coverFocalY)}%
+                    </p>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-neutral-400 dark:text-neutral-500">
-                    Focal point: {Math.round(coverFocalX)}%, {Math.round(coverFocalY)}%
-                  </p>
-                </div>
+                ) : null}
               </div>
             )}
             <div>

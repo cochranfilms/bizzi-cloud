@@ -5,6 +5,7 @@
  * Can be slow for large videos (B2 fetch + ffmpeg probe) — allow up to 5 min.
  */
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
@@ -136,12 +137,30 @@ export async function POST(request: Request) {
   const creative = classifyCreativeFileFromRelativePath(relativePath);
   const isArchive = isArchiveFile(fileName);
   const skipProbeCreative = shouldSkipVideoProbeForCreativePath(relativePath);
+  const ffmpegOnDisk =
+    typeof ffmpegPath === "string" && ffmpegPath.length > 0 && existsSync(ffmpegPath);
   const shouldProbeForVideo =
     !isDocument &&
     !skipProbeCreative &&
     !isArchive &&
     (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName))) &&
-    !!ffmpegPath;
+    ffmpegOnDisk;
+
+  if (isVideoFile(fileName) && !shouldProbeForVideo) {
+    let reason: string;
+    if (!ffmpegPath) reason = "ffmpeg_static_unresolved";
+    else if (!ffmpegOnDisk)
+      reason = "ffmpeg_binary_missing_from_serverless_bundle_fix_next_outputFileTracingIncludes";
+    else if (isDocument) reason = "document_extension";
+    else if (isArchive) reason = "archive";
+    else if (skipProbeCreative) reason = "creative_path_probe_skipped";
+    else reason = "unknown";
+    console.warn("[extract-metadata] Video probe skipped — Resolution/Duration/Codec will stay empty", {
+      backupFileId,
+      fileName,
+      reason,
+    });
+  }
 
   const updates: Record<string, unknown> = {
     media_type: isVideoFile(fileName) ? "video" : isImageFile(fileName) ? "photo" : "other",

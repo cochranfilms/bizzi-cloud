@@ -29,6 +29,8 @@ const nextConfig: NextConfig = {
     ];
   },
   outputFileTracingIncludes: {
+    /** Required on Vercel: serverless bundle must include the ffmpeg binary or probes never run (list shows Not scanned yet / Unscanned forever). */
+    "/api/files/extract-metadata": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/backup/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/backup/generate-proxy": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/shares/[token]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],

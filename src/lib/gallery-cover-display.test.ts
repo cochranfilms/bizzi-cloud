@@ -125,5 +125,6 @@ describe("getSimulatedHeroMinHeightPx", () => {
 
   it("fullscreen uses full simulated height", () => {
     expect(getSimulatedHeroMinHeightPx("fullscreen", "mobile", 844)).toBe(844);
+    expect(getSimulatedHeroMinHeightPx("fullscreen", "desktop", 1080)).toBe(1080);
   });
 });

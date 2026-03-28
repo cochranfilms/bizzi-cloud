@@ -1009,9 +1009,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         );
       };
       void refresh();
+      /** Personal/team drives use filter API polling (not Firestore snapshot); keep interval short so post-extract-metadata columns update soon after Vercel finishes probing. */
       const tid =
         typeof window !== "undefined"
-          ? window.setInterval(() => void refresh(), 20_000)
+          ? window.setInterval(() => void refresh(), 5_000)
           : null;
       return () => {
         cancelled = true;

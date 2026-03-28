@@ -9,8 +9,13 @@ import {
   type CoverTitleAlignment,
 } from "@/lib/gallery-cover-display";
 
-/** Simulated browser viewports — hero is laid out at these dimensions, then scaled into the card. */
-export const SETTINGS_HERO_VIEWPORT_DESKTOP = { width: 1280, height: 720 } as const;
+/**
+ * Simulated browser viewports — hero is laid out at these dimensions, then scaled into the card.
+ * Desktop uses 1920×1080 so fullscreen (100dvh) matches a typical full-viewport 16:9 crop; 1280×720
+ * was too short and made object-cover framing diverge from what clients see live.
+ */
+export const SETTINGS_HERO_VIEWPORT_DESKTOP = { width: 1920, height: 1080 } as const;
+/** ~iPhone layout; height aligns with common mobile 100dvh sims (safe area variance still possible). */
 export const SETTINGS_HERO_VIEWPORT_MOBILE = { width: 390, height: 844 } as const;
 
 /** Fixed display widths for the settings editor stage (“trustworthy” size, capped by card via max-width 100%). */
