@@ -70,8 +70,20 @@ export async function GET(request: Request) {
 
   try {
     const stripe = getStripeInstance();
-    const subs = await stripe.subscriptions.list({ status: "past_due", limit: 20 });
-    const pastDueUids = subs.data.map((s) => s.metadata?.userId as string).filter(Boolean);
+    const pastDueSubs: Awaited<ReturnType<typeof stripe.subscriptions.list>>["data"] = [];
+    let hasMore = true;
+    let lastId: string | undefined;
+    while (hasMore) {
+      const subs = await stripe.subscriptions.list({
+        status: "past_due",
+        limit: 100,
+        ...(lastId ? { starting_after: lastId } : {}),
+      });
+      pastDueSubs.push(...subs.data);
+      hasMore = subs.has_more;
+      lastId = subs.data[subs.data.length - 1]?.id;
+    }
+    const pastDueUids = [...new Set(pastDueSubs.map((s) => s.metadata?.userId as string).filter(Boolean))];
     if (pastDueUids.length > 0) {
       try {
         const result = await authService.getUsers(pastDueUids.map((uid) => ({ uid })));
@@ -79,7 +91,7 @@ export async function GET(request: Request) {
         for (const r of result.users) {
           if (r.email) emailMap.set(r.uid, r.email);
         }
-        for (const sub of subs.data) {
+        for (const sub of pastDueSubs) {
           const uid = sub.metadata?.userId as string | undefined;
           if (!uid) continue;
           alerts.push({
@@ -93,7 +105,7 @@ export async function GET(request: Request) {
           });
         }
       } catch (_) {
-        for (const sub of subs.data) {
+        for (const sub of pastDueSubs) {
           const uid = sub.metadata?.userId as string | undefined;
           if (!uid) continue;
           alerts.push({

@@ -9,8 +9,8 @@ import { isB2Configured, listBucketStats } from "@/lib/b2";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import type { PlanId } from "@/lib/plan-constants";
-import { AggregateField, Timestamp } from "firebase-admin/firestore";
-import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
+import { Timestamp } from "firebase-admin/firestore";
+import { aggregateActiveBackupFileMetrics } from "@/lib/admin-backup-file-metrics";
 
 /** B2 Pay-as-you-go: $6/TB/month. First 10GB free. */
 const B2_STORAGE_USD_PER_TB = 6;
@@ -78,18 +78,12 @@ export async function GET(request: Request) {
 
   let totalStorageBytes = totalStorageFromProfiles;
   try {
-    const q = db.collection("backup_files").where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE);
-    const agg = q.aggregate({ totalBytes: AggregateField.sum("size_bytes") });
-    const aggSnap = await agg.get();
-    const filesSum = Number(aggSnap.data().totalBytes ?? 0);
-    if (filesSum > 0) {
-      totalStorageBytes =
-        totalStorageFromProfiles > 0 && totalStorageFromProfiles >= filesSum
-          ? totalStorageFromProfiles
-          : filesSum;
+    const metrics = await aggregateActiveBackupFileMetrics(db);
+    if (metrics.totalBytes > 0) {
+      totalStorageBytes = metrics.totalBytes;
     }
   } catch (err) {
-    console.warn("[admin/overview] Storage aggregation failed, using profile+org total:", err);
+    console.warn("[admin/overview] Storage metrics scan failed, using profile+org total:", err);
   }
 
   const supportTicketsOpen = supportOpenSnap.data().count;

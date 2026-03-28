@@ -9,9 +9,35 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import type { PlanId } from "@/lib/plan-constants";
 import { computeSubscriptionMrr } from "@/lib/stripe-mrr";
+import { Timestamp } from "firebase-admin/firestore";
+import { aggregateActiveBackupFileMetrics } from "@/lib/admin-backup-file-metrics";
 
 const VALID_PLANS: PlanId[] = ["free", "solo", "indie", "video", "production"];
 const BATCH_SIZE = 100;
+
+function laterIso(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a && !b) return null;
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+function activityTsToIso(ts: unknown): string | null {
+  if (
+    ts != null &&
+    typeof ts === "object" &&
+    "toDate" in ts &&
+    typeof (ts as { toDate: () => Date }).toDate === "function"
+  ) {
+    try {
+      return (ts as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  if (typeof ts === "string") return ts;
+  return null;
+}
 
 export async function GET(request: Request) {
   const auth = await requireAdminAuth(request);
@@ -59,7 +85,10 @@ export async function GET(request: Request) {
 
   // Batch fetch auth records for UIDs (Firebase allows max 100 per getUsers)
   const uids = [...new Set(profiles.map((p) => p.id))];
-  const authRecords = new Map<string, { email?: string; displayName?: string; createdAt?: string }>();
+  const authRecords = new Map<
+    string,
+    { email?: string; displayName?: string; createdAt?: string; lastSignInTime?: string }
+  >();
 
   for (let i = 0; i < uids.length; i += BATCH_SIZE) {
     const batch = uids.slice(i, i + BATCH_SIZE);
@@ -70,10 +99,59 @@ export async function GET(request: Request) {
           email: r.email,
           displayName: r.displayName ?? undefined,
           createdAt: r.metadata?.creationTime,
+          lastSignInTime: r.metadata?.lastSignInTime,
         });
       }
     } catch (err) {
       console.error("[admin/users] getUsers batch error:", err);
+    }
+  }
+
+  const [metrics, activitySnap, uploadsSnap] = await Promise.all([
+    aggregateActiveBackupFileMetrics(db),
+    (async () => {
+      try {
+        const cutoff = Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        return await db.collection("activity_logs").where("created_at", ">=", cutoff).get();
+      } catch (err) {
+        console.warn("[admin/users] activity_logs query failed:", err);
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const monthStart = new Date();
+        monthStart.setUTCDate(1);
+        monthStart.setUTCHours(0, 0, 0, 0);
+        return await db
+          .collection("upload_sessions")
+          .where("createdAt", ">=", monthStart.toISOString())
+          .get();
+      } catch (err) {
+        console.warn("[admin/users] upload_sessions query failed:", err);
+        return null;
+      }
+    })(),
+  ]);
+
+  const lastActivityByUser = new Map<string, string>();
+  if (activitySnap) {
+    for (const d of activitySnap.docs) {
+      const uid = (d.data().actor_user_id as string) || "";
+      if (!uid) continue;
+      const iso = activityTsToIso(d.data().created_at);
+      if (!iso) continue;
+      const prev = lastActivityByUser.get(uid);
+      if (!prev || iso > prev) lastActivityByUser.set(uid, iso);
+    }
+  }
+
+  const uploadsThisMonthByUser = new Map<string, number>();
+  if (uploadsSnap) {
+    for (const d of uploadsSnap.docs) {
+      const uid = d.data().userId as string | undefined;
+      if (!uid) continue;
+      uploadsThisMonthByUser.set(uid, (uploadsThisMonthByUser.get(uid) ?? 0) + 1);
     }
   }
 
@@ -116,9 +194,12 @@ export async function GET(request: Request) {
         typeof row.storage_used_bytes === "number"
           ? row.storage_used_bytes
           : 0,
-      lastActive: null,
-      totalFiles: 0,
-      uploadsThisMonth: 0,
+      lastActive: laterIso(
+        lastActivityByUser.get(row.id),
+        authRec?.lastSignInTime
+      ),
+      totalFiles: metrics.fileCountByUser.get(row.id) ?? 0,
+      uploadsThisMonth: uploadsThisMonthByUser.get(row.id) ?? 0,
       revenueGenerated: Math.round((userIdToMrr[row.id] ?? 0) * 100) / 100,
       supportFlags: [],
       signupDate: authRec?.createdAt ?? new Date().toISOString(),

@@ -2,14 +2,30 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, FileIcon, Folder, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Check, FileIcon, Film, Folder, Play, RotateCcw, Trash2 } from "lucide-react";
 import TopBar from "@/components/dashboard/TopBar";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
+import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCloudFiles";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
+import { useInView } from "@/hooks/useInView";
+import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
+import { useThumbnail } from "@/hooks/useThumbnail";
+import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
+import { useBackupVideoStreamUrl } from "@/hooks/useVideoStreamUrl";
+import { getCardAspectClass } from "@/lib/card-aspect-utils";
+import { GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { rectsIntersect, formatBytes, formatDate } from "@/lib/utils";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
+
+function isVideoFile(name: string) {
+  return GALLERY_VIDEO_EXT.test(name.toLowerCase());
+}
+function isPdfFile(name: string) {
+  return /\.pdf$/i.test(name);
+}
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -124,9 +140,31 @@ function DeletedFileCard({
   accent: TrashPageVariant;
 }) {
   const a = ACCENT[accent];
+  const [cardRef, isInView] = useInView<HTMLDivElement>();
+  const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
+  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
+    enabled: !isMacosPackage && isInView,
+  });
+  const isVideo =
+    !isMacosPackage &&
+    !isAppleDoubleLeafName(file.name) &&
+    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+  const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
+    enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
+    isVideo,
+  });
+  const fetchVideoStreamUrl = useBackupVideoStreamUrl();
+  const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
+  const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
+    enabled: !isMacosPackage && !!file.objectKey && isPdf && isInView,
+  });
+  const aspectClass = getCardAspectClass("landscape");
+  const objectFit = "object-contain";
+
   return (
     <div
-      className={`group relative flex flex-col items-center rounded-xl border p-6 transition-colors ${
+      ref={cardRef}
+      className={`group relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border transition-colors ${
         selected ? a.card : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
       }`}
     >
@@ -167,21 +205,59 @@ function DeletedFileCard({
           alignRight
         />
       </div>
-      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
-        <FileIcon className="h-8 w-8" />
-      </div>
-      <h3
-        className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white"
-        title={file.name}
+      <div
+        className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
       >
-        {file.name}
-      </h3>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        {formatBytes(file.size)} · {file.driveName}
-      </p>
-      <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-        Deleted {formatDate(file.deletedAt ?? null)}
-      </p>
+        {isMacosPackage ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
+            <Archive className="h-8 w-8 text-amber-800 dark:text-amber-400" />
+          </div>
+        ) : isVideo && file.objectKey ? (
+          <VideoScrubThumbnail
+            fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
+            thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
+            showPlayIcon
+            objectFit={objectFit}
+            className="absolute inset-0 h-full min-h-0 w-full"
+          />
+        ) : thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, video frame, or PDF first page */}
+            <img
+              src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
+              alt=""
+              className={`absolute inset-0 h-full w-full ${objectFit}`}
+            />
+          </>
+        ) : isVideo ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Film className="absolute inset-2 max-h-full max-w-full text-neutral-500 dark:text-neutral-400" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/50 shadow-lg">
+                <Play className="ml-1 h-6 w-6 fill-white text-white" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <FileIcon className="h-10 w-10" />
+          </div>
+        )}
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4 pt-2">
+        <h3
+          className="mb-1 w-full truncate text-left text-sm font-medium text-neutral-900 dark:text-white"
+          title={file.name}
+        >
+          {file.name}
+        </h3>
+        <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
+          {formatBytes(file.size)} · {file.driveName}
+        </p>
+        <p className="mt-0.5 text-left text-xs text-neutral-400 dark:text-neutral-500">
+          Deleted {formatDate(file.deletedAt ?? null)}
+        </p>
+      </div>
     </div>
   );
 }

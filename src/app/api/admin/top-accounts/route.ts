@@ -8,6 +8,30 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import { computeSubscriptionMrr } from "@/lib/stripe-mrr";
 
+function laterIso(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a && !b) return null;
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+function activityTsToIso(ts: unknown): string | null {
+  if (
+    ts != null &&
+    typeof ts === "object" &&
+    "toDate" in ts &&
+    typeof (ts as { toDate: () => Date }).toDate === "function"
+  ) {
+    try {
+      return (ts as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  if (typeof ts === "string") return ts;
+  return null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdminAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -55,7 +79,7 @@ export async function GET(request: Request) {
   }));
 
   const uids = profiles.map((p) => p.id);
-  const authRecords = new Map<string, { email?: string; displayName?: string }>();
+  const authRecords = new Map<string, { email?: string; displayName?: string; lastSignInTime?: string }>();
   for (let i = 0; i < uids.length; i += 100) {
     const batch = uids.slice(i, i + 100);
     try {
@@ -64,6 +88,7 @@ export async function GET(request: Request) {
         authRecords.set(r.uid, {
           email: r.email,
           displayName: r.displayName ?? undefined,
+          lastSignInTime: r.metadata?.lastSignInTime,
         });
       }
     } catch (_) {}
@@ -79,13 +104,7 @@ export async function GET(request: Request) {
     for (const d of activitySnap.docs) {
       const uid = (d.data().actor_user_id as string) || "";
       if (uid && !lastActiveByUser.has(uid)) {
-        const ts = d.data().created_at;
-        const iso =
-          ts && typeof ts === "object" && "toDate" in ts
-            ? (ts as { toDate: () => Date }).toDate().toISOString()
-            : typeof ts === "string"
-              ? ts
-              : null;
+        const iso = activityTsToIso(d.data().created_at);
         if (iso) lastActiveByUser.set(uid, iso);
       }
     }
@@ -112,7 +131,7 @@ export async function GET(request: Request) {
     plan: a.plan,
     storageUsedBytes: a.storageUsedBytes,
     revenueMonth: Math.round(a.revenueMonth * 100) / 100,
-    lastActive: lastActiveByUser.get(a.id) ?? null,
+    lastActive: laterIso(lastActiveByUser.get(a.id), authRecords.get(a.id)?.lastSignInTime),
   }));
 
   return NextResponse.json({ accounts: topAccounts });
