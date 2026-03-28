@@ -1,18 +1,13 @@
 "use client";
 
-import { LANDING_PAGE_GRADIENT } from "@/lib/landing-gradient";
-
-/** Solid marketing gradient only (no cloud shapes). */
+/** Solid marketing gradient only (no cloud shapes). Light/dark via `globals.css`. */
 export default function CloudBackground() {
   return (
     <div
       className="pointer-events-none absolute inset-0 overflow-hidden"
       aria-hidden
     >
-      <div
-        className="absolute inset-0"
-        style={{ background: LANDING_PAGE_GRADIENT }}
-      />
+      <div className="landing-page-shell absolute inset-0" />
     </div>
   );
 }

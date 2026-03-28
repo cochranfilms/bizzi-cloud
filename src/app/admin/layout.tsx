@@ -1,6 +1,5 @@
 "use client";
 
-import { ThemeProvider } from "@/context/ThemeContext";
 import { AdminDisplayProvider } from "@/context/AdminDisplayContext";
 import AdminAuthGuard from "@/components/admin/AdminAuthGuard";
 import AdminAppLayout from "@/admin/components/layout/AdminAppLayout";
@@ -14,18 +13,16 @@ export default function AdminLayout({
   const { count } = useAdminAlertCount();
 
   return (
-    <ThemeProvider>
-      <AdminAuthGuard>
-        <AdminDisplayProvider>
-          <AdminAppLayout
-            systemStatus="healthy"
-            lastSync={new Date()}
-            unreadAlerts={count}
-          >
-            {children}
-          </AdminAppLayout>
-        </AdminDisplayProvider>
-      </AdminAuthGuard>
-    </ThemeProvider>
+    <AdminAuthGuard>
+      <AdminDisplayProvider>
+        <AdminAppLayout
+          systemStatus="healthy"
+          lastSync={new Date()}
+          unreadAlerts={count}
+        >
+          {children}
+        </AdminAppLayout>
+      </AdminDisplayProvider>
+    </AdminAuthGuard>
   );
 }

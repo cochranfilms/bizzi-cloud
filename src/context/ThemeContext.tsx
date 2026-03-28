@@ -62,8 +62,8 @@ export function useTheme() {
 }
 
 /**
- * Theme for UI that must work without ThemeProvider (e.g. portaled preview on public pages).
- * After mount, falls back to `document.documentElement` .dark class if no provider.
+ * Theme for UI rendered outside the React tree (e.g. some portaled previews).
+ * Prefers context; after mount, falls back to `document.documentElement` `.dark` class.
  */
 export function useThemeResolved(): Theme {
   const ctx = useContext(ThemeContext);

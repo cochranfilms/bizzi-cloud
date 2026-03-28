@@ -40,7 +40,7 @@ export default function TrustedByTeams() {
       <div className="mb-8 text-center">
         <h2
           id="featured-work-heading"
-          className="text-xl font-semibold text-bizzi-navy md:text-2xl"
+          className="text-xl font-semibold text-bizzi-navy dark:text-sky-50 md:text-2xl"
         >
           Trusted by creative teams
         </h2>

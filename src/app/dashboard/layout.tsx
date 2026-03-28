@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
 import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
@@ -17,27 +16,25 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ThemeProvider>
-      <EnterpriseProvider>
-        <SubscriptionProvider>
-          <BackupProvider>
-            <CurrentFolderProvider>
-              <DashboardAuthGuard>
-                <ConfirmProvider>
-                  <DashboardAppearanceProvider>
-                    <LayoutSettingsProvider>
-                      <Suspense fallback={null}>
-                        <CheckoutSuccessSync />
-                      </Suspense>
-                      <DashboardShell>{children}</DashboardShell>
-                    </LayoutSettingsProvider>
-                  </DashboardAppearanceProvider>
-                </ConfirmProvider>
+    <EnterpriseProvider>
+      <SubscriptionProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <DashboardAuthGuard>
+              <ConfirmProvider>
+                <DashboardAppearanceProvider>
+                  <LayoutSettingsProvider>
+                    <Suspense fallback={null}>
+                      <CheckoutSuccessSync />
+                    </Suspense>
+                    <DashboardShell>{children}</DashboardShell>
+                  </LayoutSettingsProvider>
+                </DashboardAppearanceProvider>
+              </ConfirmProvider>
             </DashboardAuthGuard>
           </CurrentFolderProvider>
-          </BackupProvider>
-        </SubscriptionProvider>
-      </EnterpriseProvider>
-    </ThemeProvider>
+        </BackupProvider>
+      </SubscriptionProvider>
+    </EnterpriseProvider>
   );
 }

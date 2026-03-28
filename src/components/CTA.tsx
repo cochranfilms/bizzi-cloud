@@ -4,10 +4,10 @@ export default function CTA() {
   return (
     <section className="py-20 md:py-28 px-6 relative overflow-hidden">
       <div className="max-w-2xl mx-auto text-center relative z-10">
-        <h2 className="text-3xl md:text-4xl font-bold text-bizzi-navy tracking-tight mb-4">
+        <h2 className="text-3xl md:text-4xl font-bold text-bizzi-navy dark:text-sky-50 tracking-tight mb-4">
           Ready to take control of your brand?
         </h2>
-        <p className="text-neutral-600 text-lg mb-8">
+        <p className="text-neutral-600 dark:text-neutral-300 text-lg mb-8">
           Store, manage, and share every brand file effortlessly—all from one
           powerful platform that keeps your entire team organized and on-brand.
         </p>

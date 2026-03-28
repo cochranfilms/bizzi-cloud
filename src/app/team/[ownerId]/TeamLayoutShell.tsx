@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense } from "react";
-import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
 import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
@@ -21,27 +20,25 @@ export default function TeamLayoutShell({
   children: React.ReactNode;
 }) {
   return (
-    <ThemeProvider>
-      <EnterpriseProvider>
-        <SubscriptionProvider>
-          <BackupProvider>
-            <CurrentFolderProvider>
-              <ConfirmProvider>
-                <DashboardAppearanceProvider>
-                  <LayoutSettingsProvider>
-                    <PersonalTeamWorkspaceProvider teamOwnerUid={teamOwnerUid}>
-                      <Suspense fallback={null}>
-                        <CheckoutSuccessSync />
-                      </Suspense>
-                      <DashboardShell>{children}</DashboardShell>
-                    </PersonalTeamWorkspaceProvider>
-                  </LayoutSettingsProvider>
-                </DashboardAppearanceProvider>
-              </ConfirmProvider>
-            </CurrentFolderProvider>
-          </BackupProvider>
-        </SubscriptionProvider>
-      </EnterpriseProvider>
-    </ThemeProvider>
+    <EnterpriseProvider>
+      <SubscriptionProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <ConfirmProvider>
+              <DashboardAppearanceProvider>
+                <LayoutSettingsProvider>
+                  <PersonalTeamWorkspaceProvider teamOwnerUid={teamOwnerUid}>
+                    <Suspense fallback={null}>
+                      <CheckoutSuccessSync />
+                    </Suspense>
+                    <DashboardShell>{children}</DashboardShell>
+                  </PersonalTeamWorkspaceProvider>
+                </LayoutSettingsProvider>
+              </DashboardAppearanceProvider>
+            </ConfirmProvider>
+          </CurrentFolderProvider>
+        </BackupProvider>
+      </SubscriptionProvider>
+    </EnterpriseProvider>
   );
 }

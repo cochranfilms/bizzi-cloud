@@ -1,4 +1,3 @@
-import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
 import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
@@ -16,26 +15,24 @@ export default function EnterpriseLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ThemeProvider>
-      <EnterpriseProvider>
-        <SubscriptionProvider>
-          <BackupProvider>
-            <CurrentFolderProvider>
-              <DashboardAuthGuard skipFade>
-                <ConfirmProvider>
-                  <DashboardAppearanceProvider>
-                    <LayoutSettingsProvider>
-                      <EnterpriseAuthGuard>
-                        <EnterpriseShell>{children}</EnterpriseShell>
-                      </EnterpriseAuthGuard>
-                    </LayoutSettingsProvider>
-                  </DashboardAppearanceProvider>
-                </ConfirmProvider>
-              </DashboardAuthGuard>
-            </CurrentFolderProvider>
-          </BackupProvider>
-        </SubscriptionProvider>
-      </EnterpriseProvider>
-    </ThemeProvider>
+    <EnterpriseProvider>
+      <SubscriptionProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <DashboardAuthGuard skipFade>
+              <ConfirmProvider>
+                <DashboardAppearanceProvider>
+                  <LayoutSettingsProvider>
+                    <EnterpriseAuthGuard>
+                      <EnterpriseShell>{children}</EnterpriseShell>
+                    </EnterpriseAuthGuard>
+                  </LayoutSettingsProvider>
+                </DashboardAppearanceProvider>
+              </ConfirmProvider>
+            </DashboardAuthGuard>
+          </CurrentFolderProvider>
+        </BackupProvider>
+      </SubscriptionProvider>
+    </EnterpriseProvider>
   );
 }

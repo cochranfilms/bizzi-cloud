@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { ThemeProvider } from "@/context/ThemeContext";
 import { DashboardAppearanceProvider } from "@/context/DashboardAppearanceContext";
 import { LayoutSettingsProvider } from "@/context/LayoutSettingsContext";
 import { BackupProvider } from "@/context/BackupContext";
@@ -17,27 +16,25 @@ export default function DesktopAppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ThemeProvider>
-      <EnterpriseProvider>
-        <SubscriptionProvider>
-          <BackupProvider>
-            <CurrentFolderProvider>
-              <DesktopAuthGuard>
-                <ConfirmProvider>
-                  <DashboardAppearanceProvider>
-                    <LayoutSettingsProvider>
-                      <Suspense fallback={null}>
-                        <CheckoutSuccessSync />
-                      </Suspense>
-                      <DesktopShell>{children}</DesktopShell>
-                    </LayoutSettingsProvider>
-                  </DashboardAppearanceProvider>
-                </ConfirmProvider>
-              </DesktopAuthGuard>
-            </CurrentFolderProvider>
-          </BackupProvider>
-        </SubscriptionProvider>
-      </EnterpriseProvider>
-    </ThemeProvider>
+    <EnterpriseProvider>
+      <SubscriptionProvider>
+        <BackupProvider>
+          <CurrentFolderProvider>
+            <DesktopAuthGuard>
+              <ConfirmProvider>
+                <DashboardAppearanceProvider>
+                  <LayoutSettingsProvider>
+                    <Suspense fallback={null}>
+                      <CheckoutSuccessSync />
+                    </Suspense>
+                    <DesktopShell>{children}</DesktopShell>
+                  </LayoutSettingsProvider>
+                </DashboardAppearanceProvider>
+              </ConfirmProvider>
+            </DesktopAuthGuard>
+          </CurrentFolderProvider>
+        </BackupProvider>
+      </SubscriptionProvider>
+    </EnterpriseProvider>
   );
 }

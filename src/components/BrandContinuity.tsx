@@ -14,10 +14,10 @@ export default function BrandContinuity() {
             className="object-contain"
           />
         </div>
-        <h2 className="text-2xl md:text-3xl font-semibold text-neutral-900 mb-4">
+        <h2 className="text-2xl md:text-3xl font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
           From Bizzi Byte
         </h2>
-        <p className="text-neutral-600 leading-relaxed mb-8">
+        <p className="text-neutral-600 dark:text-neutral-300 leading-relaxed mb-8">
           From the makers of Bizzi Byte SSDs—the colorful, creator-first external
           drives. Bizzi Cloud is the same philosophy: fast, reliable, built for
           how creators work.

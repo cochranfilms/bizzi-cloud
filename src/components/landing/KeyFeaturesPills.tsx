@@ -65,10 +65,10 @@ export default function KeyFeaturesPills() {
     <section className="py-12 md:py-16 px-6">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-bold text-bizzi-navy mb-2">
+          <h2 className="text-2xl md:text-3xl font-bold text-bizzi-navy dark:text-sky-50 mb-2">
             Key features
           </h2>
-          <p className="text-neutral-600">
+          <p className="text-neutral-600 dark:text-neutral-300">
             Why your team needs better cloud storage.
           </p>
         </div>
@@ -78,8 +78,8 @@ export default function KeyFeaturesPills() {
               key={f.title}
               className={`flex items-center gap-3 px-6 py-3 rounded-full border-2 transition-colors ${
                 f.active
-                  ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue"
-                  : "border-bizzi-navy/30 text-bizzi-navy hover:border-bizzi-blue/50"
+                  ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan/15 dark:text-bizzi-cyan"
+                  : "border-bizzi-navy/30 text-bizzi-navy hover:border-bizzi-blue/50 dark:border-sky-400/35 dark:text-sky-100 dark:hover:border-bizzi-cyan/60"
               }`}
             >
               <span className="flex-shrink-0">{f.icon}</span>
@@ -87,7 +87,7 @@ export default function KeyFeaturesPills() {
             </div>
           ))}
         </div>
-        <p className="text-center text-neutral-600 text-sm mt-8 max-w-md mx-auto">
+        <p className="text-center text-neutral-600 dark:text-neutral-400 text-sm mt-8 max-w-md mx-auto">
           All Storage Is Encrypted And Secured.
         </p>
       </div>

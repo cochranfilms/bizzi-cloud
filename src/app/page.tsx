@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import LandingHeroShell from "@/components/landing/LandingHeroShell";
-import { LANDING_PAGE_GRADIENT } from "@/lib/landing-gradient";
 import TrustedByBrands from "@/components/landing/TrustedByBrands";
 import KeyFeaturesPills from "@/components/landing/KeyFeaturesPills";
 import HowItWorks from "@/components/landing/HowItWorks";
@@ -17,7 +16,7 @@ import { HomePageStructuredData } from "@/components/seo/HomePageStructuredData"
 
 export default function Home() {
   return (
-    <div className="min-h-screen" style={{ background: LANDING_PAGE_GRADIENT }}>
+    <div className="min-h-screen landing-page-shell">
       <HomePageStructuredData />
       <main>
         <Header variant="landingIntegrated" />

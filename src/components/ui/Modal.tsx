@@ -78,7 +78,7 @@ export function Modal({
             <X className="h-5 w-5" />
           </Button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4 text-neutral-800 dark:text-neutral-200">{children}</div>
         {footer != null && (
           <div className="flex justify-end gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
             {footer}

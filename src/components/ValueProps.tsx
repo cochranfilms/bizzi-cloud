@@ -93,7 +93,7 @@ const valueProps = [
 
 export default function ValueProps() {
   return (
-    <section id="features" className="py-20 md:py-28 px-6 bg-neutral-50/50">
+    <section id="features" className="py-20 md:py-28 px-6 bg-neutral-50/50 dark:bg-neutral-950/40">
       <div className="max-w-6xl mx-auto">
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-12 md:gap-8">
           {valueProps.map((item) => {
@@ -103,10 +103,10 @@ export default function ValueProps() {
                 <div className="w-10 h-10 mb-4 text-bizzi-blue">
                   {Icon && <Icon className="w-10 h-10" />}
                 </div>
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+                <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
                   {item.title}
                 </h3>
-                <p className="text-neutral-600 leading-relaxed">{item.description}</p>
+                <p className="text-neutral-600 dark:text-neutral-300 leading-relaxed">{item.description}</p>
               </div>
             );
           })}

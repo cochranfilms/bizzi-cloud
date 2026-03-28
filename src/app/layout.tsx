@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { siteConfig, SITE_URL } from "@/lib/seo";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
+import { RootThemeProvider } from "@/components/RootThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -75,16 +76,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="antialiased bg-white text-neutral-800 font-sans min-h-screen">
-        <AuthProvider>
-          <I18nProvider>
-            <TransferProvider>
-              {children}
-              <CookieConsentBanner />
-            </TransferProvider>
-          </I18nProvider>
-        </AuthProvider>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <body className="antialiased bg-white text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100 font-sans min-h-screen">
+        <RootThemeProvider>
+          <AuthProvider>
+            <I18nProvider>
+              <TransferProvider>
+                {children}
+                <CookieConsentBanner />
+              </TransferProvider>
+            </I18nProvider>
+          </AuthProvider>
+        </RootThemeProvider>
       </body>
     </html>
   );

@@ -94,14 +94,14 @@ export default function CookieConsentBanner() {
             <button
               type="button"
               onClick={handleRejectAll}
-              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
+              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-800 dark:border-neutral-700 dark:text-neutral-300"
             >
               Reject All
             </button>
             <button
               type="button"
               onClick={() => setCustomizeOpen(true)}
-              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
+              className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-800 dark:border-neutral-700 dark:text-neutral-300"
             >
               Customize
             </button>
@@ -115,26 +115,26 @@ export default function CookieConsentBanner() {
         ) : (
           <div className="mt-4 space-y-3">
             <div className="flex items-center gap-2">
-              <input type="checkbox" checked disabled className="rounded" />
-              <span className="text-sm">Essential (required)</span>
+              <input type="checkbox" checked disabled className="rounded border-neutral-300 dark:border-neutral-600" />
+              <span className="text-sm text-neutral-800 dark:text-neutral-200">Essential (required)</span>
             </div>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={analytics}
                 onChange={(e) => setAnalytics(e.target.checked)}
-                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue dark:border-neutral-600 dark:bg-neutral-800"
               />
-              <span className="text-sm">Analytics</span>
+              <span className="text-sm text-neutral-800 dark:text-neutral-200">Analytics</span>
             </label>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={functional}
                 onChange={(e) => setFunctional(e.target.checked)}
-                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue dark:border-neutral-600 dark:bg-neutral-800"
               />
-              <span className="text-sm">Functional</span>
+              <span className="text-sm text-neutral-800 dark:text-neutral-200">Functional</span>
             </label>
             <div className="flex gap-2 pt-2">
               <button
@@ -147,7 +147,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={() => setCustomizeOpen(false)}
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm dark:border-neutral-700"
+                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-800 dark:border-neutral-700 dark:text-neutral-200"
               >
                 Back
               </button>

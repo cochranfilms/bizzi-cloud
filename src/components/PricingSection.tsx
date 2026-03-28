@@ -316,10 +316,10 @@ export default function PricingSection() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-20 px-2 text-center md:mb-24">
-          <h2 className="mx-auto mb-6 max-w-4xl text-4xl font-bold leading-[1.08] tracking-tight text-bizzi-navy md:text-5xl md:leading-[1.06]">
+          <h2 className="mx-auto mb-6 max-w-4xl text-4xl font-bold leading-[1.08] tracking-tight text-bizzi-navy dark:text-sky-50 md:text-5xl md:leading-[1.06]">
             The creator&apos;s workspace in the cloud
           </h2>
-          <p className="mx-auto max-w-2xl text-base leading-relaxed text-neutral-600 md:text-lg md:leading-relaxed">
+          <p className="mx-auto max-w-2xl text-base leading-relaxed text-neutral-600 dark:text-neutral-300 md:text-lg md:leading-relaxed">
             Bizzi Cloud Power Ups are designed to optimize post production from
             the storage layer up.
           </p>

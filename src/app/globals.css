@@ -12,9 +12,25 @@
   html {
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply overflow-x-hidden;
+  }
+}
+
+/* Marketing: theme-aware gradient (sync light stops with `LANDING_PAGE_GRADIENT` in landing-gradient.ts) */
+@layer components {
+  .landing-page-shell,
+  .landing-hero-shell-surface {
+    background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 40%, #bae6fd 70%, #7dd3fc 100%);
+  }
+  .dark .landing-page-shell,
+  .dark .landing-hero-shell-surface {
+    background: linear-gradient(180deg, #0a1628 0%, #0c2238 35%, #103552 65%, #154a6e 100%);
   }
 }
 
@@ -204,5 +220,11 @@
     right: -1.375rem;
     border-top-left-radius: 1.375rem;
     box-shadow: -0.6875rem -0.6875rem 0 0.6875rem rgba(255, 255, 255, 0.45);
+  }
+  .dark .landing-nav-slab::before {
+    box-shadow: 0.6875rem -0.6875rem 0 0.6875rem rgba(23, 37, 84, 0.55);
+  }
+  .dark .landing-nav-slab::after {
+    box-shadow: -0.6875rem -0.6875rem 0 0.6875rem rgba(23, 37, 84, 0.55);
   }
 }

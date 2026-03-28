@@ -21,7 +21,7 @@ export default function TrustedByBrands() {
   return (
     <section className="py-12 md:py-16 overflow-hidden">
       <div className="text-center mb-8">
-        <h2 className="text-xl md:text-2xl font-semibold text-bizzi-navy">
+        <h2 className="text-xl md:text-2xl font-semibold text-bizzi-navy dark:text-sky-50">
           Trusted by brands
         </h2>
       </div>
@@ -42,7 +42,7 @@ export default function TrustedByBrands() {
                   className="h-8 md:h-10 w-auto object-contain opacity-70 grayscale hover:opacity-90 hover:grayscale-0 transition-all"
                 />
               ) : (
-                <span className="text-sm md:text-base font-semibold text-neutral-400 whitespace-nowrap tracking-tight">
+                <span className="text-sm md:text-base font-semibold text-neutral-400 dark:text-neutral-500 whitespace-nowrap tracking-tight">
                   {brand.label ?? brand.name}
                 </span>
               )}
