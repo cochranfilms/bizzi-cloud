@@ -11,6 +11,8 @@ interface CommentItemProps {
   onEdit: (commentId: string, body: string) => Promise<boolean>;
   onDelete: (commentId: string) => Promise<boolean>;
   immersiveChrome?: boolean;
+  /** When `immersiveChrome`, set from parent. Defaults to false (light immersive). */
+  immersiveIsDark?: boolean;
 }
 
 function formatCommentTime(iso: string | null | undefined): string {
@@ -43,6 +45,7 @@ export default function CommentItem({
   onEdit,
   onDelete,
   immersiveChrome = false,
+  immersiveIsDark = false,
 }: CommentItemProps) {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(comment.body);
@@ -59,7 +62,9 @@ export default function CommentItem({
       <div
         className={
           immersiveChrome
-            ? "py-1.5 text-xs italic text-white/45"
+            ? immersiveIsDark
+              ? "py-1.5 text-xs italic text-white/40"
+              : "py-1.5 text-xs italic text-neutral-500"
             : "py-1.5 text-xs italic text-neutral-500 dark:text-neutral-400"
         }
       >
@@ -69,14 +74,16 @@ export default function CommentItem({
   }
 
   return (
-    <div className={`group relative py-2 ${immersiveChrome ? "rounded-none" : "rounded-lg"}`}>
+    <div className={`group relative py-2 ${immersiveChrome ? "" : "rounded-lg"}`}>
       <div className="flex gap-2.5">
         <div
           className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-full ${
             photoUrl
               ? ""
               : immersiveChrome
-                ? "flex items-center justify-center bg-white/15 text-[11px] font-semibold text-white"
+                ? immersiveIsDark
+                  ? "flex items-center justify-center bg-white/12 text-[11px] font-semibold text-white"
+                  : "flex items-center justify-center bg-neutral-200 text-[11px] font-semibold text-neutral-800"
                 : "flex items-center justify-center bg-neutral-200 text-[11px] font-semibold text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100"
           }`}
           aria-hidden
@@ -99,7 +106,9 @@ export default function CommentItem({
             <span
               className={
                 immersiveChrome
-                  ? "text-sm font-medium text-white"
+                  ? immersiveIsDark
+                    ? "text-sm font-medium text-white"
+                    : "text-sm font-medium text-neutral-900"
                   : "text-sm font-medium text-neutral-900 dark:text-white"
               }
             >
@@ -109,7 +118,9 @@ export default function CommentItem({
               <span
                 className={
                   immersiveChrome
-                    ? "text-[10px] uppercase tracking-wide text-white/50"
+                    ? immersiveIsDark
+                      ? "text-[10px] uppercase tracking-wide text-white/45"
+                      : "text-[10px] uppercase tracking-wide text-neutral-500"
                     : "text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
                 }
               >
@@ -119,7 +130,9 @@ export default function CommentItem({
             <span
               className={
                 immersiveChrome
-                  ? "text-[11px] text-white/55"
+                  ? immersiveIsDark
+                    ? "text-[11px] text-white/50"
+                    : "text-[11px] text-neutral-500"
                   : "text-[11px] text-neutral-500 dark:text-neutral-400"
               }
             >
@@ -129,7 +142,9 @@ export default function CommentItem({
               <span
                 className={
                   immersiveChrome
-                    ? "text-[11px] text-white/45"
+                    ? immersiveIsDark
+                      ? "text-[11px] text-white/40"
+                      : "text-[11px] text-neutral-400"
                     : "text-[11px] text-neutral-400 dark:text-neutral-500"
                 }
               >
@@ -145,7 +160,9 @@ export default function CommentItem({
                 rows={2}
                 className={
                   immersiveChrome
-                    ? "min-h-[3.5rem] w-full resize-y rounded-none border border-white/25 bg-neutral-950/45 px-2.5 py-2 text-sm text-white placeholder-neutral-400 focus:border-bizzi-cyan focus:outline-none"
+                    ? immersiveIsDark
+                      ? "min-h-[3.5rem] w-full resize-y rounded-xl border border-white/12 bg-neutral-900/55 px-2.5 py-2 text-sm text-white placeholder:text-neutral-500 focus:border-bizzi-cyan/50 focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/20"
+                      : "min-h-[3.5rem] w-full resize-y rounded-xl border border-neutral-200/95 bg-white px-2.5 py-2 text-sm text-neutral-900 focus:border-bizzi-blue/45 focus:outline-none focus:ring-2 focus:ring-bizzi-blue/15"
                     : "min-h-[3.5rem] w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm focus:border-bizzi-blue focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
                 }
               />
@@ -166,7 +183,13 @@ export default function CommentItem({
                     setEditBody(comment.body);
                     setEditing(false);
                   }}
-                  className="text-xs text-neutral-500"
+                  className={
+                    immersiveChrome
+                      ? immersiveIsDark
+                        ? "text-xs text-white/55 hover:text-white/80"
+                        : "text-xs text-neutral-500 hover:text-neutral-700"
+                      : "text-xs text-neutral-500"
+                  }
                 >
                   Cancel
                 </button>
@@ -176,7 +199,9 @@ export default function CommentItem({
             <p
               className={
                 immersiveChrome
-                  ? "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-white/85"
+                  ? immersiveIsDark
+                    ? "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-white/88"
+                    : "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800"
                   : "mt-1 whitespace-pre-wrap break-words text-sm leading-snug text-neutral-800 dark:text-neutral-200"
               }
             >
@@ -191,7 +216,9 @@ export default function CommentItem({
               onClick={() => setMenuOpen(!menuOpen)}
               className={
                 immersiveChrome
-                  ? "rounded-none p-1 text-white/70 opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                  ? immersiveIsDark
+                    ? "rounded-lg p-1 text-white/65 opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                    : "rounded-lg p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100"
                   : "rounded p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 group-hover:opacity-100 dark:hover:bg-neutral-800"
               }
               aria-label="Comment options"

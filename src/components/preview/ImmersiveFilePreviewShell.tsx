@@ -148,34 +148,47 @@ export default function ImmersiveFilePreviewShell({
 
   const headerChromeBorder: CSSProperties = isGallery
     ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }
-    : {
-        borderWidth: 2,
-        borderStyle: "solid",
-        borderColor: workspaceAccent,
-      };
+    : {};
 
-  const railChromeBorder: CSSProperties | undefined = isGallery
-    ? undefined
-    : envKey === "personal"
-      ? {
-          borderWidth: 2,
-          borderStyle: "solid",
-          borderColor: isDark ? "rgba(120, 120, 120, 0.45)" : "rgba(70, 70, 80, 0.4)",
-        }
-      : {
-          borderWidth: 2,
-          borderStyle: "solid",
-          borderColor: workspaceAccent,
-        };
+  /** App-only: thin neutral frame + very subtle accent (secondary to border). Gallery unchanged. */
+  const appHeaderSurfaceStyle = useMemo((): CSSProperties => {
+    if (isDark) {
+      return {
+        border: "1px solid rgba(255,255,255,0.11)",
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.07), 0 10px 36px -8px rgba(0,0,0,0.42), 0 0 28px -6px rgba(${accentRgb},0.08)`,
+      };
+    }
+    return {
+      border: "1px solid rgba(15,23,42,0.1)",
+      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.78), 0 8px 28px -6px rgba(15,23,42,0.1), 0 0 24px -8px rgba(${accentRgb},0.07)`,
+    };
+  }, [isDark, accentRgb]);
+
+  const appRailSurfaceStyle = useMemo((): CSSProperties => {
+    if (isDark) {
+      return {
+        border: "1px solid rgba(255,255,255,0.1)",
+        boxShadow: `0 16px 48px -12px rgba(0,0,0,0.5), 0 0 28px -8px rgba(${accentRgb},0.07)`,
+      };
+    }
+    return {
+      border: "1px solid rgba(15,23,42,0.09)",
+      boxShadow: `0 14px 40px -12px rgba(15,23,42,0.14), 0 0 24px -8px rgba(${accentRgb},0.06)`,
+    };
+  }, [isDark, accentRgb]);
 
   const barBg = isGallery
     ? "bg-black/52"
     : isDark
-      ? "bg-slate-950/78"
-      : "bg-sky-50/55";
+      ? "bg-neutral-950/78"
+      : "bg-white/[0.92]";
 
   /** App immersive: dark text on light sky backdrop (light theme), white text on deeper sky (dark theme) */
   const titleClass = isGallery ? "text-white/95" : isDark ? "text-white/95" : "text-neutral-900";
+
+  const headerShape = isGallery ? "rounded-none" : "rounded-2xl";
+
+  const closeBtnShape = isGallery ? "rounded-none" : "rounded-xl";
 
   const closeBtn = isGallery
     ? "text-white/90 hover:bg-white/15"
@@ -211,7 +224,9 @@ export default function ImmersiveFilePreviewShell({
 
   const rightRailOuter = isGallery
     ? "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-xl border border-white/28 bg-black/48 shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4"
-    : "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-none border-0 bg-neutral-950/75 shadow-md backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4";
+    : isDark
+      ? "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-neutral-950/72 shadow-none backdrop-blur-2xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4"
+      : "mt-3 flex min-h-0 w-full shrink-0 flex-col rounded-2xl border-0 bg-white/[0.94] shadow-none backdrop-blur-xl sm:mt-4 lg:mt-0 lg:max-h-none lg:w-[min(19rem,30vw)] lg:max-w-sm lg:flex-shrink-0 lg:pl-4";
 
   const shell = (
     <div
@@ -234,16 +249,16 @@ export default function ImmersiveFilePreviewShell({
         onClick={(e) => e.stopPropagation()}
       >
         <header
-          className={`relative z-20 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-none border-0 px-3 py-2 backdrop-blur-2xl sm:mb-3 sm:px-4 ${barBg}`}
+          className={`relative z-20 mb-2 flex min-h-11 shrink-0 items-center gap-2 border-0 px-3 py-2 backdrop-blur-2xl sm:mb-3 sm:px-4 ${headerShape} ${barBg}`}
           style={{
             WebkitBackdropFilter: "blur(20px)",
             backdropFilter: "blur(20px)",
-            ...headerChromeBorder,
+            ...(isGallery ? headerChromeBorder : appHeaderSurfaceStyle),
           }}
         >
           {title ? (
             <h2
-              className={`min-w-0 flex-1 truncate text-sm font-medium tracking-tight sm:text-base ${titleClass}`}
+              className={`min-w-0 flex-1 truncate text-sm tracking-tight sm:text-base ${isGallery ? "font-medium" : "font-semibold"} ${titleClass}`}
               title={title}
             >
               {title}
@@ -257,7 +272,7 @@ export default function ImmersiveFilePreviewShell({
           <button
             type="button"
             onClick={onClose}
-            className={`touch-target-sm ml-auto flex shrink-0 items-center justify-center rounded-none p-2 transition-colors ${closeBtn}`}
+            className={`touch-target-sm ml-auto flex shrink-0 items-center justify-center p-2 transition-colors ${closeBtnShape} ${closeBtn}`}
             aria-label="Close"
           >
             <X className="h-5 w-5 sm:h-6 sm:w-6" />
@@ -301,7 +316,7 @@ export default function ImmersiveFilePreviewShell({
             {hasRight ? (
               <aside
                 className={rightRailOuter}
-                style={!isGallery ? railChromeBorder : undefined}
+                style={!isGallery ? appRailSurfaceStyle : undefined}
               >
                 <div className="max-h-[min(42dvh,520px)] overflow-y-auto px-3 py-3 sm:px-3.5 sm:py-3.5 lg:max-h-[calc(100dvh-5.5rem)]">
                   {rightRail}

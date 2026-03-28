@@ -10,8 +10,11 @@ import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { resolveProofingGridLutMirror } from "@/lib/gallery-viewer-lut-state";
 import { isRawFile } from "@/lib/gallery-file-types";
 import {
+  fitProofingPreviewToMaxBounds,
+  getProofingHoverVerticalClampRange,
   getProofingTableHoverPreviewPlacement,
   getProofingHoverPreviewSize,
+  PROOFING_HOVER_VIEWPORT_MARGIN,
 } from "@/lib/proofing-hover-preview-placement";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
@@ -23,6 +26,9 @@ const HOVER_PREVIEW_GAP_PX = 12;
 const HOVER_PREVIEW_CELL_RIGHT_INSET_PX = 14;
 /** Keep in sync with `proofing-popup` duration in globals.css */
 const PROOFING_POPUP_ANIMATION_MS = 200;
+
+const POPUP_IMAGE_SHADOW =
+  "0 20px 42px -14px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08)";
 
 export interface ProofingAssetCellAsset {
   id: string;
@@ -48,6 +54,7 @@ export function ProofingAssetCell({
     width: number;
     height: number;
   } | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [popupPointerEvents, setPopupPointerEvents] = useState(false);
   const thumbRef = useRef<HTMLDivElement>(null);
   const cellRef = useRef<HTMLTableCellElement>(null);
@@ -127,6 +134,29 @@ export function ProofingAssetCell({
   }, [isHovered]);
 
   useEffect(() => {
+    if (!isHovered || !previewUrl || rawPreviewUnavailable || (!isImage && !isVideo)) {
+      setNaturalSize(null);
+      return;
+    }
+    const img = new Image();
+    let cancelled = false;
+    img.onload = () => {
+      if (cancelled) return;
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (w > 0 && h > 0) setNaturalSize({ w, h });
+      else setNaturalSize(null);
+    };
+    img.onerror = () => {
+      if (!cancelled) setNaturalSize(null);
+    };
+    img.src = previewUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [isHovered, previewUrl, rawPreviewUnavailable, isImage, isVideo]);
+
+  useEffect(() => {
     if (!isHovered || !thumbRef.current || !cellRef.current) {
       setPlacement(null);
       return;
@@ -137,29 +167,64 @@ export function ProofingAssetCell({
       if (!thumbEl || !cellEl) return;
       const thumbRect = thumbEl.getBoundingClientRect();
       const cellRect = cellEl.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const { width, height } = getProofingHoverPreviewSize(vw, vh);
-      const { left, top } = getProofingTableHoverPreviewPlacement(
+      const vv = window.visualViewport;
+      const layoutVw = window.innerWidth;
+      const vwFit = vv?.width ?? layoutVw;
+      const vhFit = vv?.height ?? window.innerHeight;
+      const maxBox = getProofingHoverPreviewSize(vwFit, vhFit);
+      let width = maxBox.width;
+      let height = maxBox.height;
+      if (naturalSize) {
+        const fitted = fitProofingPreviewToMaxBounds(
+          naturalSize.w,
+          naturalSize.h,
+          maxBox.width,
+          maxBox.height
+        );
+        width = fitted.width;
+        height = fitted.height;
+      }
+      let { minY, maxY } = getProofingHoverVerticalClampRange(height);
+      if (maxY < minY) {
+        const availH = Math.max(48, vhFit - 2 * PROOFING_HOVER_VIEWPORT_MARGIN);
+        const s = availH / height;
+        height = Math.max(1, Math.floor(height * s));
+        width = Math.max(1, Math.floor(width * s));
+        ({ minY, maxY } = getProofingHoverVerticalClampRange(height));
+      }
+      const { left, top: topGuess } = getProofingTableHoverPreviewPlacement(
         thumbRect,
         cellRect,
         width,
         height,
-        vw,
-        vh,
+        layoutVw,
         HOVER_PREVIEW_GAP_PX,
         HOVER_PREVIEW_CELL_RIGHT_INSET_PX
       );
+      const top =
+        maxY >= minY ? Math.max(minY, Math.min(topGuess, maxY)) : minY;
       setPlacement({ left, top, width, height });
     };
     updatePos();
     window.addEventListener("scroll", updatePos, true);
     window.addEventListener("resize", updatePos);
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", updatePos);
+      vv.addEventListener("scroll", updatePos);
+    }
     return () => {
       window.removeEventListener("scroll", updatePos, true);
       window.removeEventListener("resize", updatePos);
+      if (vv) {
+        vv.removeEventListener("resize", updatePos);
+        vv.removeEventListener("scroll", updatePos);
+      }
     };
-  }, [isHovered]);
+  }, [isHovered, naturalSize]);
+
+  const imageChromeClass =
+    "h-full w-full overflow-hidden rounded-xl [box-shadow:var(--proofing-pop-shadow)]";
 
   const popup =
     isHovered &&
@@ -169,48 +234,65 @@ export function ProofingAssetCell({
     createPortal(
       <div
         className="fixed z-[100]"
-        style={{
-          left: placement.left,
-          top: placement.top,
-          width: placement.width,
-          height: placement.height,
-          pointerEvents: popupPointerEvents ? "auto" : "none",
-        }}
+        style={
+          {
+            left: placement.left,
+            top: placement.top,
+            width: placement.width,
+            height: placement.height,
+            pointerEvents: popupPointerEvents ? "auto" : "none",
+            "--proofing-pop-shadow": POPUP_IMAGE_SHADOW,
+          } as React.CSSProperties
+        }
         onMouseEnter={handleMouseEnter}
         onMouseLeave={scheduleHide}
       >
-        <div
-          className="h-full w-full overflow-hidden rounded-2xl border border-neutral-200/90 bg-neutral-50 shadow-[0_22px_50px_-14px_rgba(15,23,42,0.28),0_0_0_1px_rgba(15,23,42,0.04)] dark:border-neutral-600/55 dark:bg-neutral-800 dark:shadow-[0_24px_60px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
-          style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
-          onAnimationEnd={handlePopupShellAnimationEnd}
-        >
-          {rawPreviewUnavailable && isImage ? (
-            <div className="h-full overflow-y-auto p-1">
-              <RawPreviewPlaceholder fileName={asset.name} className="min-h-0 text-[9px]" />
-            </div>
-          ) : showLutPopup ? (
+        {rawPreviewUnavailable && isImage ? (
+          <div
+            className="h-full w-full overflow-hidden rounded-xl p-2 [box-shadow:var(--proofing-pop-shadow)] backdrop-blur-md dark:bg-neutral-950/85 bg-white/90"
+            style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
+            onAnimationEnd={handlePopupShellAnimationEnd}
+          >
+            <RawPreviewPlaceholder fileName={asset.name} className="min-h-0 text-[9px]" />
+          </div>
+        ) : showLutPopup ? (
+          <div
+            className={imageChromeClass}
+            style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
+            onAnimationEnd={handlePopupShellAnimationEnd}
+          >
             <ImageWithLUT
               imageUrl={previewUrl}
               lutUrl={previewLutSource}
               lutEnabled
-              className="h-full w-full"
+              className="h-full w-full bg-transparent"
               objectFit="contain"
               tileLayout="grid"
               gradeMixPercent={lutGradeMixPercent}
             />
-          ) : previewUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={previewUrl} alt="" className="h-full w-full object-contain" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800/80">
-              {isVideo ? (
-                <Film className="h-12 w-12 text-neutral-400 dark:text-neutral-500" />
-              ) : (
-                <Loader2 className="h-10 w-10 animate-spin text-neutral-400 dark:text-neutral-500" />
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        ) : previewUrl ? (
+          <div
+            className={imageChromeClass}
+            style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
+            onAnimationEnd={handlePopupShellAnimationEnd}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewUrl} alt="" className="block h-full w-full object-contain bg-transparent" />
+          </div>
+        ) : (
+          <div
+            className="flex h-full w-full items-center justify-center overflow-hidden rounded-xl [box-shadow:var(--proofing-pop-shadow)]"
+            style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
+            onAnimationEnd={handlePopupShellAnimationEnd}
+          >
+            {isVideo ? (
+              <Film className="h-12 w-12 text-neutral-400 dark:text-neutral-500" />
+            ) : (
+              <Loader2 className="h-10 w-10 animate-spin text-neutral-400 dark:text-neutral-500" />
+            )}
+          </div>
+        )}
       </div>,
       document.body
     );

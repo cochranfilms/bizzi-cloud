@@ -55,12 +55,56 @@ export function getHoverPreviewPlacement(
   return { left, top };
 }
 
+/**
+ * Scale intrinsic image size to fit inside a max width/height box (preserve aspect).
+ */
+export function fitProofingPreviewToMaxBounds(
+  naturalW: number,
+  naturalH: number,
+  maxW: number,
+  maxH: number
+): { width: number; height: number } {
+  if (!(naturalW > 0) || !(naturalH > 0)) {
+    return { width: maxW, height: maxH };
+  }
+  const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+  return {
+    width: Math.max(1, Math.round(naturalW * scale)),
+    height: Math.max(1, Math.round(naturalH * scale)),
+  };
+}
+
+/**
+ * Vertical clamp range for `position:fixed` popups so they stay within the
+ * visible viewport (handles mobile browser chrome via Visual Viewport API).
+ */
+export function getProofingHoverVerticalClampRange(
+  popupHeight: number,
+  margin: number = PROOFING_HOVER_VIEWPORT_MARGIN
+): { minY: number; maxY: number } {
+  if (typeof window === "undefined") {
+    return { minY: margin, maxY: 800 - popupHeight - margin };
+  }
+  const vv = window.visualViewport;
+  const ih = window.innerHeight;
+  if (vv) {
+    const minY = Math.max(margin, vv.offsetTop + margin);
+    const maxY = Math.min(
+      ih - popupHeight - margin,
+      vv.offsetTop + vv.height - popupHeight - margin
+    );
+    return { minY, maxY };
+  }
+  return { minY: margin, maxY: ih - popupHeight - margin };
+}
+
 export type ProofingHoverCellRect = Pick<DOMRectReadOnly, "left" | "right">;
 
 /**
  * Proofing table: prefer the popup in the asset column’s right gutter (clear of
  * filename), then clamp to the viewport; flip to the left of the thumbnail if
- * there is no horizontal room. Vertical position follows the thumbnail top.
+ * there is no horizontal room. Returns thumbnail-aligned `top`; clamp Y with
+ * {@link getProofingHoverVerticalClampRange}.
  */
 export function getProofingTableHoverPreviewPlacement(
   thumbRect: HoverPreviewPlacementAnchor,
@@ -68,14 +112,12 @@ export function getProofingTableHoverPreviewPlacement(
   popupWidth: number,
   popupHeight: number,
   viewportWidth: number,
-  viewportHeight: number,
   gap: number,
   cellRightInset: number
 ): { left: number; top: number } {
   const m = PROOFING_HOVER_VIEWPORT_MARGIN;
   const w = popupWidth;
   const vw = viewportWidth;
-  const vh = viewportHeight;
 
   const gutterLeft = cellRect.right - w - cellRightInset;
   const minLeftPastThumb = thumbRect.right + gap;
@@ -93,8 +135,8 @@ export function getProofingTableHoverPreviewPlacement(
 
   left = Math.max(m, Math.min(left, vw - w - m));
 
-  let top = thumbRect.top;
-  top = Math.max(m, Math.min(top, vh - popupHeight - m));
+  /** Caller clamps vertically (e.g. {@link getProofingHoverVerticalClampRange}). */
+  const top = thumbRect.top;
 
   return { left, top };
 }

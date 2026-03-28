@@ -15,6 +15,8 @@ interface AddCommentInputProps {
   autoFocus?: boolean;
   /** High-contrast chrome on glass/frosted immersive panels */
   immersiveChrome?: boolean;
+  /** When `immersiveChrome`, pass theme from parent (single source of truth). */
+  immersiveIsDark?: boolean;
   /** Signed-in user avatar in immersive comment composer */
   composerPhotoURL?: string | null;
   /** For initials fallback when `composerPhotoURL` is empty */
@@ -35,6 +37,7 @@ export default function AddCommentInput({
   showCancel = false,
   autoFocus = false,
   immersiveChrome = false,
+  immersiveIsDark = false,
   composerPhotoURL,
   composerDisplayLabel = "",
 }: AddCommentInputProps) {
@@ -80,11 +83,19 @@ export default function AddCommentInput({
   };
 
   const inputClass = immersiveChrome
-    ? "min-h-[2.5rem] w-full resize-none rounded-none border border-white/25 bg-neutral-950/45 px-3 py-2 text-sm leading-snug text-white placeholder-neutral-400 focus:border-bizzi-cyan focus:outline-none focus:ring-1 focus:ring-bizzi-cyan/30 disabled:opacity-50"
+    ? immersiveIsDark
+      ? "min-h-[2.5rem] w-full resize-none rounded-xl border border-white/12 bg-neutral-900/55 px-3 py-2 text-sm leading-snug text-white placeholder:text-neutral-500 focus:border-bizzi-cyan/50 focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/20 disabled:opacity-50"
+      : "min-h-[2.5rem] w-full resize-none rounded-xl border border-neutral-200/95 bg-white px-3 py-2 text-sm leading-snug text-neutral-900 placeholder:text-neutral-500 focus:border-bizzi-blue/45 focus:outline-none focus:ring-2 focus:ring-bizzi-blue/15 disabled:opacity-50"
     : "min-h-[2.5rem] w-full resize-none rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm leading-snug text-neutral-900 placeholder-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/20 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-white dark:placeholder-neutral-500 dark:focus:border-bizzi-cyan dark:focus:ring-bizzi-cyan/20";
 
   const photo = composerPhotoURL?.trim() || null;
   const showComposerAvatar = immersiveChrome && !!composerDisplayLabel.trim();
+
+  const sendBtnClass = immersiveChrome
+    ? immersiveIsDark
+      ? "rounded-xl bg-bizzi-cyan hover:bg-bizzi-cyan/90"
+      : "rounded-xl bg-bizzi-blue hover:bg-bizzi-blue/90"
+    : "rounded-lg bg-bizzi-blue hover:bg-bizzi-blue/90 dark:rounded-lg dark:bg-bizzi-cyan dark:hover:bg-bizzi-cyan/90";
 
   return (
     <div className="flex items-end gap-2">
@@ -93,7 +104,9 @@ export default function AddCommentInput({
           className={`relative mb-px h-9 w-9 shrink-0 overflow-hidden rounded-full ${
             photo
               ? ""
-              : "flex items-center justify-center bg-white/15 text-[11px] font-semibold text-white"
+              : immersiveIsDark
+                ? "flex items-center justify-center bg-white/12 text-[11px] font-semibold text-white"
+                : "flex items-center justify-center bg-neutral-200 text-[11px] font-semibold text-neutral-800"
           }`}
           aria-hidden
         >
@@ -130,11 +143,7 @@ export default function AddCommentInput({
           type="button"
           onClick={handleSubmit}
           disabled={!body.trim() || submitting}
-          className={`flex h-9 w-9 items-center justify-center text-white transition-opacity disabled:opacity-50 ${
-            immersiveChrome
-              ? "rounded-none bg-bizzi-cyan hover:bg-bizzi-cyan/90"
-              : "rounded-lg bg-bizzi-blue hover:bg-bizzi-blue/90 dark:rounded-lg dark:bg-bizzi-cyan dark:hover:bg-bizzi-cyan/90"
-          }`}
+          className={`flex h-9 w-9 items-center justify-center text-white transition-opacity disabled:opacity-50 ${sendBtnClass}`}
           aria-label="Send comment"
         >
           <Send className="h-4 w-4" />

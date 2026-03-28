@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useComments } from "@/hooks/useComments";
 import { useAuth } from "@/context/AuthContext";
+import { useThemeResolved } from "@/context/ThemeContext";
 import AddCommentInput from "./AddCommentInput";
 import CommentItem from "./CommentItem";
 import type { Comment } from "@/types/collaboration";
@@ -21,6 +22,7 @@ function CommentReplyList({
   onEdit,
   onDelete,
   immersiveChrome,
+  immersiveIsDark,
 }: {
   comments: Comment[];
   parentId: string;
@@ -28,6 +30,7 @@ function CommentReplyList({
   onEdit: (id: string, body: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
   immersiveChrome?: boolean;
+  immersiveIsDark?: boolean;
 }) {
   const replies = comments.filter((c) => c.parentCommentId === parentId);
   if (replies.length === 0) return null;
@@ -35,7 +38,9 @@ function CommentReplyList({
     <div
       className={
         immersiveChrome
-          ? "ml-6 mt-2 border-l-2 border-white/30 pl-4"
+          ? immersiveIsDark
+            ? "ml-6 mt-2 border-l-2 border-white/15 pl-4"
+            : "ml-6 mt-2 border-l-2 border-neutral-200 pl-4"
           : "ml-6 mt-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-700"
       }
     >
@@ -47,6 +52,7 @@ function CommentReplyList({
           onEdit={onEdit}
           onDelete={onDelete}
           immersiveChrome={immersiveChrome}
+          immersiveIsDark={immersiveIsDark}
         />
       ))}
     </div>
@@ -59,6 +65,9 @@ export default function FileCommentsPanel({
   immersiveChrome = false,
 }: FileCommentsPanelProps) {
   const { user } = useAuth();
+  const theme = useThemeResolved();
+  const immersiveIsDark = immersiveChrome && theme === "dark";
+
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const {
     comments,
@@ -83,7 +92,9 @@ export default function FileCommentsPanel({
         <h3
           className={
             immersiveChrome
-              ? "text-xs font-medium uppercase tracking-wide text-white/90"
+              ? immersiveIsDark
+                ? "text-xs font-semibold tracking-tight text-white/90"
+                : "text-xs font-semibold tracking-tight text-neutral-600"
               : "text-sm font-medium text-neutral-700 dark:text-neutral-300"
           }
         >
@@ -97,7 +108,9 @@ export default function FileCommentsPanel({
             onChange={(e) => setSortOrder(e.target.value === "desc" ? "desc" : "asc")}
             className={
               immersiveChrome
-                ? "max-w-[9.5rem] rounded-none border border-white/20 bg-neutral-950/40 px-2 py-1 text-[11px] text-white/90"
+                ? immersiveIsDark
+                  ? "max-w-[9.5rem] rounded-xl border border-white/12 bg-neutral-900/45 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/25 focus:ring-1 focus:ring-bizzi-cyan/25"
+                  : "max-w-[9.5rem] rounded-xl border border-neutral-200/90 bg-white px-2 py-1 text-[11px] text-neutral-900 outline-none focus:border-bizzi-blue/40 focus:ring-1 focus:ring-bizzi-blue/15"
                 : "max-w-[9.5rem] rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
             }
           >
@@ -113,6 +126,7 @@ export default function FileCommentsPanel({
           placeholder="Add a comment…"
           autoFocus={false}
           immersiveChrome={immersiveChrome}
+          immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
           composerPhotoURL={user.photoURL ?? null}
           composerDisplayLabel={
             user.displayName?.trim() || user.email?.split("@")[0] || user.uid.slice(0, 8)
@@ -122,7 +136,9 @@ export default function FileCommentsPanel({
         <p
           className={
             immersiveChrome
-              ? "py-4 text-sm text-white/70"
+              ? immersiveIsDark
+                ? "py-4 text-sm text-white/65"
+                : "py-4 text-sm text-neutral-600"
               : "py-4 text-sm text-neutral-500 dark:text-neutral-400"
           }
         >
@@ -135,7 +151,9 @@ export default function FileCommentsPanel({
           <p
             className={
               immersiveChrome
-                ? "rounded-none border border-red-400/50 bg-red-950/35 px-3 py-2 text-xs text-red-200"
+                ? immersiveIsDark
+                  ? "rounded-xl border border-red-400/35 bg-red-950/30 px-3 py-2 text-xs text-red-200"
+                  : "rounded-xl border border-red-200/90 bg-red-50 px-3 py-2 text-xs text-red-800"
                 : "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
             }
           >
@@ -146,7 +164,9 @@ export default function FileCommentsPanel({
           <p
             className={
               immersiveChrome
-                ? "py-3 text-sm text-white/70"
+                ? immersiveIsDark
+                  ? "py-3 text-sm text-white/60"
+                  : "py-3 text-sm text-neutral-500"
                 : "py-3 text-sm text-neutral-500 dark:text-neutral-400"
             }
           >
@@ -156,14 +176,18 @@ export default function FileCommentsPanel({
           <div
             className={
               immersiveChrome
-                ? "rounded-none border border-dashed border-white/35 py-5 text-center"
+                ? immersiveIsDark
+                  ? "rounded-xl border border-white/10 bg-white/[0.06] px-4 py-6 text-center"
+                  : "rounded-xl border border-neutral-200/90 bg-neutral-50 px-4 py-6 text-center"
                 : "rounded-lg border border-dashed border-neutral-200 py-5 text-center dark:border-neutral-700"
             }
           >
             <p
               className={
                 immersiveChrome
-                  ? "text-sm text-white/80"
+                  ? immersiveIsDark
+                    ? "text-sm leading-relaxed text-white/75"
+                    : "text-sm leading-relaxed text-neutral-600"
                   : "text-sm text-neutral-500 dark:text-neutral-400"
               }
             >
@@ -180,6 +204,7 @@ export default function FileCommentsPanel({
                   onEdit={editComment}
                   onDelete={deleteComment}
                   immersiveChrome={immersiveChrome}
+                  immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
                 />
                 <CommentReplyList
                   comments={comments}
@@ -188,6 +213,7 @@ export default function FileCommentsPanel({
                   onEdit={editComment}
                   onDelete={deleteComment}
                   immersiveChrome={immersiveChrome}
+                  immersiveIsDark={immersiveChrome ? immersiveIsDark : undefined}
                 />
               </li>
             ))}
