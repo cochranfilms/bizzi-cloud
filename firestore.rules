@@ -15,8 +15,28 @@ service cloud.firestore {
       /** Writes go through /api/personal-team/settings (Admin SDK) only. */
       allow write: if false;
     }
+    /** Server/webhooks own billing + membership fields; clients cannot mutate them directly. */
+    function profilePrivilegedKeys() {
+      return [
+        'personal_team_owner_id', 'personal_team_seat_access', 'organization_id', 'organization_role',
+        'plan_id', 'addon_ids', 'seat_count', 'team_seat_counts', 'stripe_customer_id',
+        'stripe_subscription_id', 'stripe_updated_at', 'storage_quota_bytes', 'storage_addon_id',
+        'storage_used_bytes', 'userId', 'email',
+        'team_storage_lifecycle_status', 'team_cold_storage_started_at', 'team_cold_storage_expires_at',
+        'team_restore_status', 'team_restore_invoice_url', 'billing_status', 'storage_lifecycle_status'
+      ];
+    }
+    match /personal_teams/{ownerUid} {
+      allow read: if request.auth != null && request.auth.uid == ownerUid;
+      allow write: if false;
+    }
     match /profiles/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny(profilePrivilegedKeys());
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(profilePrivilegedKeys());
+      allow delete: if false;
     }
     match /linked_drives/{driveId} {
       function personalTeamCanReadOwnerDrive() {

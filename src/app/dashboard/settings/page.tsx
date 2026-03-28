@@ -39,7 +39,7 @@ import {
   TEAM_SEAT_MONTHLY_USD,
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
 } from "@/lib/team-seat-pricing";
-import { MemberTeamCard } from "@/components/dashboard/TeamManagementSection";
+import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
@@ -666,7 +666,7 @@ function SubscriptionSection() {
     loading,
     refetch,
     teamSeatCounts,
-    personalTeamOwnerId,
+    ownsPersonalTeam,
   } = useSubscription();
   const [teamSeatUsage, setTeamSeatUsage] = useState<{
     used: number;
@@ -682,7 +682,7 @@ function SubscriptionSection() {
   const [powerUpCheckLoading, setPowerUpCheckLoading] = useState(false);
 
   const teamSeatsEligible =
-    planAllowsPersonalTeamSeats(planId ?? "free") && !personalTeamOwnerId;
+    planAllowsPersonalTeamSeats(planId ?? "free") && ownsPersonalTeam;
   const purchasedTeamSeats = sumExtraTeamSeats(teamSeatCounts);
 
   useEffect(() => {
@@ -1134,7 +1134,7 @@ function SettingsContent() {
           <StorageSection />
           <PrivacySection />
           <SubscriptionSection />
-          <MemberTeamCard />
+          <TeamManagementSection />
       </div>
     </DashboardRouteFade>
   );

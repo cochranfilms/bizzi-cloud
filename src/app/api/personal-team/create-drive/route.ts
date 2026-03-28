@@ -8,6 +8,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
+import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 
 const ACTIVE_SEAT = new Set(["active", "cold_storage"]);
 const MAX_NAME_LEN = 240;
@@ -73,6 +74,16 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
+
+  if (uid === teamOwnerUserId) {
+    const ownerProf = await db.collection("profiles").doc(uid).get();
+    await ensurePersonalTeamRecord(
+      db,
+      uid,
+      ownerProf.data() as Record<string, unknown> | undefined,
+      { allowPlanBootstrap: true }
+    );
+  }
 
   if (uid !== teamOwnerUserId) {
     const seatId = personalTeamSeatDocId(teamOwnerUserId, uid);

@@ -34,6 +34,7 @@ import {
 } from "@/lib/notification-service";
 import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
+import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -472,6 +473,15 @@ export async function POST(request: Request) {
             stripe_updated_at: new Date().toISOString(),
           },
           { merge: true }
+        );
+        await ensurePersonalTeamRecord(
+          db,
+          userId,
+          {
+            plan_id: planId ?? "free",
+            team_seat_counts: teamFirestore.team_seat_counts,
+          },
+          { allowPlanBootstrap: true }
         );
         if (planId && planId !== "free") {
           await ensureDefaultDrivesForUser(userId);

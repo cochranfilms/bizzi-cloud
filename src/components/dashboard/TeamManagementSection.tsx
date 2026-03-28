@@ -51,70 +51,117 @@ function statusLabel(status: string): string {
   }
 }
 
-/** Shown on personal settings when the user is seated on someone else’s team (leave team). */
+function accessLevelLabel(level: string | undefined): string {
+  if (level && level in PERSONAL_TEAM_SEAT_ACCESS_LABELS) {
+    return PERSONAL_TEAM_SEAT_ACCESS_LABELS[level as PersonalTeamSeatAccess];
+  }
+  return level ?? "—";
+}
+
+/** Shown when the user has seat memberships on others’ personal teams (leave per team). */
 export function MemberTeamCard() {
   const { user } = useAuth();
-  const { personalTeamOwnerId, personalTeamSeatAccess, refetch } = useSubscription();
-  const [leaving, setLeaving] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const { personalTeamMemberships, refetch } = useSubscription();
+  const [leavingOwnerId, setLeavingOwnerId] = useState<string | null>(null);
+  const [confirmOwnerId, setConfirmOwnerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLeave = async () => {
+  const handleLeave = async (teamOwnerUserId: string) => {
     if (!user || !isFirebaseConfigured()) return;
-    setLeaving(true);
+    setLeavingOwnerId(teamOwnerUserId);
     setError(null);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken();
       const res = await fetch("/api/personal-team/leave", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ team_owner_user_id: teamOwnerUserId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((data.error as string) ?? "Failed to leave team");
       }
       await refetch();
-      setConfirmOpen(false);
+      setConfirmOwnerId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to leave");
     } finally {
-      setLeaving(false);
+      setLeavingOwnerId(null);
     }
   };
 
-  if (!personalTeamOwnerId) return null;
-
-  const levelLabel =
-    personalTeamSeatAccess && personalTeamSeatAccess in PERSONAL_TEAM_SEAT_ACCESS_LABELS
-      ? PERSONAL_TEAM_SEAT_ACCESS_LABELS[personalTeamSeatAccess as PersonalTeamSeatAccess]
-      : personalTeamSeatAccess ?? "—";
+  if (!personalTeamMemberships.length) return null;
 
   return (
     <section
-      id="team-management"
+      id="team-memberships"
       className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
     >
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Users className="h-5 w-5 text-bizzi-blue" />
-        Team membership
+        {personalTeamMemberships.length > 1 ? "Team memberships" : "Team membership"}
       </h2>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        You&apos;re on a <strong className="text-neutral-900 dark:text-white">personal Bizzi team</strong>.
-        Your seat access: <strong className="text-neutral-900 dark:text-white">{levelLabel}</strong>.
-        Team storage is shared; you can only delete files you uploaded. Your personal subscription stays
-        billed separately.
+        {personalTeamMemberships.length > 1 ? (
+          <>
+            You&apos;re a member of <strong className="text-neutral-900 dark:text-white">multiple</strong>{" "}
+            personal Bizzi teams. Storage is shared per team; you can only delete files you uploaded. Your
+            personal subscription stays billed separately.
+          </>
+        ) : (
+          <>
+            You&apos;re on a <strong className="text-neutral-900 dark:text-white">personal Bizzi team</strong>.
+            Team storage is shared; you can only delete files you uploaded. Your personal subscription stays
+            billed separately.
+          </>
+        )}
       </p>
-      <button
-        type="button"
-        onClick={() => setConfirmOpen(true)}
-        className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-      >
-        <UserMinus className="h-4 w-4" />
-        Leave team
-      </button>
-      {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      <ul className="space-y-4">
+        {personalTeamMemberships.map((m) => {
+          const levelLabel = accessLevelLabel(m.seat_access_level);
+          const statusNote =
+            m.status === "cold_storage" ? " · Recovery storage" : "";
+          return (
+            <li
+              key={m.owner_user_id}
+              className="flex flex-col gap-2 rounded-lg border border-neutral-100 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-800/40 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                  Team workspace
+                  <span className="ml-2 font-mono text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                    {m.owner_user_id.slice(0, 6)}…{m.owner_user_id.slice(-4)}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+                  Seat access: <strong className="text-neutral-800 dark:text-neutral-200">{levelLabel}</strong>
+                  {statusNote}
+                </p>
+                <Link
+                  href={`/team/${m.owner_user_id}`}
+                  className="mt-2 inline-block text-xs font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+                >
+                  Open team workspace
+                </Link>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmOwnerId(m.owner_user_id)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+              >
+                <UserMinus className="h-4 w-4" />
+                Leave
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      {confirmOpen &&
+      {confirmOwnerId &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -134,18 +181,22 @@ export function MemberTeamCard() {
                   <div className="mt-6 flex justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setConfirmOpen(false)}
+                      onClick={() => setConfirmOwnerId(null)}
                       className="rounded-lg border border-neutral-200 px-4 py-2 text-sm dark:border-neutral-600"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
-                      disabled={leaving}
-                      onClick={() => void handleLeave()}
+                      disabled={leavingOwnerId === confirmOwnerId}
+                      onClick={() => void handleLeave(confirmOwnerId)}
                       className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
                     >
-                      {leaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Leave team"}
+                      {leavingOwnerId === confirmOwnerId ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Leave team"
+                      )}
                     </button>
                   </div>
                 </div>
@@ -162,7 +213,8 @@ export function TeamManagementSection() {
   const { user } = useAuth();
   const {
     planId,
-    personalTeamOwnerId,
+    ownsPersonalTeam,
+    personalTeamMemberships,
     teamSeatCounts,
     loading: subLoading,
     refetch: refetchSubscription,
@@ -180,10 +232,9 @@ export function TeamManagementSection() {
   const [removing, setRemoving] = useState(false);
 
   const allowsSeats = planAllowsPersonalTeamSeats(planId);
-  const isTeamMember = !!personalTeamOwnerId;
 
   const loadTeam = useCallback(async () => {
-    if (!user || !isFirebaseConfigured() || isTeamMember || !allowsSeats) {
+    if (!user || !isFirebaseConfigured() || !ownsPersonalTeam || !allowsSeats) {
       setLoading(false);
       return;
     }
@@ -210,7 +261,7 @@ export function TeamManagementSection() {
     } finally {
       setLoading(false);
     }
-  }, [user, isTeamMember, allowsSeats]);
+  }, [user, ownsPersonalTeam, allowsSeats]);
 
   useEffect(() => {
     void loadTeam();
@@ -289,11 +340,14 @@ export function TeamManagementSection() {
 
   if (subLoading) return null;
 
-  if (isTeamMember) {
+  const showOwnerPanel = ownsPersonalTeam && allowsSeats;
+  const showMemberPanel = personalTeamMemberships.length > 0;
+
+  if (!showOwnerPanel && !showMemberPanel) return null;
+
+  if (!showOwnerPanel) {
     return <MemberTeamCard />;
   }
-
-  if (!allowsSeats) return null;
 
   const activeMembers = members.filter((m) => m.status === "active" || m.status === "invited");
   const usedTotal =
@@ -303,6 +357,7 @@ export function TeamManagementSection() {
     (overview?.used.fullframe ?? 0);
 
   return (
+    <>
     <section
       id="team-management"
       className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
@@ -545,5 +600,7 @@ export function TeamManagementSection() {
           document.body,
         )}
     </section>
+    {showMemberPanel ? <MemberTeamCard /> : null}
+    </>
   );
 }

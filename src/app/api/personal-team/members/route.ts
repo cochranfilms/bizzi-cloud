@@ -7,6 +7,7 @@ import {
   PERSONAL_TEAM_INVITES_COLLECTION,
   PERSONAL_TEAM_SEATS_COLLECTION,
 } from "@/lib/personal-team";
+import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 import { PLAN_LABELS } from "@/lib/pricing-data";
 import {
   coerceTeamSeatCounts,
@@ -37,8 +38,9 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
   const profile = await db.collection("profiles").doc(uid).get();
-  const pdata = profile.data();
-  if (pdata?.personal_team_owner_id) {
+  const pdata = profile.data() ?? {};
+  await ensurePersonalTeamRecord(db, uid, pdata);
+  if (!(await canManagePersonalTeam(db, uid, uid))) {
     return NextResponse.json({ error: "Only the team admin can list members." }, { status: 403 });
   }
 

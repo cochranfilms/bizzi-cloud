@@ -7,7 +7,11 @@ import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION, PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { getOrgWideShareTargetWorkspaceId } from "@/lib/org-pillar-drives";
-import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import {
+  ensurePersonalTeamRecord,
+  getOwnedTeam,
+  seatStatusAllowsEnter,
+} from "@/lib/personal-team-auth";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import type { Firestore } from "firebase-admin/firestore";
 
@@ -60,10 +64,9 @@ export async function GET(request: Request) {
 
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(uid).get();
-  const profileData = profileSnap.data();
-  const planId = (profileData?.plan_id as string) ?? "free";
-  const seatedOnOtherTeam = !!(profileData?.personal_team_owner_id as string | undefined)?.trim();
-  const isTeamOwner = planAllowsPersonalTeamSeats(planId) && !seatedOnOtherTeam;
+  const profileData = profileSnap.data() ?? {};
+  await ensurePersonalTeamRecord(db, uid, profileData);
+  const ownedTeam = await getOwnedTeam(db, uid);
 
   type TargetRow = {
     kind: "personal_team" | "enterprise_workspace";
@@ -76,7 +79,7 @@ export async function GET(request: Request) {
   const targets: TargetRow[] = [];
   const teamSeen = new Set<string>();
 
-  if (isTeamOwner) {
+  if (ownedTeam) {
     const ownerName = await profileDisplayName(db, uid);
     const fallback = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
     const name = await personalTeamWorkspaceMeta(db, uid, fallback);
@@ -100,7 +103,7 @@ export async function GET(request: Request) {
     const ownerId = sd.team_owner_user_id as string;
     const st = (sd.status as string) ?? "active";
     if (!ownerId || ownerId === uid || teamSeen.has(ownerId)) continue;
-    if (st !== "active" && st !== "cold_storage") continue;
+    if (!seatStatusAllowsEnter(st)) continue;
     teamSeen.add(ownerId);
     const ownerName = await profileDisplayName(db, ownerId);
     const fallback =

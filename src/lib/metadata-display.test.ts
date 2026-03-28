@@ -9,16 +9,17 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { FolderItem } from "@/components/dashboard/FolderCard";
 
 function baseFile(partial: Partial<RecentFile> & Pick<RecentFile, "name">): RecentFile {
+  const { name, ...rest } = partial;
   return {
     id: "1",
-    name: partial.name,
-    path: partial.path ?? partial.name,
+    name,
+    path: partial.path ?? name,
     objectKey: partial.objectKey ?? "k",
     size: partial.size ?? 1000,
     modifiedAt: partial.modifiedAt ?? null,
     driveId: partial.driveId ?? "d1",
     driveName: partial.driveName ?? "Storage",
-    ...partial,
+    ...rest,
   };
 }
 

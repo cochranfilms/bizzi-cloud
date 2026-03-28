@@ -1,8 +1,17 @@
 /**
  * Resolves denormalized container / uploader fields when creating backup_files server-side.
+ *
+ * Scope rule: **drive / request context wins** — `profiles.personal_team_owner_id` is not used
+ * to choose team vs personal. Team scope comes from `linked_drives.personal_team_owner_id` or,
+ * when that field is missing on a legacy row, from **drive `userId` + an enterable seat** for
+ * the uploader (same owner as team).
  */
 import type { Firestore } from "firebase-admin/firestore";
-import { personalTeamSeatDocId } from "@/lib/personal-team";
+import {
+  PERSONAL_TEAM_SEATS_COLLECTION,
+  personalTeamSeatDocId,
+} from "@/lib/personal-team-constants";
+import { seatStatusAllowsEnter } from "@/lib/personal-team-seat-visibility";
 
 export type BackupFileContainerType = "personal" | "organization" | "personal_team";
 
@@ -21,7 +30,7 @@ async function resolvePersonalTeamFromOwner(
   uploaderEmail: string | null
 ): Promise<ResolvedBackupUploadMetadata> {
   const seatSnap = await db
-    .collection("personal_team_seats")
+    .collection(PERSONAL_TEAM_SEATS_COLLECTION)
     .doc(personalTeamSeatDocId(teamOwner, uid))
     .get();
   const seatData = seatSnap.data();
@@ -50,7 +59,6 @@ export async function resolveBackupUploadMetadata(
   }
 ): Promise<ResolvedBackupUploadMetadata> {
   const { uid, authEmail, profileData, driveData, organizationId } = input;
-  const personalTeamOwnerFromProfile = profileData?.personal_team_owner_id as string | undefined;
 
   const uploaderEmail =
     (authEmail ?? (profileData?.email as string) ?? "").trim().toLowerCase() || null;
@@ -87,8 +95,19 @@ export async function resolveBackupUploadMetadata(
     };
   }
 
-  if (personalTeamOwnerFromProfile) {
-    return resolvePersonalTeamFromOwner(db, uid, personalTeamOwnerFromProfile, uploaderEmail);
+  if (driveUid && driveUid !== uid) {
+    const memberSeatSnap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .doc(personalTeamSeatDocId(driveUid, uid))
+      .get();
+    const memberSt = memberSeatSnap.data()?.status as string | undefined;
+    if (memberSeatSnap.exists && seatStatusAllowsEnter(memberSt)) {
+      console.warn(
+        "[resolveBackupUploadMetadata] recovery: team scope from drive owner uid + enterable seat (linked_drive had no personal_team_owner_id)",
+        { driveOwnerUid: driveUid, uploaderUid: uid }
+      );
+      return resolvePersonalTeamFromOwner(db, uid, driveUid, uploaderEmail);
+    }
   }
 
   return {

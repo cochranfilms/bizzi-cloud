@@ -10,6 +10,11 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isReservedHandle } from "@/lib/public-handle";
 import { NextResponse } from "next/server";
+import {
+  ensurePersonalTeamRecord,
+  getOwnedTeam,
+  getPersonalTeamSeatMembershipsForProfile,
+} from "@/lib/personal-team-auth";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
 
@@ -55,6 +60,14 @@ export async function GET(request: Request) {
     teamSeatCountsRaw && typeof teamSeatCountsRaw === "object" && !Array.isArray(teamSeatCountsRaw)
       ? teamSeatCountsRaw
       : { none: 0, gallery: 0, editor: 0, fullframe: 0 };
+
+  await ensurePersonalTeamRecord(db, auth.uid, data as Record<string, unknown>);
+  const ownedTeam = await getOwnedTeam(db, auth.uid);
+  const personal_team_memberships = await getPersonalTeamSeatMembershipsForProfile(
+    db,
+    auth.uid
+  );
+
   return NextResponse.json({
     public_slug: handle,
     handle,
@@ -74,6 +87,10 @@ export async function GET(request: Request) {
       typeof data.personal_team_seat_access === "string"
         ? data.personal_team_seat_access
         : null,
+    /** Canonical: seat-derived memberships on others' teams (non-owned). */
+    personal_team_memberships,
+    /** True when `personal_teams/{uid}` exists after bootstrap. */
+    owns_personal_team: !!ownedTeam,
   });
 }
 

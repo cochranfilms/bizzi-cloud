@@ -13,6 +13,7 @@ import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
+import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { isPersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { sendOrgRestoredEmail, sendTeamRestoredEmail } from "@/lib/emailjs";
@@ -607,6 +608,7 @@ async function restorePersonalTeamColdStorage(
         : "gallery";
       const docId = personalTeamSeatDocId(teamOwnerUserId, mid);
       await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId).set({
+        team_id: teamOwnerUserId,
         team_owner_user_id: teamOwnerUserId,
         member_user_id: mid,
         seat_access_level: level,
@@ -615,13 +617,6 @@ async function restorePersonalTeamColdStorage(
         created_at: FieldValue.serverTimestamp(),
         updated_at: FieldValue.serverTimestamp(),
       });
-      await db.collection("profiles").doc(mid).set(
-        {
-          personal_team_owner_id: teamOwnerUserId,
-          personal_team_seat_access: level,
-        },
-        { merge: true }
-      );
       seatsCreated++;
     }
   }
@@ -635,6 +630,14 @@ async function restorePersonalTeamColdStorage(
       team_restore_invoice_url: FieldValue.delete(),
     },
     { merge: true }
+  );
+
+  const ownerProfileAfter = await db.collection("profiles").doc(teamOwnerUserId).get();
+  await ensurePersonalTeamRecord(
+    db,
+    teamOwnerUserId,
+    ownerProfileAfter.data() as Record<string, unknown> | undefined,
+    { allowPlanBootstrap: true }
   );
 
   try {

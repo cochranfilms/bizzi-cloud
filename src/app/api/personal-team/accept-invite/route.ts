@@ -5,11 +5,16 @@ import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-a
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { hashInviteToken } from "@/lib/invite-token";
+import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import {
   PERSONAL_TEAM_INVITES_COLLECTION,
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team";
+import {
+  seatStatusAllowsEnter,
+  wouldExceedNonOwnedTeamCap,
+} from "@/lib/personal-team-auth";
 import { isPersonalTeamSeatAccess, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
@@ -98,26 +103,60 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid invite." }, { status: 400 });
   }
 
-  const memberProfile = await db.collection("profiles").doc(memberUid).get();
   const existingSeatId = personalTeamSeatDocId(teamOwnerUid, memberUid);
   const existingSeatSnap = await db
     .collection(PERSONAL_TEAM_SEATS_COLLECTION)
     .doc(existingSeatId)
     .get();
-  if (existingSeatSnap.exists && existingSeatSnap.data()?.status === "active") {
-    await inviteDoc.ref.set(
-      {
-        status: "accepted",
-        accepted_user_id: memberUid,
-        updated_at: FieldValue.serverTimestamp(),
+
+  if (existingSeatSnap.exists) {
+    const st = existingSeatSnap.data()?.status as string | undefined;
+    if (seatStatusAllowsEnter(st)) {
+      await inviteDoc.ref.set(
+        {
+          status: "accepted",
+          accepted_user_id: memberUid,
+          updated_at: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      await writeAuditLog({
+        action: "personal_team_invite_accepted",
+        uid: memberUid,
+        ip: getClientIp(request),
+        metadata: {
+          route: "POST /api/personal-team/accept-invite",
+          result: "allowed",
+          idempotent: true,
+          team_owner_user_id: teamOwnerUid,
+        },
+      });
+      return NextResponse.json({
+        ok: true,
+        already_member: true,
+        team_owner_user_id: teamOwnerUid,
+      });
+    }
+  }
+
+  if (await wouldExceedNonOwnedTeamCap(db, memberUid, teamOwnerUid)) {
+    await writeAuditLog({
+      action: "personal_team_membership_cap_blocked",
+      uid: memberUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/accept-invite",
+        result: "blocked",
+        team_owner_user_id: teamOwnerUid,
       },
-      { merge: true }
-    );
-    return NextResponse.json({
-      ok: true,
-      already_member: true,
-      team_owner_user_id: teamOwnerUid,
     });
+    return NextResponse.json(
+      {
+        error:
+          "You are already on the maximum number of other personal teams (3). Leave one before accepting this invite.",
+      },
+      { status: 400 }
+    );
   }
 
   const docId = personalTeamSeatDocId(teamOwnerUid, memberUid);
@@ -125,6 +164,7 @@ export async function POST(request: Request) {
 
   await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId).set(
     {
+      team_id: teamOwnerUid,
       team_owner_user_id: teamOwnerUid,
       member_user_id: memberUid,
       seat_access_level: seatLevel,
@@ -132,14 +172,6 @@ export async function POST(request: Request) {
       invited_email: invitedEmail,
       created_at: now,
       updated_at: now,
-    },
-    { merge: true }
-  );
-
-  await db.collection("profiles").doc(memberUid).set(
-    {
-      personal_team_owner_id: teamOwnerUid,
-      personal_team_seat_access: seatLevel,
     },
     { merge: true }
   );
@@ -152,6 +184,18 @@ export async function POST(request: Request) {
     },
     { merge: true }
   );
+
+  await writeAuditLog({
+    action: "personal_team_invite_accepted",
+    uid: memberUid,
+    ip: getClientIp(request),
+    metadata: {
+      route: "POST /api/personal-team/accept-invite",
+      result: "allowed",
+      team_owner_user_id: teamOwnerUid,
+      seat_access_level: seatLevel,
+    },
+  });
 
   const joinerLabel = await getActorDisplayName(db, memberUid);
   await createNotification({

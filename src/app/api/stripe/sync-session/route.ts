@@ -10,6 +10,7 @@ import {
   resolveTeamSeatCountsForProfile,
   teamSeatCountsToFirestore,
 } from "@/lib/team-seat-pricing";
+import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -145,6 +146,15 @@ export async function POST(request: Request) {
       stripe_updated_at: new Date().toISOString(),
     },
     { merge: true }
+  );
+  await ensurePersonalTeamRecord(
+    db,
+    uid,
+    {
+      plan_id: planId,
+      team_seat_counts: teamFirestore.team_seat_counts,
+    },
+    { allowPlanBootstrap: true }
   );
   await ensureDefaultDrivesForUser(uid);
 

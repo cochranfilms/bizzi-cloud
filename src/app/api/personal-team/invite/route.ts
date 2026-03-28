@@ -6,12 +6,18 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { sendPersonalTeamInviteEmail } from "@/lib/emailjs";
 import { hashInviteToken } from "@/lib/invite-token";
+import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import {
   PERSONAL_TEAM_INVITES_COLLECTION,
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
   validateTeamSeatCapacity,
 } from "@/lib/personal-team";
+import {
+  canManagePersonalTeam,
+  ensurePersonalTeamRecord,
+  wouldExceedNonOwnedTeamCap,
+} from "@/lib/personal-team-auth";
 import {
   isPersonalTeamSeatAccess,
   personalTeamSeatAccessSummary,
@@ -111,9 +117,22 @@ export async function POST(request: Request) {
       { status: 403 }
     );
   }
-  if (adminData.personal_team_owner_id) {
+
+  await ensurePersonalTeamRecord(db, adminUid, adminData, { allowPlanBootstrap: true });
+  if (!(await canManagePersonalTeam(db, adminUid, adminUid))) {
+    await writeAuditLog({
+      action: "personal_team_invite_blocked",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/invite",
+        result: "blocked",
+        reason: "not_team_owner",
+        team_owner_user_id: adminUid,
+      },
+    });
     return NextResponse.json(
-      { error: "Team members cannot invite to someone else's team from this account." },
+      { error: "You do not have a personal team workspace to manage yet." },
       { status: 403 }
     );
   }
@@ -160,6 +179,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "You cannot invite yourself." }, { status: 400 });
     }
 
+    if (await wouldExceedNonOwnedTeamCap(db, memberUid, adminUid)) {
+      await writeAuditLog({
+        action: "personal_team_membership_cap_blocked",
+        uid: adminUid,
+        ip: getClientIp(request),
+        metadata: {
+          route: "POST /api/personal-team/invite",
+          result: "blocked",
+          target_user_id: memberUid,
+          team_owner_user_id: adminUid,
+        },
+      });
+      return NextResponse.json(
+        {
+          error:
+            "This user is already on the maximum number of other personal teams (3). They must leave one before joining yours.",
+        },
+        { status: 400 }
+      );
+    }
+
     const existingSeatId = personalTeamSeatDocId(adminUid, memberUid);
     const existingSeat = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(existingSeatId).get();
     if (existingSeat.exists) {
@@ -194,6 +234,7 @@ export async function POST(request: Request) {
 
     await seatRef.set(
       {
+        team_id: adminUid,
         team_owner_user_id: adminUid,
         member_user_id: memberUid,
         seat_access_level: seatLevel,
@@ -205,13 +246,18 @@ export async function POST(request: Request) {
       { merge: true }
     );
 
-    await db.collection("profiles").doc(memberUid).set(
-      {
-        personal_team_owner_id: adminUid,
-        personal_team_seat_access: seatLevel,
+    await writeAuditLog({
+      action: "personal_team_invite_created",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/invite",
+        result: "allowed",
+        target_user_id: memberUid,
+        team_owner_user_id: adminUid,
+        seat_access_level: seatLevel,
       },
-      { merge: true }
-    );
+    });
 
     const ownerLabel = await getActorDisplayName(db, adminUid);
     await createNotification({
@@ -266,6 +312,19 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  await writeAuditLog({
+    action: "personal_team_invite_created",
+    uid: adminUid,
+    ip: getClientIp(request),
+    metadata: {
+      route: "POST /api/personal-team/invite",
+      result: "allowed",
+      pending_invite_id: pendingId,
+      team_owner_user_id: adminUid,
+      seat_access_level: seatLevel,
+    },
+  });
 
   return NextResponse.json({
     ok: true,

@@ -1,12 +1,13 @@
 /**
  * POST /api/personal-team/remove — admin removes a member; access revocation only.
- * Shared team files stay with the team container (no cold storage / transfer).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { suggestIdentityDeletionAfterTeamScopeRemoved } from "@/lib/identity-scope";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "@/lib/personal-team";
+import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -41,15 +42,36 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
-  if ((await db.collection("profiles").doc(adminUid).get()).data()?.personal_team_owner_id) {
+  const adminProfileSnap = await db.collection("profiles").doc(adminUid).get();
+  const adminData = adminProfileSnap.data() ?? {};
+  await ensurePersonalTeamRecord(db, adminUid, adminData);
+  if (!(await canManagePersonalTeam(db, adminUid, adminUid))) {
     return NextResponse.json({ error: "Only the team admin can remove members." }, { status: 403 });
   }
 
   const docId = personalTeamSeatDocId(adminUid, memberUid);
-  const seatSnap = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId).get();
+  const seatRef = db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId);
+  const seatSnap = await seatRef.get();
   const seat = seatSnap.data();
   if (!seatSnap.exists || seat?.team_owner_user_id !== adminUid) {
     return NextResponse.json({ error: "Seat not found" }, { status: 404 });
+  }
+
+  const st = seat?.status as string | undefined;
+  if (st === "removed") {
+    await writeAuditLog({
+      action: "personal_team_member_removed",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/remove",
+        result: "allowed",
+        idempotent: true,
+        target_user_id: memberUid,
+        team_owner_user_id: adminUid,
+      },
+    });
+    return NextResponse.json({ ok: true, already_removed: true });
   }
 
   const memberProfileSnap = await db.collection("profiles").doc(memberUid).get();
@@ -58,7 +80,7 @@ export async function POST(request: Request) {
   const organizationId = memberProfile?.organization_id as string | undefined;
 
   try {
-    await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(docId).set(
+    await seatRef.set(
       {
         status: "removed",
         updated_at: FieldValue.serverTimestamp(),
@@ -72,6 +94,17 @@ export async function POST(request: Request) {
       },
       { merge: true }
     );
+    await writeAuditLog({
+      action: "personal_team_member_removed",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/remove",
+        result: "allowed",
+        target_user_id: memberUid,
+        team_owner_user_id: adminUid,
+      },
+    });
     const ownerLabel = await getActorDisplayName(db, adminUid);
     await createNotification({
       recipientUserId: memberUid,

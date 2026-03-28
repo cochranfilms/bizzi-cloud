@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, User, Building2, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, User, Building2, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import {
@@ -30,6 +30,7 @@ interface PersonalTeamWs {
   role: string;
   status: string;
   theme: EnterpriseThemeId;
+  membershipKind?: "owned" | "member";
 }
 
 export default function WorkspaceSwitcher() {
@@ -48,6 +49,7 @@ export default function WorkspaceSwitcher() {
   const { org } = useEnterprise();
   const teamCtx = usePersonalTeamWorkspace();
   const [workspaceListVersion, setWorkspaceListVersion] = useState(0);
+  const [teamsSubOpen, setTeamsSubOpen] = useState(false);
 
   useEffect(() => {
     const bump = () => setWorkspaceListVersion((v) => v + 1);
@@ -86,6 +88,51 @@ export default function WorkspaceSwitcher() {
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!open) setTeamsSubOpen(false);
+  }, [open]);
+
+  const memberOnlyTeams =
+    workspaces?.personalTeams?.filter((t) => t.membershipKind === "member") ?? [];
+  const ownedPersonalTeamRows =
+    workspaces?.personalTeams?.filter((t) => t.membershipKind === "owned") ?? [];
+  const useNestedTeamsMenu = memberOnlyTeams.length >= 2;
+
+  function renderPersonalTeamRow(t: PersonalTeamWs, opts?: { nested?: boolean }) {
+    const nested = opts?.nested ?? false;
+    const tp = getThemeById(t.theme).primary;
+    const teamRowActive = activeTeamOwnerId === t.ownerUserId;
+    return (
+      <Link
+        key={t.id}
+        href={`/team/${t.ownerUserId}`}
+        onClick={() => setOpen(false)}
+        className={`flex items-center gap-2 py-2 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-white/10 ${
+          nested ? "pl-8 pr-3" : "px-3"
+        } ${teamRowActive ? "font-medium" : ""}`}
+        style={{
+          color: tp,
+          ...(teamRowActive ? { backgroundColor: `${tp}26` } : {}),
+        }}
+      >
+        <Users className="h-4 w-4 flex-shrink-0 opacity-90" style={{ color: tp }} />
+        <span className="flex-1 truncate">{t.name}</span>
+        {t.role === "Admin" ? (
+          <span
+            className="rounded px-1.5 py-0.5 text-xs font-medium"
+            style={{ backgroundColor: `${tp}40`, color: tp }}
+          >
+            Admin
+          </span>
+        ) : (
+          <span className="max-w-[84px] truncate rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100">
+            {t.role}
+          </span>
+        )}
+      </Link>
+    );
+  }
 
   const activeTeamName =
     activeTeamOwnerId &&
@@ -184,39 +231,31 @@ export default function WorkspaceSwitcher() {
               )}
             </Link>
           )}
-          {workspaces?.personalTeams?.map((t) => {
-            const tp = getThemeById(t.theme).primary;
-            const teamRowActive = activeTeamOwnerId === t.ownerUserId;
-            return (
-              <Link
-                key={t.id}
-                href={`/team/${t.ownerUserId}`}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-white/10 ${
-                  teamRowActive ? "font-medium" : ""
-                }`}
-                style={{
-                  color: tp,
-                  ...(teamRowActive ? { backgroundColor: `${tp}26` } : {}),
-                }}
-              >
-                <Users className="h-4 w-4 flex-shrink-0 opacity-90" style={{ color: tp }} />
-                <span className="flex-1 truncate">{t.name}</span>
-                {t.role === "Admin" ? (
-                  <span
-                    className="rounded px-1.5 py-0.5 text-xs font-medium"
-                    style={{ backgroundColor: `${tp}40`, color: tp }}
-                  >
-                    Admin
-                  </span>
-                ) : (
-                  <span className="max-w-[84px] truncate rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-800 dark:bg-neutral-600 dark:text-neutral-100">
-                    {t.role}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+          {useNestedTeamsMenu ? (
+            <>
+              {ownedPersonalTeamRows.map((t) => renderPersonalTeamRow(t))}
+              <div className="border-t border-neutral-100 dark:border-neutral-700/80">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTeamsSubOpen((v) => !v);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/10"
+                >
+                  <Users className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan" />
+                  <span className="flex-1">Teams</span>
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 transition-transform ${teamsSubOpen ? "rotate-90" : ""}`}
+                  />
+                </button>
+                {teamsSubOpen ? memberOnlyTeams.map((t) => renderPersonalTeamRow(t, { nested: true })) : null}
+              </div>
+            </>
+          ) : (
+            workspaces?.personalTeams?.map((t) => renderPersonalTeamRow(t))
+          )}
           {workspaces?.organizations?.map((orgWs) => {
             const op = getThemeById(orgWs.theme ?? "bizzi").primary;
             const orgRowActive = isEnterprise && org?.id === orgWs.id;

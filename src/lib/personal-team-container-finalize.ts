@@ -7,6 +7,7 @@ import { migratePersonalTeamContainerToColdStorage } from "@/lib/cold-storage-mi
 import { hasColdStorage } from "@/lib/cold-storage-restore";
 import type { ColdStorageSourceType } from "@/lib/cold-storage-retention";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
+import { PERSONAL_TEAMS_COLLECTION } from "@/lib/personal-team-constants";
 import { writeAuditLog } from "@/lib/audit-log";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getRetentionDays } from "@/lib/cold-storage-retention";
@@ -40,13 +41,8 @@ export async function finalizePersonalTeamColdStorage(
     .where("team_owner_user_id", "==", teamOwnerUserId)
     .get();
 
-  const membersSnap = await db
-    .collection("profiles")
-    .where("personal_team_owner_id", "==", teamOwnerUserId)
-    .get();
-
   const teamLife = (ownerData?.team_storage_lifecycle_status as string) ?? "active";
-  if (teamLife === "cold_storage" && seatsSnap.empty && membersSnap.empty) {
+  if (teamLife === "cold_storage" && seatsSnap.empty) {
     return {
       teamOwnerUserId,
       skipped: true,
@@ -93,27 +89,35 @@ export async function finalizePersonalTeamColdStorage(
     throw err;
   }
 
-  const profilesAgain = await db
-    .collection("profiles")
-    .where("personal_team_owner_id", "==", teamOwnerUserId)
-    .get();
-  for (const p of profilesAgain.docs) {
-    await p.ref.set(
-      {
-        personal_team_owner_id: FieldValue.delete(),
-        personal_team_seat_access: FieldValue.delete(),
-      },
-      { merge: true }
-    );
+  const memberUids = new Set<string>();
+  for (const d of seatsSnap.docs) {
+    const mid = d.data().member_user_id as string | undefined;
+    if (mid) memberUids.add(mid);
+  }
+  for (const mid of memberUids) {
+    await db
+      .collection("profiles")
+      .doc(mid)
+      .set(
+        {
+          personal_team_owner_id: FieldValue.delete(),
+          personal_team_seat_access: FieldValue.delete(),
+        },
+        { merge: true }
+      );
   }
 
-  const seatsAgain = await db
-    .collection(PERSONAL_TEAM_SEATS_COLLECTION)
-    .where("team_owner_user_id", "==", teamOwnerUserId)
-    .get();
-  for (const s of seatsAgain.docs) {
+  for (const s of seatsSnap.docs) {
     await s.ref.delete();
   }
+
+  await db.collection(PERSONAL_TEAMS_COLLECTION).doc(teamOwnerUserId).set(
+    {
+      status: "cold_storage",
+      cold_storage_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
   const retentionDays = getRetentionDays(planTier, sourceType);
   const expiresAt = new Date();

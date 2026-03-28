@@ -1,6 +1,11 @@
 /**
  * GET /api/account/workspaces
  * Returns personal workspace, personal teams, and organization workspaces with status for workspace switcher.
+ * Owned personal team rows come from `personal_teams` only (not plan inference).
+ *
+ * Rollout / degraded load: `workspace_load_issues` lists non-PII codes when a row fails; the response
+ * still includes `personal`, `organizations`, and every team row that loaded successfully.
+ * `workspace_rollout` is non-null when load was partial or identity warnings exist (safe user message only).
  */
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
@@ -9,7 +14,13 @@ import type { EnterpriseThemeId } from "@/types/enterprise";
 import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
-import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import {
+  ensurePersonalTeamRecord,
+  getOwnedTeam,
+  resolvePersonalTeamIdentityConflicts,
+  seatStatusShowsInSwitcher,
+} from "@/lib/personal-team-auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 
 function normalizeThemeId(raw: unknown): EnterpriseThemeId {
@@ -85,6 +96,9 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
+  const pdata = profileData ?? {};
+
+  await ensurePersonalTeamRecord(db, uid, pdata);
 
   const personalStatus = (profileData?.personal_status as PersonalStatus | undefined) ?? "active";
   const personalStorageLifecycle =
@@ -142,60 +156,108 @@ export async function GET(request: Request) {
     role: string;
     status: string;
     theme: EnterpriseThemeId;
+    membershipKind: "owned" | "member";
   }> = [];
   const teamSeen = new Set<string>();
+  /** Deploy / rollout: non-PII codes only; keeps switcher usable if one row fails. */
+  const workspaceLoadIssues: Array<{ scope: string; code: string }> = [];
 
-  const planId = (profileData?.plan_id as string) ?? "free";
-  /** Only show “your team” as admin when you are not a seat on someone else’s team. */
-  const seatedOnOtherTeam = !!(profileData?.personal_team_owner_id as string | undefined)?.trim();
-  const isTeamOwner = planAllowsPersonalTeamSeats(planId) && !seatedOnOtherTeam;
-
-  if (isTeamOwner) {
-    const ownerName = await profileDisplayName(db, uid);
-    const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const { name, theme } = await personalTeamWorkspaceMeta(db, uid, label);
-    personalTeams.push({
-      id: `team_${uid}`,
-      ownerUserId: uid,
-      name,
-      role: "Admin",
-      status: badgeFromStatus(personalStorageLifecycle, personalBillingStatus, personalStatus),
-      theme,
-    });
-    teamSeen.add(uid);
+  try {
+    const owned = await getOwnedTeam(db, uid);
+    if (owned) {
+      try {
+        const ownerName = await profileDisplayName(db, uid);
+        const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
+        const { name, theme } = await personalTeamWorkspaceMeta(db, uid, label);
+        personalTeams.push({
+          id: `team_${uid}`,
+          ownerUserId: uid,
+          name,
+          role: "Admin",
+          status: badgeFromStatus(personalStorageLifecycle, personalBillingStatus, personalStatus),
+          theme,
+          membershipKind: "owned",
+        });
+        teamSeen.add(uid);
+      } catch (err) {
+        console.error("[GET /api/account/workspaces] owned personal team row skipped", uid, err);
+        workspaceLoadIssues.push({ scope: "owned_personal_team", code: "row_load_failed" });
+      }
+    }
+  } catch (err) {
+    console.error("[GET /api/account/workspaces] getOwnedTeam failed", uid, err);
+    workspaceLoadIssues.push({ scope: "owned_personal_team", code: "row_load_failed" });
   }
 
-  const memberSeatsSnap = await db
-    .collection(PERSONAL_TEAM_SEATS_COLLECTION)
-    .where("member_user_id", "==", uid)
-    .get();
-
-  for (const seatDoc of memberSeatsSnap.docs) {
-    const sd = seatDoc.data();
-    const ownerId = sd.team_owner_user_id as string;
-    const st = (sd.status as string) ?? "active";
-    if (!ownerId || ownerId === uid || teamSeen.has(ownerId)) continue;
-    if (st !== "active" && st !== "cold_storage") continue;
-    const ownerName = await profileDisplayName(db, ownerId);
-    const fallback =
-      ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const { name, theme } = await personalTeamWorkspaceMeta(db, ownerId, fallback);
-    const level = (sd.seat_access_level as PersonalTeamSeatAccess) ?? "none";
-    const roleLabel = level === "none" ? "Member" : PERSONAL_TEAM_SEAT_ACCESS_LABELS[level] ?? "Member";
-    personalTeams.push({
-      id: `team_${ownerId}`,
-      ownerUserId: ownerId,
-      name,
-      role: roleLabel,
-      status: st === "cold_storage" ? "Recovery Storage" : "Active",
-      theme,
-    });
-    teamSeen.add(ownerId);
+  let memberOrSeatDocs: import("firebase-admin/firestore").QueryDocumentSnapshot[] = [];
+  try {
+    const snap = await db
+      .collection(PERSONAL_TEAM_SEATS_COLLECTION)
+      .where("member_user_id", "==", uid)
+      .get();
+    memberOrSeatDocs = snap.docs;
+  } catch (err) {
+    console.error("[GET /api/account/workspaces] member seats query failed", uid, err);
+    workspaceLoadIssues.push({ scope: "member_personal_team_list", code: "query_failed" });
   }
+
+  for (const seatDoc of memberOrSeatDocs) {
+    try {
+      const sd = seatDoc.data();
+      const ownerId = sd.team_owner_user_id as string;
+      const st = (sd.status as string) ?? "active";
+      if (!ownerId || ownerId === uid || teamSeen.has(ownerId)) continue;
+      if (!seatStatusShowsInSwitcher(st)) continue;
+      const ownerName = await profileDisplayName(db, ownerId);
+      const fallback =
+        ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
+      const { name, theme } = await personalTeamWorkspaceMeta(db, ownerId, fallback);
+      const level = (sd.seat_access_level as PersonalTeamSeatAccess) ?? "none";
+      const roleLabel = level === "none" ? "Member" : PERSONAL_TEAM_SEAT_ACCESS_LABELS[level] ?? "Member";
+      personalTeams.push({
+        id: `team_${ownerId}`,
+        ownerUserId: ownerId,
+        name,
+        role: roleLabel,
+        status: st === "cold_storage" ? "Recovery Storage" : "Active",
+        theme,
+        membershipKind: "member",
+      });
+      teamSeen.add(ownerId);
+    } catch (err) {
+      console.error("[GET /api/account/workspaces] member team row skipped", uid, err);
+      workspaceLoadIssues.push({ scope: "member_personal_team_row", code: "row_load_failed" });
+    }
+  }
+
+  const identity = await resolvePersonalTeamIdentityConflicts(db, uid, pdata);
+  if (identity.warnings.length > 0) {
+    await writeAuditLog({
+      action: "personal_team_identity_conflict",
+      uid,
+      metadata: {
+        route: "GET /api/account/workspaces",
+        warnings: identity.warnings,
+      },
+    });
+  }
+
+  const rolloutDegraded =
+    workspaceLoadIssues.length > 0 || identity.warnings.length > 0;
 
   return NextResponse.json({
     personal,
     organizations,
     personalTeams,
+    identity_warnings: identity.warnings,
+    workspace_load_issues: workspaceLoadIssues,
+    workspace_rollout: rolloutDegraded
+      ? {
+          partial_team_list: workspaceLoadIssues.length > 0,
+          identity_attention_needed: identity.warnings.length > 0,
+          support_message:
+            "Something may be out of sync. Your personal workspace should still work. If a team is missing or wrong, contact support and mention workspace switcher load.",
+        }
+      : null,
   });
 }

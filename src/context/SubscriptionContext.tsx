@@ -11,6 +11,12 @@ import {
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import {
+  computeTeamRouteSeatEntitlements,
+  type PersonalTeamMembershipRow,
+} from "@/lib/subscription-team-route-entitlements";
+
+export type { PersonalTeamMembershipRow };
 
 export interface TeamSeatCountsState {
   none: number;
@@ -26,9 +32,14 @@ export interface SubscriptionState {
   hasPortalAccess: boolean;
   hasGallerySuite: boolean;
   hasEditor: boolean;
-  /** Personal team (not Organization): member’s owner uid when applicable */
+  /** @deprecated Use personal_team_memberships; kept for gradual migration */
   personalTeamOwnerId: string | null;
+  /** @deprecated Derive from membership matching current /team route */
   personalTeamSeatAccess: string | null;
+  /** Seat memberships on other users' personal teams (canonical). */
+  personalTeamMemberships: PersonalTeamMembershipRow[];
+  /** `personal_teams/{uid}` exists (after server bootstrap). */
+  ownsPersonalTeam: boolean;
   teamSeatCounts: TeamSeatCountsState;
   loading: boolean;
 }
@@ -48,6 +59,10 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [hasPortalAccess, setHasPortalAccess] = useState(false);
   const [personalTeamOwnerId, setPersonalTeamOwnerId] = useState<string | null>(null);
   const [personalTeamSeatAccess, setPersonalTeamSeatAccess] = useState<string | null>(null);
+  const [personalTeamMemberships, setPersonalTeamMemberships] = useState<
+    PersonalTeamMembershipRow[]
+  >([]);
+  const [ownsPersonalTeam, setOwnsPersonalTeam] = useState(false);
   const [teamSeatCounts, setTeamSeatCounts] = useState<TeamSeatCountsState>({
     none: 0,
     gallery: 0,
@@ -64,6 +79,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setHasPortalAccess(false);
       setPersonalTeamOwnerId(null);
       setPersonalTeamSeatAccess(null);
+      setPersonalTeamMemberships([]);
+      setOwnsPersonalTeam(false);
       setTeamSeatCounts({ none: 0, gallery: 0, editor: 0, fullframe: 0 });
       setLoading(false);
       return;
@@ -84,13 +101,24 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           team_seat_counts?: TeamSeatCountsState;
           personal_team_owner_id?: string | null;
           personal_team_seat_access?: string | null;
+          personal_team_memberships?: PersonalTeamMembershipRow[];
+          owns_personal_team?: boolean;
         };
         setPlanId(data.plan_id ?? "free");
         setAddonIds(data.addon_ids ?? []);
         setStorageAddonId(data.storage_addon_id ?? null);
         setHasPortalAccess(data.has_portal_access ?? false);
-        setPersonalTeamOwnerId(data.personal_team_owner_id ?? null);
-        setPersonalTeamSeatAccess(data.personal_team_seat_access ?? null);
+        setOwnsPersonalTeam(!!data.owns_personal_team);
+        const m = Array.isArray(data.personal_team_memberships)
+          ? data.personal_team_memberships
+          : [];
+        setPersonalTeamMemberships(m);
+        setPersonalTeamOwnerId(
+          typeof data.personal_team_owner_id === "string" ? data.personal_team_owner_id : null
+        );
+        setPersonalTeamSeatAccess(
+          typeof data.personal_team_seat_access === "string" ? data.personal_team_seat_access : null
+        );
         const t = data.team_seat_counts;
         setTeamSeatCounts(
           t && typeof t === "object"
@@ -110,6 +138,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setHasPortalAccess(false);
       setPersonalTeamOwnerId(null);
       setPersonalTeamSeatAccess(null);
+      setPersonalTeamMemberships([]);
+      setOwnsPersonalTeam(false);
       setTeamSeatCounts({ none: 0, gallery: 0, editor: 0, fullframe: 0 });
     } finally {
       setLoading(false);
@@ -126,25 +156,12 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     return () => window.removeEventListener("subscription-updated", handler);
   }, [fetchProfile]);
 
-  /**
-   * On `/team/{ownerUid}`, when the viewer is a seat on that owner’s team, drive visibility
-   * (Storage / RAW / Gallery Media) follows the seat tier only — not the member’s personal add-ons.
-   * Everywhere else, use the signed-in account’s own subscription add-ons only (keeps personal vs team separated).
-   */
-  const teamRouteOwnerUid =
-    typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
-  const useSeatOnlyForPowerUps =
-    !!teamRouteOwnerUid &&
-    !!personalTeamOwnerId &&
-    teamRouteOwnerUid === personalTeamOwnerId;
-
-  const hasGallerySuite = useSeatOnlyForPowerUps
-    ? personalTeamSeatAccess === "gallery" || personalTeamSeatAccess === "fullframe"
-    : addonIds.includes("gallery") || addonIds.includes("fullframe");
-
-  const hasEditor = useSeatOnlyForPowerUps
-    ? personalTeamSeatAccess === "editor" || personalTeamSeatAccess === "fullframe"
-    : addonIds.includes("editor") || addonIds.includes("fullframe");
+  const { hasGallerySuite, hasEditor } = computeTeamRouteSeatEntitlements({
+    pathname,
+    userUid: user?.uid ?? null,
+    personalTeamMemberships,
+    addonIds,
+  });
 
   const value = useMemo<SubscriptionContextValue>(
     () => ({
@@ -156,6 +173,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       hasEditor,
       personalTeamOwnerId,
       personalTeamSeatAccess,
+      personalTeamMemberships,
+      ownsPersonalTeam,
       teamSeatCounts,
       loading,
       refetch: fetchProfile,
@@ -169,6 +188,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       hasEditor,
       personalTeamOwnerId,
       personalTeamSeatAccess,
+      personalTeamMemberships,
+      ownsPersonalTeam,
       teamSeatCounts,
       loading,
       fetchProfile,
