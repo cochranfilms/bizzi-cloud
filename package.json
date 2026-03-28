@@ -21,7 +21,9 @@
     "download:ffmpeg-braw": "node scripts/download-ffmpeg-braw.js",
     "k6:smoke": "k6 run -e K6_EXECUTOR=constant-vus -e K6_VUS=5 -e K6_DURATION=45s k6/bizzi-api.js",
     "k6:ramp": "k6 run k6/bizzi-api.js",
-    "k6:arrival": "k6 run -e K6_EXECUTOR=ramping-arrival-rate k6/bizzi-api.js"
+    "k6:arrival": "k6 run -e K6_EXECUTOR=ramping-arrival-rate k6/bizzi-api.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1003.0",
@@ -63,6 +65,7 @@
     "eslint-config-next": "^15.0.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

@@ -182,6 +182,10 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+    /** Quota holds for uploads; only Admin SDK / Cloud Functions may write. */
+    match /storage_quota_reservations/{reservationId} {
+      allow read, write: if false;
+    }
     match /workspaces/{workspaceId} {
       allow read: if request.auth != null
         && resource.data.organization_id is string

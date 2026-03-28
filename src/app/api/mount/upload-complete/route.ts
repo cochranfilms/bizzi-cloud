@@ -5,6 +5,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
@@ -82,6 +83,8 @@ export async function POST(request: Request) {
   try {
     await checkUserCanUpload(uid, size, typeof driveId === "string" ? driveId : undefined);
   } catch (err) {
+    const q = storageQuotaErrorJson(err);
+    if (q) return NextResponse.json(q.body, { status: q.status });
     const msg = err instanceof Error ? err.message : "Storage limit reached";
     return NextResponse.json({ error: msg }, { status: 403 });
   }

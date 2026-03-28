@@ -3,7 +3,10 @@
  * Team workspace storage totals (owner quota + usage that bills to the owner).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { getPersonalTeamWorkspaceStorageDisplay } from "@/lib/enterprise-storage";
+import {
+  getPersonalTeamWorkspaceStorageSummary,
+  deprecatedStorageFieldsFromSummary,
+} from "@/lib/storage-display";
 import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
@@ -40,6 +43,15 @@ export async function GET(request: Request) {
     }
   }
 
-  const stats = await getPersonalTeamWorkspaceStorageDisplay(teamOwnerId);
-  return NextResponse.json(stats);
+  const summary = await getPersonalTeamWorkspaceStorageSummary(teamOwnerId, uid);
+  const deprecated = deprecatedStorageFieldsFromSummary(summary);
+
+  return NextResponse.json({
+    ...summary,
+    _deprecated: {
+      storage_used_bytes: deprecated.storage_used_bytes,
+      storage_used_total_for_quota: deprecated.storage_used_total_for_quota,
+      storage_quota_bytes: summary.quota_bytes,
+    },
+  });
 }

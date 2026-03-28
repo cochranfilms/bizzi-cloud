@@ -4,7 +4,7 @@
  * Body: { parts: [{ PartNumber, ETag }] }
  * Also creates backup_files and triggers metadata extraction (Mux via extract-metadata for videos).
  */
-import { completeMultipartUpload, isB2Configured } from "@/lib/b2";
+import { completeMultipartUpload, getObjectMetadata, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
@@ -16,6 +16,10 @@ import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
+import {
+  commitReservation,
+  releaseReservation,
+} from "@/lib/storage-quota-reservations";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -122,8 +126,40 @@ export async function POST(
   const relativePath = data.fileName ?? "";
   const fileSize = data.fileSize ?? 0;
   const contentType = data.contentType ?? "application/octet-stream";
+  const reservationRaw = data.storage_quota_reservation_id;
+  const reservationId =
+    typeof reservationRaw === "string" && reservationRaw.length > 0 ? reservationRaw : null;
 
-  await completeMultipartUpload(objectKey, uploadId, validatedParts);
+  try {
+    await completeMultipartUpload(objectKey, uploadId, validatedParts);
+  } catch (completeErr) {
+    if (reservationId) {
+      await releaseReservation(reservationId, "finalize_failed").catch(() => {});
+    }
+    throw completeErr;
+  }
+
+  const meta = await getObjectMetadata(objectKey);
+  const actual = meta?.contentLength ?? -1;
+  if (actual !== fileSize) {
+    if (reservationId) {
+      await releaseReservation(reservationId, "size_mismatch").catch(() => {});
+    }
+    console.warn("[uppy multipart complete] size mismatch", {
+      objectKey,
+      reservationId,
+      expected: fileSize,
+      actual,
+    });
+    return NextResponse.json(
+      { error: "Uploaded size does not match expected size." },
+      { status: 400 }
+    );
+  }
+
+  if (reservationId) {
+    await commitReservation(reservationId);
+  }
 
   await sessionRef.update({
     status: "completed",

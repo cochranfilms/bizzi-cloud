@@ -7,7 +7,9 @@ import {
   MULTIPART_PRESIGN_EXPIRY,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
+import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
+import { releaseReservation } from "@/lib/storage-quota-reservations";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import type { UploadCreateResponse } from "@/types/upload";
@@ -97,13 +99,6 @@ async function handleCreate(request: Request) {
 
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
-  try {
-    await checkUserCanUpload(uid, sizeBytes, typeof driveId === "string" ? driveId : undefined);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Storage limit reached";
-    return NextResponse.json({ error: msg }, { status: 403 });
-  }
-
   const objectKey =
     contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
       ? `content/${contentHash.toLowerCase()}`
@@ -122,16 +117,44 @@ async function handleCreate(request: Request) {
         parts: [],
         alreadyExists: true,
         existingObjectKey: objectKey,
+        reservation_id: null,
       } satisfies UploadCreateResponse);
     }
   }
 
+  let reservation_id: string | null = null;
+  try {
+    const r = await checkAndReserveUploadBytes(
+      uid,
+      sizeBytes,
+      typeof driveId === "string" ? driveId : undefined,
+      objectKey
+    );
+    reservation_id = r.reservation_id;
+  } catch (err) {
+    const q = storageQuotaErrorJson(err);
+    if (q) return NextResponse.json(q.body, { status: q.status });
+    if (err instanceof Error && (err as Error & { code?: string }).code === "storage_reservation_race") {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
+  }
+
   const { partSize, totalParts, recommendedConcurrency } = computeAdaptivePartPlan(sizeBytes);
 
-  const { uploadId } = await createMultipartUpload(
-    objectKey,
-    typeof contentType === "string" ? contentType : "application/octet-stream"
-  );
+  let uploadId: string;
+  try {
+    const m = await createMultipartUpload(
+      objectKey,
+      typeof contentType === "string" ? contentType : "application/octet-stream"
+    );
+    uploadId = m.uploadId;
+  } catch (initErr) {
+    if (reservation_id) {
+      await releaseReservation(reservation_id, "init_failed").catch(() => {});
+    }
+    throw initErr;
+  }
 
   const MAX_PARTS_IN_RESPONSE = 200;
   const partNumbers = Array.from({ length: totalParts }, (_, i) => i + 1);
@@ -166,6 +189,7 @@ async function handleCreate(request: Request) {
     expiresAt: expiresAt.toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    storage_quota_reservation_id: reservation_id,
   });
 
   return NextResponse.json({
@@ -177,5 +201,6 @@ async function handleCreate(request: Request) {
     totalParts,
     parts,
     alreadyExists: false,
+    reservation_id,
   } satisfies UploadCreateResponse);
 }

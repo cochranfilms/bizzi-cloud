@@ -31,7 +31,7 @@ interface GalleryData {
   cover_alt_text?: string | null;
   cover_overlay_opacity?: number | null;
   cover_title_alignment?: "left" | "center" | "right" | null;
-  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
   branding: Record<string, unknown>;
   download_settings: Record<string, unknown>;
   watermark: Record<string, unknown>;

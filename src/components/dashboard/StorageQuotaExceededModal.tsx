@@ -3,17 +3,23 @@
 import { createPortal } from "react-dom";
 import { X, HardDrive, ArrowUpCircle } from "lucide-react";
 
+export type QuotaModalDenial = {
+  usage_scope: string;
+  requesting_user_id: string;
+  billing_subject_user_id: string | null;
+  organization_id: string | null;
+  effective_billable_bytes_for_enforcement: number;
+  reserved_bytes: number;
+};
+
 interface StorageQuotaExceededModalProps {
   open: boolean;
   onClose: () => void;
-  /** Total bytes the user tried to upload */
   attemptedBytes: number;
-  /** Current storage used (bytes) */
   usedBytes: number;
-  /** Storage quota (bytes), null = unlimited */
   quotaBytes: number | null;
-  /** True if user is in an organization (show org-specific message) */
   isOrganizationUser: boolean;
+  storage_denial?: QuotaModalDenial;
 }
 
 function formatBytes(n: number): string {
@@ -23,6 +29,23 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function guidanceCopy(denial: QuotaModalDenial | undefined, isOrganizationUser: boolean): string {
+  const scope = denial?.usage_scope;
+  if (scope === "enterprise_workspace") {
+    return "This organization has reached its storage limit. Contact your organization admin to upgrade storage or free up space.";
+  }
+  if (scope === "personal_team_workspace") {
+    return "This team workspace uses storage from the team owner's plan. The owner's plan is full—the owner needs to upgrade storage or free space before more files can be added here.";
+  }
+  if (scope === "personal") {
+    return "Upgrade your storage plan or delete files to free space.";
+  }
+  if (isOrganizationUser) {
+    return "Reach out to your organization owner to upgrade your storage allocation.";
+  }
+  return "Upgrade your storage plan to add more space.";
+}
+
 export default function StorageQuotaExceededModal({
   open,
   onClose,
@@ -30,6 +53,7 @@ export default function StorageQuotaExceededModal({
   usedBytes,
   quotaBytes,
   isOrganizationUser,
+  storage_denial,
 }: StorageQuotaExceededModalProps) {
   if (!open) return null;
 
@@ -37,6 +61,10 @@ export default function StorageQuotaExceededModal({
   const usedLabel = formatBytes(usedBytes);
   const attemptedLabel = formatBytes(attemptedBytes);
   const remaining = quotaBytes === null ? Infinity : Math.max(0, quotaBytes - usedBytes);
+  const reservedNote =
+    storage_denial && storage_denial.reserved_bytes > 0
+      ? ` Including ${formatBytes(storage_denial.reserved_bytes)} held for uploads in progress.`
+      : "";
 
   const modal = (
     <div
@@ -73,19 +101,18 @@ export default function StorageQuotaExceededModal({
             Storage limit reached
           </h3>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            This upload ({attemptedLabel}) would exceed your remaining storage. You&apos;re using{" "}
+            This upload ({attemptedLabel}) would exceed your remaining allowance. Plan usage is at{" "}
             <span className="font-medium text-neutral-700 dark:text-neutral-300">{usedLabel}</span> of{" "}
             <span className="font-medium text-neutral-700 dark:text-neutral-300">{quotaLabel}</span>
             {remaining < Infinity && (
-              <> ({formatBytes(remaining)} remaining)</>
-            )}.
+              <> ({formatBytes(remaining)} remaining).</>
+            )}
+            {reservedNote}
           </p>
           <div className="flex gap-3 rounded-xl border border-amber-200/60 bg-amber-50/50 p-4 dark:border-amber-800/50 dark:bg-amber-950/30">
             <ArrowUpCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
             <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-              {isOrganizationUser
-                ? "Reach out to your organization owner to upgrade your storage allocation."
-                : "Upgrade your storage plan to add more space."}
+              {guidanceCopy(storage_denial, isOrganizationUser)}
             </p>
           </div>
           <div className="mt-6 flex justify-end">

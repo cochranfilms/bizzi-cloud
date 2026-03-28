@@ -17,23 +17,13 @@ export const COVER_RECOMMENDED_WIDTH = 2500;
 export const COVER_RECOMMENDED_HEIGHT = 1400;
 export const COVER_MAX_FILE_MB = 5;
 
-/** Hero height presets (min-height) */
+/** Hero height presets (min-height). `fullscreen` matches legacy full-viewport hero. */
 export const HERO_HEIGHT_PRESETS = {
   small: { desktop: "45vh", mobile: "50vh" },
   medium: { desktop: "55vh", mobile: "60vh" },
   large: { desktop: "65vh", mobile: "70vh" },
   cinematic: { desktop: "75vh", mobile: "80vh" },
+  fullscreen: { desktop: "100dvh", mobile: "100dvh" },
 } as const;
 
 export type HeroHeightPreset = keyof typeof HERO_HEIGHT_PRESETS;
-
-/**
- * Aspect ratio (width/height) for crop preview per banner size.
- * Matches gallery banner: smaller = wider crop, larger = taller crop.
- */
-export const BANNER_ASPECT_RATIOS: Record<HeroHeightPreset, number> = {
-  small: 5.7,
-  medium: 4.6,
-  large: 3.8,
-  cinematic: 3.2,
-};

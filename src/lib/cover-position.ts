@@ -16,6 +16,11 @@ const PRESET_MAP: Record<CoverPosition, string> = {
   "bottom right": "100% 100%",
 };
 
+function normalizeFocalComponent(n: unknown): number | null {
+  if (typeof n !== "number" || !Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
 export function getCoverObjectPosition(
   opts: {
     cover_focal_x?: number | null;
@@ -24,12 +29,9 @@ export function getCoverObjectPosition(
   } = {}
 ): string {
   const { cover_focal_x, cover_focal_y, cover_position } = opts;
-  if (
-    typeof cover_focal_x === "number" &&
-    typeof cover_focal_y === "number"
-  ) {
-    const x = Math.max(0, Math.min(100, cover_focal_x));
-    const y = Math.max(0, Math.min(100, cover_focal_y));
+  const x = normalizeFocalComponent(cover_focal_x);
+  const y = normalizeFocalComponent(cover_focal_y);
+  if (x !== null && y !== null) {
     return `${x}% ${y}%`;
   }
   if (cover_position && cover_position in PRESET_MAP) {

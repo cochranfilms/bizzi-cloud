@@ -18,9 +18,10 @@ import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { GALLERY_BACKGROUND_THEMES } from "@/lib/gallery-background-themes";
 import LUTLibrarySection from "@/components/creative-lut/LUTLibrarySection";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
-import { HERO_HEIGHT_PRESETS } from "@/lib/cover-constants";
+import type { HeroHeightPreset } from "@/lib/cover-constants";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
-import CoverFocalPointEditor from "@/components/gallery/CoverFocalPointEditor";
+import CoverHeroPreview from "@/components/gallery/CoverHeroPreview";
+import { resolveCoverHeroPreset } from "@/lib/gallery-cover-display";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import {
   galleryProfileDetailDescription,
@@ -30,48 +31,17 @@ import { buildGalleryHealthAdvisories } from "@/lib/gallery-owner-health-advisor
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
 
-function CoverFocalPointEditorSection({
-  galleryId,
-  asset,
-  focalX,
-  focalY,
-  onChange,
-  bannerSize,
-}: {
-  galleryId: string;
-  asset: { id: string; name: string; object_key: string } | null;
-  focalX: number;
-  focalY: number;
-  onChange: (x: number, y: number) => void;
-  bannerSize?: "small" | "medium" | "large" | "cinematic";
-}) {
-  const { url: imageUrl, rawPreviewUnavailable } = useGalleryThumbnail(
-    galleryId,
-    asset?.object_key,
-    asset?.name ?? "",
-    { enabled: !!asset, size: "cover-md" }
-  );
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-        Edit crop
-      </label>
-      {rawPreviewUnavailable ? (
-        <div className="rounded-lg border border-neutral-200 dark:border-neutral-600">
-          <RawPreviewPlaceholder fileName={asset?.name ?? ""} />
-        </div>
-      ) : (
-        <CoverFocalPointEditor
-          imageUrl={imageUrl}
-          focalX={focalX}
-          focalY={focalY}
-          onChange={onChange}
-          bannerSize={bannerSize ?? "medium"}
-        />
-      )}
-    </div>
-  );
-}
+const COVER_FOCAL_PRESETS: { label: string; x: number; y: number }[] = [
+  { label: "Center", x: 50, y: 50 },
+  { label: "Top", x: 50, y: 20 },
+  { label: "Bottom", x: 50, y: 80 },
+  { label: "Left", x: 20, y: 50 },
+  { label: "Right", x: 80, y: 50 },
+  { label: "Top left", x: 25, y: 25 },
+  { label: "Top right", x: 75, y: 25 },
+  { label: "Bottom left", x: 25, y: 75 },
+  { label: "Bottom right", x: 75, y: 75 },
+];
 
 function CoverAssetThumbnail({
   galleryId,
@@ -139,7 +109,7 @@ interface GallerySettingsFormProps {
     cover_alt_text?: string | null;
     cover_overlay_opacity?: number | null;
     cover_title_alignment?: "left" | "center" | "right" | null;
-    cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
+    cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
     description?: string | null;
     event_date?: string | null;
     expiration_date?: string | null;
@@ -223,12 +193,10 @@ export default function GallerySettingsForm({
   >(
     (initialData.cover_title_alignment as "left" | "center" | "right") ?? "center"
   );
-  const [coverHeroHeight, setCoverHeroHeight] = useState<
-    "small" | "medium" | "large" | "cinematic"
-  >(
-    (initialData.cover_hero_height as "small" | "medium" | "large" | "cinematic") ??
-      "medium"
+  const [coverHeroHeight, setCoverHeroHeight] = useState<HeroHeightPreset>(() =>
+    resolveCoverHeroPreset(initialData.cover_hero_height ?? null)
   );
+  const [coverPreviewTab, setCoverPreviewTab] = useState<"desktop" | "mobile">("desktop");
   const [password, setPassword] = useState("");
   const [sendingInviteEmail, setSendingInviteEmail] = useState<string | null>(null);
 
@@ -427,6 +395,21 @@ export default function GallerySettingsForm({
   >([]);
   const [coverAssetsLoading, setCoverAssetsLoading] = useState(false);
   const [videoAssetsLoading, setVideoAssetsLoading] = useState(false);
+
+  const coverAssetForPreview = useMemo(
+    () => coverAssets.find((a) => a.id === coverAssetId) ?? null,
+    [coverAssets, coverAssetId]
+  );
+  const { url: coverHeroPreviewUrl, rawPreviewUnavailable } = useGalleryThumbnail(
+    galleryId,
+    coverAssetForPreview?.object_key,
+    coverAssetForPreview?.name ?? "",
+    {
+      enabled: !!coverAssetId && !!coverAssetForPreview,
+      // Match public gallery banner derivative (see GalleryView banner fetch).
+      size: "cover-lg",
+    }
+  );
 
   const fetchCoverAssets = useCallback(async () => {
     if (!user || !galleryId) return;
@@ -760,7 +743,9 @@ export default function GallerySettingsForm({
           Cover photo
         </h2>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          Choose which photo appears as the banner on your gallery. Recommended: <strong>2500 × 1400 px</strong> for best results. Keep key subjects centered for mobile.
+          Choose which photo appears as the banner on your gallery. Recommended:{" "}
+          <strong>2500 × 1400 px</strong>. Desktop and mobile framing can differ; keep important
+          subjects near the center. Use overlay darkness to calm busy backgrounds behind your title.
         </p>
         {coverAssetsLoading ? (
           <div className="flex items-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
@@ -802,38 +787,159 @@ export default function GallerySettingsForm({
                   onChange={(e) => setCoverOverlayOpacity(Number(e.target.value))}
                   className="w-full"
                 />
-                <p className="mt-1 text-xs text-neutral-500">{coverOverlayOpacity}%</p>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  {coverOverlayOpacity}% — black overlay over the cover for better title readability.
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Banner Size
+                  Banner height
                 </label>
+                <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Controls how tall the hero is on your live gallery (same as clients see).
+                </p>
                 <select
                   value={coverHeroHeight}
-                  onChange={(e) =>
-                    setCoverHeroHeight(e.target.value as keyof typeof HERO_HEIGHT_PRESETS)
-                  }
+                  onChange={(e) => setCoverHeroHeight(e.target.value as HeroHeightPreset)}
                   className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                 >
                   <option value="small">Small</option>
                   <option value="medium">Medium</option>
                   <option value="large">Large</option>
                   <option value="cinematic">Cinematic</option>
+                  <option value="fullscreen">Fullscreen</option>
                 </select>
               </div>
             </div>
             {coverAssetId && (
-              <CoverFocalPointEditorSection
-                galleryId={galleryId}
-                asset={coverAssets.find((a) => a.id === coverAssetId) ?? null}
-                focalX={coverFocalX}
-                focalY={coverFocalY}
-                onChange={(x, y) => {
-                  setCoverFocalX(x);
-                  setCoverFocalY(y);
-                }}
-                bannerSize={coverHeroHeight}
-              />
+              <div className="space-y-3">
+                <div>
+                  <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    Live preview
+                  </span>
+                  <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+                    Adjust cover position: drag the image to reposition what clients see (this is
+                    framing, not a permanent crop). Use the quick positions below for common layouts.
+                  </p>
+                  <div className="mb-3 flex flex-wrap gap-1 lg:hidden">
+                    <button
+                      type="button"
+                      onClick={() => setCoverPreviewTab("desktop")}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                        coverPreviewTab === "desktop"
+                          ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                          : "border-neutral-200 dark:border-neutral-600"
+                      }`}
+                    >
+                      Desktop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoverPreviewTab("mobile")}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                        coverPreviewTab === "mobile"
+                          ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                          : "border-neutral-200 dark:border-neutral-600"
+                      }`}
+                    >
+                      Mobile
+                    </button>
+                  </div>
+                  {rawPreviewUnavailable ? (
+                    <div className="rounded-lg border border-neutral-200 dark:border-neutral-600">
+                      <RawPreviewPlaceholder fileName={coverAssetForPreview?.name ?? ""} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hidden gap-6 lg:grid lg:grid-cols-2">
+                        <div>
+                          <p className="mb-2 text-center text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                            Desktop preview
+                          </p>
+                          <CoverHeroPreview
+                            imageUrl={coverHeroPreviewUrl}
+                            focalX={coverFocalX}
+                            focalY={coverFocalY}
+                            onFocalChange={(x, y) => {
+                              setCoverFocalX(x);
+                              setCoverFocalY(y);
+                            }}
+                            overlayOpacity={coverOverlayOpacity}
+                            titleAlignment={coverTitleAlignment}
+                            heroPreset={coverHeroHeight}
+                            previewMode="desktop"
+                            galleryTitle={title}
+                            eventDate={eventDate || null}
+                            accentColor={accentColor}
+                          />
+                        </div>
+                        <div>
+                          <p className="mb-2 text-center text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                            Mobile preview
+                          </p>
+                          <CoverHeroPreview
+                            imageUrl={coverHeroPreviewUrl}
+                            focalX={coverFocalX}
+                            focalY={coverFocalY}
+                            onFocalChange={(x, y) => {
+                              setCoverFocalX(x);
+                              setCoverFocalY(y);
+                            }}
+                            overlayOpacity={coverOverlayOpacity}
+                            titleAlignment={coverTitleAlignment}
+                            heroPreset={coverHeroHeight}
+                            previewMode="mobile"
+                            galleryTitle={title}
+                            eventDate={eventDate || null}
+                            accentColor={accentColor}
+                          />
+                        </div>
+                      </div>
+                      <div className="lg:hidden">
+                        <CoverHeroPreview
+                          imageUrl={coverHeroPreviewUrl}
+                          focalX={coverFocalX}
+                          focalY={coverFocalY}
+                          onFocalChange={(x, y) => {
+                            setCoverFocalX(x);
+                            setCoverFocalY(y);
+                          }}
+                          overlayOpacity={coverOverlayOpacity}
+                          titleAlignment={coverTitleAlignment}
+                          heroPreset={coverHeroHeight}
+                          previewMode={coverPreviewTab}
+                          galleryTitle={title}
+                          eventDate={eventDate || null}
+                          accentColor={accentColor}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div>
+                  <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                    Position shortcuts
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {COVER_FOCAL_PRESETS.map(({ label, x, y }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          setCoverFocalX(x);
+                          setCoverFocalY(y);
+                        }}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-400">
+                    Position: {Math.round(coverFocalX)}%, {Math.round(coverFocalY)}%
+                  </p>
+                </div>
+              </div>
             )}
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">

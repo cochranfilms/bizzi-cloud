@@ -5,7 +5,9 @@
  */
 import { createPresignedUploadUrl, isB2Configured } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
+import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
+import { releaseReservation } from "@/lib/storage-quota-reservations";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -69,14 +71,21 @@ export async function GET(request: Request) {
 
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
+  const objectKey = `backups/${uid}/${driveId}/${safePath}`;
+
+  let reservation_id: string | null = null;
   try {
-    await checkUserCanUpload(uid, sizeBytes, driveId);
+    const r = await checkAndReserveUploadBytes(uid, sizeBytes, driveId, objectKey);
+    reservation_id = r.reservation_id;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Storage limit reached";
-    return NextResponse.json({ error: msg }, { status: 403 });
+    const q = storageQuotaErrorJson(err);
+    if (q) return NextResponse.json(q.body, { status: q.status });
+    if (err instanceof Error && (err as Error & { code?: string }).code === "storage_reservation_race") {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
   }
 
-  const objectKey = `backups/${uid}/${driveId}/${safePath}`;
   // Do not bind Content-Type in the presigned URL — mismatches (e.g. FCP bundles, octet-stream)
   // cause net::ERR_ACCESS_DENIED from B2. Multipart path still sets a type on CreateMultipartUpload.
   try {
@@ -88,8 +97,12 @@ export async function GET(request: Request) {
       headers: {
         "x-amz-server-side-encryption": "AES256",
       },
+      reservation_id,
     });
   } catch (err) {
+    if (reservation_id) {
+      await releaseReservation(reservation_id, "init_failed").catch(() => {});
+    }
     console.error("[uppy s3/params] B2 error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to create upload URL" },

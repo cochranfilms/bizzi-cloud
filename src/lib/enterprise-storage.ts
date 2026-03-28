@@ -12,6 +12,12 @@ import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
 import { isBackupFileActiveForListing } from "./backup-file-lifecycle";
+import {
+  billingKeyForOrg,
+  billingKeyForUser,
+  sumPendingReservationBytes,
+} from "./storage-quota-reservations";
+import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -21,8 +27,11 @@ export {
 } from "./enterprise-constants";
 export type { SeatStorageTier } from "./enterprise-constants";
 
+export { StorageQuotaDeniedError } from "./storage-quota-denied-error";
+export type { StorageQuotaDenialPayload, StorageUsageScopeForDenial } from "./storage-quota-denied-error";
+
 /** Personal-account storage billed to subjectUid: own files + team uploads attributed to them. */
-async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<number> {
+export async function sumPersonalBackupBytesForQuota(subjectUid: string): Promise<number> {
   const db = getAdminFirestore();
   const [asOwner, asTeamHost] = await Promise.all([
     db
@@ -68,7 +77,7 @@ export async function sumTeamContainerBackupBytes(teamOwnerUid: string): Promise
 }
 
 /** Bytes that count toward this user's own subscription (excludes team-folder uploads). */
-async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
+export async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
   const db = getAdminFirestore();
   const filesSnap = await db
     .collection("backup_files")
@@ -86,19 +95,23 @@ async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
   return used;
 }
 
+export interface UploadBillingSnapshot {
+  requesting_user_id: string;
+  quota_subject_uid: string;
+  organization_id: string | null;
+  billing_key: string;
+  file_used_bytes: number;
+  quota_bytes: number | null;
+}
+
 /**
- * Check if a user can upload additional bytes.
- * When driveId is provided: uses the drive's organization_id to determine quota
- *   (enterprise drive → org quota; personal drive → personal quota).
- * When driveId is omitted: falls back to profile's organization_id (legacy behavior).
- * @throws Error with user-facing message if over quota
+ * Resolve who is billed and current file-backed usage (no pending reservations).
+ * @throws Error for seat/access failures (same as checkUserCanUpload).
  */
-export async function checkUserCanUpload(
+export async function getUploadBillingSnapshot(
   uid: string,
-  additionalBytes: number,
   driveId?: string
-): Promise<void> {
-  await assertStorageLifecycleAllowsAccess(uid);
+): Promise<UploadBillingSnapshot> {
   const db = getAdminFirestore();
 
   let orgId: string | null;
@@ -124,7 +137,6 @@ export async function checkUserCanUpload(
         throw new Error("You do not have access to upload to this drive.");
       }
       quotaSubjectUid = driveOwner;
-      await assertStorageLifecycleAllowsAccess(quotaSubjectUid);
     }
   } else {
     const profileSnap = await db.collection("profiles").doc(uid).get();
@@ -138,7 +150,6 @@ export async function checkUserCanUpload(
   let usedBytes: number;
 
   if (orgId) {
-    // Org storage is shared: quota and used are org-wide, not per-seat
     const orgSnap = await db.collection("organizations").doc(orgId).get();
     const orgData = orgSnap.data();
     const orgBillingPastDue = orgData?.billing_status === "past_due";
@@ -170,13 +181,82 @@ export async function checkUserCanUpload(
     usedBytes = await sumPersonalBackupBytesForQuota(quotaSubjectUid);
   }
 
-  if (quotaBytes !== null && usedBytes + additionalBytes > quotaBytes) {
-    const usedGB = (usedBytes / (1024 ** 3)).toFixed(1);
-    const quotaGB = (quotaBytes / (1024 ** 3)).toFixed(1);
-    const msg = orgId
-      ? `Storage limit reached. You're using ${usedGB} GB of ${quotaGB} GB. Contact your organization owner to upgrade your storage allocation.`
-      : `Storage limit reached. You're using ${usedGB} GB of ${quotaGB} GB. Upgrade your storage plan to add more space.`;
-    throw new Error(msg);
+  const billing_key = orgId ? billingKeyForOrg(orgId) : billingKeyForUser(quotaSubjectUid);
+
+  return {
+    requesting_user_id: uid,
+    quota_subject_uid: quotaSubjectUid,
+    organization_id: orgId,
+    billing_key,
+    file_used_bytes: usedBytes,
+    quota_bytes: quotaBytes,
+  };
+}
+
+function buildQuotaDeniedMessage(
+  orgId: string | null,
+  quotaSubjectUid: string,
+  requestingUid: string
+): { msg: string; scope: "personal" | "personal_team_workspace" | "enterprise_workspace" } {
+  if (orgId) {
+    return {
+      scope: "enterprise_workspace",
+      msg:
+        "This organization has reached its storage limit. Contact your organization admin to upgrade storage.",
+    };
+  }
+  if (quotaSubjectUid !== requestingUid) {
+    return {
+      scope: "personal_team_workspace",
+      msg:
+        "This team workspace uses storage from the team owner's plan. The owner's plan is full, so this upload cannot continue. They need to upgrade storage or free up space.",
+    };
+  }
+  return {
+    scope: "personal",
+    msg: "Your plan is full. Upgrade storage or delete files to continue uploading.",
+  };
+}
+
+/**
+ * Check if a user can upload additional bytes.
+ * When driveId is provided: uses the drive's organization_id to determine quota
+ *   (enterprise drive → org quota; personal drive → personal quota).
+ * When driveId is omitted: falls back to profile's organization_id (legacy behavior).
+ * @throws StorageQuotaDeniedError if over quota (includes structured storage_denial)
+ * @throws Error for access / lifecycle failures
+ */
+export async function checkUserCanUpload(
+  uid: string,
+  additionalBytes: number,
+  driveId?: string
+): Promise<void> {
+  await assertStorageLifecycleAllowsAccess(uid);
+  const snap = await getUploadBillingSnapshot(uid, driveId);
+  if (snap.quota_subject_uid !== uid) {
+    await assertStorageLifecycleAllowsAccess(snap.quota_subject_uid);
+  }
+
+  const reserved = await sumPendingReservationBytes(snap.billing_key);
+  const effective = snap.file_used_bytes + reserved;
+
+  if (snap.quota_bytes !== null && effective + additionalBytes > snap.quota_bytes) {
+    const { msg, scope } = buildQuotaDeniedMessage(
+      snap.organization_id,
+      snap.quota_subject_uid,
+      uid
+    );
+    throw new StorageQuotaDeniedError(msg, {
+      requesting_user_id: uid,
+      billing_subject_user_id: snap.organization_id ? null : snap.quota_subject_uid,
+      organization_id: snap.organization_id,
+      usage_scope: scope,
+      file_used_bytes: snap.file_used_bytes,
+      reserved_bytes: reserved,
+      effective_billable_bytes_for_enforcement: effective,
+      quota_bytes: snap.quota_bytes,
+      additional_bytes: additionalBytes,
+    });
   }
 }
 

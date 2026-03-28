@@ -227,4 +227,14 @@
   .dark .landing-nav-slab::after {
     box-shadow: -0.6875rem -0.6875rem 0 0.6875rem rgba(23, 37, 84, 0.55);
   }
+
+  /* Public gallery hero: responsive min-height from CSS vars (see gallery-cover-display.getLiveHeroHeightCssVars) */
+  .gallery-hero-dynamic-height {
+    min-height: var(--gallery-hero-min-mobile);
+  }
+  @media (min-width: 768px) {
+    .gallery-hero-dynamic-height {
+      min-height: var(--gallery-hero-min-desktop);
+    }
+  }
 }

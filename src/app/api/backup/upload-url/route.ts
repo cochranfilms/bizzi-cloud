@@ -4,7 +4,9 @@ import {
   objectExists,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { checkUserCanUpload } from "@/lib/enterprise-storage";
+import { StorageQuotaDeniedError } from "@/lib/storage-quota-denied-error";
+import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
+import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -95,7 +97,7 @@ async function handleUploadUrl(request: Request) {
     content_type: contentType,
     content_hash: contentHash,
     validate_only: validateOnly,
-    size_bytes: sizeBytes,
+    size_bytes: sizeBytesRaw,
   } = body;
 
   if (validateOnly === true) {
@@ -109,27 +111,26 @@ async function handleUploadUrl(request: Request) {
     );
   }
 
+  if (
+    typeof sizeBytesRaw !== "number" ||
+    !Number.isFinite(sizeBytesRaw) ||
+    sizeBytesRaw < 0
+  ) {
+    return NextResponse.json(
+      { error: "size_bytes is required (finite number, 0 allowed for empty files)" },
+      { status: 400 }
+    );
+  }
+  const sizeBytes = sizeBytesRaw;
+
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
-  // Storage quota check (when size provided)
-  const size = typeof sizeBytes === "number" && sizeBytes > 0 ? sizeBytes : 0;
-  if (size > 0) {
-    try {
-      await checkUserCanUpload(uid, size, typeof driveId === "string" ? driveId : undefined);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Storage limit reached";
-      return NextResponse.json({ error: msg }, { status: 403 });
-    }
-  }
-
-  // Content-hash storage: store by SHA256 hash for deduplication
   const objectKey =
     contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
       ? `content/${contentHash.toLowerCase()}`
       : `backups/${uid}/${driveId}/${safePath}`;
 
   try {
-    // If using content-hash, check if object already exists (deduplication)
     if (objectKey.startsWith("content/")) {
       const exists = await objectExists(objectKey);
       if (exists) {
@@ -137,23 +138,41 @@ async function handleUploadUrl(request: Request) {
           uploadUrl: null,
           objectKey,
           alreadyExists: true,
+          reservation_id: null,
         });
       }
     }
+
+    const { reservation_id } = await checkAndReserveUploadBytes(
+      uid,
+      sizeBytes,
+      typeof driveId === "string" ? driveId : undefined,
+      objectKey
+    );
 
     const url = await createPresignedUploadUrl(
       objectKey,
       typeof contentType === "string" ? contentType : "application/octet-stream",
       3600
     );
-    return NextResponse.json({ uploadUrl: url, objectKey });
-  } catch (err) {
+    return NextResponse.json({ uploadUrl: url, objectKey, reservation_id });
+  } catch (err: unknown) {
+    const q = storageQuotaErrorJson(err);
+    if (q) {
+      console.warn("[upload-url] Quota denied", {
+        storage_denial: err instanceof StorageQuotaDeniedError ? err.storage_denial : undefined,
+      });
+      return NextResponse.json(q.body, { status: q.status });
+    }
+    if (err instanceof Error && (err as Error & { code?: string }).code === "storage_reservation_race") {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+
     const message = err instanceof Error ? err.message : "Failed to create upload URL";
     const name = err instanceof Error ? err.name : undefined;
     const stack = err instanceof Error ? err.stack : undefined;
     console.error("[upload-url] B2 error:", name ?? "Unknown", message, stack ?? err);
 
-    // Surface actionable hints for common B2 config issues
     let userMessage = message;
     if (
       typeof message === "string" &&

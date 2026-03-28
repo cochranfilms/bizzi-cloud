@@ -135,7 +135,6 @@ No new env vars required. Uses existing:
   - View all comments
   - Filter assets by favorited, commented
   - Update proofing status per asset
-  - Export selected asset IDs to clipboard
 
 ### Phase 2 API Routes
 

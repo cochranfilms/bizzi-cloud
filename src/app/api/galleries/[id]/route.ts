@@ -15,6 +15,7 @@ import {
   mergeMacosPackageTrashDeltasInto,
 } from "@/lib/macos-package-container-admin";
 import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
+import { isAllowedCoverHeroHeight } from "@/lib/gallery-cover-display";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
   const authHeader = request.headers.get("Authorization");
@@ -95,6 +96,13 @@ export async function PATCH(
       { error: "Version required for optimistic locking; refetch gallery and retry" },
       { status: 400 }
     );
+  }
+
+  if (
+    body.cover_hero_height !== undefined &&
+    !isAllowedCoverHeroHeight(body.cover_hero_height)
+  ) {
+    return NextResponse.json({ error: "Invalid cover_hero_height" }, { status: 400 });
   }
 
   const db = getAdminFirestore();

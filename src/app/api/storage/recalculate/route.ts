@@ -10,9 +10,10 @@ const isDevAuthBypass = () =>
   process.env.NODE_ENV === "development";
 
 /**
- * Recalculates storage_used_bytes from actual backup_files data.
- * Use this to fix users whose profile shows stale storage after deleting files
- * (e.g. files deleted before the trash/permanent-delete flow properly tracked storage).
+ * Recalculates profiles.storage_used_bytes from backup_files using the same
+ * active-for-quota rules as billing (unified lifecycle). Does not touch
+ * storage_quota_reservations; pending uploads still affect enforcement via the
+ * storage status APIs until reservations commit or expire.
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");

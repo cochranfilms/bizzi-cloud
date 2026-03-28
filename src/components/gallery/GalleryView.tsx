@@ -21,7 +21,13 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
-import { getCoverObjectPosition } from "@/lib/cover-position";
+import CoverHeroShell from "@/components/gallery/CoverHeroShell";
+import {
+  COVER_HERO_TITLE_FONT_FAMILY,
+  getCoverHeroContentLayout,
+  resolveCoverHeroPreset,
+  resolveCoverObjectPosition,
+} from "@/lib/gallery-cover-display";
 import ImageWithLUT from "./ImageWithLUT";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
@@ -99,7 +105,7 @@ interface GalleryData {
   cover_alt_text?: string | null;
   cover_overlay_opacity?: number | null;
   cover_title_alignment?: "left" | "center" | "right" | null;
-  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
 }
 
 interface GalleryAsset {
@@ -1771,11 +1777,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     videoGalleryAllowsClientFileDownloads(gallery.download_policy);
   const clientMayDownloadFiles = videoAllowsFileDownloads && !invoiceBlocksDownload;
 
-  const coverObjectPosition = getCoverObjectPosition({
+  const coverObjectPosition = resolveCoverObjectPosition({
     cover_focal_x: gallery.cover_focal_x,
     cover_focal_y: gallery.cover_focal_y,
     cover_position: gallery.cover_position,
   });
+  const resolvedHeroPreset = resolveCoverHeroPreset(gallery.cover_hero_height);
+  const heroContentLayout = getCoverHeroContentLayout(gallery.cover_title_alignment);
 
   const heroImageLutActive =
     lutWorkflowActive &&
@@ -1846,124 +1854,111 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         </div>
       </header>
 
-      <section
-        id="gallery-hero"
-        className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6"
-        aria-label="Gallery cover"
-      >
-        {heroHasMediaBackdrop ? (
-          <>
-            <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-              {featuredVideoStreamUrl ? (
-                heroVideoLutActive ? (
-                  <VideoWithLUT
-                    key="gallery-hero-lut-video"
-                    src={featuredVideoStreamUrl}
-                    streamUrl={featuredVideoStreamUrl}
-                    showLUTOption={false}
-                    lutSource={clientLutSource}
-                    creativePreviewOn
-                    compactPreview
-                    segmentLoopSeconds={5}
-                    className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
-                    videoStyle={heroBackdropStyle}
-                  />
-                ) : (
-                  <LoopingVideoPreview
-                    src={featuredVideoStreamUrl}
-                    loopSeconds={5}
-                    className="h-full w-full object-cover"
-                    style={{ objectPosition: coverObjectPosition }}
-                  />
-                )
-              ) : heroImageLutActive ? (
-                <ImageWithLUT
-                  key="gallery-hero-lut"
-                  imageUrl={bannerUrl!}
-                  lutUrl={clientLutSource}
-                  lutEnabled
-                  variant="fill"
-                  objectFit="cover"
-                  className="h-full w-full min-h-0"
-                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                  imageStyle={heroBackdropStyle}
-                  gradeMixPercent={lutGradeMix}
+      {heroHasMediaBackdrop ? (
+        <CoverHeroShell
+          sectionId="gallery-hero"
+          heightMode={{ kind: "live", preset: resolvedHeroPreset }}
+          overlayOpacity={gallery.cover_overlay_opacity}
+          overlayMode="solid"
+          titleAlignment={gallery.cover_title_alignment ?? "center"}
+          media={
+            featuredVideoStreamUrl ? (
+              heroVideoLutActive ? (
+                <VideoWithLUT
+                  key="gallery-hero-lut-video"
+                  src={featuredVideoStreamUrl}
+                  streamUrl={featuredVideoStreamUrl}
+                  showLUTOption={false}
+                  lutSource={clientLutSource}
+                  creativePreviewOn
+                  compactPreview
+                  segmentLoopSeconds={5}
+                  className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
+                  videoStyle={heroBackdropStyle}
                 />
               ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={bannerUrl!}
-                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                <LoopingVideoPreview
+                  src={featuredVideoStreamUrl}
+                  loopSeconds={5}
                   className="h-full w-full object-cover"
                   style={{ objectPosition: coverObjectPosition }}
                 />
-              )}
-              <div
-                className="absolute inset-0"
-                style={{
-                  background: (() => {
-                    const o = Math.max(0, Math.min(100, gallery.cover_overlay_opacity ?? 50)) / 100;
-                    return `linear-gradient(to bottom, rgba(0,0,0,${o * 0.6}) 0%, transparent 30%, transparent 70%, rgba(0,0,0,${o * 0.9}) 100%)`;
-                  })(),
-                }}
+              )
+            ) : heroImageLutActive ? (
+              <ImageWithLUT
+                key="gallery-hero-lut"
+                imageUrl={bannerUrl!}
+                lutUrl={clientLutSource}
+                lutEnabled
+                variant="fill"
+                objectFit="cover"
+                className="h-full w-full min-h-0"
+                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                imageStyle={heroBackdropStyle}
+                gradeMixPercent={lutGradeMix}
               />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={bannerUrl!}
+                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                className="h-full w-full object-cover"
+                style={{ objectPosition: coverObjectPosition }}
+              />
+            )
+          }
+        >
+          {gallery.event_date && (
+            <p className="text-xs font-medium uppercase tracking-widest text-white/90">
+              {new Date(gallery.event_date).toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          )}
+          {(gallery.branding.logo_url || gallery.branding.business_name) && (
+            <div className="flex items-center gap-2">
+              {gallery.branding.logo_url && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={gallery.branding.logo_url}
+                  alt=""
+                  className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
+                />
+              )}
+              <span className="text-sm font-medium uppercase tracking-wider text-white/95">
+                {gallery.branding.business_name || ""}
+              </span>
             </div>
-            <div
-              className={`relative z-10 flex flex-col gap-6 text-white ${
-                gallery.cover_title_alignment === "left"
-                  ? "items-start text-left"
-                  : gallery.cover_title_alignment === "right"
-                    ? "items-end text-right"
-                    : "items-center text-center"
-              }`}
-            >
-              {gallery.event_date && (
-                <p className="text-xs font-medium uppercase tracking-widest text-white/90">
-                  {new Date(gallery.event_date).toLocaleDateString(undefined, {
-                    month: "long",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </p>
-              )}
-              {(gallery.branding.logo_url || gallery.branding.business_name) && (
-                <div className="flex items-center gap-2">
-                  {gallery.branding.logo_url && (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={gallery.branding.logo_url}
-                      alt=""
-                      className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
-                    />
-                  )}
-                  <span className="text-sm font-medium uppercase tracking-wider text-white/95">
-                    {gallery.branding.business_name || ""}
-                  </span>
-                </div>
-              )}
-              <h1
-                className="max-w-3xl text-4xl font-semibold sm:text-5xl"
-                style={{ fontFamily: "Georgia, Cambria, 'Times New Roman', serif" }}
-              >
-                {gallery.title}
-              </h1>
-              {gallery.branding.welcome_message && (
-                <p className="max-w-xl text-lg text-white/90">{gallery.branding.welcome_message}</p>
-              )}
-              {prePageInstructions && (
-                <p className="max-w-md text-sm text-white/75">{prePageInstructions}</p>
-              )}
-              <button
-                type="button"
-                onClick={scrollToGalleryContent}
-                className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
-                style={{ backgroundColor: accent }}
-              >
-                View gallery
-              </button>
-            </div>
-          </>
-        ) : (
+          )}
+          <h1
+            className={heroContentLayout.titleClassName}
+            style={{ fontFamily: COVER_HERO_TITLE_FONT_FAMILY }}
+          >
+            {gallery.title}
+          </h1>
+          {gallery.branding.welcome_message && (
+            <p className={heroContentLayout.welcomeClassName}>{gallery.branding.welcome_message}</p>
+          )}
+          {prePageInstructions && (
+            <p className={heroContentLayout.instructionsClassName}>{prePageInstructions}</p>
+          )}
+          <button
+            type="button"
+            onClick={scrollToGalleryContent}
+            className="rounded-xl px-8 py-4 text-lg font-medium text-white transition-all hover:scale-105 hover:opacity-95"
+            style={{ backgroundColor: accent }}
+          >
+            View gallery
+          </button>
+        </CoverHeroShell>
+      ) : (
+        <section
+          id="gallery-hero"
+          className="relative flex min-h-screen flex-col items-center justify-center px-4 py-24 text-center sm:px-6"
+          aria-label="Gallery cover"
+        >
           <div className="relative z-10 flex flex-col items-center gap-6">
             <div
               className={`rounded-2xl border px-8 py-12 ${
@@ -2040,8 +2035,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               </button>
             </div>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {prePageMusicUrl && (
         <audio ref={audioRef} src={prePageMusicUrl} loop playsInline className="hidden" />

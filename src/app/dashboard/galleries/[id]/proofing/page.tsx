@@ -7,8 +7,6 @@ import {
   ChevronLeft,
   Heart,
   MessageCircle,
-  Copy,
-  Check,
   Loader2,
   Download,
   FolderPlus,
@@ -68,7 +66,6 @@ export default function GalleryProofingPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "favorited" | "commented">("all");
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [copiedIds, setCopiedIds] = useState(false);
   const [lutMirrorGallery, setLutMirrorGallery] = useState<ViewGalleryLike | null>(null);
 
   const { bumpStorageVersion } = useBackup();
@@ -243,13 +240,6 @@ export default function GalleryProofingPage() {
       ? typeFilteredAssets.filter((a) => selectedListAssetIds.has(a.id))
       : typeFilteredAssets;
 
-  const exportIds = () => {
-    const ids = filteredAssets.map((a) => a.id).join("\n");
-    navigator.clipboard.writeText(ids);
-    setCopiedIds(true);
-    setTimeout(() => setCopiedIds(false), 2000);
-  };
-
   return (
     <>
       <TopBar title="Proofing" />
@@ -285,23 +275,6 @@ export default function GalleryProofingPage() {
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={exportIds}
-                className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:text-neutral-300"
-              >
-                {copiedIds ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    Export IDs
-                  </>
-                )}
-              </button>
               <button
                 type="button"
                 onClick={handleDownloadFavorites}

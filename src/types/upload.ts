@@ -41,6 +41,8 @@ export interface UploadCreateResponse {
   parts: { partNumber: number; uploadUrl: string }[];
   alreadyExists?: boolean;
   existingObjectKey?: string;
+  /** Pending quota reservation; commit released in uploads/complete after verify. */
+  reservation_id?: string | null;
 }
 
 export interface UploadSignPartsResponse {

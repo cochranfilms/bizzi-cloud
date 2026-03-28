@@ -282,6 +282,38 @@ async function runWithConcurrency<T, R>(
   return results;
 }
 
+async function releaseStorageReservationClient(
+  reservationId: string | null | undefined,
+  idToken: string | null
+): Promise<void> {
+  if (!reservationId || !idToken) return;
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+  await fetch(`${base}/api/storage/reservation/release`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ reservation_id: reservationId }),
+  }).catch(() => {});
+}
+
+async function commitStorageReservationClient(
+  reservationId: string | null | undefined,
+  idToken: string | null
+): Promise<void> {
+  if (!reservationId || !idToken) return;
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+  await fetch(`${base}/api/storage/reservation/commit`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ reservation_id: reservationId }),
+  }).catch(() => {});
+}
+
 async function uploadWithMultipart(
   file: File,
   driveId: string,
@@ -293,7 +325,7 @@ async function uploadWithMultipart(
   signal?: AbortSignal,
   onProgress?: (loaded: number, total: number) => void,
   onMultipartAbort?: (objectKey: string, uploadId: string) => Promise<void>
-): Promise<{ objectKey: string }> {
+): Promise<{ objectKey: string; reservation_id: string | null }> {
   const initRes = await fetch("/api/backup/multipart-init", {
     method: "POST",
     headers: {
@@ -311,12 +343,24 @@ async function uploadWithMultipart(
   });
   if (!initRes.ok) {
     const data = await initRes.json().catch(() => ({}));
+    if (initRes.status === 403 && data?.storage_denial) {
+      const e = new Error(
+        typeof data.error === "string" ? data.error : "Storage limit reached"
+      ) as Error & { storage_denial?: unknown };
+      e.storage_denial = data.storage_denial;
+      throw e;
+    }
     throw new Error(data?.error ?? "Failed to init multipart upload");
   }
   const init = await initRes.json();
-  if (init.alreadyExists) return { objectKey: init.objectKey };
+  if (init.alreadyExists) return { objectKey: init.objectKey, reservation_id: null };
 
-  const { uploadId, parts, objectKey } = init;
+  const { uploadId, parts, objectKey, reservation_id } = init as {
+    uploadId: string;
+    parts: { partNumber: number; uploadUrl: string }[];
+    objectKey: string;
+    reservation_id?: string | null;
+  };
   if (!uploadId || !Array.isArray(parts) || parts.length === 0 || !objectKey) {
     throw new Error("Invalid multipart init response");
   }
@@ -377,13 +421,14 @@ async function uploadWithMultipart(
         object_key: objectKey,
         upload_id: uploadId,
         parts: uploadResults,
+        reservation_id: reservation_id ?? null,
       }),
     });
     if (!completeRes.ok) {
       const data = await completeRes.json().catch(() => ({}));
       throw new Error(data?.error ?? "Failed to complete multipart upload");
     }
-    return { objectKey };
+    return { objectKey, reservation_id: reservation_id ?? null };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Upload failed";
     if (msg === "Upload aborted" && onMultipartAbort) {
@@ -480,6 +525,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     usedBytes: number;
     quotaBytes: number | null;
     isOrganizationUser: boolean;
+    storage_denial?: {
+      usage_scope: string;
+      requesting_user_id: string;
+      billing_subject_user_id: string | null;
+      organization_id: string | null;
+      effective_billable_bytes_for_enforcement: number;
+      reserved_bytes: number;
+    };
   } | null>(null);
   const ensureDrivesAttemptedRef = useRef(false);
   const fileUploadAbortRef = useRef<Map<string, AbortController>>(new Map());
@@ -993,12 +1046,15 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           let lastError: string | null = null;
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             if (controller.signal.aborted) return;
+            let pendingReservationId: string | null = null;
+            let idTokenForRelease: string | null = null;
             try {
               const contentHash =
                 file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
               const idToken =
                 await getCurrentUserIdToken(false);
               if (!idToken) throw new Error("Not authenticated. Sign in again.");
+              idTokenForRelease = idToken;
 
               let objectKey: string;
               if (file.size > MULTIPART_THRESHOLD) {
@@ -1018,6 +1074,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   }
                 );
                 objectKey = res.objectKey;
+                // Reservation committed server-side in multipart-complete.
+                pendingReservationId = null;
               } else {
                 const urlRes = await fetch("/api/backup/upload-url", {
                   method: "POST",
@@ -1042,25 +1100,71 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                         "Backblaze B2 is not configured. All backup storage uses B2."
                     );
                   }
+                  if (urlRes.status === 403 && data?.storage_denial) {
+                    const sd = data.storage_denial as {
+                      quota_bytes: number;
+                      effective_billable_bytes_for_enforcement: number;
+                      usage_scope: string;
+                      requesting_user_id?: string;
+                      billing_subject_user_id?: string | null;
+                      organization_id?: string | null;
+                      reserved_bytes?: number;
+                    };
+                    setFileUploadProgress(null);
+                    setStorageQuotaExceeded({
+                      attemptedBytes: file.size,
+                      usedBytes: sd.effective_billable_bytes_for_enforcement,
+                      quotaBytes: sd.quota_bytes,
+                      isOrganizationUser: sd.usage_scope === "enterprise_workspace",
+                      storage_denial: {
+                        usage_scope: sd.usage_scope,
+                        requesting_user_id: sd.requesting_user_id ?? "",
+                        billing_subject_user_id: sd.billing_subject_user_id ?? null,
+                        organization_id: sd.organization_id ?? null,
+                        effective_billable_bytes_for_enforcement:
+                          sd.effective_billable_bytes_for_enforcement,
+                        reserved_bytes: sd.reserved_bytes ?? 0,
+                      },
+                    });
+                    const e = new Error(
+                      typeof data.error === "string"
+                        ? data.error
+                        : "Storage limit reached"
+                    ) as Error & { storage_denial?: unknown };
+                    e.storage_denial = data.storage_denial;
+                    throw e;
+                  }
                   throw new Error(data?.error ?? "Failed to get upload URL");
                 }
-                const res = await urlRes.json();
+                const res = (await urlRes.json()) as {
+                  objectKey: string;
+                  uploadUrl?: string | null;
+                  alreadyExists?: boolean;
+                  reservation_id?: string | null;
+                };
                 objectKey = res.objectKey;
+                pendingReservationId =
+                  typeof res.reservation_id === "string" ? res.reservation_id : null;
                 if (!res.alreadyExists && res.uploadUrl) {
                   progressState.inFlight.set(index, 0);
-                  await putWithProgress(
-                    file,
-                    res.uploadUrl,
-                    contentType,
-                    {
-                      signal: controller.signal,
-                      sseRequired: true,
-                      onProgress: (loaded) => {
-                        progressState.inFlight.set(index, loaded);
-                        reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
-                      },
-                    }
-                  );
+                  try {
+                    await putWithProgress(
+                      file,
+                      res.uploadUrl,
+                      contentType,
+                      {
+                        signal: controller.signal,
+                        sseRequired: true,
+                        onProgress: (loaded) => {
+                          progressState.inFlight.set(index, loaded);
+                          reportSyncProgress(toUpload[index + 1]?.relativePath ?? null);
+                        },
+                      }
+                    );
+                  } catch (putErr) {
+                    await releaseStorageReservationClient(pendingReservationId, idToken);
+                    throw putErr;
+                  }
                 }
               }
 
@@ -1114,6 +1218,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 }).catch(() => {});
               }
 
+              if (file.size <= MULTIPART_THRESHOLD) {
+                await commitStorageReservationClient(pendingReservationId, idToken);
+              }
+              pendingReservationId = null;
+
               if (VIDEO_EXT.test(relativePath)) {
                 fetch("/api/backup/generate-proxy", {
                   method: "POST",
@@ -1136,6 +1245,38 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               lastError = null;
               break;
             } catch (err) {
+              await releaseStorageReservationClient(
+                pendingReservationId,
+                idTokenForRelease
+              );
+              const denial = err as Error & { storage_denial?: Record<string, unknown> };
+              if (denial.storage_denial && typeof denial.storage_denial === "object") {
+                const sd = denial.storage_denial as {
+                  quota_bytes: number;
+                  effective_billable_bytes_for_enforcement: number;
+                  usage_scope: string;
+                  requesting_user_id?: string;
+                  billing_subject_user_id?: string | null;
+                  organization_id?: string | null;
+                  reserved_bytes?: number;
+                };
+                setFileUploadProgress(null);
+                setStorageQuotaExceeded({
+                  attemptedBytes: file.size,
+                  usedBytes: sd.effective_billable_bytes_for_enforcement,
+                  quotaBytes: sd.quota_bytes,
+                  isOrganizationUser: sd.usage_scope === "enterprise_workspace",
+                  storage_denial: {
+                    usage_scope: sd.usage_scope,
+                    requesting_user_id: sd.requesting_user_id ?? "",
+                    billing_subject_user_id: sd.billing_subject_user_id ?? null,
+                    organization_id: sd.organization_id ?? null,
+                    effective_billable_bytes_for_enforcement:
+                      sd.effective_billable_bytes_for_enforcement,
+                    reserved_bytes: sd.reserved_bytes ?? 0,
+                  },
+                });
+              }
               lastError =
                 err instanceof Error ? err.message : "Upload failed";
             }
@@ -1661,23 +1802,29 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           });
           if (res.ok) {
             const data = (await res.json()) as {
-              storage_used_bytes: number;
-              storage_quota_bytes: number | null;
+              effective_billable_bytes_for_enforcement?: number;
+              billable_used_bytes?: number;
+              quota_bytes: number | null;
               is_organization_user: boolean;
-              storage_used_total_for_quota?: number;
+              _deprecated?: {
+                storage_used_total_for_quota?: number;
+                storage_quota_bytes?: number | null;
+              };
             };
-            const { storage_used_bytes, storage_quota_bytes, is_organization_user } = data;
-            const usedForQuota = data.storage_used_total_for_quota ?? storage_used_bytes;
-            if (
-              storage_quota_bytes !== null &&
-              usedForQuota + bytesTotal > storage_quota_bytes
-            ) {
+            const quota =
+              data.quota_bytes ?? data._deprecated?.storage_quota_bytes ?? null;
+            const usedForQuota =
+              data.effective_billable_bytes_for_enforcement ??
+              data._deprecated?.storage_used_total_for_quota ??
+              data.billable_used_bytes ??
+              0;
+            if (quota !== null && usedForQuota + bytesTotal > quota) {
               setFileUploadProgress(null);
               setStorageQuotaExceeded({
                 attemptedBytes: bytesTotal,
                 usedBytes: usedForQuota,
-                quotaBytes: storage_quota_bytes,
-                isOrganizationUser: is_organization_user,
+                quotaBytes: quota,
+                isOrganizationUser: data.is_organization_user,
               });
               return;
             }
@@ -1937,29 +2084,43 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       });
 
       try {
+        const tok = await getCurrentUserIdToken(false);
+        const contextParam = isEnterpriseContext ? "?context=enterprise" : "?context=personal";
         const res = await fetch(
-          typeof window !== "undefined" ? `${window.location.origin}/api/storage/status` : "",
+          typeof window !== "undefined"
+            ? `${window.location.origin}/api/storage/status${contextParam}`
+            : "",
           {
             headers: {
-              Authorization: `Bearer ${await getCurrentUserIdToken(false)}`,
+              Authorization: `Bearer ${tok}`,
             },
           }
         );
         if (res.ok) {
           const data = (await res.json()) as {
-            storage_used_bytes: number;
-            storage_quota_bytes: number | null;
-            storage_used_total_for_quota?: number;
+            effective_billable_bytes_for_enforcement?: number;
+            billable_used_bytes?: number;
+            quota_bytes: number | null;
+            is_organization_user?: boolean;
+            _deprecated?: {
+              storage_used_total_for_quota?: number;
+              storage_quota_bytes?: number | null;
+            };
           };
-          const { storage_used_bytes, storage_quota_bytes } = data;
-          const usedForQuota = data.storage_used_total_for_quota ?? storage_used_bytes;
-          if (storage_quota_bytes !== null && usedForQuota + bytesTotal > storage_quota_bytes) {
+          const quota =
+            data.quota_bytes ?? data._deprecated?.storage_quota_bytes ?? null;
+          const usedForQuota =
+            data.effective_billable_bytes_for_enforcement ??
+            data._deprecated?.storage_used_total_for_quota ??
+            data.billable_used_bytes ??
+            0;
+          if (quota !== null && usedForQuota + bytesTotal > quota) {
             setFileUploadProgress(null);
             setStorageQuotaExceeded({
               attemptedBytes: bytesTotal,
               usedBytes: usedForQuota,
-              quotaBytes: storage_quota_bytes,
-              isOrganizationUser: false,
+              quotaBytes: quota,
+              isOrganizationUser: !!data.is_organization_user,
             });
             return;
           }
@@ -2150,7 +2311,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         // Non-fatal
       }
     },
-    [user, getOrCreateGalleryDrive, selectedWorkspaceId]
+    [user, getOrCreateGalleryDrive, selectedWorkspaceId, isEnterpriseContext]
   );
 
   const uploadSingleFile = useCallback(
@@ -2186,6 +2347,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         currentFile: file.name,
       });
 
+      let legacyPendingReservationId: string | null = null;
       try {
         const contentHash =
           file.size > CONTENT_HASH_SKIP_THRESHOLD ? null : await sha256Hex(file);
@@ -2210,6 +2372,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             }
           );
           objectKey = res.objectKey;
+          legacyPendingReservationId = null;
         } else {
           const urlRes = await fetch("/api/backup/upload-url", {
             method: "POST",
@@ -2230,17 +2393,30 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             const data = await urlRes.json().catch(() => ({}));
             throw new Error(data?.error ?? "Failed to get upload URL");
           }
-          const { uploadUrl, objectKey: ok, alreadyExists } = await urlRes.json();
+          const presign = (await urlRes.json()) as {
+            uploadUrl?: string | null;
+            objectKey: string;
+            alreadyExists?: boolean;
+            reservation_id?: string | null;
+          };
+          const { uploadUrl, objectKey: ok, alreadyExists } = presign;
           objectKey = ok;
+          legacyPendingReservationId =
+            typeof presign.reservation_id === "string" ? presign.reservation_id : null;
           if (!alreadyExists && uploadUrl) {
-            await putWithProgress(file, uploadUrl, contentType, {
-              sseRequired: true,
-              onProgress: (loaded) => {
-                setSyncProgress((prev) =>
-                  prev ? { ...prev, bytesSynced: loaded } : null
-                );
-              },
-            });
+            try {
+              await putWithProgress(file, uploadUrl, contentType, {
+                sseRequired: true,
+                onProgress: (loaded) => {
+                  setSyncProgress((prev) =>
+                    prev ? { ...prev, bytesSynced: loaded } : null
+                  );
+                },
+              });
+            } catch (putErr) {
+              await releaseStorageReservationClient(legacyPendingReservationId, idToken);
+              throw putErr;
+            }
           }
         }
         const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
@@ -2276,6 +2452,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           ...personalTeamFileFields(drive),
           ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
         });
+        if (file.size <= MULTIPART_THRESHOLD) {
+          await commitStorageReservationClient(legacyPendingReservationId, idToken);
+        }
+        legacyPendingReservationId = null;
         if (idToken) {
           fetch("/api/files/extract-metadata", {
             method: "POST",
@@ -2331,6 +2511,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         }
         setStorageVersion((v) => v + 1);
       } catch (err) {
+        const idTok = await getCurrentUserIdToken(false).catch(() => null);
+        await releaseStorageReservationClient(legacyPendingReservationId, idTok);
         const msg =
           err instanceof Error
             ? err.message || (err as Error & { name?: string }).name || "Upload failed"
@@ -2432,6 +2614,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           usedBytes={storageQuotaExceeded.usedBytes}
           quotaBytes={storageQuotaExceeded.quotaBytes}
           isOrganizationUser={storageQuotaExceeded.isOrganizationUser}
+          storage_denial={storageQuotaExceeded.storage_denial}
         />
       )}
     </BackupContext.Provider>

@@ -1,6 +1,11 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import {
+  getEnterpriseWorkspaceStorageSummary,
+  deprecatedStorageFieldsFromSummary,
+} from "@/lib/storage-display";
 import { NextResponse } from "next/server";
-/** GET - Current user's storage quota and used (for enterprise users). Org storage is shared. */
+
+/** GET - Enterprise org storage display (lifecycle-aware file counts + reservations). */
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ")
@@ -37,27 +42,15 @@ export async function GET(request: Request) {
     );
   }
 
-  const orgSnap = await db.collection("organizations").doc(orgId).get();
-  const orgData = orgSnap.data();
-  const storageQuotaBytes =
-    typeof orgData?.storage_quota_bytes === "number"
-      ? orgData.storage_quota_bytes
-      : null;
-
-  const filesSnap = await db
-    .collection("backup_files")
-    .where("organization_id", "==", orgId)
-    .get();
-
-  let storageUsedBytes = 0;
-  for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (data.deleted_at) continue;
-    storageUsedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
-  }
+  const summary = await getEnterpriseWorkspaceStorageSummary(orgId, uid);
+  const deprecated = deprecatedStorageFieldsFromSummary(summary);
 
   return NextResponse.json({
-    storage_quota_bytes: storageQuotaBytes,
-    storage_used_bytes: storageUsedBytes,
+    ...summary,
+    _deprecated: {
+      storage_used_bytes: deprecated.storage_used_bytes,
+      storage_used_total_for_quota: deprecated.storage_used_total_for_quota,
+      storage_quota_bytes: summary.quota_bytes,
+    },
   });
 }

@@ -162,8 +162,8 @@ export interface Gallery {
   cover_overlay_opacity?: number | null;
   /** Title alignment on cover: left, center, right */
   cover_title_alignment?: "left" | "center" | "right" | null;
-  /** Hero height preset: small, medium, large, cinematic */
-  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
+  /** Hero height preset: small, medium, large, cinematic, fullscreen */
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
   description?: string | null;
   event_date?: string | null;    // ISO date
   expiration_date?: string | null; // ISO date – when gallery expires
@@ -311,7 +311,7 @@ export interface CreateGalleryInput {
   cover_alt_text?: string | null;
   cover_overlay_opacity?: number | null;
   cover_title_alignment?: "left" | "center" | "right" | null;
-  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | null;
+  cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
   description?: string | null;
   event_date?: string | null;
   expiration_date?: string | null;

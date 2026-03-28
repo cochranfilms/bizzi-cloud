@@ -9,15 +9,54 @@ import { getFirebaseAuth, getFirebaseFirestore, isFirebaseConfigured } from "@/l
 import { formatBytes } from "@/lib/analytics/format-bytes";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 
+type StorageStatusPayload = {
+  workspace_used_bytes?: number;
+  billable_used_bytes?: number;
+  reserved_bytes?: number;
+  effective_billable_bytes_for_enforcement?: number;
+  quota_bytes?: number | null;
+  remaining_bytes?: number | null;
+  breakdown?: {
+    personal_solo_bytes?: number;
+    hosted_team_container_bytes?: number;
+    team_workspace_bytes?: number;
+  };
+  _deprecated?: {
+    storage_used_bytes?: number;
+    storage_quota_bytes?: number | null;
+  };
+};
+
 export default function StorageBadge() {
-  const [storageUsed, setStorageUsed] = useState(0);
-  const [storageQuota, setStorageQuota] = useState(FREE_TIER_STORAGE_BYTES);
+  const [billableUsed, setBillableUsed] = useState(0);
+  const [quota, setQuota] = useState<number | null>(FREE_TIER_STORAGE_BYTES);
+  const [workspaceUsed, setWorkspaceUsed] = useState(0);
+  const [reserved, setReserved] = useState(0);
+  const [breakdown, setBreakdown] = useState<
+    NonNullable<StorageStatusPayload["breakdown"]>
+  >({});
   const [recalculating, setRecalculating] = useState(false);
   const { storageVersion } = useBackup();
   const { user } = useAuth();
   const pathname = usePathname();
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
+
+  const applyPayload = useCallback((data: StorageStatusPayload) => {
+    const bill =
+      typeof data.billable_used_bytes === "number"
+        ? data.billable_used_bytes
+        : (data._deprecated?.storage_used_bytes ?? 0);
+    const q =
+      data.quota_bytes ?? data._deprecated?.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES;
+    setBillableUsed(bill);
+    setQuota(typeof q === "number" ? q : null);
+    setWorkspaceUsed(
+      typeof data.workspace_used_bytes === "number" ? data.workspace_used_bytes : bill
+    );
+    setReserved(typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0);
+    setBreakdown(data.breakdown ?? {});
+  }, []);
 
   const fetchPersonalProfile = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;
@@ -29,13 +68,7 @@ export default function StorageBadge() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = (await res.json()) as {
-          storage_used_bytes?: number;
-          storage_quota_bytes?: number | null;
-        };
-        setStorageUsed(data.storage_used_bytes ?? 0);
-        const q = data.storage_quota_bytes;
-        setStorageQuota(typeof q === "number" ? q : FREE_TIER_STORAGE_BYTES);
+        applyPayload((await res.json()) as StorageStatusPayload);
         return;
       }
     } catch {
@@ -45,8 +78,15 @@ export default function StorageBadge() {
     const snap = await getDoc(doc(db, "profiles", user.uid));
     if (snap.exists()) {
       const d = snap.data();
-      setStorageUsed(d.storage_used_bytes ?? 0);
-      setStorageQuota(d.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
+      setBillableUsed(d.storage_used_bytes ?? 0);
+      setQuota(
+        typeof d.storage_quota_bytes === "number"
+          ? d.storage_quota_bytes
+          : FREE_TIER_STORAGE_BYTES
+      );
+      setWorkspaceUsed(d.storage_used_bytes ?? 0);
+      setReserved(0);
+      setBreakdown({});
     } else {
       try {
         const token = await getFirebaseAuth().currentUser?.getIdToken();
@@ -59,7 +99,7 @@ export default function StorageBadge() {
         // Ignore
       }
     }
-  }, [user]);
+  }, [user, applyPayload]);
 
   const fetchTeamWorkspaceStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user || !teamOwnerFromPath) return;
@@ -71,16 +111,11 @@ export default function StorageBadge() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return;
-      const data = (await res.json()) as {
-        storage_used_bytes?: number;
-        storage_quota_bytes?: number;
-      };
-      setStorageUsed(data.storage_used_bytes ?? 0);
-      setStorageQuota(data.storage_quota_bytes ?? FREE_TIER_STORAGE_BYTES);
+      applyPayload((await res.json()) as StorageStatusPayload);
     } catch {
       // keep previous values
     }
-  }, [user, teamOwnerFromPath]);
+  }, [user, teamOwnerFromPath, applyPayload]);
 
   const refresh = useCallback(() => {
     if (teamOwnerFromPath) void fetchTeamWorkspaceStorage();
@@ -117,23 +152,55 @@ export default function StorageBadge() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { storage_used_bytes: number };
-      setStorageUsed(data.storage_used_bytes);
+      await fetchPersonalProfile();
     } catch (err) {
       console.error("Recalculate storage:", err);
     } finally {
       setRecalculating(false);
     }
-  }, [user, teamOwnerFromPath, fetchTeamWorkspaceStorage]);
+  }, [user, teamOwnerFromPath, fetchTeamWorkspaceStorage, fetchPersonalProfile]);
+
+  const quotaLabel = quota === null ? "Unlimited" : formatBytes(quota);
 
   return (
     <div className="mb-3 rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">
-        {teamOwnerFromPath ? "Team workspace storage" : "Your storage"}
+        {teamOwnerFromPath ? "Team workspace files" : "Total plan usage (file-backed)"}
       </p>
       <p className="text-sm font-medium text-neutral-900 dark:text-white">
-        {formatBytes(storageUsed)} of {formatBytes(storageQuota)} used
+        {formatBytes(teamOwnerFromPath ? workspaceUsed : billableUsed)} of {quotaLabel}
+        {!teamOwnerFromPath && reserved > 0 ? (
+          <span className="font-normal text-neutral-500 dark:text-neutral-400">
+            {" "}
+            (+{formatBytes(reserved)} in-flight uploads)
+          </span>
+        ) : null}
       </p>
+      {!teamOwnerFromPath &&
+        (breakdown.personal_solo_bytes !== undefined ||
+          breakdown.hosted_team_container_bytes !== undefined) && (
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Personal files: {formatBytes(breakdown.personal_solo_bytes ?? 0)} · Hosted team
+            workspace: {formatBytes(breakdown.hosted_team_container_bytes ?? 0)}
+          </p>
+        )}
+      {teamOwnerFromPath && (
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+          This folder counts toward the team owner&apos;s plan ({formatBytes(billableUsed)} total
+          billable).
+        </p>
+      )}
+      <details className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+        <summary className="cursor-pointer select-none hover:text-neutral-700 dark:hover:text-neutral-300">
+          Details
+        </summary>
+        <ul className="mt-1.5 list-inside list-disc space-y-0.5 pl-0.5">
+          <li>Workspace slice: {formatBytes(workspaceUsed)}</li>
+          <li>Billable (files): {formatBytes(billableUsed)}</li>
+          <li>Reserved: {formatBytes(reserved)}</li>
+          <li>Enforcement total: {formatBytes(billableUsed + reserved)}</li>
+        </ul>
+      </details>
       <button
         type="button"
         onClick={recalculateStorage}

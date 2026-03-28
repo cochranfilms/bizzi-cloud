@@ -17,7 +17,7 @@ import {
 /**
  * Global drag-and-drop zone for file uploads. Shows "Drop File to Upload" overlay
  * when dragging files over the page, then opens the Uppy uploader on drop.
- * Active on Home and All files views; uploads go to storage (or current folder when in All files).
+ * Active on Home, Creator, and All files views; uploads go to storage (or current folder when in All files).
  */
 export default function GlobalDropZone() {
   const pathname = usePathname();
@@ -38,6 +38,7 @@ export default function GlobalDropZone() {
   const isActiveRoute = pathname
     ? (pathname === "/dashboard" ||
         pathname === "/dashboard/files" ||
+        pathname?.startsWith("/dashboard/creator") ||
         pathname?.startsWith("/enterprise") ||
         pathname?.startsWith("/desktop/app") ||
         pathname?.startsWith("/team/")) &&

@@ -1,4 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { sumActiveUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
 import { NextResponse } from "next/server";
 
 /** GET - List all seats in the user's organization. */
@@ -48,16 +49,7 @@ export async function GET(request: Request) {
       const userId = d.user_id as string | undefined;
       let storage_used_bytes = 0;
       if (userId && userId.length > 0) {
-        const filesSnap = await db
-          .collection("backup_files")
-          .where("userId", "==", userId)
-          .where("organization_id", "==", orgId)
-          .get();
-        for (const f of filesSnap.docs) {
-          const data = f.data();
-          if (data.deleted_at) continue;
-          storage_used_bytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
-        }
+        storage_used_bytes = await sumActiveUserOrgBackupBytes(db, userId, orgId);
       }
       return {
         id: doc.id,

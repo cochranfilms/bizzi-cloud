@@ -1,10 +1,14 @@
 import {
   completeMultipartUpload,
+  getObjectMetadata,
   isB2Configured,
 } from "@/lib/b2";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { checkUserCanUpload } from "@/lib/enterprise-storage";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import {
+  commitReservation,
+  releaseReservation,
+} from "@/lib/storage-quota-reservations";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -93,17 +97,52 @@ async function handleComplete(request: Request) {
     return NextResponse.json({ error: "No valid parts provided" }, { status: 400 });
   }
 
-  const additionalBytes = typeof sizeBytes === "number" && sizeBytes >= 0 ? sizeBytes : 0;
-  try {
-    await checkUserCanUpload(uid, additionalBytes, typeof driveId === "string" ? driveId : undefined);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Storage limit reached";
-    return NextResponse.json({ error: msg }, { status: 403 });
+  const db = getAdminFirestore();
+  let reservationId: string | null = null;
+  if (sessionId && typeof sessionId === "string") {
+    const sessionSnap = await db.collection("upload_sessions").doc(sessionId).get();
+    const rid = sessionSnap.data()?.storage_quota_reservation_id;
+    if (typeof rid === "string" && rid.length > 0) reservationId = rid;
   }
 
-  await completeMultipartUpload(objectKey, uploadId, validatedParts);
+  try {
+    await completeMultipartUpload(objectKey, uploadId, validatedParts);
+  } catch (completeErr) {
+    if (reservationId) {
+      await releaseReservation(reservationId, "finalize_failed").catch(() => {});
+    }
+    throw completeErr;
+  }
 
-  const db = getAdminFirestore();
+  const declaredSize =
+    typeof sizeBytes === "number" && sizeBytes >= 0
+      ? sizeBytes
+      : sessionId && typeof sessionId === "string"
+        ? ((await db.collection("upload_sessions").doc(sessionId).get()).data()?.fileSize as number) ??
+          0
+        : 0;
+  const meta = await getObjectMetadata(objectKey);
+  const actual = meta?.contentLength ?? -1;
+  if (actual !== declaredSize) {
+    if (reservationId) {
+      await releaseReservation(reservationId, "size_mismatch").catch(() => {});
+    }
+    console.warn("[uploads/complete] size mismatch", {
+      objectKey,
+      reservationId,
+      expected: declaredSize,
+      actual,
+    });
+    return NextResponse.json(
+      { error: "Uploaded size does not match expected size." },
+      { status: 400 }
+    );
+  }
+
+  if (reservationId) {
+    await commitReservation(reservationId);
+  }
+
   if (sessionId && typeof sessionId === "string") {
     const sessionRef = db.collection("upload_sessions").doc(sessionId);
     const sessionSnap = await sessionRef.get();
