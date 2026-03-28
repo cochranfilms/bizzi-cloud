@@ -277,7 +277,21 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   /** One tile per pillar (Storage / RAW / Gallery). Duplicate linked_drives for the same role show as extra cards without this. */
   const displayBaseFolderItems = useMemo(() => {
-    if (baseFolderItems.length <= 1) return baseFolderItems;
+    /** Custom folders are separate linked_drives; moving a file updates linked_drive_id, so the canonical Storage
+     *  drive count drops. Add all non–system-folder file counts so the Storage pillar reflects total general storage. */
+    const customNonSystemItemsTotal = driveFolders
+      .filter((d) => !isSystemDrive(d))
+      .reduce((sum, d) => sum + d.items, 0);
+
+    const applyStorageRollup = (rows: FolderItem[]): FolderItem[] =>
+      rows.map((row) => {
+        if (!row.driveId || !isStorageDrive({ name: row.name })) return row;
+        return { ...row, items: row.items + customNonSystemItemsTotal };
+      });
+
+    if (baseFolderItems.length <= 1) {
+      return applyStorageRollup(baseFolderItems);
+    }
 
     const createdMs = (driveId: string) => {
       const d = linkedDrives.find((x) => x.id === driveId);
@@ -326,14 +340,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       ...pickCanonical(rawRows),
       ...pickCanonical(galleryRows),
     ];
-    return merged.sort((a, b) => {
+    return applyStorageRollup(merged).sort((a, b) => {
       const order = (name: string) => {
         const base = teamAwareBaseName(name);
         return base === "Storage" ? 0 : base === "RAW" ? 1 : base === "Gallery Media" ? 2 : 3;
       };
       return order(a.name) - order(b.name);
     });
-  }, [baseFolderItems, linkedDrives]);
+  }, [baseFolderItems, linkedDrives, driveFolders]);
 
   const driveFolderItems = folderItems.filter((f) => {
     const drive = driveFolders.find((d) => d.id === f.driveId);
