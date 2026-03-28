@@ -815,11 +815,12 @@ export default function GallerySettingsForm({
               <div className="rounded-xl border border-neutral-200/90 bg-gradient-to-b from-neutral-50/90 to-neutral-100/40 p-4 dark:border-neutral-600/70 dark:from-neutral-900/40 dark:to-neutral-950/30">
                 <div className="border-b border-neutral-200/80 pb-3 dark:border-neutral-600/60">
                   <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Live preview
+                    Cover preview
                   </h3>
                   <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-                    Same hero as your public gallery, scaled to fit: drag the image to reposition. Use
-                    shortcuts below for quick alignment.
+                    Same hero as your public page. Drag inside the frame to reposition the image (focal
+                    framing, not cropping). Switch Desktop and Mobile to edit each view; the small
+                    preview below shows the other at a glance.
                   </p>
                 </div>
 
@@ -829,11 +830,10 @@ export default function GallerySettingsForm({
                       <RawPreviewPlaceholder fileName={coverAssetForPreview?.name ?? ""} />
                     </div>
                   ) : (
-                    <>
-                      {/* Narrow viewports: segmented control + single preview */}
-                      <div className="md:hidden">
+                    <div className="space-y-4">
+                      <div className="flex justify-center sm:justify-start">
                         <div
-                          className="mb-3 inline-flex rounded-lg border border-neutral-200/90 bg-white p-0.5 shadow-sm dark:border-neutral-600 dark:bg-neutral-800/80"
+                          className="inline-flex rounded-lg border border-neutral-200/90 bg-white p-0.5 shadow-sm dark:border-neutral-600 dark:bg-neutral-800/80"
                           role="tablist"
                           aria-label="Preview device"
                         >
@@ -864,6 +864,9 @@ export default function GallerySettingsForm({
                             Mobile
                           </button>
                         </div>
+                      </div>
+
+                      <div className="rounded-xl bg-neutral-100/70 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] dark:bg-neutral-950/40">
                         <div className="flex justify-center">
                           <GalleryCoverHeroSettingsPreview
                             device={coverPreviewTab}
@@ -885,75 +888,38 @@ export default function GallerySettingsForm({
                             businessName={businessName.trim() || null}
                             welcomeMessage={welcomeMessage.trim() || null}
                             prePageInstructions={prePageInstructions.trim() || null}
-                            maxDisplayWidth={coverPreviewTab === "desktop" ? 380 : 300}
+                            maxDisplayWidth={coverPreviewTab === "desktop" ? 720 : 390}
                           />
                         </div>
                       </div>
 
-                      {/* md+: dual preview — row when wide enough, else stacked */}
-                      <div className="hidden md:block">
-                        <div className="flex flex-col items-center gap-5 min-[960px]:flex-row min-[960px]:items-start min-[960px]:justify-center min-[960px]:gap-6">
-                          <div className="w-full min-w-0 flex-1 max-w-[430px]">
-                            <p className="mb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-300 min-[960px]:text-left">
-                              Desktop
-                            </p>
-                            <div className="flex justify-center min-[960px]:justify-start">
-                              <GalleryCoverHeroSettingsPreview
-                                device="desktop"
-                                imageUrl={coverHeroPreviewUrl}
-                                focalX={coverFocalX}
-                                focalY={coverFocalY}
-                                coverPosition={(initialData.cover_position as string | undefined) ?? null}
-                                onFocalChange={(x, y) => {
-                                  setCoverFocalX(x);
-                                  setCoverFocalY(y);
-                                }}
-                                overlayOpacity={coverOverlayOpacity}
-                                titleAlignment={coverTitleAlignment}
-                                heroPreset={coverHeroHeight}
-                                galleryTitle={title}
-                                eventDate={eventDate || null}
-                                accentColor={accentColor}
-                                logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
-                                businessName={businessName.trim() || null}
-                                welcomeMessage={welcomeMessage.trim() || null}
-                                prePageInstructions={prePageInstructions.trim() || null}
-                                maxDisplayWidth={400}
-                              />
-                            </div>
-                          </div>
-                          <div className="shrink-0 opacity-[0.92]">
-                            <p className="mb-2 text-center text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500 min-[960px]:text-left">
-                              Mobile
-                            </p>
-                            <div className="flex justify-center min-[960px]:justify-start">
-                              <GalleryCoverHeroSettingsPreview
-                                device="mobile"
-                                imageUrl={coverHeroPreviewUrl}
-                                focalX={coverFocalX}
-                                focalY={coverFocalY}
-                                coverPosition={(initialData.cover_position as string | undefined) ?? null}
-                                onFocalChange={(x, y) => {
-                                  setCoverFocalX(x);
-                                  setCoverFocalY(y);
-                                }}
-                                overlayOpacity={coverOverlayOpacity}
-                                titleAlignment={coverTitleAlignment}
-                                heroPreset={coverHeroHeight}
-                                galleryTitle={title}
-                                eventDate={eventDate || null}
-                                accentColor={accentColor}
-                                logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
-                                businessName={businessName.trim() || null}
-                                welcomeMessage={welcomeMessage.trim() || null}
-                                prePageInstructions={prePageInstructions.trim() || null}
-                                maxDisplayWidth={260}
-                              />
-                            </div>
-                          </div>
+                      <div className="hidden border-t border-neutral-200/70 pt-3 sm:block dark:border-neutral-700/60">
+                        <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400 sm:text-left">
+                          {coverPreviewTab === "desktop" ? "Mobile (reference)" : "Desktop (reference)"}
+                        </p>
+                        <div className="flex justify-center sm:justify-start">
+                          <GalleryCoverHeroSettingsPreview
+                            device={coverPreviewTab === "desktop" ? "mobile" : "desktop"}
+                            imageUrl={coverHeroPreviewUrl}
+                            focalX={coverFocalX}
+                            focalY={coverFocalY}
+                            coverPosition={(initialData.cover_position as string | undefined) ?? null}
+                            overlayOpacity={coverOverlayOpacity}
+                            titleAlignment={coverTitleAlignment}
+                            heroPreset={coverHeroHeight}
+                            galleryTitle={title}
+                            eventDate={eventDate || null}
+                            accentColor={accentColor}
+                            logoUrl={(initialData.branding?.logo_url as string | undefined) ?? null}
+                            businessName={businessName.trim() || null}
+                            welcomeMessage={welcomeMessage.trim() || null}
+                            prePageInstructions={prePageInstructions.trim() || null}
+                            maxDisplayWidth={coverPreviewTab === "desktop" ? 176 : 288}
+                            interactive={false}
+                          />
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 

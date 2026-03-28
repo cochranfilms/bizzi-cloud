@@ -139,7 +139,7 @@ function GalleryCoverHeroSettingsPreviewWithImage({
   businessName,
   welcomeMessage,
   prePageInstructions,
-  maxDisplayWidth = 440,
+  maxDisplayWidth = 640,
   interactive = true,
 }: GalleryCoverHeroSettingsPreviewProps & { imageUrl: string }) {
   const vp =
@@ -156,7 +156,8 @@ function GalleryCoverHeroSettingsPreviewWithImage({
     cover_position: coverPosition,
   });
 
-  const capW = device === "desktop" ? maxDisplayWidth : Math.min(maxDisplayWidth, 280);
+  /** Cap display width by viewport so we never scale above 1; callers set desired stage width. */
+  const capW = Math.min(maxDisplayWidth, vp.width);
   const scale = Math.min(1, capW / vp.width);
 
   const measureRef = useRef<HTMLDivElement>(null);
@@ -250,17 +251,12 @@ function GalleryCoverHeroSettingsPreviewWithImage({
 export default function GalleryCoverHeroSettingsPreview(
   props: GalleryCoverHeroSettingsPreviewProps
 ) {
-  const { imageUrl, maxDisplayWidth = 440 } = props;
+  const { imageUrl, maxDisplayWidth = 640 } = props;
 
   if (!imageUrl) {
     return (
       <div
-        className="flex items-center justify-center rounded-xl border border-dashed border-neutral-300/90 bg-neutral-100/80 px-2 text-center text-xs text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-400"
-        style={{
-          minHeight: 120,
-          width: "100%",
-          maxWidth: maxDisplayWidth,
-        }}
+        className="mx-auto flex min-h-[120px] w-full max-w-[min(720px,100%)] items-center justify-center rounded-xl border border-dashed border-neutral-300/90 bg-neutral-100/80 px-4 text-center text-xs text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-400"
       >
         Select a cover photo to preview
       </div>
