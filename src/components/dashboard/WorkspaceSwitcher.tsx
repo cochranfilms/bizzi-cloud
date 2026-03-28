@@ -110,10 +110,11 @@ export default function WorkspaceSwitcher() {
       return (
         <Link
           href="/dashboard"
-          className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          className="max-w-[11rem] truncate rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-center text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 sm:max-w-[14rem] sm:px-3 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           title="Switch to personal workspace"
         >
-          Switch to Personal
+          <span className="hidden sm:inline">Switch to Personal</span>
+          <span className="sm:hidden">Personal</span>
         </Link>
       );
     }
@@ -121,8 +122,8 @@ export default function WorkspaceSwitcher() {
       return (
         <Link
           href="/enterprise"
-          className="rounded-lg border border-bizzi-blue/40 bg-bizzi-blue/10 px-3 py-1.5 text-xs font-medium text-bizzi-blue transition-colors hover:bg-bizzi-blue/20 dark:border-bizzi-cyan/30 dark:bg-bizzi-blue/20 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/30"
-          title="Switch to enterprise workspace"
+          className="max-w-[11rem] truncate rounded-lg border border-bizzi-blue/40 bg-bizzi-blue/10 px-2 py-1.5 text-xs font-medium text-bizzi-blue transition-colors hover:bg-bizzi-blue/20 sm:max-w-[14rem] sm:px-3 dark:border-bizzi-cyan/30 dark:bg-bizzi-blue/20 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/30"
+          title={`Switch to ${org.name}`}
         >
           {org.name}
         </Link>
@@ -150,18 +151,18 @@ export default function WorkspaceSwitcher() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800 ${
+        className={`flex max-w-[10rem] shrink-0 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-medium transition-colors hover:bg-neutral-50 sm:max-w-[12rem] sm:gap-1.5 sm:px-3 md:max-w-[15rem] dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800 ${
           triggerPrimary ? "" : "text-neutral-900 hover:text-neutral-900 dark:text-white dark:hover:text-white"
         }`}
         style={triggerPrimary ? { color: triggerPrimary } : undefined}
         aria-expanded={open}
         aria-haspopup="true"
       >
-        <span className="truncate max-w-[120px]">{currentLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{currentLabel}</span>
         <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-[100] mt-1 min-w-[200px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
+        <div className="absolute right-0 top-full z-[100] mt-1 max-w-[min(20rem,calc(100vw-1.5rem))] min-w-[200px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 max-sm:left-0 max-sm:right-0 max-sm:min-w-0 max-sm:max-w-none">
           {workspaces?.personal && (
             <Link
               href="/dashboard"

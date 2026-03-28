@@ -2,13 +2,17 @@
   EmailJS: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT
   Vercel env: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT=<template id from EmailJS dashboard>
 
-  Params: to_email, change_summary, line_items_html, total_amount, amount_status_line,
+  Params: to_email, change_summary, line_items_plain, line_items_html, total_amount, amount_status_line,
           proration_note, invoice_id, manage_billing_url, logo_url
+
+  Line items (IMPORTANT):
+  - Use {{line_items_plain}} inside a <pre> (double braces) — plain text; works in all clients.
+  - Optional pretty table: {{{line_items_html}}} with TRIPLE braces; double braces escape HTML and show raw tags.
 
   Recommended EmailJS subject:
     Receipt: BizziCloud subscription updated — {{total_amount}}
 
-  In EmailJS: set "To Email" to {{to_email}}
+  In EmailJS: set "To Email" to {{to_email}} (recipient is Stripe invoice / customer email when available).
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -26,6 +30,7 @@
     .amount-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 16px 18px; margin: 20px 0; }
     .amount-box strong { font-size: 1.15rem; color: #166534; display: block; margin-bottom: 6px; }
     .lines { margin: 24px 0; overflow-x: auto; }
+    .lines-pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; line-height: 1.55; color: #334155; background: #f8fafc; padding: 14px 16px; border-radius: 10px; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-word; margin: 0; }
     .note { font-size: 13px; color: #64748b; margin-top: 16px; }
     .meta { font-size: 13px; color: #94a3b8; margin-top: 8px; }
     .cta { display: inline-block; background: #0ea5e9; color: #fff !important; padding: 12px 22px; text-decoration: none; border-radius: 8px; font-weight: 600; margin-top: 20px; }
@@ -45,7 +50,7 @@
     </div>
     <p class="note">{{proration_note}}</p>
     <div class="lines">
-      {{line_items_html}}
+      <pre class="lines-pre">{{line_items_plain}}</pre>
     </div>
     <p class="meta">Reference: Invoice {{invoice_id}}</p>
     <a class="cta" href="{{manage_billing_url}}">Manage billing</a>

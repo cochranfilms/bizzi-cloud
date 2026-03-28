@@ -105,8 +105,8 @@ export default function EnterpriseNavbar() {
         </Link>
       </div>
 
-      {/* Row 2: Navigation tabs + search + utilities */}
-      <div className="flex h-14 shrink-0 items-center gap-4 border-t border-neutral-100 px-4 dark:border-neutral-800/60 md:gap-6 md:px-6">
+      {/* Row 2: menu + utilities (row 1 mobile) + full-width search (row 2 mobile); desktop: menu | nav | search | utilities */}
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
         <button
           type="button"
           onClick={() => setMobileOpen((o) => !o)}
@@ -116,7 +116,7 @@ export default function EnterpriseNavbar() {
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
 
-        <nav className="hidden md:flex items-center gap-0.5">
+        <nav className="hidden items-center gap-0.5 md:flex">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -143,9 +143,15 @@ export default function EnterpriseNavbar() {
         })}
       </nav>
 
+        <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-none md:ml-0 md:gap-3">
+          <NotificationBell />
+          <WorkspaceSwitcher />
+          <UserMenu compact />
+        </div>
+
       <div
-        className={`relative flex-1 min-w-0 max-w-xl transition-all ${
-          searchFocused ? "flex-[1.5]" : ""
+        className={`relative order-3 w-full min-w-0 basis-full transition-all md:order-none md:max-w-xl md:flex-1 ${
+          searchFocused ? "md:flex-[1.5]" : ""
         }`}
       >
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -157,30 +163,24 @@ export default function EnterpriseNavbar() {
           className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500"
         />
       </div>
-
-        <div className="flex flex-shrink-0 items-center gap-3">
-          <NotificationBell />
-          <WorkspaceSwitcher />
-          <UserMenu compact />
-        </div>
       </div>
 
       {mobileOpen && (
         <div
-          className="fixed inset-0 top-[6.25rem] z-40 bg-black/30 md:hidden"
+          className="fixed inset-0 top-36 z-40 bg-black/30 md:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />
       )}
       <nav
-        className={`fixed left-0 right-0 top-[6.25rem] z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-36 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"
         }`}
         aria-hidden={!mobileOpen}
       >
-        <ul className="max-h-[calc(100vh-6.25rem)] overflow-y-auto p-3">
+        <ul className="max-h-[calc(100vh-9rem)] overflow-y-auto p-3">
           {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =

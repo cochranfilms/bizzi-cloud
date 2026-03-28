@@ -891,7 +891,11 @@ export interface SubscriptionChangeReceiptEmailParams {
   to_email: string;
   /** Short plain-text summary, e.g. "Plan: indie · Billing: monthly" */
   change_summary: string;
-  /** Pre-rendered HTML table of line items */
+  /**
+   * Line items as plain text (use `{{line_items_plain}}` inside a &lt;pre&gt; in EmailJS — always escaped-safe).
+   */
+  line_items_plain: string;
+  /** Pre-rendered HTML table; use `{{{line_items_html}}}` triple braces in EmailJS for raw HTML */
   line_items_html: string;
   /** Formatted currency, e.g. "$6.94" */
   total_amount: string;
@@ -908,8 +912,8 @@ export interface SubscriptionChangeReceiptEmailParams {
 /**
  * Receipt email after an in-app subscription update (plan, add-ons, team seats).
  * Requires EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT. No-op if unset or missing recipient.
- * Template params: to_email, change_summary, line_items_html, total_amount, amount_status_line,
- *   proration_note, invoice_id, manage_billing_url, logo_url
+ * Template params: to_email, change_summary, line_items_plain, line_items_html, total_amount,
+ *   amount_status_line, proration_note, invoice_id, manage_billing_url, logo_url
  */
 export async function sendSubscriptionChangeReceiptEmail(
   params: SubscriptionChangeReceiptEmailParams

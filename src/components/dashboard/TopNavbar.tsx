@@ -82,12 +82,12 @@ export default function TopNavbar() {
       : null;
   const navBase = teamNavBase ?? "/dashboard";
   const mobileOverlayTop =
-    teamNavBase && teamWs ? "top-[6.25rem]" : "top-14";
+    teamNavBase && teamWs ? "top-36" : "top-14";
   const mobileNavTop =
-    teamNavBase && teamWs ? "top-[6.25rem]" : "top-14";
+    teamNavBase && teamWs ? "top-36" : "top-14";
   const mobileNavMaxH =
     teamNavBase && teamWs
-      ? "max-h-[calc(100vh-6.25rem)]"
+      ? "max-h-[calc(100vh-9rem)]"
       : "max-h-[calc(100vh-3.5rem)]";
 
   const filteredItems = navItems.filter((item) => {
@@ -106,8 +106,8 @@ export default function TopNavbar() {
     "focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:focus:border-[var(--enterprise-accent)] dark:focus:ring-[var(--enterprise-accent)]/20";
 
   const navRow = (
-    <>
-      <nav className="hidden md:flex items-center gap-0.5">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-2 md:flex-nowrap md:gap-4">
+      <nav className="hidden items-center gap-0.5 md:flex">
         {filteredItems.map((item) => {
           const Icon = item.icon;
           const href =
@@ -138,9 +138,15 @@ export default function TopNavbar() {
         })}
       </nav>
 
+      <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-none md:ml-0 md:gap-3">
+        <NotificationBell />
+        <WorkspaceSwitcher />
+        <UserMenu compact />
+      </div>
+
       <div
-        className={`relative hidden sm:block flex-1 min-w-0 max-w-xl transition-all ${
-          searchFocused ? "flex-[1.5]" : ""
+        className={`relative order-3 w-full min-w-0 basis-full transition-all md:order-none md:max-w-xl md:flex-1 ${
+          searchFocused ? "md:flex-[1.5]" : ""
         }`}
       >
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -152,13 +158,7 @@ export default function TopNavbar() {
           className={`w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500 ${searchFocusCls}`}
         />
       </div>
-
-      <div className="flex flex-shrink-0 items-center gap-3">
-        <NotificationBell />
-        <WorkspaceSwitcher />
-        <UserMenu compact />
-      </div>
-    </>
+    </div>
   );
 
   if (teamNavBase && teamWs) {
@@ -198,7 +198,7 @@ export default function TopNavbar() {
           </Link>
         </div>
 
-        <div className="flex h-14 shrink-0 items-center gap-4 border-t border-neutral-100 px-4 dark:border-neutral-800/60 md:gap-6 md:px-6">
+        <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
@@ -265,7 +265,7 @@ export default function TopNavbar() {
   }
 
   return (
-    <header className="sticky top-0 z-[60] flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-6 md:px-6">
+    <header className="sticky top-0 z-[60] flex min-h-14 flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
       <button
         type="button"
         onClick={() => setMobileOpen((o) => !o)}

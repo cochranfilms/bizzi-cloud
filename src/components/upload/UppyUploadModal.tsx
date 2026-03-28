@@ -108,6 +108,7 @@ export default function UppyUploadModal({
 
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  const [dashboardHeight, setDashboardHeight] = useState(300);
   const [progress, setProgress] = useState({
     bytesUploaded: 0,
     bytesTotal: 0,
@@ -121,6 +122,25 @@ export default function UppyUploadModal({
 
   useEffect(() => {
     if (!open) setMacosPackageWarning(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const narrow = window.matchMedia("(max-width: 639px)").matches;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const target = narrow
+        ? Math.max(180, Math.min(300, Math.round(vh * 0.34)))
+        : Math.max(260, Math.min(380, Math.round(vh * 0.38)));
+      setDashboardHeight(target);
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -384,7 +404,7 @@ export default function UppyUploadModal({
 
   return (
     <div
-      className="fixed bottom-4 left-4 z-50 w-full max-w-2xl overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+      className="fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(42rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900 sm:left-4 sm:w-full sm:max-w-2xl sm:translate-x-0"
       role="status"
       aria-live="polite"
       aria-label="Upload panel"
@@ -479,23 +499,23 @@ export default function UppyUploadModal({
 
       {/* Expanded: Uppy Dashboard */}
       {expanded && ready && uppyRef.current && (
-        <div className="border-t border-neutral-100 dark:border-neutral-800">
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-100 dark:border-neutral-800">
           {macosPackageWarning && (
             <div className="mx-3 mt-2 whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100">
               {macosPackageWarning}
             </div>
           )}
-          <div className="mx-2 mb-2 mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900/80">
+          <div className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900/80">
             <HiddenMacosPackageRowsStyle uppy={uppyRef.current} />
             <UppyGroupedQueueList uppy={uppyRef.current} bundlesOnly />
             <Dashboard
               uppy={uppyRef.current}
               proudlyDisplayPoweredByUppy={false}
-              height={hasFiles ? 340 : 300}
+              height={hasFiles ? dashboardHeight + 32 : dashboardHeight}
               showSelectedFiles
               note={null}
               fileManagerSelectionType="both"
-              className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
+              className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[140px]"
             />
           </div>
         </div>

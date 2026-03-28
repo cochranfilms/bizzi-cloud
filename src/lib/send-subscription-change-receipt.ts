@@ -5,8 +5,10 @@
 import { getAdminAuth } from "@/lib/firebase-admin";
 import { sendSubscriptionChangeReceiptEmail } from "@/lib/emailjs";
 import { getStripeInstance } from "@/lib/stripe";
+import type Stripe from "stripe";
 import {
   buildSubscriptionLineItemsHtml,
+  buildSubscriptionLineItemsPlain,
   formatUsdFromCents,
   lineItemsFromStripeInvoice,
 } from "@/lib/stripe-subscription-line-items";
@@ -15,6 +17,25 @@ export type SubscriptionReceiptSource = "subscription_update" | "checkout";
 
 function manageBillingSettingsUrl(): string {
   return `${process.env.NEXT_PUBLIC_APP_URL ?? (typeof process.env.VERCEL_URL === "string" ? `https://${process.env.VERCEL_URL}` : "https://www.bizzicloud.io")}/dashboard/settings`;
+}
+
+/** Stripe invoice / customer email is authoritative for who is billed; avoids sending receipts to the wrong Firebase account. */
+function receiptRecipientEmail(
+  invoice: Stripe.Invoice,
+  firebaseEmail: string | undefined
+): string | null {
+  const fromInvoice = invoice.customer_email?.trim();
+  if (fromInvoice) return fromInvoice;
+  const cust = invoice.customer;
+  if (cust && typeof cust === "object") {
+    const c = cust as Stripe.Customer & { deleted?: boolean };
+    if (!c.deleted) {
+      const fromCustomer = c.email?.trim();
+      if (fromCustomer) return fromCustomer;
+    }
+  }
+  const fallback = firebaseEmail?.trim();
+  return fallback || null;
 }
 
 /**
@@ -29,17 +50,23 @@ export async function sendSubscriptionReceiptForInvoiceId(options: {
 }): Promise<void> {
   const stripe = getStripeInstance();
   const receiptInvoice = await stripe.invoices.retrieve(options.invoiceId, {
-    expand: ["lines.data"],
+    expand: ["lines.data", "customer"],
   });
   const authUser = await getAdminAuth().getUser(options.uid).catch(() => null);
-  const toEmail = authUser?.email;
-  if (!toEmail?.trim()) {
-    console.warn("[subscription receipt] skipped: no email for uid", options.uid);
+  const toEmail = receiptRecipientEmail(receiptInvoice, authUser?.email);
+  if (!toEmail) {
+    console.warn(
+      "[subscription receipt] skipped: no Stripe or Firebase email for invoice",
+      options.invoiceId,
+      "uid",
+      options.uid
+    );
     return;
   }
 
   const lineRows = lineItemsFromStripeInvoice(receiptInvoice);
   const lineItemsHtml = buildSubscriptionLineItemsHtml(lineRows);
+  const lineItemsPlain = buildSubscriptionLineItemsPlain(lineRows);
   const amountPaid = receiptInvoice.amount_paid ?? 0;
   const amountDueOpen = receiptInvoice.amount_due ?? 0;
   const displayTotalCents =
@@ -62,6 +89,7 @@ export async function sendSubscriptionReceiptForInvoiceId(options: {
   await sendSubscriptionChangeReceiptEmail({
     to_email: toEmail,
     change_summary: options.changeSummary,
+    line_items_plain: lineItemsPlain,
     line_items_html: lineItemsHtml,
     total_amount: formatUsdFromCents(displayTotalCents),
     amount_status_line:

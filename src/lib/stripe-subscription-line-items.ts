@@ -38,7 +38,7 @@ export function formatUsdFromCents(cents: number): string {
   }).format(cents / 100);
 }
 
-/** HTML table for EmailJS template variable `line_items_html`. */
+/** HTML table for EmailJS template variable `{{{line_items_html}}}` (triple brace = raw HTML). */
 export function buildSubscriptionLineItemsHtml(items: SubscriptionPreviewLineItem[]): string {
   if (items.length === 0) {
     return "<p><em>No line items on this invoice.</em></p>";
@@ -51,4 +51,20 @@ export function buildSubscriptionLineItemsHtml(items: SubscriptionPreviewLineIte
     })
     .join("");
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th align="left" style="padding:8px 12px;border-bottom:2px solid #cbd5e1;">Description</th><th align="right" style="padding:8px 12px;border-bottom:2px solid #cbd5e1;">Amount</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/**
+ * Plain-text line items for `{{line_items_plain}}` — survives EmailJS HTML-escaping (no raw HTML needed).
+ */
+export function buildSubscriptionLineItemsPlain(items: SubscriptionPreviewLineItem[]): string {
+  if (items.length === 0) return "No line items on this invoice.";
+  const lines: string[] = [];
+  for (const row of items) {
+    const prefix = row.isProration ? "Proration · " : "";
+    const amt = formatUsdFromCents(row.amountCents);
+    lines.push(`${prefix}${row.description}`);
+    lines.push(`  ${amt}`);
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }

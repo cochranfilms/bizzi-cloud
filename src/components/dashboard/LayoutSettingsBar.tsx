@@ -36,20 +36,20 @@ function OptionGroup<T extends string>({
   renderOption: (opt: T) => React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-1.5 md:w-auto md:flex-row md:items-center md:gap-2">
       <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
         {label}
       </span>
-      <div className="flex rounded-md bg-neutral-100 dark:bg-neutral-800/80 ring-1 ring-neutral-200/60 dark:ring-neutral-700/60 overflow-hidden">
+      <div className="flex w-full flex-col gap-0.5 rounded-md bg-neutral-100 p-0.5 ring-1 ring-neutral-200/60 dark:bg-neutral-800/80 dark:ring-neutral-700/60 md:w-auto md:flex-row md:gap-0 md:overflow-hidden md:p-0 md:divide-x md:divide-neutral-200/80 dark:md:divide-neutral-600/80">
         {options.map((opt) => (
           <button
             key={opt}
             type="button"
             onClick={() => onChange(opt)}
-            className={`flex items-center justify-center px-2.5 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex w-full items-center justify-center px-2.5 py-2 text-xs font-medium transition-colors md:w-auto md:py-1.5 ${
               value === opt
-                ? "bg-bizzi-blue text-white dark:bg-bizzi-cyan dark:text-neutral-950"
-                : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:text-white dark:hover:bg-neutral-700/60"
+                ? "rounded-md bg-bizzi-blue text-white md:rounded-none dark:bg-bizzi-cyan dark:text-neutral-950"
+                : "rounded-md text-neutral-600 hover:bg-neutral-200/60 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700/60 dark:hover:text-white md:rounded-none"
             }`}
           >
             {renderOption(opt)}
@@ -79,11 +79,13 @@ export default function LayoutSettingsBar({
   } = useLayoutSettings();
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      {/* Toolbar first so expansion grows left; Layout stays next to New */}
+    <div
+      className={`flex w-full min-w-0 flex-col-reverse items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center ${className}`}
+    >
+      {/* Mobile: Layout control sits above expanded panel (col-reverse). sm+: toolbar left of Layout. */}
       {expanded && (
         <div
-          className="flex flex-wrap items-center gap-x-6 gap-y-2 py-2"
+          className="flex w-full min-w-0 flex-col gap-3 py-2 md:flex-row md:flex-wrap md:items-center md:gap-x-6 md:gap-y-2"
           role="toolbar"
           aria-label="Layout settings"
         >
@@ -127,14 +129,14 @@ export default function LayoutSettingsBar({
             onChange={setThumbnailScale}
             renderOption={(opt) => opt.charAt(0).toUpperCase() + opt.slice(1)}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex w-full min-w-0 flex-col gap-1.5 md:w-auto md:flex-row md:items-center md:gap-2">
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
               Info
             </span>
             <button
               type="button"
               onClick={() => setShowCardInfo(!showCardInfo)}
-              className={`flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex w-full items-center justify-center rounded-md px-2.5 py-2 text-xs font-medium transition-colors md:w-auto md:py-1.5 ${
                 showCardInfo
                   ? "bg-bizzi-blue text-white dark:bg-bizzi-cyan dark:text-neutral-950"
                   : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200/60 dark:bg-neutral-800/80 dark:text-neutral-400 dark:hover:bg-neutral-700/60 ring-1 ring-neutral-200/60 dark:ring-neutral-700/60"

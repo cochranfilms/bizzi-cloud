@@ -175,23 +175,23 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           )}
         </div>
 
-      <div className="flex flex-1 flex-wrap items-center justify-end gap-4 sm:justify-end">
+      <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-4">
         {showLayoutSettings && (
-          <LayoutSettingsBar showViewMode={true} className="py-0" />
+          <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
         )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
         {showCreateTransfer ? (
             <button
               type="button"
               onClick={() => setTransferModalOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 sm:px-4 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan touch-manipulation"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan touch-manipulation sm:w-auto sm:justify-start sm:px-4"
             >
               <Send className="h-4 w-4 flex-shrink-0" />
               <span className="hidden xs:inline">Create transfer</span>
               <span className="xs:hidden">New</span>
             </button>
         ) : (
-          <div className="relative flex flex-col items-end gap-1" ref={newDropdownRef}>
+          <div className="relative flex w-full flex-col items-stretch gap-1 sm:w-auto sm:items-end" ref={newDropdownRef}>
             {fileUploadError && (
               <div className="flex w-full max-w-sm items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -206,12 +206,12 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                 </button>
               </div>
             )}
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setNewDropdownOpen((o) => !o)}
               disabled={fileUploading || fileUploadProgress?.status === "in_progress"}
-              className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 sm:px-4 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70 touch-manipulation"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-70 touch-manipulation sm:w-auto sm:justify-start sm:px-4"
             >
               {fileUploading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

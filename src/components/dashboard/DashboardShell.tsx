@@ -41,8 +41,9 @@ export default function DashboardShell({
   const effectiveUiTheme =
     uiThemeOverride ?? (teamWs ? teamWs.teamThemeId : "bizzi");
   const themeVars = getThemeVariables(effectiveUiTheme);
-  const stackedNavTop = teamWs ? "top-[6.25rem]" : "top-14";
-  const mobilePanelBtnTop = teamWs ? "top-[7.25rem]" : "top-16";
+  /** Taller mobile headers (wrapped search) need more offset; md+ uses compact single-row height. */
+  const stackedNavTop = teamWs ? "top-36 md:top-[6.25rem]" : "top-14";
+  const mobilePanelBtnTop = teamWs ? "top-36 md:top-[6.75rem]" : "top-20 md:top-16";
 
   return (
     <UppyUploadProvider>
@@ -78,10 +79,12 @@ export default function DashboardShell({
           {/* Main content */}
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Mobile panel button */}
-            <div className={`fixed right-4 z-30 xl:hidden ${mobilePanelBtnTop}`}>
+            <div
+              className={`fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] ${mobilePanelBtnTop}`}
+            >
               <button
                 type="button"
-                className="rounded-lg bg-white p-2 shadow dark:bg-neutral-800"
+                className="rounded-lg bg-white p-2 shadow-md ring-1 ring-neutral-200/80 dark:bg-neutral-800 dark:ring-neutral-700"
                 onClick={() => setRightPanelOpen(true)}
                 aria-label="Open panel"
               >
