@@ -410,6 +410,10 @@ export default function VideoWithLUT({
     return () => video.removeEventListener("error", handleVideoError);
   }, [videoSrc, handleVideoError]);
 
+  useEffect(() => {
+    if (error && onDisplayReady) onDisplayReady();
+  }, [error, onDisplayReady]);
+
   const fireDisplayReady = useCallback(() => {
     if (!onDisplayReady || displayReadyFiredRef.current) return;
     const v = videoRef.current;
@@ -503,7 +507,7 @@ export default function VideoWithLUT({
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
       : frameless
-        ? { minHeight: 0, maxHeight: "100%", width: "100%", height: "100%" }
+        ? { minHeight: 0, maxHeight: "100%" }
         : {
             maxHeight: "70vh",
             aspectRatio: "16 / 9",
@@ -518,7 +522,7 @@ export default function VideoWithLUT({
   const videoShellClass = frameless
     ? compactPreview
       ? "rounded-lg bg-black"
-      : "rounded-lg bg-black mx-auto flex h-full min-h-0 w-full max-h-full max-w-full items-center justify-center overflow-hidden"
+      : "rounded-lg bg-black mx-auto max-h-full max-w-full w-fit min-h-0 min-w-0"
     : compactPreview
       ? "rounded-lg bg-neutral-200 dark:bg-black"
       : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
@@ -545,7 +549,7 @@ export default function VideoWithLUT({
         className={
           compactPreview
             ? `h-full w-full object-cover ${className ?? ""}`
-            : `max-h-full max-w-full object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "h-auto w-auto max-w-[100vw] max-h-[70vh] w-full" : "h-auto w-auto max-h-full"}`
+            : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
         }
         />
         {previewOn && currentLutSource && (

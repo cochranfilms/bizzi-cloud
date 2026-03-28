@@ -1,13 +1,19 @@
 /**
  * POST /api/galleries/[id]/create-favorite-folder
- * Creates Gallery Media/{galleryId}/favorites/ and saves favorited assets there.
- * Creator-only. References existing B2 objects (no copy).
+ * Creates Gallery Media/{galleryId}/Favorites/ with shortcut backup_files (same object_key).
+ * Workspace- and drive-scoped like gallery uploads. Idempotent per object_key in Favorites namespace.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-container-admin";
+import {
+  GALLERY_FAVORITES_FOLDER_SEGMENT,
+  loadExistingFavoriteObjectKeys,
+  resolveGalleryFavoritesWriteContext,
+} from "@/lib/gallery-favorites-write-context";
+import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -50,6 +56,12 @@ function getContentType(name: string): string {
   return mime[ext] ?? "application/octet-stream";
 }
 
+function normOrgId(raw: unknown): string | null {
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim();
+  return s || null;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -73,14 +85,18 @@ export async function POST(
     return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
   }
 
-  let body: { asset_ids?: string[] };
+  let body: { asset_ids?: string[]; workspace_id?: string | null };
   try {
-    body = (await request.json().catch(() => ({}))) as { asset_ids?: string[] };
+    body = (await request.json().catch(() => ({}))) as {
+      asset_ids?: string[];
+      workspace_id?: string | null;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   const assetIds = Array.isArray(body?.asset_ids) ? body.asset_ids : [];
+  const preferredWorkspaceId = body?.workspace_id ?? null;
 
   const db = getAdminFirestore();
   const gallerySnap = await db.collection("galleries").doc(galleryId).get();
@@ -96,32 +112,18 @@ export async function POST(
     );
   }
 
-  // Get or create Gallery Media drive
-  const drivesSnap = await db
-    .collection("linked_drives")
-    .where("userId", "==", uid)
-    .get();
-
-  const galleryDrive = drivesSnap.docs.find(
-    (d) => !d.data().deleted_at && d.data().name === "Gallery Media"
-  );
-
-  let galleryDriveId: string;
-  if (galleryDrive) {
-    galleryDriveId = galleryDrive.id;
-  } else {
-    const newDrive = await db.collection("linked_drives").add({
-      userId: uid,
-      name: "Gallery Media",
-      permission_handle_id: `gallery-media-${Date.now()}`,
-      createdAt: new Date(),
-      organization_id: null,
-    });
-    galleryDriveId = newDrive.id;
+  const writeCtx = await resolveGalleryFavoritesWriteContext(db, uid, galleryId, g, {
+    preferredWorkspaceId,
+  });
+  if (!("linkedDriveId" in writeCtx)) {
+    return NextResponse.json({ error: writeCtx.error }, { status: writeCtx.status });
   }
+  const { linkedDriveId, scopeFields } = writeCtx;
+  /** Explicit null for non-org galleries — same as uploads; required for idempotency + listing composite indexes. */
+  const explicitOrganizationId = normOrgId(scopeFields.organization_id ?? g.organization_id);
 
-  // Get favorited assets (if asset_ids provided) or all assets with favorites
-  let assets: { object_key: string; name: string; size_bytes?: number }[] = [];
+  type AssetRow = { object_key: string; name: string; size_bytes?: number; media_type?: string };
+  let assets: AssetRow[] = [];
   if (assetIds.length > 0) {
     const assetSnaps = await Promise.all(
       assetIds.map((aid) => db.collection("gallery_assets").doc(aid).get())
@@ -133,14 +135,15 @@ export async function POST(
       if (!(IMAGE_EXT.test(name) || VIDEO_EXT.test(name))) continue;
       const ok = d.object_key as string;
       if (!ok) continue;
+      const mt = d.media_type as string | undefined;
       assets.push({
         object_key: ok,
         name,
         size_bytes: (d.size_bytes as number) ?? 0,
+        media_type: mt === "video" || mt === "image" ? mt : undefined,
       });
     }
   } else {
-    // No asset_ids: fetch from favorites lists
     const favSnap = await db
       .collection("favorites_lists")
       .where("gallery_id", "==", galleryId)
@@ -165,10 +168,12 @@ export async function POST(
       if (!(IMAGE_EXT.test(name) || VIDEO_EXT.test(name))) continue;
       const ok = d.object_key as string;
       if (!ok) continue;
+      const mt = d.media_type as string | undefined;
       assets.push({
         object_key: ok,
         name,
         size_bytes: (d.size_bytes as number) ?? 0,
+        media_type: mt === "video" || mt === "image" ? mt : undefined,
       });
     }
   }
@@ -180,7 +185,13 @@ export async function POST(
     );
   }
 
-  // Dedupe filenames in folder
+  const existingKeys = await loadExistingFavoriteObjectKeys(
+    db,
+    galleryId,
+    linkedDriveId,
+    explicitOrganizationId
+  );
+
   const usedNames = new Map<string, number>();
   const uniqueNames = assets.map((a) => {
     let finalName = a.name;
@@ -196,38 +207,62 @@ export async function POST(
   });
 
   const now = new Date().toISOString();
+  const toCreate: { asset: AssetRow; safeName: string }[] = [];
+  let skipped = 0;
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    if (existingKeys.has(asset.object_key)) {
+      skipped++;
+      continue;
+    }
+    toCreate.push({ asset, safeName: uniqueNames[i] });
+  }
+
+  if (toCreate.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      drive_id: linkedDriveId,
+      folder_path: `${galleryId}/${GALLERY_FAVORITES_FOLDER_SEGMENT}`,
+      files_saved: 0,
+      files_skipped: skipped,
+    });
+  }
+
   const snapshotRef = await db.collection("backup_snapshots").add({
-    linked_drive_id: galleryDriveId,
+    linked_drive_id: linkedDriveId,
     userId: uid,
     status: "completed",
-    files_count: assets.length,
+    files_count: toCreate.length,
     bytes_synced: 0,
     completed_at: now,
   });
 
   const batch = db.batch();
   const newFileIds: string[] = [];
-  for (let i = 0; i < assets.length; i++) {
-    const asset = assets[i];
-    const safeName = uniqueNames[i];
-    const relativePath = `${galleryId}/favorites/${safeName}`;
-
+  for (const { asset, safeName } of toCreate) {
+    const relativePath = `${galleryId}/${GALLERY_FAVORITES_FOLDER_SEGMENT}/${safeName}`;
     const fileRef = db.collection("backup_files").doc();
     newFileIds.push(fileRef.id);
-    batch.set(fileRef, {
+    const row: Record<string, unknown> = {
       backup_snapshot_id: snapshotRef.id,
-      linked_drive_id: galleryDriveId,
-      userId: uid,
+      linked_drive_id: linkedDriveId,
       relative_path: relativePath,
       object_key: asset.object_key,
       size_bytes: asset.size_bytes ?? 0,
       content_type: getContentType(safeName),
       modified_at: now,
+      uploaded_at: now,
       deleted_at: null,
-      organization_id: null,
+      lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
       gallery_id: galleryId,
+      ...scopeFields,
       ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
-    });
+      organization_id: explicitOrganizationId,
+    };
+    if (asset.media_type) {
+      row.media_type = asset.media_type;
+    }
+    batch.set(fileRef, row);
   }
 
   await batch.commit();
@@ -240,15 +275,15 @@ export async function POST(
     )
   );
 
-  // Update drive last_synced
-  await db.collection("linked_drives").doc(galleryDriveId).update({
+  await db.collection("linked_drives").doc(linkedDriveId).update({
     last_synced_at: now,
   });
 
   return NextResponse.json({
     ok: true,
-    drive_id: galleryDriveId,
-    folder_path: `${galleryId}/favorites`,
-    files_saved: assets.length,
+    drive_id: linkedDriveId,
+    folder_path: `${galleryId}/${GALLERY_FAVORITES_FOLDER_SEGMENT}`,
+    files_saved: toCreate.length,
+    files_skipped: skipped,
   });
 }

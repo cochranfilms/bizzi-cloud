@@ -49,6 +49,7 @@ import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { getUploadRelativePath } from "@/lib/uppy-local-preview";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
+import { linkedDriveMatchesGalleryMediaScope } from "@/lib/gallery-media-drive-match";
 import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
@@ -1461,16 +1462,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         orderBy("createdAt", "desc")
       )
     );
-    const galleryDrive = existing.docs.find((d) => {
-      const data = d.data();
-      if (data.name !== "Gallery Media") return false;
-      if (data.is_org_shared === true) return false;
-      const oid = data.organization_id ?? null;
-      const pto = (data.personal_team_owner_id as string | undefined) ?? null;
-      if (isEnterpriseContext && orgId) return oid === orgId;
-      if (teamScoped) return !oid && pto === user.uid;
-      return !oid && !pto;
-    });
+    const clientGalleryScope =
+      isEnterpriseContext && orgId
+        ? ({
+            kind: "organization" as const,
+            ownerUid: user.uid,
+            organizationId: orgId,
+          })
+        : teamScoped
+          ? ({ kind: "personal_team" as const, teamOwnerUid: user.uid })
+          : ({ kind: "personal" as const, ownerUid: user.uid });
+    const galleryDrive = existing.docs.find((d) =>
+      linkedDriveMatchesGalleryMediaScope(d.data() as Record<string, unknown>, clientGalleryScope)
+    );
     if (galleryDrive) {
       const d = galleryDrive;
       const data = d.data();

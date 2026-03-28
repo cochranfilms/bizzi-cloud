@@ -10,7 +10,6 @@ import { getAuthToken } from "@/lib/auth-token";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
-import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 import { useThemeResolved } from "@/context/ThemeContext";
@@ -94,8 +93,7 @@ export default function FilePreviewModal({
   const [error, setError] = useState<string | null>(null);
   const [lutEnabled, setLutEnabled] = useState(false);
   const [imageZoom, setImageZoom] = useState(1);
-  const [imagePreviewOpaque, setImagePreviewOpaque] = useState(false);
-  const [videoDecodeVisible, setVideoDecodeVisible] = useState(false);
+  const [videoMediaVisible, setVideoMediaVisible] = useState(false);
   const [pdfFrameVisible, setPdfFrameVisible] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const imageZoomHostRef = useRef<HTMLDivElement | null>(null);
@@ -114,10 +112,6 @@ export default function FilePreviewModal({
     file?.name ?? "",
     "preview"
   );
-  const videoPosterUrl = useVideoThumbnail(file?.objectKey, file?.name ?? "", {
-    enabled: !!file?.objectKey && previewType === "video",
-    isVideo: true,
-  });
 
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
@@ -178,22 +172,14 @@ export default function FilePreviewModal({
   }, [file?.id, previewType]);
 
   useEffect(() => {
-    setImagePreviewOpaque(false);
-    setVideoDecodeVisible(false);
+    setVideoMediaVisible(false);
     setPdfFrameVisible(false);
     setAudioReady(false);
   }, [file?.id]);
 
   useEffect(() => {
-    setVideoDecodeVisible(false);
+    setVideoMediaVisible(false);
   }, [fullUrl, videoStreamUrl]);
-
-  useEffect(() => {
-    if (!lowResPreviewUrl) return;
-    const probe = new window.Image();
-    probe.src = lowResPreviewUrl;
-    if (probe.complete) setImagePreviewOpaque(true);
-  }, [lowResPreviewUrl, file?.id]);
 
   useEffect(() => {
     const el = imageZoomHostRef.current;
@@ -372,56 +358,19 @@ export default function FilePreviewModal({
     );
   } else if (previewType === "video" && videoProcessing && !error) {
     mediaBody = (
-      <div className="relative flex h-full min-h-[min(42dvh,360px)] w-full flex-1 flex-col items-center justify-center">
-        {videoPosterUrl ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
-            <img
-              src={videoPosterUrl}
-              alt=""
-              className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-lg shadow-black/25 dark:shadow-black/50"
-            />
-            <p className="mt-4 max-w-sm px-4 text-center text-sm text-neutral-600 dark:text-neutral-400">
-              Preparing playback…
-            </p>
-          </>
-        ) : (
-          <div
-            className="h-full min-h-[min(36dvh,280px)] w-full max-w-[min(92vw,100%)] rounded-lg bg-neutral-950/88 dark:bg-black/90"
-            aria-hidden
-          />
-        )}
+      <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 py-8">
+        <p className="max-w-sm text-center text-sm text-neutral-600 dark:text-neutral-400">
+          Preparing playback…
+        </p>
       </div>
     );
   } else if (loading && !(previewType === "image" && lowResPreviewUrl)) {
-    if (previewType === "video") {
-      mediaBody = (
-        <div className="relative flex h-full min-h-[min(42dvh,360px)] w-full flex-1 items-center justify-center">
-          {videoPosterUrl ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
-              <img
-                src={videoPosterUrl}
-                alt=""
-                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-lg object-contain shadow-md shadow-black/20 opacity-95"
-              />
-            </>
-          ) : (
-            <div
-              className="h-full min-h-[min(36dvh,280px)] w-full max-w-[min(92vw,100%)] rounded-lg bg-neutral-950/88 dark:bg-black/90"
-              aria-hidden
-            />
-          )}
-        </div>
-      );
-    } else {
-      mediaBody = (
-        <div
-          className="flex h-full min-h-[min(32dvh,240px)] w-full flex-1 items-center justify-center rounded-xl bg-neutral-200/20 dark:bg-white/[0.06]"
-          aria-hidden
-        />
-      );
-    }
+    mediaBody = (
+      <div
+        className="flex min-h-[12rem] w-full flex-1 items-center justify-center"
+        aria-hidden
+      />
+    );
   } else if (
     (previewType === "image" && lowResPreviewUrl) ||
     (previewType === "video" && fullUrl && !videoProcessing) ||
@@ -445,8 +394,7 @@ export default function FilePreviewModal({
               <img
                 src={lowResPreviewUrl}
                 alt={file.name}
-                onLoad={() => setImagePreviewOpaque(true)}
-                className={`max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-md object-contain shadow-md shadow-black/15 transition-opacity duration-300 ease-out dark:shadow-black/35 ${imagePreviewOpaque ? "opacity-100" : "opacity-0"}`}
+                className="max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] rounded-md object-contain shadow-md shadow-black/15 dark:shadow-black/35"
               />
             </div>
           </div>
@@ -484,20 +432,9 @@ export default function FilePreviewModal({
       );
     } else if (previewType === "video" && fullUrl) {
       mediaBody = (
-        <div className="relative flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center">
-          {videoPosterUrl ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from video thumbnail hook */}
-              <img
-                src={videoPosterUrl}
-                alt=""
-                aria-hidden
-                className={`pointer-events-none absolute left-1/2 top-1/2 max-h-[min(82dvh,calc(100dvh-8rem))] max-w-[min(92vw,100%)] -translate-x-1/2 -translate-y-1/2 rounded-lg object-contain transition-opacity duration-500 ease-out ${videoDecodeVisible ? "opacity-0" : "opacity-100"}`}
-              />
-            </>
-          ) : null}
+        <div className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center">
           <div
-            className={`relative z-10 flex h-full w-full min-h-0 flex-1 items-center justify-center transition-opacity duration-500 ease-out ${videoDecodeVisible ? "opacity-100" : "opacity-0"}`}
+            className={`transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"}`}
           >
             <VideoWithLUT
               src={fullUrl}
@@ -509,7 +446,7 @@ export default function FilePreviewModal({
               onLutChange={setLutEnabled}
               frameless
               sideBySideLut={showLUT}
-              onDisplayReady={() => setVideoDecodeVisible(true)}
+              onDisplayReady={() => setVideoMediaVisible(true)}
             />
           </div>
         </div>

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
@@ -235,6 +236,7 @@ export default function GalleryProofingPage() {
   const [lutMirrorGallery, setLutMirrorGallery] = useState<ViewGalleryLike | null>(null);
 
   const { bumpStorageVersion } = useBackup();
+  const { selectedWorkspaceId } = useCurrentFolder();
 
   const lutMirror = useMemo(
     () =>
@@ -359,20 +361,32 @@ export default function GalleryProofingPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ asset_ids: favoritedAssetIdsForFolder }),
+        body: JSON.stringify({
+          asset_ids: favoritedAssetIdsForFolder,
+          ...(selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         files_saved?: number;
+        files_skipped?: number;
         error?: string;
       };
       if (!res.ok) {
         throw new Error(data?.error ?? "Failed to create folder");
       }
       bumpStorageVersion();
-      setCreateFolderSuccess({
-        message: `Saved ${data.files_saved ?? favoritedAssetIdsForFolder.length} photo${(data.files_saved ?? 0) !== 1 ? "s" : ""} to Gallery Media → ${galleryTitle} → favorites`,
-      });
+      const saved = data.files_saved ?? 0;
+      const skipped = data.files_skipped ?? 0;
+      let message: string;
+      if (saved === 0 && skipped > 0) {
+        message = `All ${skipped} selected photo${skipped === 1 ? "" : "s"} are already in Favorites for this gallery in the current workspace.`;
+      } else if (skipped > 0) {
+        message = `Saved ${saved} photo${saved === 1 ? "" : "s"} to Gallery Media → ${galleryTitle} → Favorites (${skipped} already there).`;
+      } else {
+        message = `Saved ${saved} photo${saved === 1 ? "" : "s"} to Gallery Media → ${galleryTitle} → Favorites`;
+      }
+      setCreateFolderSuccess({ message });
       setTimeout(() => setCreateFolderSuccess(null), 5000);
     } catch (err) {
       setCreateFolderError(err instanceof Error ? err.message : "Failed to create folder");
