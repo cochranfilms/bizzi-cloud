@@ -3,6 +3,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getStorageBytesForPlan, type PlanId } from "@/lib/plan-constants";
 import { ensureDefaultDrivesForUser } from "@/lib/ensure-default-drives";
 import { sendSignupLinkEmail, sendSubscriptionWelcomeEmail } from "@/lib/emailjs";
+import { sendSubscriptionReceiptForInvoiceId } from "@/lib/send-subscription-change-receipt";
 import { buildSubscriptionWelcomeParamsFromInvoice } from "@/lib/subscription-welcome-params";
 import {
   hasColdStorage,
@@ -664,6 +665,20 @@ export async function POST(request: Request) {
         if (billingReason !== "subscription_create") {
           return NextResponse.json({ received: true });
         }
+
+        if (consumerUserId) {
+          const metaPlan = (subscription.metadata?.planId as string) ?? "subscription";
+          const metaBilling = (subscription.metadata?.billing as string) ?? "monthly";
+          void sendSubscriptionReceiptForInvoiceId({
+            uid: consumerUserId,
+            invoiceId: invoice.id,
+            changeSummary: `Plan: ${metaPlan} · Billing: ${metaBilling}`,
+            source: "checkout",
+          }).catch((err) =>
+            console.error("[Stripe webhook] invoice.paid: subscription receipt email failed:", err)
+          );
+        }
+
         const baseUrl =
           process.env.NEXT_PUBLIC_APP_URL ??
           (typeof process.env.VERCEL_URL === "string"

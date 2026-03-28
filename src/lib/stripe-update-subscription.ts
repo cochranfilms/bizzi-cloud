@@ -4,6 +4,7 @@
  */
 import { getStripeInstance } from "@/lib/stripe";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { sendSubscriptionReceiptForInvoiceId } from "@/lib/send-subscription-change-receipt";
 import {
   getOrCreateStripePrice,
   getOrCreateStripeAddonPrice,
@@ -309,15 +310,78 @@ export async function updateSubscriptionWithProration(
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Update failed";
     console.error("[Stripe update-subscription]", err);
+    const paymentFailed = isStripePaymentFailure(err);
     return NextResponse.json(
       {
-        error: msg.includes("payment")
-          ? "Payment failed. Update your payment method in billing settings and try again."
-          : msg,
+        error: paymentFailed
+          ? paymentFailureUserMessage(err)
+          : msg.includes("payment")
+            ? "Payment failed. Update your payment method in billing settings and try again."
+            : msg,
+        code: paymentFailed ? "PAYMENT_FAILED" : undefined,
+        updatePaymentMethod:
+          paymentFailed
+            ? "Open Billing portal from Settings to add or replace your card, then try Apply changes again."
+            : undefined,
       },
       { status: 400 }
     );
   }
 
+  let updatedSubscription: Stripe.Subscription;
+  try {
+    updatedSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
+      expand: ["latest_invoice"],
+    });
+  } catch (e) {
+    console.error("[Stripe update-subscription] retrieve after update:", e);
+    return NextResponse.json({ ok: true });
+  }
+
+  const li = updatedSubscription.latest_invoice;
+  const invId = typeof li === "string" ? li : li?.id ?? null;
+  if (invId) {
+    void sendSubscriptionReceiptForInvoiceId({
+      uid,
+      invoiceId: invId,
+      changeSummary: `Plan: ${planId} · Billing: ${billingToUse}`,
+      source: "subscription_update",
+    }).catch((e) => console.error("[Stripe update-subscription] receipt email:", e));
+  }
+
   return NextResponse.json({ ok: true });
+}
+
+function isStripePaymentFailure(err: unknown): boolean {
+  if (err instanceof Stripe.errors.StripeCardError) return true;
+  if (typeof err === "object" && err !== null && "type" in err) {
+    if ((err as { type?: string }).type === "StripeCardError") return true;
+  }
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = String((err as { code?: string }).code ?? "");
+    if (
+      [
+        "card_declined",
+        "expired_card",
+        "incorrect_cvc",
+        "processing_error",
+        "incorrect_number",
+        "insufficient_funds",
+      ].includes(code)
+    ) {
+      return true;
+    }
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b(declined|card does not support|try again in|payment method|Your card)\b/i.test(msg);
+}
+
+function paymentFailureUserMessage(err: unknown): string {
+  if (err instanceof Stripe.errors.StripeCardError) {
+    return err.message;
+  }
+  if (err instanceof Error && err.message.length > 0 && err.message.length < 400) {
+    return err.message;
+  }
+  return "Your payment could not be processed. Update your card in Billing settings and try again.";
 }

@@ -26,6 +26,7 @@ import {
   getResolvedStorageAddonIdFromItem,
   subscriptionItemIsAdditionalStorage,
 } from "@/lib/stripe-storage-from-subscription";
+import { lineItemsFromStripeInvoice } from "@/lib/stripe-subscription-line-items";
 
 const VALID_PLAN_IDS = ["solo", "indie", "video", "production"];
 const VALID_ADDON_IDS = ["gallery", "editor", "fullframe"];
@@ -268,11 +269,20 @@ export async function getSubscriptionPreview(
 
     const amountDue = invoice.amount_due ?? 0;
     const isCredit = amountDue < 0;
+    const lineItems = lineItemsFromStripeInvoice(invoice);
+    const taxCentsFromInvoice =
+      invoice.total_taxes && invoice.total_taxes.length > 0
+        ? invoice.total_taxes.reduce((sum, t) => sum + t.amount, 0)
+        : null;
 
     return NextResponse.json({
       amountDueCents: Math.abs(amountDue),
       isCredit,
       currency: invoice.currency ?? "usd",
+      lineItems,
+      subtotalCents: invoice.subtotal ?? null,
+      taxCents: taxCentsFromInvoice,
+      totalCents: invoice.total ?? null,
     });
   } catch (err) {
     console.error("[Stripe subscription-preview] Failed to create preview:", err);

@@ -28,6 +28,7 @@ import {
   type TeamSeatCounts,
 } from "@/lib/team-seat-pricing";
 import { PLAN_STORAGE_BYTES } from "@/lib/plan-constants";
+import type { SubscriptionPreviewLineItem } from "@/lib/stripe-subscription-line-items";
 import { AlertTriangle, Check, Loader2, Minus, Plus } from "lucide-react";
 
 export type PlanBuilderCheckoutPayload = {
@@ -127,7 +128,12 @@ export default function BuildPlanConfigurator({
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [previewAmount, setPreviewAmount] = useState<{ cents: number; isCredit: boolean } | null>(null);
+  const [previewLineItems, setPreviewLineItems] = useState<SubscriptionPreviewLineItem[]>([]);
+  const [previewSubtotalCents, setPreviewSubtotalCents] = useState<number | null>(null);
+  const [previewTaxCents, setPreviewTaxCents] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [chargeConfirmOpen, setChargeConfirmOpen] = useState(false);
+  const [paymentRecoveryHint, setPaymentRecoveryHint] = useState<string | null>(null);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successDetails, setSuccessDetails] = useState<{
     planLabel: string;
@@ -290,6 +296,9 @@ export default function BuildPlanConfigurator({
     }
     setPreviewLoading(true);
     setPreviewAmount(null);
+    setPreviewLineItems([]);
+    setPreviewSubtotalCents(null);
+    setPreviewTaxCents(null);
     const ac = new AbortController();
     (async () => {
       try {
@@ -309,9 +318,20 @@ export default function BuildPlanConfigurator({
           signal: ac.signal,
         });
         if (!res.ok || ac.signal.aborted) return;
-        const data = (await res.json()) as { amountDueCents?: number; isCredit?: boolean };
+        const data = (await res.json()) as {
+          amountDueCents?: number;
+          isCredit?: boolean;
+          lineItems?: SubscriptionPreviewLineItem[];
+          subtotalCents?: number | null;
+          taxCents?: number | null;
+        };
         if (typeof data.amountDueCents === "number" && !ac.signal.aborted) {
           setPreviewAmount({ cents: data.amountDueCents, isCredit: data.isCredit === true });
+        }
+        if (!ac.signal.aborted) {
+          setPreviewLineItems(Array.isArray(data.lineItems) ? data.lineItems : []);
+          setPreviewSubtotalCents(typeof data.subtotalCents === "number" ? data.subtotalCents : null);
+          setPreviewTaxCents(typeof data.taxCents === "number" ? data.taxCents : null);
         }
       } catch {
         // fall back
@@ -357,10 +377,33 @@ export default function BuildPlanConfigurator({
     });
   }, []);
 
-  const handleApply = useCallback(async () => {
+  const openBillingPortal = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/stripe/portal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      // ignore
+    }
+  }, [user]);
+
+  const applySubscriptionChanges = useCallback(async () => {
     if (!selectedPlanId || !user || !isDashboard || !refetchSubscription) return;
     setApplyLoading(true);
     setApplyError(null);
+    setPaymentRecoveryHint(null);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken(true);
       if (!token) {
@@ -400,12 +443,18 @@ export default function BuildPlanConfigurator({
         return;
       }
 
-      let res = await fetch(`${base}/api/stripe/update-subscription`, {
+      const res = await fetch(`${base}/api/stripe/update-subscription`, {
         method: "POST",
         headers,
         body,
       });
-      let data = (await res.json()) as { ok?: boolean; url?: string; error?: string; code?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        url?: string;
+        error?: string;
+        code?: string;
+        updatePaymentMethod?: string;
+      };
       if (res.ok && data.ok) {
         refetchSubscription();
         window.dispatchEvent(new CustomEvent("subscription-updated"));
@@ -436,8 +485,11 @@ export default function BuildPlanConfigurator({
           return;
         }
       }
+      if (data.updatePaymentMethod) {
+        setPaymentRecoveryHint(data.updatePaymentMethod);
+      }
       const errMsg = data.error ?? "Update failed";
-      setApplyError(data.code ? `${errMsg} (${data.code})` : errMsg);
+      setApplyError(data.code === "PAYMENT_FAILED" ? errMsg : data.code ? `${errMsg} (${data.code})` : errMsg);
     } catch {
       setApplyError("Update failed. Please try again.");
     } finally {
@@ -554,6 +606,31 @@ export default function BuildPlanConfigurator({
     selectedPlanMeetsStorage &&
     selectedAddonsCorrect &&
     (requiredAddonIds.length === 0 || selectedAddonIds.length === requiredAddonIds.length);
+
+  const handleApplyButtonClick = useCallback(() => {
+    if (!hasChanges || applyLoading || !canApply) return;
+    if (!selectedPlanId || !user || !isDashboard || !refetchSubscription) return;
+    if (currentPlanId === "free") {
+      void applySubscriptionChanges();
+      return;
+    }
+    setChargeConfirmOpen(true);
+  }, [
+    hasChanges,
+    applyLoading,
+    canApply,
+    selectedPlanId,
+    user,
+    isDashboard,
+    refetchSubscription,
+    currentPlanId,
+    applySubscriptionChanges,
+  ]);
+
+  const handleConfirmCharge = useCallback(() => {
+    setChargeConfirmOpen(false);
+    void applySubscriptionChanges();
+  }, [applySubscriptionChanges]);
 
   const handleLandingSubscribeClick = () => {
     if (!selectedPlanId || !onLandingSubscribe) return;
@@ -932,7 +1009,21 @@ export default function BuildPlanConfigurator({
       )}
 
       {isDashboard && applyError && (
-        <p className="mb-4 text-sm text-red-600 dark:text-red-400">{applyError}</p>
+        <div className="mb-4 space-y-3">
+          <p className="text-sm text-red-600 dark:text-red-400">{applyError}</p>
+          {paymentRecoveryHint ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">{paymentRecoveryHint}</p>
+              <button
+                type="button"
+                onClick={() => void openBillingPortal()}
+                className="shrink-0 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                Open billing portal
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {isDashboard && hasChanges && selectedPlanId && (
@@ -977,7 +1068,7 @@ export default function BuildPlanConfigurator({
         <div className="flex flex-wrap items-center gap-4">
           <button
             type="button"
-            onClick={handleApply}
+            onClick={handleApplyButtonClick}
             disabled={!hasChanges || applyLoading || !canApply}
             className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
           >
@@ -991,6 +1082,115 @@ export default function BuildPlanConfigurator({
           >
             Downgrade to Free
           </button>
+        </div>
+      )}
+
+      {isDashboard && chargeConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              Confirm subscription change
+            </h3>
+            {displayAmount && !displayAmount.isCredit && displayAmount.cents > 0 ? (
+              <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+                Your <strong>saved payment method will be charged immediately</strong> for the prorated
+                amount below (not only on your next invoice date).
+              </p>
+            ) : displayAmount?.isCredit ? (
+              <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+                No charge today. A credit will be applied toward your subscription.
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+                You are about to update your subscription. Review the summary Stripe calculated below.
+              </p>
+            )}
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-600 dark:bg-neutral-800/50">
+              {previewLoading ? (
+                <p className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading breakdown…
+                </p>
+              ) : previewLineItems.length > 0 ? (
+                <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                  {previewLineItems.map((row, i) => (
+                    <li
+                      key={`${row.description}-${i}`}
+                      className="flex justify-between gap-3 border-b border-neutral-200/80 pb-2 text-neutral-800 last:border-0 dark:border-neutral-600 dark:text-neutral-200"
+                    >
+                      <span className="min-w-0 break-words">
+                        {row.isProration ? (
+                          <span className="text-neutral-500 dark:text-neutral-400">Proration · </span>
+                        ) : null}
+                        {row.description}
+                      </span>
+                      <span className="shrink-0 tabular-nums font-medium">
+                        {formatCents(row.amountCents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-neutral-600 dark:text-neutral-400">
+                  Line items will match your plan and add-ons. If details don&apos;t load, you can still
+                  proceed — the amount due matches the estimate above.
+                </p>
+              )}
+              {(previewSubtotalCents !== null || previewTaxCents !== null) &&
+              !previewLoading &&
+              previewLineItems.length > 0 ? (
+                <div className="mt-3 space-y-1 border-t border-neutral-200 pt-3 text-xs text-neutral-600 dark:border-neutral-600 dark:text-neutral-400">
+                  {previewSubtotalCents !== null ? (
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums">{formatCents(previewSubtotalCents)}</span>
+                    </div>
+                  ) : null}
+                  {previewTaxCents !== null && previewTaxCents > 0 ? (
+                    <div className="flex justify-between">
+                      <span>Tax</span>
+                      <span className="tabular-nums">{formatCents(previewTaxCents)}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {displayAmount ? (
+                <p className="mt-3 text-base font-bold text-green-600 dark:text-green-400">
+                  {displayAmount.isCredit ? (
+                    <>{formatCents(displayAmount.cents)} credit</>
+                  ) : displayAmount.cents > 0 ? (
+                    <>{formatCents(displayAmount.cents)} due now</>
+                  ) : (
+                    <>$0.00 due now</>
+                  )}
+                </p>
+              ) : null}
+            </div>
+            <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+              After a successful update, we&apos;ll send a receipt to your account email when receipts are
+              enabled for your workspace.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setChargeConfirmOpen(false)}
+                className="rounded-lg border border-neutral-200 px-4 py-2.5 text-sm font-medium dark:border-neutral-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCharge}
+                disabled={applyLoading || previewLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                {applyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {displayAmount && !displayAmount.isCredit && displayAmount.cents > 0
+                  ? "Charge card & apply"
+                  : "Confirm changes"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1014,7 +1214,7 @@ export default function BuildPlanConfigurator({
                   {successDetails.isCredit ? (
                     <>{formatCents(successDetails.amountCents)} credit applied to your account</>
                   ) : (
-                    <>{formatCents(successDetails.amountCents)} charged (prorated to your next bill)</>
+                    <>{formatCents(successDetails.amountCents)} charged to your card on file (prorated)</>
                   )}
                 </p>
               )}

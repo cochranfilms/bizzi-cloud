@@ -9,6 +9,7 @@
  * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
  * Org seat invite: EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE (optional; when set, invite email sent when org admin invites member)
  * Personal team invite: EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE (optional; when set, email sent for personal-account team invites)
+ * Subscription change receipt: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT (optional; itemized receipt after in-app plan/seat changes)
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -152,6 +153,27 @@ function getSubscriptionWelcomeConfig(): {
   return {
     serviceId,
     templateSubscriptionWelcome,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getSubscriptionChangeReceiptConfig(): {
+  serviceId: string;
+  templateSubscriptionChangeReceipt: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateSubscriptionChangeReceipt =
+    process.env.EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateSubscriptionChangeReceipt || !publicKey) return null;
+  return {
+    serviceId,
+    templateSubscriptionChangeReceipt,
     publicKey,
     privateKey: privateKey ?? undefined,
   };
@@ -857,6 +879,61 @@ export async function sendSubscriptionWelcomeEmail(
   await emailjs.send(
     config.serviceId,
     config.templateSubscriptionWelcome,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+export interface SubscriptionChangeReceiptEmailParams {
+  to_email: string;
+  /** Short plain-text summary, e.g. "Plan: indie · Billing: monthly" */
+  change_summary: string;
+  /** Pre-rendered HTML table of line items */
+  line_items_html: string;
+  /** Formatted currency, e.g. "$6.94" */
+  total_amount: string;
+  /** Plain sentence describing charge, credit, or $0 */
+  amount_status_line: string;
+  /** Note about proration */
+  proration_note: string;
+  /** Stripe invoice number or id for reference */
+  invoice_id: string;
+  /** Link to dashboard billing settings */
+  manage_billing_url: string;
+}
+
+/**
+ * Receipt email after an in-app subscription update (plan, add-ons, team seats).
+ * Requires EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT. No-op if unset or missing recipient.
+ * Template params: to_email, change_summary, line_items_html, total_amount, amount_status_line,
+ *   proration_note, invoice_id, manage_billing_url, logo_url
+ */
+export async function sendSubscriptionChangeReceiptEmail(
+  params: SubscriptionChangeReceiptEmailParams
+): Promise<void> {
+  const config = getSubscriptionChangeReceiptConfig();
+  if (!config) {
+    console.warn(
+      "[EmailJS] Subscription change receipt skipped: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT not set"
+    );
+    return;
+  }
+  if (!params.to_email?.trim()) {
+    console.warn("[EmailJS] Subscription change receipt skipped: no recipient email");
+    return;
+  }
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateSubscriptionChangeReceipt,
     templateParams,
     {
       publicKey: config.publicKey,
