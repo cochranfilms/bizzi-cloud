@@ -54,3 +54,47 @@ export function getHoverPreviewPlacement(
 
   return { left, top };
 }
+
+export type ProofingHoverCellRect = Pick<DOMRectReadOnly, "left" | "right">;
+
+/**
+ * Proofing table: prefer the popup in the asset column’s right gutter (clear of
+ * filename), then clamp to the viewport; flip to the left of the thumbnail if
+ * there is no horizontal room. Vertical position follows the thumbnail top.
+ */
+export function getProofingTableHoverPreviewPlacement(
+  thumbRect: HoverPreviewPlacementAnchor,
+  cellRect: ProofingHoverCellRect,
+  popupWidth: number,
+  popupHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  gap: number,
+  cellRightInset: number
+): { left: number; top: number } {
+  const m = PROOFING_HOVER_VIEWPORT_MARGIN;
+  const w = popupWidth;
+  const vw = viewportWidth;
+  const vh = viewportHeight;
+
+  const gutterLeft = cellRect.right - w - cellRightInset;
+  const minLeftPastThumb = thumbRect.right + gap;
+  let left = Math.max(gutterLeft, minLeftPastThumb);
+
+  const wouldOverflowRight = left + w > vw - m;
+  if (wouldOverflowRight) {
+    const flipped = thumbRect.left - w - gap;
+    if (flipped >= m) {
+      left = flipped;
+    } else {
+      left = Math.max(m, vw - w - m);
+    }
+  }
+
+  left = Math.max(m, Math.min(left, vw - w - m));
+
+  let top = thumbRect.top;
+  top = Math.max(m, Math.min(top, vh - popupHeight - m));
+
+  return { left, top };
+}

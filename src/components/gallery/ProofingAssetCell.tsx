@@ -10,7 +10,7 @@ import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { resolveProofingGridLutMirror } from "@/lib/gallery-viewer-lut-state";
 import { isRawFile } from "@/lib/gallery-file-types";
 import {
-  getHoverPreviewPlacement,
+  getProofingTableHoverPreviewPlacement,
   getProofingHoverPreviewSize,
 } from "@/lib/proofing-hover-preview-placement";
 
@@ -19,6 +19,8 @@ const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
 
 const HOVER_HIDE_DELAY_MS = 350;
 const HOVER_PREVIEW_GAP_PX = 12;
+/** Keeps the popup’s right edge inside the asset column gutter (before Favorited). */
+const HOVER_PREVIEW_CELL_RIGHT_INSET_PX = 14;
 /** Keep in sync with `proofing-popup` duration in globals.css */
 const PROOFING_POPUP_ANIMATION_MS = 200;
 
@@ -48,6 +50,7 @@ export function ProofingAssetCell({
   } | null>(null);
   const [popupPointerEvents, setPopupPointerEvents] = useState(false);
   const thumbRef = useRef<HTMLDivElement>(null);
+  const cellRef = useRef<HTMLTableCellElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoveredRef = useRef(isHovered);
@@ -124,24 +127,28 @@ export function ProofingAssetCell({
   }, [isHovered]);
 
   useEffect(() => {
-    if (!isHovered || !thumbRef.current) {
+    if (!isHovered || !thumbRef.current || !cellRef.current) {
       setPlacement(null);
       return;
     }
     const updatePos = () => {
-      const el = thumbRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
+      const thumbEl = thumbRef.current;
+      const cellEl = cellRef.current;
+      if (!thumbEl || !cellEl) return;
+      const thumbRect = thumbEl.getBoundingClientRect();
+      const cellRect = cellEl.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const { width, height } = getProofingHoverPreviewSize(vw, vh);
-      const { left, top } = getHoverPreviewPlacement(
-        rect,
+      const { left, top } = getProofingTableHoverPreviewPlacement(
+        thumbRect,
+        cellRect,
         width,
         height,
         vw,
         vh,
-        HOVER_PREVIEW_GAP_PX
+        HOVER_PREVIEW_GAP_PX,
+        HOVER_PREVIEW_CELL_RIGHT_INSET_PX
       );
       setPlacement({ left, top, width, height });
     };
@@ -173,7 +180,7 @@ export function ProofingAssetCell({
         onMouseLeave={scheduleHide}
       >
         <div
-          className="h-full w-full overflow-hidden rounded-xl border-2 border-white bg-neutral-900 shadow-2xl shadow-black/25 ring-2 ring-neutral-500/30"
+          className="h-full w-full overflow-hidden rounded-2xl border border-neutral-200/90 bg-neutral-50 shadow-[0_22px_50px_-14px_rgba(15,23,42,0.28),0_0_0_1px_rgba(15,23,42,0.04)] dark:border-neutral-600/55 dark:bg-neutral-800 dark:shadow-[0_24px_60px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
           style={{ animation: "proofing-popup 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
           onAnimationEnd={handlePopupShellAnimationEnd}
         >
@@ -195,11 +202,11 @@ export function ProofingAssetCell({
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={previewUrl} alt="" className="h-full w-full object-contain" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-neutral-800">
+            <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800/80">
               {isVideo ? (
-                <Film className="h-12 w-12 text-neutral-500" />
+                <Film className="h-12 w-12 text-neutral-400 dark:text-neutral-500" />
               ) : (
-                <Loader2 className="h-10 w-10 animate-spin text-neutral-500" />
+                <Loader2 className="h-10 w-10 animate-spin text-neutral-400 dark:text-neutral-500" />
               )}
             </div>
           )}
@@ -209,7 +216,7 @@ export function ProofingAssetCell({
     );
 
   return (
-    <td className="px-4 py-3">
+    <td ref={cellRef} className="px-4 py-3">
       <div
         className="flex items-center gap-3"
         onMouseEnter={handleMouseEnter}
