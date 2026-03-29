@@ -3,6 +3,8 @@
  * (webkitGetAsEntry). Falls back to dataTransfer.files when entries are unavailable.
  */
 
+import { fileListHasMacosPackageInteriorPaths } from "@/lib/macos-package-bundles";
+
 function readEntriesAll(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
   return new Promise((resolve, reject) => {
     const acc: FileSystemEntry[] = [];
@@ -84,9 +86,19 @@ export async function collectFilesFromDataTransfer(dataTransfer: DataTransfer | 
           await walkEntry(entry, "", fromEntries);
         }
       }
+      const entriesHavePackagePaths = fileListHasMacosPackageInteriorPaths(fromEntries);
+      const filesHavePackagePaths = fileListHasMacosPackageInteriorPaths(fromDataTransferFiles);
+      /**
+       * Chrome often sets `dataTransfer.files.length` larger than the webkit entry walk (resource forks,
+       * duplicates, or opaque package edges). For macOS packages (.lrlibrary, .fcpbundle, etc.), the entry
+       * walk is what preserves `Something.lrlibrary/...` relative paths — prefer it when only that side
+       * carries package-interior paths.
+       */
       const entryWalkIsAuthoritative =
         fromEntries.length > 0 &&
-        (fromDataTransferFiles.length === 0 || fromEntries.length >= fromDataTransferFiles.length);
+        (fromDataTransferFiles.length === 0 ||
+          fromEntries.length >= fromDataTransferFiles.length ||
+          (entriesHavePackagePaths && !filesHavePackagePaths));
       if (entryWalkIsAuthoritative) return fromEntries;
     } catch {
       // fall through

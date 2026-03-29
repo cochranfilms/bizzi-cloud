@@ -32,6 +32,25 @@ export function isMacosPackageFileName(fileName: string): boolean {
   return getMacosPackageKindFromFileName(fileName) != null;
 }
 
+/**
+ * True when a relative path string includes a macOS package root segment followed by `/`
+ * (e.g. `Photos/Catalog.lrlibrary/foo` or `Edit.fcpbundle/…`).
+ * Used to prefer directory-entry drag/drop trees over a longer but flat `dataTransfer.files` list.
+ */
+export function pathLooksLikeInsideMacosPackage(relativePath: string): boolean {
+  const p = relativePath.replace(/^\/+/, "").toLowerCase();
+  return MACOS_PACKAGE_EXTENSION_KIND_ENTRIES.some(({ suffix }) => p.includes(`${suffix}/`));
+}
+
+/** True if any file uses `webkitRelativePath` or name that looks inside a macOS package tree. */
+export function fileListHasMacosPackageInteriorPaths(files: File[]): boolean {
+  return files.some((f) => {
+    const wr = ((f as File & { webkitRelativePath?: string }).webkitRelativePath ?? "").trim();
+    const key = wr.length > 0 ? wr : f.name;
+    return pathLooksLikeInsideMacosPackage(key);
+  });
+}
+
 export function packageKindDisplayLabel(kind: string): string {
   switch (kind) {
     case "fcpbundle":

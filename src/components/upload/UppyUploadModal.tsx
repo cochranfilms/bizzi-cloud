@@ -164,6 +164,13 @@ export default function UppyUploadModal({
       id: "uppy-upload",
       autoProceed: false,
       allowMultipleUploadBatches: true,
+      /** No MIME/extension gate — macOS packages (.lrlibrary, .fcpbundle) must not be blocked here. */
+      restrictions: {
+        allowedFileTypes: null,
+        maxFileSize: null,
+        minFileSize: null,
+        maxNumberOfFiles: null,
+      },
       // Uppy default ids use leaf name + size + mtime, not path. FCP bundles repeat names like
       // "Frame 0 - 1023" / AppleDouble "._…" across many folders with identical size/mtime → false "duplicate" errors.
       onBeforeFileAdded: (file) => {
@@ -568,7 +575,7 @@ export default function UppyUploadModal({
               proudlyDisplayPoweredByUppy={false}
               height={hasFiles ? dashboardHeight + 32 : dashboardHeight}
               showSelectedFiles
-              note="For a full library folder tree (Final Cut .fcpbundle, Lightroom .lrlibrary, etc.), use Browse folders or drag the package onto this panel."
+              note="macOS libraries (.lrlibrary, .fcpbundle, …) upload with full folder structure when you drag the package from Finder onto this panel or use Browse folders and select the library folder (not only Browse files)."
               fileManagerSelectionType="both"
               className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[140px]"
             />
