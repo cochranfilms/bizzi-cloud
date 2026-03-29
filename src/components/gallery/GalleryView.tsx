@@ -550,6 +550,7 @@ function PreviewModal({
           lutSource={lut?.enabled ? previewLutSource : null}
           creativePreviewOn={lut?.enabled ? lutPreviewEnabled : false}
           frameless
+          preferMaxHlsQuality
         />
       ) : null}
       {!videoStreamUrl && !videoLoading && !videoError ? (
@@ -1904,6 +1905,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   lutSource={clientLutSource}
                   creativePreviewOn
                   compactPreview
+                  preferMaxHlsQuality
                   segmentLoopSeconds={5}
                   className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
                   videoStyle={heroBackdropStyle}
@@ -1911,6 +1913,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               ) : (
                 <LoopingVideoPreview
                   src={featuredVideoStreamUrl}
+                  preferMaxHlsQuality
                   loopSeconds={5}
                   className="h-full w-full object-cover"
                   style={{ objectPosition: coverObjectPosition }}

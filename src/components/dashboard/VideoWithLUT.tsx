@@ -55,6 +55,11 @@ interface VideoWithLUTProps {
   sideBySideLut?: boolean;
   /** Fired once when the video has decoded frames and dimensions (for preview fade-in). */
   onDisplayReady?: () => void;
+  /**
+   * For large heroes / backdrops with HLS: start at the highest rung so ABR does not stick on a
+   * tiny preview ladder (short loops can prevent ever upgrading). Grid tiles should leave this off.
+   */
+  preferMaxHlsQuality?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -80,6 +85,7 @@ export default function VideoWithLUT({
   frameless = false,
   sideBySideLut = false,
   onDisplayReady,
+  preferMaxHlsQuality = false,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -447,7 +453,20 @@ export default function VideoWithLUT({
     const isHls = videoSrc.includes(".m3u8");
     if (isHls && Hls.isSupported()) {
       hlsRef.current?.destroy();
-      const hls = new Hls();
+      const hls = new Hls({
+        maxMaxBufferLength: preferMaxHlsQuality ? 50 : 30,
+        startLevel: -1,
+      });
+      if (preferMaxHlsQuality) {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          const n = hls.levels?.length ?? 0;
+          if (n > 0) {
+            hls.autoLevelCapping = -1;
+            hls.loadLevel = n - 1;
+            hls.startLevel = n - 1;
+          }
+        });
+      }
       hlsRef.current = hls;
       hls.loadSource(videoSrc);
       hls.attachMedia(video);
@@ -468,7 +487,7 @@ export default function VideoWithLUT({
         video.src = "";
       };
     }
-  }, [videoSrc]);
+  }, [videoSrc, preferMaxHlsQuality]);
 
   useEffect(() => {
     const video = videoRef.current;

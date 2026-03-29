@@ -11,6 +11,8 @@ export interface LoopingVideoPreviewProps {
   src: string;
   className?: string;
   style?: React.CSSProperties;
+  /** Prefer top HLS ladder rung (large heroes); avoids blurry banner when ABR never upgrades. */
+  preferMaxHlsQuality?: boolean;
   /** Seconds to loop (from t=0). Clamped to video duration when shorter. Only used when mode is "segment". */
   loopSeconds?: number;
   /**
@@ -29,6 +31,7 @@ export default function LoopingVideoPreview({
   src,
   className = "",
   style,
+  preferMaxHlsQuality = false,
   loopSeconds = DEFAULT_LOOP_SEC,
   mode = "segment",
 }: LoopingVideoPreviewProps) {
@@ -43,9 +46,19 @@ export default function LoopingVideoPreview({
     if (isHls && Hls.isSupported()) {
       hlsRef.current?.destroy();
       const hls = new Hls({
-        maxMaxBufferLength: 20,
+        maxMaxBufferLength: preferMaxHlsQuality ? 50 : 20,
         startLevel: -1,
       });
+      if (preferMaxHlsQuality) {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          const n = hls.levels?.length ?? 0;
+          if (n > 0) {
+            hls.autoLevelCapping = -1;
+            hls.loadLevel = n - 1;
+            hls.startLevel = n - 1;
+          }
+        });
+      }
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
@@ -69,7 +82,7 @@ export default function LoopingVideoPreview({
       };
     }
     return undefined;
-  }, [src]);
+  }, [src, preferMaxHlsQuality]);
 
   /** Muted autoplay is flaky with many decoders; reinforce after src/mode settles. */
   useEffect(() => {
