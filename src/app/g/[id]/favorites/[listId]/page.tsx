@@ -451,6 +451,7 @@ function FavoritesAssetCard({
             fetchStreamUrl={fetchGalleryVideoStreamUrl}
             thumbnailUrl={thumbUrl}
             showPlayIcon
+            scrubEnabled={false}
             className="h-full w-full"
           />
         ) : thumbUrl ? (

@@ -28,6 +28,8 @@ export interface GalleryCoverHeroProps {
   galleryTitle: string;
   accentColor: string;
   onViewGallery: () => void;
+  /** Optional slot below pre-page instructions (e.g. video gallery meta line, pills, description). */
+  beforeViewButton?: ReactNode;
 }
 
 /**
@@ -51,6 +53,7 @@ export default function GalleryCoverHero({
   galleryTitle,
   accentColor,
   onViewGallery,
+  beforeViewButton,
 }: GalleryCoverHeroProps) {
   const layout = getCoverHeroContentLayout(titleAlignment, typographyScope);
 
@@ -100,6 +103,7 @@ export default function GalleryCoverHero({
       {prePageInstructions ? (
         <p className={layout.instructionsClassName}>{prePageInstructions}</p>
       ) : null}
+      {beforeViewButton}
       <button
         type="button"
         onClick={onViewGallery}

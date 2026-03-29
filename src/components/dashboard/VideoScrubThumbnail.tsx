@@ -23,6 +23,10 @@ interface VideoScrubThumbnailProps {
    * When not scrubbing, loop the first N seconds (same default as gallery marquee).
    */
   loopSeconds?: number;
+  /**
+   * When false, horizontal hover scrub is disabled so the short loop keeps playing (e.g. public video gallery).
+   */
+  scrubEnabled?: boolean;
 }
 
 /**
@@ -36,6 +40,7 @@ export default function VideoScrubThumbnail({
   showPlayIcon = true,
   objectFit = "object-cover",
   loopSeconds = DEFAULT_LOOP_SECONDS,
+  scrubEnabled = true,
 }: VideoScrubThumbnailProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamLoadFailed, setStreamLoadFailed] = useState(false);
@@ -104,6 +109,7 @@ export default function VideoScrubThumbnail({
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!scrubEnabled) return;
       const video = videoRef.current;
       const container = containerRef.current;
       if (!container) return;
@@ -125,7 +131,7 @@ export default function VideoScrubThumbnail({
         }
       }
     },
-    [streamUrl, scheduleScrubEnd]
+    [streamUrl, scheduleScrubEnd, scrubEnabled]
   );
 
   const showVideo = isHovering && streamUrl && !streamLoadFailed;
