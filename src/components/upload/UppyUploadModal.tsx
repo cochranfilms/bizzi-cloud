@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
@@ -18,6 +18,7 @@ import {
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
+import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -55,6 +56,9 @@ async function uploadPartBytesCompat(
   }
   return AwsS3.uploadPartBytes(args);
 }
+
+/** Uppy Dashboard uses @uppy/utils getDroppedFiles(), which can miss files when items.length < files.length (Chrome). */
+const dashboardOriginalHandleDrop = new WeakMap<object, (event: DragEvent) => Promise<void>>();
 
 function resumeUploadIfNeeded(uppy: Uppy): void {
   const { currentUploads, files } = uppy.getState();
@@ -165,7 +169,9 @@ export default function UppyUploadModal({
       onBeforeFileAdded: (file) => {
         const data = file.data;
         if (data instanceof File) {
-          const wr = data.webkitRelativePath?.trim();
+          const wr =
+            data.webkitRelativePath?.trim() ||
+            (data as File & { relativePath?: string }).relativePath?.trim();
           if (wr) {
             return { ...file, id: `uppy-upload:${wr}` } as typeof file;
           }
@@ -358,6 +364,55 @@ export default function UppyUploadModal({
       setReady(false);
     };
   }, [open, driveId, pathPrefix, workspaceId, galleryId]);
+
+  useLayoutEffect(() => {
+    if (!open || !ready || !uppyRef.current) return;
+    const uppy = uppyRef.current;
+    const plugin = uppy.getPlugin("Dashboard") as
+      | {
+          handleDrop: (event: DragEvent) => Promise<void>;
+          setPluginState: (s: { isDraggingOver?: boolean }) => void;
+          opts: { onDrop?: (event: DragEvent) => void };
+          addFiles: (files: File[]) => void;
+        }
+      | undefined;
+    if (!plugin || dashboardOriginalHandleDrop.has(plugin)) return;
+
+    const original = plugin.handleDrop.bind(plugin);
+    dashboardOriginalHandleDrop.set(plugin, original);
+
+    plugin.handleDrop = async (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      plugin.setPluginState({ isDraggingOver: false });
+      uppy.iteratePlugins((p) => {
+        if (p.type === "acquirer") {
+          (p as { handleRootDrop?: (e: DragEvent) => void }).handleRootDrop?.(event);
+        }
+      });
+      uppy.log("[Dashboard] Processing dropped files");
+      const files = await collectFilesFromDataTransfer(event.dataTransfer);
+      if (files.length > 0) {
+        uppy.log("[Dashboard] Files dropped");
+        plugin.addFiles(files);
+      }
+      plugin.opts.onDrop?.(event);
+    };
+
+    // Preact was given the previous `handleDrop` reference on first paint; bump plugin state so it re-renders with ours.
+    (plugin as { setPluginState: (patch: Record<string, unknown>) => void }).setPluginState({
+      bizziFullDropList: 1,
+    });
+
+    return () => {
+      const dash = uppyRef.current?.getPlugin("Dashboard") as typeof plugin | undefined;
+      const orig = dash ? dashboardOriginalHandleDrop.get(dash) : undefined;
+      if (dash && orig) {
+        dash.handleDrop = orig;
+        dashboardOriginalHandleDrop.delete(dash);
+      }
+    };
+  }, [open, ready]);
 
   const consumePending = useCallback(() => {
     onPendingFilesConsumed();

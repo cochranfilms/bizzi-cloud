@@ -21,6 +21,8 @@ export function getUploadRelativePath(
   if (fileData instanceof File) {
     const wr = fileData.webkitRelativePath?.trim();
     if (wr) return wr.replace(/^\/+/, "");
+    const uppyRel = (fileData as File & { relativePath?: string }).relativePath?.trim();
+    if (uppyRel) return uppyRel.replace(/^\/+/, "");
   }
   return displayName;
 }

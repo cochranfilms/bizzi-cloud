@@ -69,9 +69,11 @@ export async function PATCH(
     media_mode: g.media_mode as string | null | undefined,
     source_format: g.source_format as string | null | undefined,
   });
-  if (mediaMode !== "raw") {
+  const viewerLutPrefsAllowed =
+    mediaMode === "raw" || galleryType === "video";
+  if (!viewerLutPrefsAllowed) {
     return NextResponse.json(
-      { error: "Viewer LUT preferences apply only to RAW photo galleries" },
+      { error: "Viewer LUT preferences apply only to RAW or video galleries" },
       { status: 400 }
     );
   }

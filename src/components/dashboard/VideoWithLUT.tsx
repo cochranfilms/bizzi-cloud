@@ -502,16 +502,25 @@ export default function VideoWithLUT({
     );
   }
 
+  /** Full media stage (immersive modal / gallery). Excludes side-by-side LUT toolbar layout. */
+  const framelessFillStage =
+    frameless &&
+    !compactPreview &&
+    !isFullscreen &&
+    !(sideBySideLut && showLUTOption);
+
   const containerStyle: React.CSSProperties = compactPreview
     ? { width: "100%", height: "100%", minHeight: 0 }
     : isFullscreen
       ? { width: "100vw", height: "100vh", maxHeight: "100vh" }
-      : frameless
-        ? { minHeight: 0, maxHeight: "100%" }
-        : {
-            maxHeight: "70vh",
-            aspectRatio: "16 / 9",
-          };
+      : framelessFillStage
+        ? { minHeight: 0, height: "100%", width: "100%", maxHeight: "100%" }
+        : frameless
+          ? { minHeight: 0, maxHeight: "100%" }
+          : {
+              maxHeight: "70vh",
+              aspectRatio: "16 / 9",
+            };
 
   const outerClass = compactPreview
     ? "h-full w-full min-h-0"
@@ -522,7 +531,9 @@ export default function VideoWithLUT({
   const videoShellClass = frameless
     ? compactPreview
       ? "rounded-lg bg-black"
-      : "rounded-lg bg-black mx-auto max-h-full max-w-full w-fit min-h-0 min-w-0"
+      : framelessFillStage
+        ? "video-immersive-stage relative flex h-full min-h-0 w-full max-h-full max-w-full min-w-0 items-center justify-center overflow-hidden rounded-lg bg-black"
+        : "rounded-lg bg-black mx-auto max-h-full max-w-full w-fit min-h-0 min-w-0"
     : compactPreview
       ? "rounded-lg bg-neutral-200 dark:bg-black"
       : "rounded-xl bg-neutral-200 shadow-xl ring-1 ring-neutral-200 dark:bg-black dark:ring-neutral-700/50";
@@ -531,9 +542,7 @@ export default function VideoWithLUT({
     <div className={outerClass}>
       <div
         ref={containerRef}
-        className={`video-fullscreen-container relative overflow-hidden ${videoShellClass} ${
-          frameless && !compactPreview && !isFullscreen ? "mx-auto" : "w-full max-w-full"
-        }`}
+        className={`video-fullscreen-container relative overflow-hidden ${videoShellClass}`}
         style={containerStyle}
       >
         <video
@@ -549,7 +558,11 @@ export default function VideoWithLUT({
         className={
           compactPreview
             ? `h-full w-full object-cover ${className ?? ""}`
-            : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
+            : frameless && !isFullscreen
+              ? framelessFillStage
+                ? `max-h-full max-w-[min(100%,100vw)] object-contain ${className ?? ""}`
+                : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""}`
+              : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
         }
         />
         {previewOn && currentLutSource && (

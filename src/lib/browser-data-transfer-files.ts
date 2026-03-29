@@ -64,9 +64,15 @@ async function walkEntry(entry: FileSystemEntry, prefix: string, out: File[]): P
 /**
  * Best-effort structured file list from a drop event. Preserves paths when the OS exposes
  * directory entries (e.g. dragging a .fcpbundle onto Chrome often yields a directory tree).
+ *
+ * Chrome/Edge often expose every file on `dataTransfer.files` but only a subset on
+ * `dataTransfer.items` / `webkitGetAsEntry` for multi-file drags from the desktop. When the
+ * entry walk returns fewer files than `files`, we use `files` so the full selection is kept.
  */
 export async function collectFilesFromDataTransfer(dataTransfer: DataTransfer | null): Promise<File[]> {
   if (!dataTransfer) return [];
+
+  const fromDataTransferFiles = dataTransfer.files?.length ? Array.from(dataTransfer.files) : [];
 
   const items = dataTransfer.items;
   if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === "function") {
@@ -78,13 +84,15 @@ export async function collectFilesFromDataTransfer(dataTransfer: DataTransfer | 
           await walkEntry(entry, "", fromEntries);
         }
       }
-      if (fromEntries.length > 0) return fromEntries;
+      const entryWalkIsAuthoritative =
+        fromEntries.length > 0 &&
+        (fromDataTransferFiles.length === 0 || fromEntries.length >= fromDataTransferFiles.length);
+      if (entryWalkIsAuthoritative) return fromEntries;
     } catch {
       // fall through
     }
   }
 
-  const files = dataTransfer.files;
-  if (!files?.length) return [];
-  return Array.from(files);
+  if (!fromDataTransferFiles.length) return [];
+  return fromDataTransferFiles;
 }

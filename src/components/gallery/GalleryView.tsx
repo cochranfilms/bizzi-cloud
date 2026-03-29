@@ -535,33 +535,18 @@ function PreviewModal({
     ) : null;
 
   const mediaCore = isVideo ? (
-    <div className="flex h-full min-h-0 w-full max-w-full flex-col items-center justify-center gap-4">
+    <div className="flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center gap-4">
       {videoLoading && <p className="text-sm text-white/80">Loading video…</p>}
       {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
       {videoStreamUrl && !videoError ? (
-        lut?.enabled ? (
-          <VideoWithLUT
-            key={asset.id}
-            src={videoStreamUrl}
-            streamUrl={videoStreamUrl}
-            className=""
-            showLUTOption={false}
-            lutSource={previewLutSource}
-            creativePreviewOn={lutPreviewEnabled}
-            frameless
-          />
-        ) : (
-          <div className="flex h-full w-full min-h-0 items-center justify-center">
-            <div className="relative mx-auto max-h-full max-w-full overflow-hidden rounded-lg bg-black">
-              <video
-                src={videoStreamUrl}
-                controls
-                playsInline
-                className="max-h-[min(92dvh,calc(100dvh-6rem))] max-w-full object-contain"
-              />
-            </div>
-          </div>
-        )
+        <VideoWithLUT
+          key={asset.id}
+          src={videoStreamUrl}
+          showLUTOption={false}
+          lutSource={lut?.enabled ? previewLutSource : null}
+          creativePreviewOn={lut?.enabled ? lutPreviewEnabled : false}
+          frameless
+        />
       ) : null}
       {!videoStreamUrl && !videoLoading && !videoError ? (
         <p className="text-sm text-white/80">Video unavailable</p>
@@ -1107,9 +1092,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       source_format: data.gallery.source_format ?? null,
     });
     const lutWorkflowActive = mediaMode === "raw";
+    const isVideoGallery = data.gallery.gallery_type === "video";
+    const clientLutEligible = lutWorkflowActive || isVideoGallery;
     const lutOn = !!data.gallery.lut?.enabled;
 
-    if (!lutWorkflowActive || !lutOn) {
+    if (!clientLutEligible || !lutOn) {
       setLutPreviewEnabled((p) => (p ? false : p));
       return;
     }
@@ -1136,7 +1123,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     let nextMix: number | undefined;
 
     if (resolved) {
-      nextPreview = lutWorkflowActive && resolved.lutPreviewEnabled;
+      nextPreview = clientLutEligible && resolved.lutPreviewEnabled;
       if (opts.some((o) => o.id === resolved.selectedLutId)) {
         nextId = resolved.selectedLutId;
       }
@@ -1145,7 +1132,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       try {
         const hints = readGalleryViewerLutContinuityHydration(galleryId);
         if (typeof hints.previewEnabled === "boolean") {
-          nextPreview = lutWorkflowActive && hints.previewEnabled;
+          nextPreview = clientLutEligible && hints.previewEnabled;
         }
         if (hints.selectedLutId != null && opts.some((o) => o.id === hints.selectedLutId)) {
           nextId = hints.selectedLutId;
@@ -1181,7 +1168,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       media_mode: data.gallery.media_mode ?? null,
       source_format: data.gallery.source_format ?? null,
     });
-    if (mediaMode !== "raw" || !data.gallery.lut?.enabled) return;
+    if (
+      (mediaMode !== "raw" && data.gallery.gallery_type !== "video") ||
+      !data.gallery.lut?.enabled
+    )
+      return;
     if (selectedLutId === null) return;
 
     const next: GalleryViewerLutPreferences = {
@@ -1775,6 +1766,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     source_format: gallery.source_format ?? null,
   });
   const lutWorkflowActive = mediaMode === "raw";
+  const galleryClientLutEligible =
+    lutWorkflowActive || gallery.gallery_type === "video";
 
   const galleryLutOptions = buildGalleryLUTOptions(
     gallery.creative_lut_library,
@@ -1782,14 +1775,15 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     password || undefined
   );
   const clientLutSource = resolveGalleryClientLutSource({
-    lutEnabled: lutWorkflowActive && !!gallery.lut?.enabled,
+    lutEnabled: galleryClientLutEligible && !!gallery.lut?.enabled,
     lutPreviewEnabled,
     selectedLutId,
     options: galleryLutOptions,
     ownerDefaultSource: gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null,
   });
-  /** LUT preview only in RAW galleries; never use for download. Preview URL is clientLutSource. */
-  const effectiveLut = lutWorkflowActive && gallery.lut?.enabled ? gallery.lut : null;
+  /** Client LUT preview in RAW and video galleries; never use for download. Preview URL is clientLutSource. */
+  const effectiveLut =
+    galleryClientLutEligible && gallery.lut?.enabled ? gallery.lut : null;
 
   const filteredAssets =
     selectedCollectionId === null
@@ -1813,7 +1807,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const resolvedHeroPreset = resolveCoverHeroPreset(gallery.cover_hero_height);
 
   const heroImageLutActive =
-    lutWorkflowActive &&
+    galleryClientLutEligible &&
     !!gallery.lut?.enabled &&
     lutPreviewEnabled &&
     !!clientLutSource &&
@@ -1821,7 +1815,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     !featuredVideoStreamUrl;
 
   const heroVideoLutActive =
-    lutWorkflowActive &&
+    galleryClientLutEligible &&
     !!gallery.lut?.enabled &&
     lutPreviewEnabled &&
     !!clientLutSource &&
@@ -2251,7 +2245,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {lutWorkflowActive && gallery.lut?.enabled && (
+        {galleryClientLutEligible && gallery.lut?.enabled && (
           <div
             className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-5 sm:py-4 ${
               isDarkBg
