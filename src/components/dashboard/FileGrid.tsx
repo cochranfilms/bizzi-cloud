@@ -694,7 +694,12 @@ export default function FileGrid() {
       }
       const nestedSubfolders: FolderItem[] = Array.from(nextSegmentCounts.entries()).map(
         ([segment, count]) => ({
-          name: segment.toLowerCase() === "favorites" ? "Favorites" : segment,
+          name:
+            segment.toLowerCase() === "favorites"
+              ? "Favorites"
+              : segment.toLowerCase() === "selects"
+                ? "Selects"
+                : segment,
           type: "folder" as const,
           key: `path-nested-${currentDrive.id}|${currentDrivePath}|${segment}`,
           items: count,

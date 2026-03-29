@@ -287,6 +287,17 @@ export async function POST(request: Request) {
       chunk.forEach((d) => batchWrite.delete(d.ref));
       await batchWrite.commit();
     }
+    const mergeRunsSnap = await db
+      .collection("galleries")
+      .doc(gid)
+      .collection("proofing_merge_runs")
+      .get();
+    for (let j = 0; j < mergeRunsSnap.docs.length; j += BATCH_SIZE) {
+      const chunk = mergeRunsSnap.docs.slice(j, j + BATCH_SIZE);
+      const batchWrite = db.batch();
+      chunk.forEach((d) => batchWrite.delete(d.ref));
+      await batchWrite.commit();
+    }
   }
 
   // Delete gallery_collections and asset_comments (keyed by gallery_id)

@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   ChevronLeft,
   Heart,
   MessageCircle,
   Loader2,
   Download,
-  FolderPlus,
   Film,
   ExternalLink,
+  FolderOpen,
+  Merge,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
@@ -32,13 +33,21 @@ import {
   isCommentsAllowed,
   isFavoritesAllowed,
 } from "@/lib/video-gallery-client-policy";
+import {
+  proofingFilesHrefFromGalleryDetailHref,
+  shellContextFromClientPathname,
+} from "@/lib/gallery-proofing-types";
 
-interface FavoritesList {
+interface ProofingListRow {
   id: string;
   client_email: string | null;
   client_name: string | null;
   asset_ids: string[];
   created_at: string | null;
+  materialization_state?: string;
+  materialized_linked_drive_id?: string | null;
+  materialized_relative_prefix?: string | null;
+  last_materialization_error?: string | null;
 }
 
 interface Comment {
@@ -89,10 +98,11 @@ export default function GalleryProofingWorkspace({
   galleriesListHref,
 }: GalleryProofingWorkspaceProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const [galleryTitle, setGalleryTitle] = useState("");
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
-  const [favorites, setFavorites] = useState<FavoritesList[]>([]);
+  const [favorites, setFavorites] = useState<ProofingListRow[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "favorited" | "commented">("all");
@@ -102,7 +112,17 @@ export default function GalleryProofingWorkspace({
   const [reviewAsset, setReviewAsset] = useState<GalleryAsset | null>(null);
 
   const { bumpStorageVersion } = useBackup();
-  const { selectedWorkspaceId } = useCurrentFolder();
+  const {
+    selectedWorkspaceId,
+    setCurrentDrive: setCurrentFolderDriveId,
+    setCurrentDrivePath,
+  } = useCurrentFolder();
+
+  const shellHeader = useMemo(() => shellContextFromClientPathname(pathname), [pathname]);
+  const filesHref = useMemo(
+    () => proofingFilesHrefFromGalleryDetailHref(galleryDetailHref),
+    [galleryDetailHref]
+  );
 
   const lutMirror = useMemo(
     () =>
@@ -129,17 +149,11 @@ export default function GalleryProofingWorkspace({
     if (!user || !galleryId) return;
     try {
       const token = await user.getIdToken();
-      const [viewRes, favRes, commentsRes] = await Promise.all([
-        fetch(`/api/galleries/${galleryId}/view`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`/api/galleries/${galleryId}/favorites`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`/api/galleries/${galleryId}/comments`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "X-Bizzi-Shell": shellHeader,
+      };
+      const viewRes = await fetch(`/api/galleries/${galleryId}/view`, { headers });
 
       if (!viewRes.ok) {
         if (viewRes.status === 404) router.replace(galleriesListHref);
@@ -147,14 +161,26 @@ export default function GalleryProofingWorkspace({
       }
 
       const viewData = await viewRes.json();
+      const isVid = viewData.gallery?.gallery_type === "video";
+      const listsPath = isVid ? "selects" : "favorites";
+
+      const [listsRes, commentsRes] = await Promise.all([
+        fetch(`/api/galleries/${galleryId}/${listsPath}`, { headers }),
+        fetch(`/api/galleries/${galleryId}/comments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
       setGalleryTitle(viewData.gallery?.title ?? "Gallery");
       setAssets(viewData.assets ?? []);
       setLutMirrorGallery(viewData.gallery ?? null);
       setPolicyGallery((viewData.gallery ?? null) as GalleryPolicyLike);
 
-      if (favRes.ok) {
-        const favData = await favRes.json();
-        setFavorites(favData.lists ?? []);
+      if (listsRes.ok) {
+        const listsData = await listsRes.json();
+        setFavorites(listsData.lists ?? []);
+      } else {
+        setFavorites([]);
       }
 
       if (commentsRes.ok) {
@@ -166,7 +192,7 @@ export default function GalleryProofingWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [user, galleryId, router, galleriesListHref]);
+  }, [user, galleryId, router, galleriesListHref, shellHeader]);
 
   useEffect(() => {
     setLoading(true);
@@ -206,23 +232,10 @@ export default function GalleryProofingWorkspace({
     error: downloadError,
   } = useGalleryBulkDownload({ galleryId, user, password: null });
 
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
-  const [createFolderSuccess, setCreateFolderSuccess] = useState<{ message: string } | null>(
-    null
-  );
-
-  const favoritedAssetIdsForFolder = assets
-    .filter(
-      (a) =>
-        effectiveFavoritedIds.has(a.id) &&
-        a.object_key &&
-        (a.media_type === "image" ||
-          a.media_type === "video" ||
-          IMAGE_EXT.test(a.name) ||
-          VIDEO_EXT.test(a.name))
-    )
-    .map((a) => a.id);
+  const [materializingListId, setMaterializingListId] = useState<string | null>(null);
+  const [mergingAll, setMergingAll] = useState(false);
+  const [proofingActionError, setProofingActionError] = useState<string | null>(null);
+  const [proofingActionSuccess, setProofingActionSuccess] = useState<string | null>(null);
 
   const unit = isVideo ? "clip" : "photo";
   const units = isVideo ? "clips" : "photos";
@@ -233,52 +246,91 @@ export default function GalleryProofingWorkspace({
     downloadFavorites(favoritedDownloadItems, "selected");
   };
 
-  const handleCreateFavoriteFolder = async () => {
-    if (!policyFavorites) return;
-    if (favoritedAssetIdsForFolder.length === 0) return;
-    setIsCreatingFolder(true);
-    setCreateFolderError(null);
-    setCreateFolderSuccess(null);
+  const proofingListsApiSegment = isVideo ? "selects" : "favorites";
+
+  const openMaterializedFolder = useCallback(
+    (list: ProofingListRow) => {
+      const driveId = list.materialized_linked_drive_id;
+      const rel = (list.materialized_relative_prefix ?? "").replace(/^\/+/, "");
+      if (!driveId || !rel) return;
+      setCurrentFolderDriveId(driveId);
+      setCurrentDrivePath(rel);
+      router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}`);
+    },
+    [filesHref, router, setCurrentDrivePath, setCurrentFolderDriveId]
+  );
+
+  const handleMaterializeList = async (listId: string) => {
+    if (!user || !policyFavorites) return;
+    setProofingActionError(null);
+    setProofingActionSuccess(null);
+    setMaterializingListId(listId);
     try {
-      const token = await user?.getIdToken();
-      if (!token) throw new Error("Not authenticated");
-      const res = await fetch(`/api/galleries/${galleryId}/create-favorite-folder`, {
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `/api/galleries/${galleryId}/${proofingListsApiSegment}/${listId}/materialize`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "X-Bizzi-Shell": shellHeader,
+          },
+          body: JSON.stringify({
+            ...(selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : {}),
+          }),
+        }
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data?.error ?? "Materialize failed");
+      bumpStorageVersion();
+      await fetchData();
+      setProofingActionSuccess("List materialized to Gallery Media.");
+      setTimeout(() => setProofingActionSuccess(null), 5000);
+    } catch (err) {
+      setProofingActionError(err instanceof Error ? err.message : "Materialize failed");
+    } finally {
+      setMaterializingListId(null);
+    }
+  };
+
+  const handleMergeAll = async () => {
+    if (!user || !policyFavorites || favorites.length === 0) return;
+    setProofingActionError(null);
+    setProofingActionSuccess(null);
+    setMergingAll(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/galleries/${galleryId}/proofing-merge`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "X-Bizzi-Shell": shellHeader,
         },
         body: JSON.stringify({
-          asset_ids: favoritedAssetIdsForFolder,
           ...(selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : {}),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        files_saved?: number;
-        files_skipped?: number;
         error?: string;
+        files_saved?: number;
+        merge_slug?: string;
+        drive_id?: string;
+        merge_relative_prefix?: string;
       };
-      if (!res.ok) {
-        throw new Error(data?.error ?? "Failed to create folder");
-      }
+      if (!res.ok) throw new Error(data?.error ?? "Merge failed");
       bumpStorageVersion();
       const saved = data.files_saved ?? 0;
-      const skipped = data.files_skipped ?? 0;
-      let message: string;
-      if (saved === 0 && skipped > 0) {
-        message = `All ${skipped} selected ${units} are already in Favorites for this gallery in the current workspace.`;
-      } else if (skipped > 0) {
-        message = `Saved ${saved} ${saved === 1 ? unit : units} to Gallery Media → ${galleryTitle} → Favorites (${skipped} already there).`;
-      } else {
-        message = `Saved ${saved} ${saved === 1 ? unit : units} to Gallery Media → ${galleryTitle} → Favorites`;
-      }
-      setCreateFolderSuccess({ message });
-      setTimeout(() => setCreateFolderSuccess(null), 5000);
+      setProofingActionSuccess(
+        `Merged snapshot created (${saved} file${saved !== 1 ? "s" : ""}). Open Files → Gallery Media to view _merged/${data.merge_slug ?? ""}.`
+      );
+      setTimeout(() => setProofingActionSuccess(null), 8000);
+      await fetchData();
     } catch (err) {
-      setCreateFolderError(err instanceof Error ? err.message : "Failed to create folder");
+      setProofingActionError(err instanceof Error ? err.message : "Merge failed");
     } finally {
-      setIsCreatingFolder(false);
+      setMergingAll(false);
     }
   };
 
@@ -295,7 +347,7 @@ export default function GalleryProofingWorkspace({
       : typeFilteredAssets;
 
   const filterLabels: Record<typeof filter, string> = isVideo
-    ? { all: "All clips", favorited: "Favorited", commented: "Commented" }
+    ? { all: "All clips", favorited: "In selects", commented: "Commented" }
     : { all: "All", favorited: "Favorited", commented: "Commented" };
 
   const workflowChip = policyGallery?.workflow_status
@@ -391,22 +443,22 @@ export default function GalleryProofingWorkspace({
                     )}
                   </button>
                 ) : null}
-                {policyFavorites ? (
+                {policyFavorites && favorites.length > 0 ? (
                   <button
                     type="button"
-                    onClick={handleCreateFavoriteFolder}
-                    disabled={favoritedAssetIdsForFolder.length === 0 || isCreatingFolder}
+                    onClick={() => void handleMergeAll()}
+                    disabled={mergingAll}
                     className="flex items-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
                   >
-                    {isCreatingFolder ? (
+                    {mergingAll ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Creating…
+                        Merging…
                       </>
                     ) : (
                       <>
-                        <FolderPlus className="h-4 w-4" />
-                        {isVideo ? "Create favorites folder" : "Create Favorite Folder"}
+                        <Merge className="h-4 w-4" />
+                        {isVideo ? "Merge all selects" : "Merge all favorites"}
                       </>
                     )}
                   </button>
@@ -422,14 +474,14 @@ export default function GalleryProofingWorkspace({
                   Favorites are disabled for this gallery — download and folder actions are hidden.
                 </p>
               )}
-              {(downloadError || createFolderError) && (
+              {(downloadError || proofingActionError) && (
                 <p className="w-full text-sm text-red-600 dark:text-red-400">
-                  {downloadError ?? createFolderError}
+                  {downloadError ?? proofingActionError}
                 </p>
               )}
-              {createFolderSuccess && (
+              {proofingActionSuccess && (
                 <p className="w-full text-sm text-green-600 dark:text-green-400">
-                  {createFolderSuccess.message}
+                  {proofingActionSuccess}
                 </p>
               )}
             </div>
@@ -438,11 +490,11 @@ export default function GalleryProofingWorkspace({
               <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
                 <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
                   <Heart className="h-5 w-5 text-red-500" />
-                  Favorites lists ({favorites.length})
+                  {isVideo ? "Selects lists" : "Favorites lists"} ({favorites.length})
                 </h2>
                 {favorites.length === 0 ? (
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    No favorites submitted yet.
+                    {isVideo ? "No selects submitted yet." : "No favorites submitted yet."}
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -470,32 +522,73 @@ export default function GalleryProofingWorkspace({
                             minute: "2-digit",
                           })
                         : "";
+                      const mat = f.materialization_state ?? "idle";
+                      const canOpen =
+                        !!f.materialized_linked_drive_id &&
+                        !!(f.materialized_relative_prefix ?? "").trim();
+                      const busyMat = mat === "processing" || materializingListId === f.id;
                       return (
-                        <button
+                        <div
                           key={f.id}
-                          type="button"
-                          onClick={() => setSelectedListId(isSelected ? null : f.id)}
-                          className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                          className={`rounded-lg border transition-colors ${
                             isSelected
                               ? "border-bizzi-blue bg-bizzi-blue/5 ring-2 ring-bizzi-blue/50 dark:border-bizzi-cyan dark:bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
-                              : "border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/50"
+                              : "border-neutral-200 dark:border-neutral-700"
                           }`}
                         >
-                          <p className="font-medium text-neutral-900 dark:text-white">
-                            {label}
-                            {dateStr && (
-                              <span className="ml-1.5 font-normal text-neutral-500 dark:text-neutral-400">
-                                · {dateStr}
-                              </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedListId(isSelected ? null : f.id)}
+                            className="w-full p-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                          >
+                            <p className="font-medium text-neutral-900 dark:text-white">
+                              {label}
+                              {dateStr && (
+                                <span className="ml-1.5 font-normal text-neutral-500 dark:text-neutral-400">
+                                  · {dateStr}
+                                </span>
+                              )}
+                            </p>
+                            {f.client_email && f.client_name !== f.client_email && (
+                              <p className="text-xs text-neutral-500">{f.client_email}</p>
                             )}
-                          </p>
-                          {f.client_email && f.client_name !== f.client_email && (
-                            <p className="text-xs text-neutral-500">{f.client_email}</p>
-                          )}
-                          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-                            {f.asset_ids.length} {f.asset_ids.length !== 1 ? units : unit} selected
-                          </p>
-                        </button>
+                            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                              {f.asset_ids.length} {f.asset_ids.length !== 1 ? units : unit} selected
+                            </p>
+                            <p className="mt-1 text-xs uppercase tracking-wide text-neutral-500">
+                              Materialize: {mat}
+                              {f.last_materialization_error ? ` — ${f.last_materialization_error.slice(0, 80)}` : ""}
+                            </p>
+                          </button>
+                          <div className="flex flex-wrap gap-2 border-t border-neutral-100 px-3 py-2 dark:border-neutral-800">
+                            <button
+                              type="button"
+                              disabled={busyMat || f.asset_ids.length === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleMaterializeList(f.id);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-700 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-200"
+                            >
+                              {busyMat ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : null}
+                              Materialize
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canOpen}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openMaterializedFolder(f);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-700 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-200"
+                            >
+                              <FolderOpen className="h-3.5 w-3.5" />
+                              Open folder
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
@@ -565,7 +658,7 @@ export default function GalleryProofingWorkspace({
                         </th>
                       ) : null}
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
-                        Favorited
+                        {isVideo ? "Selected" : "Favorited"}
                       </th>
                       <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">
                         Comments

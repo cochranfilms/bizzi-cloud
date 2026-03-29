@@ -62,6 +62,8 @@ import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
+import { usePathname } from "next/navigation";
+import { shellContextFromClientPathname } from "@/lib/gallery-proofing-types";
 
 interface GalleryData {
   id: string;
@@ -182,12 +184,15 @@ function SaveFavoritesModal({
   count,
   galleryId,
   password,
+  listKind,
   onSave,
   onClose,
 }: {
   count: number;
   galleryId: string;
   password?: string;
+  /** Photo galleries: favorites. Video: selects (share URL + copy). */
+  listKind: "favorites" | "selects";
   onSave: (email: string, name: string) => Promise<string | null>;
   onClose: () => void;
 }) {
@@ -202,7 +207,8 @@ function SaveFavoritesModal({
     savedListId &&
     (() => {
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      const path = `/g/${galleryId}/favorites/${savedListId}`;
+      const segment = listKind === "selects" ? "selects" : "favorites";
+      const path = `/g/${galleryId}/${segment}/${savedListId}`;
       const params = password ? `?password=${encodeURIComponent(password)}` : "";
       return `${base}${path}${params}`;
     })();
@@ -235,10 +241,18 @@ function SaveFavoritesModal({
 
   const handleEmailLink = () => {
     if (!shareUrl) return;
-    const subject = encodeURIComponent("My favorite photos from the gallery");
-    const body = encodeURIComponent(
-      `Here's a link to view and download my favorite photos:\n\n${shareUrl}`
-    );
+    const subject =
+      listKind === "selects"
+        ? encodeURIComponent("My video selects from the gallery")
+        : encodeURIComponent("My favorite photos from the gallery");
+    const body =
+      listKind === "selects"
+        ? encodeURIComponent(
+            `Here's a link to view and download my selected clips:\n\n${shareUrl}`
+          )
+        : encodeURIComponent(
+            `Here's a link to view and download my favorite photos:\n\n${shareUrl}`
+          );
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
@@ -247,10 +261,12 @@ function SaveFavoritesModal({
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-            Favorites saved
+            {listKind === "selects" ? "Selects saved" : "Favorites saved"}
           </h2>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Share this link to view and download your favorites.
+            {listKind === "selects"
+              ? "Share this link to view and download your selected clips."
+              : "Share this link to view and download your favorites."}
           </p>
           <div className="mt-4 flex flex-col gap-3">
             <div className="flex gap-2">
@@ -290,10 +306,12 @@ function SaveFavoritesModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-          Save favorites list
+          {listKind === "selects" ? "Save selects list" : "Save favorites list"}
         </h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          {count} photo{count !== 1 ? "s" : ""} selected. Add your details to save.
+          {listKind === "selects"
+            ? `${count} clip${count !== 1 ? "s" : ""} selected. Add your details to save.`
+            : `${count} photo${count !== 1 ? "s" : ""} selected. Add your details to save.`}
         </p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error && (
@@ -468,8 +486,8 @@ function PreviewModal({
     (onLutPreviewToggle ||
       (modalLutOptions.length > 1 && onLutSelect) ||
       (!isVideo && onLutGradeMixChange)) ? (
-      <div className="flex w-full flex-row flex-wrap items-end gap-2 rounded-lg border border-white/12 bg-black/40 px-3 py-2 text-white backdrop-blur-md sm:gap-3">
-        <div className="min-w-0 flex-1 basis-full sm:basis-0 sm:py-0.5">
+      <div className="flex w-full flex-row flex-wrap items-center gap-2 rounded-lg border border-white/12 bg-black/40 px-3 py-2 text-white backdrop-blur-md sm:gap-3">
+        <div className="min-w-0 flex-1 basis-full sm:basis-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-white/55">Color look</p>
           <p className="text-[11px] leading-snug text-white/60">Preview only — originals unchanged.</p>
         </div>
@@ -481,7 +499,7 @@ function PreviewModal({
               aria-checked={lutPreviewEnabled}
               aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
               onClick={onLutPreviewToggle}
-              className={`flex w-full items-center justify-between gap-2 rounded-md border border-white/12 bg-white/5 px-2.5 py-1.5 text-left sm:w-auto sm:min-w-[9rem] ${
+              className={`flex w-auto min-w-[9rem] shrink-0 items-center justify-between gap-2 rounded-md border border-white/12 bg-white/5 px-2.5 py-1.5 text-left ${
                 lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/35" : ""
               }`}
             >
@@ -500,9 +518,9 @@ function PreviewModal({
             </button>
           ) : null}
           {modalLutOptions.length > 1 ? (
-            <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:max-w-[11rem]">
-              <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Look</span>
+            <label className="flex min-w-0 max-w-[min(100%,13rem)] flex-1 items-center sm:max-w-[13rem]">
               <select
+                aria-label="Color look preset"
                 value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
                 disabled={!lutPreviewEnabled}
                 onChange={(e) => {
@@ -979,6 +997,7 @@ function GalleryAssetCard({
 }
 
 export default function GalleryView({ galleryId }: { galleryId: string }) {
+  const pathname = usePathname();
   const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<{
     gallery: GalleryData;
@@ -1630,9 +1649,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const handleSaveFavorites = useCallback(
     async (clientEmail: string, clientName: string): Promise<string | null> => {
       const assetIds = Array.from(selectedFavorites);
-      const url = new URL(`/api/galleries/${galleryId}/favorites`, window.location.origin);
+      const isVideoList = data?.gallery.gallery_type === "video";
+      const pathSeg = isVideoList ? "selects" : "favorites";
+      const url = new URL(`/api/galleries/${galleryId}/${pathSeg}`, window.location.origin);
       if (password) url.searchParams.set("password", password);
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Bizzi-Shell": shellContextFromClientPathname(pathname ?? null),
+      };
       if (user) {
         const t = await user.getIdToken();
         if (t) headers.Authorization = `Bearer ${t}`;
@@ -1647,11 +1671,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Failed to save");
+        const errBody = await res.json();
+        throw new Error(errBody.message ?? errBody.error ?? "Failed to save");
       }
-      const data = await res.json();
-      const listId = typeof data.id === "string" ? data.id : null;
+      const resBody = await res.json();
+      const listId = typeof resBody.id === "string" ? resBody.id : null;
       setSelectedFavorites(new Set());
       if (typeof window !== "undefined") {
         try {
@@ -1662,7 +1686,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       }
       return listId;
     },
-    [galleryId, password, user, selectedFavorites]
+    [galleryId, password, user, selectedFavorites, data?.gallery.gallery_type, pathname]
   );
 
   const fetchPreviewComments = useCallback(
@@ -2614,9 +2638,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
             }`}
           >
             <div className="flex flex-row flex-wrap items-center justify-between gap-2 gap-y-2.5 sm:gap-3">
-              <div className="flex min-w-0 flex-1 basis-full items-start gap-2 sm:basis-0 sm:items-center">
+              <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-0">
                 <Palette
-                  className={`mt-0.5 h-4 w-4 shrink-0 sm:mt-0 ${
+                  className={`h-4 w-4 shrink-0 ${
                     isDarkBg ? "text-white/55" : "text-bizzi-blue dark:text-bizzi-cyan"
                   }`}
                   aria-hidden
@@ -2638,14 +2662,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   </p>
                 </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-row flex-wrap items-center justify-end gap-2 sm:flex-none sm:justify-end">
+              <div className="flex min-w-0 flex-1 flex-row flex-wrap items-center justify-end gap-2 sm:flex-none sm:justify-end sm:gap-2">
                 <button
                   type="button"
                   role="switch"
                   aria-checked={lutPreviewEnabled}
                   aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
                   onClick={() => setLutPreviewEnabled((p) => !p)}
-                  className={`flex w-auto min-w-[9rem] shrink-0 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left ${
+                  className={`flex h-[2.25rem] min-h-[2.25rem] w-auto min-w-[9rem] shrink-0 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left ${
                     lutPreviewEnabled
                       ? isDarkBg
                         ? "border-bizzi-cyan/30 bg-bizzi-cyan/10"
@@ -2681,22 +2705,16 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   </span>
                 </button>
                 {galleryLutOptions.length > 1 ? (
-                  <label className="flex min-w-[10rem] max-w-[min(100%,14rem)] flex-1 flex-col gap-0.5 sm:max-w-[13rem]">
-                    <span
-                      className={`text-[9px] font-medium uppercase tracking-[0.08em] ${
-                        isDarkBg ? "text-white/40" : "text-neutral-400 dark:text-neutral-500"
-                      }`}
-                    >
-                      Look
-                    </span>
+                  <label className="flex min-w-[10rem] max-w-[min(100%,14rem)] flex-1 items-stretch sm:max-w-[13rem]">
                     <select
                       id="gallery-lut-select"
+                      aria-label="Color look preset"
                       value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
                       disabled={!lutPreviewEnabled}
                       onChange={(e) => {
                         setSelectedLutId(e.target.value);
                       }}
-                      className={`w-full appearance-none rounded-md border bg-[length:0.6rem] bg-[right_0.55rem_center] bg-no-repeat py-1.5 pl-2 pr-7 text-xs font-medium outline-none transition-[border-color,box-shadow] focus:border-bizzi-blue/50 focus:ring-1 focus:ring-bizzi-blue/15 dark:focus:border-bizzi-cyan/40 dark:focus:ring-bizzi-cyan/10 ${
+                      className={`h-[2.25rem] min-h-[2.25rem] w-full appearance-none rounded-md border bg-[length:0.6rem] bg-[right_0.55rem_center] bg-no-repeat py-1.5 pl-2 pr-7 text-xs font-medium outline-none transition-[border-color,box-shadow] focus:border-bizzi-blue/50 focus:ring-1 focus:ring-bizzi-blue/15 dark:focus:border-bizzi-cyan/40 dark:focus:ring-bizzi-cyan/10 ${
                         lutPreviewEnabled
                           ? isDarkBg
                             ? "border-white/12 bg-white/[0.06] text-white"
@@ -2844,7 +2862,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           <div
             className="fixed right-6 top-1/2 z-40 flex w-48 -translate-y-1/2 flex-col gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
             role="complementary"
-            aria-label="Favorites selection"
+            aria-label={
+              gallery.gallery_type === "video" ? "Selects selection" : "Favorites selection"
+            }
           >
             <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
               {selectedFavorites.size} selected
@@ -2871,7 +2891,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 onClick={() => setShowSaveFavorites(true)}
                 className="flex items-center justify-center rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
               >
-                Save favorites list
+                {gallery.gallery_type === "video" ? "Save selects list" : "Save favorites list"}
               </button>
               <button
                 type="button"
@@ -2897,6 +2917,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           count={selectedFavorites.size}
           galleryId={galleryId}
           password={password || undefined}
+          listKind={gallery.gallery_type === "video" ? "selects" : "favorites"}
           onSave={handleSaveFavorites}
           onClose={() => setShowSaveFavorites(false)}
         />

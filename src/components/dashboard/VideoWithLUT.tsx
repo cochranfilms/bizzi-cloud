@@ -1,6 +1,13 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback, type CSSProperties } from "react";
+import {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  type CSSProperties,
+  type SyntheticEvent,
+} from "react";
 import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 import Hls from "hls.js";
 import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
@@ -37,11 +44,14 @@ function videoCoverTextureCrop(
   return [u0, 0, u0 + uSpan, 1];
 }
 
-function easeOutQuad(t: number): number {
-  return 1 - (1 - t) * (1 - t);
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-const VIDEO_LUT_CROSSFADE_MS = 280;
+/** Blend time between two 3D LUTs in the shader (dual-LUT crossfade). */
+const VIDEO_LUT_CROSSFADE_MS = 520;
+/** Fade the graded canvas in/out so preview / Original toggles do not blink. */
+const GRADE_LAYER_FADE_MS = 420;
 
 export interface LUTOption {
   id: string;
@@ -145,6 +155,8 @@ export default function VideoWithLUT({
   const displayedLutUrlRef = useRef<string | null>(null);
   const lutCrossfadeRef = useRef(0);
   const lutTransitionRafRef = useRef<number | null>(null);
+  /** CSS opacity for the WebGL layer (preview off = fade out before dispose). */
+  const [gradeLayerOpacity, setGradeLayerOpacity] = useState(1);
 
   const options =
     lutOptions.length > 0
@@ -175,8 +187,14 @@ export default function VideoWithLUT({
     });
   }, [lutOptions]);
 
+  /** Preview off: fade graded layer out, then tear down WebGL (avoids instant unmount pop). */
   useEffect(() => {
-    if (!previewOn || !currentLutSource) {
+    if (previewOn) {
+      setGradeLayerOpacity(1);
+      return;
+    }
+    setGradeLayerOpacity(0);
+    const tid = window.setTimeout(() => {
       if (lutTransitionRafRef.current != null) {
         cancelAnimationFrame(lutTransitionRafRef.current);
         lutTransitionRafRef.current = null;
@@ -189,6 +207,25 @@ export default function VideoWithLUT({
       displayedLutUrlRef.current = null;
       lutCrossfadeRef.current = 0;
       setLutReady(false);
+      setGradeLayerOpacity(1);
+    }, GRADE_LAYER_FADE_MS);
+    return () => window.clearTimeout(tid);
+  }, [previewOn]);
+
+  useEffect(() => {
+    if (!previewOn) return;
+
+    if (!currentLutSource) {
+      if (lutTransitionRafRef.current != null) {
+        cancelAnimationFrame(lutTransitionRafRef.current);
+        lutTransitionRafRef.current = null;
+      }
+      if (glRef.current) {
+        setLutReady(true);
+        setLutError(null);
+      } else {
+        setLutReady(false);
+      }
       return;
     }
 
@@ -210,11 +247,15 @@ export default function VideoWithLUT({
         if (cancelled) return;
 
         if (!glRef.current) {
+          setGradeLayerOpacity(0);
           glRef.current = createVideoLUTContext(gl, data, size);
           displayedLutUrlRef.current = currentLutSource;
           lutCrossfadeRef.current = 0;
           setLutReady(true);
           setLutError(null);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => setGradeLayerOpacity(1));
+          });
           return;
         }
 
@@ -237,7 +278,7 @@ export default function VideoWithLUT({
         const tick = () => {
           if (cancelled || !glRef.current) return;
           const t = Math.min(1, (performance.now() - start) / VIDEO_LUT_CROSSFADE_MS);
-          lutCrossfadeRef.current = easeOutQuad(t);
+          lutCrossfadeRef.current = easeInOutCubic(t);
           if (t < 1) {
             lutTransitionRafRef.current = requestAnimationFrame(tick);
           } else {
@@ -266,6 +307,20 @@ export default function VideoWithLUT({
       }
     };
   }, [previewOn, currentLutSource]);
+
+  useEffect(() => {
+    return () => {
+      if (lutTransitionRafRef.current != null) {
+        cancelAnimationFrame(lutTransitionRafRef.current);
+        lutTransitionRafRef.current = null;
+      }
+      const ctx = glRef.current;
+      if (ctx) {
+        disposeVideoLUTContext(ctx);
+        glRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -596,6 +651,36 @@ export default function VideoWithLUT({
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
   }, [segmentLoopSeconds, videoSrc]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !segmentLoopSeconds || segmentLoopSeconds <= 0 || !compactPreview) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onPause = () => {
+      if (video.ended) return;
+      if (t != null) clearTimeout(t);
+      t = setTimeout(() => {
+        t = null;
+        if (!video.paused || video.ended) return;
+        void video.play().catch(() => {});
+      }, 60);
+    };
+    video.addEventListener("pause", onPause);
+    return () => {
+      video.removeEventListener("pause", onPause);
+      if (t != null) clearTimeout(t);
+    };
+  }, [segmentLoopSeconds, compactPreview, videoSrc]);
+
+  const onSegmentLoopEnded = useCallback(
+    (e: SyntheticEvent<HTMLVideoElement>) => {
+      if (!segmentLoopSeconds || segmentLoopSeconds <= 0) return;
+      const v = e.currentTarget;
+      v.currentTime = 0;
+      void v.play().catch(() => {});
+    },
+    [segmentLoopSeconds],
+  );
+
   if (error) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg bg-red-100 p-4 text-red-700 dark:bg-red-900/20 dark:text-red-400">
@@ -665,6 +750,7 @@ export default function VideoWithLUT({
           playsInline
           muted={compactPreview ? true : undefined}
           autoPlay={compactPreview ? true : undefined}
+          onEnded={segmentLoopSeconds && segmentLoopSeconds > 0 ? onSegmentLoopEnded : undefined}
           style={videoStyle}
         className={
           compactPreview
@@ -676,13 +762,14 @@ export default function VideoWithLUT({
               : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
         }
         />
-        {previewOn && currentLutSource && (
+        {previewOn && lutReady && (
           <canvas
             ref={canvasRef}
-            className="absolute left-0 top-0 transition-opacity duration-200"
+            className="absolute left-0 top-0"
             style={{
               pointerEvents: "none",
-              opacity: lutReady && !lutError ? 1 : 0,
+              opacity: lutError ? 0 : gradeLayerOpacity,
+              transition: `opacity ${GRADE_LAYER_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
             }}
           />
         )}

@@ -136,6 +136,27 @@ export default function VideoScrubThumbnail({
 
   const showVideo = isHovering && streamUrl && !streamLoadFailed;
 
+  useEffect(() => {
+    if (scrubEnabled) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onPause = () => {
+      if (!isHoveringRef.current || v.ended) return;
+      if (t != null) clearTimeout(t);
+      t = setTimeout(() => {
+        t = null;
+        if (!isHoveringRef.current || !v.paused || v.ended) return;
+        void v.play().catch(() => {});
+      }, 60);
+    };
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("pause", onPause);
+      if (t != null) clearTimeout(t);
+    };
+  }, [scrubEnabled, streamUrl, showVideo]);
+
   /** Loop segment when idle on hover */
   useEffect(() => {
     const v = videoRef.current;
@@ -186,6 +207,12 @@ export default function VideoScrubThumbnail({
           preload="metadata"
           className={`h-full w-full bg-neutral-100 dark:bg-neutral-700 ${objectFit}`}
           onError={() => setStreamLoadFailed(true)}
+          onEnded={(e) => {
+            const v = e.currentTarget;
+            if (!isHoveringRef.current) return;
+            v.currentTime = 0;
+            void v.play().catch(() => {});
+          }}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             if (!isHoveringRef.current) return;

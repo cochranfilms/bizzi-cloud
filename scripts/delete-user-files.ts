@@ -188,6 +188,12 @@ async function main() {
   for (const gid of galleryIds) {
     const listsSnap = await db.collection("favorites_lists").where("gallery_id", "==", gid).get();
     for (const d of listsSnap.docs) await d.ref.delete();
+    const mergeSnap = await db
+      .collection("galleries")
+      .doc(gid)
+      .collection("proofing_merge_runs")
+      .get();
+    for (const d of mergeSnap.docs) await d.ref.delete();
     const collSnap = await db.collection("gallery_collections").where("gallery_id", "==", gid).get();
     for (const d of collSnap.docs) await d.ref.delete();
     const commentSnap = await db.collection("asset_comments").where("gallery_id", "==", gid).get();

@@ -190,6 +190,14 @@ export interface Gallery {
   view_count: number;
   unique_visitor_count: number;
   favorite_count: number;
+  /** Proofing: number of photo favorites list submissions (not deduped assets). */
+  favorite_submission_count?: number;
+  /** Sum of asset counts on each photo favorites submission. */
+  favorite_asset_total_submitted?: number;
+  /** Proofing: number of video selects list submissions. */
+  select_submission_count?: number;
+  /** Sum of asset counts on each video selects submission. */
+  select_asset_total_submitted?: number;
   download_count: number;
   /** Video gallery specific – optional for photo galleries */
   delivery_mode?: VideoDeliveryMode | null;
@@ -253,7 +261,7 @@ export interface GalleryCollection {
   updated_at: string;
 }
 
-/** Favorites list – client saves favorites (Phase 2) */
+/** Proofing list document (Firestore: favorites_lists) — photo favorites or video selects */
 export interface FavoritesList {
   id: string;
   gallery_id: string;
@@ -262,6 +270,19 @@ export interface FavoritesList {
   asset_ids: string[];
   created_at: string;
   updated_at: string;
+  list_type?: "photo_favorites" | "video_selects";
+  status?: "submitted" | "archived";
+  materialization_state?: "idle" | "processing" | "complete" | "partial" | "failed";
+  proofing_root_segment?: string;
+  folder_slug?: string;
+  materialized_relative_prefix?: string | null;
+  materialized_linked_drive_id?: string | null;
+  workspace_id?: string | null;
+  materialized_asset_count?: number;
+  target_asset_count?: number | null;
+  skipped_asset_count?: number;
+  submitted_asset_count?: number;
+  title?: string | null;
 }
 
 /** Favorite item – individual favorited asset (Phase 2) */

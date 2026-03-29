@@ -12,8 +12,10 @@ import {
 } from "@/lib/gallery-media-drive-match";
 import { resolveWorkspaceForOrgMemberDrive } from "@/lib/org-member-drive-workspace";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { PROOFING_ROOT_FAVORITES } from "@/lib/gallery-proofing-types";
 
-export const GALLERY_FAVORITES_FOLDER_SEGMENT = "Favorites";
+/** @deprecated Use PROOFING_ROOT_FAVORITES / proofingRootSegmentFromGalleryType */
+export const GALLERY_FAVORITES_FOLDER_SEGMENT = PROOFING_ROOT_FAVORITES;
 
 const TEMPLATE_FIELD_KEYS = [
   "organization_id",
@@ -45,7 +47,50 @@ function isInFavoritesNamespace(galleryId: string, relativePath: string): boolea
   if (!relativePath.startsWith(prefix)) return false;
   const rest = relativePath.slice(prefix.length);
   const seg = rest.split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
+  /** Legacy flat + nested proofing under `Favorites`. */
   return seg === "favorites";
+}
+
+/** Restrict dedupe to one proofing list folder (prefix without trailing slash). */
+export function pathIsUnderProofingListPrefix(
+  listFolderPrefix: string,
+  relativePath: string
+): boolean {
+  const p = listFolderPrefix.replace(/\/$/, "");
+  return relativePath === p || relativePath.startsWith(`${p}/`);
+}
+
+/**
+ * Object keys already materialized under a specific list folder prefix (`materialized_relative_prefix`).
+ */
+export async function loadExistingProofingObjectKeys(
+  db: Firestore,
+  galleryId: string,
+  linkedDriveId: string,
+  organizationId: string | null,
+  listFolderPrefix: string
+): Promise<Set<string>> {
+  let query: Query = db
+    .collection("backup_files")
+    .where("linked_drive_id", "==", linkedDriveId)
+    .where("gallery_id", "==", galleryId);
+
+  query =
+    organizationId != null && organizationId !== ""
+      ? query.where("organization_id", "==", organizationId)
+      : query.where("organization_id", "==", null);
+
+  const snap = await query.limit(2500).get();
+  const keys = new Set<string>();
+  for (const doc of snap.docs) {
+    const d = doc.data() as Record<string, unknown>;
+    if (!isBackupFileActiveForListing(d)) continue;
+    const path = String(d.relative_path ?? "");
+    if (!pathIsUnderProofingListPrefix(listFolderPrefix, path)) continue;
+    const ok = d.object_key as string | undefined;
+    if (ok) keys.add(ok);
+  }
+  return keys;
 }
 
 function scopeFieldsFromTemplate(template: Record<string, unknown>): Record<string, unknown> {

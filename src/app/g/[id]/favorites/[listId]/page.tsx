@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
 import { getGalleryBackgroundTheme } from "@/lib/gallery-background-themes";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
+import { isSelectsPublicSharePathname } from "@/lib/gallery-proofing-types";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -36,9 +37,11 @@ interface FavoritesAsset {
 
 export default function FavoritesListPage() {
   const params = useParams();
+  const pathname = usePathname();
   const galleryId = params?.id as string;
   const listId = params?.listId as string;
   const { user } = useAuth();
+  const isSelectsShare = isSelectsPublicSharePathname(pathname);
 
   const [data, setData] = useState<{
     list: { client_name?: string | null; asset_ids: string[] };
@@ -178,7 +181,9 @@ export default function FavoritesListPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <Loader2 className="mb-4 h-12 w-12 animate-spin text-bizzi-blue" />
-        <p className="text-neutral-500 dark:text-neutral-400">Loading favorites…</p>
+        <p className="text-neutral-500 dark:text-neutral-400">
+          {isSelectsShare ? "Loading selects…" : "Loading favorites…"}
+        </p>
       </div>
     );
   }
@@ -195,7 +200,8 @@ export default function FavoritesListPage() {
               Password required
             </h1>
             <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Enter the gallery password to view these favorites.
+              Enter the gallery password to view{" "}
+              {isSelectsShare ? "these selects" : "these favorites"}.
             </p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
@@ -211,7 +217,7 @@ export default function FavoritesListPage() {
               type="submit"
               className="w-full rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
             >
-              View favorites
+              {isSelectsShare ? "View selects" : "View favorites"}
             </button>
           </form>
         </div>
@@ -224,7 +230,7 @@ export default function FavoritesListPage() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <ImageIcon className="mb-4 h-16 w-16 text-neutral-300 dark:text-neutral-600" />
         <h1 className="mb-2 text-xl font-semibold text-neutral-900 dark:text-white">
-          Favorites not found
+          {isSelectsShare ? "Selects not found" : "Favorites not found"}
         </h1>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">{error}</p>
         <Link
@@ -291,14 +297,24 @@ export default function FavoritesListPage() {
               isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
             }`}
           >
-            {list.client_name ? `${list.client_name}'s favorites` : "Favorites"}
+            {list.client_name
+              ? isSelectsShare
+                ? `${list.client_name}'s selects`
+                : `${list.client_name}'s favorites`
+              : isSelectsShare
+                ? "Selects"
+                : "Favorites"}
           </h1>
           <p
             className={`mt-1 ${
               isDarkBg ? "text-white/80" : "text-neutral-500 dark:text-neutral-400"
             }`}
           >
-            {assets.length} photo{assets.length !== 1 ? "s" : ""} selected
+            {assets.length}{" "}
+            {isSelectsShare
+              ? `clip${assets.length !== 1 ? "s" : ""}`
+              : `photo${assets.length !== 1 ? "s" : ""}`}{" "}
+            selected
           </p>
           {canDownload && assets.length > 0 && (
             <button
@@ -333,7 +349,9 @@ export default function FavoritesListPage() {
               }`}
             />
             <p className={isDarkBg ? "text-white/70" : "text-neutral-500"}>
-              No photos in this favorites list.
+              {isSelectsShare
+                ? "No clips in this selects list."
+                : "No photos in this favorites list."}
             </p>
           </div>
         ) : (

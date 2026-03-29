@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  type SyntheticEvent,
+  type CSSProperties,
+} from "react";
 import Hls from "hls.js";
 import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
 import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
@@ -122,6 +128,42 @@ export default function LoopingVideoPreview({
     return () => v.removeEventListener("canplay", kick);
   }, [src, mode]);
 
+  /** Segment teasers: keep playback alive after HLS attach, seek-to-loop edges, or stray pauses. */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !src || mode !== "segment") return;
+    const nudge = () => {
+      void v.play().catch(() => {});
+    };
+    v.addEventListener("canplay", nudge);
+    v.addEventListener("loadeddata", nudge);
+    queueMicrotask(nudge);
+    return () => {
+      v.removeEventListener("canplay", nudge);
+      v.removeEventListener("loadeddata", nudge);
+    };
+  }, [src, mode]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || mode !== "segment" || !src) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onPause = () => {
+      if (v.ended) return;
+      if (t != null) clearTimeout(t);
+      t = setTimeout(() => {
+        t = null;
+        if (!v.paused || v.ended) return;
+        void v.play().catch(() => {});
+      }, 60);
+    };
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("pause", onPause);
+      if (t != null) clearTimeout(t);
+    };
+  }, [src, mode]);
+
   const onTimeUpdate = useCallback(() => {
     if (mode !== "segment") return;
     const v = videoRef.current;
@@ -142,7 +184,7 @@ export default function LoopingVideoPreview({
   }, [onTimeUpdate, src, mode]);
 
   const onEnded = useCallback(
-    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    (e: SyntheticEvent<HTMLVideoElement>) => {
       if (mode !== "playOnce") return;
       const v = e.currentTarget;
       // Do not seek after `ended`; rewinding a few frames often blanks the layer
@@ -155,7 +197,7 @@ export default function LoopingVideoPreview({
   const preload = mode === "segment" ? "metadata" : "auto";
 
   /** Own compositing layer — video inside transformed ancestors often renders black otherwise. */
-  const layerStyle: React.CSSProperties =
+  const layerStyle: CSSProperties =
     mode === "segment"
       ? {}
       : {
@@ -164,6 +206,21 @@ export default function LoopingVideoPreview({
         };
 
   const mergedStyle = style ? { ...layerStyle, ...style } : layerStyle;
+
+  const handleEnded = useCallback(
+    (e: SyntheticEvent<HTMLVideoElement>) => {
+      if (mode === "playOnce") {
+        onEnded(e);
+        return;
+      }
+      if (mode === "segment") {
+        const v = e.currentTarget;
+        v.currentTime = 0;
+        void v.play().catch(() => {});
+      }
+    },
+    [mode, onEnded],
+  );
 
   return (
     <video
@@ -176,7 +233,7 @@ export default function LoopingVideoPreview({
       preload={preload}
       className={className}
       style={mergedStyle}
-      onEnded={mode === "playOnce" ? onEnded : undefined}
+      onEnded={mode === "fullLoop" ? undefined : handleEnded}
     />
   );
 }

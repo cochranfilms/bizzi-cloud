@@ -1,8 +1,5 @@
 /**
- * Photo proofing lists (user-facing: Favorites). Firestore: favorites_lists with list_type photo_favorites.
- * POST: Create list (client). GET: Lists for gallery.
- *
- * Business status (submitted | archived) is separate from materialization_state — see gallery-proofing-types.
+ * Video proofing lists (user-facing: Selects). Same Firestore collection as favorites_lists; list_type video_selects.
  */
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
@@ -18,7 +15,6 @@ import {
   parseSubmissionSourceHeader,
 } from "@/lib/gallery-proofing-types";
 
-/** POST – Create a favorites list (photo gallery only; clients + public access) */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -53,11 +49,11 @@ export async function POST(
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const g = gallerySnap.data()!;
-  if (g.gallery_type === "video") {
+  if (g.gallery_type !== "video") {
     return NextResponse.json(
       {
-        error: "use_selects_endpoint",
-        message: "This is a video gallery — submit selects via POST /api/galleries/{id}/selects",
+        error: "use_favorites_endpoint",
+        message: "This is a photo gallery — submit favorites via POST /api/galleries/{id}/favorites",
       },
       { status: 400 }
     );
@@ -81,7 +77,7 @@ export async function POST(
 
   if (g.allow_favorites === false) {
     return NextResponse.json(
-      { error: "favorites_disabled", message: "Favorites are not enabled for this gallery." },
+      { error: "selects_disabled", message: "Selects are not enabled for this gallery." },
       { status: 403 }
     );
   }
@@ -92,11 +88,9 @@ export async function POST(
   const uniqueIds = [...new Set(validIds)];
 
   const isManager = await requesterManagesGallery(request, g);
-  const shellHeader = request.headers.get("X-Bizzi-Shell");
-  const srcHeader = request.headers.get("X-Bizzi-Submission-Source");
-  const shellContext = parseShellContextHeader(shellHeader);
+  const shellContext = parseShellContextHeader(request.headers.get("X-Bizzi-Shell"));
   const submissionSource =
-    parseSubmissionSourceHeader(srcHeader) ??
+    parseSubmissionSourceHeader(request.headers.get("X-Bizzi-Submission-Source")) ??
     (isManager ? "dashboard_proofing" : "public_gallery");
   const createdByRole = isManager ? "photographer" : "client";
 
@@ -108,7 +102,7 @@ export async function POST(
     clientEmail: typeof clientEmail === "string" ? clientEmail.trim() || null : null,
     clientName: typeof clientName === "string" ? clientName.trim() || null : null,
     title: typeof title === "string" ? title : null,
-    listType: "photo_favorites",
+    listType: "video_selects",
     shellContext,
     submissionSource,
     createdByRole,
@@ -131,7 +125,7 @@ export async function POST(
       clientName: cName || undefined,
       clientEmail: cEmail || undefined,
     },
-  }).catch((err) => console.error("[galleries/favorites POST] notification:", err));
+  }).catch((err) => console.error("[galleries/selects POST] notification:", err));
 
   return NextResponse.json({
     id: result.id,
@@ -140,7 +134,6 @@ export async function POST(
   });
 }
 
-/** GET – List proofing lists. Photographer: active lists (non-archived) unless ?include_archived=1. Client: filter by email. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -160,6 +153,10 @@ export async function GET(
   if (!gallerySnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
 
   const g = gallerySnap.data()!;
+  if (g.gallery_type !== "video") {
+    return NextResponse.json({ error: "This endpoint is only for video galleries" }, { status: 400 });
+  }
+
   const access = await verifyGalleryViewAccess(
     {
       photographer_id: g.photographer_id,
@@ -228,11 +225,7 @@ export async function GET(
     };
   };
 
-  let lists = snap.docs.map(mapDoc);
-
-  if (g.gallery_type !== "video") {
-    lists = lists.filter((l) => l.list_type !== "video_selects");
-  }
+  let lists = snap.docs.map(mapDoc).filter((l) => l.list_type === "video_selects" || l.list_type === null);
 
   if (isManager && !includeArchived) {
     lists = lists.filter((l) => l.status !== "archived");
