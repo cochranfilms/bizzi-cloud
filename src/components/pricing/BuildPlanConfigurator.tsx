@@ -1018,7 +1018,7 @@ export default function BuildPlanConfigurator({
               href={
                 user && sumExtraTeamSeats(subscriptionTeamSeats) > 0
                   ? `/team/${user.uid}/settings#team-management`
-                  : "/dashboard/settings#team-management"
+                  : "/dashboard/settings#workspace-access"
               }
               className="font-medium text-bizzi-blue hover:underline"
             >

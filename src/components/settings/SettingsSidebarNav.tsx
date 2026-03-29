@@ -4,13 +4,20 @@ import type { LucideIcon } from "lucide-react";
 
 export type SettingsNavItem = { id: string; label: string; icon: LucideIcon };
 
+const quickAccessIdle =
+  "border-neutral-200 text-neutral-800 hover:border-[var(--enterprise-primary)] hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-[var(--enterprise-primary)] dark:hover:bg-neutral-800/80";
+
 export default function SettingsSidebarNav({
   activeId,
   onSelect,
   items,
   heading = "Settings",
   className = "",
-  /** Personal dashboard uses Bizzi blue; team / enterprise chrome uses CSS theme primary. */
+  /**
+   * `quickAccess` — same border, primary, and hover treatment as the right-panel Quick access items.
+   * `enterprise` — team/enterprise settings (theme primary for active text).
+   * `personal` — legacy Bizzi blue active state (avoid for dashboard; prefer `quickAccess`).
+   */
   variant = "enterprise",
 }: {
   activeId: string;
@@ -18,14 +25,27 @@ export default function SettingsSidebarNav({
   items: SettingsNavItem[];
   heading?: string;
   className?: string;
-  variant?: "personal" | "enterprise";
+  variant?: "personal" | "enterprise" | "quickAccess";
 }) {
   const activeCls =
     variant === "personal"
-      ? "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-cyan/15 dark:text-bizzi-cyan"
-      : "bg-[var(--enterprise-primary)]/15 text-[var(--enterprise-primary)]";
+      ? "border border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-cyan dark:bg-bizzi-cyan/15 dark:text-bizzi-cyan"
+      : variant === "quickAccess"
+        ? "border border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
+        : "bg-[var(--enterprise-primary)]/15 text-[var(--enterprise-primary)]";
   const idleCls =
-    "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800";
+    variant === "quickAccess"
+      ? `border border-transparent bg-white dark:bg-neutral-900 ${quickAccessIdle}`
+      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800";
+
+  const iconCls =
+    variant === "quickAccess"
+      ? "h-5 w-5 shrink-0 text-[var(--enterprise-primary)] [&_svg]:stroke-[1.75]"
+      : variant === "personal"
+        ? "h-4 w-4 shrink-0 opacity-80"
+        : "h-4 w-4 shrink-0 opacity-80";
+
+  const padCls = variant === "quickAccess" ? "gap-3 px-3 py-2.5" : "gap-2 px-3 py-2";
 
   return (
     <nav
@@ -41,11 +61,11 @@ export default function SettingsSidebarNav({
             key={id}
             type="button"
             onClick={() => onSelect(id)}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
+            className={`flex w-full items-center rounded-lg text-left text-sm font-medium transition-colors ${padCls} ${
               activeId === id ? activeCls : idleCls
             }`}
           >
-            <Icon className="h-4 w-4 shrink-0 opacity-80" />
+            <Icon className={iconCls} strokeWidth={variant === "quickAccess" ? 1.75 : 2} />
             {label}
           </button>
         ))}

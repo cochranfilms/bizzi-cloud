@@ -168,13 +168,7 @@ function selectStorageOptions(currentBytes: number | null) {
   return [...extra, ...BASE_MEMBER_STORAGE_OPTIONS] as { label: string; value: number | null }[];
 }
 
-export type TeamManagementSettingsScope = "personal" | "team";
-
-export function TeamManagementSection({
-  settingsScope = "team",
-}: {
-  settingsScope?: TeamManagementSettingsScope;
-} = {}) {
+export function TeamManagementSection() {
   const { user } = useAuth();
   const {
     planId,
@@ -192,10 +186,7 @@ export function TeamManagementSection({
   const [teamIdentityLogoUrl, setTeamIdentityLogoUrl] = useState<string | null>(null);
   const [identityRefreshTick, setIdentityRefreshTick] = useState(0);
 
-  const scopeLabel =
-    settingsScope === "personal"
-      ? productSettingsCopy.scopes.personalAccountOnly
-      : productSettingsCopy.scopes.thisTeamWorkspaceOnly;
+  const scopeLabel = productSettingsCopy.scopes.thisTeamWorkspaceOnly;
 
   const [members, setMembers] = useState<MemberApi[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInviteApi[]>([]);
@@ -524,10 +515,10 @@ export function TeamManagementSection({
         <SettingsSectionScope label={scopeLabel} />
         <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
           <Users className="h-5 w-5 text-bizzi-blue" />
-          Personal team workspace
+          Team administration
         </h2>
         <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
-          Set up your team identity first. After that, you&apos;ll get the full Team Management view —
+          Set up your team identity first. After that, you&apos;ll get the full administration view —
           including seat purchases and invites.
         </p>
         <PersonalTeamIdentityForm
@@ -566,13 +557,11 @@ export function TeamManagementSection({
       <SettingsSectionScope label={scopeLabel} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Users className="h-5 w-5 text-bizzi-blue" />
-        Team Management
+        Team administration
       </h2>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        Invite people to your <strong className="text-neutral-900 dark:text-white">personal team</strong>, set
-        their access, and share <strong className="text-neutral-900 dark:text-white">your plan storage</strong>{" "}
-        with them (this isn’t an Organization). Everyone draws from the same pool; usage still counts toward
-        your plan limits.
+        Manage members, invites, seat access, and storage for this <strong className="text-neutral-900 dark:text-white">personal team workspace</strong> only. This is
+        not an Organization — everyone shares <strong className="text-neutral-900 dark:text-white">your plan storage</strong> pool; usage counts toward your plan.
       </p>
 
       {!hasCapacity ? (

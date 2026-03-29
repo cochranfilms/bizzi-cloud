@@ -21,8 +21,8 @@ import { productSettingsCopy } from "@/lib/product-settings-copy";
 import { Building2, Image as ImageIcon, Loader2, Users } from "lucide-react";
 
 const OWNER_TEAM_NAV: SettingsNavItem[] = [
-  { id: "branding", label: "Team branding", icon: Building2 },
-  { id: "management", label: "Team management", icon: Users },
+  { id: "branding", label: "Workspace branding", icon: Building2 },
+  { id: "management", label: "Team administration", icon: Users },
 ];
 
 export default function TeamSettingsPage() {
@@ -230,7 +230,7 @@ export default function TeamSettingsPage() {
 
   return (
     <>
-      <TopBar title="Team settings" />
+      <TopBar title="Team workspace" />
       <main className="flex-1 overflow-auto p-6">
         <DashboardRouteFade ready={ready && isOwner === true} srOnlyMessage="Loading team settings">
           <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
@@ -242,10 +242,10 @@ export default function TeamSettingsPage() {
             />
             <div className="min-w-0 flex-1 space-y-8">
               <SettingsScopeHeader
-                title="Team settings"
+                title="Team workspace administration"
                 scope="personalTeam"
                 permission={{ kind: "editable" }}
-                effectSummary={`${productSettingsCopy.scopes.thisTeamWorkspaceOnly} — shared folders and storage for this team. Personal billing and account settings live in Personal Settings.`}
+                effectSummary="Manage members, invites, storage, and branding for this team workspace. Your subscription and personal profile stay under Dashboard → Settings."
               >
                 <p className="text-sm text-neutral-600 dark:text-neutral-400">
                   Your personal account and billing:{" "}

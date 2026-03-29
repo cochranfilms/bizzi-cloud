@@ -9,6 +9,8 @@ import { useProfileUpdate } from "@/hooks/useProfileUpdate";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
+import { doc, getDoc } from "firebase/firestore";
+import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import {
   CreditCard,
   Loader2,
@@ -20,8 +22,7 @@ import {
   Trash2,
   AlertTriangle,
   User,
-  Palette,
-  Users,
+  Building2,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
@@ -37,7 +38,6 @@ import {
   TEAM_SEAT_MONTHLY_USD,
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
 } from "@/lib/team-seat-pricing";
-import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
@@ -48,11 +48,11 @@ import PersonalProfileSettingsSection from "@/components/settings/PersonalProfil
 import PersonalCredentialsSection from "@/components/settings/PersonalCredentialsSection";
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
+import DashboardWorkspaceAccessSection from "@/components/settings/DashboardWorkspaceAccessSection";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
 const DASHBOARD_SETTINGS_NAV_BASE: SettingsNavItem[] = [
-  { id: "appearance", label: "This device", icon: Palette },
   { id: "account", label: "Account", icon: User },
   { id: "storage", label: "Storage", icon: HardDrive },
   { id: "privacy", label: "Privacy", icon: Shield },
@@ -454,7 +454,7 @@ function SubscriptionSection() {
   const teamManagementSettingsHref =
     user && purchasedTeamSeats > 0
       ? `/team/${user.uid}/settings#team-management`
-      : "/dashboard/settings#team-management";
+      : "/dashboard/settings#workspace-access";
 
   useEffect(() => {
     if (!user || !teamSeatsEligible || loading) {
@@ -916,17 +916,43 @@ function SubscriptionSection() {
 
 function SettingsContent() {
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const { planId, ownsPersonalTeam, loading: subLoading } = useSubscription();
   const allowsTeamSeats = planAllowsPersonalTeamSeats(planId ?? "free");
-  const showTeamNav = ownsPersonalTeam && allowsTeamSeats && !subLoading;
+  const [hostedTeamOwnerUid, setHostedTeamOwnerUid] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!user || !isFirebaseConfigured()) {
+      setHostedTeamOwnerUid(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = getFirebaseFirestore();
+        const snap = await getDoc(doc(db, "profiles", user.uid));
+        const v = (snap.data()?.personal_team_owner_id as string | undefined)?.trim();
+        if (!cancelled) setHostedTeamOwnerUid(v && v.length > 0 ? v : null);
+      } catch {
+        if (!cancelled) setHostedTeamOwnerUid(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const showWorkspaceAccessNav =
+    (!subLoading && allowsTeamSeats && ownsPersonalTeam) ||
+    (hostedTeamOwnerUid !== undefined && hostedTeamOwnerUid !== null);
 
   const navItems = useMemo(() => {
     const items = [...DASHBOARD_SETTINGS_NAV_BASE];
-    if (showTeamNav) {
-      items.push({ id: "team", label: "Team", icon: Users });
+    if (showWorkspaceAccessNav) {
+      items.push({ id: "workspace-access", label: "Workspace access", icon: Building2 });
     }
     return items;
-  }, [showTeamNav]);
+  }, [showWorkspaceAccessNav]);
 
   const navIds = useMemo(() => new Set(navItems.map((i) => i.id)), [navItems]);
 
@@ -954,8 +980,11 @@ function SettingsContent() {
       setActive(raw);
       return;
     }
-    if ((raw === "team-management" || raw === "team") && navIds.has("team")) {
-      setActive("team");
+    if (
+      (raw === "team-management" || raw === "team" || raw === "workspace-access") &&
+      navIds.has("workspace-access")
+    ) {
+      setActive("workspace-access");
     }
   }, [navIds]);
 
@@ -963,7 +992,7 @@ function SettingsContent() {
     <DashboardRouteFade ready srOnlyMessage="">
       <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
         <SettingsSidebarNav
-          variant="personal"
+          variant="quickAccess"
           items={navItems}
           activeId={active}
           onSelect={setNav}
@@ -973,20 +1002,8 @@ function SettingsContent() {
             title="Settings"
             scope="personal"
             permission={{ kind: "editable" }}
-            effectSummary="Profile, storage analytics, privacy, subscription, and personal team management for this account."
+            effectSummary="Profile, storage, privacy, billing, and a read-only snapshot of any personal team workspace you use."
           />
-
-          {active === "appearance" && (
-            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-              <SettingsSectionScope label={productSettingsCopy.scopes.localDeviceWorkspace} />
-              <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
-                {productSettingsCopy.localDashboard.movedTitle}
-              </h2>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                {productSettingsCopy.localDashboard.movedBody}
-              </p>
-            </section>
-          )}
 
           {active === "account" && (
             <>
@@ -1001,8 +1018,8 @@ function SettingsContent() {
           <div className={active === "billing" ? "space-y-6" : "hidden"}>
             <SubscriptionSection />
           </div>
-          {active === "team" && showTeamNav && (
-            <TeamManagementSection settingsScope="personal" />
+          {active === "workspace-access" && showWorkspaceAccessNav && (
+            <DashboardWorkspaceAccessSection />
           )}
         </div>
       </div>
