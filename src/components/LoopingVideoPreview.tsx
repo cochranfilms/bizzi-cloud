@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import Hls from "hls.js";
 import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
+import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
 
 const DEFAULT_LOOP_SEC = 5;
 
@@ -22,6 +23,9 @@ export interface LoopingVideoPreviewProps {
    * playOnce — play once and stay on the last frame.
    */
   mode?: LoopingVideoPreviewMode;
+  poster?: string | null;
+  /** With ?galleryVideoDebug or localStorage galleryVideoDebug=1 */
+  playbackDebugLabel?: string;
 }
 
 /**
@@ -35,6 +39,8 @@ export default function LoopingVideoPreview({
   preferMaxHlsQuality = false,
   loopSeconds = DEFAULT_LOOP_SEC,
   mode = "segment",
+  poster = null,
+  playbackDebugLabel,
 }: LoopingVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -75,6 +81,34 @@ export default function LoopingVideoPreview({
     }
     return undefined;
   }, [src, preferMaxHlsQuality]);
+
+  useEffect(() => {
+    if (!playbackDebugLabel || !isGalleryVideoDebugEnabled()) return;
+    const video = videoRef.current;
+    if (!video || !src) return;
+    const onMeta = () => {
+      const isHls = src.includes(".m3u8");
+      const usesHlsJs = isHls && Hls.isSupported() && hlsRef.current != null;
+      const player: "hls.js" | "native_hls" | "progressive" = isHls
+        ? usesHlsJs
+          ? "hls.js"
+          : "native_hls"
+        : "progressive";
+      console.info(`[gallery-video:${playbackDebugLabel}]`, {
+        videoSrc: src.length > 100 ? `${src.slice(0, 100)}…` : src,
+        preferMaxHlsQuality,
+        player,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+      });
+    };
+    video.addEventListener("loadedmetadata", onMeta);
+    const t = window.setTimeout(onMeta, 250);
+    return () => {
+      video.removeEventListener("loadedmetadata", onMeta);
+      window.clearTimeout(t);
+    };
+  }, [src, preferMaxHlsQuality, playbackDebugLabel]);
 
   /** Muted autoplay is flaky with many decoders; reinforce after src/mode settles. */
   useEffect(() => {
@@ -134,6 +168,7 @@ export default function LoopingVideoPreview({
   return (
     <video
       ref={videoRef}
+      poster={poster ?? undefined}
       autoPlay
       muted
       playsInline

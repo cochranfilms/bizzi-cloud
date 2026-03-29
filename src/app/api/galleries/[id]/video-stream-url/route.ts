@@ -102,13 +102,31 @@ export async function GET(
         return NextResponse.json({
           streamUrl,
           isHls: true,
+          sourceType: "mux_hls",
+          muxPlaybackPending: false,
+        });
+      }
+      /** Mux failed or status unknown — B2 only; no HLS upgrade to wait for. */
+      if (status === "errored" || status === null) {
+        const proxyKey = getProxyObjectKey(objectKey);
+        const proxyExists = await objectExists(proxyKey);
+        const effectiveKey = proxyExists ? proxyKey : objectKey;
+        const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
+        return NextResponse.json({
+          streamUrl,
+          sourceType: proxyExists ? "proxy_mp4" : "original_mp4",
+          muxPlaybackPending: false,
         });
       }
       const proxyKey = getProxyObjectKey(objectKey);
       const proxyExists = await objectExists(proxyKey);
       if (proxyExists) {
         const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
-        return NextResponse.json({ streamUrl });
+        return NextResponse.json({
+          streamUrl,
+          sourceType: "proxy_mp4",
+          muxPlaybackPending: true,
+        });
       }
       return NextResponse.json({
         processing: true,
@@ -120,7 +138,11 @@ export async function GET(
     const proxyExists = await objectExists(proxyKey);
     const effectiveKey = proxyExists ? proxyKey : objectKey;
     const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
-    return NextResponse.json({ streamUrl });
+    return NextResponse.json({
+      streamUrl,
+      sourceType: proxyExists ? "proxy_mp4" : "original_mp4",
+      muxPlaybackPending: false,
+    });
   } catch (err) {
     console.error("[gallery video-stream-url] Error:", err);
     return NextResponse.json(

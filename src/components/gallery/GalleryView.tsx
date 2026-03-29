@@ -52,6 +52,12 @@ import {
   isFavoritesAllowed,
 } from "@/lib/video-gallery-client-policy";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
+import { startGalleryMuxStreamUpgradePoll } from "@/lib/gallery-mux-stream-poll";
+import {
+  isGalleryVideoStreamSuccess,
+  shouldStartMuxStreamUpgradePoll,
+} from "@/lib/gallery-video-stream-response";
+import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
@@ -1009,6 +1015,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   >([]);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
+  /** Static frame under hero video — continuity when source swaps (e.g. proxy MP4 → Mux HLS). */
+  const [featuredHeroPosterUrl, setFeaturedHeroPosterUrl] = useState<string | null>(null);
+  const heroStreamGenerationRef = useRef(0);
+  const heroMuxPollRef = useRef<ReturnType<typeof startGalleryMuxStreamUpgradePoll> | null>(
+    null
+  );
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(false);
   const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
@@ -1407,7 +1419,113 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   useEffect(() => {
     if (!featuredVideoAsset || !data) {
+      heroMuxPollRef.current?.cancel();
+      heroMuxPollRef.current = null;
       setFeaturedVideoStreamUrl(null);
+      return () => {};
+    }
+
+    const gen = ++heroStreamGenerationRef.current;
+    let cancelled = false;
+
+    heroMuxPollRef.current?.cancel();
+    heroMuxPollRef.current = null;
+
+    const alive = () => !cancelled && gen === heroStreamGenerationRef.current;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          object_key: featuredVideoAsset.object_key,
+          name: featuredVideoAsset.name,
+        });
+        if (password) params.set("password", password);
+
+        const buildHeaders = async () => {
+          const h: Record<string, string> = {};
+          if (user) {
+            const t = await user.getIdToken();
+            if (t) h.Authorization = `Bearer ${t}`;
+          }
+          return h;
+        };
+
+        const res = await fetch(
+          `/api/galleries/${galleryId}/video-stream-url?${params}`,
+          { headers: await buildHeaders() }
+        );
+        if (!alive()) return;
+        const json: unknown = await res.json().catch(() => null);
+        if (!alive()) return;
+
+        if (isGalleryVideoDebugEnabled()) {
+          console.info("[gallery-hero-stream]", {
+            sourceType: isGalleryVideoStreamSuccess(json) ? json.sourceType : "unknown",
+            muxPlaybackPending: isGalleryVideoStreamSuccess(json)
+              ? json.muxPlaybackPending
+              : undefined,
+            ok: res.ok,
+          });
+        }
+
+        if (!alive()) return;
+
+        if (
+          isGalleryVideoStreamSuccess(json) &&
+          typeof json.streamUrl === "string" &&
+          json.streamUrl.length > 0
+        ) {
+          setFeaturedVideoStreamUrl(json.streamUrl);
+          if (shouldStartMuxStreamUpgradePoll(json)) {
+            heroMuxPollRef.current = startGalleryMuxStreamUpgradePoll({
+              shouldContinue: alive,
+              fetchOnce: async () => {
+                const headers = await buildHeaders();
+                return fetch(`/api/galleries/${galleryId}/video-stream-url?${params}`, {
+                  headers,
+                });
+              },
+              onMuxHls: (body) => {
+                if (!alive()) return;
+                setFeaturedVideoStreamUrl(body.streamUrl);
+                if (isGalleryVideoDebugEnabled()) {
+                  console.info("[gallery-hero-stream] upgraded to mux_hls");
+                }
+              },
+              onTerminal: (reason) => {
+                if (isGalleryVideoDebugEnabled()) {
+                  console.info("[gallery-hero-mux-poll]", reason);
+                }
+              },
+            });
+          }
+        } else if (
+          json &&
+          typeof json === "object" &&
+          "streamUrl" in json &&
+          typeof (json as { streamUrl?: unknown }).streamUrl === "string" &&
+          (json as { streamUrl: string }).streamUrl.length > 0
+        ) {
+          setFeaturedVideoStreamUrl((json as { streamUrl: string }).streamUrl);
+        } else {
+          setFeaturedVideoStreamUrl(null);
+        }
+      } catch {
+        if (alive()) setFeaturedVideoStreamUrl(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      heroMuxPollRef.current?.cancel();
+      heroMuxPollRef.current = null;
+      setFeaturedVideoStreamUrl(null);
+    };
+  }, [featuredVideoAsset, galleryId, password, user, data]);
+
+  useEffect(() => {
+    if (!featuredVideoAsset || !data) {
+      setFeaturedHeroPosterUrl(null);
       return () => {};
     }
     let cancelled = false;
@@ -1416,6 +1534,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         const params = new URLSearchParams({
           object_key: featuredVideoAsset.object_key,
           name: featuredVideoAsset.name,
+          size: "large",
         });
         if (password) params.set("password", password);
         const headers: Record<string, string> = {};
@@ -1424,24 +1543,25 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           if (t) headers.Authorization = `Bearer ${t}`;
         }
         const res = await fetch(
-          `/api/galleries/${galleryId}/video-stream-url?${params}`,
+          `/api/galleries/${galleryId}/video-thumbnail?${params}`,
           { headers }
         );
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as { streamUrl?: string };
+        const blob = await res.blob();
         if (cancelled) return;
-        if (json.streamUrl) {
-          setFeaturedVideoStreamUrl(json.streamUrl);
-        } else {
-          setFeaturedVideoStreamUrl(null);
-        }
+        const u = URL.createObjectURL(blob);
+        if (!cancelled) setFeaturedHeroPosterUrl(u);
+        else URL.revokeObjectURL(u);
       } catch {
-        setFeaturedVideoStreamUrl(null);
+        // ignore
       }
     })();
     return () => {
       cancelled = true;
-      setFeaturedVideoStreamUrl(null);
+      setFeaturedHeroPosterUrl((u) => {
+        if (u) URL.revokeObjectURL(u);
+        return null;
+      });
     };
   }, [featuredVideoAsset, galleryId, password, user, data]);
 
@@ -1896,29 +2016,48 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           typographyScope="responsive"
           media={
             featuredVideoStreamUrl ? (
-              heroVideoLutActive ? (
-                <VideoWithLUT
-                  key="gallery-hero-lut-video"
-                  src={featuredVideoStreamUrl}
-                  streamUrl={featuredVideoStreamUrl}
-                  showLUTOption={false}
-                  lutSource={clientLutSource}
-                  creativePreviewOn
-                  compactPreview
-                  preferMaxHlsQuality
-                  segmentLoopSeconds={5}
-                  className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
-                  videoStyle={heroBackdropStyle}
-                />
-              ) : (
-                <LoopingVideoPreview
-                  src={featuredVideoStreamUrl}
-                  preferMaxHlsQuality
-                  loopSeconds={5}
-                  className="h-full w-full object-cover"
-                  style={{ objectPosition: coverObjectPosition }}
-                />
-              )
+              <div className="relative h-full w-full min-h-0">
+                {featuredHeroPosterUrl ? (
+                  <img
+                    src={featuredHeroPosterUrl}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+                    style={{ objectPosition: coverObjectPosition }}
+                    aria-hidden
+                  />
+                ) : null}
+                <div className="relative z-[1] h-full w-full min-h-0">
+                  {heroVideoLutActive ? (
+                    <VideoWithLUT
+                      key={featuredVideoStreamUrl}
+                      src={featuredVideoStreamUrl}
+                      streamUrl={featuredVideoStreamUrl}
+                      showLUTOption={false}
+                      lutSource={clientLutSource}
+                      creativePreviewOn
+                      compactPreview
+                      preferMaxHlsQuality
+                      segmentLoopSeconds={5}
+                      poster={featuredHeroPosterUrl}
+                      videoObjectFit="cover"
+                      playbackDebugLabel="gallery-hero"
+                      className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
+                      videoStyle={heroBackdropStyle}
+                    />
+                  ) : (
+                    <LoopingVideoPreview
+                      key={featuredVideoStreamUrl}
+                      src={featuredVideoStreamUrl}
+                      preferMaxHlsQuality
+                      loopSeconds={5}
+                      poster={featuredHeroPosterUrl}
+                      playbackDebugLabel="gallery-hero"
+                      className="h-full w-full object-cover"
+                      style={{ objectPosition: coverObjectPosition }}
+                    />
+                  )}
+                </div>
+              </div>
             ) : heroImageLutActive ? (
               <ImageWithLUT
                 key="gallery-hero-lut"

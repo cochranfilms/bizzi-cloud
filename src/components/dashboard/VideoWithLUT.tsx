@@ -13,6 +13,29 @@ import {
   type VideoLUTContext,
 } from "@/lib/creative-lut/video-lut-engine";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
+import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
+
+/** Normalized UV crop for object-cover (visible region of video texture). */
+function videoCoverTextureCrop(
+  elementW: number,
+  elementH: number,
+  videoW: number,
+  videoH: number
+): [number, number, number, number] {
+  if (videoW <= 0 || videoH <= 0 || elementW <= 0 || elementH <= 0) {
+    return [0, 0, 1, 1];
+  }
+  const arVideo = videoW / videoH;
+  const arElem = elementW / elementH;
+  if (arElem > arVideo) {
+    const vSpan = arVideo / arElem;
+    const v0 = (1 - vSpan) / 2;
+    return [0, v0, 1, v0 + vSpan];
+  }
+  const uSpan = arElem / arVideo;
+  const u0 = (1 - uSpan) / 2;
+  return [u0, 0, u0 + uSpan, 1];
+}
 
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
@@ -61,6 +84,12 @@ interface VideoWithLUTProps {
    * tiny preview ladder (short loops can prevent ever upgrading). Grid tiles should leave this off.
    */
   preferMaxHlsQuality?: boolean;
+  /** Optional still shown until first frame (helps hero continuity on source swap). */
+  poster?: string | null;
+  /** Match WebGL sampling to visible &lt;video&gt; (hero uses cover). Default contain / letterbox. */
+  videoObjectFit?: "contain" | "cover";
+  /** With ?galleryVideoDebug or localStorage galleryVideoDebug=1, logs playback diagnostics. */
+  playbackDebugLabel?: string;
 }
 
 function formatTime(seconds: number): string {
@@ -87,6 +116,9 @@ export default function VideoWithLUT({
   sideBySideLut = false,
   onDisplayReady,
   preferMaxHlsQuality = false,
+  poster = null,
+  videoObjectFit = "contain",
+  playbackDebugLabel,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -251,6 +283,27 @@ export default function VideoWithLUT({
       const vh = video.videoHeight;
       if (!containerRect || vw <= 0 || vh <= 0) return;
 
+      if (videoObjectFit === "cover") {
+        const contentW = videoRect.width;
+        const contentH = videoRect.height;
+        const contentLeft = videoRect.left - containerRect.left;
+        const contentTop = videoRect.top - containerRect.top;
+        const w = Math.max(1, Math.floor(contentW * dpr));
+        const h = Math.max(1, Math.floor(contentH * dpr));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        Object.assign(canvas.style, {
+          position: "absolute",
+          left: `${contentLeft}px`,
+          top: `${contentTop}px`,
+          width: `${contentW}px`,
+          height: `${contentH}px`,
+        });
+        return;
+      }
+
       const scale = Math.min(videoRect.width / vw, videoRect.height / vh);
       const contentW = vw * scale;
       const contentH = vh * scale;
@@ -291,9 +344,18 @@ export default function VideoWithLUT({
       }
       if (cancelled) return;
 
+      const videoRect = video.getBoundingClientRect();
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const coverCrop =
+        videoObjectFit === "cover" && vw > 0 && vh > 0
+          ? videoCoverTextureCrop(videoRect.width, videoRect.height, vw, vh)
+          : undefined;
+
       renderVideoFrameWithLUT(ctx, video, w, h, {
         lutEnabled: !!currentLutSource && previewOn,
         lutCrossfade: lutCrossfadeRef.current,
+        videoTextureCrop: coverCrop,
       });
 
       if (!cancelled) rafId = requestAnimationFrame(render);
@@ -313,7 +375,7 @@ export default function VideoWithLUT({
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       video.removeEventListener("loadeddata", render);
     };
-  }, [previewOn, lutReady, currentLutSource]);
+  }, [previewOn, lutReady, currentLutSource, videoObjectFit]);
 
   const handleLUTToggle = useCallback(() => {
     setLutEnabled((v) => {
@@ -482,6 +544,43 @@ export default function VideoWithLUT({
   }, [videoSrc, preferMaxHlsQuality]);
 
   useEffect(() => {
+    if (!playbackDebugLabel || !isGalleryVideoDebugEnabled()) return;
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    const onMeta = () => {
+      const isHls = videoSrc.includes(".m3u8");
+      const usesHlsJs = isHls && Hls.isSupported() && hlsRef.current != null;
+      const player: "hls.js" | "native_hls" | "progressive" = isHls
+        ? usesHlsJs
+          ? "hls.js"
+          : "native_hls"
+        : "progressive";
+      console.info(`[gallery-video:${playbackDebugLabel}]`, {
+        videoSrc: videoSrc.length > 100 ? `${videoSrc.slice(0, 100)}…` : videoSrc,
+        preferMaxHlsQuality,
+        lutPreviewOn: previewOn && !!currentLutSource,
+        videoObjectFit,
+        player,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+      });
+    };
+    video.addEventListener("loadedmetadata", onMeta);
+    const t = window.setTimeout(onMeta, 250);
+    return () => {
+      video.removeEventListener("loadedmetadata", onMeta);
+      window.clearTimeout(t);
+    };
+  }, [
+    playbackDebugLabel,
+    videoSrc,
+    preferMaxHlsQuality,
+    previewOn,
+    currentLutSource,
+    videoObjectFit,
+  ]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video || !segmentLoopSeconds || segmentLoopSeconds <= 0) return;
     const sec = segmentLoopSeconds;
@@ -558,6 +657,7 @@ export default function VideoWithLUT({
       >
         <video
           ref={videoRef}
+          poster={poster ?? undefined}
           src={!videoSrc.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls={false}

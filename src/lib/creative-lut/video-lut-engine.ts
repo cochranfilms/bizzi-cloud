@@ -71,8 +71,11 @@ vec4 sampleLUTFrom(sampler2D lut, float size, vec3 rgb) {
   return mix(c0, c1, t.b);
 }
 
+uniform vec4 u_videoCrop;
+
 void main() {
-  vec4 v = texture(u_video, v_texCoord);
+  vec2 uv = mix(u_videoCrop.xy, u_videoCrop.zw, v_texCoord);
+  vec4 v = texture(u_video, uv);
   if (u_lutEnabled > 0.5) {
     vec3 ga = sampleLUTFrom(u_lutA, u_lutSizeA, v.rgb).rgb;
     vec3 gb = sampleLUTFrom(u_lutB, u_lutSizeB, v.rgb).rgb;
@@ -102,6 +105,11 @@ export interface VideoLUTRenderOptions {
   lutEnabled: boolean;
   /** 0 = LUT A only, 1 = LUT B only (transition between grades). */
   lutCrossfade: number;
+  /**
+   * Object-cover style crop in normalized video texture space (minU, minV, maxU, maxV).
+   * Default full frame: [0, 0, 1, 1].
+   */
+  videoTextureCrop?: readonly [number, number, number, number];
 }
 
 export function createVideoLUTContext(
@@ -247,5 +255,13 @@ export function renderVideoFrameWithLUT(
   gl.uniform1f(gl.getUniformLocation(program, "u_lutSizeB"), ctx.lutSizeB);
   gl.uniform1f(gl.getUniformLocation(program, "u_lutCrossfade"), options.lutCrossfade);
   gl.uniform1f(gl.getUniformLocation(program, "u_lutEnabled"), options.lutEnabled ? 1 : 0);
+  const crop = options.videoTextureCrop ?? [0, 0, 1, 1];
+  gl.uniform4f(
+    gl.getUniformLocation(program, "u_videoCrop"),
+    crop[0],
+    crop[1],
+    crop[2],
+    crop[3]
+  );
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
