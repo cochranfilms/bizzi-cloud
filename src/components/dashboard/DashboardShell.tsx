@@ -13,7 +13,7 @@ import SupportHelpButton from "./SupportHelpButton";
 import GlobalDropZone from "./GlobalDropZone";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
-import { getThemeVariables } from "@/lib/enterprise-themes";
+import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 
 const RightPanelContext = createContext<{
   rightPanelOpen: boolean;
@@ -31,16 +31,20 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
+  const { cssVariables, uiThemeOverride, buttonColor } = useDashboardAppearance();
   const pathname = usePathname();
   const teamWs = usePersonalTeamWorkspace();
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
   const rightPanelBasePath = teamNavBase ?? "/dashboard";
   const commentsHref = teamNavBase ? `${teamNavBase}/comments` : undefined;
-  const effectiveUiTheme =
-    uiThemeOverride ?? (teamWs ? teamWs.teamThemeId : "bizzi");
-  const themeVars = getThemeVariables(effectiveUiTheme);
+  const inheritedUiTheme = teamWs ? teamWs.teamThemeId : "bizzi";
+  const effectiveUiTheme = uiThemeOverride ?? inheritedUiTheme;
+  const themeVars = resolveDashboardChromeThemeVariables(
+    inheritedUiTheme,
+    buttonColor,
+    uiThemeOverride,
+  );
   /** Taller mobile headers (wrapped search) need more offset; md+ uses compact single-row height. */
   const stackedNavTop = teamWs ? "top-36 md:top-[6.25rem]" : "top-14";
   const mobilePanelBtnTop = teamWs ? "top-36 md:top-[6.75rem]" : "top-20 md:top-16";

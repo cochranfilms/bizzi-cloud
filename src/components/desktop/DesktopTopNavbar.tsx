@@ -64,6 +64,12 @@ export default function DesktopTopNavbar({
     return true;
   });
 
+  const inactiveNavCls =
+    "border border-neutral-200 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/80 dark:hover:text-white";
+
+  const activeNavCls =
+    "border border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 font-medium text-neutral-900 dark:text-white";
+
   return (
     <header className="sticky top-0 z-[60] flex h-14 flex-shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-6 md:px-6">
       <button
@@ -120,16 +126,20 @@ export default function DesktopTopNavbar({
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                 hasPowerupColor
-                  ? "font-medium text-white"
+                  ? "border-transparent font-medium text-white"
                   : isActive
-                    ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
-                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    ? activeNavCls
+                    : inactiveNavCls
               }`}
               style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
             >
-              <Icon className="h-4 w-4 flex-shrink-0" />
+              <Icon
+                className={`h-4 w-4 flex-shrink-0 ${
+                  hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                }`}
+              />
               <span className="hidden lg:inline">{item.label}</span>
             </Link>
           );
@@ -183,16 +193,20 @@ export default function DesktopTopNavbar({
                 <Link
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                     hasPowerupColor
-                      ? "font-medium text-white"
+                      ? "border-transparent font-medium text-white"
                       : isActive
-                        ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
-                        : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                        ? activeNavCls
+                        : inactiveNavCls
                   }`}
                   style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
                 >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <Icon
+                    className={`h-4 w-4 flex-shrink-0 ${
+                      hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                    }`}
+                  />
                   {item.label}
                 </Link>
               </li>

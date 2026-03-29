@@ -12,7 +12,7 @@ import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
 import BackgroundUploadIndicator from "@/components/dashboard/BackgroundUploadIndicator";
 import SupportHelpButton from "@/components/dashboard/SupportHelpButton";
 import GlobalDropZone from "@/components/dashboard/GlobalDropZone";
-import { getThemeVariables } from "@/lib/enterprise-themes";
+import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 
 export default function EnterpriseShell({
   children,
@@ -20,9 +20,14 @@ export default function EnterpriseShell({
   children: React.ReactNode;
 }) {
   const { org, role } = useEnterprise();
-  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
-  const theme = uiThemeOverride ?? org?.theme ?? "bizzi";
-  const orgVars = getThemeVariables(theme);
+  const { cssVariables, uiThemeOverride, buttonColor } = useDashboardAppearance();
+  const inheritedUiTheme = org?.theme ?? "bizzi";
+  const theme = uiThemeOverride ?? inheritedUiTheme;
+  const orgVars = resolveDashboardChromeThemeVariables(
+    inheritedUiTheme,
+    buttonColor,
+    uiThemeOverride,
+  );
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   return (

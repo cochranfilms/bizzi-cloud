@@ -5,7 +5,7 @@ import { PanelRight, HardDrive } from "lucide-react";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useDashboardAppearance } from "@/context/DashboardAppearanceContext";
-import { getThemeVariables } from "@/lib/enterprise-themes";
+import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 import DesktopTopNavbar from "./DesktopTopNavbar";
 import RightPanel from "@/components/dashboard/RightPanel";
 import PendingInvitesBanner from "@/components/dashboard/PendingInvitesBanner";
@@ -31,8 +31,12 @@ export default function DesktopShell({
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mountPanelOpen, setMountPanelOpen] = useState(true);
   const { hasEditor } = useEffectivePowerUps();
-  const { cssVariables, uiThemeOverride } = useDashboardAppearance();
-  const themeVars = getThemeVariables(uiThemeOverride ?? "bizzi");
+  const { cssVariables, uiThemeOverride, buttonColor } = useDashboardAppearance();
+  const themeVars = resolveDashboardChromeThemeVariables(
+    "bizzi",
+    buttonColor,
+    uiThemeOverride,
+  );
 
   return (
     <UppyUploadProvider>

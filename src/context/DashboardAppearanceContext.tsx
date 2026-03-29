@@ -29,9 +29,12 @@ interface DashboardAppearanceContextType {
   setAccentColor: (hex: string) => void;
   backgroundThemeId: string | null;
   setBackgroundThemeId: (id: string | null) => void;
-  /** Local theme override (Bizzi, Rose, …). Null = inherit org/team default or Bizzi for personal. */
+  /** Legacy preset-only override; superseded by buttonColor when set. */
   uiThemeOverride: EnterpriseThemeId | null;
   setUiThemeId: (id: EnterpriseThemeId | null) => void;
+  /** Custom #rrggbb for main nav + quick access chrome; null = inherit org/team preset colors. */
+  buttonColor: string | null;
+  setButtonColor: (hex: string | null) => void;
   workspaceKey: string;
   cssVariables: React.CSSProperties;
   resetToDefault: () => void;
@@ -64,6 +67,7 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
   const [backgroundThemeId, setBackgroundThemeIdState] = useState<string | null>(null);
   const [uiThemeOverride, setUiThemeOverrideState] =
     useState<EnterpriseThemeId | null>(null);
+  const [buttonColor, setButtonColorState] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -77,6 +81,7 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       setAccentColorState(DEFAULT_ACCENT);
       setBackgroundThemeIdState(null);
       setUiThemeOverrideState(null);
+      setButtonColorState(null);
       return;
     }
     const slot = readAllWorkspaceAppearance()[workspaceKey] ?? {};
@@ -88,6 +93,11 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     );
     setUiThemeOverrideState(
       slot.uiTheme !== undefined ? slot.uiTheme : null,
+    );
+    setButtonColorState(
+      slot.buttonColor && /^#[0-9A-Fa-f]{6}$/.test(slot.buttonColor)
+        ? slot.buttonColor
+        : null,
     );
   }, [workspaceKey, hydrated]);
 
@@ -122,10 +132,27 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
     [workspaceKey],
   );
 
+  const setButtonColor = useCallback(
+    (hex: string | null) => {
+      setButtonColorState(hex);
+      if (workspaceKey === "enterprise:pending") return;
+      if (typeof window === "undefined") return;
+      if (hex === null) {
+        writeWorkspaceAppearance(workspaceKey, { buttonColor: null });
+        return;
+      }
+      if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+      writeWorkspaceAppearance(workspaceKey, { buttonColor: hex, uiTheme: null });
+      setUiThemeOverrideState(null);
+    },
+    [workspaceKey],
+  );
+
   const resetToDefault = useCallback(() => {
     setAccentColorState(DEFAULT_ACCENT);
     setBackgroundThemeIdState(null);
     setUiThemeOverrideState(null);
+    setButtonColorState(null);
     if (typeof window === "undefined" || workspaceKey === "enterprise:pending") return;
     deleteWorkspaceAppearance(workspaceKey);
     removeLegacyGlobalAppearanceKeys();
@@ -165,6 +192,8 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       setBackgroundThemeId,
       uiThemeOverride,
       setUiThemeId,
+      buttonColor,
+      setButtonColor,
       workspaceKey,
       cssVariables,
       resetToDefault,
@@ -174,10 +203,12 @@ export function DashboardAppearanceProvider({ children }: { children: React.Reac
       backgroundThemeId,
       cssVariables,
       uiThemeOverride,
+      buttonColor,
       workspaceKey,
       setAccentColor,
       setBackgroundThemeId,
       setUiThemeId,
+      setButtonColor,
       resetToDefault,
     ],
   );

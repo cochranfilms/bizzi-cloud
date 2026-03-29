@@ -96,12 +96,60 @@ function EnterpriseSidebarActionButton({
   );
 }
 
-const quickAccessActionClass = {
-  idle:
-    "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white",
-  active:
-    "bg-bizzi-blue/10 font-medium text-bizzi-blue dark:bg-bizzi-blue/20 dark:text-bizzi-cyan",
-} as const;
+function PersonalQuickAccessLink({
+  href,
+  label,
+  Icon,
+  pathname,
+  onMobileClose,
+}: {
+  href: string;
+  label: string;
+  Icon: LucideIcon;
+  pathname: string;
+  onMobileClose?: () => void;
+}) {
+  const isActive = pathname === href;
+  return (
+    <li>
+      <Link
+        href={href}
+        onClick={onMobileClose}
+        className={`flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm font-medium transition-colors dark:bg-neutral-900 ${
+          isActive
+            ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
+            : enterpriseCardIdle
+        }`}
+      >
+        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+function PersonalChromeActionButton({
+  label,
+  Icon,
+  onClick,
+}: {
+  label: string;
+  Icon: LucideIcon;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm font-medium transition-colors dark:bg-neutral-900 ${enterpriseCardIdle}`}
+      >
+        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+        {label}
+      </button>
+    </li>
+  );
+}
 
 export default function RightPanel({
   onMobileClose,
@@ -215,67 +263,42 @@ export default function RightPanel({
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Quick access
           </h3>
-          <ul className="space-y-0.5">
-            {items.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={onMobileClose}
-                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                      isActive ? quickAccessActionClass.active : quickAccessActionClass.idle
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
+          <ul className="space-y-2">
+            {items.map((item) => (
+              <PersonalQuickAccessLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                Icon={item.icon}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
+            ))}
             {commentsHref ? (
-              <li key={commentsHref}>
-                <Link
-                  href={commentsHref}
-                  onClick={onMobileClose}
-                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    pathname === commentsHref
-                      ? quickAccessActionClass.active
-                      : quickAccessActionClass.idle
-                  }`}
-                >
-                  <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                  Comments
-                </Link>
-              </li>
+              <PersonalQuickAccessLink
+                href={commentsHref}
+                label="Comments"
+                Icon={MessageCircle}
+                pathname={pathname}
+                onMobileClose={onMobileClose}
+              />
             ) : null}
-            <li>
-              <button
-                type="button"
-                onClick={() => {
-                  onMobileClose?.();
-                  setColorsModalOpen(true);
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${quickAccessActionClass.idle}`}
-              >
-                <Palette className="h-4 w-4 flex-shrink-0" />
-                Customize dashboard
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                onClick={() => {
-                  onMobileClose?.();
-                  setSupportModalOpen(true);
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${quickAccessActionClass.idle}`}
-              >
-                <Headphones className="h-4 w-4 flex-shrink-0" />
-                Support ticket
-              </button>
-            </li>
+            <PersonalChromeActionButton
+              label="Customize dashboard"
+              Icon={Palette}
+              onClick={() => {
+                onMobileClose?.();
+                setColorsModalOpen(true);
+              }}
+            />
+            <PersonalChromeActionButton
+              label="Support ticket"
+              Icon={Headphones}
+              onClick={() => {
+                onMobileClose?.();
+                setSupportModalOpen(true);
+              }}
+            />
           </ul>
         </div>
 

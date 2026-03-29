@@ -22,11 +22,12 @@ export const DASHBOARD_BACKGROUND_THEMES: DashboardBackgroundTheme[] = [
 ];
 
 export function getDashboardBackground(
-  themeId: string | null | undefined,
+  themeIdOrHex: string | null | undefined,
   isDark: boolean
 ): string | null {
-  if (!themeId) return null;
-  const theme = DASHBOARD_BACKGROUND_THEMES.find((t) => t.id === themeId);
+  if (!themeIdOrHex) return null;
+  if (/^#[0-9A-Fa-f]{6}$/.test(themeIdOrHex)) return themeIdOrHex;
+  const theme = DASHBOARD_BACKGROUND_THEMES.find((t) => t.id === themeIdOrHex);
   if (!theme) return null;
   return isDark ? theme.darkBackground : theme.lightBackground;
 }

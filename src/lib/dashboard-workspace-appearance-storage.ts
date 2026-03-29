@@ -6,8 +6,11 @@ const LEGACY_BACKGROUND = "bizzi-dashboard-background";
 
 export type WorkspaceAppearanceStored = {
   accent?: string;
+  /** Hex (#rrggbb) or legacy preset id for workspace canvas background */
   background?: string | null;
   uiTheme?: EnterpriseThemeId | null;
+  /** Custom chrome color (#rrggbb): main nav + quick access outlines; null = inherit preset */
+  buttonColor?: string | null;
 };
 
 function safeSessionEnterpriseOrgId(): string | null {

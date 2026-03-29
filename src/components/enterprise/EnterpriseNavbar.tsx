@@ -63,6 +63,12 @@ export default function EnterpriseNavbar() {
   const logoUrl = org?.logo_url;
   const theme = org?.theme ?? "bizzi";
 
+  const inactiveNavCls =
+    "border border-neutral-200 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/80 dark:hover:text-white";
+
+  const activeNavCls =
+    "border border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 font-medium text-neutral-900 dark:text-white";
+
   return (
     <header
       className="sticky top-0 z-50 flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-0"
@@ -127,16 +133,20 @@ export default function EnterpriseNavbar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors enterprise-nav-link ${
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors enterprise-nav-link ${
                 hasPowerupColor
-                  ? "font-medium text-white"
+                  ? "border-transparent font-medium text-white"
                   : isActive
-                    ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    ? activeNavCls
+                    : inactiveNavCls
               }`}
               style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
             >
-              <Icon className="h-4 w-4 flex-shrink-0" />
+              <Icon
+                className={`h-4 w-4 flex-shrink-0 ${
+                  hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                }`}
+              />
               <span className="hidden lg:inline">{item.label}</span>
             </Link>
           );
@@ -192,16 +202,20 @@ export default function EnterpriseNavbar() {
                 <Link
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                     hasPowerupColor
-                      ? "font-medium text-white"
+                      ? "border-transparent font-medium text-white"
                       : isActive
-                        ? "bg-[var(--enterprise-primary)]/10 font-medium text-[var(--enterprise-primary)]"
-                        : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
+                        ? activeNavCls
+                        : inactiveNavCls
                   }`}
                   style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
                 >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <Icon
+                    className={`h-4 w-4 flex-shrink-0 ${
+                      hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                    }`}
+                  />
                   {item.label}
                 </Link>
               </li>
