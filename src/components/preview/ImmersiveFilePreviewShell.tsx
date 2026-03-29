@@ -208,14 +208,16 @@ export default function ImmersiveFilePreviewShell({
   const toolsSide = toolsBottom == null ? sideControls : null;
 
   const mediaSlotMaxH = hasRight
-    ? "max-h-[min(92dvh,calc(100dvh-5rem))]"
+    ? isGallery && toolsBottom
+      ? "max-h-[min(94dvh,calc(100dvh-4.25rem))]"
+      : "max-h-[min(92dvh,calc(100dvh-5rem))]"
     : hasBelowOnly
       ? "max-h-[min(56dvh,calc(100dvh-13rem))] sm:max-h-[min(58dvh,calc(100dvh-13.5rem))] lg:max-h-[min(62dvh,calc(100dvh-12.5rem))]"
       : "max-h-[min(82dvh,calc(100dvh-6.5rem))] sm:max-h-[min(84dvh,calc(100dvh-7rem))]";
 
   const panelBaseApp = isDark ? "bg-neutral-950/70 backdrop-blur-xl" : "bg-white/76 backdrop-blur-xl";
   const toolsBarClass = isGallery
-    ? "w-full max-w-4xl shrink-0 rounded-xl border border-white/25 bg-black/48 px-3 py-3 shadow-lg backdrop-blur-xl sm:px-4"
+    ? "w-full max-w-4xl shrink-0 rounded-lg border border-white/12 bg-black/40 px-2.5 py-2 backdrop-blur-md sm:px-3"
     : `w-full max-w-4xl shrink-0 rounded-xl border border-neutral-200/40 px-3 py-3 shadow-md sm:px-4 dark:border-white/10 ${panelBaseApp}`;
 
   const belowFoldClass = isGallery

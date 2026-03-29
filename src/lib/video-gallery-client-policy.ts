@@ -110,3 +110,30 @@ export function getVideoExperienceSummaryLines(gallery: GalleryPolicyLike | null
 
   return { lines, mediaModeLabel };
 }
+
+/** Compact labels for video gallery capability strip (quiet UI, no long sentences). */
+export function buildVideoGalleryCapabilityPills(
+  gallery: GalleryPolicyLike | null | undefined
+): string[] {
+  if (!gallery || gallery.gallery_type !== "video") return [];
+
+  const pills: string[] = [];
+  const mediaMode = normalizeGalleryMediaMode({
+    media_mode: (gallery.media_mode as string | null) ?? null,
+    source_format: gallery.source_format ?? null,
+  });
+  if (mediaMode === "raw") pills.push("RAW");
+
+  if (clientInvoiceBlocksDownload(gallery)) {
+    pills.push("Downloads locked until payment");
+  } else if (!videoGalleryAllowsClientFileDownloads(gallery.download_policy)) {
+    pills.push("Stream only");
+  } else {
+    pills.push("Downloads available");
+  }
+
+  pills.push(isCommentsAllowed(gallery) ? "Comments on" : "Comments off");
+  pills.push(isFavoritesAllowed(gallery) ? "Selects on" : "Selects off");
+
+  return pills;
+}

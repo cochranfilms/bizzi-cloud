@@ -44,10 +44,10 @@ import {
 import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import {
+  buildVideoGalleryCapabilityPills,
   clientMayDownloadFiles,
   clientMayDownloadGalleryFiles,
   deliveryModeInfoLabel,
-  getVideoDeliverySummary,
   isCommentsAllowed,
   isFavoritesAllowed,
 } from "@/lib/video-gallery-client-policy";
@@ -422,7 +422,8 @@ function PreviewModal({
           return;
         }
         if (body.streamUrl) {
-          setVideoStreamUrl(body.streamUrl);
+          const u = body.streamUrl as string;
+          setVideoStreamUrl(u.startsWith("/") ? `${window.location.origin}${u}` : u);
         } else if (body.error) {
           setVideoError(body.error);
         }
@@ -461,87 +462,90 @@ function PreviewModal({
     (onLutPreviewToggle ||
       (modalLutOptions.length > 1 && onLutSelect) ||
       (!isVideo && onLutGradeMixChange)) ? (
-      <div className="flex flex-col gap-4 rounded-xl border border-white/12 bg-black/35 px-4 py-4 text-white shadow-lg backdrop-blur-xl">
-        <p className="text-xs font-medium uppercase tracking-wide text-white/55">Color look</p>
-        <p className="text-[13px] leading-snug text-white/70">
-          Preview a grade on this file. Originals are never modified.
-        </p>
-        {onLutPreviewToggle ? (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={lutPreviewEnabled}
-            aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
-            onClick={onLutPreviewToggle}
-            className={`flex w-full items-center justify-between gap-3 rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-left transition-colors ${
-              lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/45" : ""
-            }`}
-          >
-            <span className="text-sm font-medium text-white/95">Preview color grade</span>
-            <span
-              className={`relative inline-flex h-7 w-11 shrink-0 items-center rounded-full transition-colors ${
-                lutPreviewEnabled ? "bg-bizzi-cyan" : "bg-white/20"
+      <div className="flex w-full flex-col gap-2 rounded-lg border border-white/12 bg-black/40 px-3 py-2 text-white backdrop-blur-md sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
+        <div className="min-w-0 flex-1 sm:py-0.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-white/55">Color look</p>
+          <p className="text-[11px] leading-snug text-white/60">Preview only — originals unchanged.</p>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          {onLutPreviewToggle ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lutPreviewEnabled}
+              aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
+              onClick={onLutPreviewToggle}
+              className={`flex w-full items-center justify-between gap-2 rounded-md border border-white/12 bg-white/5 px-2.5 py-1.5 text-left sm:w-auto sm:min-w-[9rem] ${
+                lutPreviewEnabled ? "ring-1 ring-bizzi-cyan/35" : ""
               }`}
             >
+              <span className="text-[11px] font-medium text-white/95">Preview grade</span>
               <span
-                className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
-                  lutPreviewEnabled ? "translate-x-4" : "translate-x-0"
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  lutPreviewEnabled ? "bg-bizzi-cyan" : "bg-white/18"
                 }`}
+              >
+                <span
+                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                    lutPreviewEnabled ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
+          ) : null}
+          {modalLutOptions.length > 1 ? (
+            <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:max-w-[11rem]">
+              <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Look</span>
+              <select
+                value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
+                disabled={!lutPreviewEnabled}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) onLutSelect?.(id);
+                }}
+                className={`w-full rounded-md border bg-white/8 px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-bizzi-cyan/40 ${
+                  lutPreviewEnabled
+                    ? "cursor-pointer border-white/18"
+                    : "cursor-not-allowed border-white/10 opacity-45"
+                }`}
+              >
+                {modalLutOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {!isVideo && lutPreviewEnabled && previewLutSource && onLutGradeMixChange ? (
+            <div className="flex w-full flex-col gap-0.5 sm:w-32">
+              <div className="flex items-center justify-between text-[9px] font-medium text-white/75">
+                <span>Mix</span>
+                <span className="tabular-nums text-white/60">{lutGradeMixPercent}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={lutGradeMixPercent}
+                onChange={(e) => onLutGradeMixChange(Number(e.target.value))}
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/12 accent-bizzi-cyan"
               />
-            </span>
-          </button>
-        ) : null}
-        {!isVideo && lutPreviewEnabled && previewLutSource && onLutGradeMixChange ? (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between text-[11px] font-medium text-white/85">
-              <span>Mix</span>
-              <span className="tabular-nums text-white/70">{lutGradeMixPercent}</span>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={lutGradeMixPercent}
-              onChange={(e) => onLutGradeMixChange(Number(e.target.value))}
-              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-bizzi-cyan"
-            />
-          </div>
-        ) : null}
-        {modalLutOptions.length > 1 ? (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-medium text-white/75">Look</span>
-            <select
-              value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
-              disabled={!lutPreviewEnabled}
-              onChange={(e) => {
-                const id = e.target.value;
-                if (id) onLutSelect?.(id);
-              }}
-              className={`w-full rounded-lg border bg-white/10 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-bizzi-cyan/40 ${
-                lutPreviewEnabled
-                  ? "cursor-pointer border-white/25"
-                  : "cursor-not-allowed border-white/10 opacity-45"
-              }`}
-            >
-              {modalLutOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     ) : null;
 
   const mediaCore = isVideo ? (
-    <div className="flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center gap-4">
+    <div className="flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center">
       {videoLoading && <p className="text-sm text-white/80">Loading video…</p>}
       {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
       {videoStreamUrl && !videoError ? (
         <VideoWithLUT
           key={asset.id}
           src={videoStreamUrl}
+          streamUrl={videoStreamUrl}
           showLUTOption={false}
           lutSource={lut?.enabled ? previewLutSource : null}
           creativePreviewOn={lut?.enabled ? lutPreviewEnabled : false}
@@ -1796,8 +1800,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const isDarkBg = bgTheme.textTone === "light";
 
   const clientMayDownloadGalleryLevel = clientMayDownloadGalleryFiles(gallery);
-  const videoSummary = getVideoDeliverySummary(gallery);
+  const videoCapabilityPills =
+    gallery.gallery_type === "video" ? buildVideoGalleryCapabilityPills(gallery) : [];
   const deliveryModeLabel = deliveryModeInfoLabel(gallery.delivery_mode);
+  const reviewInstrRaw = gallery.client_review_instructions?.trim() ?? "";
+  const reviewInstrCompact =
+    reviewInstrRaw.length > 0 &&
+    reviewInstrRaw.length <= 120 &&
+    !reviewInstrRaw.includes("\n");
 
   const coverObjectPosition = resolveCoverObjectPosition({
     cover_focal_x: gallery.cover_focal_x,
@@ -2027,28 +2037,196 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         <audio ref={audioRef} src={prePageMusicUrl} loop playsInline className="hidden" />
       )}
 
-      <main id="gallery-content" className="mx-auto max-w-6xl scroll-mt-4 px-4 py-8 sm:px-6">
-        {gallery.gallery_type === "video" && gallery.client_review_instructions?.trim() && (
-          <div
-            className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3 ${
-              isDarkBg
-                ? "border-white/20 bg-white/5"
-                : "border-neutral-200/90 bg-white/70 dark:border-neutral-700 dark:bg-neutral-900/60"
-            }`}
-          >
+      <main
+        id="gallery-content"
+        className={`mx-auto max-w-6xl scroll-mt-4 px-4 sm:px-6 ${
+          gallery.gallery_type === "video" ? "py-5 sm:py-6" : "py-8"
+        }`}
+      >
+        {gallery.gallery_type === "video" ? (
+          <div className="mx-auto mb-4 max-w-2xl text-center sm:mb-5">
+            {heroHasMediaBackdrop ? (
+              <h2
+                className={`text-xl font-semibold tracking-tight sm:text-2xl ${
+                  isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
+                }`}
+              >
+                {gallery.title}
+              </h2>
+            ) : null}
             <p
-              className={`text-sm leading-relaxed ${
-                isDarkBg ? "text-white/85" : "text-neutral-700 dark:text-neutral-200"
+              className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                isDarkBg ? "text-white/85" : "text-neutral-500 dark:text-neutral-400"
               }`}
             >
-              {gallery.client_review_instructions.trim()}
+              Video · {mediaMode === "raw" ? "RAW" : "Final"}
+              {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
             </p>
+            {reviewInstrRaw ? (
+              reviewInstrCompact ? (
+                <p
+                  className={`mx-auto mt-3 max-w-prose text-sm leading-relaxed ${
+                    isDarkBg ? "text-white/65" : "text-neutral-600 dark:text-neutral-300"
+                  }`}
+                >
+                  {reviewInstrRaw}
+                </p>
+              ) : (
+                <div
+                  className={`mx-auto mt-3 max-w-prose rounded-lg border px-3 py-2.5 text-left text-sm leading-relaxed ${
+                    isDarkBg
+                      ? "border-white/10 bg-white/[0.04] text-white/80"
+                      : "border-neutral-200/70 bg-neutral-50/50 text-neutral-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-neutral-200"
+                  }`}
+                >
+                  {reviewInstrRaw}
+                </div>
+              )
+            ) : null}
+            {videoCapabilityPills.length > 0 ? (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {videoCapabilityPills.map((label) => (
+                  <span
+                    key={label}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
+                      isDarkBg
+                        ? "border-white/12 bg-white/[0.05] text-white/80"
+                        : "border-neutral-200/90 bg-white/70 text-neutral-600 shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-neutral-300"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {gallery.invoice_url && gallery.invoice_status !== "paid" && (
+                <a
+                  href={gallery.invoice_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90 sm:text-sm"
+                  style={{ borderColor: accent, color: accent }}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  {gallery.invoice_label || "Pay invoice"}
+                </a>
+              )}
+              {gallery.download_settings?.allow_full_gallery_download &&
+                assets.length > 0 &&
+                clientMayDownloadGalleryLevel &&
+                assets.some((a) => clientMayDownloadFiles(gallery, a.is_downloadable)) && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadAll}
+                    disabled={bulkDownloading}
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50 sm:text-sm"
+                    style={{ borderColor: accent, color: accent }}
+                  >
+                    <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    {bulkDownloading ? "Downloading…" : "Download all"}
+                  </button>
+                )}
+            </div>
+            {(bulkDownloadError ?? downloadError) && (
+              <div className="mx-auto mb-3 mt-3 max-w-xl rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                {bulkDownloadError ?? downloadError}
+                {gallery.invoice_url && gallery.invoice_status !== "paid" && (
+                  <a
+                    href={gallery.invoice_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 inline-flex items-center gap-1 font-medium underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {gallery.invoice_label || "Pay Invoice"}
+                  </a>
+                )}
+              </div>
+            )}
+            {downloadStatus && (
+              <p
+                className={`mx-auto mb-3 mt-1 text-sm ${
+                  downloadStatus.remaining === 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : isDarkBg
+                      ? "text-white/70"
+                      : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              >
+                {downloadStatus.remaining === 0 ? (
+                  <>
+                    Download limit reached ({downloadStatus.used} of {downloadStatus.limit} used).
+                  </>
+                ) : (
+                  <>
+                    {downloadStatus.remaining} of {downloadStatus.limit} downloads remaining.
+                  </>
+                )}
+              </p>
+            )}
+            {isFavoritesAllowed(gallery) && savedFavoritesLists.length > 0 && (
+              <div
+                className={`mx-auto mb-4 mt-3 max-w-2xl rounded-lg border px-3 py-2.5 ${
+                  isDarkBg
+                    ? "border-white/10 bg-white/[0.03]"
+                    : "border-neutral-200/80 bg-neutral-50/60 dark:border-white/10 dark:bg-white/[0.04]"
+                }`}
+              >
+                <h3
+                  className={`mb-1.5 text-xs font-medium ${
+                    isDarkBg ? "text-white/85" : "text-neutral-700 dark:text-neutral-300"
+                  }`}
+                >
+                  Saved favorites
+                </h3>
+                <ul className="space-y-1.5">
+                  {savedFavoritesLists.map((list) => (
+                    <li
+                      key={list.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <span
+                        className={`text-xs sm:text-sm ${
+                          isDarkBg ? "text-white/75" : "text-neutral-600 dark:text-neutral-400"
+                        }`}
+                      >
+                        {list.asset_ids.length} clip{list.asset_ids.length !== 1 ? "s" : ""}
+                        {list.created_at && (
+                          <span className="ml-1 opacity-75">
+                            · {new Date(list.created_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </span>
+                      <Link
+                        href={`/g/${galleryId}/favorites/${list.id}${
+                          password ? `?password=${encodeURIComponent(password)}` : ""
+                        }`}
+                        className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: accent }}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        View
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {gallery.description ? (
+              <p
+                className={`mx-auto mt-3 max-w-2xl text-sm ${
+                  isDarkBg ? "text-white/75" : "text-neutral-600 dark:text-neutral-300"
+                }`}
+              >
+                {gallery.description}
+              </p>
+            ) : null}
           </div>
-        )}
-        <div className="mb-8 text-center">
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
-            {gallery.invoice_url &&
-              gallery.invoice_status !== "paid" && (
+        ) : (
+          <div className="mb-8 text-center">
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+              {gallery.invoice_url && gallery.invoice_status !== "paid" && (
                 <a
                   href={gallery.invoice_url}
                   target="_blank"
@@ -2060,146 +2238,134 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   {gallery.invoice_label || "Pay Invoice"}
                 </a>
               )}
-            {gallery.download_settings?.allow_full_gallery_download &&
-              assets.length > 0 &&
-              clientMayDownloadGalleryLevel &&
-              assets.some((a) => clientMayDownloadFiles(gallery, a.is_downloadable)) && (
-                <button
-                  type="button"
-                  onClick={handleDownloadAll}
-                  disabled={bulkDownloading}
-                  className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{ borderColor: accent, color: accent }}
-                >
-                  <Download className="h-4 w-4" />
-                  {bulkDownloading ? "Downloading…" : "Download all"}
-                </button>
-              )}
-          </div>
-          {(bulkDownloadError ?? downloadError) && (
-            <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
-              {bulkDownloadError ?? downloadError}
-              {gallery.invoice_url && gallery.invoice_status !== "paid" && (
-                <a
-                  href={gallery.invoice_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-2 inline-flex items-center gap-1 font-medium underline"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {gallery.invoice_label || "Pay Invoice"}
-                </a>
-              )}
+              {gallery.download_settings?.allow_full_gallery_download &&
+                assets.length > 0 &&
+                clientMayDownloadGalleryLevel &&
+                assets.some((a) => clientMayDownloadFiles(gallery, a.is_downloadable)) && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadAll}
+                    disabled={bulkDownloading}
+                    className="flex items-center gap-2 rounded-lg border-2 px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                    style={{ borderColor: accent, color: accent }}
+                  >
+                    <Download className="h-4 w-4" />
+                    {bulkDownloading ? "Downloading…" : "Download all"}
+                  </button>
+                )}
             </div>
-          )}
-          {downloadStatus && (
-            <p
-              className={`mx-auto mb-4 text-sm ${
-                downloadStatus.remaining === 0
-                  ? "text-amber-600 dark:text-amber-400"
-                  : isDarkBg
-                    ? "text-white/70"
-                    : "text-neutral-600 dark:text-neutral-400"
-              }`}
-            >
-              {downloadStatus.remaining === 0 ? (
-                <>Download limit reached ({downloadStatus.used} of {downloadStatus.limit} used).</>
-              ) : (
-                <>{downloadStatus.remaining} of {downloadStatus.limit} downloads remaining.</>
-              )}
-            </p>
-          )}
-          {isFavoritesAllowed(gallery) && savedFavoritesLists.length > 0 && (
-            <div
-              className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3 ${
-                isDarkBg
-                  ? "border-white/20 bg-white/5"
-                  : "border-neutral-200 bg-white/80 dark:border-neutral-700 dark:bg-neutral-900/80"
-              }`}
-            >
-              <h3
-                className={`mb-2 text-sm font-medium ${
-                  isDarkBg ? "text-white/90" : "text-neutral-700 dark:text-neutral-300"
+            {(bulkDownloadError ?? downloadError) && (
+              <div className="mx-auto mb-4 max-w-xl rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                {bulkDownloadError ?? downloadError}
+                {gallery.invoice_url && gallery.invoice_status !== "paid" && (
+                  <a
+                    href={gallery.invoice_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 inline-flex items-center gap-1 font-medium underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {gallery.invoice_label || "Pay Invoice"}
+                  </a>
+                )}
+              </div>
+            )}
+            {downloadStatus && (
+              <p
+                className={`mx-auto mb-4 text-sm ${
+                  downloadStatus.remaining === 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : isDarkBg
+                      ? "text-white/70"
+                      : "text-neutral-600 dark:text-neutral-400"
                 }`}
               >
-                Your saved favorites lists
-              </h3>
-              <ul className="space-y-2">
-                {savedFavoritesLists.map((list) => (
-                  <li
-                    key={list.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <span
-                      className={`text-sm ${
-                        isDarkBg ? "text-white/80" : "text-neutral-600 dark:text-neutral-400"
-                      }`}
-                    >
-                      {list.asset_ids.length}{" "}
-                      {gallery.gallery_type === "video"
-                        ? `clip${list.asset_ids.length !== 1 ? "s" : ""}`
-                        : `photo${list.asset_ids.length !== 1 ? "s" : ""}`}
-                      {list.created_at && (
-                        <span className="ml-1 opacity-75">
-                          • {new Date(list.created_at).toLocaleDateString()}
-                        </span>
-                      )}
-                    </span>
-                    <Link
-                      href={`/g/${galleryId}/favorites/${list.id}${
-                        password ? `?password=${encodeURIComponent(password)}` : ""
-                      }`}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                      style={{ backgroundColor: accent }}
-                    >
-                      <Download className="h-4 w-4" />
-                      View & download
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-            {gallery.description && (
-            <p
-              className={`mt-4 max-w-2xl mx-auto text-sm ${
-                isDarkBg ? "text-white/80" : "text-neutral-600"
-              }`}
-            >
-              {gallery.description}
-            </p>
-          )}
-          <p
-            className={`mt-3 text-center text-xs font-medium uppercase tracking-wide ${
-              isDarkBg ? "text-white/70" : "text-neutral-500"
-            }`}
-          >
-            {gallery.gallery_type === "video" ? "Video" : "Photo"} ·{" "}
-            {mediaMode === "raw" ? "RAW" : "Final"}
-            {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
-          </p>
-          {gallery.gallery_type === "video" && videoSummary.lines.length > 0 && (
-            <div
-              className={`mx-auto mt-4 max-w-2xl rounded-lg border px-3 py-2 text-left text-xs leading-snug ${
-                isDarkBg
-                  ? "border-white/15 bg-white/[0.06] text-white/75"
-                  : "border-neutral-200 bg-neutral-50/90 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300"
-              }`}
-            >
-              <p className="font-medium text-[11px] uppercase tracking-wide opacity-90">
-                What you can do here
+                {downloadStatus.remaining === 0 ? (
+                  <>
+                    Download limit reached ({downloadStatus.used} of {downloadStatus.limit} used).
+                  </>
+                ) : (
+                  <>
+                    {downloadStatus.remaining} of {downloadStatus.limit} downloads remaining.
+                  </>
+                )}
               </p>
-              <ul className="mt-1.5 list-inside list-disc space-y-0.5">
-                {videoSummary.lines.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+            )}
+            {isFavoritesAllowed(gallery) && savedFavoritesLists.length > 0 && (
+              <div
+                className={`mx-auto mb-6 max-w-2xl rounded-lg border px-3 py-2.5 ${
+                  isDarkBg
+                    ? "border-white/10 bg-white/[0.03]"
+                    : "border-neutral-200/80 bg-neutral-50/60 dark:border-white/10 dark:bg-white/[0.04]"
+                }`}
+              >
+                <h3
+                  className={`mb-1.5 text-sm font-medium ${
+                    isDarkBg ? "text-white/90" : "text-neutral-700 dark:text-neutral-300"
+                  }`}
+                >
+                  Your saved favorites lists
+                </h3>
+                <ul className="space-y-2">
+                  {savedFavoritesLists.map((list) => (
+                    <li
+                      key={list.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <span
+                        className={`text-sm ${
+                          isDarkBg ? "text-white/80" : "text-neutral-600 dark:text-neutral-400"
+                        }`}
+                      >
+                        {list.asset_ids.length}{" "}
+                        {`photo${list.asset_ids.length !== 1 ? "s" : ""}`}
+                        {list.created_at && (
+                          <span className="ml-1 opacity-75">
+                            · {new Date(list.created_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </span>
+                      <Link
+                        href={`/g/${galleryId}/favorites/${list.id}${
+                          password ? `?password=${encodeURIComponent(password)}` : ""
+                        }`}
+                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: accent }}
+                      >
+                        <Download className="h-4 w-4" />
+                        View & download
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {gallery.description ? (
+              <p
+                className={`mx-auto mt-4 max-w-2xl text-sm ${
+                  isDarkBg ? "text-white/80" : "text-neutral-600"
+                }`}
+              >
+                {gallery.description}
+              </p>
+            ) : null}
+            <p
+              className={`mt-3 text-center text-xs font-medium uppercase tracking-wide ${
+                isDarkBg ? "text-white/70" : "text-neutral-500"
+              }`}
+            >
+              Photo · {mediaMode === "raw" ? "RAW" : "Final"}
+              {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
+            </p>
+          </div>
+        )}
 
         {collections.length > 0 && (
-          <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+          <div
+            className={`flex flex-wrap items-center justify-center gap-2 ${
+              gallery.gallery_type === "video" ? "mb-4" : "mb-6"
+            }`}
+          >
             <button
               type="button"
               onClick={() => setSelectedCollectionId(null)}
@@ -2247,93 +2413,88 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
         {galleryClientLutEligible && gallery.lut?.enabled && (
           <div
-            className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-5 sm:py-4 ${
+            className={`mx-auto mb-4 max-w-3xl rounded-lg border px-3 py-2 sm:px-3.5 sm:py-2 ${
               isDarkBg
-                ? "border-white/[0.12] bg-white/[0.055] backdrop-blur-md"
-                : "border-neutral-200/70 bg-white/[0.92] dark:border-neutral-700/80 dark:bg-neutral-900/75"
+                ? "border-white/10 bg-white/[0.04] backdrop-blur-sm"
+                : "border-neutral-200/60 bg-white/80 backdrop-blur-sm dark:border-white/10 dark:bg-neutral-900/40"
             }`}
           >
-            <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-              <div className="flex min-w-0 flex-1 gap-2.5 sm:gap-3">
-                <div
-                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                    isDarkBg ? "bg-white/[0.09] text-white" : "bg-bizzi-blue/[0.09] text-bizzi-blue dark:bg-bizzi-cyan/12 dark:text-bizzi-cyan"
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
+                <Palette
+                  className={`mt-0.5 h-4 w-4 shrink-0 sm:mt-0 ${
+                    isDarkBg ? "text-white/55" : "text-bizzi-blue dark:text-bizzi-cyan"
                   }`}
-                >
-                  <Palette className="h-4 w-4" aria-hidden />
-                </div>
-                <div className="min-w-0 space-y-1 sm:space-y-1.5">
-                  <h3
-                    className={`text-[0.9375rem] font-semibold leading-tight tracking-tight ${
-                      isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"
-                    }`}
-                  >
-                    Color look preview
-                  </h3>
+                  aria-hidden
+                />
+                <div className="min-w-0 text-left">
                   <p
-                    className={`max-w-prose text-[11px] leading-snug sm:text-xs sm:leading-snug ${
-                      isDarkBg ? "text-white/[0.62]" : "text-neutral-500 dark:text-neutral-500"
+                    className={`text-xs font-medium leading-tight ${
+                      isDarkBg ? "text-white/90" : "text-neutral-800 dark:text-white"
                     }`}
                   >
-                    Turn this on to preview a <strong className="font-medium text-inherit">color grade (LUT)</strong> your
-                    creator set up—similar to how the finished photos or video might look after editing. This is{" "}
-                    <strong className="font-medium text-inherit">only a preview</strong>; your originals and downloads are
-                    unchanged.
+                    Color look
+                  </p>
+                  <p
+                    className={`mt-0.5 text-[10px] leading-snug sm:text-[11px] ${
+                      isDarkBg ? "text-white/48 sm:text-white/50" : "text-neutral-500 dark:text-neutral-400"
+                    }`}
+                  >
+                    Preview only — originals unchanged.
                   </p>
                 </div>
               </div>
-              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[15.5rem] sm:items-stretch">
+              <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:max-w-md sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 <button
                   type="button"
                   role="switch"
                   aria-checked={lutPreviewEnabled}
                   aria-label={lutPreviewEnabled ? "Turn off color look preview" : "Turn on color look preview"}
                   onClick={() => setLutPreviewEnabled((p) => !p)}
-                  className={`group flex w-full items-center justify-between gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                  className={`flex w-full shrink-0 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left sm:w-auto sm:min-w-[9.5rem] ${
                     lutPreviewEnabled
                       ? isDarkBg
-                        ? "border-bizzi-cyan/35 bg-bizzi-cyan/[0.11] hover:border-bizzi-cyan/45"
-                        : "border-bizzi-blue/35 bg-bizzi-blue/[0.06] hover:border-bizzi-blue/45 dark:border-bizzi-cyan/35 dark:bg-bizzi-cyan/10 dark:hover:border-bizzi-cyan/45"
+                        ? "border-bizzi-cyan/30 bg-bizzi-cyan/10"
+                        : "border-bizzi-blue/30 bg-bizzi-blue/[0.06] dark:border-bizzi-cyan/30 dark:bg-bizzi-cyan/10"
                       : isDarkBg
-                        ? "border-white/[0.14] bg-white/[0.04] hover:border-white/[0.22]"
-                        : "border-neutral-200/90 bg-neutral-50/80 hover:border-neutral-300/90 dark:border-neutral-600/75 dark:bg-neutral-800/50 dark:hover:border-neutral-500/80"
+                        ? "border-white/12 bg-white/[0.04]"
+                        : "border-neutral-200/80 bg-neutral-50/90 dark:border-white/10 dark:bg-white/[0.04]"
                   }`}
                 >
                   <span
-                    className={`text-[11px] font-medium leading-none ${
+                    className={`text-[11px] font-medium ${
                       isDarkBg ? "text-white/95" : "text-neutral-800 dark:text-white/95"
                     }`}
                   >
-                    Preview color grade
+                    Preview
                   </span>
                   <span
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                       lutPreviewEnabled
                         ? isDarkBg
                           ? "bg-bizzi-cyan"
                           : "bg-bizzi-blue dark:bg-bizzi-cyan"
                         : isDarkBg
-                          ? "bg-white/18"
-                          : "bg-neutral-300/90 dark:bg-neutral-600"
+                          ? "bg-white/15"
+                          : "bg-neutral-300 dark:bg-neutral-600"
                     }`}
                   >
                     <span
-                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm ring-1 ring-black/[0.04] transition-transform duration-200 ease-out dark:ring-white/10 ${
-                        lutPreviewEnabled ? "translate-x-5" : "translate-x-0"
+                      className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                        lutPreviewEnabled ? "translate-x-4" : "translate-x-0"
                       }`}
                     />
                   </span>
                 </button>
-                {galleryLutOptions.length > 1 && (
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor="gallery-lut-select"
-                      className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
-                        isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
+                {galleryLutOptions.length > 1 ? (
+                  <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:max-w-[12rem]">
+                    <span
+                      className={`text-[9px] font-medium uppercase tracking-[0.08em] ${
+                        isDarkBg ? "text-white/40" : "text-neutral-400 dark:text-neutral-500"
                       }`}
                     >
                       Look
-                    </label>
+                    </span>
                     <select
                       id="gallery-lut-select"
                       value={selectedLutId ?? GALLERY_LUT_ORIGINAL_ID}
@@ -2341,14 +2502,14 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                       onChange={(e) => {
                         setSelectedLutId(e.target.value);
                       }}
-                      className={`w-full appearance-none rounded-lg border bg-[length:0.65rem] bg-[right_0.65rem_center] bg-no-repeat py-2 pl-2.5 pr-8 text-xs font-medium outline-none transition-[border-color,box-shadow] focus:border-bizzi-blue/50 focus:ring-1 focus:ring-bizzi-blue/20 dark:focus:border-bizzi-cyan/45 dark:focus:ring-bizzi-cyan/15 ${
+                      className={`w-full appearance-none rounded-md border bg-[length:0.6rem] bg-[right_0.55rem_center] bg-no-repeat py-1.5 pl-2 pr-7 text-xs font-medium outline-none transition-[border-color,box-shadow] focus:border-bizzi-blue/50 focus:ring-1 focus:ring-bizzi-blue/15 dark:focus:border-bizzi-cyan/40 dark:focus:ring-bizzi-cyan/10 ${
                         lutPreviewEnabled
                           ? isDarkBg
-                            ? "border-white/[0.16] bg-white/[0.07] text-white"
-                            : "border-neutral-200/90 bg-white text-neutral-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-neutral-600/80 dark:bg-neutral-800/90 dark:text-white dark:shadow-none"
+                            ? "border-white/12 bg-white/[0.06] text-white"
+                            : "border-neutral-200/90 bg-white text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
                           : isDarkBg
-                            ? "cursor-not-allowed border-white/[0.08] bg-white/[0.03] text-white/35 opacity-70"
-                            : "cursor-not-allowed border-neutral-200/70 bg-neutral-100/90 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-600"
+                            ? "cursor-not-allowed border-white/[0.06] bg-white/[0.02] text-white/35 opacity-70"
+                            : "cursor-not-allowed border-neutral-200/70 bg-neutral-100 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-500"
                       }`}
                       style={{
                         backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
@@ -2370,22 +2531,22 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                         </option>
                       ))}
                     </select>
-                  </div>
-                )}
+                  </label>
+                ) : null}
                 {gallery.gallery_type !== "video" ? (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex w-full min-w-0 flex-col gap-0.5 sm:w-36">
+                    <div className="flex items-center justify-between gap-1">
                       <label
                         htmlFor="gallery-lut-mix"
-                        className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
-                          isDarkBg ? "text-white/45" : "text-neutral-400 dark:text-neutral-500"
+                        className={`text-[9px] font-medium uppercase tracking-[0.08em] ${
+                          isDarkBg ? "text-white/40" : "text-neutral-400 dark:text-neutral-500"
                         }`}
                       >
                         Mix
                       </label>
                       <span
-                        className={`text-[11px] font-medium tabular-nums ${
-                          isDarkBg ? "text-white/70" : "text-neutral-500 dark:text-neutral-400"
+                        className={`text-[10px] font-medium tabular-nums ${
+                          isDarkBg ? "text-white/65" : "text-neutral-500 dark:text-neutral-400"
                         }`}
                       >
                         {lutGradeMix}
@@ -2399,8 +2560,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                       value={lutGradeMix}
                       disabled={!lutPreviewEnabled || !clientLutSource}
                       onChange={(e) => setLutGradeMix(Number(e.target.value))}
-                      className={`h-2 w-full cursor-pointer appearance-none rounded-full accent-bizzi-blue disabled:cursor-not-allowed disabled:opacity-45 dark:accent-bizzi-cyan ${
-                        isDarkBg ? "bg-white/15" : "bg-neutral-200/90 dark:bg-neutral-700"
+                      className={`h-1.5 w-full cursor-pointer appearance-none rounded-full accent-bizzi-blue disabled:cursor-not-allowed disabled:opacity-45 dark:accent-bizzi-cyan ${
+                        isDarkBg ? "bg-white/12" : "bg-neutral-200/90 dark:bg-neutral-700"
                       }`}
                     />
                   </div>
