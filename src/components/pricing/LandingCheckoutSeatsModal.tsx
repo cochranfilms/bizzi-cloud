@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Minus, Plus } from "lucide-react";
 import { plans, powerUpAddons, planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
@@ -51,6 +52,15 @@ export default function LandingCheckoutSeatsModal({
     if (!open) return;
     setDraft(emptyTeamSeatCounts());
   }, [open, payload?.planId, payload?.billing, payload?.addonIds.join(",")]);
+
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
 
   const adjustTier = useCallback((tier: PersonalTeamSeatAccess, delta: number) => {
     setDraft((prev) => {
@@ -147,16 +157,18 @@ export default function LandingCheckoutSeatsModal({
 
   if (!open || !payload) return null;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain p-4 sm:p-6">
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/50"
         onClick={loading ? undefined : onClose}
       />
       <div
-        className="relative z-10 max-h-[min(90dvh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+        className="relative z-10 my-auto max-h-[min(90dvh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
         role="dialog"
         aria-modal="true"
         aria-labelledby="landing-seats-title"
@@ -296,6 +308,7 @@ export default function LandingCheckoutSeatsModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

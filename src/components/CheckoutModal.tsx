@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 export type CheckoutModalLoadingPhase =
@@ -60,6 +61,15 @@ export default function CheckoutModal({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
+
   const resetFields = () => {
     setName("");
     setEmail("");
@@ -94,6 +104,7 @@ export default function CheckoutModal({
   };
 
   if (!isOpen) return null;
+  if (typeof document === "undefined") return null;
 
   const submitLabel =
     loadingPhase === "creating_account"
@@ -109,15 +120,24 @@ export default function CheckoutModal({
     password.length >= PASSWORD_MIN &&
     confirmPassword.length > 0;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50"
-        aria-hidden
-        onClick={handleClose}
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain p-4 sm:p-6">
+      <button
+        type="button"
+        aria-label="Close"
+        className="fixed inset-0 bg-black/50"
+        onClick={loading ? undefined : handleClose}
       />
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-neutral-900">
-        <h3 className="text-xl font-semibold text-neutral-900 dark:text-white">
+      <div
+        className="relative z-10 my-auto max-h-[min(90dvh,720px)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-neutral-900"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkout-modal-title"
+      >
+        <h3
+          id="checkout-modal-title"
+          className="text-xl font-semibold text-neutral-900 dark:text-white"
+        >
           Almost there
         </h3>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
@@ -273,6 +293,7 @@ export default function CheckoutModal({
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
