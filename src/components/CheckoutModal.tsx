@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import GoogleOAuthButton from "@/components/auth/GoogleOAuthButton";
 
 export type CheckoutModalLoadingPhase =
   | "idle"
+  | "signing_in_with_google"
   | "creating_account"
   | "redirecting_checkout";
 
@@ -33,6 +35,8 @@ export interface CheckoutModalProps {
   /** After signup succeeded but checkout POST failed — show “Try checkout again”. */
   checkoutRecovery?: boolean;
   onRetryCheckout?: () => void | Promise<void>;
+  /** Google sign-in then same Bearer checkout as email signup. */
+  onGoogleCheckout?: () => void | Promise<void>;
 }
 
 const PASSWORD_MIN = 6;
@@ -54,6 +58,7 @@ export default function CheckoutModal({
   emailInUse = false,
   checkoutRecovery = false,
   onRetryCheckout,
+  onGoogleCheckout,
 }: CheckoutModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -178,7 +183,33 @@ export default function CheckoutModal({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <>
+            {onGoogleCheckout && !checkoutRecovery ? (
+              <div className="mt-6 space-y-5">
+                <GoogleOAuthButton
+                  disabled={loading}
+                  onClick={onGoogleCheckout}
+                >
+                  {loading && loadingPhase === "signing_in_with_google"
+                    ? "Signing in with Google…"
+                    : "Continue with Google"}
+                </GoogleOAuthButton>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center" aria-hidden>
+                    <div className="w-full border-t border-neutral-200 dark:border-neutral-600" />
+                  </div>
+                  <div className="relative flex justify-center text-xs font-medium uppercase tracking-wide">
+                    <span className="bg-white px-3 text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
+                      or use email
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <form
+              onSubmit={handleSubmit}
+              className={`space-y-4 ${onGoogleCheckout && !checkoutRecovery ? "mt-4" : "mt-6"}`}
+            >
             <div>
               <label
                 htmlFor="checkout-name"
@@ -291,6 +322,7 @@ export default function CheckoutModal({
               </button>
             </div>
           </form>
+          </>
         )}
       </div>
     </div>,

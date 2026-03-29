@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { useAuth } from "@/context/AuthContext";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
+import { signInWithGooglePopup } from "@/lib/firebase/google-sign-in";
 import { trackCheckoutFunnelEvent } from "@/lib/checkout-funnel-analytics";
 import { plans, powerUpAddons, PLAN_LABELS, ADDON_LABELS, planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
 import {
@@ -25,6 +26,9 @@ import BuildPlanConfigurator, {
 import PowerUpProductTiles from "@/components/pricing/PowerUpProductTiles";
 import LandingCheckoutSeatsModal from "@/components/pricing/LandingCheckoutSeatsModal";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+
+const CHECKOUT_START_FAILED_MSG =
+  "We couldn't start secure checkout. Try again below, or use the login page later to finish your purchase.";
 
 export default function PricingSection() {
   const { user } = useAuth();
@@ -195,6 +199,100 @@ export default function PricingSection() {
     await runAuthenticatedLandingCheckout(payload);
   }, [checkoutModal, runAuthenticatedLandingCheckout]);
 
+  const completeCheckoutAfterGuestAuth = useCallback(async (): Promise<{
+    redirected: boolean;
+  }> => {
+    if (!checkoutModal) return { redirected: false };
+    const token = await getFirebaseAuth().currentUser?.getIdToken(true);
+    if (!token) {
+      trackCheckoutFunnelEvent("checkout_recovery_needed");
+      setCheckoutRecoveryAfterSignup(true);
+      setCheckoutError(
+        "Could not verify your session. Try again below or sign in from the login page."
+      );
+      return { redirected: false };
+    }
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await fetch(`${base}/api/stripe/checkout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        planId: checkoutModal.planId,
+        addonIds: checkoutModal.addonIds,
+        billing: checkoutModal.billing,
+        teamSeatCounts: checkoutModal.teamSeatCounts,
+      }),
+    });
+    const result = (await res.json()) as { url?: string; error?: string };
+    trackCheckoutFunnelEvent("checkout_session_created", { ok: res.ok });
+
+    if (!res.ok) {
+      trackCheckoutFunnelEvent("checkout_recovery_needed");
+      setCheckoutRecoveryAfterSignup(true);
+      setCheckoutError(CHECKOUT_START_FAILED_MSG);
+      return { redirected: false };
+    }
+    if (result.url) {
+      trackCheckoutFunnelEvent("redirected_to_stripe");
+      window.location.href = result.url;
+      return { redirected: true };
+    }
+    trackCheckoutFunnelEvent("checkout_recovery_needed");
+    setCheckoutRecoveryAfterSignup(true);
+    setCheckoutError(CHECKOUT_START_FAILED_MSG);
+    return { redirected: false };
+  }, [checkoutModal]);
+
+  const handleGuestGoogleCheckout = useCallback(async () => {
+    if (!checkoutModal) return;
+    setCheckoutLoading(true);
+    setCheckoutError(null);
+    setCheckoutRecoveryAfterSignup(false);
+    setGuestEmailInUse(false);
+    setCheckoutModalLoadingPhase("signing_in_with_google");
+    trackCheckoutFunnelEvent("signup_started");
+
+    let redirected = false;
+    try {
+      await signInWithGooglePopup();
+      trackCheckoutFunnelEvent("signup_created_account");
+      setCheckoutModalLoadingPhase("redirecting_checkout");
+      const { redirected: r } = await completeCheckoutAfterGuestAuth();
+      redirected = r;
+    } catch (err: unknown) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      if (
+        code === "auth/popup-closed-by-user" ||
+        code === "auth/cancelled-popup-request"
+      ) {
+        setCheckoutError(null);
+      } else if (code === "auth/popup-blocked") {
+        setCheckoutError(
+          "Your browser blocked the Google sign-in popup. Allow popups for this site and try again."
+        );
+      } else if (code === "auth/account-exists-with-different-credential") {
+        setCheckoutError(
+          "This email already uses password sign-in. Sign in with email and password, then subscribe from Pricing while signed in."
+        );
+      } else if (code === "auth/operation-not-allowed") {
+        setCheckoutError("Google sign-in is not available. Continue with email below.");
+      } else {
+        setCheckoutError("Google sign-in failed. Please try again or use email below.");
+      }
+    } finally {
+      if (!redirected) {
+        setCheckoutLoading(false);
+        setCheckoutModalLoadingPhase("idle");
+      }
+    }
+  }, [checkoutModal, completeCheckoutAfterGuestAuth]);
+
   const handleGuestCheckout = useCallback(
     async (data: { name: string; email: string; password: string }) => {
       if (!checkoutModal) return;
@@ -218,43 +316,8 @@ export default function PricingSection() {
         trackCheckoutFunnelEvent("signup_created_account");
 
         setCheckoutModalLoadingPhase("redirecting_checkout");
-        const token = await credential.user.getIdToken(true);
-        const base = typeof window !== "undefined" ? window.location.origin : "";
-        const res = await fetch(`${base}/api/stripe/checkout`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            planId: checkoutModal.planId,
-            addonIds: checkoutModal.addonIds,
-            billing: checkoutModal.billing,
-            teamSeatCounts: checkoutModal.teamSeatCounts,
-          }),
-        });
-        const result = (await res.json()) as { url?: string; error?: string };
-        trackCheckoutFunnelEvent("checkout_session_created", { ok: res.ok });
-
-        if (!res.ok) {
-          trackCheckoutFunnelEvent("checkout_recovery_needed");
-          setCheckoutRecoveryAfterSignup(true);
-          setCheckoutError(
-            "Your account was created, but we couldn't start checkout. Try again below, or sign in later from the login page to finish your purchase."
-          );
-          return;
-        }
-        if (result.url) {
-          trackCheckoutFunnelEvent("redirected_to_stripe");
-          redirected = true;
-          window.location.href = result.url;
-        } else {
-          trackCheckoutFunnelEvent("checkout_recovery_needed");
-          setCheckoutRecoveryAfterSignup(true);
-          setCheckoutError(
-            "Your account was created, but we couldn't start checkout. Try again below, or sign in from the login page."
-          );
-        }
+        const { redirected: r } = await completeCheckoutAfterGuestAuth();
+        redirected = r;
       } catch (err: unknown) {
         const code =
           err && typeof err === "object" && "code" in err
@@ -274,7 +337,7 @@ export default function PricingSection() {
         }
       }
     },
-    [checkoutModal]
+    [checkoutModal, completeCheckoutAfterGuestAuth]
   );
 
   useEffect(() => {
@@ -716,6 +779,9 @@ export default function PricingSection() {
           emailInUse={guestEmailInUse}
           checkoutRecovery={checkoutRecoveryAfterSignup}
           onRetryCheckout={handleRetryGuestCheckout}
+          onGoogleCheckout={
+            isFirebaseConfigured() ? handleGuestGoogleCheckout : undefined
+          }
         />
 
         {/* Footer note */}
