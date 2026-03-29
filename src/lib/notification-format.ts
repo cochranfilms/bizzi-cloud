@@ -66,6 +66,18 @@ export function formatNotificationMessage(
     }
     case "personal_team_you_were_removed":
       return `You were removed from ${actor}'s team`;
+    case "personal_team_workspace_closed_member": {
+      const tw = metadata?.teamWorkspaceName?.trim();
+      return tw
+        ? `${actor} closed the team workspace “${tw}”. You no longer have access.`
+        : `${actor} closed their team workspace. You no longer have access.`;
+    }
+    case "personal_team_workspace_closed_owner": {
+      const tw = metadata?.teamWorkspaceName?.trim();
+      return tw
+        ? `You closed the team workspace “${tw}”. Your personal account stays active; team files are in the normal recovery lifecycle.`
+        : `You closed your team workspace. Your personal account stays active; team files are in the normal recovery lifecycle.`;
+    }
     case "personal_team_member_left_owner": {
       const leaver = metadata?.newMemberDisplayName ?? actor;
       return `${leaver} left your team`;

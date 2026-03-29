@@ -61,6 +61,8 @@ export async function createNotification(input: CreateNotificationInput): Promis
 
   const message = formatNotificationMessage(input.type, actorDisplayName, metadata);
 
+  /* routingBucket matches notification-routing policy (personal-shell-first → consumer on write).
+     Read APIs re-infer so stale buckets from legacy writers still normalize. */
   const routingBucket = inferNotificationRoutingBucket({
     type: input.type,
     metadata: metadata as Record<string, unknown>,

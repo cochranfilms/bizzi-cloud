@@ -1,5 +1,8 @@
 /**
  * POST /api/personal-team/remove — admin removes a member; access revocation only.
+ *
+ * Revoking a seat does not migrate the team container to cold storage; that runs only on
+ * team shutdown / billing-driven finalize flows (see finalizePersonalTeamColdStorage).
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { suggestIdentityDeletionAfterTeamScopeRemoved } from "@/lib/identity-scope";
@@ -83,6 +86,7 @@ export async function POST(request: Request) {
     await seatRef.set(
       {
         status: "removed",
+        removed_at: FieldValue.serverTimestamp(),
         updated_at: FieldValue.serverTimestamp(),
       },
       { merge: true }

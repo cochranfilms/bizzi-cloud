@@ -16,6 +16,8 @@ export type NotificationType =
   | "personal_team_invited"
   | "personal_team_joined_owner"
   | "personal_team_you_were_removed"
+  | "personal_team_workspace_closed_member"
+  | "personal_team_workspace_closed_owner"
   | "personal_team_member_left_owner"
   | "org_member_joined"
   | "org_you_were_removed"
@@ -86,6 +88,8 @@ export interface Notification {
     shareSourceLabel?: string;
     /** Enterprise workspace shares: org id for notification routing */
     targetOrganizationId?: string;
+    /** Personal team workspace closed by owner */
+    teamWorkspaceName?: string;
   } | null;
 }
 

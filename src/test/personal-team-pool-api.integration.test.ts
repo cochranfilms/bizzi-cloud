@@ -319,6 +319,69 @@ describe("GET /api/personal-team/members overview accounting", () => {
   });
 });
 
+describe("GET /api/personal-team/members removed seats serialization and used counts", () => {
+  it("includes ISO removed_at/updated_at on historical seats and does not count removed/cold_storage in used", async () => {
+    const db = testHarness.db!;
+    seedOwnerTeam(db);
+    db.seedDoc("profiles", U.m1, videoTeamProfile({ display_name: "M1" }));
+    db.seedDoc("profiles", U.m2, videoTeamProfile({ display_name: "M2" }));
+    const coldUid = "uid_pool_cold";
+    db.seedDoc("profiles", coldUid, videoTeamProfile({ display_name: "Cold" }));
+
+    const ts = (iso: string) => ({ toDate: () => new Date(iso) });
+
+    db.seedDoc(PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId(U.owner, U.m1), {
+      team_owner_user_id: U.owner,
+      member_user_id: U.m1,
+      seat_access_level: "none",
+      status: "active",
+      invited_email: `${U.m1}@test.local`,
+    });
+    db.seedDoc(PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId(U.owner, U.m2), {
+      team_owner_user_id: U.owner,
+      member_user_id: U.m2,
+      seat_access_level: "editor",
+      status: "removed",
+      invited_email: `${U.m2}@test.local`,
+      removed_at: ts("2024-03-01T12:00:00.000Z"),
+      updated_at: ts("2024-03-02T15:30:00.000Z"),
+    });
+    db.seedDoc(PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId(U.owner, coldUid), {
+      team_owner_user_id: U.owner,
+      member_user_id: coldUid,
+      seat_access_level: "fullframe",
+      status: "cold_storage",
+      invited_email: `${coldUid}@test.local`,
+      updated_at: ts("2024-01-10T00:00:00.000Z"),
+    });
+
+    const res = await membersGET(
+      new Request("http://localhost/api/personal-team/members", { headers: authHeader(U.owner) })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: Array<{
+        status: string;
+        removed_at: string | null;
+        updated_at: string | null;
+      }>;
+      overview: { used: { none: number; editor: number; fullframe: number } };
+    };
+
+    expect(body.overview.used.none).toBe(1);
+    expect(body.overview.used.editor).toBe(0);
+    expect(body.overview.used.fullframe).toBe(0);
+
+    const removed = body.members.filter((m) => m.status === "removed");
+    const coldRow = body.members.filter((m) => m.status === "cold_storage");
+    expect(removed).toHaveLength(1);
+    expect(coldRow).toHaveLength(1);
+    expect(removed[0]?.removed_at).toBe("2024-03-01T12:00:00.000Z");
+    expect(removed[0]?.updated_at).toBe("2024-03-02T15:30:00.000Z");
+    expect(coldRow[0]?.updated_at).toBe("2024-01-10T00:00:00.000Z");
+  });
+});
+
 describe("regression: 9 TB pool, two 2 TB seats", () => {
   it("allows first 5 TB pending invite (4 + 5 = 9) then blocks another fixed tier that would exceed 9 TB", async () => {
     const db = testHarness.db!;

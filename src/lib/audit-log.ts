@@ -22,6 +22,8 @@ export type AuditAction =
   | "personal_team_membership_cap_blocked"
   | "personal_team_identity_conflict"
   | "personal_team_admin_repair"
+  | "personal_team_close_access_revoked"
+  | "personal_team_close_completed"
   | "do_not_sell_opt_out"
   | "grace_period_started"
   | "privacy_preferences_update"

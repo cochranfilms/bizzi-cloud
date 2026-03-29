@@ -61,10 +61,13 @@ export function createPersonalTeamIntegrationDb() {
   }
 
   function docRef(col: string, id: string) {
+    const k = key(col, id);
     const docRefObj = {
       id,
+      /** @internal for runTransaction / bulkWriter tests */
+      __testKey: k,
       get: async () => {
-        const d = raw.get(key(col, id));
+        const d = raw.get(k);
         return {
           exists: d !== undefined,
           id,
@@ -73,7 +76,6 @@ export function createPersonalTeamIntegrationDb() {
         };
       },
       set: async (data: DocData, opts?: { merge?: boolean }) => {
-        const k = key(col, id);
         if (opts?.merge) {
           raw.set(k, applyMerge(raw.get(k), data));
         } else {
@@ -81,7 +83,7 @@ export function createPersonalTeamIntegrationDb() {
         }
       },
       delete: async () => {
-        raw.delete(key(col, id));
+        raw.delete(k);
       },
     };
     return docRefObj;
@@ -105,12 +107,57 @@ export function createPersonalTeamIntegrationDb() {
     };
   }
 
+  type TestRef = { __testKey: string; id: string; set: (data: DocData, opts?: { merge?: boolean }) => Promise<void> };
+
   const firestore = {
     collection(col: string) {
       return {
         doc: (id: string) => docRef(col, id),
         where(field: string, op: string, value: unknown) {
           return makeQuery(col, [{ field, value }], undefined);
+        },
+      };
+    },
+    async runTransaction<T>(fn: (tx: { get: (r: TestRef) => Promise<unknown>; update: (r: TestRef, data: DocData) => Promise<void> }) => Promise<T>): Promise<T> {
+      const tx = {
+        get: async (ref: TestRef) => {
+          const d = raw.get(ref.__testKey);
+          return {
+            exists: d !== undefined,
+            id: ref.id,
+            data: () => (d === undefined ? undefined : { ...d }),
+            ref,
+          };
+        },
+        update: async (ref: TestRef, data: DocData) => {
+          const cur = raw.get(ref.__testKey);
+          if (cur === undefined) throw new Error(`[test] transaction update missing ${ref.__testKey}`);
+          raw.set(ref.__testKey, applyMerge(cur, data));
+        },
+      };
+      return fn(tx);
+    },
+    bulkWriter: () => {
+      const ops: Array<() => Promise<void>> = [];
+      return {
+        update: (ref: TestRef, data: DocData) => {
+          ops.push(async () => {
+            const cur = raw.get(ref.__testKey);
+            if (cur === undefined) throw new Error(`[test] bulkWriter update missing ${ref.__testKey}`);
+            raw.set(ref.__testKey, applyMerge(cur, data));
+          });
+        },
+        set: (ref: TestRef, data: DocData, opts?: { merge?: boolean }) => {
+          ops.push(async () => {
+            if (opts?.merge) {
+              raw.set(ref.__testKey, applyMerge(raw.get(ref.__testKey), data));
+            } else {
+              raw.set(ref.__testKey, { ...data });
+            }
+          });
+        },
+        close: async () => {
+          for (const o of ops) await o();
         },
       };
     },

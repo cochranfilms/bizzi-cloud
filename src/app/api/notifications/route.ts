@@ -4,10 +4,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { ensureNotificationMessage } from "@/lib/notification-format";
-import {
-  inferNotificationRoutingBucket,
-  notificationVisibleForRouting,
-} from "@/lib/notification-routing";
+import { notificationMatchesActiveRouting } from "@/lib/notification-routing";
 import { NextResponse } from "next/server";
 
 const MAX_SCAN = 400;
@@ -56,12 +53,14 @@ export async function GET(request: Request) {
   const snap = await q.get();
   const matched = snap.docs.filter((d) => {
     const data = d.data();
-    const bucket = inferNotificationRoutingBucket({
-      type: data.type,
-      routingBucket: data.routingBucket,
-      metadata: data.metadata as Record<string, unknown> | null,
-    });
-    return notificationVisibleForRouting(bucket, routing);
+    return notificationMatchesActiveRouting(
+      {
+        type: data.type,
+        routingBucket: data.routingBucket,
+        metadata: data.metadata as Record<string, unknown> | null,
+      },
+      routing,
+    );
   });
 
   const slice = matched.slice(0, limit);

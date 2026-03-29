@@ -59,6 +59,7 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
     case "org_removal_scheduled":
       return <Building2 className="h-4 w-4 flex-shrink-0" />;
     case "personal_team_added":
+    case "personal_team_invited":
     case "personal_team_joined_owner":
     case "personal_team_you_were_removed":
     case "personal_team_member_left_owner":

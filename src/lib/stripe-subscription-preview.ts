@@ -80,7 +80,8 @@ export type SubscriptionPreviewInput = {
   uid: string;
   planId: string;
   addonIds: AddonId[];
-  billing: BillingCycle;
+  /** When omitted, uses the subscription's current plan item interval. */
+  billing?: BillingCycle;
   storageAddonId?: string | null;
   /** When omitted, uses profile.team_seat_counts */
   teamSeatCounts?: Partial<TeamSeatCounts> | null;

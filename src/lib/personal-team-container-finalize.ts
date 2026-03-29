@@ -1,6 +1,9 @@
 /**
  * Full personal team container shutdown: snapshot seats, migrate team files to cold storage,
  * clear member and owner team fields, remove seat docs, set owner team lifecycle metadata.
+ *
+ * Seat churn (a member removed or leaving) does not invoke this path; only full team shutdown
+ * and related billing lifecycle flows do.
  */
 import { getAdminAuth, getAdminFirestore } from "@/lib/firebase-admin";
 import { migratePersonalTeamContainerToColdStorage } from "@/lib/cold-storage-migrate";

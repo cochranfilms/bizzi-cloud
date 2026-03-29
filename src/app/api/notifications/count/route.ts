@@ -3,10 +3,7 @@
  * Query: ?routing=consumer|team:{uid}|enterprise:{orgId}
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import {
-  inferNotificationRoutingBucket,
-  notificationVisibleForRouting,
-} from "@/lib/notification-routing";
+import { notificationMatchesActiveRouting } from "@/lib/notification-routing";
 import { NextResponse } from "next/server";
 
 const MAX_UNREAD_SCAN = 500;
@@ -39,12 +36,18 @@ export async function GET(request: Request) {
   let count = 0;
   for (const d of snap.docs) {
     const data = d.data();
-    const bucket = inferNotificationRoutingBucket({
-      type: data.type,
-      routingBucket: data.routingBucket,
-      metadata: data.metadata as Record<string, unknown> | null,
-    });
-    if (notificationVisibleForRouting(bucket, routing)) count++;
+    if (
+      notificationMatchesActiveRouting(
+        {
+          type: data.type,
+          routingBucket: data.routingBucket,
+          metadata: data.metadata as Record<string, unknown> | null,
+        },
+        routing,
+      )
+    ) {
+      count++;
+    }
   }
 
   return NextResponse.json({ count });

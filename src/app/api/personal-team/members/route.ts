@@ -33,6 +33,29 @@ async function requireAuth(request: Request): Promise<{ uid: string } | NextResp
 
 const LEVELS: PersonalTeamSeatAccess[] = ["none", "gallery", "editor", "fullframe"];
 
+function timestampToIso(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? null : new Date(t).toISOString();
+  }
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  const withToDate = value as { toDate?: () => Date };
+  if (typeof withToDate.toDate === "function") {
+    const d = withToDate.toDate();
+    return d instanceof Date && !isNaN(d.getTime()) ? d.toISOString() : null;
+  }
+  const sec =
+    (value as { seconds?: number; _seconds?: number }).seconds ??
+    (value as { _seconds?: number })._seconds;
+  if (typeof sec === "number") {
+    return new Date(sec * 1000).toISOString();
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -61,6 +84,8 @@ export async function GET(request: Request) {
     quota_mode?: string;
     storage_quota_bytes: number | null;
     storage_used_bytes: number;
+    removed_at: string | null;
+    updated_at: string | null;
   }> = [];
 
   for (const d of snap.docs) {
@@ -79,17 +104,22 @@ export async function GET(request: Request) {
     if (memberUserId && ((data.status as string) ?? "") === "active") {
       storage_used_bytes = await sumActiveUserPersonalTeamBackupBytes(db, memberUserId, uid);
     }
+    const st = (data.status as string) ?? "active";
+    const removedAt = timestampToIso(data.removed_at);
+    const updatedAt = timestampToIso(data.updated_at);
     members.push({
       id: d.id,
       member_user_id: memberUserId,
       email,
       seat_access_level: (data.seat_access_level as string) ?? "none",
-      status: (data.status as string) ?? "active",
+      status: st,
       invited_email: typeof data.invited_email === "string" ? data.invited_email : null,
       quota_mode: data.quota_mode as string | undefined,
       storage_quota_bytes:
         (data.storage_quota_bytes as number | null | undefined) ?? null,
       storage_used_bytes,
+      removed_at: removedAt,
+      updated_at: updatedAt,
     });
   }
 

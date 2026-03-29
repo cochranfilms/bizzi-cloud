@@ -4,6 +4,9 @@
  * and account delete flow.
  *
  * Does NOT delete B2 objects—those stay until cold-storage-cleanup cron after retention expires.
+ *
+ * Personal-team seat removal/leave does not trigger personal-team container migration here;
+ * that is scoped to finalize/shutdown flows (e.g. finalizePersonalTeamColdStorage).
  */
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
 import type { Firestore } from "firebase-admin/firestore";
