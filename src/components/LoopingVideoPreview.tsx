@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import Hls from "hls.js";
+import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
 
 const DEFAULT_LOOP_SEC = 5;
 
@@ -45,20 +46,11 @@ export default function LoopingVideoPreview({
     const isHls = src.includes(".m3u8");
     if (isHls && Hls.isSupported()) {
       hlsRef.current?.destroy();
-      const hls = new Hls({
-        maxMaxBufferLength: preferMaxHlsQuality ? 50 : 20,
-        startLevel: -1,
+      const hls = createGalleryHlsInstance({
+        preferMaxQuality: preferMaxHlsQuality,
+        maxBufferDefault: 20,
+        maxBufferTopRung: 60,
       });
-      if (preferMaxHlsQuality) {
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          const n = hls.levels?.length ?? 0;
-          if (n > 0) {
-            hls.autoLevelCapping = -1;
-            hls.loadLevel = n - 1;
-            hls.startLevel = n - 1;
-          }
-        });
-      }
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);

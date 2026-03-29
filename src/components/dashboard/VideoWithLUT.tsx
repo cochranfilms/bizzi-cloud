@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState, useCallback, type CSSProperties } from "react";
 import { Pause, Play, Volume2, VolumeX, Maximize } from "lucide-react";
 import Hls from "hls.js";
+import { createGalleryHlsInstance } from "@/lib/hls-gallery-player";
 import {
   createVideoLUTContext,
   disposeVideoLUTContext,
@@ -453,20 +454,11 @@ export default function VideoWithLUT({
     const isHls = videoSrc.includes(".m3u8");
     if (isHls && Hls.isSupported()) {
       hlsRef.current?.destroy();
-      const hls = new Hls({
-        maxMaxBufferLength: preferMaxHlsQuality ? 50 : 30,
-        startLevel: -1,
+      const hls = createGalleryHlsInstance({
+        preferMaxQuality: preferMaxHlsQuality,
+        maxBufferDefault: 30,
+        maxBufferTopRung: 60,
       });
-      if (preferMaxHlsQuality) {
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          const n = hls.levels?.length ?? 0;
-          if (n > 0) {
-            hls.autoLevelCapping = -1;
-            hls.loadLevel = n - 1;
-            hls.startLevel = n - 1;
-          }
-        });
-      }
       hlsRef.current = hls;
       hls.loadSource(videoSrc);
       hls.attachMedia(video);
