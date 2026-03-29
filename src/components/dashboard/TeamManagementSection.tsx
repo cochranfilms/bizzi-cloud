@@ -679,9 +679,9 @@ export function TeamManagementSection({
         </h3>
         <form
           onSubmit={(e) => void handleInvite(e)}
-          className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end"
+          className="flex flex-col gap-4"
         >
-          <div className="min-w-0 flex-1">
+          <div className="w-full">
             <label htmlFor="team-invite-email" className="mb-1 block text-xs text-neutral-500">
               Email
             </label>
@@ -693,81 +693,70 @@ export function TeamManagementSection({
               onChange={(e) => setInviteEmail(e.target.value)}
               required
               placeholder="teammate@example.com"
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              autoComplete="email"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
             />
           </div>
-          <div className="sm:w-52">
-            <label htmlFor="team-invite-level" className="mb-1 block text-xs text-neutral-500">
-              Seat access
-            </label>
-            <select
-              id="team-invite-level"
-              value={inviteLevel}
-              onChange={(e) => setInviteLevel(e.target.value as PersonalTeamSeatAccess)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 sm:max-w-[14rem]">
+              <label htmlFor="team-invite-level" className="mb-1 block text-xs text-neutral-500">
+                Seat access
+              </label>
+              <select
+                id="team-invite-level"
+                value={inviteLevel}
+                onChange={(e) => setInviteLevel(e.target.value as PersonalTeamSeatAccess)}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              >
+                <option value="none">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.none}</option>
+                <option value="gallery">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.gallery}</option>
+                <option value="editor">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.editor}</option>
+                <option value="fullframe">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.fullframe}</option>
+              </select>
+            </div>
+            <div className="min-w-0 flex-1 sm:max-w-[15rem]">
+              <label htmlFor="team-invite-storage" className="mb-1 block text-xs text-neutral-500">
+                Member storage cap
+              </label>
+              <select
+                id="team-invite-storage"
+                value={inviteStorageBytes === null ? "" : String(inviteStorageBytes)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setInviteStorageBytes(v === "" ? null : Number(v));
+                }}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              >
+                {BASE_MEMBER_STORAGE_OPTIONS.map((opt) => {
+                  const overBudget =
+                    opt.value !== null &&
+                    typeof opt.value === "number" &&
+                    opt.value > inviteFixedCapBudget;
+                  return (
+                    <option
+                      key={opt.label}
+                      value={opt.value === null ? "" : String(opt.value)}
+                      disabled={overBudget}
+                    >
+                      {opt.label}
+                      {overBudget ? " (not available)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={inviting || !hasCapacity}
+              className="w-full shrink-0 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50 sm:w-auto sm:self-end"
             >
-              <option value="none">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.none}</option>
-              <option value="gallery">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.gallery}</option>
-              <option value="editor">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.editor}</option>
-              <option value="fullframe">{PERSONAL_TEAM_SEAT_ACCESS_LABELS.fullframe}</option>
-            </select>
+              {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Invite"}
+            </button>
           </div>
-          <div className="sm:w-56">
-            <label htmlFor="team-invite-storage" className="mb-1 block text-xs text-neutral-500">
-              Member storage cap
-            </label>
-            <select
-              id="team-invite-storage"
-              value={inviteStorageBytes === null ? "" : String(inviteStorageBytes)}
-              onChange={(e) => {
-                const v = e.target.value;
-                setInviteStorageBytes(v === "" ? null : Number(v));
-              }}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-            >
-              {BASE_MEMBER_STORAGE_OPTIONS.map((opt) => {
-                const overBudget =
-                  opt.value !== null &&
-                  typeof opt.value === "number" &&
-                  opt.value > inviteFixedCapBudget;
-                return (
-                  <option
-                    key={opt.label}
-                    value={opt.value === null ? "" : String(opt.value)}
-                    disabled={overBudget}
-                  >
-                    {opt.label}
-                    {overBudget ? " (exceeds fixed-cap assignable budget)" : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={inviting || !hasCapacity}
-            className="shrink-0 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
-          >
-            {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Invite"}
-          </button>
         </form>
         {!hasCapacity && (
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
             Purchase team seats before inviting.
-          </p>
-        )}
-        {overview?.available != null && hasCapacity && (
-          <p className="mt-2 text-xs text-neutral-500">
-            Remaining at this tier:{" "}
-            <strong>
-              {inviteLevel === "none" && overview.available.none}
-              {inviteLevel === "gallery" && overview.available.gallery}
-              {inviteLevel === "editor" && overview.available.editor}
-              {inviteLevel === "fullframe" && overview.available.fullframe}
-            </strong>
-            {" · "}
-            Max fixed tier for invites: <strong>{formatStorage(inviteFixedCapBudget)}</strong>{" "}
-            <span className="text-neutral-500">(assignable fixed-cap budget)</span>
           </p>
         )}
         {inviteMsg && (
@@ -848,7 +837,7 @@ export function TeamManagementSection({
                                     disabled={overBudget}
                                   >
                                     {opt.label}
-                                    {overBudget ? " (exceeds fixed-cap assignable budget)" : ""}
+                                    {overBudget ? " (not available)" : ""}
                                   </option>
                                 );
                               })}

@@ -14,18 +14,19 @@ import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
-import ReadOnlyBanner from "@/components/settings/ReadOnlyBanner";
+import TeamMemberPersonalSettingsLayout from "@/components/settings/TeamMemberPersonalSettingsLayout";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
 
 export default function TeamSettingsPage() {
   const { user } = useAuth();
-  const { teamOwnerUid } = usePersonalTeamWorkspaceRequired();
+  const teamWs = usePersonalTeamWorkspaceRequired();
+  const { teamOwnerUid, teamName, teamLogoUrl, roleLabel } = teamWs;
   const [ready, setReady] = useState(false);
-  const [teamName, setTeamName] = useState("");
+  const [teamNameState, setTeamNameState] = useState("");
   const [themeId, setThemeId] = useState<EnterpriseThemeId>("bizzi");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [isOwner, setIsOwner] = useState(false);
+  const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -49,7 +50,7 @@ export default function TeamSettingsPage() {
       theme: string;
       is_owner: boolean;
     };
-    setTeamName(data.team_name ?? "");
+    setTeamNameState(data.team_name ?? "");
     setThemeId((data.theme as EnterpriseThemeId) || "bizzi");
     setLogoPreview(data.logo_url);
     setIsOwner(Boolean(data.is_owner));
@@ -62,7 +63,10 @@ export default function TeamSettingsPage() {
       try {
         await loadSettings();
       } catch {
-        if (!cancelled) setReady(true);
+        if (!cancelled) {
+          setIsOwner(user?.uid === teamOwnerUid);
+          setReady(true);
+        }
       }
     })();
     return () => {
@@ -72,7 +76,7 @@ export default function TeamSettingsPage() {
 
   const handleSaveName = async () => {
     if (!user || !isOwner) return;
-    const trimmed = teamName.trim();
+    const trimmed = teamNameState.trim();
     if (trimmed.length < 2) {
       setNameError("Team name must be at least 2 characters");
       return;
@@ -178,37 +182,45 @@ export default function TeamSettingsPage() {
     }
   };
 
+  if (ready && isOwner === false) {
+    return (
+      <>
+        <TopBar title="Settings" />
+        <main className="flex-1 overflow-auto p-6">
+          <TeamMemberPersonalSettingsLayout
+            teamOwnerUid={teamOwnerUid}
+            teamName={teamName}
+            teamLogoUrl={teamLogoUrl}
+            roleLabel={roleLabel}
+          />
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <TopBar title="Team settings" />
       <main className="flex-1 overflow-auto p-6">
-        <DashboardRouteFade ready={ready} srOnlyMessage="Loading team settings">
+        <DashboardRouteFade ready={ready && isOwner === true} srOnlyMessage="Loading team settings">
           <div className="mx-auto max-w-2xl space-y-8">
             <SettingsScopeHeader
               title="Team settings"
               scope="personalTeam"
-              permission={
-                isOwner
-                  ? { kind: "editable" }
-                  : {
-                      kind: "readOnly",
-                      reason: "Only the team owner can change the team name, logo, and theme.",
-                    }
-              }
+              permission={{ kind: "editable" }}
               effectSummary={`${productSettingsCopy.scopes.thisTeamWorkspaceOnly} — shared folders and storage for this team. Personal billing and account settings live in Personal Settings.`}
             >
               <p className="text-sm text-neutral-600 dark:text-neutral-400">
                 Your personal account and billing:{" "}
-                <Link href="/dashboard/settings" className="text-bizzi-blue hover:underline dark:text-bizzi-cyan">
+                <Link
+                  href="/dashboard/settings"
+                  className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+                >
                   Dashboard → Settings
                 </Link>
                 .
               </p>
             </SettingsScopeHeader>
-
-            {!isOwner ? (
-              <ReadOnlyBanner message="You can view team branding and theme. Invites and seats are managed by the owner in Team Management below." />
-            ) : null}
 
             <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
@@ -218,25 +230,22 @@ export default function TeamSettingsPage() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  value={teamName}
+                  value={teamNameState}
                   onChange={(e) => {
-                    setTeamName(e.target.value);
+                    setTeamNameState(e.target.value);
                     setNameError(null);
                   }}
                   placeholder="Your team name"
-                  disabled={!isOwner}
-                  className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--enterprise-primary)] disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                  className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--enterprise-primary)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                 />
-                {isOwner && (
-                  <button
-                    type="button"
-                    onClick={handleSaveName}
-                    disabled={savingName || teamName.trim().length < 2}
-                    className="shrink-0 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleSaveName}
+                  disabled={savingName || teamNameState.trim().length < 2}
+                  className="shrink-0 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                </button>
               </div>
               {nameError && (
                 <p className="mt-1 text-sm text-red-600 dark:text-red-400">{nameError}</p>
@@ -264,38 +273,34 @@ export default function TeamSettingsPage() {
                       <ImageIcon className="h-10 w-10 text-neutral-400" />
                     )}
                   </div>
-                  {isOwner && (
-                    <>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleLogoSelect}
-                        aria-label="Upload team logo"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-sm text-[var(--enterprise-primary)] hover:underline"
-                      >
-                        Choose image
-                      </button>
-                      {logoFile && (
-                        <button
-                          type="button"
-                          onClick={handleUploadLogo}
-                          disabled={uploadingLogo}
-                          className="flex items-center gap-1 rounded-lg bg-[var(--enterprise-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-                        >
-                          {uploadingLogo ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            "Upload"
-                          )}
-                        </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleLogoSelect}
+                    aria-label="Upload team logo"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-sm text-[var(--enterprise-primary)] hover:underline"
+                  >
+                    Choose image
+                  </button>
+                  {logoFile && (
+                    <button
+                      type="button"
+                      onClick={handleUploadLogo}
+                      disabled={uploadingLogo}
+                      className="flex items-center gap-1 rounded-lg bg-[var(--enterprise-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {uploadingLogo ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Upload"
                       )}
-                    </>
+                    </button>
                   )}
                 </div>
                 {logoError && (
@@ -314,13 +319,12 @@ export default function TeamSettingsPage() {
                   <button
                     key={theme.id}
                     type="button"
-                    onClick={() => isOwner && handleThemeChange(theme.id)}
-                    disabled={!isOwner}
+                    onClick={() => handleThemeChange(theme.id)}
                     className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-colors ${
                       themeId === theme.id
                         ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                    } ${!isOwner ? "cursor-default opacity-70" : ""}`}
+                    }`}
                     title={theme.name}
                   >
                     <div
