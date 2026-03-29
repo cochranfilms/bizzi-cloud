@@ -22,17 +22,20 @@ import PersonalProfileSettingsSection from "@/components/settings/PersonalProfil
 import PersonalAccountEmailSection from "@/components/settings/PersonalAccountEmailSection";
 import PersonalPasswordChangeSection from "@/components/settings/PersonalPasswordChangeSection";
 import SupportTicketModal from "@/components/dashboard/SupportTicketModal";
+import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
+import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 
-const NAV_IDS = [
-  "account",
-  "notifications",
-  "security",
-  "apps",
-  "workspace",
-  "help",
-] as const;
+const MEMBER_NAV_ITEMS: SettingsNavItem[] = [
+  { id: "account", label: "Account", icon: User },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "security", label: "Security", icon: Lock },
+  { id: "apps", label: "Apps and devices", icon: Monitor },
+  { id: "workspace", label: "Workspace access", icon: Building2 },
+  { id: "help", label: "Help", icon: HelpCircle },
+];
 
-type MemberNavId = (typeof NAV_IDS)[number];
+const MEMBER_NAV_IDS = new Set(MEMBER_NAV_ITEMS.map((i) => i.id));
+type MemberNavId = (typeof MEMBER_NAV_ITEMS)[number]["id"];
 
 function formatMemberStorage(bytes: number | null, used: number): string {
   if (bytes === null) {
@@ -107,7 +110,7 @@ export default function TeamMemberPersonalSettingsLayout({
 
   useEffect(() => {
     const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
-    if (hash && NAV_IDS.includes(hash as MemberNavId)) {
+    if (hash && MEMBER_NAV_IDS.has(hash)) {
       setActive(hash as MemberNavId);
     }
   }, []);
@@ -168,40 +171,14 @@ export default function TeamMemberPersonalSettingsLayout({
     }
   };
 
-  const navBtn = (id: MemberNavId, label: string, Icon: typeof User) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => setNav(id)}
-      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-        active === id
-          ? "bg-[var(--enterprise-primary)]/15 text-[var(--enterprise-primary)]"
-          : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-      }`}
-    >
-      <Icon className="h-4 w-4 shrink-0 opacity-80" />
-      {label}
-    </button>
-  );
-
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
-      <nav
-        aria-label="Settings sections"
-        className="shrink-0 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900 lg:w-56"
-      >
-        <p className="mb-2 px-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Settings
-        </p>
-        <div className="flex flex-col gap-0.5">
-          {navBtn("account", "Account", User)}
-          {navBtn("notifications", "Notifications", Bell)}
-          {navBtn("security", "Security", Lock)}
-          {navBtn("apps", "Apps and devices", Monitor)}
-          {navBtn("workspace", "Workspace access", Building2)}
-          {navBtn("help", "Help", HelpCircle)}
-        </div>
-      </nav>
+      <SettingsSidebarNav
+        variant="enterprise"
+        activeId={active}
+        onSelect={(id: string) => setNav(id as MemberNavId)}
+        items={MEMBER_NAV_ITEMS}
+      />
 
       <div className="min-w-0 flex-1 space-y-6">
         <SettingsScopeHeader

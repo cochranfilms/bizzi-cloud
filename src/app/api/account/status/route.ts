@@ -4,6 +4,7 @@
  * Used to determine if user should be redirected to /account/personal-deleted interstitial.
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { userHasActiveOrgAdminSeat } from "@/lib/enterprise-access";
 import type { PersonalStatus } from "@/types/profile";
 import { NextResponse } from "next/server";
 
@@ -65,12 +66,8 @@ export async function GET(request: Request) {
   const redirect_to_interstitial =
     !!restoreStillValid && enterprise_orgs.length > 0;
 
-  const ownedOrgsSnap = await db
-    .collection("organizations")
-    .where("created_by", "==", uid)
-    .limit(1)
-    .get();
-  const owns_org = !ownedOrgsSnap.empty;
+  /** Active org admin on any enterprise org (organization_seats), not `organizations.created_by`. */
+  const owns_org = await userHasActiveOrgAdminSeat(uid, db);
 
   return NextResponse.json({
     personal_status: personalStatus,

@@ -32,6 +32,23 @@ function seatRoleFromData(
 }
 
 /**
+ * Whether the user is an **active organization admin** on any org (seat truth).
+ * Prefer this over `organizations.created_by`, which can be stale after a demotion:
+ * `created_by` is updated when someone is promoted to admin, but not always cleared when demoted.
+ */
+export async function userHasActiveOrgAdminSeat(
+  uid: string,
+  db: Firestore = getAdminFirestore()
+): Promise<boolean> {
+  const snap = await db
+    .collection("organization_seats")
+    .where("user_id", "==", uid)
+    .where("status", "==", "active")
+    .get();
+  return snap.docs.some((d) => seatRoleFromData(d.data()?.role) === "admin");
+}
+
+/**
  * Resolve access for a specific organization. Always load seat truth for orgId + uid.
  */
 export async function resolveEnterpriseAccess(

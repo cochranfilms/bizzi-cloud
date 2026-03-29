@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -19,6 +19,9 @@ import {
   Download,
   Trash2,
   AlertTriangle,
+  User,
+  Palette,
+  Users,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
@@ -43,8 +46,18 @@ import WhereToChangeHint from "@/components/settings/WhereToChangeHint";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import PersonalProfileSettingsSection from "@/components/settings/PersonalProfileSettingsSection";
 import PersonalCredentialsSection from "@/components/settings/PersonalCredentialsSection";
+import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
+import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
+
+const DASHBOARD_SETTINGS_NAV_BASE: SettingsNavItem[] = [
+  { id: "appearance", label: "This device", icon: Palette },
+  { id: "account", label: "Account", icon: User },
+  { id: "storage", label: "Storage", icon: HardDrive },
+  { id: "privacy", label: "Privacy", icon: Shield },
+  { id: "billing", label: "Billing", icon: CreditCard },
+];
 
 function StorageSection() {
   return (
@@ -303,8 +316,8 @@ function PrivacySection() {
           {ownsOrg && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
               <p className="text-sm text-amber-800 dark:text-amber-200">
-                You still administer an organization. Transfer ownership or delete the organization
-                before closing your identity.
+                You are an organization admin. Transfer ownership or delete the organization before
+                closing your personal identity.
               </p>
               <Link
                 href="/enterprise/seats"
@@ -903,37 +916,95 @@ function SubscriptionSection() {
 
 function SettingsContent() {
   const searchParams = useSearchParams();
+  const { planId, ownsPersonalTeam, loading: subLoading } = useSubscription();
+  const allowsTeamSeats = planAllowsPersonalTeamSeats(planId ?? "free");
+  const showTeamNav = ownsPersonalTeam && allowsTeamSeats && !subLoading;
+
+  const navItems = useMemo(() => {
+    const items = [...DASHBOARD_SETTINGS_NAV_BASE];
+    if (showTeamNav) {
+      items.push({ id: "team", label: "Team", icon: Users });
+    }
+    return items;
+  }, [showTeamNav]);
+
+  const navIds = useMemo(() => new Set(navItems.map((i) => i.id)), [navItems]);
+
+  const [active, setActive] = useState("account");
+
+  const setNav = useCallback((id: string) => {
+    setActive(id);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${id}`);
+    }
+  }, []);
+
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab === "privacy") {
-      document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth" });
+      setActive("privacy");
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.location.hash.replace(/^#/, "");
+    if (!raw) return;
+    if (navIds.has(raw)) {
+      setActive(raw);
+      return;
+    }
+    if ((raw === "team-management" || raw === "team") && navIds.has("team")) {
+      setActive("team");
+    }
+  }, [navIds]);
+
   return (
     <DashboardRouteFade ready srOnlyMessage="">
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
+        <SettingsSidebarNav
+          variant="personal"
+          items={navItems}
+          activeId={active}
+          onSelect={setNav}
+        />
+        <div className="min-w-0 flex-1 space-y-6">
           <SettingsScopeHeader
             title="Settings"
             scope="personal"
             permission={{ kind: "editable" }}
             effectSummary="Profile, storage analytics, privacy, subscription, and personal team management for this account."
           />
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <SettingsSectionScope label={productSettingsCopy.scopes.localDeviceWorkspace} />
-            <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
-              {productSettingsCopy.localDashboard.movedTitle}
-            </h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              {productSettingsCopy.localDashboard.movedBody}
-            </p>
-          </section>
-          <PersonalProfileSettingsSection />
-          <PersonalCredentialsSection />
-          <StorageSection />
-          <PrivacySection />
-          <SubscriptionSection />
-          <TeamManagementSection settingsScope="personal" />
+
+          {active === "appearance" && (
+            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+              <SettingsSectionScope label={productSettingsCopy.scopes.localDeviceWorkspace} />
+              <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                {productSettingsCopy.localDashboard.movedTitle}
+              </h2>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                {productSettingsCopy.localDashboard.movedBody}
+              </p>
+            </section>
+          )}
+
+          {active === "account" && (
+            <>
+              <PersonalProfileSettingsSection />
+              <PersonalCredentialsSection />
+            </>
+          )}
+
+          {active === "storage" && <StorageSection />}
+          {active === "privacy" && <PrivacySection />}
+          {/* Keep mounted so Stripe return query params still trigger refetch/banners. */}
+          <div className={active === "billing" ? "space-y-6" : "hidden"}>
+            <SubscriptionSection />
+          </div>
+          {active === "team" && showTeamNav && (
+            <TeamManagementSection settingsScope="personal" />
+          )}
+        </div>
       </div>
     </DashboardRouteFade>
   );

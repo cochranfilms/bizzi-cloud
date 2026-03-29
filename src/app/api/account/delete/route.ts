@@ -17,6 +17,7 @@ import {
   transitionToScheduledDelete,
   transitionToPersonalScheduledDelete,
 } from "@/lib/storage-lifecycle";
+import { userHasActiveOrgAdminSeat } from "@/lib/enterprise-access";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 
@@ -96,18 +97,13 @@ export async function POST(request: Request) {
     .get();
   const hasEnterpriseAccess = !activeSeatsSnap.empty;
 
-  const ownedOrgsSnap = await db
-    .collection("organizations")
-    .where("created_by", "==", uid)
-    .limit(1)
-    .get();
-  const ownsOrg = !ownedOrgsSnap.empty;
+  const ownsOrg = await userHasActiveOrgAdminSeat(uid, db);
 
   if (!hasEnterpriseAccess && ownsOrg) {
     return NextResponse.json(
       {
         error:
-          "You still administer an organization. Transfer ownership or delete the organization before closing your identity.",
+          "You are an organization admin. Transfer ownership or delete the organization before closing your identity.",
         ownsOrg: true,
       },
       { status: 400 }

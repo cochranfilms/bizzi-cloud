@@ -8,6 +8,7 @@
  * Schedule: daily. Requires CRON_SECRET.
  */
 import { getAdminFirestore, getAdminAuth } from "@/lib/firebase-admin";
+import { userHasActiveOrgAdminSeat } from "@/lib/enterprise-access";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
@@ -68,16 +69,11 @@ export async function POST(request: Request) {
         });
         results.push({ uid, status: "personal_purged" });
       } else {
-        const ownedOrgsSnap = await db
-          .collection("organizations")
-          .where("created_by", "==", uid)
-          .limit(1)
-          .get();
-        if (!ownedOrgsSnap.empty) {
+        if (await userHasActiveOrgAdminSeat(uid, db)) {
           results.push({
             uid,
             status: "skipped",
-            error: "User owns organization; transfer ownership before identity deletion",
+            error: "User is an organization admin; transfer ownership before identity deletion",
           });
           continue;
         }

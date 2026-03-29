@@ -15,13 +15,21 @@ import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
 import TeamMemberPersonalSettingsLayout from "@/components/settings/TeamMemberPersonalSettingsLayout";
+import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
+import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Building2, Image as ImageIcon, Loader2, Users } from "lucide-react";
+
+const OWNER_TEAM_NAV: SettingsNavItem[] = [
+  { id: "branding", label: "Team branding", icon: Building2 },
+  { id: "management", label: "Team management", icon: Users },
+];
 
 export default function TeamSettingsPage() {
   const { user } = useAuth();
   const teamWs = usePersonalTeamWorkspaceRequired();
   const { teamOwnerUid, teamName, teamLogoUrl, roleLabel } = teamWs;
+  const [ownerSection, setOwnerSection] = useState<"branding" | "management">("branding");
   const [ready, setReady] = useState(false);
   const [teamNameState, setTeamNameState] = useState("");
   const [themeId, setThemeId] = useState<EnterpriseThemeId>("bizzi");
@@ -73,6 +81,28 @@ export default function TeamSettingsPage() {
       cancelled = true;
     };
   }, [loadSettings]);
+
+  const setOwnerNav = useCallback((id: string) => {
+    const next = id === "management" ? "management" : "branding";
+    setOwnerSection(next);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        `#${next === "management" ? "team-management" : "branding"}`
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !ready || isOwner !== true) return;
+    const h = window.location.hash.replace(/^#/, "");
+    if (h === "team-management" || h === "management" || h === "team") {
+      setOwnerSection("management");
+    } else if (h === "branding") {
+      setOwnerSection("branding");
+    }
+  }, [ready, isOwner]);
 
   const handleSaveName = async () => {
     if (!user || !isOwner) return;
@@ -203,143 +233,155 @@ export default function TeamSettingsPage() {
       <TopBar title="Team settings" />
       <main className="flex-1 overflow-auto p-6">
         <DashboardRouteFade ready={ready && isOwner === true} srOnlyMessage="Loading team settings">
-          <div className="mx-auto max-w-2xl space-y-8">
-            <SettingsScopeHeader
-              title="Team settings"
-              scope="personalTeam"
-              permission={{ kind: "editable" }}
-              effectSummary={`${productSettingsCopy.scopes.thisTeamWorkspaceOnly} — shared folders and storage for this team. Personal billing and account settings live in Personal Settings.`}
-            >
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                Your personal account and billing:{" "}
-                <Link
-                  href="/dashboard/settings"
-                  className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-                >
-                  Dashboard → Settings
-                </Link>
-                .
-              </p>
-            </SettingsScopeHeader>
+          <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
+            <SettingsSidebarNav
+              variant="enterprise"
+              items={OWNER_TEAM_NAV}
+              activeId={ownerSection}
+              onSelect={setOwnerNav}
+            />
+            <div className="min-w-0 flex-1 space-y-8">
+              <SettingsScopeHeader
+                title="Team settings"
+                scope="personalTeam"
+                permission={{ kind: "editable" }}
+                effectSummary={`${productSettingsCopy.scopes.thisTeamWorkspaceOnly} — shared folders and storage for this team. Personal billing and account settings live in Personal Settings.`}
+              >
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  Your personal account and billing:{" "}
+                  <Link
+                    href="/dashboard/settings"
+                    className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+                  >
+                    Dashboard → Settings
+                  </Link>
+                  .
+                </p>
+              </SettingsScopeHeader>
 
-            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-                <Building2 className="h-5 w-5 text-[var(--enterprise-primary)]" />
-                Team name
-              </h2>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={teamNameState}
-                  onChange={(e) => {
-                    setTeamNameState(e.target.value);
-                    setNameError(null);
-                  }}
-                  placeholder="Your team name"
-                  className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--enterprise-primary)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveName}
-                  disabled={savingName || teamNameState.trim().length < 2}
-                  className="shrink-0 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                </button>
-              </div>
-              {nameError && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{nameError}</p>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-                <ImageIcon className="h-5 w-5 text-[var(--enterprise-primary)]" />
-                Logo
-              </h2>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <div className="flex shrink-0 flex-col items-center gap-2">
-                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                    {logoPreview ? (
-                      <Image
-                        src={logoPreview}
-                        alt="Team logo"
-                        width={96}
-                        height={96}
-                        className="h-full w-full object-contain"
-                        unoptimized
+              {ownerSection === "branding" && (
+                <>
+                  <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                    <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                      <Building2 className="h-5 w-5 text-[var(--enterprise-primary)]" />
+                      Team name
+                    </h2>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={teamNameState}
+                        onChange={(e) => {
+                          setTeamNameState(e.target.value);
+                          setNameError(null);
+                        }}
+                        placeholder="Your team name"
+                        className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--enterprise-primary)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                       />
-                    ) : (
-                      <ImageIcon className="h-10 w-10 text-neutral-400" />
+                      <button
+                        type="button"
+                        onClick={handleSaveName}
+                        disabled={savingName || teamNameState.trim().length < 2}
+                        className="shrink-0 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                      </button>
+                    </div>
+                    {nameError && (
+                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{nameError}</p>
                     )}
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleLogoSelect}
-                    aria-label="Upload team logo"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-sm text-[var(--enterprise-primary)] hover:underline"
-                  >
-                    Choose image
-                  </button>
-                  {logoFile && (
-                    <button
-                      type="button"
-                      onClick={handleUploadLogo}
-                      disabled={uploadingLogo}
-                      className="flex items-center gap-1 rounded-lg bg-[var(--enterprise-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-                    >
-                      {uploadingLogo ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Upload"
+                  </section>
+
+                  <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                    <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                      <ImageIcon className="h-5 w-5 text-[var(--enterprise-primary)]" />
+                      Logo
+                    </h2>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <div className="flex shrink-0 flex-col items-center gap-2">
+                        <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                          {logoPreview ? (
+                            <Image
+                              src={logoPreview}
+                              alt="Team logo"
+                              width={96}
+                              height={96}
+                              className="h-full w-full object-contain"
+                              unoptimized
+                            />
+                          ) : (
+                            <ImageIcon className="h-10 w-10 text-neutral-400" />
+                          )}
+                        </div>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoSelect}
+                          aria-label="Upload team logo"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-sm text-[var(--enterprise-primary)] hover:underline"
+                        >
+                          Choose image
+                        </button>
+                        {logoFile && (
+                          <button
+                            type="button"
+                            onClick={handleUploadLogo}
+                            disabled={uploadingLogo}
+                            className="flex items-center gap-1 rounded-lg bg-[var(--enterprise-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {uploadingLogo ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Upload"
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      {logoError && (
+                        <p className="text-sm text-red-600 dark:text-red-400">{logoError}</p>
                       )}
-                    </button>
-                  )}
-                </div>
-                {logoError && (
-                  <p className="text-sm text-red-600 dark:text-red-400">{logoError}</p>
-                )}
-              </div>
-            </section>
+                    </div>
+                  </section>
 
-            <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-              <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">Theme</h2>
-              <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-                Choose accent colors for this team workspace (navigation and highlights).
-              </p>
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
-                {ENTERPRISE_THEMES.map((theme) => (
-                  <button
-                    key={theme.id}
-                    type="button"
-                    onClick={() => handleThemeChange(theme.id)}
-                    className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-colors ${
-                      themeId === theme.id
-                        ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10"
-                        : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                    }`}
-                    title={theme.name}
-                  >
-                    <div
-                      className="h-8 w-8 rounded-full"
-                      style={{ backgroundColor: theme.primary }}
-                    />
-                    <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                      {theme.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
+                  <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                    <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">Theme</h2>
+                    <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+                      Choose accent colors for this team workspace (navigation and highlights).
+                    </p>
+                    <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
+                      {ENTERPRISE_THEMES.map((theme) => (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => handleThemeChange(theme.id)}
+                          className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-colors ${
+                            themeId === theme.id
+                              ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10"
+                              : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
+                          }`}
+                          title={theme.name}
+                        >
+                          <div
+                            className="h-8 w-8 rounded-full"
+                            style={{ backgroundColor: theme.primary }}
+                          />
+                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                            {theme.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
 
-            <TeamManagementSection />
+              {ownerSection === "management" && <TeamManagementSection />}
+            </div>
           </div>
         </DashboardRouteFade>
       </main>
