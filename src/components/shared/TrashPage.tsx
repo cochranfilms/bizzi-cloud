@@ -18,6 +18,11 @@ import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { rectsIntersect, formatBytes, formatDate } from "@/lib/utils";
+import {
+  recentFileToCreativeThumbnailSource,
+  resolveCreativeProjectTile,
+} from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 function isVideoFile(name: string) {
@@ -158,6 +163,7 @@ function DeletedFileCard({
   const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isPdf && isInView,
   });
+  const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
   const aspectClass = getCardAspectClass("landscape");
   const objectFit = "object-contain";
 
@@ -209,9 +215,21 @@ function DeletedFileCard({
         className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
       >
         {isMacosPackage ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
-            <Archive className="h-8 w-8 text-amber-800 dark:text-amber-400" />
-          </div>
+          creativeThumb.mode === "branded_project" ? (
+            <BrandedProjectTile
+              brandId={creativeThumb.brandId}
+              tileVariant={creativeThumb.tileVariant}
+              fileName={file.name}
+              displayLabel={creativeThumb.displayLabel}
+              extensionLabel={creativeThumb.extensionLabel}
+              size="md"
+              className="absolute inset-0"
+            />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
+              <Archive className="h-8 w-8 text-amber-800 dark:text-amber-400" />
+            </div>
+          )
         ) : isVideo && file.objectKey ? (
           <VideoScrubThumbnail
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
@@ -238,6 +256,16 @@ function DeletedFileCard({
               </div>
             </div>
           </div>
+        ) : creativeThumb.mode === "branded_project" ? (
+          <BrandedProjectTile
+            brandId={creativeThumb.brandId}
+            tileVariant={creativeThumb.tileVariant}
+            fileName={file.name}
+            displayLabel={creativeThumb.displayLabel}
+            extensionLabel={creativeThumb.extensionLabel}
+            size="md"
+            className="absolute inset-0"
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <FileIcon className="h-10 w-10" />

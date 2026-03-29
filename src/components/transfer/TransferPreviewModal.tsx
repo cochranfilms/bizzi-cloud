@@ -5,13 +5,19 @@ import { Download, FileIcon, Loader2, Film } from "lucide-react";
 import VideoWithLUT from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
 import type { TransferFile } from "@/types/transfer";
+import { isProjectFile } from "@/lib/bizzi-file-types";
+import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
-function getPreviewType(name: string): "image" | "video" | "audio" | "pdf" | "other" {
+function getPreviewType(
+  name: string
+): "image" | "video" | "audio" | "pdf" | "project_file" | "other" {
+  if (isProjectFile(name)) return "project_file";
   const lower = name.toLowerCase();
   if (IMAGE_EXT.test(lower)) return "image";
   if (VIDEO_EXT.test(lower)) return "video";
@@ -52,6 +58,12 @@ export default function TransferPreviewModal({
 
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
+    if (previewType === "project_file") {
+      setLoading(false);
+      setError(null);
+      setFullUrl(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     setVideoStreamUrl(null);
@@ -177,7 +189,45 @@ export default function TransferPreviewModal({
 
   let mediaBody: ReactNode = null;
 
-  if (loading) {
+  if (previewType === "project_file") {
+    const pc = resolveCreativeProjectTile({
+      name: file.name,
+      path: file.path || file.name,
+    });
+    mediaBody = (
+      <div className="flex max-w-md flex-col items-center gap-4 px-4 text-center text-neutral-600 dark:text-neutral-300">
+        {pc.mode === "branded_project" ? (
+          <div className="h-52 w-full max-w-[14rem]">
+            <BrandedProjectTile
+              brandId={pc.brandId}
+              tileVariant={pc.tileVariant}
+              fileName={file.name}
+              displayLabel={pc.displayLabel}
+              extensionLabel={pc.extensionLabel}
+              size="xl"
+              className="h-full w-full"
+            />
+          </div>
+        ) : (
+          <FileIcon className="h-16 w-16" />
+        )}
+        <p className="text-sm font-medium text-neutral-900 dark:text-white">
+          Preview not supported for this project file
+        </p>
+        <p className="text-sm">Download to open in your editing app</p>
+        {canDownload ? (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+          >
+            Download
+          </button>
+        ) : null}
+      </div>
+    );
+  } else if (loading) {
     mediaBody = (
       <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-4 py-10">
         <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />

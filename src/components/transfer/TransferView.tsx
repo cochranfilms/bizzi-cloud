@@ -6,6 +6,8 @@ import { useTransfers } from "@/context/TransferContext";
 import { File, Download, Lock, FolderOpen, Film, Play } from "lucide-react";
 import Image from "next/image";
 import type { Transfer, TransferFile } from "@/types/transfer";
+import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 import TransferPreviewModal from "./TransferPreviewModal";
 import { useTransferThumbnail } from "@/hooks/useTransferThumbnail";
 import { useTransferBulkDownload } from "@/hooks/useTransferBulkDownload";
@@ -45,6 +47,10 @@ function TransferFileRow({
   const isImage = isImageFile(file.name);
   const canPreview = !!file.objectKey;
   const hasThumbnail = (isImage && thumbnailUrl) || (isVideo && videoThumbnailUrl);
+  const transferCreative = resolveCreativeProjectTile({
+    name: file.name,
+    path: file.path || file.name,
+  });
 
   const fetchTransferVideoStreamUrl = useCallback(async (): Promise<string | null> => {
     if (!file.objectKey) return null;
@@ -109,6 +115,16 @@ function TransferFileRow({
                 className="h-full w-full object-cover"
               />
             </>
+          ) : transferCreative.mode === "branded_project" ? (
+            <BrandedProjectTile
+              brandId={transferCreative.brandId}
+              tileVariant={transferCreative.tileVariant}
+              fileName={file.name}
+              displayLabel={transferCreative.displayLabel}
+              extensionLabel={transferCreative.extensionLabel}
+              size="md"
+              className="h-full w-full"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <File className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />

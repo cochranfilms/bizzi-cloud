@@ -278,7 +278,13 @@ export function MemberTeamCard() {
   );
 }
 
-export function TeamManagementSection() {
+export type TeamManagementSettingsScope = "personal" | "team";
+
+export function TeamManagementSection({
+  settingsScope = "team",
+}: {
+  settingsScope?: TeamManagementSettingsScope;
+} = {}) {
   const { user } = useAuth();
   const {
     planId,
@@ -293,6 +299,14 @@ export function TeamManagementSection() {
   const showOwnerPanel = ownsPersonalTeam && allowsSeats;
   const [teamIdentityLoading, setTeamIdentityLoading] = useState(true);
   const [teamHasName, setTeamHasName] = useState(false);
+  const [teamIdentityName, setTeamIdentityName] = useState("");
+  const [teamIdentityLogoUrl, setTeamIdentityLogoUrl] = useState<string | null>(null);
+  const [identityRefreshTick, setIdentityRefreshTick] = useState(0);
+
+  const scopeLabel =
+    settingsScope === "personal"
+      ? productSettingsCopy.scopes.personalAccountOnly
+      : productSettingsCopy.scopes.thisTeamWorkspaceOnly;
 
   const [members, setMembers] = useState<MemberApi[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInviteApi[]>([]);
@@ -328,9 +342,16 @@ export function TeamManagementSection() {
           `/api/personal-team/settings?owner_uid=${encodeURIComponent(user.uid)}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        const data = (await res.json().catch(() => ({}))) as { team_name?: string | null };
+        const data = (await res.json().catch(() => ({}))) as {
+          team_name?: string | null;
+          logo_url?: string | null;
+        };
         if (cancelled) return;
-        setTeamHasName(Boolean((data.team_name ?? "").trim()));
+        const trimmedName = (data.team_name ?? "").trim();
+        setTeamHasName(Boolean(trimmedName));
+        setTeamIdentityName(trimmedName);
+        const logo = (data.logo_url ?? "").trim();
+        setTeamIdentityLogoUrl(logo.length > 0 ? logo : null);
       } catch {
         if (!cancelled) setTeamHasName(true);
       } finally {
@@ -340,7 +361,7 @@ export function TeamManagementSection() {
     return () => {
       cancelled = true;
     };
-  }, [user, showOwnerPanel]);
+  }, [user, showOwnerPanel, identityRefreshTick]);
 
   const loadTeam = useCallback(async () => {
     if (!user || !isFirebaseConfigured() || !ownsPersonalTeam || !allowsSeats) {
@@ -493,7 +514,7 @@ export function TeamManagementSection() {
           id="team-management"
           className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
         >
-          <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
+          <SettingsSectionScope label={scopeLabel} />
           <div className="flex flex-col items-center justify-center gap-3 py-16">
             <Loader2 className="h-8 w-8 animate-spin text-bizzi-blue" aria-hidden />
             <p className="text-sm text-neutral-600 dark:text-neutral-400">Loading team workspace…</p>
@@ -512,7 +533,7 @@ export function TeamManagementSection() {
           id="team-management"
           className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
         >
-          <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
+          <SettingsSectionScope label={scopeLabel} />
           <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
             <Users className="h-5 w-5 text-bizzi-blue" />
             Personal team workspace
@@ -527,6 +548,7 @@ export function TeamManagementSection() {
             className="p-5 sm:p-6"
             onComplete={() => {
               setTeamHasName(true);
+              setIdentityRefreshTick((t) => t + 1);
               void refetchSubscription();
             }}
           />
@@ -550,7 +572,7 @@ export function TeamManagementSection() {
       id="team-management"
       className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
     >
-      <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
+      <SettingsSectionScope label={scopeLabel} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Users className="h-5 w-5 text-bizzi-blue" />
         Team Management
@@ -566,6 +588,50 @@ export function TeamManagementSection() {
         uses your plan and cannot exceed your total. Combined usage (you + all members, team folder +
         your personal files on this account) can never go above your plan.
       </p>
+
+      {!hasCapacity ? (
+        <div className="mb-6 rounded-xl border border-bizzi-blue/35 bg-gradient-to-br from-cyan-50/80 to-white p-5 dark:border-bizzi-cyan/25 dark:from-cyan-950/25 dark:to-neutral-900">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Your team identity</h3>
+          <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+            Your team name and logo are saved. The dedicated team workspace stays locked until you activate
+            it with seats.
+          </p>
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-600 dark:bg-neutral-800">
+              {teamIdentityLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- remote logo URL from storage
+                <img
+                  src={teamIdentityLogoUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Users className="h-9 w-9 text-bizzi-blue/50 dark:text-bizzi-cyan/60" aria-hidden />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Team name
+              </p>
+              <p className="truncate text-lg font-semibold text-neutral-900 dark:text-white">
+                {teamIdentityName || "—"}
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">
+            Purchase at least one{" "}
+            <strong className="text-neutral-900 dark:text-white">extra team seat</strong> to unlock the
+            team workspace and the workspace switcher. Until then, keep working in your personal workspace —
+            your team identity remains here in Settings.
+          </p>
+          <Link
+            href="/dashboard/change-plan"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
+          >
+            Add team seats
+          </Link>
+        </div>
+      ) : null}
 
       <div className="mb-6 rounded-lg border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Team overview</h3>
@@ -646,20 +712,7 @@ export function TeamManagementSection() {
         </ul>
       </div>
 
-      {!hasCapacity ? (
-        <div className="rounded-lg border border-dashed border-bizzi-blue/40 bg-cyan-50/50 p-4 dark:bg-cyan-950/20">
-          <p className="text-sm font-medium text-neutral-900 dark:text-white">Your team is ready</p>
-          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-            Add team seats on your plan, then invite members to collaborate.
-          </p>
-          <Link
-            href="/dashboard/change-plan"
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
-          >
-            Add team seats
-          </Link>
-        </div>
-      ) : activeMembers.length === 0 && pendingInvites.length === 0 ? (
+      {hasCapacity && activeMembers.length === 0 && pendingInvites.length === 0 ? (
         <div className="mb-6 rounded-lg border border-dashed border-neutral-200 p-4 dark:border-neutral-600">
           <p className="text-sm font-medium text-neutral-900 dark:text-white">
             Your team is ready — invite members to start collaborating

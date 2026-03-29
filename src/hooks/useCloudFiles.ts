@@ -247,6 +247,8 @@ export interface RecentFile {
   macosPackageId?: string | null;
   macosPackageFileCount?: number | null;
   macosPackageLabel?: string | null;
+  /** macOS package kind from API / container (e.g. `fcpbundle`). */
+  macosPackageKind?: string | null;
   /** Creative registry (Projects, labels) */
   handlingModel?: string | null;
   creativeApp?: string | null;
@@ -297,6 +299,7 @@ export function apiFileToRecentFile(
     macosPackageId: (raw.macos_package_id as string) ?? null,
     macosPackageFileCount: raw.macos_package_file_count != null ? Number(raw.macos_package_file_count) : null,
     macosPackageLabel: (raw.macos_package_label as string) ?? null,
+    macosPackageKind: (raw.macos_package_kind as string) ?? null,
     resolution_w: (raw.resolution_w as number) ?? null,
     resolution_h: (raw.resolution_h as number) ?? null,
     duration_sec: (raw.duration_sec as number) ?? null,

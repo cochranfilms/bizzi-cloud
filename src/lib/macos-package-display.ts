@@ -2,11 +2,15 @@
  * UI helpers: synthetic rows + hiding package members when showing one logical package.
  */
 
+import { getMacosPackageKindFromFileName } from "@/lib/macos-package-bundles";
+
 export type MacosPackageListEntry = {
   id: string;
   root_relative_path: string;
   root_segment_name?: string | null;
   display_label?: string | null;
+  /** From container doc (`package_kind`), e.g. `fcpbundle`. */
+  package_kind?: string | null;
   file_count: number;
   total_bytes: number;
   last_activity_at: string | null;
@@ -26,6 +30,7 @@ export type MacosPackageSyntheticFileRow = {
   macosPackageId: string;
   macosPackageFileCount: number;
   macosPackageLabel: string | null;
+  macosPackageKind?: string | null;
 };
 
 /** True when the row is a collapsed macOS package (FCP / Premiere bundle, etc.). */
@@ -45,6 +50,8 @@ export function recentFileFromMacosPackageListEntry(
     (pkg.root_segment_name as string) ||
     pkg.root_relative_path.split("/").filter(Boolean).pop() ||
     pkg.root_relative_path;
+  const pk = pkg.package_kind?.trim();
+  const macosPackageKind = (pk && pk.length > 0 ? pk : null) ?? getMacosPackageKindFromFileName(name);
   return {
     id: `macos-pkg:${pkg.id}`,
     name,
@@ -58,6 +65,7 @@ export function recentFileFromMacosPackageListEntry(
     macosPackageId: pkg.id,
     macosPackageFileCount: pkg.file_count,
     macosPackageLabel: (pkg.display_label as string) ?? null,
+    macosPackageKind,
   };
 }
 

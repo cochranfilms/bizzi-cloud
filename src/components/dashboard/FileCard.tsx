@@ -27,6 +27,11 @@ import HeartButton from "@/components/collaboration/HeartButton";
 import { useHearts } from "@/hooks/useHearts";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
+import {
+  recentFileToCreativeThumbnailSource,
+  resolveCreativeProjectTile,
+} from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
 interface FileCardProps {
   file: RecentFile;
@@ -166,6 +171,10 @@ export default function FileCard({
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
   // Videos respect thumbnailScale like images: Fill = object-cover (Frame.io style, no black bars), Fit = object-contain.
   const videoObjectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
+
+  const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
+  const brandedTileSize =
+    layoutSize === "small" ? "sm" : layoutSize === "medium" ? "md" : "lg";
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -354,9 +363,21 @@ export default function FileCard({
         className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
       >
         {isMacosPackage ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
-            <Archive className={`${sizeClasses.iconInner} text-amber-800 dark:text-amber-400`} />
-          </div>
+          creativeThumb.mode === "branded_project" ? (
+            <BrandedProjectTile
+              brandId={creativeThumb.brandId}
+              tileVariant={creativeThumb.tileVariant}
+              fileName={file.name}
+              displayLabel={creativeThumb.displayLabel}
+              extensionLabel={creativeThumb.extensionLabel}
+              size={brandedTileSize}
+              className="absolute inset-0"
+            />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-amber-50 dark:bg-amber-950/40">
+              <Archive className={`${sizeClasses.iconInner} text-amber-800 dark:text-amber-400`} />
+            </div>
+          )
         ) : isVideo && file.objectKey ? (
           <VideoScrubThumbnail
             fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
@@ -383,6 +404,16 @@ export default function FileCard({
               </div>
             </div>
           </div>
+        ) : creativeThumb.mode === "branded_project" ? (
+          <BrandedProjectTile
+            brandId={creativeThumb.brandId}
+            tileVariant={creativeThumb.tileVariant}
+            fileName={file.name}
+            displayLabel={creativeThumb.displayLabel}
+            extensionLabel={creativeThumb.extensionLabel}
+            size={brandedTileSize}
+            className="absolute inset-0"
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <FileIcon className={sizeClasses.iconInner} />

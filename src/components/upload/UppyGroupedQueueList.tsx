@@ -6,6 +6,8 @@ import type { UppyFile, Meta, Body } from "@uppy/core";
 import { Archive, FileIcon, X, RotateCcw } from "lucide-react";
 import { packageKindDisplayLabel } from "@/lib/macos-package-bundles";
 import { revokeUppyPreview } from "@/lib/uppy-local-preview";
+import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -17,6 +19,7 @@ function formatBytes(n: number): string {
 type PkgMeta = {
   macosPackageGroupRoot?: string;
   macosPackageKind?: string;
+  relativePath?: string;
 };
 
 export function useUppyFileList<M extends Meta, B extends Body>(uppy: Uppy<M, B> | null): UppyFile<M, B>[] {
@@ -177,16 +180,35 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
         const members = g.members;
         const { bytesTotal, pct, failed, complete, allDone } = aggregateFileProgress(members);
         const anyFailed = failed > 0;
+        const bundleTile = resolveCreativeProjectTile({
+          name: displayName,
+          path: g.root,
+          assetType: "macos_package",
+          macosPackageKind: g.kind || null,
+          id: "macos-pkg:uppy-bundle",
+        });
         return (
           <div
             key={g.root}
             className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
           >
             <div className="flex gap-3 p-2">
-              <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-amber-50 dark:bg-amber-950/40">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Archive className="h-9 w-9 text-amber-800 dark:text-amber-400" aria-hidden />
-                </div>
+              <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                {bundleTile.mode === "branded_project" ? (
+                  <BrandedProjectTile
+                    brandId={bundleTile.brandId}
+                    tileVariant={bundleTile.tileVariant}
+                    fileName={displayName}
+                    displayLabel={bundleTile.displayLabel}
+                    extensionLabel={bundleTile.extensionLabel}
+                    size="lg"
+                    className="absolute inset-0"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-amber-50 dark:bg-amber-950/40">
+                    <Archive className="h-9 w-9 text-amber-800 dark:text-amber-400" aria-hidden />
+                  </div>
+                )}
               </div>
               <div className="min-w-0 flex-1 py-0.5">
                 <div className="flex items-start justify-between gap-2">
@@ -249,6 +271,9 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
               f.progress?.uploadComplete === true || (size > 0 && up >= size);
             const pct = size > 0 ? Math.min(100, done ? 100 : (up / size) * 100) : 0;
             const name = f.name ?? "File";
+            const m = f.meta as PkgMeta;
+            const rel = m.relativePath?.trim();
+            const looseTile = resolveCreativeProjectTile({ name, path: rel || name });
             return (
               <div
                 key={f.id}
@@ -258,6 +283,16 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                   {f.preview ? (
                     // eslint-disable-next-line @next/next/no-img-element -- Uppy blob/object URL
                     <img src={f.preview} alt="" className="h-full w-full object-cover" />
+                  ) : looseTile.mode === "branded_project" ? (
+                    <BrandedProjectTile
+                      brandId={looseTile.brandId}
+                      tileVariant={looseTile.tileVariant}
+                      fileName={name}
+                      displayLabel={looseTile.displayLabel}
+                      extensionLabel={looseTile.extensionLabel}
+                      size="sm"
+                      className="h-full w-full"
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-neutral-400">
                       <FileIcon className="h-5 w-5" />

@@ -20,15 +20,15 @@ const INTRO_COPY: Record<
   settings: {
     eyebrow: "Personal team workspace",
     title: "Create your team",
-    body: "Choose a name for your workspace. This is separate from buying seats — you can add seats and invites after your team exists. The name appears in the workspace switcher for you and future collaborators.",
+    body: "Choose a name for your workspace (logo optional). This creates your team identity in Settings. The dedicated team workspace and workspace switcher unlock after you purchase at least one extra team seat — collaborators see your name and logo once they’re invited.",
   },
 };
 
 function modalBodyCopy(hasExtraSeats: boolean): string {
   if (hasExtraSeats) {
-    return "You have extra team seats — this name appears in the workspace switcher for you and your collaborators. Add a logo so invites and the team workspace feel on-brand (you can always change both in Team settings).";
+    return "You have extra team seats — your team workspace and switcher are available. This name appears in the workspace switcher for you and your collaborators. Add a logo so invites and the team workspace feel on-brand (you can always change both in Team settings).";
   }
-  return "Your plan includes a personal team workspace. Name it to get started — then you can add seats, invite collaborators, and manage everything from Team Management. Add a logo anytime for a polished experience (you can always update both in Team settings).";
+  return "Your plan includes a personal team workspace. Name it to create your team identity — it will show in Settings right away. Purchase extra team seats to unlock the team workspace and switcher; then you can invite collaborators from Team Management. Add a logo anytime (you can always update both in Settings).";
 }
 
 type PersonalTeamIdentityFormProps = {
@@ -196,7 +196,8 @@ export default function PersonalTeamIdentityForm({
               <div>
                 <p className="text-sm font-semibold text-neutral-900 dark:text-white">Team profile image</p>
                 <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-400">
-                  Optional — shows in the workspace switcher. Skip for now if you prefer; you can upload later.
+                  Optional — shows in Settings and in the team workspace once seats are active. Skip for now if you
+                  prefer; you can upload later.
                 </p>
               </div>
             </div>

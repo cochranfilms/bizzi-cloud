@@ -25,6 +25,11 @@ import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
+import {
+  recentFileToCreativeThumbnailSource,
+  resolveCreativeProjectTile,
+} from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
 function isVideoFile(name: string) {
   return GALLERY_VIDEO_EXT.test(name.toLowerCase());
@@ -112,6 +117,7 @@ export default function FileListRow({
   });
   const hasThumbnail = isVideo || isImage || isPdf;
   const { confirm } = useConfirm();
+  const creativeThumb = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -168,9 +174,21 @@ export default function FileListRow({
           <div className="flex items-center gap-3">
             <div className="relative flex h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800">
               {isMacosPackage ? (
-                <div className="flex h-full w-full items-center justify-center bg-amber-50 dark:bg-amber-950/40">
-                  <Archive className="h-5 w-5 text-amber-800 dark:text-amber-400" />
-                </div>
+                creativeThumb.mode === "branded_project" ? (
+                  <BrandedProjectTile
+                    brandId={creativeThumb.brandId}
+                    tileVariant={creativeThumb.tileVariant}
+                    fileName={file.name}
+                    displayLabel={creativeThumb.displayLabel}
+                    extensionLabel={creativeThumb.extensionLabel}
+                    size="sm"
+                    className="h-full w-full"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-amber-50 dark:bg-amber-950/40">
+                    <Archive className="h-5 w-5 text-amber-800 dark:text-amber-400" />
+                  </div>
+                )
               ) : isVideo && file.objectKey ? (
                 <VideoScrubThumbnail
                   fetchStreamUrl={() => fetchVideoStreamUrl(file.objectKey)}
@@ -186,6 +204,16 @@ export default function FileListRow({
                   height={40}
                   className="h-full w-full object-cover"
                   unoptimized
+                />
+              ) : creativeThumb.mode === "branded_project" ? (
+                <BrandedProjectTile
+                  brandId={creativeThumb.brandId}
+                  tileVariant={creativeThumb.tileVariant}
+                  fileName={file.name}
+                  displayLabel={creativeThumb.displayLabel}
+                  extensionLabel={creativeThumb.extensionLabel}
+                  size="sm"
+                  className="h-full w-full"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">

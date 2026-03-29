@@ -1015,7 +1015,11 @@ export default function BuildPlanConfigurator({
             Add extra seats for your <strong className="text-neutral-800 dark:text-neutral-200">personal team</strong>{" "}
             (not an Organization). After checkout, invite members from{" "}
             <Link
-              href={user ? `/team/${user.uid}/settings#team-management` : "/dashboard/settings"}
+              href={
+                user && sumExtraTeamSeats(subscriptionTeamSeats) > 0
+                  ? `/team/${user.uid}/settings#team-management`
+                  : "/dashboard/settings#team-management"
+              }
               className="font-medium text-bizzi-blue hover:underline"
             >
               Team settings — manage seats and invites

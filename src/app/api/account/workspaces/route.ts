@@ -17,6 +17,7 @@ import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants
 import {
   ensurePersonalTeamRecord,
   getOwnedTeam,
+  ownerPersonalTeamWorkspaceActivated,
   resolvePersonalTeamIdentityConflicts,
   seatStatusShowsInSwitcher,
 } from "@/lib/personal-team-auth";
@@ -164,7 +165,9 @@ export async function GET(request: Request) {
 
   try {
     const owned = await getOwnedTeam(db, uid);
-    if (owned) {
+    const ownedWorkspaceActive =
+      owned && (await ownerPersonalTeamWorkspaceActivated(db, uid));
+    if (ownedWorkspaceActive) {
       try {
         const ownerName = await profileDisplayName(db, uid);
         const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;

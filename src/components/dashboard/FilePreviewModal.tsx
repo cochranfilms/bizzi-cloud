@@ -18,6 +18,11 @@ import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 import { downloadMacosPackageZipStreaming } from "@/lib/macos-package-zip-download";
 import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/macos-package-synthetic-id";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
+import {
+  recentFileToCreativeThumbnailSource,
+  resolveCreativeProjectTile,
+} from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -308,6 +313,8 @@ export default function FilePreviewModal({
 
   if (!file) return null;
 
+  const fpCreative = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
+
   const headerActions = (
     <>
       {file.id ? (
@@ -479,7 +486,21 @@ export default function FilePreviewModal({
     } else if (previewType === "project_file") {
       mediaBody = (
         <div className="flex max-w-md flex-col items-center gap-4 px-4 text-center text-neutral-600 dark:text-neutral-300">
-          <FolderInput className="h-16 w-16 text-bizzi-blue" />
+          {fpCreative.mode === "branded_project" ? (
+            <div className="h-52 w-full max-w-[14rem]">
+              <BrandedProjectTile
+                brandId={fpCreative.brandId}
+                tileVariant={fpCreative.tileVariant}
+                fileName={file.name}
+                displayLabel={fpCreative.displayLabel}
+                extensionLabel={fpCreative.extensionLabel}
+                size="xl"
+                className="h-full w-full"
+              />
+            </div>
+          ) : (
+            <FolderInput className="h-16 w-16 text-bizzi-blue" />
+          )}
           <p className="text-sm font-medium text-neutral-900 dark:text-white">
             Preview not supported for this project file
           </p>

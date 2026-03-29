@@ -692,6 +692,10 @@ function SubscriptionSection() {
   const teamSeatsEligible =
     planAllowsPersonalTeamSeats(planId ?? "free") && ownsPersonalTeam;
   const purchasedTeamSeats = sumExtraTeamSeats(teamSeatCounts);
+  const teamManagementSettingsHref =
+    user && purchasedTeamSeats > 0
+      ? `/team/${user.uid}/settings#team-management`
+      : "/dashboard/settings#team-management";
 
   useEffect(() => {
     if (!user || !teamSeatsEligible || loading) {
@@ -884,7 +888,7 @@ function SubscriptionSection() {
                       {productSettingsCopy.changePlan.label}
                     </Link>
                     <Link
-                      href={user ? `/team/${user.uid}/settings#team-management` : "/dashboard/settings"}
+                      href={teamManagementSettingsHref}
                       className="inline-flex items-center justify-center rounded-lg border border-green-700/40 bg-white px-3 py-2 text-sm font-medium text-green-900 hover:bg-green-50 dark:border-green-600 dark:bg-neutral-900 dark:text-green-100 dark:hover:bg-green-950/40"
                     >
                       Team management
@@ -980,11 +984,7 @@ function SubscriptionSection() {
                     Add or change team seats
                   </Link>
                   <Link
-                    href={
-                      user
-                        ? `/team/${user.uid}/settings#team-management`
-                        : "/dashboard/settings"
-                    }
+                    href={teamManagementSettingsHref}
                     className="inline-flex items-center rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-800 hover:bg-white dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"
                   >
                     Team settings
@@ -1187,7 +1187,7 @@ function SettingsContent() {
           <StorageSection />
           <PrivacySection />
           <SubscriptionSection />
-          <TeamManagementSection />
+          <TeamManagementSection settingsScope="personal" />
       </div>
     </DashboardRouteFade>
   );

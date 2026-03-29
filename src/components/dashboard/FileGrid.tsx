@@ -50,36 +50,12 @@ import {
   expandMacosPackageRowIds,
   isMacosPackageFileRow,
   mergeDriveFilesWithMacosPackages,
+  recentFileFromMacosPackageListEntry,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import { filterFilesForVirtualFolder } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
-
-function recentFileFromMacosPackageListEntry(
-  pkg: MacosPackageListEntry,
-  driveId: string,
-  driveName: string
-): RecentFile {
-  const name =
-    (pkg.root_segment_name as string) ||
-    pkg.root_relative_path.split("/").filter(Boolean).pop() ||
-    pkg.root_relative_path;
-  return {
-    id: `macos-pkg:${pkg.id}`,
-    name,
-    path: pkg.root_relative_path,
-    objectKey: "",
-    size: Number(pkg.total_bytes ?? 0),
-    modifiedAt: pkg.last_activity_at,
-    driveId,
-    driveName,
-    assetType: "macos_package",
-    macosPackageId: pkg.id,
-    macosPackageFileCount: pkg.file_count,
-    macosPackageLabel: (pkg.display_label as string) ?? null,
-  };
-}
 
 function mergeDisplayedFilesWithMacosPackages(
   displayedFiles: RecentFile[],
@@ -99,7 +75,7 @@ function mergeDisplayedFilesWithMacosPackages(
     return true;
   });
   const synthetic = packages.map((pkg) =>
-    recentFileFromMacosPackageListEntry(pkg, driveId, driveName)
+    recentFileFromMacosPackageListEntry(pkg, driveId, driveName) as RecentFile
   );
   return [...synthetic, ...filtered].sort((a, b) => {
     const ta = new Date(a.modifiedAt ?? 0).getTime();

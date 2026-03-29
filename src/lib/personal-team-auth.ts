@@ -5,6 +5,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import { coerceTeamSeatCounts, sumExtraTeamSeats } from "@/lib/team-seat-pricing";
 import {
   MAX_ACTIVE_NON_OWNED_PERSONAL_TEAM_MEMBERSHIPS,
   PERSONAL_TEAMS_COLLECTION,
@@ -129,10 +130,23 @@ export async function canManagePersonalTeam(
 }
 
 /**
+ * Team workspace shell (`/team/{owner}`) and owned switcher row unlock only after the owner
+ * has purchased at least one extra team seat (`profiles.team_seat_counts`).
+ */
+export async function ownerPersonalTeamWorkspaceActivated(
+  db: Firestore,
+  ownerUid: string
+): Promise<boolean> {
+  const snap = await db.collection("profiles").doc(ownerUid).get();
+  const raw = snap.data()?.team_seat_counts;
+  const counts = coerceTeamSeatCounts(raw);
+  return sumExtraTeamSeats(counts) > 0;
+}
+
+/**
  * Owner may enter own `/team/{uid}` if canonical `personal_teams` row exists or the team
- * container is already materialized (linked drive). Intentionally **not** gated on billing
- * or subscription lapsed state — identity resolution stays separate from operational
- * permissions (uploads, invites, etc.), which must enforce billing elsewhere.
+ * container is already materialized (linked drive). Workspace **routing** additionally
+ * requires {@link ownerPersonalTeamWorkspaceActivated}.
  */
 async function ownerCanEnterOwnTeamWorkspace(db: Firestore, uid: string): Promise<boolean> {
   if (await userOwnsPersonalTeamRecord(db, uid)) return true;
@@ -150,8 +164,8 @@ async function ownerCanEnterOwnTeamWorkspace(db: Firestore, uid: string): Promis
  * team shell). This is not a full entitlements check.
  *
  * - **Owner (`uid === ownerUid`):** Allowed when the canonical team record or materialized
- *   team container exists — even if personal billing is lapsed. Downstream APIs must block
- *   operations that require an active subscription or quota.
+ *   team container exists **and** {@link ownerPersonalTeamWorkspaceActivated} is true.
+ *   Downstream APIs must still enforce operational permissions (uploads, invites, quota).
  * - **Member:** Allowed when their seat document exists and status allows enter (e.g. active
  *   or cold_storage per `seatStatusAllowsEnter`).
  */
@@ -161,7 +175,8 @@ export async function canEnterPersonalTeam(
   ownerUid: string
 ): Promise<boolean> {
   if (uid === ownerUid) {
-    return ownerCanEnterOwnTeamWorkspace(db, uid);
+    if (!(await ownerCanEnterOwnTeamWorkspace(db, uid))) return false;
+    return ownerPersonalTeamWorkspaceActivated(db, uid);
   }
   const seatId = personalTeamSeatDocId(ownerUid, uid);
   const seat = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(seatId).get();
@@ -224,7 +239,12 @@ export async function wouldExceedNonOwnedTeamCap(
 /** Owners of teams the user may enter (own team + seat enter semantics). */
 export async function getAccessiblePersonalTeamOwnerIds(db: Firestore, uid: string): Promise<string[]> {
   const out: string[] = [];
-  if (await userOwnsPersonalTeamRecord(db, uid)) out.push(uid);
+  if (
+    (await userOwnsPersonalTeamRecord(db, uid)) &&
+    (await ownerPersonalTeamWorkspaceActivated(db, uid))
+  ) {
+    out.push(uid);
+  }
   const docs = await listNonOwnedSeatDocs(db, uid);
   for (const d of docs) {
     const o = d.data().team_owner_user_id as string;

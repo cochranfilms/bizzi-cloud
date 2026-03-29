@@ -52,7 +52,8 @@ const EXTENSION_ENTRIES: { ext: string; entry: RegistryEntry }[] = [
   { ext: "fcpevent", entry: { handling_model: "project_support_file", project_file_type: "fcp_event", creative_app: "final_cut_pro", creative_display_label: "Final Cut event" } },
 ];
 
-function fileInsideMacosPackageInterior(relativePath: string): boolean {
+/** True when `relativePath` is strictly inside a macOS package root (not the root segment itself). */
+export function isMacosPackageInteriorPath(relativePath: string): boolean {
   const pkg = macosPackageFirestoreFieldsFromRelativePath(relativePath);
   if (!pkg.macos_package_root_relative_path || !pkg.macos_package_kind) return false;
   const safe = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
@@ -76,7 +77,7 @@ function lookupByFileName(fileName: string): RegistryEntry | null {
 export function classifyCreativeFileFromRelativePath(relativePath: string): CreativeClassification {
   const safe = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
   const baseName = safe.split("/").filter(Boolean).pop() ?? safe;
-  if (fileInsideMacosPackageInterior(safe)) {
+  if (isMacosPackageInteriorPath(safe)) {
     return {
       handling_model: "normal_media_asset",
       project_file_type: null,

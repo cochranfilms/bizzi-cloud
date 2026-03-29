@@ -12,6 +12,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/hooks/useSubscription";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import {
   PERSONAL_TEAM_SETTINGS_COLLECTION,
@@ -20,6 +21,7 @@ import {
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import {
   PERSONAL_TEAM_SEAT_ACCESS_LABELS,
+  sumExtraTeamSeats,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 
@@ -105,6 +107,7 @@ export function PersonalTeamWorkspaceProvider({
   children: React.ReactNode;
 }) {
   const { user, loading: authLoading } = useAuth();
+  const { teamSeatCounts, loading: subLoading } = useSubscription();
   const router = useRouter();
   const pathname = usePathname();
   const [teamName, setTeamName] = useState<string>("Team workspace");
@@ -193,10 +196,24 @@ export function PersonalTeamWorkspaceProvider({
     }
 
     let cancelled = false;
+
+    if (user.uid === teamOwnerUid && subLoading) {
+      setAccessLoading(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     (async () => {
       setAccessLoading(true);
       try {
         if (user.uid === teamOwnerUid) {
+          if (sumExtraTeamSeats(teamSeatCounts) <= 0) {
+            if (!cancelled) {
+              setAllowed(false);
+            }
+            return;
+          }
           const app = await loadTeamWorkspaceAppearance(teamOwnerUid);
           if (cancelled) return;
           setTeamName(app.name);
@@ -238,14 +255,16 @@ export function PersonalTeamWorkspaceProvider({
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user, teamOwnerUid]);
+  }, [authLoading, user, teamOwnerUid, subLoading, teamSeatCounts]);
 
   useEffect(() => {
-    if (authLoading || accessLoading) return;
+    const ownerWaitingSubscription =
+      !!user && user.uid === teamOwnerUid && subLoading;
+    if (authLoading || accessLoading || ownerWaitingSubscription) return;
     if (user && !allowed) {
       router.replace("/dashboard");
     }
-  }, [authLoading, accessLoading, user, allowed, router]);
+  }, [authLoading, accessLoading, user, allowed, router, teamOwnerUid, subLoading]);
 
   const value = useMemo<PersonalTeamWorkspaceContextValue | null>(() => {
     if (!allowed) return null;
@@ -274,11 +293,14 @@ export function PersonalTeamWorkspaceProvider({
     return null;
   }
 
+  const ownerWaitingSubscription =
+    !!user && user.uid === teamOwnerUid && subLoading;
   const shellReady =
     !authLoading &&
     !!user &&
     statusChecked &&
     !accessLoading &&
+    !ownerWaitingSubscription &&
     allowed &&
     value !== null;
 

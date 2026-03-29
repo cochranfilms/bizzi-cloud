@@ -10,7 +10,8 @@ import PersonalTeamIdentityForm from "@/components/dashboard/PersonalTeamIdentit
 
 /**
  * After subscribing to a plan with a personal team workspace, require a team name (logo optional)
- * before using the dashboard / team shell — including when the owner has zero extra seats.
+ * before using the personal dashboard. The team workspace shell (`/team/...`) stays gated on extra
+ * seat purchase separately; zero extra seats does not block the personal workspace.
  */
 export default function TeamBrandingOnboardingGate() {
   const { user } = useAuth();

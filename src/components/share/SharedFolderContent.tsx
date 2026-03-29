@@ -9,6 +9,8 @@ import { useShareVideoThumbnail } from "@/hooks/useShareVideoThumbnail";
 import { useInView } from "@/hooks/useInView";
 import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
+import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
+import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -54,6 +56,10 @@ function ShareFileRow({
   );
   const isVideo = isVideoFile(file.name);
   const canPreview = !!file.object_key;
+  const shareCreative = resolveCreativeProjectTile({
+    name: file.name,
+    path: file.path || file.name,
+  });
 
   const fetchShareVideoStreamUrl = useCallback(async (): Promise<string | null> => {
     try {
@@ -120,6 +126,16 @@ function ShareFileRow({
                 className="h-full w-full object-cover"
               />
             </>
+          ) : shareCreative.mode === "branded_project" ? (
+            <BrandedProjectTile
+              brandId={shareCreative.brandId}
+              tileVariant={shareCreative.tileVariant}
+              fileName={file.name}
+              displayLabel={shareCreative.displayLabel}
+              extensionLabel={shareCreative.extensionLabel}
+              size="md"
+              className="h-full w-full"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <File className="h-7 w-7 text-neutral-500 dark:text-neutral-400" />

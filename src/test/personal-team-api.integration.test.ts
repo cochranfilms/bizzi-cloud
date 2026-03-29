@@ -491,4 +491,68 @@ describe("GET /api/account/workspaces — owned + multiple memberships", () => {
     expect(base?.role).toBe("Member");
     expect(body.workspace_rollout).toBeNull();
   });
+
+  it("omits owned team from switcher when owner has zero extra seats", async () => {
+    const db = testHarness.db!;
+    const ownerOnly = "uid_ws_owner_no_seats";
+    db.seedDoc("profiles", ownerOnly, {
+      plan_id: "video",
+      display_name: "Sans Seats",
+      team_seat_counts: { none: 0, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+    });
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, ownerOnly, {
+      team_id: ownerOnly,
+      owner_user_id: ownerOnly,
+      status: "active",
+    });
+    db.seedDoc(PERSONAL_TEAM_SETTINGS_COLLECTION, ownerOnly, { team_name: "Identity Only FC" });
+
+    const res = await workspacesGET(
+      new Request("http://localhost/api/account/workspaces", {
+        headers: authHeader(ownerOnly),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      personalTeams: Array<{ membershipKind?: string; ownerUserId: string }>;
+      personal: unknown;
+    };
+    expect(body.personal).not.toBeNull();
+    expect(body.personalTeams.some((t) => t.membershipKind === "owned")).toBe(false);
+  });
+
+  it("includes owned team in switcher when owner has at least one extra seat", async () => {
+    const db = testHarness.db!;
+    const ownerOne = "uid_ws_owner_one_seat";
+    db.seedDoc("profiles", ownerOne, {
+      plan_id: "video",
+      display_name: "One Seat",
+      team_seat_counts: { none: 1, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+    });
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, ownerOne, {
+      team_id: ownerOne,
+      owner_user_id: ownerOne,
+      status: "active",
+    });
+    db.seedDoc(PERSONAL_TEAM_SETTINGS_COLLECTION, ownerOne, { team_name: "Activated FC" });
+
+    const res = await workspacesGET(
+      new Request("http://localhost/api/account/workspaces", {
+        headers: authHeader(ownerOne),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      personalTeams: Array<{ membershipKind?: string; ownerUserId: string }>;
+    };
+    const owned = body.personalTeams.filter((t) => t.membershipKind === "owned");
+    expect(owned).toHaveLength(1);
+    expect(owned[0]?.ownerUserId).toBe(ownerOne);
+  });
 });
