@@ -57,15 +57,27 @@ export function packageKindDisplayLabel(kind: string): string {
 
 /**
  * Single-stream browser upload: no path inside the bundle (picker exposed one file/blob only).
- * Do not treat as full library backup.
+ * We block most macOS packages so users use folder/drag for a full tree (see warning copy).
+ *
+ * **Exception: `.lrlibrary`** — Chromium/Safari often surface Lightroom Library as one `File` stream
+ * (opaque package). Accepting it matches user expectation and still uploads usable library bytes;
+ * users can still use Browse folders / drag for an explicit directory walk when the browser exposes it.
  */
 export function isLikelyFlatMacosPackageBrowserUpload(file: File): boolean {
   if (!isMacosPackageFileName(file.name)) return false;
+  if (file.name.toLowerCase().endsWith(".lrlibrary")) return false;
   const rel = (file.webkitRelativePath ?? "").trim();
   /** Folder / drag-tree uploads set paths like `MyLib.fcpbundle/Contents/Info.plist`. */
   if (rel.includes("/")) return false;
   return true;
 }
+
+/**
+ * HTML `accept` hint for file inputs that should highlight macOS creative packages (optional).
+ * Does not replace "all files" — use alongside `video/*` etc. if you add a restrictive accept string.
+ */
+export const UPPY_MACOS_CREATIVE_PACKAGE_ACCEPT_EXTENSIONS =
+  ".fcpbundle,.lrlibrary,.photoslibrary,.logicx,.imovieproject,.band,.playground,.dvdproj";
 
 export const MACOS_PACKAGE_STRUCTURED_UPLOAD_BLURB =
   "This project is a macOS package folder (Finder shows it as one item). To preserve the full library and internal file relationships, Bizzi Cloud uploads it as a structured package with paths — not as a single opaque file.";

@@ -215,8 +215,9 @@ export default function GlobalDropZone() {
         <Upload className="h-16 w-16 text-white" strokeWidth={1.5} />
         <p className="text-xl font-semibold text-white">Drop files to upload</p>
         <p className="text-sm text-white/80">
-          Release to add them to the uploader. Final Cut (.fcpbundle) and other macOS packages keep folder
-          structure when the browser exposes the package as a directory.
+          Release to add them to the uploader. Final Cut (.fcpbundle), Lightroom Library (.lrlibrary), and other
+          macOS packages keep folder structure when the browser exposes the package as a directory (or use Browse
+          folders in the upload panel).
         </p>
       </div>
     </div>

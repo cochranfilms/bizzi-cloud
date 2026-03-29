@@ -568,7 +568,7 @@ export default function UppyUploadModal({
               proudlyDisplayPoweredByUppy={false}
               height={hasFiles ? dashboardHeight + 32 : dashboardHeight}
               showSelectedFiles
-              note={null}
+              note="For a full library folder tree (Final Cut .fcpbundle, Lightroom .lrlibrary, etc.), use Browse folders or drag the package onto this panel."
               fileManagerSelectionType="both"
               className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[140px]"
             />
