@@ -16,6 +16,7 @@ import {
 import { PRODUCT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-constants";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+import PersonalTeamIdentityForm from "@/components/dashboard/PersonalTeamIdentityForm";
 
 const STORAGE_TIER_LABELS = [
   "50 GB",
@@ -288,6 +289,11 @@ export function TeamManagementSection() {
     refetch: refetchSubscription,
   } = useSubscription();
 
+  const allowsSeats = planAllowsPersonalTeamSeats(planId);
+  const showOwnerPanel = ownsPersonalTeam && allowsSeats;
+  const [teamIdentityLoading, setTeamIdentityLoading] = useState(true);
+  const [teamHasName, setTeamHasName] = useState(false);
+
   const [members, setMembers] = useState<MemberApi[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInviteApi[]>([]);
   const [overview, setOverview] = useState<OverviewApi | null>(null);
@@ -301,10 +307,47 @@ export function TeamManagementSection() {
   const [removeTarget, setRemoveTarget] = useState<MemberApi | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const allowsSeats = planAllowsPersonalTeamSeats(planId);
+  useEffect(() => {
+    if (!user || !showOwnerPanel) {
+      setTeamIdentityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTeamIdentityLoading(true);
+    (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken();
+        if (!token) {
+          if (!cancelled) {
+            setTeamHasName(true);
+            setTeamIdentityLoading(false);
+          }
+          return;
+        }
+        const res = await fetch(
+          `/api/personal-team/settings?owner_uid=${encodeURIComponent(user.uid)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = (await res.json().catch(() => ({}))) as { team_name?: string | null };
+        if (cancelled) return;
+        setTeamHasName(Boolean((data.team_name ?? "").trim()));
+      } catch {
+        if (!cancelled) setTeamHasName(true);
+      } finally {
+        if (!cancelled) setTeamIdentityLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, showOwnerPanel]);
 
   const loadTeam = useCallback(async () => {
     if (!user || !isFirebaseConfigured() || !ownsPersonalTeam || !allowsSeats) {
+      setLoading(false);
+      return;
+    }
+    if (!teamHasName) {
       setLoading(false);
       return;
     }
@@ -331,7 +374,7 @@ export function TeamManagementSection() {
     } finally {
       setLoading(false);
     }
-  }, [user, ownsPersonalTeam, allowsSeats]);
+  }, [user, ownsPersonalTeam, allowsSeats, teamHasName]);
 
   useEffect(() => {
     void loadTeam();
@@ -435,13 +478,62 @@ export function TeamManagementSection() {
 
   if (subLoading) return null;
 
-  const showOwnerPanel = ownsPersonalTeam && allowsSeats;
   const showMemberPanel = personalTeamMemberships.length > 0;
 
   if (!showOwnerPanel && !showMemberPanel) return null;
 
   if (!showOwnerPanel) {
     return <MemberTeamCard />;
+  }
+
+  if (teamIdentityLoading) {
+    return (
+      <>
+        <section
+          id="team-management"
+          className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-bizzi-blue" aria-hidden />
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">Loading team workspace…</p>
+          </div>
+        </section>
+        {showMemberPanel ? <MemberTeamCard /> : null}
+      </>
+    );
+  }
+
+  if (!teamHasName) {
+    if (!user) return null;
+    return (
+      <>
+        <section
+          id="team-management"
+          className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+            <Users className="h-5 w-5 text-bizzi-blue" />
+            Personal team workspace
+          </h2>
+          <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
+            Set up your team identity first. After that, you&apos;ll get the full Team Management view —
+            including seat purchases and invites.
+          </p>
+          <PersonalTeamIdentityForm
+            ownerUid={user.uid}
+            layout="settings"
+            className="p-5 sm:p-6"
+            onComplete={() => {
+              setTeamHasName(true);
+              void refetchSubscription();
+            }}
+          />
+        </section>
+        {showMemberPanel ? <MemberTeamCard /> : null}
+      </>
+    );
   }
 
   const activeMembers = members.filter((m) => m.status === "active" || m.status === "invited");
