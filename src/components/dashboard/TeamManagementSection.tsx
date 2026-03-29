@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Users, Loader2, UserMinus, Mail, AlertTriangle } from "lucide-react";
+import { Users, Loader2, Mail } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
@@ -152,13 +152,6 @@ function inviteStorageForReuse(m: MemberApi, overview: OverviewApi | null): numb
   return cap;
 }
 
-function accessLevelLabel(level: string | undefined): string {
-  if (level && level in PERSONAL_TEAM_SEAT_ACCESS_LABELS) {
-    return PERSONAL_TEAM_SEAT_ACCESS_LABELS[level as PersonalTeamSeatAccess];
-  }
-  return level ?? "—";
-}
-
 function formatStorage(bytes: number | null): string {
   if (bytes === null) return "Unlimited (team pool)";
   const gb = bytes / 1024 ** 3;
@@ -175,157 +168,6 @@ function selectStorageOptions(currentBytes: number | null) {
   return [...extra, ...BASE_MEMBER_STORAGE_OPTIONS] as { label: string; value: number | null }[];
 }
 
-/** Shown when the user has seat memberships on others’ personal teams (leave per team). */
-export function MemberTeamCard() {
-  const { user } = useAuth();
-  const { personalTeamMemberships, refetch } = useSubscription();
-  const [leavingOwnerId, setLeavingOwnerId] = useState<string | null>(null);
-  const [confirmOwnerId, setConfirmOwnerId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleLeave = async (teamOwnerUserId: string) => {
-    if (!user || !isFirebaseConfigured()) return;
-    setLeavingOwnerId(teamOwnerUserId);
-    setError(null);
-    try {
-      const token = await getFirebaseAuth().currentUser?.getIdToken();
-      const res = await fetch("/api/personal-team/leave", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ team_owner_user_id: teamOwnerUserId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error((data.error as string) ?? "Failed to leave team");
-      }
-      await refetch();
-      setConfirmOwnerId(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to leave");
-    } finally {
-      setLeavingOwnerId(null);
-    }
-  };
-
-  if (!personalTeamMemberships.length) return null;
-
-  return (
-    <section
-      id="team-memberships"
-      className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
-    >
-      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-        <Users className="h-5 w-5 text-bizzi-blue" />
-        {personalTeamMemberships.length > 1 ? "Team memberships" : "Team membership"}
-      </h2>
-      <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        {personalTeamMemberships.length > 1 ? (
-          <>
-            You&apos;re a member of <strong className="text-neutral-900 dark:text-white">multiple</strong>{" "}
-            personal Bizzi teams. Storage is shared per team; you can only delete files you uploaded. Your
-            personal subscription stays billed separately.
-          </>
-        ) : (
-          <>
-            You&apos;re on a <strong className="text-neutral-900 dark:text-white">personal Bizzi team</strong>.
-            Team storage is shared; you can only delete files you uploaded. Your personal subscription stays
-            billed separately.
-          </>
-        )}
-      </p>
-      <ul className="space-y-4">
-        {personalTeamMemberships.map((m) => {
-          const levelLabel = accessLevelLabel(m.seat_access_level);
-          const statusNote =
-            m.status === "cold_storage" ? " · Recovery storage" : "";
-          return (
-            <li
-              key={m.owner_user_id}
-              className="flex flex-col gap-2 rounded-lg border border-neutral-100 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-800/40 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-neutral-900 dark:text-white">
-                  Team workspace
-                  <span className="ml-2 font-mono text-xs font-normal text-neutral-500 dark:text-neutral-400">
-                    {m.owner_user_id.slice(0, 6)}…{m.owner_user_id.slice(-4)}
-                  </span>
-                </p>
-                <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-                  Seat access: <strong className="text-neutral-800 dark:text-neutral-200">{levelLabel}</strong>
-                  {statusNote}
-                </p>
-                <Link
-                  href={`/team/${m.owner_user_id}`}
-                  className="mt-2 inline-block text-xs font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-                >
-                  Open team workspace
-                </Link>
-              </div>
-              <button
-                type="button"
-                onClick={() => setConfirmOwnerId(m.owner_user_id)}
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-              >
-                <UserMinus className="h-4 w-4" />
-                Leave
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-      {confirmOwnerId &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-              <div className="flex gap-3">
-                <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
-                <div>
-                  <h3 className="font-semibold text-neutral-900 dark:text-white">Leave this team?</h3>
-                  <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-                    Files you uploaded in the team space will be moved to cold storage. You will lose team
-                    access.
-                  </p>
-                  <div className="mt-6 flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setConfirmOwnerId(null)}
-                      className="rounded-lg border border-neutral-200 px-4 py-2 text-sm dark:border-neutral-600"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={leavingOwnerId === confirmOwnerId}
-                      onClick={() => void handleLeave(confirmOwnerId)}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
-                    >
-                      {leavingOwnerId === confirmOwnerId ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Leave team"
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-    </section>
-  );
-}
-
 export type TeamManagementSettingsScope = "personal" | "team";
 
 export function TeamManagementSection({
@@ -337,7 +179,6 @@ export function TeamManagementSection({
   const {
     planId,
     ownsPersonalTeam,
-    personalTeamMemberships,
     teamSeatCounts,
     loading: subLoading,
     refetch: refetchSubscription,
@@ -654,62 +495,52 @@ export function TeamManagementSection({
 
   if (subLoading) return null;
 
-  const showMemberPanel = personalTeamMemberships.length > 0;
-
-  if (!showOwnerPanel && !showMemberPanel) return null;
-
   if (!showOwnerPanel) {
-    return <MemberTeamCard />;
+    return null;
   }
 
   if (teamIdentityLoading) {
     return (
-      <>
-        <section
-          id="team-management"
-          className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <SettingsSectionScope label={scopeLabel} />
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-bizzi-blue" aria-hidden />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">Loading team workspace…</p>
-          </div>
-        </section>
-        {showMemberPanel ? <MemberTeamCard /> : null}
-      </>
+      <section
+        id="team-management"
+        className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+      >
+        <SettingsSectionScope label={scopeLabel} />
+        <div className="flex flex-col items-center justify-center gap-3 py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-bizzi-blue" aria-hidden />
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">Loading team workspace…</p>
+        </div>
+      </section>
     );
   }
 
   if (!teamHasName) {
     if (!user) return null;
     return (
-      <>
-        <section
-          id="team-management"
-          className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <SettingsSectionScope label={scopeLabel} />
-          <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-            <Users className="h-5 w-5 text-bizzi-blue" />
-            Personal team workspace
-          </h2>
-          <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
-            Set up your team identity first. After that, you&apos;ll get the full Team Management view —
-            including seat purchases and invites.
-          </p>
-          <PersonalTeamIdentityForm
-            ownerUid={user.uid}
-            layout="settings"
-            className="p-5 sm:p-6"
-            onComplete={() => {
-              setTeamHasName(true);
-              setIdentityRefreshTick((t) => t + 1);
-              void refetchSubscription();
-            }}
-          />
-        </section>
-        {showMemberPanel ? <MemberTeamCard /> : null}
-      </>
+      <section
+        id="team-management"
+        className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+      >
+        <SettingsSectionScope label={scopeLabel} />
+        <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+          <Users className="h-5 w-5 text-bizzi-blue" />
+          Personal team workspace
+        </h2>
+        <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
+          Set up your team identity first. After that, you&apos;ll get the full Team Management view —
+          including seat purchases and invites.
+        </p>
+        <PersonalTeamIdentityForm
+          ownerUid={user.uid}
+          layout="settings"
+          className="p-5 sm:p-6"
+          onComplete={() => {
+            setTeamHasName(true);
+            setIdentityRefreshTick((t) => t + 1);
+            void refetchSubscription();
+          }}
+        />
+      </section>
     );
   }
 
@@ -738,15 +569,10 @@ export function TeamManagementSection({
         Team Management
       </h2>
       <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        Manage your <strong className="text-neutral-900 dark:text-white">personal team seats</strong>, invite
-        members, assign seat access, and share storage. This is <strong>not</strong> an Organization.
-      </p>
-      <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-        <strong className="text-neutral-900 dark:text-white">Team pool</strong> means everyone shares{" "}
-        <strong className="text-neutral-900 dark:text-white">your purchased storage</strong>
-        — not extra space. Fixed caps reserve slices of that same pool; “Unlimited (team pool)” still
-                uses your plan and cannot exceed your total. Combined usage (you + all members, team folder +
-        your personal files on this account) can never go above your plan.
+        Invite people to your <strong className="text-neutral-900 dark:text-white">personal team</strong>, set
+        their access, and share <strong className="text-neutral-900 dark:text-white">your plan storage</strong>{" "}
+        with them (this isn’t an Organization). Everyone draws from the same pool; usage still counts toward
+        your plan limits.
       </p>
 
       {!hasCapacity ? (
@@ -795,80 +621,43 @@ export function TeamManagementSection({
 
       <div className="mb-6 rounded-lg border border-neutral-100 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Team overview</h3>
-        <ul className="mt-2 space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+        <ul className="mt-3 space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
           <li>
-            <strong className="text-neutral-800 dark:text-neutral-200">Owner:</strong>{" "}
-            {user?.email ?? "—"}
+            <span className="text-neutral-500">Owner</span>{" "}
+            <span className="text-neutral-900 dark:text-white">{user?.email ?? "—"}</span>
           </li>
           <li>
-            <strong className="text-neutral-800 dark:text-neutral-200">Plan:</strong>{" "}
-            {overview?.plan_label ?? "—"}
+            <span className="text-neutral-500">Plan</span>{" "}
+            <span className="text-neutral-900 dark:text-white">{overview?.plan_label ?? "—"}</span>
           </li>
           <li>
-            <strong className="text-neutral-800 dark:text-neutral-200">Purchased extra seats:</strong>{" "}
-            {purchasedExtra} across tiers (none / gallery / editor / full frame)
+            <span className="text-neutral-500">Extra team seats</span>{" "}
+            <span className="text-neutral-900 dark:text-white">
+              {purchasedExtra} purchased
+              {!loading && (
+                <>
+                  {" · "}
+                  {usedTotal} in use (members + open invites)
+                  {" · "}
+                  {Math.max(0, purchasedExtra - usedTotal)} available
+                </>
+              )}
+              {loading ? " · …" : null}
+            </span>
           </li>
-          <li>
-            <strong className="text-neutral-800 dark:text-neutral-200">Assigned + pending:</strong>{" "}
-            {loading ? "…" : usedTotal}{" "}
-            {!loading && (
-              <span className="text-neutral-500">
-                ({Math.max(0, purchasedExtra - usedTotal)} available)
+          {typeof overview?.team_quota_bytes === "number" ? (
+            <li>
+              <span className="text-neutral-500">Storage</span>{" "}
+              <span className="text-neutral-900 dark:text-white">
+                {formatStorage(overview.team_quota_bytes)} on your plan · Team workspace{" "}
+                {formatStorage(overview.team_used_bytes ?? 0)} used
               </span>
-            )}
-          </li>
-          <li className="text-xs text-neutral-500">
-            Only you can buy more plan storage. Teammates keep their own personal Bizzi billing for
-            accounts that aren’t on this team.
-          </li>
-          {typeof overview?.team_quota_bytes === "number" && (
-            <li className="space-y-1 text-xs text-neutral-500">
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Purchased plan (ceiling):</strong>{" "}
-                {formatStorage(overview.team_quota_bytes)}
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Team folder used:</strong>{" "}
-                {formatStorage(overview.team_used_bytes ?? 0)} (files in this team workspace only)
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Account billable total (owner):</strong>{" "}
-                {formatStorage(overview.total_plan_billable_bytes ?? 0)} (personal solo + hosted team — hard
-                ceiling for uploads)
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Fixed caps on seats:</strong>{" "}
-                {formatStorage(overview.fixed_cap_allocated_bytes ?? 0)}
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Reserved on pending invites:</strong>{" "}
-                {formatStorage(overview.fixed_cap_reserved_pending_invites_bytes ?? 0)}
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">
-                  Fixed-cap assignable headroom:
-                </strong>{" "}
-                {formatStorage(overview.remaining_fixed_cap_allocatable_bytes ?? 0)}{" "}
-                <span className="font-normal text-neutral-500">
-                  (budget for fixed tiers on seats + pending invites; unlimited seats do not reserve this)
-                </span>
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Team-folder usable headroom:</strong>{" "}
-                {formatStorage(overview.remaining_team_workspace_headroom_bytes ?? 0)}{" "}
-                <span className="font-normal text-neutral-500">
-                  (purchased plan minus team-workspace uploads only; excludes your personal solo files)
-                </span>
-              </div>
-              <div>
-                <strong className="text-neutral-700 dark:text-neutral-300">Owner plan headroom (uploads):</strong>{" "}
-                {formatStorage(overview.remaining_plan_headroom_bytes ?? 0)}{" "}
-                <span className="font-normal text-neutral-500">
-                  (purchased plan minus full billable total — same gate as uploads)
-                </span>
-              </div>
             </li>
-          )}
+          ) : null}
+          <li className="text-xs text-neutral-500">
+            You buy plan storage; teammates keep their own Bizzi accounts and billing for anything outside this
+            team.
+          </li>
         </ul>
       </div>
 
@@ -1380,7 +1169,6 @@ export function TeamManagementSection({
           document.body,
         )}
     </section>
-    {showMemberPanel ? <MemberTeamCard /> : null}
     </>
   );
 }
