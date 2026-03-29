@@ -10,8 +10,6 @@ import {
   usePersonalTeamWorkspaceRequired,
   notifyTeamWorkspaceUpdated,
 } from "@/context/PersonalTeamWorkspaceContext";
-import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
-import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
 import TeamMemberPersonalSettingsLayout from "@/components/settings/TeamMemberPersonalSettingsLayout";
@@ -32,7 +30,6 @@ export default function TeamSettingsPage() {
   const [ownerSection, setOwnerSection] = useState<"branding" | "management">("branding");
   const [ready, setReady] = useState(false);
   const [teamNameState, setTeamNameState] = useState("");
-  const [themeId, setThemeId] = useState<EnterpriseThemeId>("bizzi");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [savingName, setSavingName] = useState(false);
@@ -55,11 +52,9 @@ export default function TeamSettingsPage() {
     const data = (await res.json()) as {
       team_name: string | null;
       logo_url: string | null;
-      theme: string;
       is_owner: boolean;
     };
     setTeamNameState(data.team_name ?? "");
-    setThemeId((data.theme as EnterpriseThemeId) || "bizzi");
     setLogoPreview(data.logo_url);
     setIsOwner(Boolean(data.is_owner));
     setReady(true);
@@ -136,32 +131,6 @@ export default function TeamSettingsPage() {
       setNameError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSavingName(false);
-    }
-  };
-
-  const handleThemeChange = async (id: EnterpriseThemeId) => {
-    if (!user || !isOwner) return;
-    setThemeId(id);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch(
-        `/api/personal-team/settings?owner_uid=${encodeURIComponent(teamOwnerUid)}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ theme: id }),
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data.error as string) ?? "Failed to update theme");
-      }
-      notifyTeamWorkspaceUpdated(teamOwnerUid);
-    } catch {
-      await loadSettings();
     }
   };
 
@@ -345,36 +314,6 @@ export default function TeamSettingsPage() {
                       {logoError && (
                         <p className="text-sm text-red-600 dark:text-red-400">{logoError}</p>
                       )}
-                    </div>
-                  </section>
-
-                  <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-                    <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">Theme</h2>
-                    <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-                      Choose accent colors for this team workspace (navigation and highlights).
-                    </p>
-                    <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
-                      {ENTERPRISE_THEMES.map((theme) => (
-                        <button
-                          key={theme.id}
-                          type="button"
-                          onClick={() => handleThemeChange(theme.id)}
-                          className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-colors ${
-                            themeId === theme.id
-                              ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10"
-                              : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                          }`}
-                          title={theme.name}
-                        >
-                          <div
-                            className="h-8 w-8 rounded-full"
-                            style={{ backgroundColor: theme.primary }}
-                          />
-                          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                            {theme.name}
-                          </span>
-                        </button>
-                      ))}
                     </div>
                   </section>
                 </>

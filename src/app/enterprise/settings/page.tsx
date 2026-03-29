@@ -1,13 +1,21 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
-import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import { ADDON_LABELS } from "@/lib/pricing-data";
 import Image from "next/image";
-import { Building2, Globe, Image as ImageIcon, Loader2, HardDrive, CreditCard, Zap } from "lucide-react";
+import {
+  Building2,
+  Globe,
+  Image as ImageIcon,
+  Loader2,
+  HardDrive,
+  CreditCard,
+  Zap,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
@@ -15,7 +23,16 @@ import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
 import ReadOnlyBanner from "@/components/settings/ReadOnlyBanner";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
+import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+
+type EnterpriseSettingsSectionId =
+  | "branding"
+  | "storage"
+  | "subscription"
+  | "profile-handle"
+  | "seats";
 
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
@@ -30,6 +47,54 @@ export default function EnterpriseSettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = role === "admin";
+
+  const navItems = useMemo(() => {
+    const base: SettingsNavItem[] = [
+      { id: "branding", label: "Branding", icon: Building2 },
+      { id: "storage", label: "Storage", icon: HardDrive },
+      { id: "subscription", label: "Subscription", icon: CreditCard },
+      { id: "profile-handle", label: "Profile handle", icon: Globe },
+    ];
+    if (isAdmin) {
+      base.push({ id: "seats", label: "Seat management", icon: Users });
+    }
+    return base;
+  }, [isAdmin]);
+
+  const [section, setSection] = useState<EnterpriseSettingsSectionId>("branding");
+
+  const setSectionNav = useCallback((id: string) => {
+    const allowed = new Set(navItems.map((i) => i.id));
+    const next = (allowed.has(id) ? id : "branding") as EnterpriseSettingsSectionId;
+    setSection(next);
+    if (typeof window !== "undefined") {
+      const hash =
+        next === "seats"
+          ? "seats"
+          : next === "profile-handle"
+            ? "profile-handle"
+            : next;
+      window.history.replaceState(null, "", `#${hash}`);
+    }
+  }, [navItems]);
+
+  useEffect(() => {
+    if (!isAdmin && section === "seats") {
+      setSection("branding");
+    }
+  }, [isAdmin, section]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !org) return;
+    const h = window.location.hash.replace(/^#/, "");
+    const ids = new Set(navItems.map((i) => i.id));
+    if (h === "storage") setSection("storage");
+    else if (h === "subscription") setSection("subscription");
+    else if (h === "profile-handle" || h === "galleries") setSection("profile-handle");
+    else if ((h === "seats" || h === "seat-management") && ids.has("seats"))
+      setSection("seats");
+    else if (h === "branding" || h === "") setSection("branding");
+  }, [org, navItems]);
 
   const handleSaveName = async () => {
     if (!org || !isAdmin) return;
@@ -59,28 +124,6 @@ export default function EnterpriseSettingsPage() {
       setNameError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSavingName(false);
-    }
-  };
-
-  const handleThemeChange = async (themeId: string) => {
-    if (!org || !isAdmin) return;
-    try {
-      const token = await user?.getIdToken();
-      const res = await fetch("/api/enterprise/update", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ theme: themeId }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to update theme");
-      }
-      await refetch();
-    } catch {
-      // Silently fail for now
     }
   };
 
@@ -138,26 +181,35 @@ export default function EnterpriseSettingsPage() {
           srOnlyMessage="Loading organization settings"
         >
         {org ? (
-        <div className="mx-auto max-w-2xl space-y-8">
-          <SettingsScopeHeader
-            title="Organization settings"
-            scope="enterprise"
-            permission={
-              isAdmin
-                ? { kind: "editable" }
-                : {
-                    kind: "readOnly",
-                    reason: "Only organization admins can change these settings.",
-                  }
-            }
-            effectSummary={`${productSettingsCopy.scopes.organizationWide}. ${productSettingsCopy.organizationSeats.helper}`}
-          />
+          <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
+            <SettingsSidebarNav
+              variant="quickAccess"
+              items={navItems}
+              activeId={section}
+              onSelect={setSectionNav}
+            />
+            <div className="min-w-0 flex-1 space-y-8">
+              <SettingsScopeHeader
+                title="Organization settings"
+                scope="enterprise"
+                permission={
+                  isAdmin
+                    ? { kind: "editable" }
+                    : {
+                        kind: "readOnly",
+                        reason: "Only organization admins can change these settings.",
+                      }
+                }
+                effectSummary={`${productSettingsCopy.scopes.organizationWide}. ${productSettingsCopy.organizationSeats.helper}`}
+              />
 
-          {!isAdmin ? (
-            <ReadOnlyBanner message="Contact an organization admin to update the company profile, theme, logo, or billing-related workspace options." />
-          ) : null}
+              {!isAdmin ? (
+                <ReadOnlyBanner message="Contact an organization admin to update the company profile, logo, or billing-related workspace options." />
+              ) : null}
 
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+              {section === "branding" && (
+                <>
+                  <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
             <SettingsSectionScope label={productSettingsCopy.scopes.organizationWide} />
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
               <Building2 className="h-5 w-5 text-[var(--enterprise-primary)]" />
@@ -259,131 +311,109 @@ export default function EnterpriseSettingsPage() {
               )}
             </div>
           </section>
-
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
-              Theme
-            </h2>
-            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-              Choose a color theme for your enterprise dashboard.
-            </p>
-            <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
-              {ENTERPRISE_THEMES.map((theme) => (
-                <button
-                  key={theme.id}
-                  type="button"
-                  onClick={() => isAdmin && handleThemeChange(theme.id)}
-                  disabled={!isAdmin}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-colors ${
-                    org.theme === theme.id
-                      ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10"
-                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-                  } ${!isAdmin ? "cursor-default opacity-70" : ""}`}
-                  title={theme.name}
-                >
-                  <div
-                    className="h-8 w-8 rounded-full"
-                    style={{ backgroundColor: theme.primary }}
-                  />
-                  <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    {theme.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-              <HardDrive className="h-5 w-5 text-[var(--enterprise-primary)]" />
-              Storage
-            </h2>
-            <StorageAnalyticsPage basePath="/enterprise" />
-          </section>
-
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-              <CreditCard className="h-5 w-5 text-[var(--enterprise-primary)]" />
-              Subscription
-            </h2>
-            <ColdStorageAlertBanner />
-            {org.storage_quota_bytes > 0 && (
-              <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-800/50">
-                <p className="text-sm font-medium text-neutral-900 dark:text-white">
-                  Total storage: {org.storage_quota_bytes >= 1024 ** 4
-                    ? `${(org.storage_quota_bytes / 1024 ** 4).toFixed(1)} TB`
-                    : org.storage_quota_bytes >= 1024 ** 3
-                      ? `${(org.storage_quota_bytes / 1024 ** 3).toFixed(1)} GB`
-                      : `${Math.round(org.storage_quota_bytes / 1024 ** 2)} MB`}
-                </p>
-                {org.max_seats != null && (
-                  <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-                    {org.max_seats} seat{org.max_seats !== 1 ? "s" : ""} included
-                  </p>
-                )}
-              </div>
-            )}
-            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-              Storage and seats are managed by Bizzi. Contact our sales team to change your plan or add seats.
-            </p>
-            <a
-              href="mailto:sales@bizzicloud.io"
-              className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            >
-              Contact sales
-            </a>
-            <div className="mt-6 border-t border-neutral-200 pt-6 dark:border-neutral-700">
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-white">
-                <Zap className="h-4 w-4 text-amber-500" />
-                Power ups
-              </h3>
-              {org?.addon_ids && org.addon_ids.length > 0 ? (
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  Your package includes:{" "}
-                  {org.addon_ids
-                    .map((id) => ADDON_LABELS[id] ?? id)
-                    .join(", ")}
-                  . Contact sales to add or change power ups.
-                </p>
-              ) : (
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  No power ups in your package. Contact sales to add Editor, Gallery Suite, or Full Frame.
-                </p>
+                </>
               )}
+
+              {section === "storage" && (
+                <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                  <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                    <HardDrive className="h-5 w-5 text-[var(--enterprise-primary)]" />
+                    Storage
+                  </h2>
+                  <StorageAnalyticsPage basePath="/enterprise" />
+                </section>
+              )}
+
+              {section === "subscription" && (
+                <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                    <CreditCard className="h-5 w-5 text-[var(--enterprise-primary)]" />
+                    Subscription
+                  </h2>
+                  <ColdStorageAlertBanner />
+                  {org.storage_quota_bytes > 0 && (
+                    <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-white">
+                        Total storage: {org.storage_quota_bytes >= 1024 ** 4
+                          ? `${(org.storage_quota_bytes / 1024 ** 4).toFixed(1)} TB`
+                          : org.storage_quota_bytes >= 1024 ** 3
+                            ? `${(org.storage_quota_bytes / 1024 ** 3).toFixed(1)} GB`
+                            : `${Math.round(org.storage_quota_bytes / 1024 ** 2)} MB`}
+                      </p>
+                      {org.max_seats != null && (
+                        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                          {org.max_seats} seat{org.max_seats !== 1 ? "s" : ""} included
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+                    Storage and seats are managed by Bizzi. Contact our sales team to change your plan or add seats.
+                  </p>
+                  <a
+                    href="mailto:sales@bizzicloud.io"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  >
+                    Contact sales
+                  </a>
+                  <div className="mt-6 border-t border-neutral-200 pt-6 dark:border-neutral-700">
+                    <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-white">
+                      <Zap className="h-4 w-4 text-amber-500" />
+                      Power ups
+                    </h3>
+                    {org?.addon_ids && org.addon_ids.length > 0 ? (
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                        Your package includes:{" "}
+                        {org.addon_ids
+                          .map((id) => ADDON_LABELS[id] ?? id)
+                          .join(", ")}
+                        . Contact sales to add or change power ups.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                        No power ups in your package. Contact sales to add Editor, Gallery Suite, or Full Frame.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {section === "profile-handle" && (
+                <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                    <Globe className="h-5 w-5 text-[var(--enterprise-primary)]" />
+                    Profile handle
+                  </h2>
+                  <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+                    Your profile handle is used for branded gallery URLs (e.g. bizzicloud.io/yourhandle/gallery-name).
+                    Same handle across personal and enterprise when using the same email. Set it in{" "}
+                    <Link href="/enterprise/galleries" className="text-[var(--enterprise-primary)] hover:underline">
+                      Galleries
+                    </Link>
+                    {" "}→ Gallery Settings.
+                  </p>
+                </section>
+              )}
+
+              {section === "seats" && isAdmin ? (
+                <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+                  <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+                    Seat management
+                  </h2>
+                  <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+                    Invite team members and manage who has access to your
+                    organization.
+                  </p>
+                  <Link
+                    href="/enterprise/seats"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  >
+                    Manage seats
+                  </Link>
+                </section>
+              ) : null}
             </div>
-          </section>
-
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-              <Globe className="h-5 w-5 text-[var(--enterprise-primary)]" />
-              Profile handle
-            </h2>
-            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-              Your profile handle is used for branded gallery URLs (e.g. bizzicloud.io/yourhandle/gallery-name).
-              Same handle across personal and enterprise when using the same email. Set it in{" "}
-              <Link href="/enterprise/galleries" className="text-[var(--enterprise-primary)] hover:underline">
-                Galleries
-              </Link>
-              {" "}→ Gallery Settings.
-            </p>
-          </section>
-
-          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
-            <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
-              Seat management
-            </h2>
-            <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-              Invite team members and manage who has access to your
-              organization.
-            </p>
-            <Link
-              href="/enterprise/seats"
-              className="inline-flex items-center gap-2 rounded-lg bg-[var(--enterprise-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            >
-              Manage seats
-            </Link>
-          </section>
-        </div>
+          </div>
         ) : null}
         </DashboardRouteFade>
       </main>

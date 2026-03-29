@@ -158,13 +158,20 @@ export default function WorkspaceSwitcher() {
       ? activeTeamName ?? "Team workspace"
       : workspaces?.personal?.name ?? "Personal Workspace";
 
-  const entryCount =
-    (workspaces?.personal ? 1 : 0) +
-    (workspaces?.personalTeams?.length ?? 0) +
-    (workspaces?.organizations?.length ?? 0);
-  const hasMultiple = entryCount > 1;
+  const workspacesReady = workspaces !== null;
+  const entryCount = workspacesReady
+    ? (workspaces.personal ? 1 : 0) +
+      (workspaces.personalTeams?.length ?? 0) +
+      (workspaces.organizations?.length ?? 0)
+    : 0;
+  const hasMultiple = workspacesReady && entryCount > 1;
 
-  if (!hasMultiple) {
+  /**
+   * Until `/api/account/workspaces` resolves, `entryCount` was 0 while `org` from EnterpriseContext
+   * could already be set — the old `!hasMultiple` path briefly rendered the org name on `/dashboard`.
+   * Only use compact single-target shortcuts after the workspace list is ready.
+   */
+  if (workspacesReady && !hasMultiple) {
     if (isEnterprise && org) {
       return (
         <Link
@@ -177,7 +184,14 @@ export default function WorkspaceSwitcher() {
         </Link>
       );
     }
-    if (!isEnterprise && org) {
+    const orgInSwitcherList =
+      org && workspaces.organizations?.some((o) => o.id === org.id);
+    if (
+      !isEnterprise &&
+      orgInSwitcherList &&
+      !workspaces.personal &&
+      (workspaces.personalTeams?.length ?? 0) === 0
+    ) {
       return (
         <Link
           href="/enterprise"
