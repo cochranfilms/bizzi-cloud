@@ -46,6 +46,7 @@ import StorageQuotaExceededModal from "@/components/dashboard/StorageQuotaExceed
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { getUploadRelativePath } from "@/lib/uppy-local-preview";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { linkedDriveMatchesGalleryMediaScope } from "@/lib/gallery-media-drive-match";
 import {
@@ -1372,6 +1373,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               ...workspaceFields,
               ...personalTeamFileFields(drive),
               ...macosPackageFirestoreFieldsFromRelativePath(relPath),
+              ...creativeFirestoreFieldsFromRelativePath(relPath),
             });
             options?.onFileComplete?.({
               name: file.name,
@@ -1641,6 +1643,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             ...workspaceFields,
             ...personalTeamFileFields(drive),
             ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
+            ...creativeFirestoreFieldsFromRelativePath(relativePath),
           });
           getCurrentUserIdToken(false)
             .then((token) =>

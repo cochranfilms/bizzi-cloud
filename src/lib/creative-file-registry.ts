@@ -3,6 +3,7 @@
  * project support / interchange). Not every format uses macOS package container logic.
  */
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
+import { LIGHTROOM_LIBRARY_DISPLAY_LABEL } from "@/lib/lightroom-display";
 
 export type CreativeHandlingModel =
   | "package_container"
@@ -34,8 +35,52 @@ const EXTENSION_ENTRIES: { ext: string; entry: RegistryEntry }[] = [
   { ext: "premiereproject", entry: { handling_model: "single_project_file", project_file_type: "premiere_legacy", creative_app: "premiere_pro", creative_display_label: "Premiere Pro project" } },
   { ext: "aep", entry: { handling_model: "single_project_file", project_file_type: "after_effects_aep", creative_app: "after_effects", creative_display_label: "After Effects project" } },
   { ext: "mogrt", entry: { handling_model: "single_project_file", project_file_type: "after_effects_mogrt", creative_app: "after_effects", creative_display_label: "Motion Graphic Template" } },
-  { ext: "lrcat", entry: { handling_model: "single_project_file", project_file_type: "lightroom_lrcat", creative_app: "lightroom", creative_display_label: "Lightroom catalog" } },
-  { ext: "lrdata", entry: { handling_model: "archive_container", project_file_type: "lightroom_sidecar", creative_app: "lightroom", creative_display_label: "Lightroom data" } },
+  /** Lightroom Classic — longest catalog-related suffix first */
+  {
+    ext: "lrcat-journal",
+    entry: {
+      handling_model: "project_support_file",
+      project_file_type: "lightroom_lrcat_journal",
+      creative_app: "lightroom_classic",
+      creative_display_label: `${LIGHTROOM_LIBRARY_DISPLAY_LABEL} (support)`,
+    },
+  },
+  {
+    ext: "lrcat-wal",
+    entry: {
+      handling_model: "project_support_file",
+      project_file_type: "lightroom_lrcat_wal",
+      creative_app: "lightroom_classic",
+      creative_display_label: `${LIGHTROOM_LIBRARY_DISPLAY_LABEL} (support)`,
+    },
+  },
+  {
+    ext: "lrcat-shm",
+    entry: {
+      handling_model: "project_support_file",
+      project_file_type: "lightroom_lrcat_shm",
+      creative_app: "lightroom_classic",
+      creative_display_label: `${LIGHTROOM_LIBRARY_DISPLAY_LABEL} (support)`,
+    },
+  },
+  {
+    ext: "lrcat",
+    entry: {
+      handling_model: "single_project_file",
+      project_file_type: "lightroom_lrcat",
+      creative_app: "lightroom_classic",
+      creative_display_label: LIGHTROOM_LIBRARY_DISPLAY_LABEL,
+    },
+  },
+  {
+    ext: "lrdata",
+    entry: {
+      handling_model: "archive_container",
+      project_file_type: "lightroom_sidecar",
+      creative_app: "lightroom_classic",
+      creative_display_label: `${LIGHTROOM_LIBRARY_DISPLAY_LABEL} (data)`,
+    },
+  },
   { ext: "drp", entry: { handling_model: "single_project_file", project_file_type: "resolve_drp", creative_app: "davinci_resolve", creative_display_label: "DaVinci Resolve export" } },
   { ext: "drt", entry: { handling_model: "single_project_file", project_file_type: "resolve_drt", creative_app: "davinci_resolve", creative_display_label: "DaVinci Resolve template" } },
   { ext: "dra", entry: { handling_model: "archive_container", project_file_type: "resolve_dra", creative_app: "davinci_resolve", creative_display_label: "DaVinci Resolve archive" } },
@@ -130,8 +175,30 @@ export function shouldSkipVideoProbeForCreativePath(relativePath: string): boole
   return c.handling_model !== "normal_media_asset";
 }
 
+/** Lightroom support assets — never standalone rows in Projects (primary is .lrlibrary or .lrcat). */
+export const LIGHTROOM_SUPPORT_PROJECT_FILE_TYPES = new Set([
+  "lightroom_sidecar",
+  "lightroom_lrcat_wal",
+  "lightroom_lrcat_shm",
+  "lightroom_lrcat_journal",
+]);
+
+export function isLightroomSupportProjectFileType(projectFileType: string | null | undefined): boolean {
+  if (!projectFileType) return false;
+  return LIGHTROOM_SUPPORT_PROJECT_FILE_TYPES.has(String(projectFileType).toLowerCase());
+}
+
+/** True for legacy `creative_app` on historical Firestore rows (read path only). */
+export function isLightroomCreativeApp(app: string | null | undefined): boolean {
+  const a = String(app ?? "").toLowerCase();
+  return a === "lightroom" || a === "lightroom_classic";
+}
+
 /** Filter API / Projects: interchange + NLE single project files (not package interiors). */
 export function isCreativeProjectFilterMatch(item: Record<string, unknown>): boolean {
+  const pftRaw = item.project_file_type;
+  if (isLightroomSupportProjectFileType(pftRaw != null ? String(pftRaw) : null)) return false;
+
   const hm = String(item.handling_model ?? "").toLowerCase();
   if (hm === "single_project_file" || hm === "project_support_file") return true;
   if (hm === "archive_container" && item.project_file_type) return true;

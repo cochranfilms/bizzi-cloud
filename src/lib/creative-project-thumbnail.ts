@@ -11,6 +11,7 @@ import {
   type CreativeClassification,
 } from "@/lib/creative-file-registry";
 import { getMacosPackageKindFromFileName } from "@/lib/macos-package-bundles";
+import { LIGHTROOM_LIBRARY_DISPLAY_LABEL } from "@/lib/lightroom-display";
 
 export type CreativeProjectTileVariant = "default" | "archive_container";
 
@@ -81,7 +82,9 @@ function resolveDavinciTileVariant(
 }
 
 function creativeAppToBrandId(app: string): CreativeTileBrandId {
-  if (KNOWN_APPS.has(app)) return app as CreativeTileBrandId;
+  const a = app.toLowerCase();
+  if (a === "lightroom_classic" || a === "lightroom") return "lightroom";
+  if (KNOWN_APPS.has(a)) return a as CreativeTileBrandId;
   return "creative_generic";
 }
 
@@ -96,7 +99,7 @@ function defaultLabelForBrand(brandId: CreativeTileBrandId, rawApp: string): str
     case "after_effects":
       return "After Effects";
     case "lightroom":
-      return "Lightroom";
+      return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
     case "photoshop":
       return "Photoshop";
     case "illustrator":
@@ -140,7 +143,7 @@ function fromClassification(
   const app = c.creative_app.toLowerCase();
   const brandId = creativeAppToBrandId(app);
   let tileVariant: CreativeProjectTileVariant = "default";
-  if (c.creative_app === "davinci_resolve") {
+  if (app === "davinci_resolve") {
     tileVariant = resolveDavinciTileVariant(c.handling_model, c.project_file_type);
   }
   return {
@@ -174,6 +177,15 @@ export function resolveCreativeProjectTile(
         tileVariant: "default",
         displayLabel: "Final Cut Pro library",
         extensionLabel: ".fcpbundle",
+      };
+    }
+    if (kind === "lrlibrary") {
+      return {
+        mode: "branded_project",
+        brandId: "lightroom",
+        tileVariant: "default",
+        displayLabel: LIGHTROOM_LIBRARY_DISPLAY_LABEL,
+        extensionLabel: ".lrlibrary",
       };
     }
     return { mode: "generic" };

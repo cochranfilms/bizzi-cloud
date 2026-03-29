@@ -40,7 +40,7 @@ export const PROJECT_EXTENSIONS = [
   "fcpbundle", "fcpproject", "fcpevent", "fcpxml",
   "prproj", "premiereproject", "aep", "mogrt",
   "psd", "psb", "ai",
-  "lrcat", "lrdata",
+  "lrlibrary", "lrcat", "lrdata",
   "drp", "dra", "drt",
   "otio", "xml", "edl", "aaf",
   "srt", "vtt", "cube", "cdl", "ale",
@@ -85,22 +85,26 @@ export type ProjectFileType =
   | "premiere_pro"
   | "davinci_resolve"
   | "after_effects"
+  | "lightroom"
   | "interchange"
   | "archive"
   | "unknown_project";
 
 export function getProjectFileType(name: string): ProjectFileType | null {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const lower = name.toLowerCase();
+  const ext = lower.split(".").pop() ?? "";
   const fcp = ["fcpbundle", "fcpproject", "fcpevent", "fcpxml"];
   const premiere = ["prproj", "premiereproject"];
   const resolve = ["drp", "dra", "drt"];
   const ae = ["aep", "mogrt"];
+  const lr = ["lrlibrary", "lrcat", "lrdata"];
   const interchange = ["xml", "fcpxml", "edl", "aaf", "otio", "srt", "vtt", "cube", "cdl", "ale"];
   const archive = ["zip", "tar", "gz", "7z"];
   if (fcp.includes(ext)) return "final_cut_pro";
   if (premiere.includes(ext)) return "premiere_pro";
   if (resolve.includes(ext)) return "davinci_resolve";
   if (ae.includes(ext)) return "after_effects";
+  if (lr.some((s) => lower.endsWith(`.${s}`))) return "lightroom";
   if (archive.includes(ext)) return "archive";
   if (interchange.includes(ext)) return "interchange";
   if (PROJECT_EXT.test(name.toLowerCase())) return "unknown_project";

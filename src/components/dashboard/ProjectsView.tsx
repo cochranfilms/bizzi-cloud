@@ -17,6 +17,7 @@ import {
   mergeDriveFilesWithMacosPackages,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
+import { dedupeLightroomFamilyProjectRows } from "@/lib/lightroom-projects-dedupe";
 import { Check, Download, FolderInput, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import SectionTitle from "./SectionTitle";
 import BulkMoveModal from "./BulkMoveModal";
@@ -363,14 +364,13 @@ export default function ProjectsView({
       for (const drive of scopedDrives) {
         const packages = packageResults.find((p) => p.driveId === drive.id)?.packages ?? [];
         const driveFiles = byDrive.get(drive.id) ?? [];
-        merged.push(
-          ...(mergeDriveFilesWithMacosPackages(
-            driveFiles,
-            packages,
-            drive.id,
-            drive.name ?? "Folder"
-          ) as RecentFile[])
-        );
+        const mergedDrive = mergeDriveFilesWithMacosPackages(
+          driveFiles,
+          packages,
+          drive.id,
+          drive.name ?? "Folder"
+        ) as RecentFile[];
+        merged.push(...dedupeLightroomFamilyProjectRows(mergedDrive));
       }
       merged.sort((a, b) => {
         const ta = new Date(a.uploadedAt ?? a.modifiedAt ?? 0).getTime();

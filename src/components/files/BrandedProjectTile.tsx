@@ -97,11 +97,14 @@ function LightroomMark({ className }: { className?: string }) {
   return (
     <div
       className={cx(
-        "flex items-center justify-center rounded-lg bg-gradient-to-br from-sky-900 to-sky-950 shadow-inner",
+        "relative flex flex-col items-center justify-center rounded-lg bg-[#0a1628] shadow-inner",
         className
       )}
     >
-      <span className="text-[0.5em] font-bold text-sky-200">Lr</span>
+      <span className="text-[0.65em] font-bold leading-none tracking-tight text-sky-300 sm:text-[0.7em]">
+        Lr
+      </span>
+      <span className="mt-0.5 text-[0.35em] font-semibold uppercase tracking-wider text-white/90">LIB</span>
     </div>
   );
 }

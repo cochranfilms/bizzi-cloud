@@ -6,15 +6,18 @@
  * It is not an extension allowlist bolt-on.
  */
 
-/** Longest suffix first so `.fcpbundle` wins over hypothetical shorter overlaps. */
+import { LIGHTROOM_LIBRARY_DISPLAY_LABEL } from "@/lib/lightroom-display";
+
+/** Longest suffix first so longer package types win over shorter overlaps. */
 export const MACOS_PACKAGE_EXTENSION_KIND_ENTRIES: { suffix: string; kind: string }[] = [
   { suffix: ".photoslibrary", kind: "photoslibrary" },
-  { suffix: ".fcpbundle", kind: "fcpbundle" },
   { suffix: ".imovieproject", kind: "imovieproject" },
-  { suffix: ".logicx", kind: "logicx" },
-  { suffix: ".dvdproj", kind: "dvdproj" },
-  { suffix: ".band", kind: "band" },
+  { suffix: ".lrlibrary", kind: "lrlibrary" },
   { suffix: ".playground", kind: "playground" },
+  { suffix: ".fcpbundle", kind: "fcpbundle" },
+  { suffix: ".dvdproj", kind: "dvdproj" },
+  { suffix: ".logicx", kind: "logicx" },
+  { suffix: ".band", kind: "band" },
 ];
 
 export function getMacosPackageKindFromFileName(fileName: string): string | null {
@@ -45,6 +48,8 @@ export function packageKindDisplayLabel(kind: string): string {
       return "iDVD project";
     case "playground":
       return "Swift Playground";
+    case "lrlibrary":
+      return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
     default:
       return "macOS package";
   }
@@ -68,11 +73,14 @@ export const MACOS_PACKAGE_STRUCTURED_UPLOAD_BLURB =
 export function flatMacosPackageUserMessage(fileName: string): string {
   const kind = getMacosPackageKindFromFileName(fileName) ?? "package";
   const label = packageKindDisplayLabel(kind);
+  const lower = fileName.toLowerCase();
+  const uploadNoun =
+    lower.endsWith(".fcpbundle") || lower.endsWith(".lrlibrary") ? "library" : "package";
   return (
     `${fileName} is a ${label} — a folder-like package on macOS, not a normal file. ` +
     `Your browser only provided a single file stream, so we cannot guarantee the full internal structure. ` +
-    `To back up the complete library for Final Cut Pro (or other apps) to open later, use one of these:\n\n` +
-    `• Upload folder: choose the ${fileName.endsWith(".fcpbundle") ? "library" : "package"} folder via “Upload folder” (or drag the package onto the page so the browser exposes its contents).\n` +
+    `To back up the complete library for your creative app to open later, use one of these:\n\n` +
+    `• Upload folder: choose the ${uploadNoun} folder via “Upload folder” (or drag the package onto the page so the browser exposes its contents).\n` +
     `• Or compress: right‑click the package in Finder → Compress, then upload the .zip.\n\n` +
     `We won’t treat a single-stream upload as full ${label} support.`
   );

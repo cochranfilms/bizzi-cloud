@@ -12,6 +12,9 @@ import {
   isProjectFile,
   isVideoFile,
 } from "@/lib/bizzi-file-types";
+import { isLightroomCreativeApp } from "@/lib/creative-file-registry";
+import { LIGHTROOM_LIBRARY_DISPLAY_LABEL } from "@/lib/lightroom-display";
+import { getMacosPackageKindFromFileName } from "@/lib/macos-package-bundles";
 import type { FolderItem } from "@/components/dashboard/FolderCard";
 
 export type MetadataCompleteness = "full" | "derived" | "fallback";
@@ -114,15 +117,39 @@ export function classifyFileKind(file: RecentFile): FileKindCategory {
   return "unknown";
 }
 
+/** Prefer “Lightroom Library” over generic folder / archive / macOS package labels when classification is confident. */
+function lightroomConfidentLabel(file: RecentFile): string | null {
+  if ((file.macosPackageKind ?? "").toLowerCase() === "lrlibrary") return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
+  if (getMacosPackageKindFromFileName(file.name) === "lrlibrary") return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
+  if (isLightroomCreativeApp(file.creativeApp)) return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
+  const pft = (file.projectFileType ?? "").toLowerCase();
+  if (
+    pft === "lightroom_lrcat" ||
+    pft === "lightroom_sidecar" ||
+    pft.startsWith("lightroom_lrcat_")
+  ) {
+    return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
+  }
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".lrcat") || lower.endsWith(".lrdata")) return LIGHTROOM_LIBRARY_DISPLAY_LABEL;
+  return null;
+}
+
 export function buildTypeLabel(file: RecentFile): string {
   if (file.creativeDisplayLabel?.trim()) return file.creativeDisplayLabel.trim();
-  if (file.assetType === "macos_package") return "macOS package";
+  const lr = lightroomConfidentLabel(file);
+  const isPkgRow = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
+  if (isPkgRow) {
+    if (lr) return lr;
+    if (file.macosPackageLabel?.trim()) return file.macosPackageLabel.trim();
+    return "macOS package";
+  }
   if (file.macosPackageLabel?.trim()) return file.macosPackageLabel.trim();
 
   const cat = classifyFileKind(file);
   switch (cat) {
     case "macos_package":
-      return "macOS package";
+      return lr ?? "macOS package";
     case "video":
       return "Video";
     case "photo":
@@ -132,13 +159,13 @@ export function buildTypeLabel(file: RecentFile): string {
     case "document":
       return "Document";
     case "archive":
-      return "Archive";
+      return lr ?? "Archive";
     case "lut":
       return "LUT";
     case "project":
-      return "Project file";
+      return lr ?? "Project file";
     default:
-      return "Unknown file";
+      return lr ?? "Unknown file";
   }
 }
 

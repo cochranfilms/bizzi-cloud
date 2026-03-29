@@ -125,6 +125,46 @@ describe("resolveCreativeProjectTile", () => {
     expect(r.mode).toBe("branded_project");
     if (r.mode === "branded_project") expect(r.brandId).toBe("final_cut_pro");
   });
+
+  it("brands Lightroom Library package root (synthetic row)", () => {
+    const r = resolveCreativeProjectTile({
+      name: "Lightroom Library.lrlibrary",
+      path: "imports/Lightroom Library.lrlibrary",
+      assetType: "macos_package",
+      id: "macos-pkg:lr1",
+      macosPackageKind: "lrlibrary",
+    });
+    expect(r.mode).toBe("branded_project");
+    if (r.mode === "branded_project") {
+      expect(r.brandId).toBe("lightroom");
+      expect(r.extensionLabel).toBe(".lrlibrary");
+      expect(r.displayLabel).toBe("Lightroom Library");
+    }
+  });
+
+  it("maps creativeApp lightroom_classic to Lightroom tile", () => {
+    const r = resolveCreativeProjectTile({
+      name: "cat.lrcat",
+      path: "classic/cat.lrcat",
+      creativeApp: "lightroom_classic",
+      handlingModel: "single_project_file",
+      projectFileType: "lightroom_lrcat",
+    });
+    expect(r.mode).toBe("branded_project");
+    if (r.mode === "branded_project") expect(r.brandId).toBe("lightroom");
+  });
+
+  it("read alias: legacy lightroom creativeApp still brands", () => {
+    const r = resolveCreativeProjectTile({
+      name: "legacy.lrcat",
+      path: "legacy.lrcat",
+      creativeApp: "lightroom",
+      handlingModel: "single_project_file",
+      projectFileType: "lightroom_lrcat",
+    });
+    expect(r.mode).toBe("branded_project");
+    if (r.mode === "branded_project") expect(r.brandId).toBe("lightroom");
+  });
 });
 
 describe("recentFileToCreativeThumbnailSource", () => {
