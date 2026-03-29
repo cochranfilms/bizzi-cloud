@@ -3,17 +3,27 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
-import { plans, powerUpAddons, PLAN_LABELS, ADDON_LABELS } from "@/lib/pricing-data";
-import { emptyTeamSeatCounts, type TeamSeatCounts } from "@/lib/team-seat-pricing";
-import CheckoutModal from "@/components/CheckoutModal";
+import { trackCheckoutFunnelEvent } from "@/lib/checkout-funnel-analytics";
+import { plans, powerUpAddons, PLAN_LABELS, ADDON_LABELS, planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import {
+  emptyTeamSeatCounts,
+  sumExtraTeamSeats,
+  teamSeatMonthlySubtotal,
+  teamSeatsAnnualUsdTotal,
+  type TeamSeatCounts,
+} from "@/lib/team-seat-pricing";
+import CheckoutModal, {
+  type CheckoutModalLoadingPhase,
+} from "@/components/CheckoutModal";
 import FreeSignUpModal from "@/components/FreeSignUpModal";
 import BuildPlanConfigurator, {
   type PlanBuilderCheckoutPayload,
 } from "@/components/pricing/BuildPlanConfigurator";
 import PowerUpProductTiles from "@/components/pricing/PowerUpProductTiles";
-import SubscriptionCheckoutSummaryModal from "@/components/pricing/SubscriptionCheckoutSummaryModal";
+import LandingCheckoutSeatsModal from "@/components/pricing/LandingCheckoutSeatsModal";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 
 export default function PricingSection() {
@@ -21,6 +31,11 @@ export default function PricingSection() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutModalLoadingPhase, setCheckoutModalLoadingPhase] =
+    useState<CheckoutModalLoadingPhase>("idle");
+  const [guestEmailInUse, setGuestEmailInUse] = useState(false);
+  const [checkoutRecoveryAfterSignup, setCheckoutRecoveryAfterSignup] =
+    useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const purchaseProcessedRef = useRef(false);
   const [checkoutModal, setCheckoutModal] = useState<{
@@ -30,18 +45,12 @@ export default function PricingSection() {
     addonName?: string;
     billing: "monthly" | "annual";
     priceLabel: string;
+    teamSummaryLine?: string;
     teamSeatCounts: TeamSeatCounts;
   } | null>(null);
-  const [checkoutSummaryOpen, setCheckoutSummaryOpen] = useState(false);
+  const [checkoutSeatsOpen, setCheckoutSeatsOpen] = useState(false);
   const [pendingLandingPayload, setPendingLandingPayload] =
     useState<PlanBuilderCheckoutPayload | null>(null);
-
-  const normalizeLandingPayload = useCallback((payload: PlanBuilderCheckoutPayload): PlanBuilderCheckoutPayload => {
-    return {
-      ...payload,
-      teamSeatCounts: emptyTeamSeatCounts(),
-    };
-  }, []);
 
   const buildGuestPriceLabel = useCallback((payload: PlanBuilderCheckoutPayload) => {
     const tier = plans.find((t) => t.id === payload.planId);
@@ -59,12 +68,19 @@ export default function PricingSection() {
       }, 0);
       label += ` + ~$${addonMonthly}/mo ${productSettingsCopy.powerUps.label}`;
     }
+    const seats = sumExtraTeamSeats(payload.teamSeatCounts);
+    if (seats > 0 && planAllowsPersonalTeamSeats(payload.planId)) {
+      if (payload.billing === "monthly") {
+        label += ` + ~$${teamSeatMonthlySubtotal(payload.teamSeatCounts)}/mo seats`;
+      } else {
+        label += ` + ~$${teamSeatsAnnualUsdTotal(payload.teamSeatCounts)}/yr seats`;
+      }
+    }
     return label;
   }, []);
 
   const runAuthenticatedLandingCheckout = useCallback(
     async (payload: PlanBuilderCheckoutPayload) => {
-      const normalized = normalizeLandingPayload(payload);
       setCheckoutLoading(true);
       setCheckoutError(null);
       try {
@@ -74,6 +90,9 @@ export default function PricingSection() {
           return;
         }
         const base = typeof window !== "undefined" ? window.location.origin : "";
+        const teamSeatCounts = planAllowsPersonalTeamSeats(payload.planId)
+          ? payload.teamSeatCounts
+          : emptyTeamSeatCounts();
         const res = await fetch(`${base}/api/stripe/checkout`, {
           method: "POST",
           headers: {
@@ -81,10 +100,10 @@ export default function PricingSection() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            planId: normalized.planId,
-            addonIds: normalized.addonIds,
-            billing: normalized.billing,
-            teamSeatCounts: normalized.teamSeatCounts,
+            planId: payload.planId,
+            addonIds: payload.addonIds,
+            billing: payload.billing,
+            teamSeatCounts,
           }),
         });
         const data = (await res.json()) as { url?: string; error?: string };
@@ -103,83 +122,156 @@ export default function PricingSection() {
         setCheckoutLoading(false);
       }
     },
-    [normalizeLandingPayload]
+    []
   );
 
-  const handleLandingSubscribe = useCallback(
-    (payload: PlanBuilderCheckoutPayload) => {
-      setPendingLandingPayload(normalizeLandingPayload(payload));
-      setCheckoutSummaryOpen(true);
+  const handleLandingSubscribe = useCallback((payload: PlanBuilderCheckoutPayload) => {
+    setCheckoutError(null);
+    setPendingLandingPayload(payload);
+    setCheckoutSeatsOpen(true);
+  }, []);
+
+  const handleLandingFinishAndPay = useCallback(
+    async (teamSeatCounts: TeamSeatCounts) => {
+      if (!pendingLandingPayload) return;
+      const final: PlanBuilderCheckoutPayload = {
+        ...pendingLandingPayload,
+        teamSeatCounts: planAllowsPersonalTeamSeats(pendingLandingPayload.planId)
+          ? teamSeatCounts
+          : emptyTeamSeatCounts(),
+      };
+
+      if (!user) {
+        setCheckoutSeatsOpen(false);
+        setPendingLandingPayload(null);
+        const tier = plans.find((t) => t.id === final.planId);
+        const addonName =
+          final.addonIds.length > 0
+            ? final.addonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")
+            : undefined;
+        const seatN = sumExtraTeamSeats(final.teamSeatCounts);
+        setGuestEmailInUse(false);
+        setCheckoutRecoveryAfterSignup(false);
+        setCheckoutModalLoadingPhase("idle");
+        setCheckoutModal({
+          planId: final.planId,
+          planName: tier?.name ?? PLAN_LABELS[final.planId] ?? final.planId,
+          addonIds: final.addonIds,
+          addonName,
+          billing: final.billing,
+          priceLabel: buildGuestPriceLabel(final),
+          teamSummaryLine:
+            seatN > 0 && planAllowsPersonalTeamSeats(final.planId)
+              ? final.billing === "monthly"
+                ? `Personal team seats: ~$${teamSeatMonthlySubtotal(final.teamSeatCounts)}/mo for ${seatN} extra seat${seatN !== 1 ? "s" : ""}`
+                : `Personal team seats: ~$${teamSeatsAnnualUsdTotal(final.teamSeatCounts)}/yr for ${seatN} extra seat${seatN !== 1 ? "s" : ""}`
+              : undefined,
+          teamSeatCounts: final.teamSeatCounts,
+        });
+        return;
+      }
+
+      await runAuthenticatedLandingCheckout(final);
     },
-    [normalizeLandingPayload]
+    [pendingLandingPayload, user, buildGuestPriceLabel, runAuthenticatedLandingCheckout]
   );
 
-  const handleCheckoutSummaryConfirm = useCallback(async () => {
-    if (!pendingLandingPayload) return;
-    setCheckoutSummaryOpen(false);
-    const normalized = pendingLandingPayload;
-    setPendingLandingPayload(null);
-
-    if (!user) {
-      const tier = plans.find((t) => t.id === normalized.planId);
-      const addonName =
-        normalized.addonIds.length > 0
-          ? normalized.addonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")
-          : undefined;
-      setCheckoutModal({
-        planId: normalized.planId,
-        planName: tier?.name ?? PLAN_LABELS[normalized.planId] ?? normalized.planId,
-        addonIds: normalized.addonIds,
-        addonName,
-        billing: normalized.billing,
-        priceLabel: buildGuestPriceLabel(normalized),
-        teamSeatCounts: emptyTeamSeatCounts(),
-      });
-      return;
-    }
-
-    await runAuthenticatedLandingCheckout(normalized);
-  }, [pendingLandingPayload, user, buildGuestPriceLabel, runAuthenticatedLandingCheckout]);
-
-  const handleCheckoutSummaryClose = useCallback(() => {
+  const handleCheckoutSeatsClose = useCallback(() => {
     if (checkoutLoading) return;
-    setCheckoutSummaryOpen(false);
+    setCheckoutSeatsOpen(false);
     setPendingLandingPayload(null);
   }, [checkoutLoading]);
 
+  const handleRetryGuestCheckout = useCallback(async () => {
+    if (!checkoutModal) return;
+    setCheckoutError(null);
+    const payload: PlanBuilderCheckoutPayload = {
+      planId: checkoutModal.planId,
+      addonIds: checkoutModal.addonIds,
+      billing: checkoutModal.billing,
+      storageAddonId: null,
+      teamSeatCounts: checkoutModal.teamSeatCounts,
+    };
+    await runAuthenticatedLandingCheckout(payload);
+  }, [checkoutModal, runAuthenticatedLandingCheckout]);
+
   const handleGuestCheckout = useCallback(
-    async (data: { name: string; email: string }) => {
+    async (data: { name: string; email: string; password: string }) => {
       if (!checkoutModal) return;
       setCheckoutLoading(true);
       setCheckoutError(null);
+      setCheckoutRecoveryAfterSignup(false);
+      setGuestEmailInUse(false);
+      setCheckoutModalLoadingPhase("creating_account");
+      trackCheckoutFunnelEvent("signup_started");
+
+      let redirected = false;
       try {
+        const auth = getFirebaseAuth();
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          data.email,
+          data.password
+        );
+        // Auth display name only; Firestore profile + plan data come from the Stripe webhook when userId is on the session.
+        await updateProfile(credential.user, { displayName: data.name });
+        trackCheckoutFunnelEvent("signup_created_account");
+
+        setCheckoutModalLoadingPhase("redirecting_checkout");
+        const token = await credential.user.getIdToken(true);
         const base = typeof window !== "undefined" ? window.location.origin : "";
         const res = await fetch(`${base}/api/stripe/checkout`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
             planId: checkoutModal.planId,
             addonIds: checkoutModal.addonIds,
             billing: checkoutModal.billing,
             teamSeatCounts: checkoutModal.teamSeatCounts,
-            email: data.email,
-            name: data.name,
           }),
         });
         const result = (await res.json()) as { url?: string; error?: string };
+        trackCheckoutFunnelEvent("checkout_session_created", { ok: res.ok });
+
         if (!res.ok) {
-          setCheckoutError(result.error ?? "Checkout failed");
+          trackCheckoutFunnelEvent("checkout_recovery_needed");
+          setCheckoutRecoveryAfterSignup(true);
+          setCheckoutError(
+            "Your account was created, but we couldn't start checkout. Try again below, or sign in later from the login page to finish your purchase."
+          );
           return;
         }
         if (result.url) {
+          trackCheckoutFunnelEvent("redirected_to_stripe");
+          redirected = true;
           window.location.href = result.url;
         } else {
-          setCheckoutError("Checkout failed");
+          trackCheckoutFunnelEvent("checkout_recovery_needed");
+          setCheckoutRecoveryAfterSignup(true);
+          setCheckoutError(
+            "Your account was created, but we couldn't start checkout. Try again below, or sign in from the login page."
+          );
         }
-      } catch {
-        setCheckoutError("Checkout failed. Please try again.");
+      } catch (err: unknown) {
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? String((err as { code?: string }).code)
+            : "";
+        if (code === "auth/email-already-in-use") {
+          trackCheckoutFunnelEvent("email_already_in_use_hit");
+          setGuestEmailInUse(true);
+          setCheckoutError(null);
+          return;
+        }
+        setCheckoutError("Something went wrong. Please try again.");
       } finally {
-        setCheckoutLoading(false);
+        if (!redirected) {
+          setCheckoutLoading(false);
+          setCheckoutModalLoadingPhase("idle");
+        }
       }
     },
     [checkoutModal]
@@ -592,30 +684,23 @@ export default function PricingSection() {
           isOpen={freeSignUpModalOpen}
           onClose={() => setFreeSignUpModalOpen(false)}
         />
-        <SubscriptionCheckoutSummaryModal
-          open={checkoutSummaryOpen && !!pendingLandingPayload}
-          onClose={handleCheckoutSummaryClose}
-          onConfirm={() => void handleCheckoutSummaryConfirm()}
-          planId={pendingLandingPayload?.planId ?? ""}
-          planName={
-            pendingLandingPayload
-              ? plans.find((t) => t.id === pendingLandingPayload.planId)?.name ??
-                PLAN_LABELS[pendingLandingPayload.planId] ??
-                pendingLandingPayload.planId
-              : ""
-          }
-          billing={pendingLandingPayload?.billing ?? "monthly"}
-          addons={(pendingLandingPayload?.addonIds ?? []).map((id) => ({
-            id,
-            label: ADDON_LABELS[id] ?? id,
-          }))}
+        <LandingCheckoutSeatsModal
+          open={checkoutSeatsOpen && !!pendingLandingPayload}
+          payload={pendingLandingPayload}
           loading={checkoutLoading}
+          error={checkoutError}
+          onClose={handleCheckoutSeatsClose}
+          onFinishAndPay={(seats) => void handleLandingFinishAndPay(seats)}
         />
         <CheckoutModal
           isOpen={!!checkoutModal}
           onClose={() => {
+            if (checkoutLoading) return;
             setCheckoutModal(null);
             setCheckoutError(null);
+            setGuestEmailInUse(false);
+            setCheckoutRecoveryAfterSignup(false);
+            setCheckoutModalLoadingPhase("idle");
           }}
           planId={checkoutModal?.planId ?? ""}
           planName={checkoutModal?.planName ?? ""}
@@ -623,9 +708,14 @@ export default function PricingSection() {
           addonName={checkoutModal?.addonName}
           billing={checkoutModal?.billing ?? "monthly"}
           priceLabel={checkoutModal?.priceLabel ?? ""}
+          teamSummaryLine={checkoutModal?.teamSummaryLine}
           onSubmit={handleGuestCheckout}
           loading={checkoutLoading}
+          loadingPhase={checkoutModalLoadingPhase}
           error={checkoutError}
+          emailInUse={guestEmailInUse}
+          checkoutRecovery={checkoutRecoveryAfterSignup}
+          onRetryCheckout={handleRetryGuestCheckout}
         />
 
         {/* Footer note */}

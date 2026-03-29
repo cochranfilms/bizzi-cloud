@@ -55,6 +55,16 @@ export function teamSeatMonthlySubtotal(c: TeamSeatCounts): number {
   );
 }
 
+/** Total annual USD for all extra seats (Stripe annual tier prices use 25% off × 12). */
+export function teamSeatsAnnualUsdTotal(c: TeamSeatCounts): number {
+  return (
+    c.none * teamSeatAnnualCentsPerSeat("none") +
+    c.gallery * teamSeatAnnualCentsPerSeat("gallery") +
+    c.editor * teamSeatAnnualCentsPerSeat("editor") +
+    c.fullframe * teamSeatAnnualCentsPerSeat("fullframe")
+  ) / 100;
+}
+
 /** Annual amount in cents (25% off vs 12 × monthly), matching plan annual pattern */
 export function teamSeatAnnualCentsPerSeat(level: PersonalTeamSeatAccess): number {
   const m = TEAM_SEAT_MONTHLY_USD[level];

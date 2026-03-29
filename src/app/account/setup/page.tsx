@@ -3,14 +3,20 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { signInWithCustomToken } from "firebase/auth";
+import { signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import Image from "next/image";
+
+type SetupStatus =
+  | "loading"
+  | "password"
+  | "sign_in_required"
+  | "error";
 
 function AccountSetupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [status, setStatus] = useState<"loading" | "password" | "error">("loading");
+  const [status, setStatus] = useState<SetupStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -30,6 +36,8 @@ function AccountSetupContent() {
       return;
     }
 
+    let cancelled = false;
+
     (async () => {
       try {
         const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -39,6 +47,8 @@ function AccountSetupContent() {
           body: JSON.stringify({ session_id: sessionId }),
         });
         const data = (await res.json()) as {
+          flow?: string;
+          userId?: string;
           customToken?: string;
           needsPassword?: boolean;
           email?: string;
@@ -46,7 +56,32 @@ function AccountSetupContent() {
           existing_user?: boolean;
         };
 
+        if (cancelled) return;
+
+        if (data.flow === "post_checkout_signed_in" && data.userId) {
+          const auth = getFirebaseAuth();
+          await new Promise<void>((resolve) => {
+            const unsub = onAuthStateChanged(auth, (user) => {
+              unsub();
+              if (cancelled) {
+                resolve();
+                return;
+              }
+              if (user?.uid === data.userId) {
+                router.replace(
+                  `/dashboard?checkout=success&session_id=${encodeURIComponent(sessionId)}`
+                );
+              } else {
+                setStatus("sign_in_required");
+              }
+              resolve();
+            });
+          });
+          return;
+        }
+
         if (!res.ok) {
+          if (cancelled) return;
           setStatus("error");
           setError(
             data.existing_user
@@ -60,6 +95,7 @@ function AccountSetupContent() {
         }
 
         if (data.needsPassword && data.email) {
+          if (cancelled) return;
           setEmail(data.email);
           setStatus("password");
           return;
@@ -68,18 +104,26 @@ function AccountSetupContent() {
         if (data.customToken) {
           const auth = getFirebaseAuth();
           await signInWithCustomToken(auth, data.customToken);
+          if (cancelled) return;
           router.replace("/dashboard");
           return;
         }
 
+        if (cancelled) return;
         setStatus("error");
         setError("Invalid response from server");
       } catch (err) {
         console.error("[account/setup]", err);
-        setStatus("error");
-        setError("Something went wrong. Please try again or contact support.");
+        if (!cancelled) {
+          setStatus("error");
+          setError("Something went wrong. Please try again or contact support.");
+        }
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, router]);
 
   const handleSetPassword = async (e: React.FormEvent) => {
@@ -138,6 +182,31 @@ function AccountSetupContent() {
           <p className="mt-2 text-neutral-500 dark:text-neutral-400">
             You&apos;ll be redirected to your dashboard shortly.
           </p>
+        </div>
+      )}
+
+      {status === "sign_in_required" && (
+        <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900 p-6 max-w-md w-full text-center">
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">
+            Sign in to continue
+          </h1>
+          <p className="mt-2 text-neutral-600 dark:text-neutral-400">
+            Sign in with the account you used at checkout to open your dashboard.
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <Link
+              href="/login"
+              className="rounded-lg bg-bizzi-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/#pricing"
+              className="text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            >
+              Back to pricing
+            </Link>
+          </div>
         </div>
       )}
 

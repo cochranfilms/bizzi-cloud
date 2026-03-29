@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/hooks/useSubscription";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { trackCheckoutFunnelEvent } from "@/lib/checkout-funnel-analytics";
 
 /**
  * When user lands on dashboard after Stripe checkout with session_id,
@@ -17,11 +18,19 @@ export default function CheckoutSuccessSync() {
   const { user } = useAuth();
   const { refetch } = useSubscription();
   const syncedRef = useRef(false);
+  const funnelLandingRef = useRef(false);
 
   useEffect(() => {
     const checkout = searchParams.get("checkout");
     const sessionId = searchParams.get("session_id");
-    if (!user || checkout !== "success" || !sessionId || syncedRef.current) return;
+    if (!user || checkout !== "success" || !sessionId) return;
+
+    if (!funnelLandingRef.current) {
+      funnelLandingRef.current = true;
+      trackCheckoutFunnelEvent("checkout_success_dashboard");
+    }
+
+    if (syncedRef.current) return;
 
     syncedRef.current = true;
 

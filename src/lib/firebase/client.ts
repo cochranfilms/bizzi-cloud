@@ -1,5 +1,10 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  type Auth,
+} from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
@@ -24,8 +29,17 @@ function getApp(): FirebaseApp {
   return app;
 }
 
+let browserLocalPersistenceEnsured = false;
+
 export function getFirebaseAuth(): Auth {
-  return getAuth(getApp());
+  const auth = getAuth(getApp());
+  if (typeof window !== "undefined" && !browserLocalPersistenceEnsured) {
+    browserLocalPersistenceEnsured = true;
+    void setPersistence(auth, browserLocalPersistence).catch((err) =>
+      console.warn("[firebase/auth] setPersistence failed:", err)
+    );
+  }
+  return auth;
 }
 
 export function getFirebaseFirestore(): Firestore {

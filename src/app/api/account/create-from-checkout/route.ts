@@ -2,6 +2,12 @@
  * POST /api/account/create-from-checkout
  * Creates a Firebase user and profile from a completed Stripe checkout session.
  * Called by /account/setup after guest checkout payment success.
+ *
+ * Email verification: legacy guest sessions (no `userId` in metadata) use Admin
+ * `createUser` with `emailVerified: true`. Users who signed up on the client before
+ * Stripe (`userId` in metadata) are not provisioned here; they should land on the
+ * dashboard already signed in. Client `createUserWithEmailAndPassword` may leave
+ * `emailVerified` false until the user verifies — unchanged in this pass.
  */
 import { getStripeInstance } from "@/lib/stripe";
 import {
@@ -75,15 +81,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Already has userId = existing user, webhook would have handled profile
+  // Pre-checkout signup: session metadata includes Firebase uid; user should sign in, not set password here.
   if (userId) {
-    return NextResponse.json(
-      {
-        error: "Account already exists. Sign in to access your dashboard.",
-        existing_user: true,
-      },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      flow: "post_checkout_signed_in",
+      userId,
+    });
   }
 
   const planId = (metadata.planId ?? "solo") as PlanId;

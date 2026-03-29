@@ -51,6 +51,15 @@ function formatCents(cents: number): string {
   }).format(cents / 100);
 }
 
+function formatUsdWholeOrTwo(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
 const PLAN_ORDER = ["solo", "indie", "video", "production"];
 
 const NO_RESTORE_REQUIRED_ADDONS: string[] = [];
@@ -695,6 +704,47 @@ export default function BuildPlanConfigurator({
     });
   };
 
+  const landingPriceBreakdown = useMemo(() => {
+    if (!isLanding || !selectedPlanId) return null;
+    const plan = plans.find((p) => p.id === selectedPlanId);
+    if (!plan) return null;
+    const addonMonthly = selectedAddonIds.reduce((sum, id) => {
+      const a = powerUpAddons.find((x) => x.id === id);
+      return sum + (a?.price ?? 0);
+    }, 0);
+    const addonLabel =
+      selectedAddonIds.length > 0
+        ? selectedAddonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")
+        : null;
+    if (billing === "monthly") {
+      const total = plan.price + addonMonthly;
+      return {
+        billing: "monthly" as const,
+        planName: plan.name,
+        baseLabel: `${formatUsdWholeOrTwo(plan.price)}/mo`,
+        addonLabel,
+        addonMonthly,
+        headline: `${formatUsdWholeOrTwo(total)}/mo`,
+        subtext: "Estimated subtotal before taxes. Personal team seats are added later in your account.",
+      };
+    }
+    const annual = plan.annualPrice ?? plan.price * 12;
+    const baseMonthlyEquiv = annual / 12;
+    const combinedMonthly = baseMonthlyEquiv + addonMonthly;
+    return {
+      billing: "annual" as const,
+      planName: plan.name,
+      baseLabel: `${formatUsdWholeOrTwo(annual)}/yr`,
+      addonLabel,
+      addonMonthly,
+      headline: `~${formatUsdWholeOrTwo(combinedMonthly)}/mo`,
+      subtext:
+        addonMonthly > 0
+          ? `Equivalent to ${formatUsdWholeOrTwo(baseMonthlyEquiv)}/mo for your base plan (billed annually) plus ${formatUsdWholeOrTwo(addonMonthly)}/mo for Power Ups (billed monthly). Estimated before taxes.`
+          : `Equivalent to ${formatUsdWholeOrTwo(baseMonthlyEquiv)}/mo averaged over the year (annual prepay). Estimated before taxes.`,
+    };
+  }, [isLanding, selectedPlanId, selectedAddonIds, billing]);
+
   const showAdditionalStorageSection =
     showAdditionalStorage && (selectedPlanId === "indie" || selectedPlanId === "video");
 
@@ -1109,16 +1159,66 @@ export default function BuildPlanConfigurator({
       )}
 
       {isLanding ? (
-        <div className="flex flex-wrap items-center gap-4">
-          <button
-            type="button"
-            onClick={handleLandingSubscribeClick}
-            disabled={!selectedPlanId || landingSubscribeLoading}
-            className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
-          >
-            {landingSubscribeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Subscribe
-          </button>
+        <div className="space-y-4">
+          {landingPriceBreakdown ? (
+            <div
+              className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/50"
+              role="region"
+              aria-label="Estimated price for your selections"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Estimated price
+              </p>
+              <ul className="mt-3 space-y-2 text-sm text-neutral-800 dark:text-neutral-200">
+                <li className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-neutral-600 dark:text-neutral-400">{landingPriceBreakdown.planName}</span>
+                  <span className="font-medium tabular-nums text-neutral-900 dark:text-white">
+                    {landingPriceBreakdown.baseLabel}
+                  </span>
+                </li>
+                <li className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="min-w-0 text-neutral-600 dark:text-neutral-400">
+                    {productSettingsCopy.powerUps.label}
+                    {landingPriceBreakdown.addonLabel ? (
+                      <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-500">
+                        {landingPriceBreakdown.addonLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 font-medium tabular-nums text-neutral-900 dark:text-white">
+                    {landingPriceBreakdown.addonMonthly > 0
+                      ? `+${formatUsdWholeOrTwo(landingPriceBreakdown.addonMonthly)}/mo`
+                      : "—"}
+                  </span>
+                </li>
+              </ul>
+              <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-600">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  {landingPriceBreakdown.billing === "monthly" ? "Total" : "Typical combined bill"}
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-neutral-900 dark:text-white">
+                  {landingPriceBreakdown.headline}
+                  <span className="ml-1.5 text-base font-semibold text-neutral-500 dark:text-neutral-400">
+                    {landingPriceBreakdown.billing === "monthly" ? "before taxes" : "avg. before taxes"}
+                  </span>
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {landingPriceBreakdown.subtext}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={handleLandingSubscribeClick}
+              disabled={!selectedPlanId || landingSubscribeLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-5 py-2.5 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              {landingSubscribeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Subscribe
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-4">
