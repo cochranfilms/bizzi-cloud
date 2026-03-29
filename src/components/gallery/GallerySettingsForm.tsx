@@ -33,6 +33,9 @@ import {
 import { buildGalleryHealthAdvisories } from "@/lib/gallery-owner-health-advisories";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
+import StickyUnsavedBar from "@/components/settings/StickyUnsavedBar";
+import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 
 const COVER_FOCAL_PRESETS: { label: string; x: number; y: number }[] = [
   { label: "Center", x: 50, y: 50 },
@@ -489,6 +492,230 @@ export default function GallerySettingsForm({
     fetchLUT();
   }, [fetchLUT]);
 
+  const galleryComparableInitial = useMemo(() => {
+    const normAccess =
+      initialData.access_mode === "pin" ? "public" : (initialData.access_mode ?? "public");
+    const inv = [...(initialData.invited_emails ?? [])]
+      .map((e) => e.trim())
+      .filter(Boolean)
+      .sort();
+    return {
+      title: (initialData.title ?? "").trim(),
+      description: (initialData.description ?? "").trim(),
+      event_date: initialData.event_date ?? "",
+      expiration_date: initialData.expiration_date ?? "",
+      access_mode: normAccess,
+      invited: inv,
+      layout: initialData.layout ?? "masonry",
+      cover_asset_id: initialData.cover_asset_id ?? null,
+      share_image_asset_id: initialData.share_image_asset_id ?? null,
+      featured_video_asset_id: initialData.featured_video_asset_id ?? null,
+      cover_focal_x: typeof initialData.cover_focal_x === "number" ? initialData.cover_focal_x : 50,
+      cover_focal_y: typeof initialData.cover_focal_y === "number" ? initialData.cover_focal_y : 50,
+      cover_alt_text: (initialData.cover_alt_text ?? "").trim(),
+      cover_overlay_opacity:
+        typeof initialData.cover_overlay_opacity === "number" ? initialData.cover_overlay_opacity : 50,
+      cover_title_alignment:
+        (initialData.cover_title_alignment as "left" | "center" | "right") ?? "center",
+      cover_hero_height: resolveCoverHeroPreset(initialData.cover_hero_height ?? null),
+      branding: {
+        business_name: ((initialData.branding?.business_name as string) ?? "").trim(),
+        background_theme: (initialData.branding?.background_theme as string) ?? "warm-beige",
+        accent_color: (initialData.branding?.accent_color as string) ?? "#00BFFF",
+        welcome_message: ((initialData.branding?.welcome_message as string) ?? "").trim(),
+        pre_page_music_url: ((initialData.branding?.pre_page_music_url as string) ?? "").trim(),
+        pre_page_instructions: ((initialData.branding?.pre_page_instructions as string) ?? "").trim(),
+        contact_email: ((initialData.branding?.contact_email as string) ?? "").trim(),
+        website_url: ((initialData.branding?.website_url as string) ?? "").trim(),
+      },
+      download_settings: {
+        allow_full_gallery_download:
+          (initialData.download_settings?.allow_full_gallery_download as boolean) ?? true,
+        allow_single_download: (initialData.download_settings?.allow_single_download as boolean) ?? true,
+        allow_selected_download:
+          (initialData.download_settings?.allow_selected_download as boolean) ?? true,
+        free_download_limit:
+          initialData.download_settings?.free_download_limit != null &&
+          initialData.download_settings.free_download_limit !== undefined
+            ? String(initialData.download_settings.free_download_limit)
+            : "",
+      },
+      watermark: {
+        enabled: (initialData.watermark?.enabled as boolean) ?? false,
+        position: (initialData.watermark?.position as string) ?? "bottom-right",
+        opacity: (initialData.watermark?.opacity as number) ?? 50,
+        image_url: (initialData.watermark?.image_url as string) ?? null,
+      },
+      invoice_url: (initialData.invoice_url as string) ?? "",
+      invoice_label: (initialData.invoice_label as string) ?? "Pay Invoice",
+      invoice_status: (initialData.invoice_status as string) ?? "none",
+      invoice_required_for_download: (initialData.invoice_required_for_download as boolean) ?? false,
+      media_mode: normalizeGalleryMediaMode({
+        media_mode: initialData.media_mode,
+        source_format: initialData.source_format,
+      }),
+      videoDownloadPolicy: initialData.download_policy === "all_assets" ? "all_assets" : "none",
+    };
+  }, [initialData]);
+
+  const galleryComparableCurrent = useMemo(() => {
+    const inv = invitedEmails
+      .split(/[\s,]+/)
+      .map((e) => e.trim())
+      .filter(Boolean)
+      .sort();
+    return {
+      title: title.trim(),
+      description: description.trim(),
+      event_date: eventDate,
+      expiration_date: expirationDate,
+      access_mode: accessMode,
+      invited: inv,
+      layout,
+      cover_asset_id: coverAssetId,
+      share_image_asset_id: shareImageAssetId,
+      featured_video_asset_id: featuredVideoAssetId,
+      cover_focal_x: coverFocalX,
+      cover_focal_y: coverFocalY,
+      cover_alt_text: coverAltText.trim(),
+      cover_overlay_opacity: coverOverlayOpacity,
+      cover_title_alignment: coverTitleAlignment,
+      cover_hero_height: coverHeroHeight,
+      branding: {
+        business_name: businessName.trim(),
+        background_theme: backgroundTheme,
+        accent_color: accentColor,
+        welcome_message: welcomeMessage.trim(),
+        pre_page_music_url: prePageMusicUrl.trim(),
+        pre_page_instructions: prePageInstructions.trim(),
+        contact_email: contactEmail.trim(),
+        website_url: websiteUrl.trim(),
+      },
+      download_settings: {
+        allow_full_gallery_download: allowFullGalleryDownload,
+        allow_single_download: allowSingleDownload,
+        allow_selected_download: allowSelectedDownload,
+        free_download_limit: freeDownloadLimit,
+      },
+      watermark: {
+        enabled: watermarkEnabled,
+        position: watermarkPosition,
+        opacity: watermarkOpacity,
+        image_url: watermarkImageUrl,
+      },
+      invoice_url: invoiceUrl.trim(),
+      invoice_label: invoiceLabel.trim(),
+      invoice_status: invoiceStatus,
+      invoice_required_for_download: invoiceRequiredForDownload,
+      media_mode: mediaMode,
+      videoDownloadPolicy,
+    };
+  }, [
+    title,
+    description,
+    eventDate,
+    expirationDate,
+    accessMode,
+    invitedEmails,
+    layout,
+    coverAssetId,
+    shareImageAssetId,
+    featuredVideoAssetId,
+    coverFocalX,
+    coverFocalY,
+    coverAltText,
+    coverOverlayOpacity,
+    coverTitleAlignment,
+    coverHeroHeight,
+    businessName,
+    backgroundTheme,
+    accentColor,
+    welcomeMessage,
+    prePageMusicUrl,
+    prePageInstructions,
+    contactEmail,
+    websiteUrl,
+    allowFullGalleryDownload,
+    allowSingleDownload,
+    allowSelectedDownload,
+    freeDownloadLimit,
+    watermarkEnabled,
+    watermarkPosition,
+    watermarkOpacity,
+    watermarkImageUrl,
+    invoiceUrl,
+    invoiceLabel,
+    invoiceStatus,
+    invoiceRequiredForDownload,
+    mediaMode,
+    videoDownloadPolicy,
+  ]);
+
+  const galleryFormDirty =
+    JSON.stringify(galleryComparableCurrent) !== JSON.stringify(galleryComparableInitial) ||
+    !!watermarkFile ||
+    (accessMode === "password" && password.length > 0);
+
+  const [stickyGallerySaved, setStickyGallerySaved] = useState(false);
+  useEffect(() => {
+    if (!galleryFormDirty) setStickyGallerySaved(false);
+  }, [galleryFormDirty]);
+
+  const resetGalleryFormToInitial = useCallback(() => {
+    const norm = normalizeGalleryMediaMode({
+      media_mode: initialData.media_mode,
+      source_format: initialData.source_format,
+    });
+    setTitle(initialData.title ?? "");
+    setDescription(initialData.description ?? "");
+    setEventDate(initialData.event_date ?? "");
+    setExpirationDate(initialData.expiration_date ?? "");
+    setAccessMode(initialData.access_mode === "pin" ? "public" : (initialData.access_mode ?? "public"));
+    setInvitedEmails((initialData.invited_emails ?? []).join(", "));
+    setLayout(initialData.layout ?? "masonry");
+    setCoverAssetId(initialData.cover_asset_id ?? null);
+    setFeaturedVideoAssetId(initialData.featured_video_asset_id ?? null);
+    setShareImageAssetId(initialData.share_image_asset_id ?? null);
+    setCoverFocalX(typeof initialData.cover_focal_x === "number" ? initialData.cover_focal_x : 50);
+    setCoverFocalY(typeof initialData.cover_focal_y === "number" ? initialData.cover_focal_y : 50);
+    setCoverAltText(initialData.cover_alt_text ?? "");
+    setCoverOverlayOpacity(
+      typeof initialData.cover_overlay_opacity === "number" ? initialData.cover_overlay_opacity : 50
+    );
+    setCoverTitleAlignment(
+      (initialData.cover_title_alignment as "left" | "center" | "right") ?? "center"
+    );
+    setCoverHeroHeight(resolveCoverHeroPreset(initialData.cover_hero_height ?? null));
+    setPassword("");
+    setBusinessName((initialData.branding?.business_name as string) ?? "");
+    setBackgroundTheme((initialData.branding?.background_theme as string) ?? "warm-beige");
+    setAccentColor((initialData.branding?.accent_color as string) ?? "#00BFFF");
+    setWelcomeMessage((initialData.branding?.welcome_message as string) ?? "");
+    setPrePageMusicUrl((initialData.branding?.pre_page_music_url as string) ?? "");
+    setPrePageInstructions((initialData.branding?.pre_page_instructions as string) ?? "");
+    setContactEmail((initialData.branding?.contact_email as string) ?? "");
+    setWebsiteUrl((initialData.branding?.website_url as string) ?? "");
+    setWatermarkEnabled((initialData.watermark?.enabled as boolean) ?? false);
+    setWatermarkPosition((initialData.watermark?.position as string) ?? "bottom-right");
+    setWatermarkOpacity((initialData.watermark?.opacity as number) ?? 50);
+    setWatermarkImageUrl((initialData.watermark?.image_url as string) ?? null);
+    setWatermarkFile(null);
+    setAllowFullGalleryDownload((initialData.download_settings?.allow_full_gallery_download as boolean) ?? true);
+    setAllowSingleDownload((initialData.download_settings?.allow_single_download as boolean) ?? true);
+    setAllowSelectedDownload((initialData.download_settings?.allow_selected_download as boolean) ?? true);
+    setFreeDownloadLimit(
+      String((initialData.download_settings?.free_download_limit as number) ?? "")
+    );
+    setInvoiceUrl((initialData.invoice_url as string) ?? "");
+    setInvoiceLabel((initialData.invoice_label as string) ?? "Pay Invoice");
+    setInvoiceStatus((initialData.invoice_status as string) ?? "none");
+    setInvoiceRequiredForDownload((initialData.invoice_required_for_download as boolean) ?? false);
+    setVideoDownloadPolicy(initialData.download_policy === "all_assets" ? "all_assets" : "none");
+    setMediaMode(norm);
+    setCommittedMediaMode(norm);
+    setStickyGallerySaved(false);
+  }, [initialData]);
+
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -571,6 +798,7 @@ export default function GallerySettingsForm({
       }
       setCommittedMediaMode(mediaMode);
       setSaved(true);
+      setStickyGallerySaved(true);
       setPassword("");
       versionRef.current += 1;
       onRefetch?.();
@@ -602,6 +830,7 @@ export default function GallerySettingsForm({
       )}
 
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <SettingsSectionScope label={productSettingsCopy.scopes.thisGalleryOnly} />
         <h2 className="mb-3 text-lg font-semibold text-neutral-900 dark:text-white">
           Gallery profile
         </h2>
@@ -1679,6 +1908,14 @@ export default function GallerySettingsForm({
         </button>
       </div>
     </form>
+
+    <StickyUnsavedBar
+      show={galleryFormDirty && !stickyGallerySaved}
+      showSuccess={stickyGallerySaved}
+      saving={saving}
+      onSave={() => void handleSave()}
+      onDiscard={resetGalleryFormToInitial}
+    />
 
     <ConfirmModal
       open={profileConfirmOpen}

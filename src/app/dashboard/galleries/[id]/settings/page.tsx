@@ -8,6 +8,8 @@ import { useAuth } from "@/context/AuthContext";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GallerySettingsForm from "@/components/gallery/GallerySettingsForm";
+import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 import type { CoverPosition } from "@/types/gallery";
 
 interface GalleryData {
@@ -94,6 +96,12 @@ export default function GallerySettingsPage() {
             <ChevronLeft className="h-4 w-4" />
             Back to {gallery.title}
           </Link>
+          <SettingsScopeHeader
+            title="Gallery settings"
+            scope="gallery"
+            permission={{ kind: "editable" }}
+            effectSummary={`${productSettingsCopy.scopes.thisGalleryOnly} — branding, access, downloads, and delivery options for this gallery only.`}
+          />
           <GallerySettingsForm
             galleryId={id}
             initialData={gallery}

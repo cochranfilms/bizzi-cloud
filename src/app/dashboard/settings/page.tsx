@@ -42,6 +42,10 @@ import {
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
+import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
+import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import WhereToChangeHint from "@/components/settings/WhereToChangeHint";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -78,6 +82,7 @@ function ProfileSection() {
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <User className="h-5 w-5 text-bizzi-blue" />
         Profile
@@ -188,6 +193,7 @@ function AccountSection() {
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Mail className="h-5 w-5 text-bizzi-blue" />
         Account
@@ -297,6 +303,7 @@ function AccountSection() {
 function StorageSection() {
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
       <h2 className="mb-6 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <HardDrive className="h-5 w-5 text-bizzi-blue" />
         Storage
@@ -470,6 +477,7 @@ function PrivacySection() {
       id="privacy"
       className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
     >
+      <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Shield className="h-5 w-5 text-bizzi-blue" />
         Privacy
@@ -827,10 +835,14 @@ function SubscriptionSection() {
 
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+      <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <CreditCard className="h-5 w-5 text-bizzi-blue" />
-        Subscription
+        {productSettingsCopy.billing.subscriptionAndBilling}
       </h2>
+      <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+        Your paid plan, Power Ups, storage add-ons, and personal team seats are tied to this account.
+      </p>
       <ColdStorageAlertBanner />
       {showConfirmationBanner && (
         <div
@@ -857,8 +869,28 @@ function SubscriptionSection() {
                   Welcome! Your purchase is complete
                 </p>
                 <p className="mt-1 text-sm text-green-800 dark:text-green-200">
-                  Your plan is now active. You can manage your subscription and billing below.
+                  Your plan is now active. Add Power Ups, storage, or personal team seats anytime from{" "}
+                  <strong className="text-green-900 dark:text-green-100">
+                    {productSettingsCopy.changePlan.label}
+                  </strong>{" "}
+                  or manage invites in team settings.
                 </p>
+                {!isDesktop ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href="/dashboard/change-plan"
+                      className="inline-flex items-center justify-center rounded-lg bg-bizzi-blue px-3 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan"
+                    >
+                      {productSettingsCopy.changePlan.label}
+                    </Link>
+                    <Link
+                      href={user ? `/team/${user.uid}/settings#team-management` : "/dashboard/settings"}
+                      className="inline-flex items-center justify-center rounded-lg border border-green-700/40 bg-white px-3 py-2 text-sm font-medium text-green-900 hover:bg-green-50 dark:border-green-600 dark:bg-neutral-900 dark:text-green-100 dark:hover:bg-green-950/40"
+                    >
+                      Team management
+                    </Link>
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -996,16 +1028,22 @@ function SubscriptionSection() {
                   </>
                 ) : (
                   <>
+                    <div className="w-full">
+                      <WhereToChangeHint>
+                        {productSettingsCopy.changePlan.label} updates your base plan, Power Ups, storage add-ons, and
+                        personal team seats. Billing details use <strong>Manage billing</strong> below.
+                      </WhereToChangeHint>
+                    </div>
                     <button
                       type="button"
                       onClick={handleChangePlanClick}
                       disabled={powerUpCheckLoading}
-                      className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                      className="mt-2 inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
                     >
                       {powerUpCheckLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : null}
-                      Change plan
+                      {productSettingsCopy.changePlan.label}
                     </button>
                     <button
                       type="button"
@@ -1129,6 +1167,21 @@ function SettingsContent() {
   return (
     <DashboardRouteFade ready srOnlyMessage="">
       <div className="mx-auto max-w-2xl space-y-6">
+          <SettingsScopeHeader
+            title="Settings"
+            scope="personal"
+            permission={{ kind: "editable" }}
+            effectSummary="Profile, storage analytics, privacy, subscription, and personal team management for this account."
+          />
+          <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <SettingsSectionScope label={productSettingsCopy.scopes.localDeviceWorkspace} />
+            <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+              {productSettingsCopy.localDashboard.movedTitle}
+            </h2>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {productSettingsCopy.localDashboard.movedBody}
+            </p>
+          </section>
           <ProfileSection />
           <AccountSection />
           <StorageSection />

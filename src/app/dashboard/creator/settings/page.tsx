@@ -8,6 +8,8 @@ import { useBackup } from "@/context/BackupContext";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import LUTLibrarySection from "@/components/creative-lut/LUTLibrarySection";
+import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 
 export default function CreatorSettingsPage() {
@@ -109,6 +111,13 @@ export default function CreatorSettingsPage() {
               <ChevronLeft className="h-4 w-4" />
               Back to Creator
             </Link>
+            <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+              <SettingsSectionScope label={productSettingsCopy.scopes.personalAccountOnly} />
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                LUT library defaults for your Creator RAW drive on this account. This does not change gallery or
+                enterprise workspaces.
+              </p>
+            </div>
             <LUTLibrarySection
               driveId={driveId}
               scope="creator_raw_video"

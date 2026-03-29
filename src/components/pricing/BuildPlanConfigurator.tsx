@@ -32,6 +32,8 @@ import type {
   SubscriptionPreviewLineItem,
   SubscriptionReceiptDisplay,
 } from "@/lib/stripe-subscription-line-items";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
+import StickyUnsavedBar from "@/components/settings/StickyUnsavedBar";
 import { AlertTriangle, Check, Loader2, Mail, Minus, Plus } from "lucide-react";
 
 export type PlanBuilderCheckoutPayload = {
@@ -50,6 +52,8 @@ function formatCents(cents: number): string {
 }
 
 const PLAN_ORDER = ["solo", "indie", "video", "production"];
+
+const NO_RESTORE_REQUIRED_ADDONS: string[] = [];
 
 const ZERO_TEAM_SEAT_COUNTS = {
   none: 0,
@@ -151,6 +155,7 @@ export default function BuildPlanConfigurator({
     totalBytesUsed: number;
     requiredAddonIds: string[];
   } | null>(null);
+  const [stickyApplySaved, setStickyApplySaved] = useState(false);
   const [draftTeamSeats, setDraftTeamSeats] = useState({
     none: 0,
     gallery: 0,
@@ -258,6 +263,10 @@ export default function BuildPlanConfigurator({
       (currentAddonIds ?? []).some((id) => !selectedAddonIds.includes(id)) ||
       selectedStorageAddonId !== (currentStorageAddonId ?? null) ||
       teamSeatsChanged);
+
+  useEffect(() => {
+    if (!hasChanges) setStickyApplySaved(false);
+  }, [hasChanges]);
 
   function getEstimatedChange(): { cents: number; isCredit: boolean } | null {
     if (!hasChanges || !selectedPlanId || !currentPlanId || currentPlanId === "free") return null;
@@ -475,6 +484,7 @@ export default function BuildPlanConfigurator({
           isCredit: displayAmount?.isCredit ?? null,
           receipt: data.receipt ?? null,
         });
+        setStickyApplySaved(true);
         setSuccessModalOpen(true);
         /** Defer refetch: SubscriptionContext sets loading=true and would unmount this tree on /dashboard/change-plan before the fix there; also yields a paint for the modal. */
         queueMicrotask(() => {
@@ -544,7 +554,7 @@ export default function BuildPlanConfigurator({
   }, [user, router, isDashboard]);
 
   const minStorageBytes = restoreRequirements?.totalBytesUsed ?? 0;
-  const requiredAddonIds = restoreRequirements?.requiredAddonIds ?? [];
+  const requiredAddonIds = restoreRequirements?.requiredAddonIds ?? NO_RESTORE_REQUIRED_ADDONS;
   const storageSelected = !!selectedPlanId;
 
   const planMeetsStorage = useCallback(
@@ -642,18 +652,46 @@ export default function BuildPlanConfigurator({
     void applySubscriptionChanges();
   }, [applySubscriptionChanges]);
 
+  const discardDashboardDraft = useCallback(() => {
+    if (!isDashboard) return;
+    setChargeConfirmOpen(false);
+    setStickyApplySaved(false);
+    if (currentPlanId && currentPlanId !== "free") {
+      setSelectedPlanId(currentPlanId);
+      setSelectedAddonIds([...(currentAddonIds ?? [])]);
+      setSelectedStorageAddonId(currentStorageAddonId ?? null);
+      setDraftTeamSeats({
+        none: subscriptionTeamSeats.none,
+        gallery: subscriptionTeamSeats.gallery,
+        editor: subscriptionTeamSeats.editor,
+        fullframe: subscriptionTeamSeats.fullframe,
+      });
+    } else {
+      setSelectedPlanId(null);
+      setSelectedAddonIds(
+        isRestoringFromDelete && requiredAddonIds.length > 0 ? [...requiredAddonIds] : []
+      );
+      setSelectedStorageAddonId(null);
+      setDraftTeamSeats(emptyTeamSeatCounts());
+    }
+  }, [
+    isDashboard,
+    currentPlanId,
+    currentAddonIds,
+    currentStorageAddonId,
+    subscriptionTeamSeats,
+    isRestoringFromDelete,
+    requiredAddonIds,
+  ]);
+
   const handleLandingSubscribeClick = () => {
     if (!selectedPlanId || !onLandingSubscribe) return;
-    const teamSeatCountsPayload =
-      selectedPlanId === "solo" || !planAllowsPersonalTeamSeats(selectedPlanId)
-        ? emptyTeamSeatCounts()
-        : draftTeamSeats;
     onLandingSubscribe({
       planId: selectedPlanId,
       addonIds: selectedAddonIds,
       billing,
       storageAddonId: showAdditionalStorage ? selectedStorageAddonId : null,
-      teamSeatCounts: teamSeatCountsPayload,
+      teamSeatCounts: emptyTeamSeatCounts(),
     });
   };
 
@@ -664,7 +702,7 @@ export default function BuildPlanConfigurator({
   const sub =
     subtitle ??
     (isLanding
-      ? "Choose a base plan, Power Ups, and seats — same builder as in your account."
+      ? "Choose a base plan and Power Ups — same builder as in your account."
       : undefined);
 
   return (
@@ -732,8 +770,8 @@ export default function BuildPlanConfigurator({
         <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
           {isLanding ? (
             <>
-              Pick the storage tier that fits your workflow, then add Power Ups and any extra seats you need before you
-              subscribe.
+              Pick the storage tier that fits your workflow, add Power Ups, then subscribe. Personal team seats can be
+              added after you have an account.
             </>
           ) : (
             <>
@@ -901,7 +939,15 @@ export default function BuildPlanConfigurator({
         </div>
       </div>
 
-      {selectedPlanId && planAllowsPersonalTeamSeats(selectedPlanId) && (
+      {isLanding && selectedPlanId && planAllowsPersonalTeamSeats(selectedPlanId) && (
+        <div className="mb-8 rounded-xl border border-cyan-200/80 bg-cyan-50/50 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/25">
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">
+            {productSettingsCopy.personalTeamSeats.collaboratorsExplainer}
+          </p>
+        </div>
+      )}
+
+      {isDashboard && selectedPlanId && planAllowsPersonalTeamSeats(selectedPlanId) && (
         <div
           className={`relative mb-8 ${isRestoringFromDelete && !storageSelected ? "opacity-60" : ""}`}
         >
@@ -913,7 +959,7 @@ export default function BuildPlanConfigurator({
             </div>
           )}
           <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-            Personal team seats
+            {productSettingsCopy.personalTeamSeats.label}
           </h3>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
             Add extra seats for your <strong className="text-neutral-800 dark:text-neutral-200">personal team</strong>{" "}
@@ -1341,6 +1387,17 @@ export default function BuildPlanConfigurator({
           </div>
         </div>
       )}
+
+      {isDashboard ? (
+        <StickyUnsavedBar
+          show={Boolean(hasChanges && selectedPlanId) && !stickyApplySaved}
+          showSuccess={stickyApplySaved}
+          saving={applyLoading}
+          onSave={() => handleApplyButtonClick()}
+          onDiscard={discardDashboardDraft}
+          saveLabel="Apply changes"
+        />
+      ) : null}
     </div>
   );
 }

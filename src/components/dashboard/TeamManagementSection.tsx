@@ -14,6 +14,8 @@ import {
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 import { PRODUCT_SEAT_STORAGE_BYTES } from "@/lib/enterprise-constants";
+import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 
 const STORAGE_TIER_LABELS = [
   "50 GB",
@@ -456,6 +458,7 @@ export function TeamManagementSection() {
       id="team-management"
       className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
     >
+      <SettingsSectionScope label={productSettingsCopy.scopes.thisTeamWorkspaceOnly} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <Users className="h-5 w-5 text-bizzi-blue" />
         Team Management

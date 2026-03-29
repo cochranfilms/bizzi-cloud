@@ -12,6 +12,11 @@ import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { ColdStorageAlertBanner } from "@/components/dashboard/ColdStorageAlertBanner";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
+import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
+import ReadOnlyBanner from "@/components/settings/ReadOnlyBanner";
+import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
+
 export default function EnterpriseSettingsPage() {
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
@@ -134,16 +139,26 @@ export default function EnterpriseSettingsPage() {
         >
         {org ? (
         <div className="mx-auto max-w-2xl space-y-8">
-          {!isAdmin && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/50">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                Only organization admins can change these settings. Contact your
-                admin to request changes.
-              </p>
-            </div>
-          )}
+          <SettingsScopeHeader
+            title="Organization settings"
+            scope="enterprise"
+            permission={
+              isAdmin
+                ? { kind: "editable" }
+                : {
+                    kind: "readOnly",
+                    reason: "Only organization admins can change these settings.",
+                  }
+            }
+            effectSummary={`${productSettingsCopy.scopes.organizationWide}. ${productSettingsCopy.organizationSeats.helper}`}
+          />
+
+          {!isAdmin ? (
+            <ReadOnlyBanner message="Contact an organization admin to update the company profile, theme, logo, or billing-related workspace options." />
+          ) : null}
 
           <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+            <SettingsSectionScope label={productSettingsCopy.scopes.organizationWide} />
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
               <Building2 className="h-5 w-5 text-[var(--enterprise-primary)]" />
               Company name

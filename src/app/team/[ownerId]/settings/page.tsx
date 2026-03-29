@@ -13,6 +13,9 @@ import {
 import { ENTERPRISE_THEMES } from "@/lib/enterprise-themes";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 import { TeamManagementSection } from "@/components/dashboard/TeamManagementSection";
+import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
+import ReadOnlyBanner from "@/components/settings/ReadOnlyBanner";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 import { Building2, Image as ImageIcon, Loader2 } from "lucide-react";
 
 export default function TeamSettingsPage() {
@@ -181,22 +184,31 @@ export default function TeamSettingsPage() {
       <main className="flex-1 overflow-auto p-6">
         <DashboardRouteFade ready={ready} srOnlyMessage="Loading team settings">
           <div className="mx-auto max-w-2xl space-y-8">
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              These settings apply to this team workspace only (shared folders and storage scoped to this team).
-              Your personal account, billing, and personal files are managed under{" "}
-              <Link href="/dashboard/settings" className="text-bizzi-blue hover:underline dark:text-bizzi-cyan">
-                Personal Settings
-              </Link>
-              .
-            </p>
+            <SettingsScopeHeader
+              title="Team settings"
+              scope="personalTeam"
+              permission={
+                isOwner
+                  ? { kind: "editable" }
+                  : {
+                      kind: "readOnly",
+                      reason: "Only the team owner can change the team name, logo, and theme.",
+                    }
+              }
+              effectSummary={`${productSettingsCopy.scopes.thisTeamWorkspaceOnly} — shared folders and storage for this team. Personal billing and account settings live in Personal Settings.`}
+            >
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                Your personal account and billing:{" "}
+                <Link href="/dashboard/settings" className="text-bizzi-blue hover:underline dark:text-bizzi-cyan">
+                  Dashboard → Settings
+                </Link>
+                .
+              </p>
+            </SettingsScopeHeader>
 
-            {!isOwner && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/50">
-                <p className="text-sm text-amber-800 dark:text-amber-200">
-                  You are a team member. Only the team owner can change the team name, logo, and theme.
-                </p>
-              </div>
-            )}
+            {!isOwner ? (
+              <ReadOnlyBanner message="You can view team branding and theme. Invites and seats are managed by the owner in Team Management below." />
+            ) : null}
 
             <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">

@@ -33,6 +33,7 @@ import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken, getCurrentUserIdToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import { isMacosPackageFileRow } from "@/lib/macos-package-display";
+import Link from "next/link";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -226,6 +227,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   }, [moveNotice]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [checkoutHomeEcho, setCheckoutHomeEcho] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
   const [shareDriveId, setShareDriveId] = useState<string | null>(null);
   const [shareReferencedFileIds, setShareReferencedFileIds] = useState<string[]>([]);
@@ -239,6 +241,16 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const filesHref = `${basePath}/files`;
   const isEnterpriseHome = basePath === "/enterprise";
+
+  useEffect(() => {
+    if (basePath !== "/dashboard") return;
+    if (searchParams.get("checkout") !== "success") return;
+    setCheckoutHomeEcho(true);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("checkout");
+    const q = next.toString();
+    router.replace(`${pathname}${q ? `?${q}` : ""}`, { scroll: false });
+  }, [basePath, pathname, router, searchParams]);
   const totalItems = driveFolders.reduce((sum, d) => sum + d.items, 0);
 
   const teamAwareBaseName = (name: string) => name.replace(/^\[Team\]\s+/, "");
@@ -924,6 +936,28 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         srOnlyMessage="Loading your folders and subscription"
       >
       <div className="space-y-0">
+      {checkoutHomeEcho ? (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900 dark:border-green-900 dark:bg-green-950/35 dark:text-green-100"
+        >
+          <p className="font-medium">Subscription active</p>
+          <p className="mt-1 text-green-800 dark:text-green-200/90">
+            You&apos;re all set. Manage your plan, Power Ups, or team seats in{" "}
+            <Link href="/dashboard/settings" className="font-medium underline hover:no-underline">
+              Settings
+            </Link>
+            .
+          </p>
+          <button
+            type="button"
+            onClick={() => setCheckoutHomeEcho(false)}
+            className="mt-2 text-xs font-medium text-green-800 underline hover:no-underline dark:text-green-200"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {authQuotaExceeded ? (
         <div
           role="alert"

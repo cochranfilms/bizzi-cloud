@@ -5,43 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseAuth } from "@/lib/firebase/client";
-import {
-  plans,
-  powerUpAddons,
-  PLAN_LABELS,
-  ADDON_LABELS,
-  planAllowsPersonalTeamSeats,
-} from "@/lib/pricing-data";
-import {
-  emptyTeamSeatCounts,
-  sumExtraTeamSeats,
-  teamSeatMonthlySubtotal,
-  type TeamSeatCounts,
-} from "@/lib/team-seat-pricing";
+import { plans, powerUpAddons, PLAN_LABELS, ADDON_LABELS } from "@/lib/pricing-data";
+import { emptyTeamSeatCounts, type TeamSeatCounts } from "@/lib/team-seat-pricing";
 import CheckoutModal from "@/components/CheckoutModal";
 import FreeSignUpModal from "@/components/FreeSignUpModal";
 import BuildPlanConfigurator, {
   type PlanBuilderCheckoutPayload,
 } from "@/components/pricing/BuildPlanConfigurator";
 import PowerUpProductTiles from "@/components/pricing/PowerUpProductTiles";
-
-function teamExtrasSummaryLine(
-  counts: TeamSeatCounts,
-  billing: "monthly" | "annual"
-): string {
-  const mult = billing === "annual" ? 0.75 : 1;
-  const sub = teamSeatMonthlySubtotal(counts) * mult;
-  if (sumExtraTeamSeats(counts) === 0) return "";
-  const parts: string[] = [];
-  if (counts.none) parts.push(`${counts.none}× base ($${(9 * mult).toFixed(0)}/ea)`);
-  if (counts.gallery)
-    parts.push(`${counts.gallery}× Gallery ($${(12 * mult).toFixed(0)}/ea)`);
-  if (counts.editor)
-    parts.push(`${counts.editor}× Editor ($${(14 * mult).toFixed(0)}/ea)`);
-  if (counts.fullframe)
-    parts.push(`${counts.fullframe}× Full Frame ($${(16 * mult).toFixed(0)}/ea)`);
-  return `Team: ${parts.join(", ")} · ~$${Math.round(sub)}/mo`;
-}
+import SubscriptionCheckoutSummaryModal from "@/components/pricing/SubscriptionCheckoutSummaryModal";
+import { productSettingsCopy } from "@/lib/product-settings-copy";
 
 export default function PricingSection() {
   const { user } = useAuth();
@@ -57,49 +30,41 @@ export default function PricingSection() {
     addonName?: string;
     billing: "monthly" | "annual";
     priceLabel: string;
-    teamSummaryLine: string;
     teamSeatCounts: TeamSeatCounts;
   } | null>(null);
+  const [checkoutSummaryOpen, setCheckoutSummaryOpen] = useState(false);
+  const [pendingLandingPayload, setPendingLandingPayload] =
+    useState<PlanBuilderCheckoutPayload | null>(null);
 
-  const handleLandingSubscribe = useCallback(
-    async (payload: PlanBuilderCheckoutPayload) => {
-      if (!user) {
-        const tier = plans.find((t) => t.id === payload.planId);
-        const addonName =
-          payload.addonIds.length > 0
-            ? payload.addonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")
-            : undefined;
-        const priceLabel =
-          tier && payload.billing === "annual"
-            ? `$${tier.annualPrice}/yr`
-            : tier
-              ? `$${tier.price}/mo`
-              : "";
-        let label = priceLabel;
-        if (payload.addonIds.length > 0) {
-          const addonMonthly = payload.addonIds.reduce((sum, id) => {
-            const a = powerUpAddons.find((x) => x.id === id);
-            return sum + (a?.price ?? 0);
-          }, 0);
-          label += ` + ~$${addonMonthly}/mo Power Ups`;
-        }
-        const allowsSeats = planAllowsPersonalTeamSeats(payload.planId);
-        const teamLine = allowsSeats
-          ? teamExtrasSummaryLine(payload.teamSeatCounts, payload.billing)
+  const normalizeLandingPayload = useCallback((payload: PlanBuilderCheckoutPayload): PlanBuilderCheckoutPayload => {
+    return {
+      ...payload,
+      teamSeatCounts: emptyTeamSeatCounts(),
+    };
+  }, []);
+
+  const buildGuestPriceLabel = useCallback((payload: PlanBuilderCheckoutPayload) => {
+    const tier = plans.find((t) => t.id === payload.planId);
+    const priceLabel =
+      tier && payload.billing === "annual"
+        ? `$${tier.annualPrice}/yr`
+        : tier
+          ? `$${tier.price}/mo`
           : "";
-        if (teamLine) label += ` · ${teamLine}`;
-        setCheckoutModal({
-          planId: payload.planId,
-          planName: tier?.name ?? PLAN_LABELS[payload.planId] ?? payload.planId,
-          addonIds: payload.addonIds,
-          addonName,
-          billing: payload.billing,
-          priceLabel: label,
-          teamSummaryLine: teamLine,
-          teamSeatCounts: allowsSeats ? payload.teamSeatCounts : emptyTeamSeatCounts(),
-        });
-        return;
-      }
+    let label = priceLabel;
+    if (payload.addonIds.length > 0) {
+      const addonMonthly = payload.addonIds.reduce((sum, id) => {
+        const a = powerUpAddons.find((x) => x.id === id);
+        return sum + (a?.price ?? 0);
+      }, 0);
+      label += ` + ~$${addonMonthly}/mo ${productSettingsCopy.powerUps.label}`;
+    }
+    return label;
+  }, []);
+
+  const runAuthenticatedLandingCheckout = useCallback(
+    async (payload: PlanBuilderCheckoutPayload) => {
+      const normalized = normalizeLandingPayload(payload);
       setCheckoutLoading(true);
       setCheckoutError(null);
       try {
@@ -109,10 +74,6 @@ export default function PricingSection() {
           return;
         }
         const base = typeof window !== "undefined" ? window.location.origin : "";
-        const teamSeatCountsPayload =
-          payload.planId === "solo" || !planAllowsPersonalTeamSeats(payload.planId)
-            ? emptyTeamSeatCounts()
-            : payload.teamSeatCounts;
         const res = await fetch(`${base}/api/stripe/checkout`, {
           method: "POST",
           headers: {
@@ -120,10 +81,10 @@ export default function PricingSection() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            planId: payload.planId,
-            addonIds: payload.addonIds,
-            billing: payload.billing,
-            teamSeatCounts: teamSeatCountsPayload,
+            planId: normalized.planId,
+            addonIds: normalized.addonIds,
+            billing: normalized.billing,
+            teamSeatCounts: normalized.teamSeatCounts,
           }),
         });
         const data = (await res.json()) as { url?: string; error?: string };
@@ -142,8 +103,49 @@ export default function PricingSection() {
         setCheckoutLoading(false);
       }
     },
-    [user]
+    [normalizeLandingPayload]
   );
+
+  const handleLandingSubscribe = useCallback(
+    (payload: PlanBuilderCheckoutPayload) => {
+      setPendingLandingPayload(normalizeLandingPayload(payload));
+      setCheckoutSummaryOpen(true);
+    },
+    [normalizeLandingPayload]
+  );
+
+  const handleCheckoutSummaryConfirm = useCallback(async () => {
+    if (!pendingLandingPayload) return;
+    setCheckoutSummaryOpen(false);
+    const normalized = pendingLandingPayload;
+    setPendingLandingPayload(null);
+
+    if (!user) {
+      const tier = plans.find((t) => t.id === normalized.planId);
+      const addonName =
+        normalized.addonIds.length > 0
+          ? normalized.addonIds.map((id) => ADDON_LABELS[id] ?? id).join(", ")
+          : undefined;
+      setCheckoutModal({
+        planId: normalized.planId,
+        planName: tier?.name ?? PLAN_LABELS[normalized.planId] ?? normalized.planId,
+        addonIds: normalized.addonIds,
+        addonName,
+        billing: normalized.billing,
+        priceLabel: buildGuestPriceLabel(normalized),
+        teamSeatCounts: emptyTeamSeatCounts(),
+      });
+      return;
+    }
+
+    await runAuthenticatedLandingCheckout(normalized);
+  }, [pendingLandingPayload, user, buildGuestPriceLabel, runAuthenticatedLandingCheckout]);
+
+  const handleCheckoutSummaryClose = useCallback(() => {
+    if (checkoutLoading) return;
+    setCheckoutSummaryOpen(false);
+    setPendingLandingPayload(null);
+  }, [checkoutLoading]);
 
   const handleGuestCheckout = useCallback(
     async (data: { name: string; email: string }) => {
@@ -590,6 +592,25 @@ export default function PricingSection() {
           isOpen={freeSignUpModalOpen}
           onClose={() => setFreeSignUpModalOpen(false)}
         />
+        <SubscriptionCheckoutSummaryModal
+          open={checkoutSummaryOpen && !!pendingLandingPayload}
+          onClose={handleCheckoutSummaryClose}
+          onConfirm={() => void handleCheckoutSummaryConfirm()}
+          planId={pendingLandingPayload?.planId ?? ""}
+          planName={
+            pendingLandingPayload
+              ? plans.find((t) => t.id === pendingLandingPayload.planId)?.name ??
+                PLAN_LABELS[pendingLandingPayload.planId] ??
+                pendingLandingPayload.planId
+              : ""
+          }
+          billing={pendingLandingPayload?.billing ?? "monthly"}
+          addons={(pendingLandingPayload?.addonIds ?? []).map((id) => ({
+            id,
+            label: ADDON_LABELS[id] ?? id,
+          }))}
+          loading={checkoutLoading}
+        />
         <CheckoutModal
           isOpen={!!checkoutModal}
           onClose={() => {
@@ -602,7 +623,6 @@ export default function PricingSection() {
           addonName={checkoutModal?.addonName}
           billing={checkoutModal?.billing ?? "monthly"}
           priceLabel={checkoutModal?.priceLabel ?? ""}
-          teamSummaryLine={checkoutModal?.teamSummaryLine || undefined}
           onSubmit={handleGuestCheckout}
           loading={checkoutLoading}
           error={checkoutError}
