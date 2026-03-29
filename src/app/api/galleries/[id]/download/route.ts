@@ -90,6 +90,17 @@ export async function POST(
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
+  const assetRow = assetSnap.docs[0]!.data();
+  if (!isOwner && assetRow.is_downloadable === false) {
+    return NextResponse.json(
+      {
+        error: "download_disabled",
+        message: "This file is not available for download.",
+      },
+      { status: 403 }
+    );
+  }
+
   const galleryType = g.gallery_type === "video" ? "video" : "photo";
 
   if (!isOwner) {

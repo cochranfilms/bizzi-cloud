@@ -3,7 +3,8 @@
  * POST: Create/save a favorites list (client)
  * GET: List favorites for gallery (photographer sees all; client can filter by email)
  */
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminFirestore } from "@/lib/firebase-admin";
+import { requesterManagesGallery } from "@/lib/gallery-route-manager";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
@@ -54,6 +55,13 @@ export async function POST(
 
   if (!access.allowed) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  if (g.allow_favorites === false) {
+    return NextResponse.json(
+      { error: "favorites_disabled", message: "Favorites are not enabled for this gallery." },
+      { status: 403 }
+    );
   }
 
   const validIds = assetIds.filter(
@@ -137,6 +145,11 @@ export async function GET(
 
   if (!access.allowed) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const isManager = await requesterManagesGallery(request, g);
+  if (g.allow_favorites === false && !isManager) {
+    return NextResponse.json({ lists: [] });
   }
 
   const clientEmail = clientEmailParam ?? sessionEmail;

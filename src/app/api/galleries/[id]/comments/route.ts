@@ -9,6 +9,7 @@ import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
 import { galleryNotificationRecipientUserId } from "@/lib/gallery-owner-access";
 import { createNotification } from "@/lib/notification-service";
+import { requesterManagesGallery } from "@/lib/gallery-route-manager";
 
 /** POST – Add comment on an asset */
 export async function POST(
@@ -54,6 +55,14 @@ export async function POST(
 
   if (!access.allowed) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const commentsOff = g.allow_comments === false;
+  if (commentsOff) {
+    return NextResponse.json(
+      { error: "comments_disabled", message: "Comments are not enabled for this gallery." },
+      { status: 403 }
+    );
   }
 
   const assetSnap = await db
@@ -134,6 +143,11 @@ export async function GET(
 
   if (!access.allowed) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const isManager = await requesterManagesGallery(request, g);
+  if (g.allow_comments === false && !isManager) {
+    return NextResponse.json({ comments: [] });
   }
 
   let snap;

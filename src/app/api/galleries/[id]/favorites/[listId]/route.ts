@@ -7,6 +7,7 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { NextResponse } from "next/server";
+import { requesterManagesGallery } from "@/lib/gallery-route-manager";
 
 export async function GET(
   request: Request,
@@ -47,6 +48,20 @@ export async function GET(
       { error: access.code, message: access.message, needsPassword: access.needsPassword },
       { status: 403 }
     );
+  }
+
+  const isManager = await requesterManagesGallery(request, g);
+  if (g.allow_favorites === false && !isManager) {
+    return NextResponse.json({
+      list: null,
+      gallery: {
+        id: gallerySnap.id,
+        title: g.title,
+        branding: g.branding ?? {},
+        download_settings: g.download_settings ?? {},
+      },
+      assets: [],
+    });
   }
 
   const listSnap = await db.collection("favorites_lists").doc(listId).get();

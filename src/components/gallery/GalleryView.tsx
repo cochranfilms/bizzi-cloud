@@ -43,7 +43,14 @@ import {
 } from "@/lib/gallery-viewer-lut-state";
 import type { GalleryViewerLutPreferences } from "@/types/gallery-viewer-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
-import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
+import {
+  clientMayDownloadFiles,
+  clientMayDownloadGalleryFiles,
+  deliveryModeInfoLabel,
+  getVideoDeliverySummary,
+  isCommentsAllowed,
+  isFavoritesAllowed,
+} from "@/lib/video-gallery-client-policy";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
@@ -104,6 +111,9 @@ interface GalleryData {
   cover_overlay_opacity?: number | null;
   cover_title_alignment?: "left" | "center" | "right" | null;
   cover_hero_height?: "small" | "medium" | "large" | "cinematic" | "fullscreen" | null;
+  delivery_mode?: string | null;
+  client_review_instructions?: string | null;
+  workflow_status?: string | null;
 }
 
 interface GalleryAsset {
@@ -113,6 +123,7 @@ interface GalleryAsset {
   media_type: "image" | "video";
   sort_order: number;
   collection_id?: string | null;
+  is_downloadable?: boolean | null;
 }
 
 interface GalleryCollection {
@@ -695,6 +706,7 @@ function GalleryAssetCard({
   lutGradeMixPercent = 100,
   isFeaturedVideo = false,
   isVideoGallery = false,
+  showFavoriteButton = true,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -716,6 +728,7 @@ function GalleryAssetCard({
   isFeaturedVideo?: boolean;
   /** When true, all videos autoplay muted (not just featured) */
   isVideoGallery?: boolean;
+  showFavoriteButton?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [rawThumbUnavailable, setRawThumbUnavailable] = useState(false);
@@ -935,19 +948,21 @@ function GalleryAssetCard({
             opacity={watermark.opacity ?? 50}
           />
         )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onFavoriteToggle();
-          }}
-          className="absolute left-2 top-2 rounded-full bg-black/50 p-2 text-white transition-opacity hover:bg-black/70"
-          aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-        >
-          <Heart
-            className={`h-5 w-5 ${isFavorited ? "fill-red-500 text-red-500" : ""}`}
-          />
-        </button>
+        {showFavoriteButton ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFavoriteToggle();
+            }}
+            className="absolute left-2 top-2 rounded-full bg-black/50 p-2 text-white transition-opacity hover:bg-black/70"
+            aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+          >
+            <Heart
+              className={`h-5 w-5 ${isFavorited ? "fill-red-500 text-red-500" : ""}`}
+            />
+          </button>
+        ) : null}
       </div>
       {canDownload && onDownload && (
         <button
@@ -1266,6 +1281,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   useEffect(() => {
     if (!data) return;
+    if (!isFavoritesAllowed(data.gallery)) {
+      setSavedFavoritesLists([]);
+      return;
+    }
     const clientEmail = user?.email?.toLowerCase().trim();
     if (!clientEmail) return;
     let cancelled = false;
@@ -1290,6 +1309,16 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       cancelled = true;
     };
   }, [data, galleryId, password, user]);
+
+  useEffect(() => {
+    if (!data || isFavoritesAllowed(data.gallery)) return;
+    setSelectedFavorites(new Set());
+    try {
+      localStorage.removeItem(`gallery-favorites-${galleryId}`);
+    } catch {
+      // ignore
+    }
+  }, [data, galleryId]);
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1622,8 +1651,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     if (!data) return;
     const downloadable = data.assets.filter(
       (a) =>
-        a.media_type === "image" ||
-        /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic|mp4|webm|mov|m4v)$/i.test(a.name)
+        (a.media_type === "image" ||
+          /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic|mp4|webm|mov|m4v)$/i.test(a.name)) &&
+        clientMayDownloadFiles(data.gallery, a.is_downloadable)
     );
     if (downloadable.length === 0) return;
     setDownloadError(null);
@@ -1633,7 +1663,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const handleDownloadSelected = useCallback(async () => {
     if (!data) return;
-    const toDownload = data.assets.filter((a) => selectedFavorites.has(a.id));
+    const toDownload = data.assets.filter(
+      (a) =>
+        selectedFavorites.has(a.id) && clientMayDownloadFiles(data.gallery, a.is_downloadable)
+    );
     if (toDownload.length === 0) return;
     setDownloadError(null);
     const items = toDownload.map((a) => ({ object_key: a.object_key, name: a.name }));
@@ -1768,12 +1801,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const bgTheme = getGalleryBackgroundTheme(gallery.branding.background_theme);
   const isDarkBg = bgTheme.textTone === "light";
 
-  const invoiceBlocksDownload =
-    !!(gallery.invoice_required_for_download && gallery.invoice_status !== "paid");
-  const videoAllowsFileDownloads =
-    gallery.gallery_type !== "video" ||
-    videoGalleryAllowsClientFileDownloads(gallery.download_policy);
-  const clientMayDownloadFiles = videoAllowsFileDownloads && !invoiceBlocksDownload;
+  const clientMayDownloadGalleryLevel = clientMayDownloadGalleryFiles(gallery);
+  const videoSummary = getVideoDeliverySummary(gallery);
+  const deliveryModeLabel = deliveryModeInfoLabel(gallery.delivery_mode);
 
   const coverObjectPosition = resolveCoverObjectPosition({
     cover_focal_x: gallery.cover_focal_x,
@@ -2004,6 +2034,23 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       )}
 
       <main id="gallery-content" className="mx-auto max-w-6xl scroll-mt-4 px-4 py-8 sm:px-6">
+        {gallery.gallery_type === "video" && gallery.client_review_instructions?.trim() && (
+          <div
+            className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3 ${
+              isDarkBg
+                ? "border-white/20 bg-white/5"
+                : "border-neutral-200/90 bg-white/70 dark:border-neutral-700 dark:bg-neutral-900/60"
+            }`}
+          >
+            <p
+              className={`text-sm leading-relaxed ${
+                isDarkBg ? "text-white/85" : "text-neutral-700 dark:text-neutral-200"
+              }`}
+            >
+              {gallery.client_review_instructions.trim()}
+            </p>
+          </div>
+        )}
         <div className="mb-8 text-center">
           <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             {gallery.invoice_url &&
@@ -2021,7 +2068,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               )}
             {gallery.download_settings?.allow_full_gallery_download &&
               assets.length > 0 &&
-              clientMayDownloadFiles && (
+              clientMayDownloadGalleryLevel &&
+              assets.some((a) => clientMayDownloadFiles(gallery, a.is_downloadable)) && (
                 <button
                   type="button"
                   onClick={handleDownloadAll}
@@ -2067,7 +2115,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               )}
             </p>
           )}
-          {savedFavoritesLists.length > 0 && (
+          {isFavoritesAllowed(gallery) && savedFavoritesLists.length > 0 && (
             <div
               className={`mx-auto mb-6 max-w-2xl rounded-xl border px-4 py-3 ${
                 isDarkBg
@@ -2093,8 +2141,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                         isDarkBg ? "text-white/80" : "text-neutral-600 dark:text-neutral-400"
                       }`}
                     >
-                      {list.asset_ids.length} photo
-                      {list.asset_ids.length !== 1 ? "s" : ""}
+                      {list.asset_ids.length}{" "}
+                      {gallery.gallery_type === "video"
+                        ? `clip${list.asset_ids.length !== 1 ? "s" : ""}`
+                        : `photo${list.asset_ids.length !== 1 ? "s" : ""}`}
                       {list.created_at && (
                         <span className="ml-1 opacity-75">
                           • {new Date(list.created_at).toLocaleDateString()}
@@ -2132,7 +2182,26 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           >
             {gallery.gallery_type === "video" ? "Video" : "Photo"} ·{" "}
             {mediaMode === "raw" ? "RAW" : "Final"}
+            {deliveryModeLabel ? ` · ${deliveryModeLabel}` : ""}
           </p>
+          {gallery.gallery_type === "video" && videoSummary.lines.length > 0 && (
+            <div
+              className={`mx-auto mt-4 max-w-2xl rounded-lg border px-3 py-2 text-left text-xs leading-snug ${
+                isDarkBg
+                  ? "border-white/15 bg-white/[0.06] text-white/75"
+                  : "border-neutral-200 bg-neutral-50/90 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300"
+              }`}
+            >
+              <p className="font-medium text-[11px] uppercase tracking-wide opacity-90">
+                What you can do here
+              </p>
+              <ul className="mt-1.5 list-inside list-disc space-y-0.5">
+                {videoSummary.lines.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {collections.length > 0 && (
@@ -2386,18 +2455,22 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 getAuthToken={user ? getAuthToken : undefined}
                 onPreview={() => {
                   setPreviewAsset(asset);
-                  fetchPreviewComments(asset.id);
+                  if (isCommentsAllowed(gallery)) fetchPreviewComments(asset.id);
+                  else setPreviewComments([]);
                 }}
                 onDownload={
-                  gallery.download_settings?.allow_single_download && clientMayDownloadFiles
+                  gallery.download_settings?.allow_single_download &&
+                  clientMayDownloadFiles(gallery, asset.is_downloadable)
                     ? () => handleDownload(asset)
                     : undefined
                 }
                 onFavoriteToggle={() => toggleFavorite(asset.id)}
                 isFavorited={selectedFavorites.has(asset.id)}
                 canDownload={
-                  !!gallery.download_settings?.allow_single_download && clientMayDownloadFiles
+                  !!gallery.download_settings?.allow_single_download &&
+                  clientMayDownloadFiles(gallery, asset.is_downloadable)
                 }
+                showFavoriteButton={isFavoritesAllowed(gallery)}
                 downloading={downloadingId === asset.id}
                 masonryLayout={gallery.layout === "masonry"}
                 watermark={gallery.watermark}
@@ -2415,7 +2488,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         )}
       </main>
 
-      {selectedFavorites.size > 0 &&
+      {isFavoritesAllowed(gallery) &&
+        selectedFavorites.size > 0 &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -2427,7 +2501,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               {selectedFavorites.size} selected
             </span>
             <div className="flex flex-col gap-2">
-              {gallery.download_settings?.allow_selected_download && clientMayDownloadFiles && (
+              {gallery.download_settings?.allow_selected_download &&
+                clientMayDownloadGalleryLevel &&
+                Array.from(selectedFavorites).some((id) => {
+                  const a = filteredAssets.find((x) => x.id === id);
+                  return a && clientMayDownloadFiles(gallery, a.is_downloadable);
+                }) && (
                 <button
                   type="button"
                   onClick={handleDownloadSelected}
@@ -2500,7 +2579,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           onLutSelect={(id) => setSelectedLutId(id)}
           lutPreviewEnabled={lutPreviewEnabled}
           onLutPreviewToggle={() => setLutPreviewEnabled((p) => !p)}
-          allowComments={gallery.allow_comments !== false}
+          allowComments={isCommentsAllowed(gallery)}
           previewLutSource={clientLutSource}
           lutGradeMixPercent={lutGradeMix}
           onLutGradeMixChange={

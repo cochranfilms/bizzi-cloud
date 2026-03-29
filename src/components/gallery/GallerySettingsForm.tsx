@@ -36,6 +36,54 @@ import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import StickyUnsavedBar from "@/components/settings/StickyUnsavedBar";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+import { DEFAULT_VIDEO_GALLERY_SETTINGS } from "@/lib/gallery-defaults";
+import type { VideoDeliveryMode, VideoWorkflowStatus } from "@/types/gallery";
+
+const VIDEO_DELIVERY_MODES: {
+  value: VideoDeliveryMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "standard_client_gallery",
+    label: "Client delivery",
+    description: "Showcase-style gallery — clearer for approved delivery and downloads when you enable them.",
+  },
+  {
+    value: "video_review",
+    label: "Client review",
+    description: "Review-focused — watch, comment, and selects; use with your proofing workflow.",
+  },
+  {
+    value: "private_editor_review",
+    label: "Editor review",
+    description: "Stricter, work-in-progress context — informational label for your team and clients.",
+  },
+];
+
+const WORKFLOW_STATUS_OPTIONS: { value: VideoWorkflowStatus; label: string }[] = [
+  { value: "draft", label: "Draft" },
+  { value: "sent_to_client", label: "Sent to client" },
+  { value: "awaiting_feedback", label: "Awaiting feedback" },
+  { value: "revisions_in_progress", label: "Revisions in progress" },
+  { value: "awaiting_payment", label: "Awaiting payment" },
+  { value: "approved", label: "Approved" },
+  { value: "archived", label: "Archived" },
+];
+
+function normalizeDeliveryMode(
+  v: string | null | undefined
+): VideoDeliveryMode {
+  if (v === "standard_client_gallery" || v === "video_review" || v === "private_editor_review")
+    return v;
+  return DEFAULT_VIDEO_GALLERY_SETTINGS.delivery_mode;
+}
+
+function normalizeWorkflowStatus(v: string | null | undefined): VideoWorkflowStatus {
+  const allowed = new Set(WORKFLOW_STATUS_OPTIONS.map((o) => o.value));
+  if (v && allowed.has(v as VideoWorkflowStatus)) return v as VideoWorkflowStatus;
+  return DEFAULT_VIDEO_GALLERY_SETTINGS.workflow_status;
+}
 
 const COVER_FOCAL_PRESETS: { label: string; x: number; y: number }[] = [
   { label: "Center", x: 50, y: 50 },
@@ -139,6 +187,11 @@ interface GallerySettingsFormProps {
     media_mode?: "final" | "raw";
     /** @deprecated */
     source_format?: "raw" | "jpg";
+    delivery_mode?: VideoDeliveryMode | null;
+    allow_comments?: boolean;
+    allow_favorites?: boolean;
+    client_review_instructions?: string | null;
+    workflow_status?: VideoWorkflowStatus | null;
   };
 }
 
@@ -293,6 +346,22 @@ export default function GallerySettingsForm({
     initialData.download_policy === "all_assets" ? "all_assets" : "none"
   );
 
+  const [deliveryMode, setDeliveryMode] = useState<VideoDeliveryMode>(() =>
+    normalizeDeliveryMode(initialData.delivery_mode ?? undefined)
+  );
+  const [allowComments, setAllowComments] = useState(
+    initialData.allow_comments !== false
+  );
+  const [allowFavorites, setAllowFavorites] = useState(
+    initialData.allow_favorites !== false
+  );
+  const [clientReviewInstructions, setClientReviewInstructions] = useState(
+    (initialData.client_review_instructions as string) ?? ""
+  );
+  const [workflowStatus, setWorkflowStatus] = useState<VideoWorkflowStatus>(() =>
+    normalizeWorkflowStatus(initialData.workflow_status ?? undefined)
+  );
+
   const normalizedInitialMediaMode = normalizeGalleryMediaMode({
     media_mode: initialData.media_mode,
     source_format: initialData.source_format,
@@ -325,6 +394,20 @@ export default function GallerySettingsForm({
       initialData.download_policy === "all_assets" ? "all_assets" : "none"
     );
   }, [initialData.download_policy]);
+
+  useEffect(() => {
+    setDeliveryMode(normalizeDeliveryMode(initialData.delivery_mode ?? undefined));
+    setAllowComments(initialData.allow_comments !== false);
+    setAllowFavorites(initialData.allow_favorites !== false);
+    setClientReviewInstructions((initialData.client_review_instructions as string) ?? "");
+    setWorkflowStatus(normalizeWorkflowStatus(initialData.workflow_status ?? undefined));
+  }, [
+    initialData.delivery_mode,
+    initialData.allow_comments,
+    initialData.allow_favorites,
+    initialData.client_review_instructions,
+    initialData.workflow_status,
+  ]);
 
   const handleMarkAsPaid = useCallback(async () => {
     if (!user) return;
@@ -555,6 +638,11 @@ export default function GallerySettingsForm({
         source_format: initialData.source_format,
       }),
       videoDownloadPolicy: initialData.download_policy === "all_assets" ? "all_assets" : "none",
+      deliveryMode: normalizeDeliveryMode(initialData.delivery_mode ?? undefined),
+      allowComments: initialData.allow_comments !== false,
+      allowFavorites: initialData.allow_favorites !== false,
+      clientReviewInstructions: ((initialData.client_review_instructions as string) ?? "").trim(),
+      workflowStatus: normalizeWorkflowStatus(initialData.workflow_status ?? undefined),
     };
   }, [initialData]);
 
@@ -607,8 +695,13 @@ export default function GallerySettingsForm({
       invoice_label: invoiceLabel.trim(),
       invoice_status: invoiceStatus,
       invoice_required_for_download: invoiceRequiredForDownload,
-      media_mode: mediaMode,
+      media_mode:       mediaMode,
       videoDownloadPolicy,
+      deliveryMode,
+      allowComments,
+      allowFavorites,
+      clientReviewInstructions: clientReviewInstructions.trim(),
+      workflowStatus,
     };
   }, [
     title,
@@ -649,6 +742,11 @@ export default function GallerySettingsForm({
     invoiceRequiredForDownload,
     mediaMode,
     videoDownloadPolicy,
+    deliveryMode,
+    allowComments,
+    allowFavorites,
+    clientReviewInstructions,
+    workflowStatus,
   ]);
 
   const galleryFormDirty =
@@ -711,6 +809,11 @@ export default function GallerySettingsForm({
     setInvoiceStatus((initialData.invoice_status as string) ?? "none");
     setInvoiceRequiredForDownload((initialData.invoice_required_for_download as boolean) ?? false);
     setVideoDownloadPolicy(initialData.download_policy === "all_assets" ? "all_assets" : "none");
+    setDeliveryMode(normalizeDeliveryMode(initialData.delivery_mode ?? undefined));
+    setAllowComments(initialData.allow_comments !== false);
+    setAllowFavorites(initialData.allow_favorites !== false);
+    setClientReviewInstructions((initialData.client_review_instructions as string) ?? "");
+    setWorkflowStatus(normalizeWorkflowStatus(initialData.workflow_status ?? undefined));
     setMediaMode(norm);
     setCommittedMediaMode(norm);
     setStickyGallerySaved(false);
@@ -775,6 +878,12 @@ export default function GallerySettingsForm({
       };
       if (isVideoGallery) {
         body.download_policy = videoDownloadPolicy;
+        body.featured_video_asset_id = featuredVideoAssetId;
+        body.delivery_mode = deliveryMode;
+        body.allow_comments = allowComments;
+        body.allow_favorites = allowFavorites;
+        body.client_review_instructions = clientReviewInstructions.trim() || null;
+        body.workflow_status = workflowStatus;
       }
       if (accessMode === "password" && password) body.password = password;
 
@@ -931,6 +1040,12 @@ export default function GallerySettingsForm({
           </h2>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
             Control whether clients can download video files, or only stream previews in the gallery.
+            When downloads are allowed here, the{" "}
+            <strong className="font-medium text-neutral-700 dark:text-neutral-300">
+              Download options
+            </strong>{" "}
+            section still applies — e.g. single-file vs full gallery ZIP and invoice gating work together
+            with this policy.
           </p>
           <div className="space-y-2">
             <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
@@ -965,6 +1080,148 @@ export default function GallerySettingsForm({
                 </p>
               </div>
             </label>
+          </div>
+        </section>
+      )}
+
+      {isVideoGallery && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+            Video review &amp; delivery
+          </h2>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Labels and client-facing options for proofing and delivery. Delivery mode is informational
+            in the product today — it is saved for clarity and future use, not a separate permission
+            layer.
+          </p>
+
+          <div className="mb-6 space-y-3">
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Delivery mode
+            </label>
+            <div className="space-y-2">
+              {VIDEO_DELIVERY_MODES.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+                >
+                  <input
+                    type="radio"
+                    name="settings_video_delivery_mode"
+                    className="mt-1"
+                    checked={deliveryMode === opt.value}
+                    onChange={() => setDeliveryMode(opt.value)}
+                  />
+                  <div>
+                    <span className="font-medium text-neutral-900 dark:text-white">{opt.label}</span>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{opt.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-6 grid gap-4 sm:grid-cols-2">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={allowComments}
+                onChange={(e) => setAllowComments(e.target.checked)}
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+              />
+              <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                Allow client comments on clips
+              </span>
+            </label>
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={allowFavorites}
+                onChange={(e) => setAllowFavorites(e.target.checked)}
+                className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
+              />
+              <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                Allow favorites / selects
+              </span>
+            </label>
+          </div>
+
+          <div className="mb-6">
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Workflow status (internal)
+            </label>
+            <select
+              value={workflowStatus}
+              onChange={(e) => setWorkflowStatus(e.target.value as VideoWorkflowStatus)}
+              className="w-full max-w-md rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            >
+              {WORKFLOW_STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              For you and your team on proofing and gallery detail — not a public workflow promise.
+            </p>
+          </div>
+
+          <div className="mb-6">
+            <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Client review instructions
+            </label>
+            <textarea
+              value={clientReviewInstructions}
+              onChange={(e) => setClientReviewInstructions(e.target.value)}
+              rows={4}
+              placeholder="Optional note shown on the public gallery (e.g. what to watch for, turnaround)."
+              className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Shown to visitors on the client gallery when this field is filled in.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Featured clip
+            </label>
+            <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+              Hero clip on the public gallery when set. Choose from videos already in this gallery.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFeaturedVideoAssetId(null)}
+              className={`mb-3 text-sm font-medium ${
+                featuredVideoAssetId
+                  ? "text-bizzi-blue hover:underline"
+                  : "text-neutral-400"
+              }`}
+            >
+              Clear featured clip
+            </button>
+            {videoAssetsLoading ? (
+              <div className="flex items-center gap-2 py-6 text-neutral-500 dark:text-neutral-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Loading videos…
+              </div>
+            ) : videoAssets.length === 0 ? (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Add video files to choose a featured clip.
+              </p>
+            ) : (
+              <div className="grid max-h-56 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+                {videoAssets.map((asset) => (
+                  <CoverAssetThumbnail
+                    key={asset.id}
+                    galleryId={galleryId}
+                    asset={asset}
+                    selected={featuredVideoAssetId === asset.id}
+                    onSelect={() => setFeaturedVideoAssetId(asset.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -1682,7 +1939,7 @@ export default function GallerySettingsForm({
               className="rounded border-neutral-300 text-bizzi-blue focus:ring-bizzi-blue"
             />
             <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              Allow single image download
+              {isVideoGallery ? "Allow single file download" : "Allow single image download"}
             </span>
           </label>
           <label className="flex items-center gap-3">

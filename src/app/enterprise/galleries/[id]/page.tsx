@@ -34,6 +34,7 @@ import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
 import GalleryOwnerProfileBanner from "@/components/gallery/GalleryOwnerProfileBanner";
+import { GalleryVideoDetailStrip } from "@/components/gallery/GalleryVideoDetailStrip";
 import GalleryDetailHealthAdvisories from "@/components/gallery/GalleryDetailHealthAdvisories";
 
 const BASE_PATH = "/enterprise";
@@ -122,6 +123,13 @@ interface GalleryData {
   owner_handle?: string | null;
   version?: number;
   branding?: { business_name?: string; accent_color?: string };
+  source_format?: "raw" | "jpg";
+  download_policy?: string | null;
+  allow_comments?: boolean;
+  allow_favorites?: boolean;
+  workflow_status?: string | null;
+  invoice_required_for_download?: boolean;
+  invoice_status?: string | null;
 }
 
 interface GalleryAsset {
@@ -421,6 +429,8 @@ export default function EnterpriseGalleryDetailPage() {
             galleryType={isVideoGallery ? "video" : "photo"}
             mediaMode={gallery?.media_mode === "raw" ? "raw" : "final"}
           />
+
+          <GalleryVideoDetailStrip gallery={gallery} assets={assets} />
 
           {assets.length > 0 && (
             <GalleryDetailHealthAdvisories

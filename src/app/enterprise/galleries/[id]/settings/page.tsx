@@ -10,7 +10,7 @@ import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GallerySettingsForm from "@/components/gallery/GallerySettingsForm";
 import SettingsScopeHeader from "@/components/settings/SettingsScopeHeader";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import type { CoverPosition } from "@/types/gallery";
+import type { CoverPosition, VideoDeliveryMode, VideoWorkflowStatus } from "@/types/gallery";
 
 const BASE_PATH = "/enterprise";
 
@@ -41,6 +41,12 @@ interface GalleryData {
   gallery_type?: "photo" | "video";
   media_mode?: "final" | "raw";
   source_format?: "raw" | "jpg";
+  delivery_mode?: VideoDeliveryMode | null;
+  allow_comments?: boolean;
+  allow_favorites?: boolean;
+  client_review_instructions?: string | null;
+  workflow_status?: VideoWorkflowStatus | null;
+  featured_video_asset_id?: string | null;
 }
 
 export default function EnterpriseGallerySettingsPage() {

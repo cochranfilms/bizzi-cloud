@@ -174,6 +174,7 @@ export async function POST(
         },
         { status: 403 }
       );
+    }
   }
 
   const rawItemsTyped = rawItems
@@ -203,13 +204,17 @@ export async function POST(
     .where("is_visible", "==", true)
     .get();
 
-  const objectKeyToAsset = new Map<string, { name: string }>();
+  const objectKeyToAsset = new Map<
+    string,
+    { name: string; is_downloadable?: boolean | null }
+  >();
   for (const doc of assetsSnap.docs) {
     const d = doc.data();
     const key = d.object_key as string;
     if (key) {
       objectKeyToAsset.set(key, {
         name: (d.name as string) ?? "download",
+        is_downloadable: d.is_downloadable as boolean | null | undefined,
       });
     }
   }
@@ -220,6 +225,15 @@ export async function POST(
     if (!asset) {
       return NextResponse.json(
         { error: `Asset not found or not visible: ${raw.object_key}` },
+        { status: 403 }
+      );
+    }
+    if (!isOwner && asset.is_downloadable === false) {
+      return NextResponse.json(
+        {
+          error: "download_disabled",
+          message: "One or more files are not available for download.",
+        },
         { status: 403 }
       );
     }
@@ -268,4 +282,3 @@ export async function POST(
     );
   });
 }
-} // SWC workaround: Next.js 15 parser expects one extra closing brace
