@@ -27,6 +27,7 @@ import {
   BACKUP_LIFECYCLE_ACTIVE,
   isBackupFileActiveForListing,
 } from "@/lib/backup-file-lifecycle";
+import { firestoreDateToIso } from "@/lib/firestore-date";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -235,8 +236,8 @@ type FiltersWithIds = ReturnType<typeof parseFilters> & {
 function filterItemCalendarDay(item: Record<string, unknown>): string | undefined {
   const day = (raw: unknown): string | undefined => {
     if (typeof raw === "string") return raw.slice(0, 10);
-    const r = raw as { toDate?: () => Date } | undefined;
-    return r?.toDate?.()?.toISOString?.()?.slice(0, 10);
+    const iso = firestoreDateToIso(raw);
+    return iso?.slice(0, 10);
   };
   return day(item.uploaded_at) ?? day(item.modified_at) ?? day(item.created_at);
 }
@@ -425,21 +426,9 @@ function toFileResponse(
     path,
     objectKey: d.object_key ?? "",
     size: d.size_bytes ?? 0,
-    modifiedAt: d.modified_at?.toDate?.()
-      ? d.modified_at.toDate().toISOString()
-      : typeof d.modified_at === "string"
-        ? d.modified_at
-        : null,
-    uploadedAt: d.uploaded_at?.toDate?.()
-      ? d.uploaded_at.toDate().toISOString()
-      : typeof d.uploaded_at === "string"
-        ? d.uploaded_at
-        : null,
-    createdAt: d.created_at?.toDate?.()
-      ? d.created_at.toDate().toISOString()
-      : typeof d.created_at === "string"
-        ? d.created_at
-        : null,
+    modifiedAt: firestoreDateToIso(d.modified_at),
+    uploadedAt: firestoreDateToIso(d.uploaded_at),
+    createdAt: firestoreDateToIso(d.created_at),
     proxyDurationSec:
       typeof d.proxy_duration_sec === "number" && Number.isFinite(d.proxy_duration_sec)
         ? d.proxy_duration_sec
