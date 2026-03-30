@@ -32,10 +32,11 @@ export default function EnterpriseStorageBadge() {
   const { refetch } = useEnterprise();
   const { user } = useAuth();
   const [billableUsed, setBillableUsed] = useState(0);
-  const [quota, setQuota] = useState<number | null>(1024 * 1024 * 1024 * 1024);
+  const [quota, setQuota] = useState<number | null | undefined>(undefined);
   const [reserved, setReserved] = useState(0);
   const [seat, setSeat] = useState<SeatPayload | null>(null);
   const [orgPoolState, setOrgPoolState] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
 
   const fetchMyStorage = useCallback(async () => {
@@ -46,7 +47,10 @@ export default function EnterpriseStorageBadge() {
       const res = await fetch(`${base}/api/enterprise/my-storage`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setHydrated(true);
+        return;
+      }
       const data = (await res.json()) as OrgStoragePayload;
       const bill =
         typeof data.billable_used_bytes === "number"
@@ -58,8 +62,10 @@ export default function EnterpriseStorageBadge() {
       setReserved(typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0);
       setSeat(data.seat ?? null);
       setOrgPoolState(typeof data.org_pool_state === "string" ? data.org_pool_state : null);
+      setHydrated(true);
     } catch (err) {
       console.error("Fetch my storage:", err);
+      setHydrated(true);
     }
   }, [user]);
 
@@ -86,7 +92,19 @@ export default function EnterpriseStorageBadge() {
     }
   }, [user, refetch, fetchMyStorage]);
 
-  const quotaLabel = quota === null ? "Unlimited" : formatBytes(quota);
+  useEffect(() => {
+    if (!user) {
+      setHydrated(false);
+      setQuota(undefined);
+      setBillableUsed(0);
+      setReserved(0);
+      setSeat(null);
+      setOrgPoolState(null);
+    }
+  }, [user]);
+
+  const quotaLabel =
+    quota === null ? "Unlimited" : typeof quota === "number" ? formatBytes(quota) : null;
   const seatCapLabel =
     seat?.unlimited_within_org_pool || seat?.storage_quota_bytes == null
       ? "Unlimited (org pool)"
@@ -98,22 +116,26 @@ export default function EnterpriseStorageBadge() {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">Organization storage (shared pool)</p>
-      <p className="text-sm font-medium text-neutral-900 dark:text-white">
-        {formatBytes(billableUsed)} of {quotaLabel} used
-        {reserved > 0 ? (
-          <span className="font-normal text-neutral-500 dark:text-neutral-400">
-            {" "}
-            (+{formatBytes(reserved)} in-flight)
-          </span>
-        ) : null}
-      </p>
-      {orgPoolState === "over_pool" ? (
+      {!hydrated ? (
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading storage…</p>
+      ) : (
+        <p className="text-sm font-medium text-neutral-900 dark:text-white">
+          {formatBytes(billableUsed)} of {quotaLabel ?? "—"} used
+          {reserved > 0 ? (
+            <span className="font-normal text-neutral-500 dark:text-neutral-400">
+              {" "}
+              (+{formatBytes(reserved)} in-flight)
+            </span>
+          ) : null}
+        </p>
+      )}
+      {hydrated && orgPoolState === "over_pool" ? (
         <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">
           Org pool is over capacity — new uploads are blocked until space is freed.
         </p>
       ) : null}
 
-      {seat ? (
+      {hydrated && seat ? (
         <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-600">
           <p className="text-xs text-neutral-600 dark:text-neutral-400">Your seat</p>
           <p className="text-sm font-medium text-neutral-900 dark:text-white">
@@ -134,20 +156,12 @@ export default function EnterpriseStorageBadge() {
         </div>
       ) : null}
 
-      <details className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-        <summary className="cursor-pointer select-none hover:text-neutral-700 dark:hover:text-neutral-300">
-          Details
-        </summary>
-        <ul className="mt-1.5 list-inside list-disc space-y-0.5 pl-0.5">
-          <li>Org billable (files): {formatBytes(billableUsed)}</li>
-          <li>Reserved: {formatBytes(reserved)}</li>
-          <li>Enforcement total: {formatBytes(billableUsed + reserved)}</li>
-          <li className="pt-1 text-neutral-500">
-            &quot;Unlimited&quot; for a seat means unlimited within the organization pool—not infinite
-            storage.
-          </li>
-        </ul>
-      </details>
+      {hydrated ? (
+        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          &quot;Unlimited&quot; for a seat means unlimited within the organization pool—not infinite
+          storage.
+        </p>
+      ) : null}
       <div className="mt-auto pt-3">
         <button
           type="button"

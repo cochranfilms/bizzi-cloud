@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { useBackup } from "@/context/BackupContext";
@@ -30,19 +30,39 @@ type StorageStatusPayload = {
 
 export default function StorageBadge() {
   const [billableUsed, setBillableUsed] = useState(0);
-  const [quota, setQuota] = useState<number | null>(FREE_TIER_STORAGE_BYTES);
+  /** `undefined` until first successful load — avoids flashing free-tier cap before real quota. */
+  const [quota, setQuota] = useState<number | null | undefined>(undefined);
   const [workspaceUsed, setWorkspaceUsed] = useState(0);
   const [reserved, setReserved] = useState(0);
   const [breakdown, setBreakdown] = useState<
     NonNullable<StorageStatusPayload["breakdown"]>
   >({});
-  const [effectiveEnforcement, setEffectiveEnforcement] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+  const [teamFetchFailed, setTeamFetchFailed] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const { storageVersion } = useBackup();
   const { user } = useAuth();
   const pathname = usePathname();
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
+  const prevTeamOwnerKeyRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (
+      prevTeamOwnerKeyRef.current === teamOwnerFromPath &&
+      prevTeamOwnerKeyRef.current !== undefined
+    ) {
+      return;
+    }
+    prevTeamOwnerKeyRef.current = teamOwnerFromPath;
+    setHydrated(false);
+    setTeamFetchFailed(false);
+    setQuota(undefined);
+    setBillableUsed(0);
+    setWorkspaceUsed(0);
+    setReserved(0);
+    setBreakdown({});
+  }, [teamOwnerFromPath]);
 
   const applyPayload = useCallback((data: StorageStatusPayload) => {
     const bill =
@@ -66,10 +86,8 @@ export default function StorageBadge() {
     );
     setReserved(typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0);
     setBreakdown(data.breakdown ?? {});
-    const eff = data.effective_billable_bytes_for_enforcement;
-    setEffectiveEnforcement(
-      typeof eff === "number" ? eff : bill + (typeof data.reserved_bytes === "number" ? data.reserved_bytes : 0)
-    );
+    setHydrated(true);
+    setTeamFetchFailed(false);
   }, []);
 
   const fetchPersonalProfile = useCallback(async () => {
@@ -88,20 +106,23 @@ export default function StorageBadge() {
     } catch {
       // fall through to profile doc
     }
-    const db = getFirebaseFirestore();
-    const snap = await getDoc(doc(db, "profiles", user.uid));
-    if (snap.exists()) {
-      const d = snap.data();
-      setBillableUsed(d.storage_used_bytes ?? 0);
-      setQuota(
-        typeof d.storage_quota_bytes === "number"
-          ? d.storage_quota_bytes
-          : FREE_TIER_STORAGE_BYTES
-      );
-      setWorkspaceUsed(d.storage_used_bytes ?? 0);
-      setReserved(0);
-      setBreakdown({});
-    } else {
+    try {
+      const db = getFirebaseFirestore();
+      const snap = await getDoc(doc(db, "profiles", user.uid));
+      if (snap.exists()) {
+        const d = snap.data();
+        applyPayload({
+          billable_used_bytes: d.storage_used_bytes ?? 0,
+          quota_bytes:
+            typeof d.storage_quota_bytes === "number"
+              ? d.storage_quota_bytes
+              : FREE_TIER_STORAGE_BYTES,
+          workspace_used_bytes: d.storage_used_bytes ?? 0,
+          reserved_bytes: 0,
+          breakdown: {},
+        });
+        return;
+      }
       try {
         const token = await getFirebaseAuth().currentUser?.getIdToken();
         const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -112,11 +133,42 @@ export default function StorageBadge() {
       } catch {
         // Ignore
       }
+      const snap2 = await getDoc(doc(db, "profiles", user.uid));
+      if (snap2.exists()) {
+        const d = snap2.data();
+        applyPayload({
+          billable_used_bytes: d.storage_used_bytes ?? 0,
+          quota_bytes:
+            typeof d.storage_quota_bytes === "number"
+              ? d.storage_quota_bytes
+              : FREE_TIER_STORAGE_BYTES,
+          workspace_used_bytes: d.storage_used_bytes ?? 0,
+          reserved_bytes: 0,
+          breakdown: {},
+        });
+      } else {
+        applyPayload({
+          billable_used_bytes: 0,
+          quota_bytes: FREE_TIER_STORAGE_BYTES,
+          workspace_used_bytes: 0,
+          reserved_bytes: 0,
+          breakdown: {},
+        });
+      }
+    } catch {
+      applyPayload({
+        billable_used_bytes: 0,
+        quota_bytes: FREE_TIER_STORAGE_BYTES,
+        workspace_used_bytes: 0,
+        reserved_bytes: 0,
+        breakdown: {},
+      });
     }
   }, [user, applyPayload]);
 
   const fetchTeamWorkspaceStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user || !teamOwnerFromPath) return;
+    setTeamFetchFailed(false);
     try {
       const token = await getFirebaseAuth().currentUser?.getIdToken();
       const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -124,10 +176,15 @@ export default function StorageBadge() {
         `${base}/api/storage/personal-team-workspace?team_owner_id=${encodeURIComponent(teamOwnerFromPath)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        setHydrated(true);
+        setTeamFetchFailed(true);
+        return;
+      }
       applyPayload((await res.json()) as StorageStatusPayload);
     } catch {
-      // keep previous values
+      setHydrated(true);
+      setTeamFetchFailed(true);
     }
   }, [user, teamOwnerFromPath, applyPayload]);
 
@@ -139,6 +196,19 @@ export default function StorageBadge() {
   useEffect(() => {
     refresh();
   }, [refresh, storageVersion]);
+
+  useEffect(() => {
+    if (!user) {
+      prevTeamOwnerKeyRef.current = undefined;
+      setHydrated(false);
+      setTeamFetchFailed(false);
+      setQuota(undefined);
+      setBillableUsed(0);
+      setWorkspaceUsed(0);
+      setReserved(0);
+      setBreakdown({});
+    }
+  }, [user]);
 
   useEffect(() => {
     const handler = () => refresh();
@@ -179,7 +249,9 @@ export default function StorageBadge() {
       ? teamOwnerFromPath
         ? "Unlimited (team pool)"
         : "Unlimited"
-      : formatBytes(quota);
+      : typeof quota === "number"
+        ? formatBytes(quota)
+        : null;
   const viewerIsTeamOwner =
     Boolean(user && teamOwnerFromPath && user.uid === teamOwnerFromPath);
 
@@ -188,16 +260,32 @@ export default function StorageBadge() {
       <p className="text-xs text-neutral-600 dark:text-neutral-400">
         {teamOwnerFromPath ? "Team workspace files" : "Total plan usage (file-backed)"}
       </p>
-      <p className="text-sm font-medium text-neutral-900 dark:text-white">
-        {formatBytes(teamOwnerFromPath ? workspaceUsed : billableUsed)} of {quotaLabel}
-        {!teamOwnerFromPath && reserved > 0 ? (
-          <span className="font-normal text-neutral-500 dark:text-neutral-400">
-            {" "}
-            (+{formatBytes(reserved)} in-flight uploads)
-          </span>
-        ) : null}
-      </p>
-      {!teamOwnerFromPath &&
+      {!hydrated ? (
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading storage…</p>
+      ) : teamFetchFailed ? (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          Couldn&apos;t load team storage. Try{" "}
+          <button
+            type="button"
+            onClick={() => void fetchTeamWorkspaceStorage()}
+            className="underline hover:text-neutral-900 dark:hover:text-neutral-200"
+          >
+            refresh
+          </button>
+          .
+        </p>
+      ) : (
+        <p className="text-sm font-medium text-neutral-900 dark:text-white">
+          {formatBytes(teamOwnerFromPath ? workspaceUsed : billableUsed)} of {quotaLabel ?? "—"}
+          {!teamOwnerFromPath && reserved > 0 ? (
+            <span className="font-normal text-neutral-500 dark:text-neutral-400">
+              {" "}
+              (+{formatBytes(reserved)} in-flight uploads)
+            </span>
+          ) : null}
+        </p>
+      )}
+      {hydrated && !teamFetchFailed && !teamOwnerFromPath &&
         (breakdown.personal_solo_bytes !== undefined ||
           breakdown.hosted_team_container_bytes !== undefined) && (
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -205,7 +293,9 @@ export default function StorageBadge() {
             workspace: {formatBytes(breakdown.hosted_team_container_bytes ?? 0)}
           </p>
         )}
-      {teamOwnerFromPath &&
+      {hydrated &&
+        !teamFetchFailed &&
+        teamOwnerFromPath &&
         (viewerIsTeamOwner ? (
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             This team workspace uses storage from your plan ({formatBytes(billableUsed)} total
@@ -218,22 +308,6 @@ export default function StorageBadge() {
             owner combined).
           </p>
         ))}
-      <details className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-        <summary className="cursor-pointer select-none hover:text-neutral-700 dark:hover:text-neutral-300">
-          Details
-        </summary>
-        <ul className="mt-1.5 list-inside list-disc space-y-0.5 pl-0.5">
-          <li>Workspace slice: {formatBytes(workspaceUsed)}</li>
-          <li>
-            {teamOwnerFromPath && !viewerIsTeamOwner
-              ? "Team owner account billable (all workspaces)"
-              : "Billable (files)"}
-            : {formatBytes(billableUsed)}
-          </li>
-          <li>Reserved: {formatBytes(reserved)}</li>
-          <li>Enforcement total: {formatBytes(effectiveEnforcement)}</li>
-        </ul>
-      </details>
       <div className="mt-auto pt-3">
         <button
           type="button"

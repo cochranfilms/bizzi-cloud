@@ -258,78 +258,81 @@ export default function RightPanel({
   return (
     <>
       <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
-        {/* Quick access */}
-        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-            Quick access
-          </h3>
-          <ul className="space-y-2">
-            {items.map((item) => (
-              <PersonalQuickAccessLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                Icon={item.icon}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-            ))}
-            {commentsHref ? (
-              <PersonalQuickAccessLink
-                href={commentsHref}
-                label="Comments"
-                Icon={MessageCircle}
-                pathname={pathname}
-                onMobileClose={onMobileClose}
-              />
-            ) : null}
-            <PersonalChromeActionButton
-              label="Customize dashboard"
-              Icon={Palette}
-              onClick={() => {
-                onMobileClose?.();
-                setColorsModalOpen(true);
-              }}
-            />
-            <PersonalChromeActionButton
-              label="Support ticket"
-              Icon={Headphones}
-              onClick={() => {
-                onMobileClose?.();
-                setSupportModalOpen(true);
-              }}
-            />
-          </ul>
-        </div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 dark:border-neutral-800">
+            {/* Quick access */}
+            <div className="p-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                Quick access
+              </h3>
+              <ul className="space-y-2">
+                {items.map((item) => (
+                  <PersonalQuickAccessLink
+                    key={item.href}
+                    href={item.href}
+                    label={item.label}
+                    Icon={item.icon}
+                    pathname={pathname}
+                    onMobileClose={onMobileClose}
+                  />
+                ))}
+                {commentsHref ? (
+                  <PersonalQuickAccessLink
+                    href={commentsHref}
+                    label="Comments"
+                    Icon={MessageCircle}
+                    pathname={pathname}
+                    onMobileClose={onMobileClose}
+                  />
+                ) : null}
+                <PersonalChromeActionButton
+                  label="Customize dashboard"
+                  Icon={Palette}
+                  onClick={() => {
+                    onMobileClose?.();
+                    setColorsModalOpen(true);
+                  }}
+                />
+                <PersonalChromeActionButton
+                  label="Support ticket"
+                  Icon={Headphones}
+                  onClick={() => {
+                    onMobileClose?.();
+                    setSupportModalOpen(true);
+                  }}
+                />
+              </ul>
+            </div>
 
-        {/* Activity */}
-        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-          <Link
-            href={`${basePath}/activity`}
-            onClick={onMobileClose}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            <Activity className="h-4 w-4" />
-            Activity
-          </Link>
-        </div>
+            {/* Activity */}
+            <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+              <Link
+                href={`${basePath}/activity`}
+                onClick={onMobileClose}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                <Activity className="h-4 w-4" />
+                Activity
+              </Link>
+            </div>
 
-        {/* Shared shortcut */}
-        <div className="border-b border-neutral-200 p-4 dark:border-neutral-800">
-          <Link
-            href={`${basePath}/shared`}
-            onClick={onMobileClose}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            <Share2 className="h-4 w-4" />
-            Shared with you
-          </Link>
-        </div>
+            {/* Shared shortcut */}
+            <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
+              <Link
+                href={`${basePath}/shared`}
+                onClick={onMobileClose}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                <Share2 className="h-4 w-4" />
+                Shared with you
+              </Link>
+            </div>
+          </div>
 
-        {/* Storage — fills sidebar below shortcuts (single panel, no split with sync) */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex min-h-0 flex-1 flex-col p-4">
-            {storageComponent ?? <StorageBadge />}
+          <div className="flex min-h-0 flex-shrink-0 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-col p-4">
+              {storageComponent ?? <StorageBadge />}
+            </div>
           </div>
         </div>
       </aside>
