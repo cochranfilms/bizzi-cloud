@@ -70,6 +70,16 @@ import { usePathname } from "next/navigation";
 import { shellContextFromClientPathname } from "@/lib/gallery-proofing-types";
 import { logGalleryProductEvent } from "@/lib/gallery-product-analytics";
 
+/** Dev / ?galleryVideoDebug — prove VideoWithLUT prop flow vs resolver (not fetch). */
+function logPublicGalleryVideoLutSurface(
+  surface: "hero" | "grid" | "modal",
+  payload: Record<string, unknown>
+) {
+  if (typeof window === "undefined") return;
+  if (process.env.NODE_ENV !== "development" && !isGalleryVideoDebugEnabled()) return;
+  console.debug(`[GalleryView → VideoWithLUT surface=${surface}]`, payload);
+}
+
 interface GalleryData {
   id: string;
   gallery_type?: "photo" | "video";
@@ -471,6 +481,39 @@ function PreviewModal({
     return () => { cancelled = true; };
   }, [isVideo, asset.object_key, asset.name, galleryId, password, getAuthToken]);
 
+  useEffect(() => {
+    if (!isVideo || !videoStreamUrl || videoError) return;
+    const lutSrc = galleryVideoControlledLut
+      ? galleryVideoLutSource
+      : lut?.enabled
+        ? previewLutSource
+        : null;
+    const shouldApply = galleryVideoControlledLut ? galleryVideoShouldApplyLut : false;
+    logPublicGalleryVideoLutSurface("modal", {
+      selectedLutId: selectedLutId ?? null,
+      lutPreviewEnabled,
+      galleryVideoControlledLut,
+      resolverShouldApplyLut: galleryVideoShouldApplyLut,
+      resolverResolvedLutSource: galleryVideoLutSource,
+      propLutSource: lutSrc,
+      propShouldApplyLut: shouldApply,
+      streamUrl:
+        videoStreamUrl.length > 100 ? `${videoStreamUrl.slice(0, 100)}…` : videoStreamUrl,
+      mounting: "VideoWithLUT",
+    });
+  }, [
+    isVideo,
+    videoStreamUrl,
+    videoError,
+    galleryVideoControlledLut,
+    galleryVideoLutSource,
+    galleryVideoShouldApplyLut,
+    previewLutSource,
+    lut?.enabled,
+    selectedLutId,
+    lutPreviewEnabled,
+  ]);
+
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentBody.trim()) return;
@@ -764,6 +807,7 @@ function GalleryAssetCard({
   galleryVideoLutSource = null,
   galleryIdForLutTelemetry,
   galleryPasswordProtected = false,
+  debugSelectedLutId,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -792,6 +836,8 @@ function GalleryAssetCard({
   galleryVideoLutSource?: string | null;
   galleryIdForLutTelemetry?: string;
   galleryPasswordProtected?: boolean;
+  /** Video gallery: log prop flow next to React state `selectedLutId`. */
+  debugSelectedLutId?: string;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [rawThumbUnavailable, setRawThumbUnavailable] = useState(false);
@@ -799,6 +845,42 @@ function GalleryAssetCard({
   const isImg = isImage(asset.name);
   const isVid = isVideo(asset.name);
   const shouldAutoplayVideo = isVid && (isFeaturedVideo || isVideoGallery);
+
+  useEffect(() => {
+    if (!galleryVideoControlledLut || !isVid || !videoStreamUrl) return;
+    const mountsGradedPlayer = !!(galleryVideoShouldApplyLut && galleryVideoLutSource);
+    logPublicGalleryVideoLutSurface("grid", {
+      assetId: asset.id,
+      selectedLutId: debugSelectedLutId ?? null,
+      lutPreviewEnabled,
+      resolverShouldApplyLut: galleryVideoShouldApplyLut,
+      resolverResolvedLutSource: galleryVideoLutSource,
+      propLutSource: galleryVideoLutSource,
+      propShouldApplyLut: galleryVideoShouldApplyLut,
+      streamUrl:
+        videoStreamUrl.length > 100 ? `${videoStreamUrl.slice(0, 100)}…` : videoStreamUrl,
+      mounting: mountsGradedPlayer
+        ? "VideoWithLUT"
+        : galleryVideoControlledLut
+          ? "LoopingVideoPreview (gallery: need shouldApply ∧ lutSource)"
+          : lut?.enabled && previewLutSource && lutPreviewEnabled
+            ? "VideoWithLUT (photo-style creativePreviewOn)"
+            : "LoopingVideoPreview",
+      mismatchShouldApplyWithoutSource:
+        galleryVideoShouldApplyLut && !galleryVideoLutSource,
+    });
+  }, [
+    galleryVideoControlledLut,
+    isVid,
+    videoStreamUrl,
+    galleryVideoShouldApplyLut,
+    galleryVideoLutSource,
+    debugSelectedLutId,
+    lutPreviewEnabled,
+    asset.id,
+    lut?.enabled,
+    previewLutSource,
+  ]);
 
   const fetchGalleryVideoStreamUrl = useCallback(async (): Promise<string | null> => {
     try {
@@ -1149,6 +1231,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
    * LUT choice — otherwise the UI snaps back to Original and looks “broken”.
    */
   const viewerLutHydrationSnapshotRef = useRef<string | null>(null);
+  const lastHeroLutPropLogRef = useRef<string | null>(null);
 
   const scrollToGalleryContent = useCallback(() => {
     setMusicPlaying(false);
@@ -2451,6 +2534,52 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                     />
                   ) : null}
                   <div className="relative z-[1] h-full w-full min-h-0">
+                    {(() => {
+                      if (gallery.gallery_type === "video" && featuredVideoStreamUrl) {
+                        const payload = {
+                          selectedLutId,
+                          lutPreviewEnabled,
+                          creativeLutOn,
+                          resolverShouldApplyLut: videoLutDisplay?.shouldApplyLut ?? null,
+                          resolverResolvedLutSource:
+                            videoLutDisplay?.resolvedLutSource ?? null,
+                          resolverFallbackReason: videoLutDisplay?.fallbackReason ?? null,
+                          resolverSanitizedId:
+                            videoLutDisplay?.sanitizedSelectedLutId ?? null,
+                          heroVideoLutActive,
+                          propLutSource: heroVideoLutSource,
+                          propShouldApplyLut:
+                            gallery.gallery_type === "video"
+                              ? !!videoLutDisplay?.shouldApplyLut
+                              : true,
+                          streamUrl:
+                            featuredVideoStreamUrl.length > 100
+                              ? `${featuredVideoStreamUrl.slice(0, 100)}…`
+                              : featuredVideoStreamUrl,
+                          mounting: heroVideoLutActive
+                            ? "VideoWithLUT"
+                            : "LoopingVideoPreview",
+                          heroInactiveReasons: [
+                            !featuredVideoStreamUrl && "no_stream",
+                            !galleryClientLutEligible && "!clientLutEligible",
+                            !creativeLutOn && "!creativeLutOn",
+                            !lutPreviewEnabled && "!lutPreviewEnabled",
+                            gallery.gallery_type === "video" &&
+                              !videoLutDisplay?.shouldApplyLut &&
+                              "!resolverShouldApply",
+                            gallery.gallery_type !== "video" &&
+                              !clientLutSource &&
+                              "!photoClientLutSource",
+                          ].filter(Boolean),
+                        };
+                        const sig = JSON.stringify(payload);
+                        if (lastHeroLutPropLogRef.current !== sig) {
+                          lastHeroLutPropLogRef.current = sig;
+                          logPublicGalleryVideoLutSurface("hero", payload);
+                        }
+                      }
+                      return null;
+                    })()}
                     {heroVideoLutActive ? (
                       <VideoWithLUT
                         key={`hero:${featuredVideoStreamUrl}:${heroVideoLutSource ?? "orig"}:${
@@ -3248,6 +3377,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 }
                 galleryIdForLutTelemetry={galleryId}
                 galleryPasswordProtected={!!password}
+                debugSelectedLutId={selectedLutId}
               />
             ))}
           </div>
