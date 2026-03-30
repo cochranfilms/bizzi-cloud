@@ -15,6 +15,7 @@ import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
+import { shouldUseUppyS3Multipart } from "@/lib/uppy-multipart-policy";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
@@ -193,7 +194,7 @@ export default function UppyUploadModal({
       headers: {} as Record<string, string>,
       /** Lower than default 6 to reduce concurrent B2/S3 sockets during huge .fcpbundle uploads */
       limit: 3,
-      shouldUseMultipart: (file: { size?: number | null }) => (file.size ?? 0) > 5 * 1024 * 1024,
+      shouldUseMultipart: shouldUseUppyS3Multipart,
       retryDelays: [0, 1000, 3000, 5000, 10000],
       uploadPartBytes: uploadPartBytesCompat,
     };
@@ -314,7 +315,11 @@ export default function UppyUploadModal({
     uppy.on("upload-success", async (file) => {
       if (!file) return;
       const size = file.size ?? 0;
-      if (size > 0 && size <= 5 * 1024 * 1024) {
+      if (
+        size > 0 &&
+        size <= 5 * 1024 * 1024 &&
+        !shouldUseUppyS3Multipart({ size, meta: file.meta ?? {} })
+      ) {
         const meta = file.meta ?? {};
         const metaDriveId = meta.driveId ?? meta.drive_id;
         const relativePath = meta.relativePath ?? meta.relative_path ?? file.name ?? "";

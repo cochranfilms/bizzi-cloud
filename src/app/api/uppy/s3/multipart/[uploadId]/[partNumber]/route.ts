@@ -86,14 +86,12 @@ export async function GET(
     return NextResponse.json({ error: "Session no longer active" }, { status: 410 });
   }
 
-  const contentType = data.contentType ?? "application/octet-stream";
-
   try {
     const url = await createPresignedPartUrl(sessionKey, uploadId, partNum, 7 * 24 * 60 * 60);
     return NextResponse.json({
       url,
       method: "PUT",
-      headers: { "Content-Type": contentType },
+      headers: {},
     });
   } catch (err) {
     console.error("[uppy sign part] Error:", err);
