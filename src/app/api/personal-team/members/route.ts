@@ -14,7 +14,7 @@ import {
   emptyTeamSeatCounts,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
-import { sumActiveUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { sumQuotaCountedUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
 import { getPersonalTeamPoolAccounting } from "@/lib/personal-team-pool-accounting";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
     }
     let storage_used_bytes = 0;
     if (memberUserId && ((data.status as string) ?? "") === "active") {
-      storage_used_bytes = await sumActiveUserPersonalTeamBackupBytes(db, memberUserId, uid);
+      storage_used_bytes = await sumQuotaCountedUserPersonalTeamBackupBytes(db, memberUserId, uid);
     }
     const st = (data.status as string) ?? "active";
     const removedAt = timestampToIso(data.removed_at);

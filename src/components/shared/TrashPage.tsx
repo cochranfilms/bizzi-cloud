@@ -661,8 +661,9 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
       <main className="flex-1 overflow-auto p-6">
         <p className="mb-6 text-neutral-500 dark:text-neutral-400">
           Deleted files and folders are kept for 30 days before permanent
-          deletion. Restore them to their original location or permanently
-          delete them.
+          deletion. Items here still count toward your storage until they are
+          permanently deleted—restore them to their original location, or delete
+          permanently to free space.
         </p>
 
         {hasSelection && (

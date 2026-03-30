@@ -4,7 +4,13 @@
  */
 
 import { getCategoryFromFile } from "./category-map";
-import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import {
+  BACKUP_LIFECYCLE_DELETE_FAILED,
+  BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+  BACKUP_LIFECYCLE_TRASHED,
+  isBackupFileActiveForListing,
+  resolveBackupFileLifecycleState,
+} from "@/lib/backup-file-lifecycle";
 
 export interface FileRecord {
   id: string;
@@ -41,9 +47,17 @@ export interface StorageAnalyticsSummary {
   totalFileCount: number;
   lastUpdated: string;
   categories: CategoryAggregate[];
+  /** Bytes in listing-active files only. */
   activeBytes: number;
   archivedBytes: number;
+  /**
+   * @deprecated Same as `trashedBytes`. Prefer `trashedBytes` for new code.
+   */
   trashBytes: number;
+  /** Trashed lifecycle only (user-visible Trash). */
+  trashedBytes: number;
+  pendingPurgeBytes: number;
+  deleteFailedBytes: number;
   sharedBytes: number;
   versionBytes: number;
   largestFiles: Array<{ id: string; name: string; size: number; category: string }>;
@@ -75,6 +89,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 /**
  * Aggregate files into category summaries.
+ * @param totalUsedBytes Quota-counted total (must match storage bar definition).
  */
 export function aggregateFiles(
   files: FileRecord[],
@@ -95,7 +110,10 @@ export function aggregateFiles(
   >();
 
   let archivedBytes = 0;
-  let trashBytes = 0;
+  let activeBytesSum = 0;
+  let trashedBytes = 0;
+  let pendingPurgeBytes = 0;
+  let deleteFailedBytes = 0;
   let sharedBytes = 0;
   let uploadBytesThisMonth = 0;
   let uploadBytesLastMonth = 0;
@@ -106,8 +124,20 @@ export function aggregateFiles(
   for (const file of files) {
     const size = typeof file.size_bytes === "number" ? file.size_bytes : 0;
     const isShared = sharedFileIds.has(file.id);
-    const isDeleted = file.deleted_at != null;
     const isArchived = file.usage_status === "archived";
+
+    const row = file as unknown as Record<string, unknown>;
+    const state = resolveBackupFileLifecycleState(row);
+    if (state === BACKUP_LIFECYCLE_TRASHED) {
+      trashedBytes += size;
+    } else if (state === BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE) {
+      pendingPurgeBytes += size;
+    } else if (state === BACKUP_LIFECYCLE_DELETE_FAILED) {
+      deleteFailedBytes += size;
+    }
+    if (isBackupFileActiveForListing(row)) {
+      activeBytesSum += size;
+    }
 
     const cat = getCategoryFromFile(
       { ...file, isShared } as Parameters<typeof getCategoryFromFile>[0],
@@ -122,8 +152,7 @@ export function aggregateFiles(
     agg.count += 1;
     agg.files.push(file);
 
-    if (isDeleted) trashBytes += size;
-    else if (isArchived) archivedBytes += size;
+    if (isArchived) archivedBytes += size;
     if (isShared) sharedBytes += size;
 
     const createdAt = file.created_at
@@ -173,10 +202,8 @@ export function aggregateFiles(
     });
   }
 
-  // Sort categories by bytes descending
   categories.sort((a, b) => b.bytes - a.bytes);
 
-  // Top 10 largest files
   allLargest.sort((a, b) => b.size - a.size);
   const largestFiles = allLargest.slice(0, 10).map((f) => ({
     id: f.id,
@@ -185,7 +212,6 @@ export function aggregateFiles(
     category: f.cat,
   }));
 
-  // Fastest growing: compare this month vs last month by category
   const thisMonthByCat = new Map<string, number>();
   const lastMonthByCat = new Map<string, number>();
   for (const file of files) {
@@ -223,12 +249,12 @@ export function aggregateFiles(
   const remainingBytes =
     quotaBytes != null ? Math.max(0, quotaBytes - totalUsedBytes) : 0;
 
-  const monthlyUploads: MonthlyUpload[] = [];
+  const monthlyUploadsP: MonthlyUpload[] = [];
   const today = new Date();
   for (let i = 5; i >= 0; i--) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    const monthStart = d.getTime();
-    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0).getTime();
+    const dm = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    const monthStart = dm.getTime();
+    const monthEnd = new Date(dm.getFullYear(), dm.getMonth() + 1, 0).getTime();
     let sum = 0;
     for (const file of files) {
       const created = file.created_at
@@ -238,8 +264,8 @@ export function aggregateFiles(
         sum += file.size_bytes ?? 0;
       }
     }
-    monthlyUploads.push({
-      month: d.toISOString().slice(0, 7),
+    monthlyUploadsP.push({
+      month: dm.toISOString().slice(0, 7),
       bytes: sum,
     });
   }
@@ -252,9 +278,12 @@ export function aggregateFiles(
       isBackupFileActiveForListing(f as unknown as Record<string, unknown>)
     ).length,
     categories,
-    activeBytes: totalUsedBytes,
+    activeBytes: activeBytesSum,
     archivedBytes,
-    trashBytes,
+    trashBytes: trashedBytes,
+    trashedBytes,
+    pendingPurgeBytes,
+    deleteFailedBytes,
     sharedBytes,
     versionBytes: 0,
     largestFiles,
@@ -265,6 +294,6 @@ export function aggregateFiles(
     compressionOpportunities: 0,
     uploadBytesThisMonth,
     uploadBytesLastMonth,
-    monthlyUploads,
+    monthlyUploads: monthlyUploadsP,
   };
 }

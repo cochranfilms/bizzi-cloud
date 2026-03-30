@@ -8,7 +8,7 @@ import {
   PERSONAL_TEAM_SEATS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
-import { sumActiveUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { sumQuotaCountedUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
 
 const ACTIVE_OR_LEGACY: Set<string> = new Set(["active", "cold_storage"]);
 
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   const data = seatSnap.data() ?? {};
   let storageUsedBytes = 0;
   if (st === "active") {
-    storageUsedBytes = await sumActiveUserPersonalTeamBackupBytes(db, uid, ownerUid);
+    storageUsedBytes = await sumQuotaCountedUserPersonalTeamBackupBytes(db, uid, ownerUid);
   }
 
   let ownerEmail: string | null = null;

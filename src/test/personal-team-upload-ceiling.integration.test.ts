@@ -113,4 +113,59 @@ describe("checkUserCanUpload personal-team drive", () => {
     expect(err.storage_denial.usage_scope).toBe("personal_team_workspace");
     expect(err.storage_denial.quota_bytes).toBe(POOL_9_TB);
   });
+
+  it("counts trashed team-folder files toward owner plan (trash does not free pool headroom)", async () => {
+    const db = testHarness.db!;
+    db.seedDoc("profiles", U.owner, {
+      plan_id: "video",
+      display_name: "Owner",
+      team_seat_counts: { none: 10, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+      storage_quota_bytes: POOL_9_TB,
+    });
+    db.seedDoc("profiles", U.member, {
+      plan_id: "free",
+      display_name: "Member",
+      billing_status: "active",
+      storage_quota_bytes: 50 * 1024 ** 3,
+    });
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, U.owner, {
+      team_id: U.owner,
+      owner_user_id: U.owner,
+      status: "active",
+    });
+    const seatId = personalTeamSeatDocId(U.owner, U.member);
+    db.seedDoc(PERSONAL_TEAM_SEATS_COLLECTION, seatId, {
+      team_owner_user_id: U.owner,
+      member_user_id: U.member,
+      seat_access_level: "none",
+      status: "active",
+      invited_email: `${U.member}@test.local`,
+      storage_quota_bytes: TIER_5_TB,
+      quota_mode: "fixed",
+    });
+    db.seedDoc("linked_drives", DRIVE_ID, {
+      userId: U.owner,
+      organization_id: null,
+      personal_team_owner_id: U.owner,
+    });
+    db.seedDoc("backup_files", "bf_trashed", {
+      userId: U.member,
+      personal_team_owner_id: U.owner,
+      organization_id: null,
+      size_bytes: POOL_9_TB - 500,
+      lifecycle_state: "trashed",
+      deleted_at: new Date(),
+    });
+
+    let thrown: unknown;
+    try {
+      await checkUserCanUpload(U.member, 1000, DRIVE_ID);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(StorageQuotaDeniedError);
+  });
 });

@@ -4,7 +4,7 @@ import {
   getEnterpriseWorkspaceStorageSummary,
   deprecatedStorageFieldsFromSummary,
 } from "@/lib/storage-display";
-import { sumActiveUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { sumQuotaCountedUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
 import {
   billingKeyForOrg,
   sumPendingReservationBytesForRequestingUser,
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   const seatSnap = await db.collection("organization_seats").doc(`${orgId}_${uid}`).get();
   const seatRow = seatSnap.data();
   const seatCap = seatNumericCapForEnforcement(seatRow as Record<string, unknown> | undefined);
-  const seatUsed = await sumActiveUserOrgBackupBytes(db, uid, orgId);
+  const seatUsed = await sumQuotaCountedUserOrgBackupBytes(db, uid, orgId);
   const seatReserved = await sumPendingReservationBytesForRequestingUser(
     billingKeyForOrg(orgId),
     uid

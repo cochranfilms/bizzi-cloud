@@ -1,5 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { quotaCountedSizeBytesFromBackupFile } from "@/lib/backup-file-lifecycle";
 import { isPersonalScopeFileDoc } from "@/lib/backup-scope";
 import { FREE_TIER_STORAGE_BYTES } from "@/lib/plan-constants";
 import { NextResponse } from "next/server";
@@ -10,10 +10,12 @@ const isDevAuthBypass = () =>
   process.env.NODE_ENV === "development";
 
 /**
- * Recalculates profiles.storage_used_bytes from backup_files using the same
- * active-for-quota rules as billing (unified lifecycle). Does not touch
- * storage_quota_reservations; pending uploads still affect enforcement via the
- * storage status APIs until reservations commit or expire.
+ * Writes cached display totals on the user profile (`storage_used_bytes` for the solo-personal scope bar).
+ *
+ * This is for UI reconciliation and reporting only. It is NOT the authoritative upload enforcement path:
+ * quota checks must use live Firestore aggregation (see enterprise-storage / quota service), not this field alone.
+ *
+ * Does not touch storage_quota_reservations; pending uploads still affect enforcement via the storage status APIs.
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -59,9 +61,8 @@ export async function POST(request: Request) {
   let totalBytes = 0;
   for (const docSnap of filesSnap.docs) {
     const data = docSnap.data() as Record<string, unknown>;
-    if (!isBackupFileActiveForListing(data)) continue;
     if (!isPersonalScopeFileDoc(data)) continue;
-    totalBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    totalBytes += quotaCountedSizeBytesFromBackupFile(data);
   }
 
   const profileRef = db.collection("profiles").doc(uid);
@@ -70,6 +71,22 @@ export async function POST(request: Request) {
     profileSnap.exists && typeof profileSnap.data()?.storage_quota_bytes === "number"
       ? profileSnap.data()!.storage_quota_bytes
       : FREE_TIER_STORAGE_BYTES;
+
+  const prevUsed =
+    profileSnap.exists && typeof profileSnap.data()?.storage_used_bytes === "number"
+      ? profileSnap.data()!.storage_used_bytes
+      : null;
+  if (
+    prevUsed !== null &&
+    typeof totalBytes === "number" &&
+    Math.abs(totalBytes - prevUsed) >= 1024 * 1024
+  ) {
+    console.info("[storage/recalculate] profile delta", {
+      uid,
+      previous_storage_used_bytes: prevUsed,
+      new_storage_used_bytes: totalBytes,
+    });
+  }
 
   await profileRef.set(
     {

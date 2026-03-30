@@ -11,10 +11,10 @@ import {
 import { FREE_TIER_STORAGE_BYTES } from "./plan-constants";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "./personal-team";
 import { assertStorageLifecycleAllowsAccess } from "./storage-lifecycle";
-import { isBackupFileActiveForListing } from "./backup-file-lifecycle";
+import { quotaCountedSizeBytesFromBackupFile } from "./backup-file-lifecycle";
 import {
-  sumActiveUserOrgBackupBytes,
-  sumActiveUserPersonalTeamBackupBytes,
+  sumQuotaCountedUserOrgBackupBytes,
+  sumQuotaCountedUserPersonalTeamBackupBytes,
 } from "./backup-file-storage-bytes";
 import { seatNumericCapForEnforcement } from "./org-seat-quota";
 import {
@@ -58,10 +58,9 @@ export async function sumPersonalBackupBytesForQuota(subjectUid: string): Promis
   for (const snap of [asOwner, asTeamHost]) {
     for (const docSnap of snap.docs) {
       if (seen.has(docSnap.id)) continue;
-      const data = docSnap.data();
-      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
+      const data = docSnap.data() as Record<string, unknown>;
       seen.add(docSnap.id);
-      used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+      used += quotaCountedSizeBytesFromBackupFile(data);
     }
   }
   return used;
@@ -77,9 +76,8 @@ export async function sumTeamContainerBackupBytes(teamOwnerUid: string): Promise
     .get();
   let used = 0;
   for (const docSnap of snap.docs) {
-    const data = docSnap.data();
-    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
-    used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    const data = docSnap.data() as Record<string, unknown>;
+    used += quotaCountedSizeBytesFromBackupFile(data);
   }
   return used;
 }
@@ -94,11 +92,10 @@ export async function sumSoloPersonalBackupBytes(uid: string): Promise<number> {
     .get();
   let used = 0;
   for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
+    const data = docSnap.data() as Record<string, unknown>;
     if (typeof data.personal_team_owner_id === "string" && data.personal_team_owner_id)
       continue;
-    used += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    used += quotaCountedSizeBytesFromBackupFile(data);
   }
   return used;
 }
@@ -173,9 +170,8 @@ export async function getUploadBillingSnapshot(
       .get();
     usedBytes = 0;
     for (const docSnap of orgFilesSnap.docs) {
-      const data = docSnap.data();
-      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
-      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+      const data = docSnap.data() as Record<string, unknown>;
+      usedBytes += quotaCountedSizeBytesFromBackupFile(data);
     }
   } else {
     quotaBytes = adminPurchasedTeamPoolBytes(profileData as Record<string, unknown> | undefined);
@@ -204,19 +200,20 @@ function buildQuotaDeniedMessage(
     return {
       scope: "enterprise_workspace",
       msg:
-        "This upload would exceed your organization’s shared storage pool. Free space or ask an admin to upgrade.",
+        "This upload would exceed your organization’s shared storage pool. Trashed items still count until permanently deleted—free space or ask an admin to upgrade.",
     };
   }
   if (quotaSubjectUid !== requestingUid) {
     return {
       scope: "personal_team_workspace",
       msg:
-        "This team workspace uses storage from the team owner's plan. The owner's plan is full, so this upload cannot continue. They need to upgrade storage or free up space.",
+        "This team workspace uses storage from the team owner's plan. The owner's plan is full, so this upload cannot continue. Trashed files still count until permanently deleted—they need to upgrade or free space (including Trash).",
     };
   }
   return {
     scope: "personal",
-    msg: "Your plan is full. Upgrade storage or delete files to continue uploading.",
+    msg:
+      "Your plan is full. Items in Trash still use storage until you permanently delete them—empty Trash or upgrade to continue uploading.",
   };
 }
 
@@ -290,7 +287,7 @@ export async function checkUserCanUpload(
       seatSnap.data() as Record<string, unknown> | undefined
     );
     if (typeof seatQuota === "number") {
-      const seatUsed = await sumActiveUserOrgBackupBytes(db, uid, orgIdForSeat);
+      const seatUsed = await sumQuotaCountedUserOrgBackupBytes(db, uid, orgIdForSeat);
       const seatReserved = await sumPendingReservationBytesForRequestingUser(
         billingKeyForOrg(orgIdForSeat),
         uid
@@ -307,7 +304,7 @@ export async function checkUserCanUpload(
           quota_bytes: seatQuota,
         });
         throw new StorageQuotaDeniedError(
-          "This upload would exceed your seat allocation for this organization. Ask an admin to raise your cap or free space.",
+          "This upload would exceed your seat allocation for this organization. Trashed items still count until permanently deleted—ask an admin to raise your cap or free space.",
           {
             requesting_user_id: uid,
             billing_subject_user_id: null,
@@ -337,7 +334,7 @@ export async function checkUserCanUpload(
       seatSnap.data() as Record<string, unknown> | undefined
     );
     if (typeof seatQuota === "number") {
-      const seatUsed = await sumActiveUserPersonalTeamBackupBytes(db, uid, teamOwnerUid);
+      const seatUsed = await sumQuotaCountedUserPersonalTeamBackupBytes(db, uid, teamOwnerUid);
       const seatReserved = await sumPendingReservationBytesForRequestingUser(
         billingKeyForUser(teamOwnerUid),
         uid
@@ -355,7 +352,7 @@ export async function checkUserCanUpload(
           quota_bytes: seatQuota,
         });
         throw new StorageQuotaDeniedError(
-          "This upload would exceed your storage allocation for this team. Ask your team admin to raise your cap or free space.",
+          "This upload would exceed your storage allocation for this team. Items in Trash still count until permanently deleted—ask your team admin to raise your cap or free space.",
           {
             requesting_user_id: uid,
             billing_subject_user_id: null,
@@ -425,9 +422,8 @@ export async function getStorageStatus(
       .get();
     usedBytes = 0;
     for (const docSnap of orgFilesSnap.docs) {
-      const data = docSnap.data();
-      if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
-      usedBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+      const data = docSnap.data() as Record<string, unknown>;
+      usedBytes += quotaCountedSizeBytesFromBackupFile(data);
     }
   } else {
     const profileBillingPastDue = profileData?.billing_status === "past_due";

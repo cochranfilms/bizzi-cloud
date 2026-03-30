@@ -17,8 +17,8 @@ import {
   billingKeyForOrg,
 } from "@/lib/storage-quota-reservations";
 import {
-  sumActiveOrgBackupBytesDefault,
-  sumActiveUserPersonalTeamBackupBytes,
+  sumQuotaCountedOrgBackupBytesDefault,
+  sumQuotaCountedUserPersonalTeamBackupBytes,
 } from "@/lib/backup-file-storage-bytes";
 import {
   PERSONAL_TEAM_SEATS_COLLECTION,
@@ -142,7 +142,7 @@ export async function getPersonalTeamWorkspaceStorageSummary(
     .doc(personalTeamSeatDocId(ownerUid, viewerUid))
     .get();
   const seatCap = seatNumericCapForEnforcement(seatSnap.data() as Record<string, unknown> | undefined);
-  const seatUsed = await sumActiveUserPersonalTeamBackupBytes(db, viewerUid, ownerUid);
+  const seatUsed = await sumQuotaCountedUserPersonalTeamBackupBytes(db, viewerUid, ownerUid);
   const seatReserved = await sumPendingReservationBytesForRequestingUser(
     billingKeyForUser(ownerUid),
     viewerUid
@@ -204,7 +204,7 @@ export async function getEnterpriseWorkspaceStorageSummary(
       ? orgData.storage_quota_bytes
       : null;
 
-  const billable_used_bytes = await sumActiveOrgBackupBytesDefault(orgId);
+  const billable_used_bytes = await sumQuotaCountedOrgBackupBytesDefault(orgId);
   const billingKey = billingKeyForOrg(orgId);
   const reserved_bytes = await sumPendingReservationBytes(billingKey);
   const effective_billable_bytes_for_enforcement = billable_used_bytes + reserved_bytes;

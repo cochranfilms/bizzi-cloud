@@ -1,25 +1,24 @@
 /**
- * Lifecycle-aware byte totals for storage quota and display.
- * Prefer these helpers over ad-hoc deleted_at checks.
+ * Quota-aware byte totals from backup_files (trash and pending purge count until docs are removed).
+ * Prefer these helpers over ad-hoc deleted_at checks for enforcement and cached profile totals.
  */
 
 import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { quotaCountedSizeBytesFromBackupFile } from "@/lib/backup-file-lifecycle";
 
-/** Sum size_bytes for docs in a snapshot where the file is actively listed (not trashed/etc.). */
-export function sumActiveBytesFromSnapshot(docs: QueryDocumentSnapshot[]): number {
+/** Sum quota-counted `size_bytes` for docs in a snapshot. */
+export function sumQuotaCountedBytesFromSnapshot(docs: QueryDocumentSnapshot[]): number {
   let n = 0;
   for (const docSnap of docs) {
     const data = docSnap.data() as Record<string, unknown>;
-    if (!isBackupFileActiveForListing(data)) continue;
-    n += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    n += quotaCountedSizeBytesFromBackupFile(data);
   }
   return n;
 }
 
-/** Active org-scoped backup bytes (shared org pool). */
-export async function sumActiveOrgBackupBytes(
+/** Org-scoped bytes that count toward the shared org pool quota. */
+export async function sumQuotaCountedOrgBackupBytes(
   db: Firestore,
   orgId: string
 ): Promise<number> {
@@ -27,15 +26,15 @@ export async function sumActiveOrgBackupBytes(
     .collection("backup_files")
     .where("organization_id", "==", orgId)
     .get();
-  return sumActiveBytesFromSnapshot(snap.docs);
+  return sumQuotaCountedBytesFromSnapshot(snap.docs);
 }
 
-export async function sumActiveOrgBackupBytesDefault(orgId: string): Promise<number> {
-  return sumActiveOrgBackupBytes(getAdminFirestore(), orgId);
+export async function sumQuotaCountedOrgBackupBytesDefault(orgId: string): Promise<number> {
+  return sumQuotaCountedOrgBackupBytes(getAdminFirestore(), orgId);
 }
 
-/** Per-seat org upload totals: user's files in that org (active only). */
-export async function sumActiveUserOrgBackupBytes(
+/** Per-seat org totals: this user's files in that org (quota-counted). */
+export async function sumQuotaCountedUserOrgBackupBytes(
   db: Firestore,
   userId: string,
   orgId: string
@@ -45,11 +44,11 @@ export async function sumActiveUserOrgBackupBytes(
     .where("userId", "==", userId)
     .where("organization_id", "==", orgId)
     .get();
-  return sumActiveBytesFromSnapshot(snap.docs);
+  return sumQuotaCountedBytesFromSnapshot(snap.docs);
 }
 
-/** Per-member personal-team uploads: this user's files in the owner's team container. */
-export async function sumActiveUserPersonalTeamBackupBytes(
+/** Personal-team container: this user's files in the owner's team (quota-counted). */
+export async function sumQuotaCountedUserPersonalTeamBackupBytes(
   db: Firestore,
   userId: string,
   teamOwnerUid: string
@@ -60,5 +59,5 @@ export async function sumActiveUserPersonalTeamBackupBytes(
     .where("personal_team_owner_id", "==", teamOwnerUid)
     .where("organization_id", "==", null)
     .get();
-  return sumActiveBytesFromSnapshot(snap.docs);
+  return sumQuotaCountedBytesFromSnapshot(snap.docs);
 }

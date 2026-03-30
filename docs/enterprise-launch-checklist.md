@@ -21,7 +21,7 @@ Use this before treating enterprise as production-ready: API authorization, stor
 ## Storage & reservations
 
 - **Org pool**: Enforcement uses org-wide file bytes + pending reservations on `billing_key` `org:{orgId}`.
-- **Seat allocation**: If `storage_quota_bytes` on the seat is a number, uploads also enforce `sumActiveUserOrgBackupBytes` + that user’s share of pending reservations against that cap. `null` on the seat means no per-seat cap (for that dimension).
+- **Seat allocation**: If `storage_quota_bytes` on the seat is a number, uploads also enforce `sumQuotaCountedUserOrgBackupBytes` + that user’s share of pending reservations against that cap. `null` on the seat means no per-seat cap (for that dimension).
 - **Caveat**: Reservation totals are split per requesting user in software for seat caps; org-wide reservation math stays the single Firestore query + in-memory filter for the user—acceptable for current scale; Redis or composite indexes are future options if hot.
 
 ## Rate limits (invites)

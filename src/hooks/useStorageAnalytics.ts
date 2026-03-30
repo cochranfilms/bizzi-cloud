@@ -16,7 +16,11 @@ export interface StorageAnalyticsData {
   categories: CategoryAggregate[];
   activeBytes: number;
   archivedBytes: number;
+  /** @deprecated Use trashedBytes */
   trashBytes: number;
+  trashedBytes: number;
+  pendingPurgeBytes: number;
+  deleteFailedBytes: number;
   sharedBytes: number;
   versionBytes: number;
   largestFiles: Array<{
@@ -70,9 +74,17 @@ export function useStorageAnalytics() {
       const json = (await res.json()) as StorageAnalyticsData & {
         lastUpdated?: string;
         largestFileType?: string | null;
+        trashedBytes?: number;
+        pendingPurgeBytes?: number;
+        deleteFailedBytes?: number;
       };
+      const trashedBytes = json.trashedBytes ?? json.trashBytes ?? 0;
       setData({
         ...json,
+        trashedBytes,
+        trashBytes: json.trashBytes ?? trashedBytes,
+        pendingPurgeBytes: json.pendingPurgeBytes ?? 0,
+        deleteFailedBytes: json.deleteFailedBytes ?? 0,
         lastUpdated: json.lastUpdated ?? new Date().toISOString(),
         largestFileType: json.largestFileType ?? null,
       });

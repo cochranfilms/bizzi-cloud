@@ -3,12 +3,15 @@ import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { quotaCountedSizeBytesFromBackupFile } from "@/lib/backup-file-lifecycle";
 import { syncOrganizationSeatAllocationSummary } from "@/lib/org-seat-allocation-summary";
 
 /**
- * Recalculates storage_used_bytes for an organization from backup_files
- * of all active members. Call after bulk deletes or to fix stale org storage.
+ * Writes cached display totals on the organization (`organizations.storage_used_bytes`).
+ *
+ * This is for UI reconciliation and reporting only. It is NOT the authoritative upload enforcement path:
+ * quota checks must use live Firestore aggregation (see enterprise-storage), not this field alone.
+ *
  * Requires active org admin. Optional body: { "organization_id": "..." }.
  */
 export async function POST(request: Request) {
@@ -78,9 +81,8 @@ export async function POST(request: Request) {
 
   let totalBytes = 0;
   for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
-    if (!isBackupFileActiveForListing(data as Record<string, unknown>)) continue;
-    totalBytes += typeof data.size_bytes === "number" ? data.size_bytes : 0;
+    const data = docSnap.data() as Record<string, unknown>;
+    totalBytes += quotaCountedSizeBytesFromBackupFile(data);
   }
 
   const orgRef = db.collection("organizations").doc(orgId);

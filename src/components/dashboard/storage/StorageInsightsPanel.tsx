@@ -48,7 +48,7 @@ export default function StorageInsightsPanel({
     insights.push({
       title: "Archived storage",
       value: formatBytes(data.archivedBytes),
-      description: `vs ${formatBytes(data.activeBytes - data.archivedBytes)} active`,
+      description: "Files marked archived in metadata",
     });
   }
 
@@ -59,12 +59,22 @@ export default function StorageInsightsPanel({
     });
   }
 
-  if (data.trashBytes > 0) {
+  const trashed = data.trashedBytes ?? data.trashBytes;
+  if (trashed > 0) {
     insights.push({
       title: "In trash",
-      value: formatBytes(data.trashBytes),
-      description: "Empty trash to free this space",
+      value: formatBytes(trashed),
+      description:
+        "Still counts toward storage until permanently deleted. Empty trash to free space.",
       action: { label: "View trash", href: `${basePath}/trash` },
+    });
+  }
+  const pendingPurge = data.pendingPurgeBytes ?? 0;
+  if (pendingPurge > 0) {
+    insights.push({
+      title: "Pending permanent delete",
+      value: formatBytes(pendingPurge),
+      description: "Purge in progress; still counts toward storage until complete.",
     });
   }
 

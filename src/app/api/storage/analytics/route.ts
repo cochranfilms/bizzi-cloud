@@ -8,6 +8,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { NextResponse } from "next/server";
 import { aggregateFiles } from "@/lib/analytics/aggregate";
+import { quotaCountedSizeBytesFromBackupFile } from "@/lib/backup-file-lifecycle";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -122,27 +123,27 @@ export async function GET(request: Request) {
     content_type?: string | null;
     usage_status?: string | null;
     deleted_at?: unknown;
+    lifecycle_state?: unknown;
     modified_at?: string | null;
     created_at?: string | null;
     raw_format?: string | null;
   }> = [];
 
   for (const docSnap of filesSnap.docs) {
-    const data = docSnap.data();
+    const data = docSnap.data() as Record<string, unknown>;
     const size = typeof data.size_bytes === "number" ? data.size_bytes : 0;
-    if (!data.deleted_at) {
-      totalUsedBytes += size;
-    }
+    totalUsedBytes += quotaCountedSizeBytesFromBackupFile(data);
     files.push({
       id: docSnap.id,
-      relative_path: data.relative_path,
+      relative_path: data.relative_path as string | undefined,
       size_bytes: size,
-      content_type: data.content_type,
-      usage_status: data.usage_status,
+      content_type: data.content_type as string | null | undefined,
+      usage_status: data.usage_status as string | null | undefined,
       deleted_at: data.deleted_at,
-      modified_at: data.modified_at,
-      created_at: data.created_at,
-      raw_format: data.raw_format,
+      lifecycle_state: data.lifecycle_state,
+      modified_at: data.modified_at as string | null | undefined,
+      created_at: data.created_at as string | null | undefined,
+      raw_format: data.raw_format as string | null | undefined,
     });
   }
 

@@ -1,5 +1,5 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { sumActiveUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
+import { sumQuotaCountedUserOrgBackupBytes } from "@/lib/backup-file-storage-bytes";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { NextResponse } from "next/server";
 import {
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
       const userId = d.user_id as string | undefined;
       let storage_used_bytes = 0;
       if (userId && userId.length > 0) {
-        storage_used_bytes = await sumActiveUserOrgBackupBytes(db, userId, orgId);
+        storage_used_bytes = await sumQuotaCountedUserOrgBackupBytes(db, userId, orgId);
       }
       return {
         id: doc.id,
