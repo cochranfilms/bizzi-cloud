@@ -10,7 +10,6 @@ import {
   Share2,
   Trash2,
   Send,
-  Search,
   Settings,
   Menu,
   X,
@@ -72,7 +71,6 @@ function isNavItemActive(
 export default function TopNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
   const { hasGallerySuite, hasEditor } = useEffectivePowerUps();
   const teamWs = usePersonalTeamWorkspace();
 
@@ -81,8 +79,6 @@ export default function TopNavbar() {
       ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null)
       : null;
   const navBase = teamNavBase ?? "/dashboard";
-  const mobileOverlayTop = "top-14";
-  const mobileNavTop = "top-14";
   const mobileNavMaxH = "max-h-[calc(100vh-3.5rem)]";
 
   const filteredItems = navItems.filter((item) => {
@@ -97,123 +93,112 @@ export default function TopNavbar() {
   const activeNavCls =
     "border border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 font-medium text-neutral-900 dark:text-white";
 
-  const searchFocusCls =
-    "focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:focus:border-[var(--enterprise-accent)] dark:focus:ring-[var(--enterprise-accent)]/20";
+  const navLinkClass = (isActive: boolean, hasPowerupColor: boolean) =>
+    `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs transition-colors sm:gap-2 sm:px-3 sm:py-2 sm:text-sm ${
+      hasPowerupColor
+        ? "border-transparent font-medium text-white"
+        : isActive
+          ? activeNavCls
+          : inactiveNavCls
+    }`;
 
-  const navRow = (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-2 md:flex-nowrap md:gap-4">
-      <nav className="hidden items-center gap-0.5 md:flex">
-        {filteredItems.map((item) => {
-          const Icon = item.icon;
-          const href =
-            teamNavBase && item.href === "/dashboard/settings"
-              ? `${teamNavBase}/settings`
-              : item.href.replace(/^\/dashboard/, navBase);
-          const isActive = isNavItemActive(pathname, href, item.href);
-          const hasPowerupColor = isActive && item.activeBgColor;
-          return (
-            <Link
-              key={item.href}
-              href={href}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                hasPowerupColor
-                  ? "border-transparent font-medium text-white"
-                  : isActive
-                    ? activeNavCls
-                    : inactiveNavCls
-              }`}
-              style={
-                hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined
-              }
-            >
-              <Icon
-                className={`h-4 w-4 flex-shrink-0 ${
-                  hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
-                }`}
-              />
-              <span className="hidden lg:inline">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-none md:ml-0 md:gap-3">
-        <NotificationBell />
-        <WorkspaceSwitcher />
-        <UserMenu compact />
-      </div>
-
-      <div
-        className={`relative order-3 w-full min-w-0 basis-full transition-all md:order-none md:max-w-xl md:flex-1 ${
-          searchFocused ? "md:flex-[1.5]" : ""
-        }`}
-      >
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-        <input
-          type="search"
-          placeholder="Search files..."
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          className={`w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500 ${searchFocusCls}`}
-        />
-      </div>
+  const accountTools = (
+    <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 md:gap-3">
+      <NotificationBell />
+      <WorkspaceSwitcher />
+      <UserMenu compact />
     </div>
+  );
+
+  const desktopNav = (
+    <nav
+      className="-mx-1 hidden min-h-9 w-full min-w-0 gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
+      aria-label="Workspace"
+    >
+      {filteredItems.map((item) => {
+        const Icon = item.icon;
+        const href =
+          teamNavBase && item.href === "/dashboard/settings"
+            ? `${teamNavBase}/settings`
+            : item.href.replace(/^\/dashboard/, navBase);
+        const isActive = isNavItemActive(pathname, href, item.href);
+        const hasPowerupColor = isActive && item.activeBgColor;
+        return (
+          <Link
+            key={item.href}
+            href={href}
+            className={navLinkClass(isActive, !!hasPowerupColor)}
+            style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
+          >
+            <Icon
+              className={`h-4 w-4 flex-shrink-0 ${
+                hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+              }`}
+            />
+            <span className="hidden lg:inline">{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 
   if (teamNavBase && teamWs) {
     const homeHref = teamNavBase;
     return (
-      <header className="sticky top-0 z-[60] flex min-h-14 flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
-        <button
-          type="button"
-          onClick={() => setMobileOpen((o) => !o)}
-          className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
-        >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-        <Link
-          href={homeHref}
-          className="flex min-w-0 max-w-[min(100%,18rem)] shrink items-center gap-2 sm:max-w-[20rem] md:max-w-[min(22rem,32vw)]"
-          onClick={() => setMobileOpen(false)}
-          title={teamWs.teamName}
-        >
-          {teamWs.teamLogoUrl ? (
-            <Image
-              src={teamWs.teamLogoUrl}
-              alt={teamWs.teamName}
-              width={24}
-              height={24}
-              className="h-6 w-6 flex-shrink-0 object-contain"
-              unoptimized
-            />
-          ) : (
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={24}
-              height={24}
-              className="flex-shrink-0 object-contain"
-            />
-          )}
-          <span className="truncate font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-            {teamWs.teamName}
-          </span>
-          <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]">
-            Team
-          </span>
-        </Link>
-        {navRow}
+      <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
+        <div className="flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
+          <button
+            type="button"
+            onClick={() => setMobileOpen((o) => !o)}
+            className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+          <Link
+            href={homeHref}
+            className="flex min-w-0 max-w-[min(100%,14rem)] shrink items-center gap-2 sm:max-w-[min(100%,18rem)] md:max-w-[min(20rem,45vw)] lg:max-w-[24rem]"
+            onClick={() => setMobileOpen(false)}
+            title={teamWs.teamName}
+          >
+            {teamWs.teamLogoUrl ? (
+              <Image
+                src={teamWs.teamLogoUrl}
+                alt={teamWs.teamName}
+                width={24}
+                height={24}
+                className="h-6 w-6 flex-shrink-0 object-contain"
+                unoptimized
+              />
+            ) : (
+              <Image
+                src="/logo.png"
+                alt="Bizzi Byte"
+                width={24}
+                height={24}
+                className="flex-shrink-0 object-contain"
+              />
+            )}
+            <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
+              {teamWs.teamName}
+            </span>
+            <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs">
+              Team
+            </span>
+          </Link>
+          {accountTools}
+        </div>
+        {desktopNav}
 
         {mobileOpen && (
           <div
-            className={`fixed inset-0 ${mobileOverlayTop} z-40 bg-black/30 md:hidden`}
+            className="fixed inset-0 top-16 z-40 bg-black/30 md:hidden"
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
         )}
         <nav
-          className={`fixed left-0 right-0 ${mobileNavTop} z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+          className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
             mobileOpen
               ? "translate-y-0 pointer-events-auto"
               : "-translate-y-full pointer-events-none opacity-0"
@@ -264,44 +249,47 @@ export default function TopNavbar() {
   }
 
   return (
-    <header className="sticky top-0 z-[60] flex min-h-14 flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
-      <button
-        type="button"
-        onClick={() => setMobileOpen((o) => !o)}
-        className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-        aria-label={mobileOpen ? "Close menu" : "Open menu"}
-      >
-        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </button>
+    <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
+      <div className="flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
+        <button
+          type="button"
+          onClick={() => setMobileOpen((o) => !o)}
+          className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+        >
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
 
-      <Link
-        href="/"
-        className="flex flex-shrink-0 items-center gap-2"
-        onClick={() => setMobileOpen(false)}
-      >
-        <Image
-          src="/logo.png"
-          alt="Bizzi Byte"
-          width={24}
-          height={24}
-          className="object-contain"
-        />
-        <span className="font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-          Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
-        </span>
-      </Link>
+        <Link
+          href="/"
+          className="flex min-w-0 shrink-0 items-center gap-2"
+          onClick={() => setMobileOpen(false)}
+        >
+          <Image
+            src="/logo.png"
+            alt="Bizzi Byte"
+            width={24}
+            height={24}
+            className="object-contain"
+          />
+          <span className="whitespace-nowrap font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
+            Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
+          </span>
+        </Link>
 
-      {navRow}
+        {accountTools}
+      </div>
+      {desktopNav}
 
       {mobileOpen && (
         <div
-          className={`fixed inset-0 ${mobileOverlayTop} z-40 bg-black/30 md:hidden`}
+          className="fixed inset-0 top-16 z-40 bg-black/30 md:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />
       )}
       <nav
-        className={`fixed left-0 right-0 ${mobileNavTop} z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-16 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"
