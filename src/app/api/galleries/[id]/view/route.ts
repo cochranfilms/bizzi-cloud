@@ -156,13 +156,14 @@ export async function GET(
     lut = { enabled: true, lut_source: lutSource, storage_url: lutSource };
   }
 
-  const viewer_lut_preferences =
-    mediaMode === "raw"
-      ? normalizeStoredViewerLutPreferences(
-          g.viewer_lut_preferences,
-          buildValidViewerLutIdSet(rawLibrary, galleryType)
-        )
-      : null;
+  /** Same scope as PATCH: RAW galleries or any video gallery (Final video was incorrectly omitted before). */
+  const viewerLutPrefsEligible = mediaMode === "raw" || galleryType === "video";
+  const viewer_lut_preferences = viewerLutPrefsEligible
+    ? normalizeStoredViewerLutPreferences(
+        g.viewer_lut_preferences,
+        buildValidViewerLutIdSet(rawLibrary, galleryType)
+      )
+    : null;
 
   return NextResponse.json({
     gallery: {

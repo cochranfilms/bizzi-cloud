@@ -92,7 +92,7 @@ export default function EnterpriseGallerySettingsPage() {
       <main className="flex-1 overflow-auto p-6">
         <DashboardRouteFade ready={!loading && !!gallery} srOnlyMessage="Loading gallery settings">
         {gallery ? (
-        <div className="mx-auto max-w-2xl space-y-6">
+        <div className="mx-auto max-w-5xl space-y-6">
           <Link
             href={`${BASE_PATH}/galleries/${id}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"

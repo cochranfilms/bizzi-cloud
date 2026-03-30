@@ -15,6 +15,13 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Layers,
+  FileText,
+  Lock,
+  Link2,
+  Palette,
+  Download,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
@@ -38,6 +45,8 @@ import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import StickyUnsavedBar from "@/components/settings/StickyUnsavedBar";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
+import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
+import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import { DEFAULT_VIDEO_GALLERY_SETTINGS } from "@/lib/gallery-defaults";
 import type { VideoDeliveryMode, VideoWorkflowStatus } from "@/types/gallery";
@@ -613,6 +622,54 @@ export default function GallerySettingsForm({
     fetchLUT();
   }, [fetchLUT]);
 
+  const gallerySettingsNavItems = useMemo((): SettingsNavItem[] => {
+    const items: SettingsNavItem[] = [
+      { id: "profile", label: "Gallery profile", icon: Layers },
+    ];
+    if (initialData.gallery_type === "video") {
+      items.push({ id: "video", label: "Video delivery", icon: Film });
+    }
+    items.push(
+      { id: "hero", label: "Cover & share image", icon: ImageIcon },
+      { id: "basics", label: "Basic info", icon: FileText },
+      { id: "access", label: "Access & link", icon: Lock },
+      { id: "studio", label: "Studio handle", icon: Link2 },
+      { id: "branding", label: "Branding", icon: Palette },
+      { id: "billing", label: "Invoice & payment", icon: CreditCard },
+      { id: "downloads", label: "Downloads & watermark", icon: Download },
+      { id: "creative", label: "Creative LUT", icon: Sparkles }
+    );
+    return items;
+  }, [initialData.gallery_type]);
+
+  const galleryNavIds = useMemo(
+    () => new Set(gallerySettingsNavItems.map((i) => i.id)),
+    [gallerySettingsNavItems]
+  );
+
+  const [activeSettingsSection, setActiveSettingsSection] = useState("profile");
+
+  const setGallerySettingsNav = useCallback((id: string) => {
+    setActiveSettingsSection(id);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${id}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.location.hash.replace(/^#/, "");
+    if (raw && galleryNavIds.has(raw)) {
+      setActiveSettingsSection(raw);
+    }
+  }, [galleryNavIds]);
+
+  useEffect(() => {
+    if (activeSettingsSection === "video" && initialData.gallery_type !== "video") {
+      setActiveSettingsSection("profile");
+    }
+  }, [activeSettingsSection, initialData.gallery_type]);
+
   const galleryComparableInitial = useMemo(() => {
     const normAccess =
       initialData.access_mode === "pin" ? "public" : (initialData.access_mode ?? "public");
@@ -996,6 +1053,16 @@ export default function GallerySettingsForm({
 
   return (
     <>
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+      <SettingsSidebarNav
+        variant="quickAccess"
+        heading="Gallery settings"
+        items={gallerySettingsNavItems}
+        activeId={activeSettingsSection}
+        onSelect={setGallerySettingsNav}
+        className="w-full lg:sticky lg:top-4 lg:self-start"
+      />
+      <div className="min-w-0 flex-1 space-y-6">
     <form
       onSubmit={(e) => {
         e.preventDefault();
@@ -1009,6 +1076,7 @@ export default function GallerySettingsForm({
         </div>
       )}
 
+      {activeSettingsSection === "profile" && (
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <SettingsSectionScope label={productSettingsCopy.scopes.thisGalleryOnly} />
         <h2 className="mb-3 text-lg font-semibold text-neutral-900 dark:text-white">
@@ -1103,8 +1171,10 @@ export default function GallerySettingsForm({
           )}
         </div>
       </section>
+      )}
 
-      {isVideoGallery && (
+      {activeSettingsSection === "video" && isVideoGallery && (
+        <>
         <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
             Video download policy
@@ -1153,9 +1223,6 @@ export default function GallerySettingsForm({
             </label>
           </div>
         </section>
-      )}
-
-      {isVideoGallery && (
         <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
             Video review &amp; delivery
@@ -1295,8 +1362,11 @@ export default function GallerySettingsForm({
             )}
           </div>
         </section>
+        </>
       )}
 
+      {activeSettingsSection === "hero" && (
+        <>
       {/* Cover photo */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
@@ -1573,8 +1643,10 @@ export default function GallerySettingsForm({
           </div>
         )}
       </section>
+        </>
+      )}
 
-      {/* Basic */}
+      {activeSettingsSection === "basics" && (
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Basic info
@@ -1643,8 +1715,10 @@ export default function GallerySettingsForm({
           </div>
         </div>
       </section>
+      )}
 
-      {/* Access */}
+      {activeSettingsSection === "access" && (
+        <>
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Who can view
@@ -1725,7 +1799,6 @@ export default function GallerySettingsForm({
         </div>
       </section>
 
-      {/* Invite people */}
       {accessMode === "invite_only" && (
         <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
           <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
@@ -1823,8 +1896,10 @@ export default function GallerySettingsForm({
           </div>
         </section>
       )}
+        </>
+      )}
 
-      {/* Studio handle */}
+      {activeSettingsSection === "studio" && (
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
           Studio handle
@@ -1882,8 +1957,9 @@ export default function GallerySettingsForm({
           </div>
         )}
       </section>
+      )}
 
-      {/* Branding */}
+      {activeSettingsSection === "branding" && (
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Branding
@@ -2024,8 +2100,9 @@ export default function GallerySettingsForm({
           </div>
         </div>
       </section>
+      )}
 
-      {/* Invoice — photo & video galleries */}
+      {activeSettingsSection === "billing" && (
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Invoice & payment
@@ -2099,8 +2176,10 @@ export default function GallerySettingsForm({
           )}
         </div>
       </section>
+      )}
 
-      {/* Download */}
+      {activeSettingsSection === "downloads" && (
+        <>
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
           Download options
@@ -2301,8 +2380,11 @@ export default function GallerySettingsForm({
           )}
         </div>
       </section>
+        </>
+      )}
 
-      {/* Creative LUT — RAW galleries only */}
+      {activeSettingsSection === "creative" && (
+      <>
       {isRawGallery ? (
         <LUTLibrarySection
           galleryId={galleryId}
@@ -2323,6 +2405,8 @@ export default function GallerySettingsForm({
             to switch to RAW, then upload LUTs for on-screen preview (preview only; originals unchanged).
           </p>
         </section>
+      )}
+      </>
       )}
 
       {profileSavedNotice && (
@@ -2359,6 +2443,8 @@ export default function GallerySettingsForm({
       onSave={() => void handleSave()}
       onDiscard={resetGalleryFormToInitial}
     />
+      </div>
+    </div>
 
     <ConfirmModal
       open={profileConfirmOpen}

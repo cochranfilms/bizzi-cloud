@@ -1043,6 +1043,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [featuredVideoStreamUrl, setFeaturedVideoStreamUrl] = useState<string | null>(null);
   /** Static frame under hero video — continuity when source swaps (e.g. proxy MP4 → Mux HLS). */
   const [featuredHeroPosterUrl, setFeaturedHeroPosterUrl] = useState<string | null>(null);
+  /** False while resolving featured-hero stream URL (avoids flashing the no-media card before video loads). */
+  const [heroFeaturedStreamSettled, setHeroFeaturedStreamSettled] = useState(true);
+  /** False while resolving cover banner image blob URL. */
+  const [heroBannerSettled, setHeroBannerSettled] = useState(true);
+  /** Smooth reveal when hero media becomes available (matches dashboard-style fade-in). */
+  const [heroReveal, setHeroReveal] = useState(false);
   const heroStreamGenerationRef = useRef(0);
   const heroMuxPollRef = useRef<ReturnType<typeof startGalleryMuxStreamUpgradePoll> | null>(
     null
@@ -1060,6 +1066,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const viewerLutSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Last known server prefs; updated on GET and after PATCH without replacing `data` (avoids re-hydration blink). */
   const viewerPrefsFromServerRef = useRef<GalleryViewerLutPreferences | null>(null);
+  /**
+   * When `fetchGallery` runs twice with the same viewer preferences (common: auth finishes and
+   * the client refetches), the LUT hydration effect must not overwrite the visitor’s in-session
+   * LUT choice — otherwise the UI snaps back to Original and looks “broken”.
+   */
+  const viewerLutHydrationSnapshotRef = useRef<string | null>(null);
 
   const scrollToGalleryContent = useCallback(() => {
     setMusicPlaying(false);
@@ -1140,9 +1152,17 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     const lutOn = !!data.gallery.lut?.enabled;
 
     if (!clientLutEligible || !lutOn) {
+      viewerLutHydrationSnapshotRef.current = null;
       setLutPreviewEnabled((p) => (p ? false : p));
       return;
     }
+
+    const persisted = data.gallery.viewer_lut_preferences;
+    const hydrationSnapshot = `${galleryId}:${password ?? ""}:${JSON.stringify(persisted ?? null)}`;
+    if (viewerLutHydrationSnapshotRef.current === hydrationSnapshot) {
+      return;
+    }
+    viewerLutHydrationSnapshotRef.current = hydrationSnapshot;
 
     const opts = buildGalleryLUTOptions(
       lib,
@@ -1154,7 +1174,6 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         ? cfg.selected_lut_id
         : GALLERY_LUT_ORIGINAL_ID;
 
-    const persisted = data.gallery.viewer_lut_preferences;
     const resolved =
       typeof window !== "undefined"
         ? getGalleryViewerLutPreferencesResolved(galleryId, persisted)
@@ -1536,6 +1555,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       heroMuxPollRef.current?.cancel();
       heroMuxPollRef.current = null;
       setFeaturedVideoStreamUrl(null);
+      setHeroFeaturedStreamSettled(true);
       return () => {};
     }
 
@@ -1544,6 +1564,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
     heroMuxPollRef.current?.cancel();
     heroMuxPollRef.current = null;
+    setHeroFeaturedStreamSettled(false);
 
     const alive = () => !cancelled && gen === heroStreamGenerationRef.current;
 
@@ -1626,6 +1647,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         }
       } catch {
         if (alive()) setFeaturedVideoStreamUrl(null);
+      } finally {
+        if (alive()) setHeroFeaturedStreamSettled(true);
       }
     })();
 
@@ -1682,10 +1705,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   useEffect(() => {
     if (!bannerAsset || !data) {
       setBannerUrl(null);
+      setHeroBannerSettled(true);
       return () => {};
     }
     let cancelled = false;
-    (async () => {
+    setHeroBannerSettled(false);
+    void (async () => {
       try {
         const params = new URLSearchParams({
           object_key: bannerAsset.object_key,
@@ -1710,6 +1735,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
         else URL.revokeObjectURL(url);
       } catch {
         // ignore
+      } finally {
+        if (!cancelled) setHeroBannerSettled(true);
       }
     })();
     return () => {
@@ -1720,6 +1747,19 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       });
     };
   }, [bannerAsset, galleryId, password, user, data]);
+
+  useEffect(() => {
+    const heroHas = !!(bannerUrl || featuredVideoStreamUrl);
+    if (!heroHas) {
+      setHeroReveal(false);
+      return;
+    }
+    setHeroReveal(false);
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setHeroReveal(true));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [bannerUrl, featuredVideoStreamUrl]);
 
   const toggleFavorite = useCallback((assetId: string) => {
     setSelectedFavorites((prev) => {
@@ -2114,7 +2154,19 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const prePageMusicUrl = gallery.branding.pre_page_music_url;
   const prePageInstructions = gallery.branding.pre_page_instructions;
-  const heroHasMediaBackdrop = !!(bannerUrl || featuredVideoStreamUrl);
+  /**
+   * When a featured clip is configured, wait for its stream (or a failed fetch) before using a
+   * cover image as the hero — avoids a photo hero flashing before the video banner.
+   */
+  const heroHasMediaBackdrop =
+    !!featuredVideoStreamUrl ||
+    (!!bannerUrl &&
+      (!featuredVideoAsset || (heroFeaturedStreamSettled && !featuredVideoStreamUrl)));
+  /** Avoid the centered “View gallery” card while hero video/image URLs are still loading. */
+  const heroBackdropPending =
+    (!!featuredVideoAsset && !heroFeaturedStreamSettled) ||
+    (!!bannerAsset && !heroBannerSettled && !featuredVideoStreamUrl);
+  const heroVisualActive = heroHasMediaBackdrop || heroBackdropPending;
 
   /** Video gallery intro (meta, review, pills, description) on the hero overlay — keeps main for grid + actions only. */
   const videoGalleryHeroOverlay =
@@ -2159,7 +2211,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       >
       <header
         className={`z-30 ${
-          heroHasMediaBackdrop
+          heroVisualActive
             ? "absolute left-0 right-0 top-0 border-b border-transparent"
             : `relative border-b ${isDarkBg ? "border-white/10" : "border-neutral-200 dark:border-neutral-800"}`
         }`}
@@ -2169,7 +2221,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           <Link
             href="/"
             className={`flex items-center gap-2 ${
-              heroHasMediaBackdrop ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"
+              heroVisualActive ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"
             }`}
           >
             <Image
@@ -2189,7 +2241,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               type="button"
               onClick={() => setMusicPlaying((p) => !p)}
               className={`rounded-full p-2 transition-colors ${
-                heroHasMediaBackdrop ? "text-white hover:bg-white/20" : isDarkBg ? "text-white/90 hover:bg-white/10" : "text-neutral-600 hover:bg-neutral-100"
+                heroVisualActive ? "text-white hover:bg-white/20" : isDarkBg ? "text-white/90 hover:bg-white/10" : "text-neutral-600 hover:bg-neutral-100"
               }`}
               title={musicPlaying ? "Pause music" : "Play music"}
             >
@@ -2200,89 +2252,103 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       </header>
 
       {heroHasMediaBackdrop ? (
-        <GalleryCoverHero
-          sectionId="gallery-hero"
-          heightMode={{ kind: "live", preset: resolvedHeroPreset }}
-          overlayOpacity={gallery.cover_overlay_opacity}
-          overlayMode="solid"
-          titleAlignment={gallery.cover_title_alignment ?? "center"}
-          typographyScope="responsive"
-          media={
-            featuredVideoStreamUrl ? (
-              <div className="relative h-full w-full min-h-0">
-                {featuredHeroPosterUrl ? (
-                  <img
-                    src={featuredHeroPosterUrl}
-                    alt=""
-                    className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
-                    style={{ objectPosition: coverObjectPosition }}
-                    aria-hidden
-                  />
-                ) : null}
-                <div className="relative z-[1] h-full w-full min-h-0">
-                  {heroVideoLutActive ? (
-                    <VideoWithLUT
-                      key={featuredVideoStreamUrl}
-                      src={featuredVideoStreamUrl}
-                      streamUrl={featuredVideoStreamUrl}
-                      showLUTOption={false}
-                      lutSource={clientLutSource}
-                      creativePreviewOn
-                      compactPreview
-                      preferMaxHlsQuality
-                      segmentLoopSeconds={5}
-                      poster={featuredHeroPosterUrl}
-                      videoObjectFit="cover"
-                      playbackDebugLabel="gallery-hero"
-                      className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
-                      videoStyle={heroBackdropStyle}
-                    />
-                  ) : (
-                    <LoopingVideoPreview
-                      key={featuredVideoStreamUrl}
-                      src={featuredVideoStreamUrl}
-                      preferMaxHlsQuality
-                      loopSeconds={5}
-                      poster={featuredHeroPosterUrl}
-                      playbackDebugLabel="gallery-hero"
-                      className="h-full w-full object-cover"
+        <div
+          className={`transition-opacity duration-1000 ease-in-out ${
+            heroReveal ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <GalleryCoverHero
+            sectionId="gallery-hero"
+            heightMode={{ kind: "live", preset: resolvedHeroPreset }}
+            overlayOpacity={gallery.cover_overlay_opacity}
+            overlayMode="solid"
+            titleAlignment={gallery.cover_title_alignment ?? "center"}
+            typographyScope="responsive"
+            media={
+              featuredVideoStreamUrl ? (
+                <div className="relative h-full w-full min-h-0">
+                  {featuredHeroPosterUrl ? (
+                    <img
+                      src={featuredHeroPosterUrl}
+                      alt=""
+                      className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
                       style={{ objectPosition: coverObjectPosition }}
+                      aria-hidden
                     />
-                  )}
+                  ) : null}
+                  <div className="relative z-[1] h-full w-full min-h-0">
+                    {heroVideoLutActive ? (
+                      <VideoWithLUT
+                        key={featuredVideoStreamUrl}
+                        src={featuredVideoStreamUrl}
+                        streamUrl={featuredVideoStreamUrl}
+                        showLUTOption={false}
+                        lutSource={clientLutSource}
+                        creativePreviewOn
+                        compactPreview
+                        preferMaxHlsQuality
+                        segmentLoopSeconds={5}
+                        poster={featuredHeroPosterUrl}
+                        videoObjectFit="cover"
+                        playbackDebugLabel="gallery-hero"
+                        className="h-full w-full object-cover [&_.video-fullscreen-container]:h-full [&_.video-fullscreen-container]:min-h-0"
+                        videoStyle={heroBackdropStyle}
+                      />
+                    ) : (
+                      <LoopingVideoPreview
+                        key={featuredVideoStreamUrl}
+                        src={featuredVideoStreamUrl}
+                        preferMaxHlsQuality
+                        loopSeconds={5}
+                        poster={featuredHeroPosterUrl}
+                        playbackDebugLabel="gallery-hero"
+                        className="h-full w-full object-cover"
+                        style={{ objectPosition: coverObjectPosition }}
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : heroImageLutActive ? (
-              <ImageWithLUT
-                key="gallery-hero-lut"
-                imageUrl={bannerUrl!}
-                lutUrl={clientLutSource}
-                lutEnabled
-                variant="fill"
-                objectFit="cover"
-                className="h-full w-full min-h-0"
-                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                imageStyle={heroBackdropStyle}
-                gradeMixPercent={lutGradeMix}
-              />
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={bannerUrl!}
-                alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
-                className="h-full w-full object-cover"
-                style={{ objectPosition: coverObjectPosition }}
-              />
-            )
-          }
-          eventDate={gallery.event_date}
-          logoUrl={gallery.branding.logo_url ?? null}
-          businessName={gallery.branding.business_name ?? null}
-          welcomeMessage={gallery.branding.welcome_message ?? null}
-          prePageInstructions={prePageInstructions || null}
-          galleryTitle={gallery.title}
-          accentColor={accent}
-          onViewGallery={scrollToGalleryContent}
-          beforeViewButton={videoGalleryHeroOverlay}
+              ) : heroImageLutActive ? (
+                <ImageWithLUT
+                  key="gallery-hero-lut"
+                  imageUrl={bannerUrl!}
+                  lutUrl={clientLutSource}
+                  lutEnabled
+                  variant="fill"
+                  objectFit="cover"
+                  className="h-full w-full min-h-0"
+                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                  imageStyle={heroBackdropStyle}
+                  gradeMixPercent={lutGradeMix}
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={bannerUrl!}
+                  alt={gallery.cover_alt_text || gallery.title || "Gallery cover"}
+                  className="h-full w-full object-cover"
+                  style={{ objectPosition: coverObjectPosition }}
+                />
+              )
+            }
+            eventDate={gallery.event_date}
+            logoUrl={gallery.branding.logo_url ?? null}
+            businessName={gallery.branding.business_name ?? null}
+            welcomeMessage={gallery.branding.welcome_message ?? null}
+            prePageInstructions={prePageInstructions || null}
+            galleryTitle={gallery.title}
+            accentColor={accent}
+            onViewGallery={scrollToGalleryContent}
+            beforeViewButton={videoGalleryHeroOverlay}
+          />
+        </div>
+      ) : heroBackdropPending ? (
+        <section
+          id="gallery-hero"
+          className="relative min-h-screen"
+          style={{ backgroundColor: bgTheme.background }}
+          aria-busy="true"
+          aria-label="Loading gallery hero"
         />
       ) : (
         <section
