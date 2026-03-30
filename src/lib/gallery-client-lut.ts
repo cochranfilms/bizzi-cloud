@@ -70,3 +70,30 @@ export function resolveGalleryClientLutSource(params: {
   if (!lutEnabled || !lutPreviewEnabled) return null;
   return getLutSourceFromSelection(selectedLutId, options, ownerDefaultSource);
 }
+
+/** Firestore / JSON often uses string or numeric booleans; keep GET/PATCH and client in sync. */
+export function coerceFirestoreBoolean(v: unknown): boolean | undefined {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const l = v.trim().toLowerCase();
+    if (l === "true") return true;
+    if (l === "false") return false;
+  }
+  if (typeof v === "number") {
+    if (v === 1) return true;
+    if (v === 0) return false;
+  }
+  return undefined;
+}
+
+/** Matches server GET /view: creative config wins, then legacy `lut.enabled`. */
+export function resolveGalleryCreativeLutEnabledFromPayload(gallery: {
+  creative_lut_config?: { enabled?: unknown } | null;
+  lut?: { enabled?: unknown } | null;
+}): boolean {
+  return (
+    coerceFirestoreBoolean(gallery.creative_lut_config?.enabled) ??
+    coerceFirestoreBoolean(gallery.lut?.enabled) ??
+    false
+  );
+}

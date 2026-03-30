@@ -35,6 +35,7 @@ import {
   buildGalleryLUTOptions,
   GALLERY_LUT_ORIGINAL_ID,
   resolveGalleryClientLutSource,
+  resolveGalleryCreativeLutEnabledFromPayload,
 } from "@/lib/gallery-client-lut";
 import {
   getGalleryViewerLutPreferencesResolved,
@@ -569,7 +570,7 @@ function PreviewModal({
       {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
       {videoStreamUrl && !videoError ? (
         <VideoWithLUT
-          key={asset.id}
+          key={`${asset.id}:${previewLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
           src={videoStreamUrl}
           streamUrl={videoStreamUrl}
           showLUTOption={false}
@@ -890,7 +891,7 @@ function GalleryAssetCard({
         {shouldAutoplayVideo && videoStreamUrl ? (
           lut?.enabled && previewLutSource && lutPreviewEnabled ? (
             <VideoWithLUT
-              key={asset.id}
+              key={`${asset.id}:${previewLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
               src={videoStreamUrl}
               streamUrl={videoStreamUrl}
               showLUTOption={false}
@@ -1055,7 +1056,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   );
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [lutPreviewEnabled, setLutPreviewEnabled] = useState(false);
-  const [selectedLutId, setSelectedLutId] = useState<string | null>(null);
+  const [selectedLutId, setSelectedLutId] = useState<string>(() => GALLERY_LUT_ORIGINAL_ID);
   const [lutGradeMix, setLutGradeMix] = useState(() => readGalleryViewerLutMixInitial(galleryId));
   const [downloadStatus, setDownloadStatus] = useState<{
     used: number;
@@ -1149,11 +1150,12 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     const lutWorkflowActive = mediaMode === "raw";
     const isVideoGallery = data.gallery.gallery_type === "video";
     const clientLutEligible = lutWorkflowActive || isVideoGallery;
-    const lutOn = !!data.gallery.lut?.enabled;
+    const lutOn = resolveGalleryCreativeLutEnabledFromPayload(data.gallery);
 
     if (!clientLutEligible || !lutOn) {
       viewerLutHydrationSnapshotRef.current = null;
       setLutPreviewEnabled((p) => (p ? false : p));
+      setSelectedLutId(GALLERY_LUT_ORIGINAL_ID);
       return;
     }
 
@@ -1215,7 +1217,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   }, [data, password, galleryId]);
 
   useEffect(() => {
-    if (!data || selectedLutId === null) return;
+    if (!data) return;
     persistGalleryViewerLutContinuity(galleryId, {
       selectedLutId,
       lutPreviewEnabled,
@@ -1232,10 +1234,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     });
     if (
       (mediaMode !== "raw" && data.gallery.gallery_type !== "video") ||
-      !data.gallery.lut?.enabled
+      !resolveGalleryCreativeLutEnabledFromPayload(data.gallery)
     )
       return;
-    if (selectedLutId === null) return;
 
     const next: GalleryViewerLutPreferences = {
       selectedLutId,
@@ -2097,8 +2098,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     gallery.gallery_type === "video",
     password || undefined
   );
+  const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(gallery);
   const clientLutSource = resolveGalleryClientLutSource({
-    lutEnabled: galleryClientLutEligible && !!gallery.lut?.enabled,
+    lutEnabled: galleryClientLutEligible && creativeLutOn,
     lutPreviewEnabled,
     selectedLutId,
     options: galleryLutOptions,
@@ -2106,7 +2108,9 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   });
   /** Client LUT preview in RAW and video galleries; never use for download. Preview URL is clientLutSource. */
   const effectiveLut =
-    galleryClientLutEligible && gallery.lut?.enabled ? gallery.lut : null;
+    galleryClientLutEligible && creativeLutOn
+      ? (gallery.lut ?? { enabled: true as const, lut_source: null, storage_url: null })
+      : null;
 
   const filteredAssets =
     selectedCollectionId === null
@@ -2137,7 +2141,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const heroImageLutActive =
     galleryClientLutEligible &&
-    !!gallery.lut?.enabled &&
+    creativeLutOn &&
     lutPreviewEnabled &&
     !!clientLutSource &&
     !!bannerUrl &&
@@ -2145,7 +2149,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const heroVideoLutActive =
     galleryClientLutEligible &&
-    !!gallery.lut?.enabled &&
+    creativeLutOn &&
     lutPreviewEnabled &&
     !!clientLutSource &&
     !!featuredVideoStreamUrl;
@@ -2279,7 +2283,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   <div className="relative z-[1] h-full w-full min-h-0">
                     {heroVideoLutActive ? (
                       <VideoWithLUT
-                        key={featuredVideoStreamUrl}
+                        key={`${featuredVideoStreamUrl}:${clientLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
                         src={featuredVideoStreamUrl}
                         streamUrl={featuredVideoStreamUrl}
                         showLUTOption={false}
@@ -2828,7 +2832,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           </div>
         )}
 
-        {galleryClientLutEligible && gallery.lut?.enabled && (
+        {galleryClientLutEligible && creativeLutOn && (
           <div
             className={`mx-auto mb-4 max-w-3xl rounded-lg border px-3 py-2 sm:px-3.5 sm:py-2 ${
               isDarkBg

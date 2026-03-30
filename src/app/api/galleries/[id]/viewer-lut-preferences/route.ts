@@ -10,6 +10,7 @@ import {
   parseViewerLutPreferencesPatchBody,
 } from "@/lib/gallery-viewer-lut-persist-server";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
+import { resolveGalleryCreativeLutEnabledFromPayload } from "@/lib/gallery-client-lut";
 import { NextResponse } from "next/server";
 
 export async function PATCH(
@@ -78,19 +79,10 @@ export async function PATCH(
     );
   }
 
-  const coerceBool = (v: unknown): boolean | undefined => {
-    if (typeof v === "boolean") return v;
-    if (typeof v === "string") {
-      const l = v.trim().toLowerCase();
-      if (l === "true") return true;
-      if (l === "false") return false;
-    }
-    return undefined;
-  };
-  const creativeConfig = (g.creative_lut_config ?? null) as { enabled?: unknown } | null;
-  const legacyLut = (g.lut ?? null) as { enabled?: unknown } | null;
-  const lutEnabled =
-    coerceBool(creativeConfig?.enabled) ?? coerceBool(legacyLut?.enabled) ?? false;
+  const lutEnabled = resolveGalleryCreativeLutEnabledFromPayload({
+    creative_lut_config: g.creative_lut_config ?? null,
+    lut: g.lut ?? null,
+  });
   if (!lutEnabled) {
     return NextResponse.json(
       { error: "LUT preview is not enabled for this gallery" },

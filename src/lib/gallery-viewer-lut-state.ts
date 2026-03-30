@@ -16,6 +16,7 @@ import {
   buildGalleryLUTOptions,
   GALLERY_LUT_ORIGINAL_ID,
   resolveGalleryClientLutSource,
+  resolveGalleryCreativeLutEnabledFromPayload,
 } from "@/lib/gallery-client-lut";
 import { normalizeGalleryMediaMode } from "@/lib/gallery-media-mode";
 import {
@@ -31,6 +32,15 @@ import type {
 
 export type { GalleryViewerLutPreferences, GalleryViewerLutPreferencesPersisted };
 
+function isCompleteViewerLutPreferences(v: unknown): v is GalleryViewerLutPreferences {
+  if (v == null || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.selectedLutId !== "string" || !o.selectedLutId.trim()) return false;
+  if (typeof o.lutPreviewEnabled !== "boolean") return false;
+  if (typeof o.gradeMixPercent !== "number" || !Number.isFinite(o.gradeMixPercent)) return false;
+  return true;
+}
+
 /**
  * Resolved preferences for the viewer: **database wins** when provided; otherwise continuity session.
  *
@@ -42,7 +52,7 @@ export function getGalleryViewerLutPreferencesResolved(
   galleryId: string,
   persistedFromApi?: GalleryViewerLutPreferences | null
 ): GalleryViewerLutPreferences | null {
-  if (persistedFromApi != null) {
+  if (isCompleteViewerLutPreferences(persistedFromApi)) {
     return persistedFromApi;
   }
   const snap = readGalleryViewerLutContinuitySnapshotOrNull(galleryId);
@@ -103,7 +113,7 @@ export function resolveProofingGridLutMirror(
     source_format: viewGallery.source_format ?? null,
   });
   const lutWorkflowActive = !isVideo && mediaMode === "raw";
-  const lutOn = !!viewGallery.lut?.enabled;
+  const lutOn = resolveGalleryCreativeLutEnabledFromPayload(viewGallery);
   const mix = readGalleryViewerLutMixFromContinuitySession(galleryId);
 
   const resolved = getGalleryViewerLutPreferencesResolved(galleryId, persistedViewerPrefs);
