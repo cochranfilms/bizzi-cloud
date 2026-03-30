@@ -126,7 +126,9 @@ export async function deleteGalleryAssetAndStorage(input: {
     const fileSnap = await fileRef.get();
     if (fileSnap.exists) {
       const fileData = fileSnap.data()!;
-      if (fileData.userId === ownerUid && (fileData.gallery_id as string | null) === galleryId) {
+      const docOwner =
+        (fileData.userId as string | undefined) ?? (fileData.user_id as string | undefined);
+      if (docOwner === ownerUid && (fileData.gallery_id as string | null) === galleryId) {
         await fileRef.update({ gallery_id: null });
       }
     }
@@ -149,7 +151,9 @@ export async function deleteGalleryAssetAndStorage(input: {
     };
   }
   const fileData = fileSnap.data()!;
-  if (fileData.userId !== ownerUid) {
+  const docOwner =
+    (fileData.userId as string | undefined) ?? (fileData.user_id as string | undefined);
+  if (docOwner !== ownerUid) {
     return {
       ok: true,
       backup_file_deleted: false,

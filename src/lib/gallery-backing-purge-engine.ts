@@ -52,7 +52,9 @@ export async function purgeGalleryStoredBackupFileAdmin(
   const fileSnap = await fileRef.get();
   if (!fileSnap.exists) return;
   const fileData = fileSnap.data()!;
-  if (fileData.userId !== ownerUid) return;
+  const docOwner =
+    (fileData.userId as string | undefined) ?? (fileData.user_id as string | undefined);
+  if (docOwner !== ownerUid) return;
 
   const objectKey = (fileData.object_key as string) ?? "";
 
