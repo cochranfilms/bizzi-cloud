@@ -2,7 +2,7 @@
 
 import { Plus, Upload, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useContext } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
@@ -14,6 +14,7 @@ import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
+import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
 
 interface TopBarProps {
   title?: string;
@@ -24,6 +25,7 @@ interface TopBarProps {
 }
 
 export default function TopBar({ title = "All files", showLayoutSettings = false, settingsHref }: TopBarProps) {
+  const filesFilterTopChrome = useContext(FilesFilterTopChromeContext)?.chrome ?? null;
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
@@ -175,7 +177,8 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           )}
         </div>
 
-      <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-4">
+      <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+        {filesFilterTopChrome}
         {showLayoutSettings && (
           <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
         )}

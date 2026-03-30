@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
 import { createPortal } from "react-dom";
 import { Check, CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
@@ -36,7 +36,8 @@ import ItemActionsMenu from "./ItemActionsMenu";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
-import FileFiltersToolbar from "@/components/filters/FileFiltersToolbar";
+import { FileFiltersTopBarChrome, FileFiltersExpandedStrip } from "@/components/filters/FileFiltersToolbar";
+import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
 import ActiveFilterBar from "@/components/filters/ActiveFilterBar";
 import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
@@ -297,14 +298,17 @@ export default function FileGrid() {
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const setFilesTopBarChrome = useContext(FilesFilterTopChromeContext)?.setChrome;
   const router = useRouter();
   /** Files landing: flat grid from filter API (no Storage/RAW/Gallery folder tiles). */
   const allFilesFlatLanding =
     typeof pathname === "string" &&
     (/^\/(dashboard|enterprise)\/files$/.test(pathname) ||
-      /^\/team\/[^/]+\/files$/.test(pathname));
+      /^\/team\/[^/]+\/files$/.test(pathname) ||
+      /^\/desktop\/app\/files$/.test(pathname));
   const teamAwareDriveName = (name: string) => name.replace(/^\[Team\]\s+/, "");
   const isBizziCloudBaseDrive = (name: string) => {
     const b = teamAwareDriveName(name);
@@ -546,6 +550,28 @@ export default function FileGrid() {
     (v: string) => setFilter("search", v || undefined),
     [setFilter]
   );
+
+  useEffect(() => {
+    if (!setFilesTopBarChrome || !allFilesFlatLanding) return;
+    setFilesTopBarChrome(
+      <FileFiltersTopBarChrome
+        searchValue={(filterState.search as string) ?? ""}
+        onSearchChange={handleSearchChange}
+        quickFiltersOpen={quickFiltersOpen}
+        onToggleQuickFilters={() => setQuickFiltersOpen((o) => !o)}
+        hasActiveFilters={hasFilters}
+      />
+    );
+    return () => setFilesTopBarChrome(null);
+  }, [
+    setFilesTopBarChrome,
+    allFilesFlatLanding,
+    filterState.search,
+    handleSearchChange,
+    quickFiltersOpen,
+    hasFilters,
+  ]);
+
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
     hasGallerySuite,
@@ -1356,18 +1382,15 @@ export default function FileGrid() {
       {/* Filter section — compact, no section title bar */}
       <section className="shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
         <div className="space-y-3">
-          <FileFiltersToolbar
-            searchValue={(filterState.search as string) ?? ""}
-            onSearchChange={handleSearchChange}
-            filterState={filterState}
-            setFilter={setFilter}
-            sortValue={(filterState.sort as string) ?? "newest"}
-            onSortChange={() => {}}
-            onFiltersClick={() => setFilterDrawerOpen(true)}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            hasActiveFilters={hasFilters}
-          />
+          {quickFiltersOpen && allFilesFlatLanding && (
+            <FileFiltersExpandedStrip
+              filterState={filterState}
+              setFilter={setFilter}
+              sortValue={(filterState.sort as string) ?? "newest"}
+              onSortChange={() => {}}
+              onAdvancedClick={() => setFilterDrawerOpen(true)}
+            />
+          )}
           {(useFilteredScoped || !currentDrive) && (
           <ActiveFilterBar
             activeFilters={activeFiltersWithLabels}

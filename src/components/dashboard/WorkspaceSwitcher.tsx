@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, User, Building2, Users } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, User, Building2, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import {
@@ -279,10 +279,12 @@ export default function WorkspaceSwitcher() {
               >
                 <Users className="h-4 w-4 shrink-0 text-bizzi-blue dark:text-bizzi-cyan" />
                 <span className="flex-1">Teams</span>
+                <ChevronLeft className="hidden h-4 w-4 shrink-0 opacity-70 sm:block" aria-hidden />
                 <ChevronRight
-                  className={`h-4 w-4 shrink-0 sm:opacity-70 max-sm:transition-transform ${
+                  className={`h-4 w-4 shrink-0 sm:hidden max-sm:transition-transform ${
                     teamsSubOpen ? "max-sm:rotate-90" : ""
                   }`}
+                  aria-hidden
                 />
               </button>
               {/* Mobile / coarse pointer: inline accordion */}
@@ -293,9 +295,9 @@ export default function WorkspaceSwitcher() {
                   renderPersonalTeamRow(t, { nested: true, nestedIndent: true })
                 )}
               </div>
-              {/* Desktop / hover: flyout to the right (same wrapper keeps hover hit target) */}
+              {/* Desktop / hover: flyout to the left so it stays in viewport near the nav edge */}
               {teamsSubOpen && (
-                <div className="hidden min-w-[14rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-600 dark:bg-neutral-800 sm:absolute sm:left-full sm:top-0 sm:z-[110] sm:ml-0.5 sm:block sm:pl-0.5">
+                <div className="hidden min-w-[14rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-600 dark:bg-neutral-800 sm:absolute sm:right-full sm:top-0 sm:z-[110] sm:mr-0.5 sm:block sm:pr-0.5">
                   {personalTeams.map((t) =>
                     renderPersonalTeamRow(t, { nested: true, nestedIndent: false })
                   )}
