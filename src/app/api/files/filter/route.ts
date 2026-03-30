@@ -3,10 +3,7 @@
  * Returns paginated backup_files matching filter params.
  * Firestore handles base filters; complex filters applied in-memory.
  */
-import type {
-  QueryDocumentSnapshot,
-  Query,
-} from "firebase-admin/firestore";
+import type { QueryDocumentSnapshot, Query } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -32,6 +29,44 @@ import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
 const MAX_FETCH_FOR_POST_FILTER = 200;
+
+/** gRPC / Firestore index-required failures vary by SDK (code 9, string, message only). */
+function isFirestoreIndexError(err: unknown): boolean {
+  const e = err as { code?: number | string; message?: string; details?: unknown };
+  const code = e?.code;
+  const msg = `${e?.message ?? ""} ${typeof e?.details === "string" ? e.details : ""}`;
+  const codeUpper = String(code ?? "").toUpperCase();
+  return (
+    code === 9 ||
+    code === "FAILED_PRECONDITION" ||
+    codeUpper === "FAILED_PRECONDITION" ||
+    msg.includes("FAILED_PRECONDITION") ||
+    msg.toLowerCase().includes("failed-precondition") ||
+    msg.includes("requires an index") ||
+    msg.includes("The query requires an index")
+  );
+}
+
+/** After modified_at fallback fetch, restore intended upload-time order for date-range / “newest”. */
+function sortDocsByUploadTimeMs(
+  docs: QueryDocumentSnapshot[],
+  dir: "asc" | "desc"
+): QueryDocumentSnapshot[] {
+  const primaryMs = (doc: QueryDocumentSnapshot): number => {
+    const d = doc.data();
+    const u = firestoreDateToIso(d.uploaded_at);
+    const m = firestoreDateToIso(d.modified_at);
+    const tu = u ? Date.parse(u) : NaN;
+    const tm = m ? Date.parse(m) : NaN;
+    if (Number.isFinite(tu)) return tu;
+    if (Number.isFinite(tm)) return tm;
+    return 0;
+  };
+  return [...docs].sort((a, b) => {
+    const c = primaryMs(a) - primaryMs(b);
+    return dir === "asc" ? c : -c;
+  });
+}
 
 type SortOption = "newest" | "oldest" | "largest" | "smallest" | "name_asc" | "name_desc";
 
@@ -979,7 +1014,7 @@ export async function GET(request: Request) {
     if (filters.sizeMin != null && filters.sizeMin >= 0) q = q.where("size_bytes", ">=", filters.sizeMin);
     if (filters.sizeMax != null && filters.sizeMax > 0) q = q.where("size_bytes", "<=", filters.sizeMax);
   }
-  q = q.orderBy(orderField, orderDir);
+  const queryBeforeOrder = q;
   const hasDateRangeFilter = !!(filters.dateFrom || filters.dateTo);
   const mediaWantsForPost = mediaTypeWantsList(filters);
   const needsPostFilter =
@@ -1010,23 +1045,41 @@ export async function GET(request: Request) {
     (orderField !== "size_bytes" && ((filters.sizeMin != null && filters.sizeMin >= 0) || (filters.sizeMax != null && filters.sizeMax > 0)));
   const fetchLimit = needsPostFilter ? MAX_FETCH_FOR_POST_FILTER : filters.pageSize;
 
-  if (filters.cursor) {
-    try {
-      const cursorDoc = await db.collection("backup_files").doc(filters.cursor).get();
-      if (cursorDoc.exists) {
-        q = q.startAfter(cursorDoc);
+  let queryDocs: QueryDocumentSnapshot[];
+  try {
+    let qq = queryBeforeOrder.orderBy(orderField, orderDir);
+    if (filters.cursor) {
+      try {
+        const cursorDoc = await db.collection("backup_files").doc(filters.cursor).get();
+        if (cursorDoc.exists) {
+          qq = qq.startAfter(cursorDoc);
+        }
+      } catch {
+        // Invalid cursor, ignore
       }
-    } catch {
-      // Invalid cursor, ignore
     }
+    qq = qq.limit(fetchLimit);
+    queryDocs = (await qq.get()).docs;
+  } catch (firstErr) {
+    if (!isFirestoreIndexError(firstErr) || orderField !== "uploaded_at") {
+      throw firstErr;
+    }
+    console.warn(
+      "[api/files/filter] orderBy(uploaded_at) failed (missing index?); using modified_at + in-memory upload sort",
+      firstErr instanceof Error ? firstErr.message : firstErr
+    );
+    if (filters.cursor) {
+      console.warn("[api/files/filter] ignoring cursor in uploaded_at index fallback");
+    }
+    const fbLimit = Math.min(1000, Math.max(fetchLimit * 4, 400));
+    const fbSnap = await queryBeforeOrder.orderBy("modified_at", orderDir).limit(fbLimit).get();
+    queryDocs = sortDocsByUploadTimeMs(fbSnap.docs, orderDir);
   }
-  q = q.limit(fetchLimit);
 
-  const snap = await q.get();
   const driveFilter = (d: QueryDocumentSnapshot) =>
     driveIds.has(d.data().linked_drive_id as string);
 
-  let filteredDocs = snap.docs
+  let filteredDocs = queryDocs
     .filter(driveFilter)
     .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>));
     if (orgFilter == null) {
@@ -1065,12 +1118,9 @@ export async function GET(request: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
-    const code = (err as { code?: string })?.code;
+    const code = (err as { code?: number | string })?.code;
     console.error("[api/files/filter] Error:", { msg, code, stack });
-    const isIndexError =
-      code === "FAILED_PRECONDITION" ||
-      (typeof msg === "string" &&
-        (msg.includes("index") || msg.includes("FAILED_PRECONDITION")));
+    const isIndexError = isFirestoreIndexError(err);
     const errorResponse: Record<string, string> = {
       error: isIndexError
         ? "Filter requires Firestore index. Run: firebase deploy --only firestore:indexes (indexes may take a few minutes to build)"
