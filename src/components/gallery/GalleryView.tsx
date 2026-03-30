@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -37,6 +37,8 @@ import {
   resolveGalleryClientLutSource,
   resolveGalleryCreativeLutEnabledFromPayload,
 } from "@/lib/gallery-client-lut";
+import { resolvePublicVideoGalleryLutDisplayState } from "@/lib/resolve-public-video-gallery-lut";
+import { logGalleryLutEvent } from "@/lib/gallery-lut-telemetry";
 import {
   getGalleryViewerLutPreferencesResolved,
   persistGalleryViewerLutContinuity,
@@ -391,6 +393,9 @@ function PreviewModal({
   previewLutSource,
   lutGradeMixPercent = 100,
   onLutGradeMixChange,
+  galleryVideoControlledLut = false,
+  galleryVideoShouldApplyLut = false,
+  galleryVideoLutSource = null,
 }: {
   asset: GalleryAsset;
   previewImageUrl: string | null;
@@ -415,6 +420,9 @@ function PreviewModal({
   previewLutSource: string | null;
   lutGradeMixPercent?: number;
   onLutGradeMixChange?: (value: number) => void;
+  galleryVideoControlledLut?: boolean;
+  galleryVideoShouldApplyLut?: boolean;
+  galleryVideoLutSource?: string | null;
 }) {
   const [commentBody, setCommentBody] = useState("");
   const [commentEmail, setCommentEmail] = useState("");
@@ -570,12 +578,39 @@ function PreviewModal({
       {videoError && <p className="text-sm text-amber-400">{videoError}</p>}
       {videoStreamUrl && !videoError ? (
         <VideoWithLUT
-          key={`${asset.id}:${previewLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
+          key={`${asset.id}:${videoStreamUrl}:${
+            galleryVideoControlledLut
+              ? (galleryVideoLutSource ?? "orig")
+              : (previewLutSource ?? "orig")
+          }:${
+            galleryVideoControlledLut
+              ? (galleryVideoShouldApplyLut ? 1 : 0)
+              : lutPreviewEnabled
+                ? 1
+                : 0
+          }`}
           src={videoStreamUrl}
           streamUrl={videoStreamUrl}
           showLUTOption={false}
-          lutSource={lut?.enabled ? previewLutSource : null}
-          creativePreviewOn={lut?.enabled ? lutPreviewEnabled : false}
+          lutSource={
+            galleryVideoControlledLut
+              ? galleryVideoLutSource
+              : lut?.enabled
+                ? previewLutSource
+                : null
+          }
+          creativePreviewOn={
+            galleryVideoControlledLut
+              ? undefined
+              : lutPreviewEnabled && !!lut?.enabled
+          }
+          galleryControlledLut={galleryVideoControlledLut}
+          shouldApplyLut={
+            galleryVideoControlledLut ? galleryVideoShouldApplyLut : false
+          }
+          lutTelemetrySurface="modal"
+          lutTelemetryGalleryId={galleryId}
+          lutTelemetryPasswordProtected={!!password}
           frameless
           preferMaxHlsQuality
         />
@@ -724,6 +759,11 @@ function GalleryAssetCard({
   isFeaturedVideo = false,
   isVideoGallery = false,
   showFavoriteButton = true,
+  galleryVideoControlledLut = false,
+  galleryVideoShouldApplyLut = false,
+  galleryVideoLutSource = null,
+  galleryIdForLutTelemetry,
+  galleryPasswordProtected = false,
 }: {
   galleryId: string;
   asset: GalleryAsset;
@@ -746,6 +786,12 @@ function GalleryAssetCard({
   /** When true, all videos autoplay muted (not just featured) */
   isVideoGallery?: boolean;
   showFavoriteButton?: boolean;
+  /** Video gallery: parent-resolved LUT apply + source (single resolver). */
+  galleryVideoControlledLut?: boolean;
+  galleryVideoShouldApplyLut?: boolean;
+  galleryVideoLutSource?: string | null;
+  galleryIdForLutTelemetry?: string;
+  galleryPasswordProtected?: boolean;
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [rawThumbUnavailable, setRawThumbUnavailable] = useState(false);
@@ -889,7 +935,37 @@ function GalleryAssetCard({
         className={`relative w-full ${useNaturalAspect ? "flex" : "aspect-[4/3]"}`}
       >
         {shouldAutoplayVideo && videoStreamUrl ? (
-          lut?.enabled && previewLutSource && lutPreviewEnabled ? (
+          galleryVideoControlledLut ? (
+            galleryVideoShouldApplyLut && galleryVideoLutSource ? (
+              <VideoWithLUT
+                key={`${asset.id}:${videoStreamUrl}:${galleryVideoLutSource ?? "orig"}:${
+                  galleryVideoShouldApplyLut ? 1 : 0
+                }`}
+                src={videoStreamUrl}
+                streamUrl={videoStreamUrl}
+                showLUTOption={false}
+                lutSource={galleryVideoLutSource}
+                galleryControlledLut
+                shouldApplyLut={galleryVideoShouldApplyLut}
+                lutTelemetrySurface="grid"
+                lutTelemetryGalleryId={galleryIdForLutTelemetry}
+                lutTelemetryPasswordProtected={galleryPasswordProtected}
+                compactPreview
+                segmentLoopSeconds={5}
+                className={`block w-full object-cover ${
+                  useNaturalAspect ? "h-auto" : "h-full"
+                }`}
+              />
+            ) : (
+              <LoopingVideoPreview
+                src={videoStreamUrl}
+                loopSeconds={5}
+                className={`block w-full object-cover ${
+                  useNaturalAspect ? "h-auto" : "h-full"
+                }`}
+              />
+            )
+          ) : lut?.enabled && previewLutSource && lutPreviewEnabled ? (
             <VideoWithLUT
               key={`${asset.id}:${previewLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
               src={videoStreamUrl}
@@ -1956,6 +2032,92 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     else audioRef.current.pause();
   }, [musicPlaying, prePageMusicUrlFromData]);
 
+  const galleryForLut = data?.gallery ?? null;
+
+  const galleryLutOptions = useMemo(
+    () =>
+      galleryForLut
+        ? buildGalleryLUTOptions(
+            galleryForLut.creative_lut_library,
+            galleryForLut.gallery_type === "video",
+            password || undefined
+          )
+        : [],
+    [galleryForLut, password]
+  );
+
+  const videoLutDisplay = useMemo(() => {
+    if (!galleryForLut || galleryForLut.gallery_type !== "video") return null;
+    const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(galleryForLut);
+    return resolvePublicVideoGalleryLutDisplayState({
+      creativeLutOn,
+      lutPreviewEnabled,
+      selectedLutId,
+      options: galleryLutOptions,
+      ownerDefaultLutId: galleryForLut.creative_lut_config?.selected_lut_id ?? null,
+    });
+  }, [galleryForLut, lutPreviewEnabled, selectedLutId, galleryLutOptions]);
+
+  const photoRawLutSource = useMemo(() => {
+    if (!galleryForLut || galleryForLut.gallery_type === "video") return null;
+    const mediaMode = normalizeGalleryMediaMode({
+      media_mode: galleryForLut.media_mode ?? null,
+      source_format: galleryForLut.source_format ?? null,
+    });
+    const lutWorkflowActive = mediaMode === "raw";
+    const eligible = lutWorkflowActive;
+    const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(galleryForLut);
+    if (!eligible || !creativeLutOn) return null;
+    return resolveGalleryClientLutSource({
+      lutEnabled: true,
+      lutPreviewEnabled,
+      selectedLutId,
+      options: galleryLutOptions,
+      ownerDefaultSource: galleryForLut.lut?.lut_source ?? galleryForLut.lut?.storage_url ?? null,
+    });
+  }, [galleryForLut, lutPreviewEnabled, selectedLutId, galleryLutOptions]);
+
+  useEffect(() => {
+    if (!galleryForLut || galleryForLut.gallery_type !== "video") return;
+    const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(galleryForLut);
+    const opts = buildGalleryLUTOptions(
+      galleryForLut.creative_lut_library,
+      true,
+      password || undefined
+    );
+    const d = resolvePublicVideoGalleryLutDisplayState({
+      creativeLutOn,
+      lutPreviewEnabled,
+      selectedLutId,
+      options: opts,
+      ownerDefaultLutId: galleryForLut.creative_lut_config?.selected_lut_id ?? null,
+    });
+    if (d.selectionWasSanitized && d.sanitizedSelectedLutId !== selectedLutId) {
+      logGalleryLutEvent("gallery_lut_selection_sanitized", {
+        galleryId,
+        selectedLutId,
+        sanitizedLutId: d.sanitizedSelectedLutId,
+        fallbackReason: d.fallbackReason,
+        passwordProtected: !!password,
+      });
+      setSelectedLutId(d.sanitizedSelectedLutId);
+    }
+  }, [galleryForLut, galleryId, lutPreviewEnabled, selectedLutId, password]);
+
+  const missingSourceLoggedRef = useRef(false);
+  useEffect(() => {
+    if (videoLutDisplay?.fallbackReason !== "missing_source") {
+      missingSourceLoggedRef.current = false;
+      return;
+    }
+    if (missingSourceLoggedRef.current) return;
+    missingSourceLoggedRef.current = true;
+    logGalleryLutEvent("gallery_lut_option_missing_source", {
+      galleryId,
+      sanitizedLutId: videoLutDisplay.sanitizedSelectedLutId,
+    });
+  }, [videoLutDisplay, galleryId]);
+
   if (loading && !data) {
     return (
       <div className="min-h-[100dvh] bg-neutral-50 dark:bg-neutral-950">
@@ -2093,24 +2255,30 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const galleryClientLutEligible =
     lutWorkflowActive || gallery.gallery_type === "video";
 
-  const galleryLutOptions = buildGalleryLUTOptions(
-    gallery.creative_lut_library,
-    gallery.gallery_type === "video",
-    password || undefined
-  );
   const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(gallery);
-  const clientLutSource = resolveGalleryClientLutSource({
-    lutEnabled: galleryClientLutEligible && creativeLutOn,
-    lutPreviewEnabled,
-    selectedLutId,
-    options: galleryLutOptions,
-    ownerDefaultSource: gallery.lut?.lut_source ?? gallery.lut?.storage_url ?? null,
-  });
+
+  const clientLutSource =
+    gallery.gallery_type === "video"
+      ? (videoLutDisplay?.resolvedLutSource ?? null)
+      : photoRawLutSource;
+
   /** Client LUT preview in RAW and video galleries; never use for download. Preview URL is clientLutSource. */
   const effectiveLut =
     galleryClientLutEligible && creativeLutOn
       ? (gallery.lut ?? { enabled: true as const, lut_source: null, storage_url: null })
       : null;
+
+  const imageHeroLutUrl =
+    gallery.gallery_type === "video"
+      ? videoLutDisplay?.shouldApplyLut
+        ? (videoLutDisplay.resolvedLutSource ?? null)
+        : null
+      : clientLutSource;
+
+  const heroVideoLutSource =
+    gallery.gallery_type === "video"
+      ? (videoLutDisplay?.resolvedLutSource ?? null)
+      : clientLutSource;
 
   const filteredAssets =
     selectedCollectionId === null
@@ -2143,16 +2311,18 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     galleryClientLutEligible &&
     creativeLutOn &&
     lutPreviewEnabled &&
-    !!clientLutSource &&
+    !!imageHeroLutUrl &&
     !!bannerUrl &&
     !featuredVideoStreamUrl;
 
   const heroVideoLutActive =
+    !!featuredVideoStreamUrl &&
     galleryClientLutEligible &&
     creativeLutOn &&
     lutPreviewEnabled &&
-    !!clientLutSource &&
-    !!featuredVideoStreamUrl;
+    (gallery.gallery_type === "video"
+      ? !!videoLutDisplay?.shouldApplyLut
+      : !!clientLutSource);
 
   const heroBackdropStyle: CSSProperties = { objectPosition: coverObjectPosition };
 
@@ -2283,12 +2453,29 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                   <div className="relative z-[1] h-full w-full min-h-0">
                     {heroVideoLutActive ? (
                       <VideoWithLUT
-                        key={`${featuredVideoStreamUrl}:${clientLutSource ?? "orig"}:${lutPreviewEnabled ? 1 : 0}`}
+                        key={`hero:${featuredVideoStreamUrl}:${heroVideoLutSource ?? "orig"}:${
+                          gallery.gallery_type === "video"
+                            ? (videoLutDisplay?.shouldApplyLut ? 1 : 0)
+                            : lutPreviewEnabled
+                              ? 1
+                              : 0
+                        }`}
                         src={featuredVideoStreamUrl}
                         streamUrl={featuredVideoStreamUrl}
                         showLUTOption={false}
-                        lutSource={clientLutSource}
-                        creativePreviewOn
+                        lutSource={heroVideoLutSource}
+                        creativePreviewOn={
+                          gallery.gallery_type === "video" ? undefined : true
+                        }
+                        galleryControlledLut={gallery.gallery_type === "video"}
+                        shouldApplyLut={
+                          gallery.gallery_type === "video"
+                            ? !!videoLutDisplay?.shouldApplyLut
+                            : true
+                        }
+                        lutTelemetrySurface="hero"
+                        lutTelemetryGalleryId={galleryId}
+                        lutTelemetryPasswordProtected={!!password}
                         compactPreview
                         preferMaxHlsQuality
                         segmentLoopSeconds={5}
@@ -2316,7 +2503,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 <ImageWithLUT
                   key="gallery-hero-lut"
                   imageUrl={bannerUrl!}
-                  lutUrl={clientLutSource}
+                  lutUrl={imageHeroLutUrl!}
                   lutEnabled
                   variant="fill"
                   objectFit="cover"
@@ -3052,6 +3239,15 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
                 }
                 isFeaturedVideo={gallery.featured_video_asset_id === asset.id}
                 isVideoGallery={gallery.gallery_type === "video"}
+                galleryVideoControlledLut={gallery.gallery_type === "video"}
+                galleryVideoShouldApplyLut={
+                  videoLutDisplay?.shouldApplyLut ?? false
+                }
+                galleryVideoLutSource={
+                  videoLutDisplay?.resolvedLutSource ?? null
+                }
+                galleryIdForLutTelemetry={galleryId}
+                galleryPasswordProtected={!!password}
               />
             ))}
           </div>
@@ -3157,6 +3353,13 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           lutGradeMixPercent={lutGradeMix}
           onLutGradeMixChange={
             isVideo(previewAsset.name) ? undefined : setLutGradeMix
+          }
+          galleryVideoControlledLut={gallery.gallery_type === "video"}
+          galleryVideoShouldApplyLut={
+            videoLutDisplay?.shouldApplyLut ?? false
+          }
+          galleryVideoLutSource={
+            videoLutDisplay?.resolvedLutSource ?? null
           }
         />
       )}

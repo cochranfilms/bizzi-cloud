@@ -20,7 +20,9 @@ import {
   type VideoLUTContext,
 } from "@/lib/creative-lut/video-lut-engine";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
+import { canRenderVideoToWebGL } from "@/lib/creative-lut/video-webgl-eligibility";
 import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
+import { logGalleryLutEvent } from "@/lib/gallery-lut-telemetry";
 
 /** Normalized UV crop for object-cover (visible region of video texture). */
 function videoCoverTextureCrop(
@@ -100,6 +102,16 @@ interface VideoWithLUTProps {
   videoObjectFit?: "contain" | "cover";
   /** With ?galleryVideoDebug or localStorage galleryVideoDebug=1, logs playback diagnostics. */
   playbackDebugLabel?: string;
+  /**
+   * Public gallery: parent owns apply/source — use `shouldApplyLut` + `lutSource` only.
+   * Skips internal lutOptions dropdown resolution.
+   */
+  galleryControlledLut?: boolean;
+  /** With `galleryControlledLut`, whether to show the grade (parent-resolved). */
+  shouldApplyLut?: boolean;
+  lutTelemetrySurface?: "hero" | "grid" | "modal";
+  lutTelemetryGalleryId?: string;
+  lutTelemetryPasswordProtected?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -129,12 +141,18 @@ export default function VideoWithLUT({
   poster = null,
   videoObjectFit = "contain",
   playbackDebugLabel,
+  galleryControlledLut = false,
+  shouldApplyLut = false,
+  lutTelemetrySurface,
+  lutTelemetryGalleryId,
+  lutTelemetryPasswordProtected,
 }: VideoWithLUTProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const displayReadyFiredRef = useRef(false);
+  const prevGalleryStreamRef = useRef<string | null>(null);
   const videoSrc = streamUrl ?? src;
 
   const defaultSony = "sony_rec709";
@@ -157,26 +175,36 @@ export default function VideoWithLUT({
   const lutTransitionRafRef = useRef<number | null>(null);
   /** CSS opacity for the WebGL layer (preview off = fade out before dispose). */
   const [gradeLayerOpacity, setGradeLayerOpacity] = useState(1);
+  /** Gallery path: false after CORS/security blocks video texture upload for WebGL. */
+  const [videoWebglSamplingOk, setVideoWebglSamplingOk] = useState(true);
 
   const options =
     lutOptions.length > 0
       ? lutOptions
       : [{ id: defaultSony, name: "Sony Rec 709", source: defaultSony, isBuiltin: true }];
 
-  const previewOn =
-    creativePreviewOn !== undefined ? creativePreviewOn : lutEnabled;
+  const previewOn = galleryControlledLut
+    ? shouldApplyLut
+    : creativePreviewOn !== undefined
+      ? creativePreviewOn
+      : lutEnabled;
 
-  const currentLutSource: string | null = !previewOn
-    ? null
-    : lutOptions.length > 0
-      ? (() => {
-          const id = selectedLutId ?? options[0]?.id;
-          const opt = options.find((o) => o.id === id);
-          return opt?.source && opt.source.length > 0 ? opt.source : null;
-        })()
-      : effectiveLutSource ?? null;
+  const currentLutSource: string | null = galleryControlledLut
+    ? shouldApplyLut && lutSource
+      ? lutSource
+      : null
+    : !previewOn
+      ? null
+      : lutOptions.length > 0
+        ? (() => {
+            const id = selectedLutId ?? options[0]?.id;
+            const opt = options.find((o) => o.id === id);
+            return opt?.source && opt.source.length > 0 ? opt.source : null;
+          })()
+        : effectiveLutSource ?? null;
 
   useEffect(() => {
+    if (galleryControlledLut) return;
     if (lutOptions.length === 0) {
       setSelectedLutId(null);
       return;
@@ -185,7 +213,100 @@ export default function VideoWithLUT({
       if (prev && lutOptions.some((o) => o.id === prev)) return prev;
       return lutOptions[0]?.id ?? null;
     });
-  }, [lutOptions]);
+  }, [lutOptions, galleryControlledLut]);
+
+  /** Full teardown when stream identity changes (gallery): avoid stale HLS/WebGL after Mux swap. */
+  useEffect(() => {
+    if (!galleryControlledLut) {
+      prevGalleryStreamRef.current = videoSrc;
+      return;
+    }
+    const prev = prevGalleryStreamRef.current;
+    if (prev === null) {
+      prevGalleryStreamRef.current = videoSrc;
+      return;
+    }
+    if (prev === videoSrc) return;
+    prevGalleryStreamRef.current = videoSrc;
+    logGalleryLutEvent("gallery_video_stream_swapped", {
+      galleryId: lutTelemetryGalleryId,
+      surface: lutTelemetrySurface,
+      passwordProtected: lutTelemetryPasswordProtected,
+      streamUrlSample: videoSrc.length > 120 ? `${videoSrc.slice(0, 120)}…` : videoSrc,
+    });
+    logGalleryLutEvent("gallery_video_lut_context_reinitialized", {
+      galleryId: lutTelemetryGalleryId,
+      surface: lutTelemetrySurface,
+    });
+    /* HLS lifecycle stays in the dedicated effect below (avoids double destroy). */
+    if (lutTransitionRafRef.current != null) {
+      cancelAnimationFrame(lutTransitionRafRef.current);
+      lutTransitionRafRef.current = null;
+    }
+    if (glRef.current) {
+      disposeVideoLUTContext(glRef.current);
+      glRef.current = null;
+    }
+    displayedLutUrlRef.current = null;
+    lutCrossfadeRef.current = 0;
+    setLutReady(false);
+    setLutError(null);
+    setGradeLayerOpacity(1);
+  }, [
+    videoSrc,
+    galleryControlledLut,
+    lutTelemetryGalleryId,
+    lutTelemetrySurface,
+    lutTelemetryPasswordProtected,
+  ]);
+
+  useEffect(() => {
+    if (!galleryControlledLut) {
+      setVideoWebglSamplingOk(true);
+      return;
+    }
+    if (!previewOn || !currentLutSource) {
+      setVideoWebglSamplingOk(true);
+      return;
+    }
+    setVideoWebglSamplingOk(true);
+    const video = videoRef.current;
+    if (!video) return;
+
+    const run = () => {
+      if (video.readyState < 2 || video.videoWidth <= 0) return;
+      const ok = canRenderVideoToWebGL(video);
+      setVideoWebglSamplingOk(ok);
+      if (!ok) {
+        logGalleryLutEvent("gallery_video_texture_upload_failed", {
+          galleryId: lutTelemetryGalleryId,
+          surface: lutTelemetrySurface,
+          passwordProtected: lutTelemetryPasswordProtected,
+        });
+        logGalleryLutEvent("gallery_video_lut_disabled_fallback", {
+          galleryId: lutTelemetryGalleryId,
+          surface: lutTelemetrySurface,
+          message: "video_not_webgl_renderable",
+        });
+      }
+    };
+
+    video.addEventListener("loadeddata", run);
+    video.addEventListener("canplay", run);
+    if (video.readyState >= 2) queueMicrotask(run);
+    return () => {
+      video.removeEventListener("loadeddata", run);
+      video.removeEventListener("canplay", run);
+    };
+  }, [
+    galleryControlledLut,
+    previewOn,
+    currentLutSource,
+    videoSrc,
+    lutTelemetryGalleryId,
+    lutTelemetrySurface,
+    lutTelemetryPasswordProtected,
+  ]);
 
   /** Preview off: fade graded layer out, then tear down WebGL (avoids instant unmount pop). */
   useEffect(() => {
@@ -238,6 +359,12 @@ export default function VideoWithLUT({
     const gl = canvas.getContext("webgl2", { alpha: true });
     if (!gl) {
       setError("WebGL2 not supported");
+      if (galleryControlledLut) {
+        logGalleryLutEvent("gallery_video_webgl2_unavailable", {
+          galleryId: lutTelemetryGalleryId,
+          surface: lutTelemetrySurface,
+        });
+      }
       return;
     }
 
@@ -297,6 +424,13 @@ export default function VideoWithLUT({
         if (!cancelled) {
           setLutError(e instanceof Error ? e.message : "LUT load failed");
           setLutReady(false);
+          if (galleryControlledLut) {
+            logGalleryLutEvent("gallery_lut_fetch_failed", {
+              galleryId: lutTelemetryGalleryId,
+              surface: lutTelemetrySurface,
+              message: e instanceof Error ? e.message : String(e),
+            });
+          }
         }
       }
     })();
@@ -313,7 +447,13 @@ export default function VideoWithLUT({
        */
       setGradeLayerOpacity(1);
     };
-  }, [previewOn, currentLutSource]);
+  }, [
+    previewOn,
+    currentLutSource,
+    galleryControlledLut,
+    lutTelemetryGalleryId,
+    lutTelemetrySurface,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -415,7 +555,7 @@ export default function VideoWithLUT({
           : undefined;
 
       renderVideoFrameWithLUT(ctx, video, w, h, {
-        lutEnabled: !!currentLutSource && previewOn,
+        lutEnabled: !!currentLutSource && previewOn && videoWebglSamplingOk,
         lutCrossfade: lutCrossfadeRef.current,
         videoTextureCrop: coverCrop,
       });
@@ -437,7 +577,7 @@ export default function VideoWithLUT({
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       video.removeEventListener("loadeddata", render);
     };
-  }, [previewOn, lutReady, currentLutSource, videoObjectFit]);
+  }, [previewOn, lutReady, currentLutSource, videoObjectFit, videoWebglSamplingOk]);
 
   const handleLUTToggle = useCallback(() => {
     setLutEnabled((v) => {

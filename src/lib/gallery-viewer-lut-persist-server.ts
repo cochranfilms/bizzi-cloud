@@ -21,7 +21,10 @@ export function buildValidViewerLutIdSet(
   return s;
 }
 
-/** Normalize Firestore value for GET /view; null if missing or invalid (e.g. removed LUT id). */
+/**
+ * Normalize Firestore value for GET /view; null if missing or invalid (e.g. removed LUT id).
+ * Invalid `selectedLutId` (not in `validIds`) yields null so the client re-hydrates from defaults + continuity.
+ */
 export function normalizeStoredViewerLutPreferences(
   raw: unknown,
   validIds: Set<string>
