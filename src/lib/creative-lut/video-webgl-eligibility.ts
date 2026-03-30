@@ -1,6 +1,9 @@
+/** Runtime video→WebGL texture upload state; `unknown` must not permanently disable grading. */
+export type VideoWebglEligibility = "unknown" | "ok" | "failed";
+
 /**
  * Whether `texImage2D` can sample this video for WebGL grading (CORS / decode readiness).
- * Call when `readyState >= 2` and dimensions are known.
+ * Call when `readyState >= 2` and intrinsic width/height are both > 0 (after frame decode).
  */
 export function canRenderVideoToWebGL(video: HTMLVideoElement): boolean {
   try {

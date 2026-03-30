@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type CSSProperties,
   type SyntheticEvent,
 } from "react";
@@ -20,7 +21,10 @@ import {
   type VideoLUTContext,
 } from "@/lib/creative-lut/video-lut-engine";
 import { getOrLoadLUT } from "@/lib/creative-lut/lut-cache";
-import { canRenderVideoToWebGL } from "@/lib/creative-lut/video-webgl-eligibility";
+import {
+  canRenderVideoToWebGL,
+  type VideoWebglEligibility,
+} from "@/lib/creative-lut/video-webgl-eligibility";
 import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
 import { logGalleryLutEvent } from "@/lib/gallery-lut-telemetry";
 
@@ -48,6 +52,15 @@ function videoCoverTextureCrop(
 
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** Dev: set `NEXT_PUBLIC_BYPASS_VIDEO_WEBGL_SAMPLING=1` to force LUT draw path (isolates probe vs resolver). */
+function bypassVideoWebglSamplingGate(): boolean {
+  return process.env.NEXT_PUBLIC_BYPASS_VIDEO_WEBGL_SAMPLING === "1";
+}
+
+function galleryLutDevHudEnabled(): boolean {
+  return process.env.NODE_ENV === "development" || isGalleryVideoDebugEnabled();
 }
 
 /** Blend time between two 3D LUTs in the shader (dual-LUT crossfade). */
@@ -153,6 +166,10 @@ export default function VideoWithLUT({
   const hlsRef = useRef<Hls | null>(null);
   const displayReadyFiredRef = useRef(false);
   const prevGalleryStreamRef = useRef<string | null>(null);
+  /** HLS / parent effects trigger the same deferred WebGL probe (gallery-controlled path). */
+  const webglProbeTriggerRef = useRef<(() => void) | null>(null);
+  /** Dev HUD: last time `renderVideoFrameWithLUT` ran (gallery diagnostic). */
+  const lastLutRenderFrameAtRef = useRef(0);
   const videoSrc = streamUrl ?? src;
 
   const defaultSony = "sony_rec709";
@@ -175,8 +192,12 @@ export default function VideoWithLUT({
   const lutTransitionRafRef = useRef<number | null>(null);
   /** CSS opacity for the WebGL layer (preview off = fade out before dispose). */
   const [gradeLayerOpacity, setGradeLayerOpacity] = useState(1);
-  /** Gallery path: false after CORS/security blocks video texture upload for WebGL. */
-  const [videoWebglSamplingOk, setVideoWebglSamplingOk] = useState(true);
+  /**
+   * Gallery-only: whether `texImage2D` from the video succeeds. `unknown` keeps the LUT shader path
+   * on until a probe completes — avoids a single early failure disabling grading for the whole clip.
+   */
+  const [videoWebglEligibility, setVideoWebglEligibility] =
+    useState<VideoWebglEligibility>("ok");
 
   const options =
     lutOptions.length > 0
@@ -202,6 +223,14 @@ export default function VideoWithLUT({
             return opt?.source && opt.source.length > 0 ? opt.source : null;
           })()
         : effectiveLutSource ?? null;
+
+  /** Final flag passed to `renderVideoFrameWithLUT` (`unknown` does not disable grading). */
+  const lutEnabledInShader =
+    !!currentLutSource &&
+    previewOn &&
+    (!galleryControlledLut ||
+      bypassVideoWebglSamplingGate() ||
+      videoWebglEligibility !== "failed");
 
   useEffect(() => {
     if (galleryControlledLut) return;
@@ -252,6 +281,8 @@ export default function VideoWithLUT({
     setLutReady(false);
     setLutError(null);
     setGradeLayerOpacity(1);
+    setVideoWebglEligibility("unknown");
+    lastLutRenderFrameAtRef.current = 0;
   }, [
     videoSrc,
     galleryControlledLut,
@@ -262,41 +293,122 @@ export default function VideoWithLUT({
 
   useEffect(() => {
     if (!galleryControlledLut) {
-      setVideoWebglSamplingOk(true);
+      setVideoWebglEligibility("ok");
+      webglProbeTriggerRef.current = null;
       return;
     }
     if (!previewOn || !currentLutSource) {
-      setVideoWebglSamplingOk(true);
+      setVideoWebglEligibility("ok");
+      webglProbeTriggerRef.current = null;
       return;
     }
-    setVideoWebglSamplingOk(true);
-    const video = videoRef.current;
-    if (!video) return;
 
-    const run = () => {
-      if (video.readyState < 2 || video.videoWidth <= 0) return;
-      const ok = canRenderVideoToWebGL(video);
-      setVideoWebglSamplingOk(ok);
-      if (!ok) {
-        logGalleryLutEvent("gallery_video_texture_upload_failed", {
-          galleryId: lutTelemetryGalleryId,
-          surface: lutTelemetrySurface,
-          passwordProtected: lutTelemetryPasswordProtected,
-        });
-        logGalleryLutEvent("gallery_video_lut_disabled_fallback", {
-          galleryId: lutTelemetryGalleryId,
-          surface: lutTelemetrySurface,
-          message: "video_not_webgl_renderable",
-        });
+    const video = videoRef.current;
+    if (!video) {
+      setVideoWebglEligibility("unknown");
+      webglProbeTriggerRef.current = null;
+      return;
+    }
+
+    setVideoWebglEligibility("unknown");
+
+    let cancelled = false;
+    let raf1: number | null = null;
+    let raf2: number | null = null;
+
+    const clearRaf = () => {
+      if (raf1 != null) {
+        cancelAnimationFrame(raf1);
+        raf1 = null;
+      }
+      if (raf2 != null) {
+        cancelAnimationFrame(raf2);
+        raf2 = null;
       }
     };
 
-    video.addEventListener("loadeddata", run);
-    video.addEventListener("canplay", run);
-    if (video.readyState >= 2) queueMicrotask(run);
+    const runProbe = () => {
+      if (cancelled) return;
+      if (
+        video.readyState < 2 ||
+        video.videoWidth <= 0 ||
+        video.videoHeight <= 0
+      ) {
+        return;
+      }
+      clearRaf();
+      raf1 = requestAnimationFrame(() => {
+        raf1 = null;
+        if (cancelled) return;
+        raf2 = requestAnimationFrame(() => {
+          raf2 = null;
+          if (cancelled) return;
+          if (
+            video.readyState < 2 ||
+            video.videoWidth <= 0 ||
+            video.videoHeight <= 0
+          ) {
+            return;
+          }
+          const ok = canRenderVideoToWebGL(video);
+          setVideoWebglEligibility(ok ? "ok" : "failed");
+          if (!ok) {
+            logGalleryLutEvent("gallery_video_texture_upload_failed", {
+              galleryId: lutTelemetryGalleryId,
+              surface: lutTelemetrySurface,
+              passwordProtected: lutTelemetryPasswordProtected,
+            });
+            logGalleryLutEvent("gallery_video_lut_disabled_fallback", {
+              galleryId: lutTelemetryGalleryId,
+              surface: lutTelemetrySurface,
+              message: "video_not_webgl_renderable",
+            });
+          }
+        });
+      });
+    };
+
+    const onVideoSignal = () => runProbe();
+
+    let prevW = video.videoWidth;
+    let prevH = video.videoHeight;
+    const onMaybeDimensionBump = () => {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if ((prevW <= 0 || prevH <= 0) && w > 0 && h > 0) {
+        runProbe();
+      }
+      prevW = w;
+      prevH = h;
+    };
+
+    video.addEventListener("loadeddata", onVideoSignal);
+    video.addEventListener("canplay", onVideoSignal);
+    video.addEventListener("loadedmetadata", onVideoSignal);
+    video.addEventListener("playing", onVideoSignal);
+    video.addEventListener("loadedmetadata", onMaybeDimensionBump);
+    video.addEventListener("loadeddata", onMaybeDimensionBump);
+
+    webglProbeTriggerRef.current = runProbe;
+
+    if (
+      video.readyState >= 2 &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0
+    ) {
+      queueMicrotask(runProbe);
+    }
+
     return () => {
-      video.removeEventListener("loadeddata", run);
-      video.removeEventListener("canplay", run);
+      cancelled = true;
+      clearRaf();
+      webglProbeTriggerRef.current = null;
+      video.removeEventListener("loadeddata", onVideoSignal);
+      video.removeEventListener("canplay", onVideoSignal);
+      video.removeEventListener("loadedmetadata", onVideoSignal);
+      video.removeEventListener("playing", onVideoSignal);
+      video.removeEventListener("loadedmetadata", onMaybeDimensionBump);
+      video.removeEventListener("loadeddata", onMaybeDimensionBump);
     };
   }, [
     galleryControlledLut,
@@ -307,6 +419,88 @@ export default function VideoWithLUT({
     lutTelemetrySurface,
     lutTelemetryPasswordProtected,
   ]);
+
+  /** Single consolidated log for gallery-controlled render gating (dev / ?galleryVideoDebug). */
+  useEffect(() => {
+    if (!galleryControlledLut || !galleryLutDevHudEnabled()) return;
+    const v = videoRef.current;
+    console.debug("[VideoWithLUT gallery LUT render inputs]", {
+      galleryControlledLut,
+      shouldApplyLut,
+      lutSource: lutSource
+        ? lutSource.length > 120
+          ? `${lutSource.slice(0, 120)}…`
+          : lutSource
+        : null,
+      currentLutSource: currentLutSource
+        ? currentLutSource.length > 120
+          ? `${currentLutSource.slice(0, 120)}…`
+          : currentLutSource
+        : null,
+      previewOn,
+      lutReady,
+      videoWebglEligibility,
+      bypassVideoWebglSamplingGate: bypassVideoWebglSamplingGate(),
+      lutEnabledInShader,
+      videoReadyState: v?.readyState,
+      videoWidth: v?.videoWidth,
+      videoHeight: v?.videoHeight,
+    });
+  }, [
+    galleryControlledLut,
+    shouldApplyLut,
+    lutSource,
+    currentLutSource,
+    previewOn,
+    lutReady,
+    videoWebglEligibility,
+    lutEnabledInShader,
+  ]);
+
+  const [galleryHudTick, setGalleryHudTick] = useState(0);
+  useEffect(() => {
+    if (!galleryControlledLut || !galleryLutDevHudEnabled()) return;
+    const id = window.setInterval(() => setGalleryHudTick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [galleryControlledLut]);
+
+  const galleryPassThroughSummary = useMemo((): string | null => {
+    if (!galleryControlledLut || !galleryLutDevHudEnabled()) return null;
+    if (!shouldApplyLut) return "pass-through: shouldApplyLut false";
+    if (!currentLutSource) return "pass-through: missing currentLutSource";
+    if (!lutReady) return "pass-through: lutReady false";
+    if (!bypassVideoWebglSamplingGate() && videoWebglEligibility === "failed") {
+      return "pass-through: video WebGL sampling failed";
+    }
+    if (videoWebglEligibility === "unknown") {
+      return "probing: WebGL eligibility unknown (LUT shader path on)";
+    }
+    const stale = lutReady && previewOn && currentLutSource;
+    const ageMs = performance.now() - lastLutRenderFrameAtRef.current;
+    if (stale && lastLutRenderFrameAtRef.current > 0 && ageMs > 2000) {
+      return "pass-through?: render loop may be inactive (>2s since last graded frame)";
+    }
+    if (previewOn && currentLutSource && lutReady) {
+      return "grading: LUT draw path active";
+    }
+    return null;
+  }, [
+    galleryControlledLut,
+    shouldApplyLut,
+    currentLutSource,
+    lutReady,
+    videoWebglEligibility,
+    previewOn,
+    galleryHudTick,
+  ]);
+
+  useEffect(() => {
+    if (!galleryControlledLut || !galleryLutDevHudEnabled()) return;
+    if (!galleryPassThroughSummary || galleryPassThroughSummary.startsWith("grading:")) {
+      return;
+    }
+    console.debug("[VideoWithLUT gallery LUT pass-through]", galleryPassThroughSummary);
+  }, [galleryControlledLut, galleryPassThroughSummary]);
 
   /** Preview off: fade graded layer out, then tear down WebGL (avoids instant unmount pop). */
   useEffect(() => {
@@ -555,10 +749,11 @@ export default function VideoWithLUT({
           : undefined;
 
       renderVideoFrameWithLUT(ctx, video, w, h, {
-        lutEnabled: !!currentLutSource && previewOn && videoWebglSamplingOk,
+        lutEnabled: lutEnabledInShader,
         lutCrossfade: lutCrossfadeRef.current,
         videoTextureCrop: coverCrop,
       });
+      lastLutRenderFrameAtRef.current = performance.now();
 
       if (!cancelled) rafId = requestAnimationFrame(render);
     };
@@ -568,6 +763,7 @@ export default function VideoWithLUT({
     window.addEventListener("resize", onResize);
     document.addEventListener("fullscreenchange", onFullscreenChange);
     video.addEventListener("loadeddata", render);
+    video.addEventListener("canplay", render);
     if (video.readyState >= 2) render();
 
     return () => {
@@ -576,8 +772,9 @@ export default function VideoWithLUT({
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       video.removeEventListener("loadeddata", render);
+      video.removeEventListener("canplay", render);
     };
-  }, [previewOn, lutReady, currentLutSource, videoObjectFit, videoWebglSamplingOk]);
+  }, [previewOn, lutReady, currentLutSource, videoObjectFit, lutEnabledInShader]);
 
   const handleLUTToggle = useCallback(() => {
     setLutEnabled((v) => {
@@ -724,6 +921,9 @@ export default function VideoWithLUT({
         maxBufferTopRung: 60,
       });
       hlsRef.current = hls;
+      const probe = () => webglProbeTriggerRef.current?.();
+      hls.on(Hls.Events.MEDIA_ATTACHED, probe);
+      hls.on(Hls.Events.MANIFEST_PARSED, probe);
       hls.loadSource(videoSrc);
       hls.attachMedia(video);
       return () => {
@@ -899,26 +1099,35 @@ export default function VideoWithLUT({
           autoPlay={compactPreview ? true : undefined}
           onEnded={segmentLoopSeconds && segmentLoopSeconds > 0 ? onSegmentLoopEnded : undefined}
           style={videoStyle}
-        className={
-          compactPreview
-            ? `h-full w-full object-cover ${className ?? ""}`
-            : frameless && !isFullscreen
-              ? framelessFillStage
-                ? `max-h-full max-w-[min(100%,100vw)] object-contain ${className ?? ""}`
-                : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""}`
-              : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
-        }
+          className={
+            (galleryControlledLut ? "relative z-0 " : "") +
+            (compactPreview
+              ? `h-full w-full object-cover ${className ?? ""}`
+              : frameless && !isFullscreen
+                ? framelessFillStage
+                  ? `max-h-full max-w-[min(100%,100vw)] object-contain ${className ?? ""}`
+                  : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""}`
+                : `max-h-full max-w-full h-auto w-auto max-w-[100vw] object-contain ${className ?? ""} ${isFullscreen ? "!max-h-none min-h-full !w-full" : !frameless ? "max-h-[70vh] w-full" : ""}`
+            )
+          }
         />
         {previewOn && lutReady && (
           <canvas
             ref={canvasRef}
-            className="absolute left-0 top-0"
+            className="pointer-events-none absolute left-0 top-0 z-[11]"
             style={{
-              pointerEvents: "none",
               opacity: lutError ? 0 : gradeLayerOpacity,
               transition: `opacity ${GRADE_LAYER_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
             }}
           />
+        )}
+        {galleryPassThroughSummary && (
+          <div
+            className="pointer-events-none absolute left-2 top-2 z-[40] max-w-[min(100%,22rem)] rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] leading-snug text-amber-100 shadow-md ring-1 ring-white/15"
+            aria-hidden
+          >
+            {galleryPassThroughSummary}
+          </div>
         )}
         {!compactPreview && (
         <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col gap-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pb-3 pt-8 transition-opacity duration-200">
