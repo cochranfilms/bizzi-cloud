@@ -45,6 +45,8 @@ interface GalleryData {
   client_review_instructions?: string | null;
   workflow_status?: VideoWorkflowStatus | null;
   featured_video_asset_id?: string | null;
+  slug?: string;
+  owner_handle?: string | null;
 }
 
 export default function GallerySettingsPage() {

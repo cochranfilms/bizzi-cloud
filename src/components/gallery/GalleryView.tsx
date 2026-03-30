@@ -17,6 +17,7 @@ import {
   Music2,
   ExternalLink,
   Palette,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useGalleryBulkDownload } from "@/hooks/useGalleryBulkDownload";
@@ -64,6 +65,7 @@ import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreview
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import { usePathname } from "next/navigation";
 import { shellContextFromClientPathname } from "@/lib/gallery-proofing-types";
+import { logGalleryProductEvent } from "@/lib/gallery-product-analytics";
 
 interface GalleryData {
   id: string;
@@ -1010,6 +1012,10 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
+  const [inviteEmailInput, setInviteEmailInput] = useState("");
+  const [inviteVerifyLoading, setInviteVerifyLoading] = useState(false);
+  const [inviteVerifyError, setInviteVerifyError] = useState<string | null>(null);
+  const [inviteAccessError, setInviteAccessError] = useState<string | null>(null);
   const [previewAsset, setPreviewAsset] = useState<GalleryAsset | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewImageRawUnavailable, setPreviewImageRawUnavailable] = useState(false);
@@ -1072,7 +1078,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
           const t = await user.getIdToken();
           if (t) headers.Authorization = `Bearer ${t}`;
         }
-        const res = await fetch(url.toString(), { headers });
+        const res = await fetch(url.toString(), { headers, credentials: "include" });
         const body = await res.json();
         if (!res.ok) {
           setError(body.message ?? body.error ?? `Failed to load (${res.status})`);
@@ -1352,6 +1358,94 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     e.preventDefault();
     setLoading(true);
     fetchGallery(passwordInput);
+  };
+
+  const handlePrivateGalleryEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = inviteEmailInput.trim().toLowerCase();
+    if (!trimmed) return;
+    setInviteVerifyLoading(true);
+    setInviteVerifyError(null);
+    setInviteAccessError(null);
+    try {
+      const ver = await fetch("/api/client/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+        credentials: "include",
+      });
+      const verBody = await ver.json().catch(() => ({}));
+      if (!ver.ok) {
+        logGalleryProductEvent("gallery_invite_verify_failure", { status: ver.status });
+        setInviteVerifyError(
+          ver.status === 403
+            ? "This email is not on the guest list for this gallery."
+            : (verBody.message ?? verBody.error ?? "Could not verify email.")
+        );
+        return;
+      }
+      logGalleryProductEvent("gallery_invite_verify_success");
+
+      const loadAfterVerify = async (): Promise<boolean> => {
+        setLoading(true);
+        setError(null);
+        setErrorCode(null);
+        try {
+          const url = new URL(`/api/galleries/${galleryId}/view`, window.location.origin);
+          const headers: Record<string, string> = {};
+          if (user) {
+            const t = await user.getIdToken();
+            if (t) headers.Authorization = `Bearer ${t}`;
+          }
+          let res = await fetch(url.toString(), { headers, credentials: "include" });
+          let body = await res.json();
+          if (res.ok) {
+            setData({
+              gallery: body.gallery,
+              assets: body.assets ?? [],
+              collections: body.collections ?? [],
+            });
+            setLoading(false);
+            setInviteEmailInput("");
+            return true;
+          }
+          const stillInvite =
+            body.error === "invite_required" || body.code === "invite_required";
+          if (stillInvite) {
+            await new Promise((r) => setTimeout(r, 450));
+            res = await fetch(url.toString(), { headers, credentials: "include" });
+            body = await res.json();
+            if (res.ok) {
+              setData({
+                gallery: body.gallery,
+                assets: body.assets ?? [],
+                collections: body.collections ?? [],
+              });
+              setLoading(false);
+              setInviteEmailInput("");
+              return true;
+            }
+          }
+          setError(body.message ?? body.error ?? `Failed to load (${res.status})`);
+          setErrorCode(body.error ?? body.code ?? null);
+          setLoading(false);
+          return false;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to load");
+          setLoading(false);
+          return false;
+        }
+      };
+
+      const opened = await loadAfterVerify();
+      if (!opened) {
+        setInviteAccessError(
+          "We confirmed your email, but the gallery did not open. Wait a moment and try again, or use the same email your photographer shared this gallery with."
+        );
+      }
+    } finally {
+      setInviteVerifyLoading(false);
+    }
   };
 
   const {
@@ -1847,7 +1941,7 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               Password required
             </h1>
             <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-              {error ?? "Enter the gallery password to view."}
+              {error ?? "Enter the password you were given to view this gallery."}
             </p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
@@ -1880,18 +1974,57 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               <Mail className="h-7 w-7" />
             </div>
             <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              Invite only
+              Private gallery
             </h1>
             <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Enter your invited email to access this gallery. No sign-up required.
+              This gallery is private. Enter the email address this gallery was shared with to continue.
+              No account required.
             </p>
           </div>
-          <Link
-            href={`/client?redirect=${encodeURIComponent(`/g/${galleryId}`)}`}
-            className="flex w-full items-center justify-center rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
-          >
-            Enter email to access
-          </Link>
+          <form onSubmit={handlePrivateGalleryEmailSubmit} className="space-y-4">
+            {inviteVerifyError && (
+              <div className="rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                {inviteVerifyError}
+              </div>
+            )}
+            {inviteAccessError && (
+              <div className="rounded-lg bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/25 dark:text-amber-200">
+                {inviteAccessError}
+              </div>
+            )}
+            <input
+              type="email"
+              value={inviteEmailInput}
+              onChange={(e) => {
+                setInviteEmailInput(e.target.value);
+                setInviteVerifyError(null);
+                setInviteAccessError(null);
+              }}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-neutral-200 px-4 py-3 text-neutral-900 outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              autoFocus
+              required
+            />
+            <button
+              type="submit"
+              disabled={inviteVerifyLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-bizzi-blue py-3 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              {inviteVerifyLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Verifying…
+                </>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </form>
+          <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+            <Link href="/client" className="text-bizzi-blue hover:text-bizzi-cyan">
+              View all galleries shared with you
+            </Link>
+          </p>
         </div>
       </div>
     );

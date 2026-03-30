@@ -77,6 +77,11 @@ export async function POST(
 
   const title = (data.title ?? "Gallery") as string;
   const eventDate = (data.event_date as string | null) ?? null;
+  const gallerySlug = typeof data.slug === "string" ? data.slug : null;
+  const photographerId =
+    typeof data.photographer_id === "string" ? data.photographer_id : uid;
+  const profileSnap = await db.collection("profiles").doc(photographerId).get();
+  const publicSlug = (profileSnap.data()?.public_slug as string | undefined) ?? null;
 
   try {
     await sendGalleryInviteEmailsToInvitees({
@@ -85,6 +90,8 @@ export async function POST(
       photographerDisplayName,
       galleryTitle: title,
       galleryId,
+      publicSlug,
+      gallerySlug,
       eventDate,
     });
   } catch (err) {

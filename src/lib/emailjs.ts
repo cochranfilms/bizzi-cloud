@@ -15,6 +15,7 @@
 import emailjs from "@emailjs/nodejs";
 import { getAdminAuth } from "@/lib/firebase-admin";
 import { getFileDisplayNames } from "@/lib/file-access";
+import { getPreferredGalleryShareAbsoluteUrl } from "@/lib/gallery-share-url";
 
 function getConfig() {
   const serviceId = process.env.EMAILJS_SERVICE_ID;
@@ -988,6 +989,10 @@ export interface SendGalleryInviteEmailsParams {
   photographerDisplayName: string;
   galleryTitle: string;
   galleryId: string;
+  /** From profiles/{photographerId}.public_slug — pass null if unset (caller reads Firestore). */
+  publicSlug: string | null | undefined;
+  /** Gallery document slug — pass null if missing. */
+  gallerySlug: string | null | undefined;
   eventDate?: string | null;
 }
 
@@ -1012,7 +1017,11 @@ export async function sendGalleryInviteEmailsToInvitees(
   }
 
   const baseUrl = getShareBaseUrl();
-  const galleryUrl = `${baseUrl}/g/${params.galleryId}`;
+  const galleryUrl = getPreferredGalleryShareAbsoluteUrl(baseUrl, {
+    publicSlug: params.publicSlug,
+    gallerySlug: params.gallerySlug,
+    galleryId: params.galleryId,
+  });
   const eventDateLine = params.eventDate
     ? new Date(params.eventDate).toLocaleDateString(undefined, {
         month: "long",

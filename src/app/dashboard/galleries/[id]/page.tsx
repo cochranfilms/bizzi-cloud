@@ -28,6 +28,8 @@ import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
 import { useInView } from "@/hooks/useInView";
 import { useAuth } from "@/context/AuthContext";
 import type { RecentFile } from "@/hooks/useCloudFiles";
+import { getDisplayGalleryShareUrl } from "@/lib/gallery-share-url";
+import { logGalleryProductEvent } from "@/lib/gallery-product-analytics";
 
 function AddFileButton({
   file,
@@ -332,11 +334,19 @@ export default function GalleryDetailPage() {
     });
   };
 
-  const brandedUrl =
-    gallery?.owner_handle && gallery?.slug
-      ? `${typeof window !== "undefined" ? window.location.origin : ""}/${encodeURIComponent(gallery.owner_handle)}/${encodeURIComponent(gallery.slug)}`
-      : null;
-  const galleryUrl = brandedUrl ?? (typeof window !== "undefined" ? `${window.location.origin}/g/${id}` : `/g/${id}`);
+  const [galleryShareUrl, setGalleryShareUrl] = useState("");
+  useEffect(() => {
+    if (!gallery || typeof window === "undefined") return;
+    setGalleryShareUrl(
+      getDisplayGalleryShareUrl({
+        origin: window.location.origin,
+        publicSlug: gallery.owner_handle,
+        gallerySlug: gallery.slug,
+        galleryId: id,
+      })
+    );
+  }, [gallery, id]);
+  const galleryUrl = galleryShareUrl || (typeof window !== "undefined" ? `${window.location.origin}/g/${id}` : `/g/${id}`);
 
   const filesEligibleForFromFiles = recentFiles.filter((f) => {
     if (f.driveName === "Gallery Media") return false;
@@ -352,6 +362,7 @@ export default function GalleryDetailPage() {
 
   const copyLink = () => {
     navigator.clipboard.writeText(galleryUrl);
+    logGalleryProductEvent("gallery_share_link_copied", { galleryId: id });
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -376,10 +387,11 @@ export default function GalleryDetailPage() {
 
           {!gallery?.owner_handle && (
             <Link
-              href="/dashboard/settings"
+              href={`${navBase}/galleries/${id}/settings`}
               className="block rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
             >
-              Set your profile handle in Settings to get branded share URLs like bizzicloud.io/yourhandle/gallery-name
+              Want a branded link (yoursite.com/yourname/gallery-name)? Claim a studio handle in Gallery
+              settings.
             </Link>
           )}
           <div className="flex flex-wrap items-center justify-between gap-4">

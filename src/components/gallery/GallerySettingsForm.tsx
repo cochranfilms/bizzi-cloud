@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Save,
@@ -12,6 +14,7 @@ import {
   Mail,
   ChevronDown,
   ChevronUp,
+  Copy,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
@@ -38,6 +41,8 @@ import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import { DEFAULT_VIDEO_GALLERY_SETTINGS } from "@/lib/gallery-defaults";
 import type { VideoDeliveryMode, VideoWorkflowStatus } from "@/types/gallery";
+import { getDisplayGalleryShareUrl } from "@/lib/gallery-share-url";
+import { logGalleryProductEvent } from "@/lib/gallery-product-analytics";
 
 const VIDEO_DELIVERY_MODES: {
   value: VideoDeliveryMode;
@@ -63,7 +68,7 @@ const VIDEO_DELIVERY_MODES: {
 
 const WORKFLOW_STATUS_OPTIONS: { value: VideoWorkflowStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
-  { value: "sent_to_client", label: "Sent to client" },
+  { value: "sent_to_client", label: "Sent to guest" },
   { value: "awaiting_feedback", label: "Awaiting feedback" },
   { value: "revisions_in_progress", label: "Revisions in progress" },
   { value: "awaiting_payment", label: "Awaiting payment" },
@@ -192,6 +197,10 @@ interface GallerySettingsFormProps {
     allow_favorites?: boolean;
     client_review_instructions?: string | null;
     workflow_status?: VideoWorkflowStatus | null;
+    /** Gallery URL slug (Firestore); used for branded share links */
+    slug?: string | null;
+    /** profiles/{photographer}.public_slug from gallery GET */
+    owner_handle?: string | null;
   };
 }
 
@@ -201,6 +210,10 @@ export default function GallerySettingsForm({
   onRefetch,
 }: GallerySettingsFormProps) {
   const { user } = useAuth();
+  const pathname = usePathname() ?? "";
+  const navBase = pathname.startsWith("/enterprise")
+    ? "/enterprise"
+    : /^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? "/dashboard";
   const versionRef = useRef<number>(initialData.version ?? 1);
   useEffect(() => {
     versionRef.current = initialData.version ?? 1;
@@ -208,6 +221,31 @@ export default function GallerySettingsForm({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [displayPublicSlug, setDisplayPublicSlug] = useState<string | null>(
+    initialData.owner_handle?.trim() || null
+  );
+  useEffect(() => {
+    setDisplayPublicSlug(initialData.owner_handle?.trim() || null);
+  }, [initialData.owner_handle]);
+
+  const [handleClaimDraft, setHandleClaimDraft] = useState("");
+  const [handleClaimSaving, setHandleClaimSaving] = useState(false);
+  const [handleClaimError, setHandleClaimError] = useState<string | null>(null);
+
+  const [shareDisplayUrl, setShareDisplayUrl] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setShareDisplayUrl(
+      getDisplayGalleryShareUrl({
+        origin: window.location.origin,
+        publicSlug: displayPublicSlug,
+        gallerySlug: initialData.slug ?? null,
+        galleryId,
+      })
+    );
+  }, [displayPublicSlug, initialData.slug, galleryId]);
 
   const [title, setTitle] = useState(initialData.title ?? "");
   const [description, setDescription] = useState(initialData.description ?? "");
@@ -818,6 +856,39 @@ export default function GallerySettingsForm({
     setCommittedMediaMode(norm);
     setStickyGallerySaved(false);
   }, [initialData]);
+
+  const handleSavePublicHandleOnly = async () => {
+    if (!user) return;
+    const raw = handleClaimDraft.trim().toLowerCase();
+    if (!raw) {
+      setHandleClaimError("Enter a handle to save.");
+      return;
+    }
+    setHandleClaimSaving(true);
+    setHandleClaimError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ public_slug: raw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data.error as string) ?? "Could not save handle");
+      }
+      logGalleryProductEvent("gallery_handle_claimed_settings");
+      setHandleClaimDraft("");
+      await onRefetch?.();
+    } catch (err) {
+      setHandleClaimError(err instanceof Error ? err.message : "Could not save handle");
+    } finally {
+      setHandleClaimSaving(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!user) return;
@@ -1576,21 +1647,24 @@ export default function GallerySettingsForm({
       {/* Access */}
       <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
         <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
-          Access
+          Who can view
         </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          Choose how guests open this gallery from your share link.
+        </p>
         <div className="space-y-4">
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-              Access mode
+              Access
             </label>
             <select
               value={accessMode}
               onChange={(e) => setAccessMode(e.target.value)}
               className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
             >
-              <option value="public">Public (anyone with link)</option>
-              <option value="password">Password required</option>
-              <option value="invite_only">Invite only</option>
+              <option value="public">Anyone with the link</option>
+              <option value="invite_only">Only invited emails</option>
+              <option value="password">Anyone with the link and password</option>
             </select>
           </div>
           {accessMode === "password" && (
@@ -1607,94 +1681,206 @@ export default function GallerySettingsForm({
               />
             </div>
           )}
-          {accessMode === "invite_only" && (
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Invited emails (comma separated)
-                </label>
-                <input
-                  type="text"
-                  value={invitedEmails}
-                  onChange={(e) => setInvitedEmails(e.target.value)}
-                  placeholder="client@example.com, other@example.com"
-                  className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-                />
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  Save to add emails to the list, then use Send Invite to email each person.
-                </p>
-              </div>
-              {(initialData.invited_emails ?? []).length > 0 && (
-                <div>
-                  <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    Invited list
-                  </span>
-                  <ul className="space-y-2">
-                    {(initialData.invited_emails ?? []).map((email) => {
-                      const inviteSentTo = new Set(
-                        (initialData.invite_sent_to ?? []).map((e) => e.toLowerCase())
-                      );
-                      const hasBeenInvited = inviteSentTo.has(email.toLowerCase());
-                      return (
-                        <li
-                          key={email}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"
-                        >
-                          <span className="truncate text-sm text-neutral-800 dark:text-neutral-200">
-                            {email}
-                          </span>
-                          {hasBeenInvited ? (
-                            <span className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-100 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                              <Check className="h-3.5 w-3.5" />
-                              Invited
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!user) return;
-                                setSendingInviteEmail(email);
-                                try {
-                                  const token = await user.getIdToken();
-                                  const res = await fetch(`/api/galleries/${galleryId}/send-invite`, {
-                                    method: "POST",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                    body: JSON.stringify({ email }),
-                                  });
-                                  if (!res.ok) {
-                                    const data = await res.json();
-                                    throw new Error(data.error ?? "Failed to send invite");
-                                  }
-                                  onRefetch?.();
-                                } catch (err) {
-                                  setError(err instanceof Error ? err.message : "Failed to send invite");
-                                } finally {
-                                  setSendingInviteEmail(null);
-                                }
-                              }}
-                              disabled={sendingInviteEmail !== null}
-                              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-bizzi-blue px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
-                            >
-                              {sendingInviteEmail === email ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Mail className="h-3.5 w-3.5" />
-                              )}
-                              {sendingInviteEmail === email ? "Sending…" : "Send Invite"}
-                            </button>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
         </div>
+      </section>
+
+      {/* Share link */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          Gallery link
+        </h2>
+        <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+          Copy the same link you send manually and the one used in invite emails.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            readOnly
+            value={shareDisplayUrl}
+            className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!shareDisplayUrl) return;
+              void navigator.clipboard.writeText(shareDisplayUrl);
+              logGalleryProductEvent("gallery_share_link_copied", { galleryId });
+              setShareCopied(true);
+              setTimeout(() => setShareCopied(false), 2000);
+            }}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            {shareCopied ? (
+              <>
+                <Check className="h-4 w-4 text-green-600" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4" />
+                Copy link
+              </>
+            )}
+          </button>
+        </div>
+      </section>
+
+      {/* Invite people */}
+      {accessMode === "invite_only" && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+          <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+            Invite people
+          </h2>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Add guest emails below, save this page, then send each person an email with the gallery link.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Guest emails (comma separated)
+              </label>
+              <input
+                type="text"
+                value={invitedEmails}
+                onChange={(e) => setInvitedEmails(e.target.value)}
+                placeholder="name@example.com, other@example.com"
+                className="w-full rounded-lg border border-neutral-200 px-4 py-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              />
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                Save changes to update the list, then send the email for each guest.
+              </p>
+            </div>
+            {(initialData.invited_emails ?? []).length > 0 && (
+              <div>
+                <span className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Guest list
+                </span>
+                <ul className="space-y-2">
+                  {(initialData.invited_emails ?? []).map((email) => {
+                    const inviteSentTo = new Set(
+                      (initialData.invite_sent_to ?? []).map((e) => e.toLowerCase())
+                    );
+                    const hasBeenInvited = inviteSentTo.has(email.toLowerCase());
+                    return (
+                      <li
+                        key={email}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800"
+                      >
+                        <span className="truncate text-sm text-neutral-800 dark:text-neutral-200">
+                          {email}
+                        </span>
+                        {hasBeenInvited ? (
+                          <span className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-100 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                            <Check className="h-3.5 w-3.5" />
+                            Email sent
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!user) return;
+                              setSendingInviteEmail(email);
+                              try {
+                                const token = await user.getIdToken();
+                                const res = await fetch(`/api/galleries/${galleryId}/send-invite`, {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                  body: JSON.stringify({ email }),
+                                });
+                                if (!res.ok) {
+                                  const data = await res.json();
+                                  throw new Error(data.error ?? "Failed to send invite email");
+                                }
+                                onRefetch?.();
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : "Failed to send invite email"
+                                );
+                              } finally {
+                                setSendingInviteEmail(null);
+                              }
+                            }}
+                            disabled={sendingInviteEmail !== null}
+                            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-bizzi-blue px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
+                          >
+                            {sendingInviteEmail === email ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Mail className="h-3.5 w-3.5" />
+                            )}
+                            {sendingInviteEmail === email ? "Sending…" : "Send email"}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Studio handle */}
+      <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">
+        <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">
+          Studio handle
+        </h2>
+        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+          A short name in your gallery link (
+          <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">yoursite.com/handle/gallery-name</code>
+          ). Saved to your account, not this gallery&apos;s main save button.
+        </p>
+        {displayPublicSlug ? (
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">
+            Current handle:{" "}
+            <span className="font-medium text-neutral-900 dark:text-white">{displayPublicSlug}</span>
+            .{" "}
+            <Link
+              href={`${navBase}/galleries`}
+              className="text-bizzi-blue hover:text-bizzi-cyan"
+            >
+              Open Galleries
+            </Link>{" "}
+            → Gallery Settings to change it.
+          </p>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+            <p className="text-sm text-amber-950 dark:text-amber-100">
+              Want a branded gallery link? Claim a studio handle (lowercase letters, numbers, hyphens).
+            </p>
+            {handleClaimError && (
+              <p className="text-sm text-red-700 dark:text-red-300">{handleClaimError}</p>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="text"
+                value={handleClaimDraft}
+                onChange={(e) => {
+                  setHandleClaimDraft(e.target.value.toLowerCase());
+                  setHandleClaimError(null);
+                }}
+                placeholder="your-handle"
+                disabled={handleClaimSaving}
+                className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => void handleSavePublicHandleOnly()}
+                disabled={handleClaimSaving || !handleClaimDraft.trim()}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+              >
+                {handleClaimSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                Save handle
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Branding */}
@@ -1720,7 +1906,7 @@ export default function GallerySettingsForm({
               Gallery background
             </label>
             <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-              Choose a background color for your client gallery view.
+              Choose a background color for your guest gallery view.
             </p>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
               {GALLERY_BACKGROUND_THEMES.map((theme) => (

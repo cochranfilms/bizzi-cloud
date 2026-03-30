@@ -160,7 +160,7 @@ function ClientPortalContent() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-6 dark:bg-neutral-950">
         <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
         <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
-          Loading your galleries…
+          Loading galleries…
         </p>
       </div>
     );
@@ -175,16 +175,16 @@ function ClientPortalContent() {
               <Mail className="h-7 w-7" />
             </div>
             <h1 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              Enter your invited email
+              Enter your guest email
             </h1>
             <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-              Enter the email address your photographer used to invite you. No sign-up required.
+              Enter the email your photographer shared the gallery with. No account required.
             </p>
           </div>
           <form onSubmit={handleVerifyEmail} className="space-y-4">
             {accessDenied && (
               <div className="rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                This email has not been invited to any galleries.
+                This email is not on any gallery guest lists yet.
               </div>
             )}
             {error && !accessDenied && (
@@ -250,7 +250,7 @@ function ClientPortalContent() {
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <h1 className="mb-6 text-2xl font-semibold text-neutral-900 dark:text-white">
-          Your invited galleries
+          Galleries shared with you
         </h1>
 
         {error && (
@@ -266,7 +266,7 @@ function ClientPortalContent() {
               No galleries yet
             </p>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              When a photographer invites you to a gallery, it will appear here.
+              When a photographer shares a gallery with you, it will appear here.
             </p>
           </div>
         )}

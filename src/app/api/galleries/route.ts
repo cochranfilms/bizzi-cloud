@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
 import { ensureUniqueMediaFolderSegment } from "@/lib/gallery-media-folder-admin";
+import { getPreferredGallerySharePath } from "@/lib/gallery-share-url";
 
 function isNonOrgGalleryOid(oid: unknown): boolean {
   return oid === null || oid === undefined || oid === "";
@@ -365,6 +366,10 @@ export async function POST(request: Request) {
 
   const ref = await db.collection("galleries").add(galleryData);
 
+  const profileForShare = await db.collection("profiles").doc(uid).get();
+  const creatorPublicSlug =
+    (profileForShare.data()?.public_slug as string | undefined) ?? null;
+
   // Send invite emails when access is invite_only and there are invited emails
   const invitedList = Array.isArray(invited_emails)
     ? invited_emails
@@ -390,6 +395,8 @@ export async function POST(request: Request) {
       photographerDisplayName,
       galleryTitle: title.trim(),
       galleryId: ref.id,
+      publicSlug: creatorPublicSlug,
+      gallerySlug: slug,
       eventDate: event_date ?? null,
     }).catch((err) => {
       console.error("[galleries] Gallery invite email error:", err);
@@ -405,9 +412,15 @@ export async function POST(request: Request) {
     });
   }
 
+  const gallery_url = getPreferredGallerySharePath({
+    publicSlug: creatorPublicSlug,
+    gallerySlug: slug,
+    galleryId: ref.id,
+  });
+
   return NextResponse.json({
     id: ref.id,
-    gallery_url: `/g/${ref.id}`,
+    gallery_url,
     ...galleryData,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),

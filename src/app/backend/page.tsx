@@ -610,12 +610,12 @@ export default function BackendDocPage() {
           </DocSection>
 
           {/* 15. Client Portal */}
-          <DocSection id="client-portal" title="15. Client Portal">
+          <DocSection id="client-portal" title="15. Guest hub (/client)">
             <p className="text-neutral-600 dark:text-neutral-400">
-              When a client is invited to a gallery (by email), they can go to /client to see all
-              galleries they’ve been invited to. They verify their email and get a session. This
-              gives them a single place to see all their invited galleries instead of following
-              individual links.
+              Guests can verify their email on a private gallery page (inline), or open{" "}
+              <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">/client</code> to
+              see all galleries shared with that email in one place after verifying. The session
+              cookie is the same for both.
             </p>
           </DocSection>
 

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "access_denied",
-          message: "This email has not been invited to any galleries.",
+          message: "This email is not on any gallery guest lists yet.",
         },
         { status: 403 }
       );

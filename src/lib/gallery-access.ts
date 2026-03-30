@@ -145,7 +145,8 @@ export async function verifyGalleryViewAccess(
     return {
       allowed: false,
       code: "invite_required",
-      message: "This gallery is invite only. Enter your invited email at /client to access.",
+      message:
+        "This gallery is private. Enter the email address this gallery was shared with to continue.",
     };
   }
 
