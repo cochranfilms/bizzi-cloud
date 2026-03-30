@@ -1072,8 +1072,21 @@ export async function GET(request: Request) {
       console.warn("[api/files/filter] ignoring cursor in uploaded_at index fallback");
     }
     const fbLimit = Math.min(1000, Math.max(fetchLimit * 4, 400));
-    const fbSnap = await queryBeforeOrder.orderBy("modified_at", orderDir).limit(fbLimit).get();
-    queryDocs = sortDocsByUploadTimeMs(fbSnap.docs, orderDir);
+    try {
+      const fbSnap = await queryBeforeOrder.orderBy("modified_at", orderDir).limit(fbLimit).get();
+      queryDocs = sortDocsByUploadTimeMs(fbSnap.docs, orderDir);
+    } catch (secondErr) {
+      if (!isFirestoreIndexError(secondErr)) {
+        throw secondErr;
+      }
+      console.warn(
+        "[api/files/filter] orderBy(modified_at) also failed; using unordered capped fetch + in-memory sort",
+        secondErr instanceof Error ? secondErr.message : secondErr
+      );
+      const wideLimit = Math.min(2500, Math.max(fbLimit * 2, 600));
+      const wideSnap = await queryBeforeOrder.limit(wideLimit).get();
+      queryDocs = sortDocsByUploadTimeMs(wideSnap.docs, orderDir);
+    }
   }
 
   const driveFilter = (d: QueryDocumentSnapshot) =>
