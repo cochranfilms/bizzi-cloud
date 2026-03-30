@@ -123,7 +123,19 @@ export async function POST(
   }
 
   const driveId = data.driveId;
-  const relativePath = data.fileName ?? "";
+  const keyPrefix = `backups/${uid}/${driveId}/`;
+  const relativePathFromObjectKey = objectKey.startsWith(keyPrefix) ? objectKey.slice(keyPrefix.length) : "";
+  const storedRel =
+    typeof data.relative_path === "string" && data.relative_path.trim()
+      ? String(data.relative_path).trim().replace(/^\/+/, "").replace(/\.\./g, "")
+      : "";
+  const legacyLeaf = String(data.fileName ?? "")
+    .replace(/^\/+/, "")
+    .replace(/\.\./g, "");
+  const relativePath =
+    relativePathFromObjectKey ||
+    storedRel ||
+    legacyLeaf;
   const fileSize = data.fileSize ?? 0;
   const contentType = data.contentType ?? "application/octet-stream";
   const reservationRaw = data.storage_quota_reservation_id;

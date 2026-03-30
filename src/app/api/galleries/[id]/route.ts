@@ -1,4 +1,3 @@
-import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { hashSecret } from "@/lib/gallery-access";
 import { slugify, ensureUniqueSlugInTransaction } from "@/lib/gallery-slug";
@@ -11,9 +10,10 @@ import {
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
-  applyMacosPackageDelta,
-  mergeMacosPackageTrashDeltasInto,
-} from "@/lib/macos-package-container-admin";
+  type GalleryDeleteTrashSummary,
+  GALLERY_DELETE_TRASH_MAX_EXPANDED_IDS,
+  moveBackupFilesToTrashForGalleryDeletion,
+} from "@/lib/backup-files-trash-domain";
 import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
 import { isAllowedCoverHeroHeight } from "@/lib/gallery-cover-display";
 
@@ -241,7 +241,7 @@ export async function PATCH(
 }
 
 /** DELETE /api/galleries/[id]
- * Query: ?deleteFiles=true – also soft-delete backup_files linked via gallery_assets
+ * Query: ?deleteFiles=true – soft-delete active backup_files referenced by gallery_assets (shared trash domain), then remove assets + gallery.
  */
 export async function DELETE(
   request: Request,
@@ -272,37 +272,20 @@ export async function DELETE(
     .where("gallery_id", "==", id)
     .get();
 
+  let trashSummary: GalleryDeleteTrashSummary | undefined;
+
   if (deleteFiles && !assetsSnap.empty) {
     const backupFileIds = assetsSnap.docs
       .map((d) => d.data().backup_file_id as string)
       .filter(Boolean);
-    const uniqueIds = [...new Set(backupFileIds)];
 
-    const pkgDeltas = new Map<string, { count: number; bytes: number }>();
-    let batch = db.batch();
-    let batchCount = 0;
-
-    for (const fileId of uniqueIds) {
-      const fileRef = db.collection("backup_files").doc(fileId);
-      const fileSnap = await fileRef.get();
-      if (!fileSnap.exists || fileSnap.data()!.userId !== uid) continue;
-      const fd = fileSnap.data()!;
-      if (fd.deleted_at) continue;
-      mergeMacosPackageTrashDeltasInto(pkgDeltas, fd);
-      batch.update(fileRef, { deleted_at: FieldValue.serverTimestamp() });
-      batchCount++;
-      if (batchCount >= 450) {
-        await batch.commit();
-        batch = db.batch();
-        batchCount = 0;
-      }
+    const trashResult = await moveBackupFilesToTrashForGalleryDeletion(db, uid, galleryData, backupFileIds, {
+      maxExpandedIds: GALLERY_DELETE_TRASH_MAX_EXPANDED_IDS,
+    });
+    if (!trashResult.ok) {
+      return NextResponse.json({ error: trashResult.err.error }, { status: trashResult.err.status });
     }
-    if (batchCount > 0) {
-      await batch.commit();
-    }
-    if (pkgDeltas.size > 0) {
-      await applyMacosPackageDelta(db, pkgDeltas);
-    }
+    trashSummary = trashResult.summary;
   }
 
   for (const doc of assetsSnap.docs) {
@@ -311,5 +294,8 @@ export async function DELETE(
 
   await ref.delete();
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(deleteFiles && trashSummary !== undefined ? { trash: trashSummary } : {}),
+  });
 }

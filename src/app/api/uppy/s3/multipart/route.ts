@@ -132,7 +132,9 @@ export async function POST(request: Request) {
     galleryId: galleryId ?? null,
     status: "pending",
     fileFingerprint: null,
-    fileName: filename ?? relativePath,
+    /** Full path inside the drive (same as B2 key suffix); Uppy often sends leaf-only `filename` — do not use that alone. */
+    relative_path: safePath,
+    fileName: safePath,
     fileSize: sizeBytes,
     lastModified,
     contentType,

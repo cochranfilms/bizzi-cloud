@@ -88,7 +88,8 @@ export default function DeleteGalleryModal({
                   Delete gallery only
                 </span>
                 <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">
-                  Removes the gallery. Files in Gallery Media/{galleryTitle} stay in place.
+                  Removes the gallery only. Associated files stay in storage and are no longer grouped under
+                  this gallery.
                 </span>
               </div>
               {loading === "gallery" && (
@@ -110,7 +111,7 @@ export default function DeleteGalleryModal({
                   Delete gallery &amp; files
                 </span>
                 <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">
-                  Removes the gallery and moves all associated files to Deleted files.
+                  Removes the gallery and marks associated files as deleted so they appear in Deleted files.
                 </span>
               </div>
               {loading === "files" && (
