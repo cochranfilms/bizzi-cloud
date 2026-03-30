@@ -26,6 +26,9 @@ import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useHeartedFiles } from "@/hooks/useHeartedFiles";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken } from "@/lib/auth-token";
+import { getFirebaseAuth } from "@/lib/firebase/client";
+import { isCreatorRawDriveId } from "@/lib/creator-raw-drive";
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -241,7 +244,7 @@ export default function FileGrid() {
     loadMore: loadMoreHearted,
     refresh: refreshHearted,
   } = useHeartedFiles();
-  const { linkedDrives, storageVersion, creatorRawDriveId } = useBackup();
+  const { linkedDrives, storageVersion } = useBackup();
   const { org } = useEnterprise();
   const { loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
@@ -268,6 +271,11 @@ export default function FileGrid() {
   const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
   const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
   const [packageInfoLoading, setPackageInfoLoading] = useState(false);
+  /** Drive-scoped LUT (Creator RAW / shared RAW) while file preview is open — matches Creator tab behavior. */
+  const [previewRawDriveLut, setPreviewRawDriveLut] = useState<{
+    config: CreativeLUTConfig;
+    library: CreativeLUTLibraryEntry[];
+  } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
@@ -640,6 +648,45 @@ export default function FileGrid() {
     }
     return { locationScope: "personal" as const };
   }, [pathname]);
+
+  const previewIsOnCreatorRawDrive = Boolean(
+    previewFile && isCreatorRawDriveId(previewFile.driveId, linkedDrives)
+  );
+
+  useEffect(() => {
+    if (!previewFile?.driveId || !isCreatorRawDriveId(previewFile.driveId, linkedDrives)) {
+      setPreviewRawDriveLut(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken();
+        if (!token || cancelled) return;
+        const res = await fetch(`/api/drives/${encodeURIComponent(previewFile.driveId)}/lut`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (!cancelled) setPreviewRawDriveLut(null);
+          return;
+        }
+        const data = (await res.json()) as {
+          creative_lut_config?: CreativeLUTConfig | null;
+          creative_lut_library?: CreativeLUTLibraryEntry[];
+        };
+        if (cancelled) return;
+        setPreviewRawDriveLut({
+          config: (data.creative_lut_config ?? {}) as CreativeLUTConfig,
+          library: data.creative_lut_library ?? [],
+        });
+      } catch {
+        if (!cancelled) setPreviewRawDriveLut(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewFile?.driveId, previewFile?.id, linkedDrives]);
 
   const loadDriveFiles = useCallback(
     async (driveId: string, options?: { silent?: boolean }) => {
@@ -2376,7 +2423,9 @@ export default function FileGrid() {
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        showLUTForVideo={previewFile?.driveId === creatorRawDriveId}
+        showLUTForVideo={previewIsOnCreatorRawDrive}
+        lutConfig={previewIsOnCreatorRawDrive ? (previewRawDriveLut?.config ?? null) : null}
+        lutLibrary={previewIsOnCreatorRawDrive ? (previewRawDriveLut?.library ?? null) : null}
       />
     </div>
   );

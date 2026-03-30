@@ -443,6 +443,7 @@ export default function FilePreviewModal({
           className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"}`}
         >
           <VideoWithLUT
+            key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
             src={fullUrl}
             streamUrl={videoStreamUrl}
             className=""

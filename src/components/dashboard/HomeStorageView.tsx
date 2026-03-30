@@ -31,6 +31,9 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
 import { getAuthToken, getCurrentUserIdToken } from "@/lib/auth-token";
+import { getFirebaseAuth } from "@/lib/firebase/client";
+import { isCreatorRawDriveId } from "@/lib/creator-raw-drive";
+import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { useAuth } from "@/context/AuthContext";
 import { isMacosPackageFileRow } from "@/lib/macos-package-display";
 import Link from "next/link";
@@ -188,7 +191,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getOrCreateCreatorRawDrive,
     getOrCreateGalleryDrive,
     loading: backupDrivesLoading,
-    creatorRawDriveId,
   } = useBackup();
   const { setCurrentDrive: setCurrentFolderDriveId, setCurrentDrivePath } = useCurrentFolder();
   const {
@@ -205,6 +207,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
   const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
   const [packageInfoLoading, setPackageInfoLoading] = useState(false);
+  const [previewRawDriveLut, setPreviewRawDriveLut] = useState<{
+    config: CreativeLUTConfig;
+    library: CreativeLUTLibraryEntry[];
+  } | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
   const [dragState, setDragState] = useState<{
@@ -405,6 +411,45 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   useEffect(() => {
     loadPinnedFiles();
   }, [loadPinnedFiles]);
+
+  const previewIsOnCreatorRawDrive = Boolean(
+    previewFile && isCreatorRawDriveId(previewFile.driveId, linkedDrives)
+  );
+
+  useEffect(() => {
+    if (!previewFile?.driveId || !isCreatorRawDriveId(previewFile.driveId, linkedDrives)) {
+      setPreviewRawDriveLut(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getFirebaseAuth().currentUser?.getIdToken();
+        if (!token || cancelled) return;
+        const res = await fetch(`/api/drives/${encodeURIComponent(previewFile.driveId)}/lut`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (!cancelled) setPreviewRawDriveLut(null);
+          return;
+        }
+        const data = (await res.json()) as {
+          creative_lut_config?: CreativeLUTConfig | null;
+          creative_lut_library?: CreativeLUTLibraryEntry[];
+        };
+        if (cancelled) return;
+        setPreviewRawDriveLut({
+          config: (data.creative_lut_config ?? {}) as CreativeLUTConfig,
+          library: data.creative_lut_library ?? [],
+        });
+      } catch {
+        if (!cancelled) setPreviewRawDriveLut(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewFile?.driveId, previewFile?.id, linkedDrives]);
 
   // Open file preview when navigating from notification (e.g. /dashboard?file=xxx)
   const fileIdFromUrl = searchParams.get("file");
@@ -1611,7 +1656,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        showLUTForVideo={previewFile?.driveId === creatorRawDriveId}
+        showLUTForVideo={previewIsOnCreatorRawDrive}
+        lutConfig={previewIsOnCreatorRawDrive ? (previewRawDriveLut?.config ?? null) : null}
+        lutLibrary={previewIsOnCreatorRawDrive ? (previewRawDriveLut?.library ?? null) : null}
       />
     </div>
   );

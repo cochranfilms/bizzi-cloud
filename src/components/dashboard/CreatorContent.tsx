@@ -16,9 +16,15 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import SectionTitle from "./SectionTitle";
 import { useAuth } from "@/context/AuthContext";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
+import { isCreatorRawDriveId } from "@/lib/creator-raw-drive";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 const DRAG_THRESHOLD_PX = 5;
+
+type RawDriveLutPayload = {
+  config: CreativeLUTConfig;
+  library: CreativeLUTLibraryEntry[];
+};
 
 export default function CreatorContent() {
   const { viewMode, cardSize, aspectRatio, showCardInfo, thumbnailScale } =
@@ -28,8 +34,8 @@ export default function CreatorContent() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
-  const [lutConfig, setLutConfig] = useState<CreativeLUTConfig | null>(null);
-  const [lutLibrary, setLutLibrary] = useState<CreativeLUTLibraryEntry[]>([]);
+  /** LUT library + config per Creator RAW drive (`is_creator_raw`), including org-shared RAW. */
+  const [rawDriveLutById, setRawDriveLutById] = useState<Record<string, RawDriveLutPayload>>({});
   const {
     driveFolders,
     loading,
@@ -89,25 +95,58 @@ export default function CreatorContent() {
     getOrCreateCreatorRawDrive().catch(console.error);
   }, [getOrCreateCreatorRawDrive]);
 
-  // Fetch LUT config for Creator RAW drive
+  const creatorRawDriveIds = useMemo(
+    () => linkedDrives.filter((d) => d.is_creator_raw === true).map((d) => d.id),
+    [linkedDrives]
+  );
+
   useEffect(() => {
-    if (!creatorRawDriveId || !user) return;
+    if (!user || creatorRawDriveIds.length === 0) {
+      setRawDriveLutById({});
+      return;
+    }
     let cancelled = false;
-    user.getIdToken().then((token) => {
-      if (cancelled) return;
-      return fetch(`/api/drives/${creatorRawDriveId}/lut`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    }).then((res) => {
-      if (!res || cancelled) return res?.json?.();
-      return res.json();
-    }).then((data) => {
-      if (cancelled || !data) return;
-      setLutConfig(data.creative_lut_config ?? null);
-      setLutLibrary(data.creative_lut_library ?? []);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [creatorRawDriveId, user]);
+    void (async () => {
+      try {
+        const token = await user.getIdToken();
+        if (!token || cancelled) return;
+        const results = await Promise.all(
+          creatorRawDriveIds.map(async (driveId) => {
+            try {
+              const res = await fetch(`/api/drives/${encodeURIComponent(driveId)}/lut`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) return { driveId, payload: null as RawDriveLutPayload | null };
+              const data = (await res.json()) as {
+                creative_lut_config?: CreativeLUTConfig | null;
+                creative_lut_library?: CreativeLUTLibraryEntry[];
+              };
+              return {
+                driveId,
+                payload: {
+                  config: (data.creative_lut_config ?? {}) as CreativeLUTConfig,
+                  library: data.creative_lut_library ?? [],
+                },
+              };
+            } catch {
+              return { driveId, payload: null };
+            }
+          })
+        );
+        if (cancelled) return;
+        const next: Record<string, RawDriveLutPayload> = {};
+        for (const { driveId, payload } of results) {
+          if (payload) next[driveId] = payload;
+        }
+        setRawDriveLutById(next);
+      } catch {
+        if (!cancelled) setRawDriveLutById({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, creatorRawDriveIds, storageVersion]);
 
   // Refresh drive files when storage changes (e.g. after upload). Use silent to avoid loading flash.
   useEffect(() => {
@@ -146,6 +185,11 @@ export default function CreatorContent() {
           : "sm:grid-cols-3 md:grid-cols-4";
 
   const folderLayoutSize = viewMode === "thumbnail" ? "large" : cardSize;
+
+  const previewOnCreatorRaw = Boolean(
+    previewFile && isCreatorRawDriveId(previewFile.driveId, linkedDrives)
+  );
+  const previewRawDriveId = previewFile?.driveId;
 
   return (
     <div className="w-full space-y-0">
@@ -233,7 +277,7 @@ export default function CreatorContent() {
             )
           ) : (
             <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              {currentDrive.id === creatorRawDriveId
+              {linkedDrives.find((d) => d.id === currentDrive.id)?.is_creator_raw === true
                 ? "No videos yet. Upload RAW footage to get started."
                 : "No files in this folder yet."}
             </div>
@@ -315,8 +359,17 @@ export default function CreatorContent() {
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        lutConfig={previewFile?.driveId === creatorRawDriveId ? lutConfig : null}
-        lutLibrary={previewFile?.driveId === creatorRawDriveId ? lutLibrary : null}
+        showLUTForVideo={previewOnCreatorRaw}
+        lutConfig={
+          previewOnCreatorRaw && previewRawDriveId
+            ? (rawDriveLutById[previewRawDriveId]?.config ?? null)
+            : null
+        }
+        lutLibrary={
+          previewOnCreatorRaw && previewRawDriveId
+            ? (rawDriveLutById[previewRawDriveId]?.library ?? null)
+            : null
+        }
       />
     </div>
   );
