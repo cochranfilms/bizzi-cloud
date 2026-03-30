@@ -64,6 +64,14 @@ export async function verifyIdToken(
   token: string
 ): Promise<{ uid: string; email?: string }> {
   const auth = getAuth(getAdminApp());
-  const decoded = await auth.verifyIdToken(token);
-  return { uid: decoded.uid, email: decoded.email };
+  try {
+    const decoded = await auth.verifyIdToken(token);
+    return { uid: decoded.uid, email: decoded.email };
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[firebase-admin] verifyIdToken failed:", msg);
+    }
+    throw e;
+  }
 }

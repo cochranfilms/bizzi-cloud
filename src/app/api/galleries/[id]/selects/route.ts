@@ -213,6 +213,7 @@ export async function GET(
       materialization_state: data.materialization_state ?? "idle",
       proofing_root_segment: data.proofing_root_segment ?? null,
       folder_slug: data.folder_slug ?? null,
+      client_folder_segment: data.client_folder_segment ?? null,
       materialized_relative_prefix: data.materialized_relative_prefix ?? null,
       materialized_linked_drive_id: data.materialized_linked_drive_id ?? null,
       workspace_id: data.workspace_id ?? null,

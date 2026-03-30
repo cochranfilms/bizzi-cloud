@@ -9,6 +9,7 @@ import type {
 import { proofingRootSegmentFromGalleryType } from "@/lib/gallery-proofing-types";
 import { assignProofingFolderSlug } from "@/lib/gallery-proofing-slug";
 import type { MaterializationState } from "@/lib/gallery-proofing-types";
+import { buildMaterializedListPrefix } from "@/lib/gallery-media-path";
 
 export type AssetSnapshotMinEntry = {
   asset_id: string;
@@ -19,7 +20,7 @@ export type AssetSnapshotMinEntry = {
 
 /**
  * Build Firestore fields for a new proofing list (favorites_lists doc).
- * `materialized_relative_prefix` and `folder_slug` are immutable after create.
+ * `materialized_relative_prefix` is immutable after create (per materialize contract).
  */
 export function buildNewProofingListFields(input: {
   galleryId: string;
@@ -28,7 +29,10 @@ export function buildNewProofingListFields(input: {
   assetSnapshotMin: AssetSnapshotMinEntry[];
   clientEmail: string | null;
   clientName: string | null;
-  /** Derives proofing_root_segment when omitted. */
+  /** Persisted gallery storage root (immutable on gallery). */
+  mediaFolderSegment: string;
+  /** Deterministic client subfolder (see allocateClientFolderSegment). */
+  clientFolderSegment: string;
   galleryType: "photo" | "video" | undefined | null;
   listType: ProofingListType;
   title: string | null | undefined;
@@ -47,7 +51,12 @@ export function buildNewProofingListFields(input: {
     listDocId: input.listDocId,
     clientName: input.clientName,
   });
-  const materialized_relative_prefix = `${input.galleryId}/${proofing_root_segment}/${folder_slug}`;
+  const galleryKind = input.galleryType === "video" ? "video" : "photo";
+  const materialized_relative_prefix = buildMaterializedListPrefix({
+    mediaFolderSegment: input.mediaFolderSegment,
+    galleryKind,
+    clientFolderSegment: input.clientFolderSegment,
+  });
 
   const status: ProofingListBusinessStatus = "submitted";
   const materialization_state: MaterializationState = "idle";
@@ -63,6 +72,7 @@ export function buildNewProofingListFields(input: {
     list_type: input.listType,
     proofing_root_segment,
     folder_slug,
+    client_folder_segment: input.clientFolderSegment,
     materialized_relative_prefix,
     status,
     materialization_state,

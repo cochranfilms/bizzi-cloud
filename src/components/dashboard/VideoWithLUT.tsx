@@ -220,6 +220,8 @@ export default function VideoWithLUT({
         cancelAnimationFrame(lutTransitionRafRef.current);
         lutTransitionRafRef.current = null;
       }
+      /** No graded pass: ensure canvas is visible if we still mount it (shader uses lutEnabled false). */
+      setGradeLayerOpacity(1);
       if (glRef.current) {
         setLutReady(true);
         setLutError(null);
@@ -305,6 +307,11 @@ export default function VideoWithLUT({
         cancelAnimationFrame(lutTransitionRafRef.current);
         lutTransitionRafRef.current = null;
       }
+      /**
+       * If init set opacity 0 then this effect re-ran or the async was abandoned before rAF
+       * restored 1, the graded layer stayed invisible (video looked like Original).
+       */
+      setGradeLayerOpacity(1);
     };
   }, [previewOn, currentLutSource]);
 

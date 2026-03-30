@@ -147,6 +147,8 @@ export interface Gallery {
   gallery_type?: GalleryType;
   title: string;
   slug: string;                  // URL-safe, unique per photographer
+  /** Immutable storage folder name under Gallery Media drive (set at gallery create). */
+  media_folder_segment?: string | null;
   photographer_id: string;
   cover_asset_id?: string | null;
   /** Asset ID for link preview when sharing gallery (bizzicloud.io/handle/gallery-slug) */
@@ -275,6 +277,8 @@ export interface FavoritesList {
   materialization_state?: "idle" | "processing" | "complete" | "partial" | "failed";
   proofing_root_segment?: string;
   folder_slug?: string;
+  /** Client subfolder under Favorited/Selected (deterministic; immutable with list). */
+  client_folder_segment?: string;
   materialized_relative_prefix?: string | null;
   materialized_linked_drive_id?: string | null;
   workspace_id?: string | null;

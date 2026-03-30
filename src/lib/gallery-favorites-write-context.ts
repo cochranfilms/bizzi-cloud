@@ -13,8 +13,9 @@ import {
 import { resolveWorkspaceForOrgMemberDrive } from "@/lib/org-member-drive-workspace";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import { PROOFING_ROOT_FAVORITES } from "@/lib/gallery-proofing-types";
+import { relativePathIsInPhotoProofingTree } from "@/lib/gallery-media-path";
 
-/** @deprecated Use PROOFING_ROOT_FAVORITES / proofingRootSegmentFromGalleryType */
+/** @deprecated Use PROOFING_ROOT_FAVORITES / canonical photo segment */
 export const GALLERY_FAVORITES_FOLDER_SEGMENT = PROOFING_ROOT_FAVORITES;
 
 const TEMPLATE_FIELD_KEYS = [
@@ -41,15 +42,6 @@ export type GalleryFavoritesWriteContextError = {
   error: string;
   status: number;
 };
-
-function isInFavoritesNamespace(galleryId: string, relativePath: string): boolean {
-  const prefix = `${galleryId}/`;
-  if (!relativePath.startsWith(prefix)) return false;
-  const rest = relativePath.slice(prefix.length);
-  const seg = rest.split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
-  /** Legacy flat + nested proofing under `Favorites`. */
-  return seg === "favorites";
-}
 
 /** Restrict dedupe to one proofing list folder (prefix without trailing slash). */
 export function pathIsUnderProofingListPrefix(
@@ -308,7 +300,8 @@ export async function loadExistingFavoriteObjectKeys(
   db: Firestore,
   galleryId: string,
   linkedDriveId: string,
-  organizationId: string | null
+  organizationId: string | null,
+  galleryForRoots: { id: string; media_folder_segment?: string | null }
 ): Promise<Set<string>> {
   let query: Query = db
     .collection("backup_files")
@@ -326,7 +319,7 @@ export async function loadExistingFavoriteObjectKeys(
     const d = doc.data() as Record<string, unknown>;
     if (!isBackupFileActiveForListing(d)) continue;
     const path = String(d.relative_path ?? "");
-    if (!isInFavoritesNamespace(galleryId, path)) continue;
+    if (!relativePathIsInPhotoProofingTree(path, galleryForRoots)) continue;
     const ok = d.object_key as string | undefined;
     if (ok) keys.add(ok);
   }

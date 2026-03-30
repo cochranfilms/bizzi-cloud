@@ -77,17 +77,23 @@ function createProofingMemDb(): ProofingMem {
       if (name === "favorites_lists") {
         return {
           doc: (id?: string) => listDocRef(id ?? `gen_${++listIdAuto}`),
-          where(_field: string, _op: string, galleryIdVal: unknown) {
-            return {
+          where(field: string, _op: string, val: unknown) {
+            const filters: [string, unknown][] = [[field, val]];
+            const chain = {
+              where(f2: string, _o2: string, v2: unknown) {
+                filters.push([f2, v2]);
+                return chain;
+              },
               get: async () => ({
                 docs: [...lists.entries()]
-                  .filter(([, row]) => row.gallery_id === galleryIdVal)
+                  .filter(([, row]) => filters.every(([k, v]) => row[k] === v))
                   .map(([id, row]) => ({
                     id,
                     data: () => ({ ...row }),
                   })),
               }),
             };
+            return chain;
           },
         };
       }
@@ -178,17 +184,18 @@ function createProofingMemDb(): ProofingMem {
       }
       throw new Error(`unknown collection ${name}`);
     },
-    runTransaction: async (fn: (t: TransactionApi) => Promise<unknown>) => {
-      type TransactionApi = {
+    runTransaction: async (
+      fn: (t: {
         get: (ref: { id: string }) => Promise<{ exists: boolean; data: () => Row }>;
         update: (ref: { id: string }, patch: Row) => void;
-      };
-      const t: TransactionApi = {
-        get: async (ref) => {
+      }) => Promise<unknown>
+    ) => {
+      const t = {
+        get: async (ref: { id: string }) => {
           const d = lists.get(ref.id);
           return { exists: !!d, data: () => ({ ...(d ?? {}) }) };
         },
-        update: (ref, patch) => {
+        update: (ref: { id: string }, patch: Row) => {
           lists.set(ref.id, { ...(lists.get(ref.id) ?? {}), ...patch });
         },
       };
@@ -280,6 +287,7 @@ function baseGalleryPhoto(): Row {
     expiration_date: null,
     allow_favorites: true,
     title: "Test",
+    media_folder_segment: "wedding-test",
   };
 }
 

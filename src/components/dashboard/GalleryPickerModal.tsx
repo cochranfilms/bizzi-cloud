@@ -9,7 +9,7 @@ interface GalleryPickerModalProps {
   open: boolean;
   onClose: () => void;
   files: File[];
-  onPick: (galleryId: string, galleryTitle: string) => void;
+  onPick: (galleryId: string, galleryTitle: string, mediaFolderSegment: string | null) => void;
 }
 
 export default function GalleryPickerModal({
@@ -27,9 +27,9 @@ export default function GalleryPickerModal({
 
   if (!open) return null;
 
-  const handlePick = (id: string, title: string) => {
+  const handlePick = (id: string, title: string, mediaFolderSegment: string | null) => {
     setPicked(id);
-    onPick(id, title);
+    onPick(id, title, mediaFolderSegment);
     onClose();
   };
 
@@ -87,7 +87,7 @@ export default function GalleryPickerModal({
                 <li key={g.id}>
                   <button
                     type="button"
-                    onClick={() => handlePick(g.id, g.title)}
+                    onClick={() => handlePick(g.id, g.title, g.media_folder_segment ?? null)}
                     disabled={!!picked}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-neutral-100 disabled:opacity-70 dark:hover:bg-neutral-800"
                   >

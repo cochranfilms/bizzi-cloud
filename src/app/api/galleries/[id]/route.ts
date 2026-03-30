@@ -90,6 +90,12 @@ export async function PATCH(
   if (!id) return NextResponse.json({ error: "Gallery ID required" }, { status: 400 });
 
   const body = (await request.json().catch(() => ({}))) as UpdateGalleryInput;
+  if (Object.prototype.hasOwnProperty.call(body, "media_folder_segment")) {
+    return NextResponse.json(
+      { error: "media_folder_segment cannot be changed" },
+      { status: 400 }
+    );
+  }
   const requestedVersion = typeof body.version === "number" ? body.version : undefined;
   if (requestedVersion === undefined) {
     return NextResponse.json(

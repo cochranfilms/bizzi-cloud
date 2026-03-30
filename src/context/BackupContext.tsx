@@ -49,6 +49,7 @@ import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-m
 import { creativeFirestoreFieldsFromRelativePath } from "@/lib/creative-file-registry";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { linkedDriveMatchesGalleryMediaScope } from "@/lib/gallery-media-drive-match";
+import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
 import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
@@ -98,7 +99,12 @@ interface BackupContextValue {
   uploadFilesToGallery: (
     files: File[],
     galleryId: string,
-    options?: { onComplete?: () => void; galleryTitle?: string }
+    options?: {
+      onComplete?: () => void;
+      galleryTitle?: string;
+      /** When set, avoids GET /api/galleries/[id] for path root. */
+      mediaFolderSegment?: string;
+    }
   ) => Promise<void>;
 }
 
@@ -1487,7 +1493,11 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
     async (
       files: File[],
       galleryId: string,
-      options?: { onComplete?: () => void; galleryTitle?: string }
+      options?: {
+        onComplete?: () => void;
+        galleryTitle?: string;
+        mediaFolderSegment?: string;
+      }
     ) => {
       if (!isFirebaseConfigured() || !user) {
         setError("Please sign in to upload.");
@@ -1561,6 +1571,30 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       }
 
       const drive = await getOrCreateGalleryDrive();
+      const uploadBase = typeof window !== "undefined" ? window.location.origin : "";
+      let pathRoot = options?.mediaFolderSegment?.trim();
+      if (!pathRoot) {
+        const gTok = await getCurrentUserIdToken(false);
+        if (gTok) {
+          try {
+            const gr = await fetch(`${uploadBase}/api/galleries/${galleryId}`, {
+              headers: { Authorization: `Bearer ${gTok}` },
+            });
+            if (gr.ok) {
+              const g = (await gr.json()) as {
+                media_folder_segment?: string | null;
+                title?: string;
+                id?: string;
+              };
+              pathRoot = resolveMediaFolderSegmentForPath({ ...g, id: galleryId }, galleryId);
+            }
+          } catch {
+            pathRoot = galleryId;
+          }
+        }
+      }
+      if (!pathRoot) pathRoot = galleryId;
+
       const db = getFirebaseFirestore();
       const usedNames = new Map<string, number>();
       const uniqueNames = files.map((f) => {
@@ -1618,7 +1652,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           });
           const fileIndex = fileItems.findIndex((it) => it.id === ev.fileId);
           const safeName = uniqueNames[fileIndex] ?? file.name;
-          const relativePath = `${galleryId}/${safeName}`;
+          const relativePath = `${pathRoot}/${safeName}`;
           const token = await getCurrentUserIdToken(false);
           const workspaceFields = await getWorkspaceFieldsForOrgDrive(
             drive,
@@ -1706,7 +1740,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           id: item.id,
           file,
           driveId: drive.id,
-          relativePath: `${galleryId}/${uniqueNames[i]}`,
+          relativePath: `${pathRoot}/${uniqueNames[i]}`,
           workspaceId: undefined,
           organizationId: null,
         };

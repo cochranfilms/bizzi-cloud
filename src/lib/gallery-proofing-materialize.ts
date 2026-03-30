@@ -12,7 +12,7 @@ import {
   resolveGalleryFavoritesWriteContext,
 } from "@/lib/gallery-favorites-write-context";
 import type { MaterializationState } from "@/lib/gallery-proofing-types";
-import { proofingRootSegmentFromGalleryType } from "@/lib/gallery-proofing-types";
+import { canonicalProofingRootSegment, resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
 import { assignProofingFolderSlug } from "@/lib/gallery-proofing-slug";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
@@ -71,7 +71,8 @@ async function ensureImmutableListPrefix(
   db: Firestore,
   galleryId: string,
   listId: string,
-  galleryKind: "photo" | "video"
+  galleryKind: "photo" | "video",
+  galleryRow: GalleryManagementDoc
 ): Promise<{ prefix: string }> {
   const ref = db.collection("favorites_lists").doc(listId);
   return db.runTransaction(async (t) => {
@@ -85,16 +86,23 @@ async function ensureImmutableListPrefix(
       return { prefix: existing };
     }
 
-    const root = proofingRootSegmentFromGalleryType(galleryKind);
-    const folder_slug = assignProofingFolderSlug({
-      title: d.title as string | undefined,
-      listDocId: listId,
-      clientName: d.client_name as string | undefined,
-    });
-    const materialized_relative_prefix = `${galleryId}/${root}/${folder_slug}`;
-    t.update(ref, {
+    const root = canonicalProofingRootSegment(galleryKind);
+    const media = resolveMediaFolderSegmentForPath(
+      { ...galleryRow, id: galleryId } as Record<string, unknown>,
+      galleryId
+    );
+    const clientFolder =
+      (typeof d.client_folder_segment === "string" && d.client_folder_segment.trim()) ||
+      (typeof d.folder_slug === "string" && d.folder_slug.trim()) ||
+      assignProofingFolderSlug({
+        title: d.title as string | undefined,
+        listDocId: listId,
+        clientName: d.client_name as string | undefined,
+      });
+    const materialized_relative_prefix = `${media}/${root}/${clientFolder}`;
+
+    const patch: Record<string, unknown> = {
       proofing_root_segment: root,
-      folder_slug,
       materialized_relative_prefix,
       materialization_state: (d.materialization_state as string) ?? "idle",
       status: (d.status as string) ?? "submitted",
@@ -106,7 +114,12 @@ async function ensureImmutableListPrefix(
             ? d.asset_ids.length
             : 0,
       updated_at: new Date(),
-    });
+    };
+    if (!(typeof d.client_folder_segment === "string" && d.client_folder_segment.trim())) {
+      patch.client_folder_segment = clientFolder;
+    }
+
+    t.update(ref, patch);
     return { prefix: materialized_relative_prefix };
   });
 }
@@ -153,7 +166,7 @@ export async function materializeProofingList(params: {
   const gKind = galleryKindFromRow(galleryRow as Record<string, unknown>);
   let prefix: string;
   try {
-    const r = await ensureImmutableListPrefix(db, galleryId, listId, gKind);
+    const r = await ensureImmutableListPrefix(db, galleryId, listId, gKind, galleryRow);
     prefix = r.prefix;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

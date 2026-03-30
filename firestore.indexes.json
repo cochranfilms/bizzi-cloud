@@ -1407,6 +1407,28 @@
       ]
     },
     {
+      "collectionGroup": "galleries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "photographer_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "organization_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "personal_team_owner_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "media_folder_segment",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "gallery_assets",
       "queryScope": "COLLECTION",
       "fields": [
@@ -1481,6 +1503,20 @@
         {
           "fieldPath": "created_at",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "favorites_lists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "gallery_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "list_type",
+          "order": "ASCENDING"
         }
       ]
     },

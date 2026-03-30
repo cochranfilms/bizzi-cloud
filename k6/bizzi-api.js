@@ -1,213 +1,115 @@
 /**
- * Load tests for bizzi-cloud App Router APIs.
+ * Legacy umbrella load mix (all behavior classes combined).
+ * Prefer feature-specific scripts under k6/*.js for clearer thresholds.
  *
- * Prerequisites:
- *   - k6 on PATH (brew install k6, or install from https://k6.io/docs/get-started/installation/)
+ * Prerequisites: k6 on PATH.
  *
- * Required env:
- *   - BASE_URL   e.g. http://localhost:3000 or https://your-preview.vercel.app
+ * Required: BASE_URL
+ * Optional: BEARER_TOKEN, DRIVE_ID, GALLERY_ID, FILE_ID, OBJECT_KEY,
+ *   TEST_DISPOSABLE_DRIVE_ID (required when B2/presign/upload-create flags on),
+ *   TEST_BACKUP_FILE_ID (when K6_INCLUDE_METADATA_EXTRACT=1)
  *
- * Auth (most routes): Firebase ID token from the signed-in app (Network tab → any /api/* → Authorization).
- *   - BEARER_TOKEN   (refresh often; tokens expire)
+ * Dangerous flags require K6_ALLOW_MUTATIONS=1:
+ *   K6_ENABLE_B2_WRITES, K6_INCLUDE_UPLOAD_URL_PRESIGN, K6_INCLUDE_METADATA_EXTRACT,
+ *   K6_INCLUDE_STRIPE, K6_ENABLE_UPLOAD_SESSION_CREATE
  *
- * Optional (enable richer checks; omit to skip that branch):
- *   - DRIVE_ID              for /api/files/filter, multipart/upload-url (non-validate)
- *   - GALLERY_ID            for GET /api/galleries/:id
- *   - FILE_ID               for GET /api/files/:fileId
- *   - OBJECT_KEY            for GET /api/mount/range (must be readable by user)
- *   - BACKUP_FILE_ID        for POST /api/files/extract-metadata (heavy; off by default)
- *   - K6_PLAN_ID            default solo — for POST /api/stripe/subscription-preview
- *
- * Dangerous / side-effecting (off unless explicitly enabled):
- *   - K6_ENABLE_B2_WRITES=1       POST /api/backup/multipart-init (creates real B2 multipart state)
- *   - K6_INCLUDE_STRIPE=1         POST /api/stripe/subscription-preview, /api/stripe/portal (Stripe + your DB)
- *   - K6_INCLUDE_METADATA_EXTRACT=1   POST /api/files/extract-metadata (ffmpeg/B2; very expensive)
- *   - K6_INCLUDE_UPLOAD_URL_PRESIGN=1 POST /api/backup/upload-url without validate_only (B2 presigns)
- *
- * Executor selection (default: ramping-vus 10 → 4000):
- *   - K6_EXECUTOR=ramping-vus | constant-vus | ramping-arrival-rate
- *   - K6_START_VUS, K6_TARGET_VUS, K6_RAMP_DURATION, K6_HOLD_DURATION, K6_RAMP_DOWN_DURATION
- *   - For arrival-rate: K6_START_RATE, K6_STAGE1_DURATION, K6_STAGE1_TARGET, ... (see buildOptions)
+ * Executor: K6_EXECUTOR=ramping-vus | constant-vus | ramping-arrival-rate (default ramping-vus)
  */
 
 import http from "k6/http";
 import { check, sleep } from "k6";
+import { env } from "./lib/env.js";
+import { assertK6Ready, readBizziApiMutationFlags } from "./lib/guards.js";
+import { buildBizziMixOptions } from "./lib/options.js";
+import { getBaseUrl, buildTags, authHeadersJson, postJson, jitter } from "./lib/http.js";
 
-function env(name, fallback = "") {
-  return __ENV[name] || fallback;
-}
-
-function buildOptions() {
-  const execName = "bizziMix";
-
-  const constantVus = {
-    scenarios: {
-      main: {
-        executor: "constant-vus",
-        vus: parseInt(env("K6_VUS", "10"), 10),
-        duration: env("K6_DURATION", "5m"),
-        exec: execName,
-      },
-    },
-    thresholds: {
-      http_req_failed: ["rate<0.5"],
-      http_req_duration: ["p(95)<30000"],
-    },
-  };
-
-  const rampingArrival = {
-    scenarios: {
-      main: {
-        executor: "ramping-arrival-rate",
-        startRate: parseInt(env("K6_START_RATE", "10"), 10),
-        timeUnit: "1s",
-        preAllocatedVUs: parseInt(env("K6_PREALLOC_VUS", "200"), 10),
-        maxVUs: parseInt(env("K6_MAX_VUS", "4000"), 10),
-        stages: [
-          {
-            duration: env("K6_STAGE1_DURATION", "2m"),
-            target: parseInt(env("K6_STAGE1_TARGET", "50"), 10),
-          },
-          {
-            duration: env("K6_STAGE2_DURATION", "5m"),
-            target: parseInt(env("K6_STAGE2_TARGET", "500"), 10),
-          },
-          {
-            duration: env("K6_STAGE3_DURATION", "5m"),
-            target: parseInt(env("K6_STAGE3_TARGET", "2000"), 10),
-          },
-          {
-            duration: env("K6_STAGE4_DURATION", "2m"),
-            target: parseInt(env("K6_STAGE4_TARGET", "0"), 10),
-          },
-        ],
-        exec: execName,
-      },
-    },
-    thresholds: {
-      http_req_failed: ["rate<0.5"],
-      http_req_duration: ["p(95)<30000"],
-    },
-  };
-
-  const rampingVus = {
-    scenarios: {
-      main: {
-        executor: "ramping-vus",
-        startVUs: parseInt(env("K6_START_VUS", "10"), 10),
-        stages: [
-          {
-            duration: env("K6_RAMP_DURATION", "8m"),
-            target: parseInt(env("K6_TARGET_VUS", "4000"), 10),
-          },
-          {
-            duration: env("K6_HOLD_DURATION", "2m"),
-            target: parseInt(env("K6_TARGET_VUS", "4000"), 10),
-          },
-          {
-            duration: env("K6_RAMP_DOWN_DURATION", "2m"),
-            target: 0,
-          },
-        ],
-        gracefulRampDown: "30s",
-        exec: execName,
-      },
-    },
-    thresholds: {
-      http_req_failed: ["rate<0.5"],
-      http_req_duration: ["p(95)<30000"],
-    },
-  };
-
-  const mode = env("K6_EXECUTOR", "ramping-vus");
-  if (mode === "constant-vus") return constantVus;
-  if (mode === "ramping-arrival-rate") return rampingArrival;
-  return rampingVus;
-}
-
-export const options = buildOptions();
-
-function baseUrl() {
-  const u = env("BASE_URL");
-  if (!u) {
-    throw new Error("Set BASE_URL, e.g. BASE_URL=http://localhost:3000 k6 run k6/bizzi-api.js");
-  }
-  return u.replace(/\/$/, "");
-}
-
-function authHeaders() {
-  const token = env("BEARER_TOKEN");
-  const h = { "Content-Type": "application/json" };
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
-}
-
-function jsonPost(path, body) {
-  return http.post(`${baseUrl()}${path}`, JSON.stringify(body), {
-    headers: authHeaders(),
-    tags: { name: `POST ${path}` },
+export function setup() {
+  const flags = readBizziApiMutationFlags();
+  assertK6Ready({
+    script: "bizzi-api",
+    requires: ["BASE_URL"],
+    includeB2Writes: flags.includeB2Writes,
+    includeUploadPresign: flags.includeUploadPresign,
+    includeMetadataExtract: flags.includeMetadataExtract,
+    includeStripe: flags.includeStripe,
+    includeUploadSessionCreate: flags.includeUploadSessionCreate,
   });
+  return {};
 }
 
-function jitter() {
-  return (1 + Math.floor(Math.random() * 3)) / 10;
+export const options = buildBizziMixOptions();
+
+function jsonPost(path, body, tags) {
+  return postJson(path, body, tags);
 }
 
-export function bizziMix() {
-  const b = baseUrl();
-  const h = authHeaders();
+export default function bizziMix() {
+  const flags = readBizziApiMutationFlags();
+  const b = getBaseUrl();
+  const h = authHeadersJson();
   const driveId = env("DRIVE_ID");
+  const testDrive = env("TEST_DISPOSABLE_DRIVE_ID", "");
   const galleryId = env("GALLERY_ID");
   const fileId = env("FILE_ID");
   const objectKey = env("OBJECT_KEY");
-  const backupFileId = env("BACKUP_FILE_ID");
+  const backupFileId = env("TEST_BACKUP_FILE_ID", "");
   const planId = env("K6_PLAN_ID", "solo");
 
-  // Side-effecting paths: small probability when explicitly enabled (see file header).
-  if (env("K6_ENABLE_B2_WRITES") === "1" && driveId && Math.random() < 0.005) {
-    const res = jsonPost("/api/backup/multipart-init", {
-      drive_id: driveId,
-      relative_path: `k6-multipart/${__VU}-${__ITER}.bin`,
-      content_type: "application/octet-stream",
-      size_bytes: 32 * 1024 * 1024,
-    });
+  if (flags.includeB2Writes && testDrive && Math.random() < 0.005) {
+    const tags = buildTags("storage", "multipart_init", "normal", "yes");
+    const res = jsonPost(
+      "/api/backup/multipart-init",
+      {
+        drive_id: testDrive,
+        relative_path: `k6-multipart/${__VU}-${__ITER}.bin`,
+        content_type: "application/octet-stream",
+        size_bytes: 32 * 1024 * 1024,
+      },
+      tags
+    );
     check(res, { "multipart-init 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
     return;
   }
 
-  if (env("K6_INCLUDE_UPLOAD_URL_PRESIGN") === "1" && driveId && Math.random() < 0.008) {
-    const res = jsonPost("/api/backup/upload-url", {
-      drive_id: driveId,
-      relative_path: `k6-load/${__VU}-${__ITER}.bin`,
-      content_type: "application/octet-stream",
-      size_bytes: 1024,
-    });
+  if (flags.includeUploadPresign && testDrive && Math.random() < 0.008) {
+    const tags = buildTags("storage", "upload_url_presign", "normal", "yes");
+    const res = jsonPost(
+      "/api/backup/upload-url",
+      {
+        drive_id: testDrive,
+        relative_path: `k6-load/${__VU}-${__ITER}.bin`,
+        content_type: "application/octet-stream",
+        size_bytes: 1024,
+      },
+      tags
+    );
     check(res, { "upload-url presign 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
     return;
   }
 
-  if (env("K6_INCLUDE_METADATA_EXTRACT") === "1" && backupFileId && Math.random() < 0.003) {
-    const res = jsonPost("/api/files/extract-metadata", { backup_file_id: backupFileId });
+  if (flags.includeMetadataExtract && backupFileId && Math.random() < 0.003) {
+    const tags = buildTags("storage", "extract_metadata", "normal", "yes");
+    const res = jsonPost("/api/files/extract-metadata", { backup_file_id: backupFileId }, tags);
     check(res, { "extract-metadata responded": (r) => r.status >= 200 && r.status < 500 });
     sleep(1);
     return;
   }
 
-  if (env("K6_INCLUDE_STRIPE") === "1" && Math.random() < 0.005) {
+  if (flags.includeStripe && Math.random() < 0.005) {
     if (Math.random() < 0.7) {
-      const res = jsonPost("/api/stripe/subscription-preview", {
-        planId,
-        addonIds: [],
-        billing: "monthly",
-        storageAddonId: null,
-      });
+      const tags = buildTags("storage", "stripe_preview", "normal", "yes");
+      const res = jsonPost(
+        "/api/stripe/subscription-preview",
+        { planId, addonIds: [], billing: "monthly", storageAddonId: null },
+        tags
+      );
       check(res, { "subscription-preview 2xx": (r) => r.status >= 200 && r.status < 300 });
     } else {
-      const res = http.post(`${baseUrl()}/api/stripe/portal`, "{}", {
+      const res = http.post(`${b}/api/stripe/portal`, "{}", {
         headers: { ...h, "Content-Type": "application/json" },
-        tags: { name: "POST /api/stripe/portal" },
+        tags: buildTags("storage", "stripe_portal", "normal", "yes"),
       });
       check(res, {
         "portal ok or expected fail": (r) =>
@@ -218,12 +120,29 @@ export function bizziMix() {
     return;
   }
 
-  // Weighted mix: favor read-mostly APIs.
+  if (flags.includeUploadSessionCreate && testDrive && Math.random() < 0.004) {
+    const tags = buildTags("storage", "upload_create", "normal", "yes");
+    const res = jsonPost(
+      "/api/uploads/create",
+      {
+        drive_id: testDrive,
+        relative_path: `k6-umbrella/${__VU}-${__ITER}.bin`,
+        content_type: "application/octet-stream",
+        size_bytes: 1024,
+        file_name: "k6.bin",
+      },
+      tags
+    );
+    check(res, { "upload create responded": (r) => r.status >= 200 && r.status < 500 });
+    sleep(jitter());
+    return;
+  }
+
   const roll = Math.random();
 
   if (roll < 0.06) {
     const res = http.get(`${b}/api/backup/auth-status`, {
-      tags: { name: "GET /api/backup/auth-status" },
+      tags: buildTags("auth", "auth_status", "normal", "no"),
     });
     check(res, { "auth-status 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -231,7 +150,10 @@ export function bizziMix() {
   }
 
   if (roll < 0.18) {
-    const res = http.get(`${b}/api/profile`, { headers: h, tags: { name: "GET /api/profile" } });
+    const res = http.get(`${b}/api/profile`, {
+      headers: h,
+      tags: buildTags("auth", "profile", "normal", "no"),
+    });
     check(res, { "profile 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
     return;
@@ -242,7 +164,7 @@ export function bizziMix() {
     if (driveId) q += `&drive_id=${encodeURIComponent(driveId)}`;
     const res = http.get(`${b}/api/files/filter?${q}`, {
       headers: h,
-      tags: { name: "GET /api/files/filter" },
+      tags: buildTags("files", "filter", "normal", "no"),
     });
     check(res, { "files/filter 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -252,7 +174,7 @@ export function bizziMix() {
   if (roll < 0.5) {
     const res = http.get(`${b}/api/notifications?limit=20`, {
       headers: h,
-      tags: { name: "GET /api/notifications" },
+      tags: buildTags("notifications", "list", "normal", "no"),
     });
     check(res, { "notifications 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -262,7 +184,7 @@ export function bizziMix() {
   if (roll < 0.58) {
     const res = http.get(`${b}/api/notifications/count`, {
       headers: h,
-      tags: { name: "GET /api/notifications/count" },
+      tags: buildTags("notifications", "count", "normal", "no"),
     });
     check(res, { "notifications/count 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -270,7 +192,10 @@ export function bizziMix() {
   }
 
   if (roll < 0.72) {
-    const res = http.get(`${b}/api/galleries`, { headers: h, tags: { name: "GET /api/galleries" } });
+    const res = http.get(`${b}/api/galleries`, {
+      headers: h,
+      tags: buildTags("gallery", "galleries_list", "normal", "no"),
+    });
     check(res, { "galleries 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
     return;
@@ -279,7 +204,7 @@ export function bizziMix() {
   if (roll < 0.8 && galleryId) {
     const res = http.get(`${b}/api/galleries/${encodeURIComponent(galleryId)}`, {
       headers: h,
-      tags: { name: "GET /api/galleries/:id" },
+      tags: buildTags("gallery", "gallery_by_id", "normal", "no"),
     });
     check(res, { "gallery by id 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -289,7 +214,7 @@ export function bizziMix() {
   if (roll < 0.88 && fileId) {
     const res = http.get(`${b}/api/files/${encodeURIComponent(fileId)}`, {
       headers: h,
-      tags: { name: "GET /api/files/:fileId" },
+      tags: buildTags("files", "file_metadata", "normal", "no"),
     });
     check(res, { "file metadata 2xx": (r) => r.status >= 200 && r.status < 300 });
     sleep(jitter());
@@ -301,7 +226,7 @@ export function bizziMix() {
     const res = http.get(`${b}/api/mount/range?${qs}`, {
       headers: { ...h, Range: "bytes=0-1023" },
       redirects: 0,
-      tags: { name: "GET /api/mount/range" },
+      tags: buildTags("files", "mount_range", "normal", "no"),
     });
     check(res, {
       "range redirect or ok": (r) => r.status === 302 || r.status === 200 || r.status === 206,
@@ -310,8 +235,7 @@ export function bizziMix() {
     return;
   }
 
-  // Signed URL path: lightweight token check only (no B2 presign)
-  const res = jsonPost("/api/backup/upload-url", { validate_only: true });
+  const res = jsonPost("/api/backup/upload-url", { validate_only: true }, buildTags("storage", "upload_url_validate", "normal", "no"));
   check(res, { "upload-url validate 2xx": (r) => r.status >= 200 && r.status < 300 });
   sleep(jitter());
 }

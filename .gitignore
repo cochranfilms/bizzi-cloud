@@ -23,6 +23,9 @@ yarn-error.log*
 .env.production.local
 firebase-service-account.json
 
+# k6 local secrets (copy from k6/.env.local.example)
+k6/.env.local
+
 # IDE
 .idea
 .vscode
@@ -51,6 +54,9 @@ desktop/bin/
 bin/ffmpeg-braw/
 bin/ffmpeg-braw-extract/
 bin/*.zip
+
+# k6 JSON output (local audit artifacts)
+/k6-results/
 
 # Playwright
 /test-results/

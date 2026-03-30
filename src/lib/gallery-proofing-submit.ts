@@ -2,6 +2,8 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { buildNewProofingListFields } from "@/lib/gallery-proofing-list-document";
 import { buildAssetSnapshotMin } from "@/lib/gallery-proofing-build-snapshot";
 import type { CreatedByRole, ProofingListType, ShellContext, SubmissionSource } from "@/lib/gallery-proofing-types";
+import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
+import { allocateClientFolderSegment } from "@/lib/gallery-media-folder-admin";
 
 function normOrgId(raw: unknown): string | null {
   if (raw == null || raw === "") return null;
@@ -43,6 +45,18 @@ export async function submitProofingList(params: {
   } = params;
 
   const docRef = db.collection("favorites_lists").doc();
+  const mediaFolderSegment = resolveMediaFolderSegmentForPath(
+    { ...galleryRow, id: galleryId },
+    galleryId
+  );
+  const clientFolderSegment = await allocateClientFolderSegment(
+    db,
+    galleryId,
+    docRef.id,
+    listType,
+    clientName
+  );
+
   const assetSnapshotMin = await buildAssetSnapshotMin(db, galleryId, uniqueIds);
   const galleryType = galleryRow.gallery_type === "video" ? "video" : "photo";
   const now = new Date();
@@ -56,6 +70,8 @@ export async function submitProofingList(params: {
     assetSnapshotMin,
     clientEmail,
     clientName,
+    mediaFolderSegment,
+    clientFolderSegment,
     galleryType,
     listType,
     title: title ?? null,

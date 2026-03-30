@@ -19,15 +19,24 @@ export type SubmissionSource = "public_gallery" | "dashboard_proofing" | "enterp
 
 export type CreatedByRole = "client" | "photographer";
 
-export const PROOFING_ROOT_FAVORITES = "Favorites";
-export const PROOFING_ROOT_SELECTS = "Selects";
+import {
+  CANONICAL_PHOTO_PROOFING_FOLDER,
+  CANONICAL_VIDEO_PROOFING_FOLDER,
+  canonicalProofingRootSegment,
+} from "@/lib/gallery-media-path";
+
+/** Canonical storage segment for photo proofing (writes). Legacy reads use "Favorites". */
+export const PROOFING_ROOT_FAVORITES = CANONICAL_PHOTO_PROOFING_FOLDER;
+/** Canonical storage segment for video proofing (writes). Legacy reads use "Selects". */
+export const PROOFING_ROOT_SELECTS = CANONICAL_VIDEO_PROOFING_FOLDER;
 
 export type ProofingRootSegment = typeof PROOFING_ROOT_FAVORITES | typeof PROOFING_ROOT_SELECTS;
 
 export function proofingRootSegmentFromGalleryType(
   galleryType: "photo" | "video" | undefined | null
 ): ProofingRootSegment {
-  return galleryType === "video" ? PROOFING_ROOT_SELECTS : PROOFING_ROOT_FAVORITES;
+  const k = galleryType === "video" ? "video" : "photo";
+  return canonicalProofingRootSegment(k) as ProofingRootSegment;
 }
 
 /** Merge folders live under `_merged/{merge_slug}/` — new slug per merge action. */

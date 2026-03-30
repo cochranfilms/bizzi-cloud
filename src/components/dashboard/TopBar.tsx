@@ -332,9 +332,12 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         open={galleryPickerFiles !== null && galleryPickerFiles.length > 0}
         onClose={() => setGalleryPickerFiles(null)}
         files={galleryPickerFiles ?? []}
-        onPick={(galleryId, galleryTitle) => {
+        onPick={(galleryId, galleryTitle, mediaFolderSegment) => {
           if (galleryPickerFiles?.length) {
-            uploadFilesToGallery(galleryPickerFiles, galleryId, { galleryTitle });
+            uploadFilesToGallery(galleryPickerFiles, galleryId, {
+              galleryTitle,
+              mediaFolderSegment: mediaFolderSegment ?? undefined,
+            });
             setGalleryPickerFiles(null);
           }
         }}

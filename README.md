@@ -11,6 +11,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+Load tests: see [k6/README.md](k6/README.md) (k6 CLI + guards + JSON output).
+
 ## Sync Feature
 
 1. Sign in at `/login`

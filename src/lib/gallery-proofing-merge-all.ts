@@ -10,7 +10,12 @@ import {
   loadExistingProofingObjectKeys,
   resolveGalleryFavoritesWriteContext,
 } from "@/lib/gallery-favorites-write-context";
-import { proofingRootSegmentFromGalleryType, PROOFING_MERGED_SEGMENT } from "@/lib/gallery-proofing-types";
+import { PROOFING_MERGED_SEGMENT } from "@/lib/gallery-proofing-types";
+import {
+  buildMergeRelativePrefix,
+  canonicalProofingRootSegment,
+  resolveMediaFolderSegmentForPath,
+} from "@/lib/gallery-media-path";
 import { assignMergeSlug } from "@/lib/gallery-proofing-slug";
 import type { MaterializationState, ShellContext } from "@/lib/gallery-proofing-types";
 
@@ -105,9 +110,17 @@ export async function mergeAllProofingLists(params: {
     for (const id of (d.asset_ids as string[]) ?? []) assetIdSet.add(id);
   }
 
-  const root = proofingRootSegmentFromGalleryType(gKind);
   const merge_slug = assignMergeSlug();
-  const merge_relative_prefix = `${galleryId}/${root}/${PROOFING_MERGED_SEGMENT}/${merge_slug}`;
+  const mediaFolder = resolveMediaFolderSegmentForPath(
+    { ...galleryRow, id: galleryId } as Record<string, unknown>,
+    galleryId
+  );
+  const merge_relative_prefix = buildMergeRelativePrefix({
+    mediaFolderSegment: mediaFolder,
+    galleryKind: gKind,
+    mergeSlug: merge_slug,
+    mergedSegment: PROOFING_MERGED_SEGMENT,
+  });
 
   const mergeRef = db
     .collection("galleries")
@@ -118,7 +131,7 @@ export async function mergeAllProofingLists(params: {
   const now = new Date();
   await mergeRef.set({
     merge_slug,
-    proofing_root_segment: root,
+    proofing_root_segment: canonicalProofingRootSegment(gKind),
     merge_relative_prefix,
     merged_at: null,
     merged_by_uid: actingUid,

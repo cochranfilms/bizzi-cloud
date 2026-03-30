@@ -11,6 +11,7 @@ export interface GalleryListItem {
   media_mode?: "final" | "raw";
   title: string;
   slug: string;
+  media_folder_segment?: string | null;
   photographer_id: string;
   cover_asset_id: string | null;
   cover_object_key: string | null;

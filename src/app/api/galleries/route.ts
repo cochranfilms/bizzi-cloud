@@ -19,6 +19,7 @@ import {
 import { NextResponse } from "next/server";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { normalizeVideoDownloadPolicyForStorage } from "@/lib/gallery-video-download-policy";
+import { ensureUniqueMediaFolderSegment } from "@/lib/gallery-media-folder-admin";
 
 function isNonOrgGalleryOid(oid: unknown): boolean {
   return oid === null || oid === undefined || oid === "";
@@ -163,6 +164,7 @@ export async function GET(request: Request) {
       unique_visitor_count: data.unique_visitor_count ?? 0,
       favorite_count: data.favorite_count ?? 0,
       download_count: data.download_count ?? 0,
+      media_folder_segment: (data.media_folder_segment as string | undefined) ?? null,
       created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
       updated_at: data.updated_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
     };
@@ -266,6 +268,16 @@ export async function POST(request: Request) {
   const baseSlug = slugify(title.trim());
   const slug = await ensureUniqueSlug(db, uid, baseSlug);
 
+  const media_folder_segment = await ensureUniqueMediaFolderSegment(
+    db,
+    {
+      photographerId: uid,
+      organizationId,
+      personalTeamOwnerId,
+    },
+    title.trim()
+  );
+
   let passwordHash: string | null = null;
 
   if (access_mode === "password" && password && typeof password === "string") {
@@ -279,6 +291,7 @@ export async function POST(request: Request) {
     gallery_type: galleryType,
     title: title.trim(),
     slug,
+    media_folder_segment,
     photographer_id: uid,
     cover_asset_id: null,
     description: description?.trim() ?? null,

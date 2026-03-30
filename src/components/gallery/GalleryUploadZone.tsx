@@ -11,10 +11,13 @@ import {
 } from "@/lib/gallery-file-types";
 import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
 import { galleryUploadHelperPhoto, galleryUploadHelperVideo } from "@/lib/gallery-profile-copy";
+import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
   galleryTitle?: string;
+  /** Persisted storage folder (from gallery document); title used as legacy fallback. */
+  mediaFolderSegment?: string | null;
   onUploadComplete?: () => void;
   disabled?: boolean;
   /** From gallery profile — drives upload hints */
@@ -25,6 +28,8 @@ interface GalleryUploadZoneProps {
 
 export default function GalleryUploadZone({
   galleryId,
+  galleryTitle,
+  mediaFolderSegment,
   onUploadComplete,
   disabled,
   mediaMode = "final",
@@ -68,7 +73,14 @@ export default function GalleryUploadZone({
     }
     try {
       const drive = await getOrCreateGalleryDrive();
-      const pathPrefix = galleryId;
+      const pathPrefix = resolveMediaFolderSegmentForPath(
+        {
+          id: galleryId,
+          title: galleryTitle,
+          media_folder_segment: mediaFolderSegment,
+        },
+        galleryId
+      );
       openPanel(drive.id, pathPrefix, null, {
         galleryId,
         initialFiles: droppedFiles && droppedFiles.length > 0 ? droppedFiles : undefined,

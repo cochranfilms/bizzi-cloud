@@ -111,6 +111,7 @@ interface GalleryData {
   media_mode?: "final" | "raw";
   title: string;
   slug: string;
+  media_folder_segment?: string | null;
   description?: string | null;
   event_date?: string | null;
   expiration_date?: string | null;
@@ -463,6 +464,7 @@ export default function EnterpriseGalleryDetailPage() {
               <GalleryUploadZone
                 galleryId={id}
                 galleryTitle={gallery?.title}
+                mediaFolderSegment={gallery?.media_folder_segment}
                 mediaMode={gallery?.media_mode ?? "final"}
                 galleryType={isVideoGallery ? "video" : "photo"}
                 onUploadComplete={() => {
