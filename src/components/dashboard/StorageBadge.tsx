@@ -256,7 +256,7 @@ export default function StorageBadge() {
     Boolean(user && teamOwnerFromPath && user.uid === teamOwnerFromPath);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
+    <div className="flex flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">
         {teamOwnerFromPath ? "Team workspace files" : "Total plan usage (file-backed)"}
       </p>
@@ -308,7 +308,7 @@ export default function StorageBadge() {
             owner combined).
           </p>
         ))}
-      <div className="mt-auto pt-3">
+      <div className="pt-2">
         <button
           type="button"
           onClick={recalculateStorage}

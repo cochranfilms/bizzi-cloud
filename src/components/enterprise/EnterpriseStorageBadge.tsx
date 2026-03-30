@@ -114,7 +114,7 @@ export default function EnterpriseStorageBadge() {
     typeof seat?.remaining_bytes === "number" ? formatBytes(seat.remaining_bytes) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
+    <div className="flex flex-col rounded-lg bg-neutral-100 px-3 py-3 dark:bg-neutral-800">
       <p className="text-xs text-neutral-600 dark:text-neutral-400">Organization storage (shared pool)</p>
       {!hydrated ? (
         <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading storage…</p>
@@ -162,7 +162,7 @@ export default function EnterpriseStorageBadge() {
           storage.
         </p>
       ) : null}
-      <div className="mt-auto pt-3">
+      <div className="pt-2">
         <button
           type="button"
           onClick={recalculateStorage}

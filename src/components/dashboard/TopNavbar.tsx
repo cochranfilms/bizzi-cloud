@@ -81,14 +81,9 @@ export default function TopNavbar() {
       ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null)
       : null;
   const navBase = teamNavBase ?? "/dashboard";
-  const mobileOverlayTop =
-    teamNavBase && teamWs ? "top-36" : "top-14";
-  const mobileNavTop =
-    teamNavBase && teamWs ? "top-36" : "top-14";
-  const mobileNavMaxH =
-    teamNavBase && teamWs
-      ? "max-h-[calc(100vh-9rem)]"
-      : "max-h-[calc(100vh-3.5rem)]";
+  const mobileOverlayTop = "top-14";
+  const mobileNavTop = "top-14";
+  const mobileNavMaxH = "max-h-[calc(100vh-3.5rem)]";
 
   const filteredItems = navItems.filter((item) => {
     if (item.requiresGallerySuite && !hasGallerySuite) return false;
@@ -168,51 +163,47 @@ export default function TopNavbar() {
   if (teamNavBase && teamWs) {
     const homeHref = teamNavBase;
     return (
-      <header className="sticky top-0 z-[60] flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50">
-        <div className="flex min-h-[2.75rem] shrink-0 items-center px-4 md:px-6">
-          <Link
-            href={homeHref}
-            className="flex min-w-0 flex-shrink-0 items-center gap-2"
-            onClick={() => setMobileOpen(false)}
-          >
-            {teamWs.teamLogoUrl ? (
-              <Image
-                src={teamWs.teamLogoUrl}
-                alt={teamWs.teamName}
-                width={24}
-                height={24}
-                className="h-6 w-6 flex-shrink-0 object-contain"
-                unoptimized
-              />
-            ) : (
-              <Image
-                src="/logo.png"
-                alt="Bizzi Byte"
-                width={24}
-                height={24}
-                className="flex-shrink-0 object-contain"
-              />
-            )}
-            <span className="truncate font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-              {teamWs.teamName}
-            </span>
-            <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]">
-              Team
-            </span>
-          </Link>
-        </div>
-
-        <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
-          <button
-            type="button"
-            onClick={() => setMobileOpen((o) => !o)}
-            className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-            aria-label={mobileOpen ? "Close menu" : "Open menu"}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-          {navRow}
-        </div>
+      <header className="sticky top-0 z-[60] flex min-h-14 flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
+        <button
+          type="button"
+          onClick={() => setMobileOpen((o) => !o)}
+          className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+        >
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+        <Link
+          href={homeHref}
+          className="flex min-w-0 max-w-[min(100%,18rem)] shrink items-center gap-2 sm:max-w-[20rem] md:max-w-[min(22rem,32vw)]"
+          onClick={() => setMobileOpen(false)}
+          title={teamWs.teamName}
+        >
+          {teamWs.teamLogoUrl ? (
+            <Image
+              src={teamWs.teamLogoUrl}
+              alt={teamWs.teamName}
+              width={24}
+              height={24}
+              className="h-6 w-6 flex-shrink-0 object-contain"
+              unoptimized
+            />
+          ) : (
+            <Image
+              src="/logo.png"
+              alt="Bizzi Byte"
+              width={24}
+              height={24}
+              className="flex-shrink-0 object-contain"
+            />
+          )}
+          <span className="truncate font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
+            {teamWs.teamName}
+          </span>
+          <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]">
+            Team
+          </span>
+        </Link>
+        {navRow}
 
         {mobileOpen && (
           <div

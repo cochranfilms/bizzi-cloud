@@ -45,9 +45,9 @@ export default function DashboardShell({
     buttonColor,
     uiThemeOverride,
   );
-  /** Taller mobile headers (wrapped search) need more offset; md+ uses compact single-row height. */
-  const stackedNavTop = teamWs ? "top-36 md:top-[6.25rem]" : "top-14";
-  const mobilePanelBtnTop = teamWs ? "top-36 md:top-[6.75rem]" : "top-20 md:top-16";
+  /** Right panel sits below the sticky header (single-row team + personal nav match). */
+  const stackedNavTop = "top-14";
+  const mobilePanelBtnTop = "top-20 md:top-16";
 
   return (
     <UppyUploadProvider>

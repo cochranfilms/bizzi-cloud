@@ -71,58 +71,54 @@ export default function EnterpriseNavbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-0"
+      className="sticky top-0 z-50 flex min-h-14 flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6"
       data-org-theme={theme}
     >
-      {/* Row 1: Organization branding — above tabs so long names don't compress nav */}
-      <div className="flex min-h-[2.75rem] shrink-0 items-center px-4 md:px-6">
-        <Link
-          href="/enterprise"
-          className="flex min-w-0 flex-shrink-0 items-center gap-2"
-          onClick={() => setMobileOpen(false)}
-        >
-          {logoUrl ? (
-            <Image
-              src={logoUrl}
-              alt={org?.name ?? "Organization"}
-              width={24}
-              height={24}
-              className="h-6 w-6 flex-shrink-0 object-contain"
-              unoptimized
-            />
-          ) : (
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={24}
-              height={24}
-              className="flex-shrink-0 object-contain"
-            />
-          )}
-          <span className="truncate font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
-            {org?.name ?? "Enterprise"}
-          </span>
-          <span
-            className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]"
-            aria-label="Enterprise workspace"
-          >
-            Enterprise
-          </span>
-        </Link>
-      </div>
+      <button
+        type="button"
+        onClick={() => setMobileOpen((o) => !o)}
+        className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+        aria-label={mobileOpen ? "Close menu" : "Open menu"}
+      >
+        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
 
-      {/* Row 2: menu + utilities (row 1 mobile) + full-width search (row 2 mobile); desktop: menu | nav | search | utilities */}
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60 md:h-14 md:flex-nowrap md:gap-6 md:py-0 md:px-6">
-        <button
-          type="button"
-          onClick={() => setMobileOpen((o) => !o)}
-          className="-ml-1 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+      <Link
+        href="/enterprise"
+        className="flex min-w-0 max-w-[min(100%,18rem)] shrink items-center gap-2 sm:max-w-[20rem] md:max-w-[min(22rem,32vw)]"
+        onClick={() => setMobileOpen(false)}
+        title={org?.name ?? "Enterprise"}
+      >
+        {logoUrl ? (
+          <Image
+            src={logoUrl}
+            alt={org?.name ?? "Organization"}
+            width={24}
+            height={24}
+            className="h-6 w-6 flex-shrink-0 object-contain"
+            unoptimized
+          />
+        ) : (
+          <Image
+            src="/logo.png"
+            alt="Bizzi Byte"
+            width={24}
+            height={24}
+            className="flex-shrink-0 object-contain"
+          />
+        )}
+        <span className="truncate font-semibold text-base tracking-tight text-neutral-900 dark:text-white">
+          {org?.name ?? "Enterprise"}
+        </span>
+        <span
+          className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-2 py-0.5 text-xs font-medium text-[var(--enterprise-primary)]"
+          aria-label="Enterprise workspace"
         >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+          Enterprise
+        </span>
+      </Link>
 
-        <nav className="hidden items-center gap-0.5 md:flex">
+      <nav className="hidden items-center gap-0.5 md:flex">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -153,11 +149,11 @@ export default function EnterpriseNavbar() {
         })}
       </nav>
 
-        <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-none md:ml-0 md:gap-3">
-          <NotificationBell />
-          <WorkspaceSwitcher />
-          <UserMenu compact />
-        </div>
+      <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-none md:ml-0 md:gap-3">
+        <NotificationBell />
+        <WorkspaceSwitcher />
+        <UserMenu compact />
+      </div>
 
       <div
         className={`relative order-3 w-full min-w-0 basis-full transition-all md:order-none md:max-w-xl md:flex-1 ${
@@ -173,24 +169,23 @@ export default function EnterpriseNavbar() {
           className="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-3 text-sm placeholder-neutral-400 outline-none transition-colors focus:border-[var(--enterprise-primary)] focus:ring-1 focus:ring-[var(--enterprise-primary)]/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder-neutral-500"
         />
       </div>
-      </div>
 
       {mobileOpen && (
         <div
-          className="fixed inset-0 top-36 z-40 bg-black/30 md:hidden"
+          className="fixed inset-0 top-14 z-40 bg-black/30 md:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />
       )}
       <nav
-        className={`fixed left-0 right-0 top-36 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
+        className={`fixed left-0 right-0 top-14 z-50 transform border-b border-neutral-200 bg-white transition-transform duration-200 ease-out md:hidden dark:border-neutral-800 dark:bg-neutral-950 ${
           mobileOpen
             ? "translate-y-0 pointer-events-auto"
             : "-translate-y-full pointer-events-none opacity-0"
         }`}
         aria-hidden={!mobileOpen}
       >
-        <ul className="max-h-[calc(100vh-9rem)] overflow-y-auto p-3">
+        <ul className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-3">
           {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =

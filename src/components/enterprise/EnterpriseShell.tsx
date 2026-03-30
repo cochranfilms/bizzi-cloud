@@ -56,7 +56,7 @@ export default function EnterpriseShell({
       {/* Main content + right panel row */}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] top-36 md:top-[6.75rem]">
+          <div className="fixed z-30 xl:hidden left-[max(0.75rem,env(safe-area-inset-left))] top-20 md:top-16">
             <button
               type="button"
               className="rounded-lg bg-white p-2 shadow-md ring-1 ring-neutral-200/80 dark:bg-neutral-800 dark:ring-neutral-700"
@@ -70,7 +70,7 @@ export default function EnterpriseShell({
         </div>
 
         <div
-          className={`fixed bottom-0 right-0 top-36 z-40 w-56 transform transition-transform md:top-[6.25rem] xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${
+          className={`fixed bottom-0 right-0 top-14 z-40 w-56 transform transition-transform xl:static xl:top-0 xl:min-h-0 xl:translate-x-0 ${
             rightPanelOpen ? "translate-x-0" : "translate-x-full xl:translate-x-0"
           }`}
         >
