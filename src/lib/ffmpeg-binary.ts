@@ -1,6 +1,7 @@
 /**
  * Resolve FFmpeg binary for a given input by leaf extension (e.g. BRAW-capable build).
  * Shared by proxy generation and video-thumbnail routes.
+ * @module ffmpeg-binary
  */
 import ffmpegPath from "ffmpeg-static";
 import { isBrawFile } from "@/lib/format-detection";
