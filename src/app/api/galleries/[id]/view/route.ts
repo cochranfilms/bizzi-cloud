@@ -13,6 +13,10 @@ import {
   buildValidViewerLutIdSet,
   normalizeStoredViewerLutPreferences,
 } from "@/lib/gallery-viewer-lut-persist-server";
+import {
+  fetchBackupRelativePathsById,
+  shouldOmitAssetFromFinalVideoDeliveryListing,
+} from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -66,6 +70,33 @@ export async function GET(
     .orderBy("sort_order", "asc")
     .get();
 
+  const galleryForFilter = {
+    id,
+    gallery_type: g.gallery_type,
+    media_mode: g.media_mode,
+    source_format: g.source_format,
+    media_folder_segment: g.media_folder_segment,
+  };
+  const backupIdsForFilter = assetsSnap.docs
+    .map((d) => d.data().backup_file_id as string | undefined)
+    .filter((x): x is string => !!x);
+  const pathByBackupId = await fetchBackupRelativePathsById(db, backupIdsForFilter);
+  const omittedAssetIds = new Set<string>();
+  const visibleAssetDocs = assetsSnap.docs.filter((d) => {
+    const bid = d.data().backup_file_id as string | undefined;
+    const rel = bid ? pathByBackupId.get(bid) ?? "" : "";
+    if (shouldOmitAssetFromFinalVideoDeliveryListing(galleryForFilter, rel)) {
+      omittedAssetIds.add(d.id);
+      return false;
+    }
+    return true;
+  });
+  const sanitizeAssetRef = (aid: unknown): string | null => {
+    if (aid == null || aid === "") return null;
+    if (typeof aid !== "string") return null;
+    return omittedAssetIds.has(aid) ? null : aid;
+  };
+
   const collectionsSnap = await db
     .collection("gallery_collections")
     .where("gallery_id", "==", id)
@@ -82,7 +113,7 @@ export async function GET(
     };
   });
 
-  const assets = assetsSnap.docs.map((d) => {
+  const assets = visibleAssetDocs.map((d) => {
     const a = d.data();
     return {
       id: d.id,
@@ -176,8 +207,8 @@ export async function GET(
       lut,
       creative_lut_config: creativeConfig,
       creative_lut_library: creativeLibrary,
-      cover_asset_id: g.cover_asset_id ?? null,
-      share_image_asset_id: g.share_image_asset_id ?? null,
+      cover_asset_id: sanitizeAssetRef(g.cover_asset_id),
+      share_image_asset_id: sanitizeAssetRef(g.share_image_asset_id),
       cover_position: g.cover_position ?? "center",
       cover_focal_x: g.cover_focal_x ?? null,
       cover_focal_y: g.cover_focal_y ?? null,
@@ -186,7 +217,7 @@ export async function GET(
       cover_title_alignment: g.cover_title_alignment ?? null,
       cover_hero_height: g.cover_hero_height ?? null,
       // Video gallery specific – present for all, meaningful for video
-      featured_video_asset_id: g.featured_video_asset_id ?? null,
+      featured_video_asset_id: sanitizeAssetRef(g.featured_video_asset_id),
       delivery_mode: g.delivery_mode ?? null,
       download_policy: g.download_policy ?? null,
       allow_comments: g.allow_comments ?? true,

@@ -14,6 +14,7 @@ import {
 } from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import { isGalleryAssetOmittedFromFinalVideoDelivery } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
 
 export async function POST(
@@ -91,6 +92,23 @@ export async function POST(
   }
 
   const assetRow = assetSnap.docs[0]!.data();
+  const backupFileIdForPolicy = assetRow.backup_file_id as string | undefined;
+  if (
+    await isGalleryAssetOmittedFromFinalVideoDelivery(
+      db,
+      {
+        id: galleryId,
+        gallery_type: g.gallery_type,
+        media_mode: g.media_mode,
+        source_format: g.source_format,
+        media_folder_segment: g.media_folder_segment,
+      },
+      backupFileIdForPolicy
+    )
+  ) {
+    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+  }
+
   if (!isOwner && assetRow.is_downloadable === false) {
     return NextResponse.json(
       {

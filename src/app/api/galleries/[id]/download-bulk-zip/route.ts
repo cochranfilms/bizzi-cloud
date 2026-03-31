@@ -14,6 +14,10 @@ import {
 } from "@/lib/gallery-download-tracking";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import {
+  fetchBackupRelativePathsById,
+  shouldOmitAssetFromFinalVideoDeliveryListing,
+} from "@/lib/gallery-final-video-delivery-asset-filter";
 import { videoGalleryAllowsClientFileDownloads } from "@/lib/gallery-video-download-policy";
 
 const MAX_ITEMS = 50;
@@ -204,12 +208,27 @@ export async function POST(
     .where("is_visible", "==", true)
     .get();
 
+  const galleryForFilter = {
+    id: galleryId,
+    gallery_type: g.gallery_type,
+    media_mode: g.media_mode,
+    source_format: g.source_format,
+    media_folder_segment: g.media_folder_segment,
+  };
+  const zipBackupIds = assetsSnap.docs
+    .map((doc) => doc.data().backup_file_id as string | undefined)
+    .filter((x): x is string => !!x);
+  const zipPathByBackupId = await fetchBackupRelativePathsById(db, zipBackupIds);
+
   const objectKeyToAsset = new Map<
     string,
     { name: string; is_downloadable?: boolean | null }
   >();
   for (const doc of assetsSnap.docs) {
     const d = doc.data();
+    const bid = d.backup_file_id as string | undefined;
+    const rel = bid ? zipPathByBackupId.get(bid) ?? "" : "";
+    if (shouldOmitAssetFromFinalVideoDeliveryListing(galleryForFilter, rel)) continue;
     const key = d.object_key as string;
     if (key) {
       objectKeyToAsset.set(key, {

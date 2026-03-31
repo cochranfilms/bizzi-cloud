@@ -4,6 +4,10 @@
  * No auth required. Returns galleries for the profile with public_slug = slug.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import {
+  fetchBackupRelativePathsById,
+  shouldOmitAssetFromFinalVideoDeliveryListing,
+} from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -45,6 +49,21 @@ export async function GET(
   });
 
   const galleryIds = publicPersonalDocs.map((d) => d.id);
+  const galleryRowById = new Map(
+    publicPersonalDocs.map((gd) => {
+      const row = gd.data();
+      return [
+        gd.id,
+        {
+          id: gd.id,
+          gallery_type: row.gallery_type,
+          media_mode: row.media_mode,
+          source_format: row.source_format,
+          media_folder_segment: row.media_folder_segment,
+        },
+      ] as const;
+    })
+  );
   let coverMap: Record<string, { object_key: string; name: string }> = {};
 
   if (galleryIds.length > 0) {
@@ -57,9 +76,17 @@ export async function GET(
         .where("is_visible", "==", true)
         .orderBy("sort_order", "asc")
         .get();
+      const studioBackupIds = assetsSnap.docs
+        .map((doc) => doc.data().backup_file_id as string | undefined)
+        .filter((x): x is string => !!x);
+      const studioPathByBackup = await fetchBackupRelativePathsById(db, studioBackupIds);
       for (const doc of assetsSnap.docs) {
         const d = doc.data();
-        const gid = d.gallery_id;
+        const gid = d.gallery_id as string;
+        const galleryMeta = galleryRowById.get(gid);
+        const bid = d.backup_file_id as string | undefined;
+        const rel = bid ? studioPathByBackup.get(bid) ?? "" : "";
+        if (galleryMeta && shouldOmitAssetFromFinalVideoDeliveryListing(galleryMeta, rel)) continue;
         if (!byGallery[gid]) byGallery[gid] = [];
         byGallery[gid].push({
           id: doc.id,

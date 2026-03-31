@@ -22,6 +22,10 @@ import {
   weakEtagForGalleryAssets,
   ifNoneMatchIndicatesUnchanged,
 } from "@/lib/gallery-asset-mutations";
+import {
+  fetchBackupRelativePathsById,
+  shouldOmitAssetFromFinalVideoDeliveryListing,
+} from "@/lib/gallery-final-video-delivery-asset-filter";
 
 const MANAGE_ASSETS_GET_LIMIT_PER_MINUTE = 180;
 
@@ -145,7 +149,24 @@ export async function GET(
     return a.id.localeCompare(b.id);
   });
 
-  const assets = sortedDocs.map((d) => {
+  const galleryForFilter = {
+    id: galleryId,
+    gallery_type: galleryRow.gallery_type,
+    media_mode: galleryRow.media_mode,
+    source_format: galleryRow.source_format,
+    media_folder_segment: galleryRow.media_folder_segment,
+  };
+  const backupIds = sortedDocs
+    .map((d) => d.data().backup_file_id as string | undefined)
+    .filter((x): x is string => !!x);
+  const pathByBackupId = await fetchBackupRelativePathsById(db, backupIds);
+  const listedDocs = sortedDocs.filter((d) => {
+    const bid = d.data().backup_file_id as string | undefined;
+    const rel = bid ? pathByBackupId.get(bid) ?? "" : "";
+    return !shouldOmitAssetFromFinalVideoDeliveryListing(galleryForFilter, rel);
+  });
+
+  const assets = listedDocs.map((d) => {
     const a = d.data();
     return {
       id: d.id,

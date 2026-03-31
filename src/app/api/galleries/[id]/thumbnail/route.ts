@@ -24,6 +24,7 @@ import {
   PREVIEW_STATUS_UNAVAILABLE,
 } from "@/lib/gallery-preview-headers";
 import { rawToThumbnail } from "@/lib/raw-thumbnail";
+import { isGalleryAssetOmittedFromFinalVideoDelivery } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -105,6 +106,23 @@ export async function GET(
     .get();
 
   if (assetSnap.empty) {
+    return new NextResponse("Asset not found", { status: 404 });
+  }
+
+  const thumbBackupId = assetSnap.docs[0]!.data().backup_file_id as string | undefined;
+  if (
+    await isGalleryAssetOmittedFromFinalVideoDelivery(
+      db,
+      {
+        id: galleryId,
+        gallery_type: g.gallery_type,
+        media_mode: g.media_mode,
+        source_format: g.source_format,
+        media_folder_segment: g.media_folder_segment,
+      },
+      thumbBackupId
+    )
+  ) {
     return new NextResponse("Asset not found", { status: 404 });
   }
 

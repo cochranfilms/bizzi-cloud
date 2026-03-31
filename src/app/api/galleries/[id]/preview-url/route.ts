@@ -8,6 +8,7 @@ import { getDownloadUrl } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import { isGalleryAssetOmittedFromFinalVideoDelivery } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
 
 const PREVIEW_EXT = /\.(pdf|mp3|wav|ogg|m4a|aac|flac)$/i;
@@ -73,6 +74,23 @@ export async function GET(
     .get();
 
   if (assetSnap.empty) {
+    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+  }
+
+  const backupFileId = assetSnap.docs[0]!.data().backup_file_id as string | undefined;
+  if (
+    await isGalleryAssetOmittedFromFinalVideoDelivery(
+      db,
+      {
+        id: galleryId,
+        gallery_type: g.gallery_type,
+        media_mode: g.media_mode,
+        source_format: g.source_format,
+        media_folder_segment: g.media_folder_segment,
+      },
+      backupFileId
+    )
+  ) {
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 

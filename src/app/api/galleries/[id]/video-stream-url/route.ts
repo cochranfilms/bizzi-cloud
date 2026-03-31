@@ -8,6 +8,7 @@ import { getMuxAssetStatus } from "@/lib/mux";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import { isGalleryAssetOmittedFromFinalVideoDelivery } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
 
 const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to gallery videos
@@ -78,8 +79,24 @@ export async function GET(
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
+  const backupFileId = assetSnap.docs[0].data().backup_file_id as string | undefined;
+  if (
+    await isGalleryAssetOmittedFromFinalVideoDelivery(
+      db,
+      {
+        id: galleryId,
+        gallery_type: g.gallery_type,
+        media_mode: g.media_mode,
+        source_format: g.source_format,
+        media_folder_segment: g.media_folder_segment,
+      },
+      backupFileId
+    )
+  ) {
+    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+  }
+
   try {
-    const backupFileId = assetSnap.docs[0].data().backup_file_id as string | undefined;
     let muxPlaybackId: string | undefined;
     let muxAssetId: string | undefined;
     let storedStatus: string | undefined;
