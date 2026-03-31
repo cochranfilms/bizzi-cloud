@@ -381,35 +381,82 @@ export default function UppyUploadModal({
           meta.lastModified ??
           null;
         if (metaDriveId && relativePath && sizeBytes) {
-          enqueuePresignedComplete(async () => {
+          await enqueuePresignedComplete(async () => {
+            let data: { error?: string } = {};
             try {
               const token = await getAuthToken(false);
-              if (!token) return;
-              await fetch(`${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  driveId: metaDriveId,
-                  relativePath,
-                  sizeBytes: Number(sizeBytes),
-                  contentType,
-                  lastModified: lastModified != null ? Number(lastModified) : null,
-                  workspaceId: meta.workspaceId ?? null,
-                  galleryId: meta.galleryId ?? null,
-                  uploadIntent: meta.uploadIntent ?? null,
-                  lockedDestination: meta.lockedDestination ?? null,
-                  destinationMode: meta.destinationMode ?? null,
-                  routeContext: meta.routeContext ?? null,
-                  sourceSurface: meta.sourceSurface ?? null,
-                  targetDriveName: meta.targetDriveName ?? null,
-                  resolvedBy: meta.resolvedBy ?? null,
-                }),
-              });
+              if (!token) {
+                const msg = "Sign in again to finish saving this upload to your library.";
+                uppy.setFileState(file.id, { error: msg });
+                uppy.info({ message: msg, details: file.name }, "error", 12_000);
+                updateProgress();
+                return;
+              }
+              const res = await fetch(
+                `${typeof window !== "undefined" ? window.location.origin : ""}/api/uppy/presigned-complete`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    driveId: metaDriveId,
+                    relativePath,
+                    sizeBytes: Number(sizeBytes),
+                    contentType,
+                    lastModified: lastModified != null ? Number(lastModified) : null,
+                    workspaceId: meta.workspaceId ?? null,
+                    galleryId: meta.galleryId ?? null,
+                    reservation_id: meta.reservation_id ?? meta.reservationId ?? null,
+                    reservationId: meta.reservationId ?? meta.reservation_id ?? null,
+                    uploadIntent: meta.uploadIntent ?? null,
+                    lockedDestination: meta.lockedDestination ?? null,
+                    destinationMode: meta.destinationMode ?? null,
+                    routeContext: meta.routeContext ?? null,
+                    sourceSurface: meta.sourceSurface ?? null,
+                    targetDriveName: meta.targetDriveName ?? null,
+                    resolvedBy: meta.resolvedBy ?? null,
+                  }),
+                }
+              );
+              try {
+                data = (await res.json()) as { error?: string };
+              } catch {
+                /* non-JSON body */
+              }
+              if (!res.ok) {
+                const msg =
+                  typeof data.error === "string" && data.error.trim()
+                    ? data.error.trim()
+                    : "Upload could not be finalized. The file may still be in storage; try again or contact support.";
+                const cur = uppy.getFile(file.id);
+                const p = cur?.progress;
+                const uploadOk =
+                  p != null &&
+                  p.uploadStarted != null &&
+                  typeof p.bytesUploaded === "number";
+                uppy.setFileState(file.id, {
+                  error: msg,
+                  progress: uploadOk
+                    ? { ...p, uploadComplete: false }
+                    : {
+                        uploadStarted: Date.now(),
+                        bytesUploaded: size,
+                        bytesTotal: size,
+                        uploadComplete: false,
+                        percentage: 100,
+                      },
+                });
+                uppy.info({ message: msg, details: file.name }, "error", 16_000);
+                updateProgress();
+              }
             } catch {
-              // Non-blocking; file is in B2, record creation may retry or user can re-upload
+              const msg =
+                "Could not reach the server to finish saving your upload. Check your connection and try again.";
+              uppy.setFileState(file.id, { error: msg });
+              uppy.info({ message: msg, details: file.name }, "error", 12_000);
+              updateProgress();
             }
           });
         }
