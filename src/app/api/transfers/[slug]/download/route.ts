@@ -1,9 +1,4 @@
-import {
-  createPresignedDownloadUrl,
-  isB2Configured,
-  objectExists,
-  getProxyObjectKey,
-} from "@/lib/b2";
+import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
 import { timingSafeEqual } from "crypto";
@@ -125,10 +120,11 @@ export async function POST(
   }
 
   try {
-    const proxyKey = getProxyObjectKey(objKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
+    // Always serve the original from B2. Streaming proxies are 720p with 16:9 padding
+    // (see proxy-generation FFmpeg pad filter) — using them for download bakes pillarboxing
+    // into portrait/delivered files.
     const url = await createPresignedDownloadUrl(
-      effectiveKey,
+      objKey,
       DOWNLOAD_URL_EXPIRY,
       name || "download"
     );

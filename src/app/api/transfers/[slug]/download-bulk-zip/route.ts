@@ -5,7 +5,7 @@
  */
 import { PassThrough, Readable } from "stream";
 import archiver from "archiver";
-import { getObject, isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
+import { getObject, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
 import { timingSafeEqual } from "crypto";
@@ -197,9 +197,7 @@ export async function POST(
       for (let i = 0; i < items.length; i++) {
         const { object_key } = items[i];
         const name = names[i];
-        const proxyKey = getProxyObjectKey(object_key);
-        const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : object_key;
-        const { body: objBody } = await getObject(effectiveKey);
+        const { body: objBody } = await getObject(object_key);
         const nodeStream =
           typeof (objBody as { getReader?: unknown }).getReader === "function"
             ? Readable.fromWeb(objBody as any)
