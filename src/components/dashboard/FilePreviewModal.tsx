@@ -29,6 +29,19 @@ const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
+/** Dev or set `localStorage.bizziFilePreviewLutDebug = "1"` for LUT prop / resolution logging on video previews. */
+function filePreviewLutDebugEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      process.env.NODE_ENV === "development" ||
+      window.localStorage?.getItem("bizziFilePreviewLutDebug") === "1"
+    );
+  } catch {
+    return process.env.NODE_ENV === "development";
+  }
+}
+
 function getPreviewType(
   name: string,
   contentType?: string | null,
@@ -310,6 +323,39 @@ export default function FilePreviewModal({
       ? lutOptions.find((o) => o.id === lutConfig.selected_lut_id)!.source
       : lutOptions[0]?.source ?? null;
   const showLUT = lutOptions.length > 0;
+
+  useEffect(() => {
+    if (!filePreviewLutDebugEnabled() || !file) return;
+    if (getPreviewType(file.name, file.contentType, file.assetType) !== "video") return;
+    console.debug("[FilePreviewModal LUT]", {
+      fileId: file.id,
+      driveId: file.driveId,
+      showLUTForVideo,
+      lutConfigPresent: lutConfig != null,
+      lutLibraryIsNull: lutLibrary === null,
+      lutLibraryLength: Array.isArray(lutLibrary) ? lutLibrary.length : null,
+      lutOptionsCount: lutOptions.length,
+      showLUT,
+      lutSourceSample:
+        lutSource == null
+          ? null
+          : lutSource.length > 96
+            ? `${lutSource.slice(0, 96)}…`
+            : lutSource,
+    });
+  }, [
+    file?.id,
+    file?.driveId,
+    file?.name,
+    file?.contentType,
+    file?.assetType,
+    showLUTForVideo,
+    lutConfig,
+    lutLibrary,
+    lutOptions.length,
+    showLUT,
+    lutSource,
+  ]);
 
   if (!file) return null;
 

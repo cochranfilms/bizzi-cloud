@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useBackup } from "@/context/BackupContext";
+import { useFilePreviewModalRawLut } from "@/hooks/useFilePreviewModalRawLut";
 import { useRouter, usePathname } from "next/navigation";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
@@ -57,6 +59,8 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
   const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const { deleteFile } = useCloudFiles();
+  const { linkedDrives } = useBackup();
+  const filePreviewRawLut = useFilePreviewModalRawLut(previewFile, linkedDrives);
 
   const files = items.filter((i) => i.type === "file").map(toRecentFile).filter(Boolean) as RecentFile[];
   const folders = items.filter((i) => i.type === "folder").map(toFolderItem).filter(Boolean) as FolderItem[];
@@ -166,6 +170,9 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
         <FilePreviewModal
           file={previewFile}
           onClose={() => setPreviewFile(null)}
+          showLUTForVideo={filePreviewRawLut.showLUTForVideo}
+          lutConfig={filePreviewRawLut.lutConfig}
+          lutLibrary={filePreviewRawLut.lutLibrary}
         />
       )}
     </>

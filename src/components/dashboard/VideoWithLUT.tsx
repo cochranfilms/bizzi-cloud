@@ -1084,9 +1084,14 @@ export default function VideoWithLUT({
     <div className={outerClass}>
       <div
         ref={containerRef}
-        className={`video-fullscreen-container relative overflow-hidden ${videoShellClass}`}
+        className={`video-fullscreen-container relative isolate overflow-hidden ${videoShellClass}`}
         style={containerStyle}
       >
+        {/*
+          Stack: video z-0, graded canvas z-[15], custom chrome z-30+.
+          Modal/dashboard used to omit z-0 on the video; some browsers then composite the video
+          layer above the WebGL canvas so the grade looks missing while controls still show.
+        */}
         <video
           ref={videoRef}
           poster={poster ?? undefined}
@@ -1100,7 +1105,7 @@ export default function VideoWithLUT({
           onEnded={segmentLoopSeconds && segmentLoopSeconds > 0 ? onSegmentLoopEnded : undefined}
           style={videoStyle}
           className={
-            (galleryControlledLut ? "relative z-0 " : "") +
+            "relative z-0 " +
             (compactPreview
               ? `h-full w-full object-cover ${className ?? ""}`
               : frameless && !isFullscreen
@@ -1114,7 +1119,7 @@ export default function VideoWithLUT({
         {previewOn && lutReady && (
           <canvas
             ref={canvasRef}
-            className="pointer-events-none absolute left-0 top-0 z-[11]"
+            className="pointer-events-none absolute left-0 top-0 z-[15] will-change-[opacity,transform] [transform:translateZ(0)]"
             style={{
               opacity: lutError ? 0 : gradeLayerOpacity,
               transition: `opacity ${GRADE_LAYER_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,

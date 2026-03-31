@@ -28,6 +28,7 @@ import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useConfirm } from "@/hooks/useConfirm";
 import { getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
+import { useFilePreviewModalRawLut } from "@/hooks/useFilePreviewModalRawLut";
 import type { LinkedDrive } from "@/types/backup";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 
@@ -243,6 +244,7 @@ export default function ProjectsView({
   const [memberFilesForMove, setMemberFilesForMove] = useState<RecentFile[]>([]);
   const [allPackagesForMove, setAllPackagesForMove] = useState<MacosPackageListEntry[]>([]);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
+  const filePreviewRawLut = useFilePreviewModalRawLut(previewFile, linkedDrives);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -665,7 +667,13 @@ export default function ProjectsView({
         />
       )}
 
-      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      <FilePreviewModal
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+        showLUTForVideo={filePreviewRawLut.showLUTForVideo}
+        lutConfig={filePreviewRawLut.lutConfig}
+        lutLibrary={filePreviewRawLut.lutLibrary}
+      />
     </div>
   );
 }

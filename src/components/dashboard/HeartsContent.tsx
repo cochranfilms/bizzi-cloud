@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useBackup } from "@/context/BackupContext";
+import { useFilePreviewModalRawLut } from "@/hooks/useFilePreviewModalRawLut";
 import { usePathname } from "next/navigation";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
@@ -26,6 +28,8 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
   const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const { deleteFile } = useCloudFiles();
+  const { linkedDrives } = useBackup();
+  const filePreviewRawLut = useFilePreviewModalRawLut(previewFile, linkedDrives);
 
   const ready = !(loading && files.length === 0);
 
@@ -122,6 +126,9 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
         <FilePreviewModal
           file={previewFile}
           onClose={() => setPreviewFile(null)}
+          showLUTForVideo={filePreviewRawLut.showLUTForVideo}
+          lutConfig={filePreviewRawLut.lutConfig}
+          lutLibrary={filePreviewRawLut.lutLibrary}
         />
       )}
     </>
