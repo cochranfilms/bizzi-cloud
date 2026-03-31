@@ -517,7 +517,11 @@ export default function FilePreviewModal({
         </button>
       </div>
     );
-  } else if (previewType === "video" && videoProcessing && !error) {
+  } else if (
+    previewType === "video" &&
+    !error &&
+    (videoProcessing || (showLUTForVideo && loading))
+  ) {
     if (showLUTForVideo && portraitProductStage) {
       mediaBody = (
         <div
@@ -526,6 +530,16 @@ export default function FilePreviewModal({
           <div
             className={`flex w-full max-w-[min(26.25rem,calc(100vw-1.25rem))] flex-col items-center justify-center lg:max-w-[min(28.75rem,34vw)] ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
           >
+            {lowResPreviewUrl ? (
+              <div className="mb-4 w-full max-w-[14rem] overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element -- thumb API URL */}
+                <img
+                  src={lowResPreviewUrl}
+                  alt=""
+                  className="aspect-video w-full object-cover opacity-95"
+                />
+              </div>
+            ) : null}
             <div
               className="flex w-full flex-col items-center justify-center rounded-[1.75rem] border border-neutral-200/30 bg-black/45 px-4 py-10 shadow-[0_28px_90px_-20px_rgba(0,0,0,0.55)] backdrop-blur-md dark:border-white/12 dark:bg-black/55"
               style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
@@ -540,14 +554,29 @@ export default function FilePreviewModal({
         </div>
       );
     } else if (showLUTForVideo) {
+      const waitTextClass = immersiveLightChrome
+        ? "text-neutral-800"
+        : "text-neutral-100";
+      const waitMutedClass = immersiveLightChrome ? "text-neutral-600" : "text-neutral-300";
       mediaBody = (
-        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 px-4 py-8 md:px-8">
-          <p className="max-w-lg text-center text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-8 md:px-8">
+          {lowResPreviewUrl ? (
+            <div className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-black/10 bg-black/30 shadow-xl dark:border-white/15">
+              {/* eslint-disable-next-line @next/next/no-img-element -- thumb API URL */}
+              <img
+                src={lowResPreviewUrl}
+                alt=""
+                className="mx-auto max-h-[min(38dvh,320px)] w-full object-contain"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/55 to-transparent dark:from-black/70" />
+            </div>
+          ) : null}
+          <p className={`max-w-lg text-center text-sm leading-relaxed ${waitTextClass}`}>
             Creating a lightweight streaming proxy for preview.{" "}
-            <span className="font-medium text-neutral-800 dark:text-neutral-200">
+            <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
               Full-resolution originals are not played in this viewer
             </span>{" "}
-            — use Download for the camera file.
+            <span className={waitMutedClass}>— use Download for the camera file.</span>
           </p>
         </div>
       );
