@@ -23,24 +23,12 @@ import {
   resolveCreativeProjectTile,
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { filePreviewLutDebugEnabled } from "@/lib/file-preview-lut-debug";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
-
-/** Dev or set `localStorage.bizziFilePreviewLutDebug = "1"` for LUT prop / resolution logging on video previews. */
-function filePreviewLutDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return (
-      process.env.NODE_ENV === "development" ||
-      window.localStorage?.getItem("bizziFilePreviewLutDebug") === "1"
-    );
-  } catch {
-    return process.env.NODE_ENV === "development";
-  }
-}
 
 function getPreviewType(
   name: string,

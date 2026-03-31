@@ -3,6 +3,7 @@
  * across multiple ImageWithLUT/VideoWithLUT instances in a session.
  */
 
+import { filePreviewLutDebugEnabled } from "@/lib/file-preview-lut-debug";
 import { getBuiltinLUTUrl } from "./builtin-registry";
 import {
   BIZZI_TEST_INVERT_LUT_ID,
@@ -39,10 +40,18 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
     return entry;
   }
 
+  const isBuiltinId = getBuiltinLUTUrl(urlOrBuiltinId) != null;
   const resolved = resolveUrl(urlOrBuiltinId);
 
   const cached = cache.get(resolved);
   if (cached) {
+    if (filePreviewLutDebugEnabled() && isBuiltinId) {
+      console.info("[LUT cache] builtin load OK (cache hit)", {
+        id: urlOrBuiltinId,
+        resolved,
+        latticeSize: cached.size,
+      });
+    }
     const idx = accessOrder.indexOf(resolved);
     if (idx >= 0) {
       accessOrder.splice(idx, 1);
@@ -51,8 +60,29 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
     return cached;
   }
 
-  const res = await fetch(resolved);
-  if (!res.ok) throw new Error(`Failed to load LUT: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(resolved);
+  } catch (e) {
+    if (filePreviewLutDebugEnabled() && isBuiltinId) {
+      console.warn("[LUT cache] builtin fetch failed (network)", {
+        id: urlOrBuiltinId,
+        resolved,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+    throw e;
+  }
+  if (!res.ok) {
+    if (filePreviewLutDebugEnabled() && isBuiltinId) {
+      console.warn("[LUT cache] builtin fetch failed (HTTP)", {
+        id: urlOrBuiltinId,
+        resolved,
+        status: res.status,
+      });
+    }
+    throw new Error(`Failed to load LUT: ${res.status}`);
+  }
   const text = await res.text();
 
   let formatHint: "cube" | "3dl" | undefined;
@@ -72,7 +102,22 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
         ? "cube"
         : undefined;
   }
-  const { data, size } = parseLutFileText(text, formatHint);
+  let data: Float32Array;
+  let size: number;
+  try {
+    const parsed = parseLutFileText(text, formatHint);
+    data = parsed.data;
+    size = parsed.size;
+  } catch (e) {
+    if (filePreviewLutDebugEnabled() && isBuiltinId) {
+      console.warn("[LUT cache] builtin parse failed", {
+        id: urlOrBuiltinId,
+        resolved,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+    throw e;
+  }
   lutDebug("parsed LUT file", {
     ...summarizeLutData(data, size),
     formatHint: formatHint ?? "auto",
@@ -82,6 +127,14 @@ export async function getOrLoadLUT(urlOrBuiltinId: string): Promise<LoadedLUT> {
   const entry = { data, size };
   cache.set(resolved, entry);
   accessOrder.push(resolved);
+
+  if (filePreviewLutDebugEnabled() && isBuiltinId) {
+    console.info("[LUT cache] builtin load OK", {
+      id: urlOrBuiltinId,
+      resolved,
+      latticeSize: size,
+    });
+  }
 
   return entry;
 }

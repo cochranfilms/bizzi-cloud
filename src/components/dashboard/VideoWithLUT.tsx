@@ -25,6 +25,7 @@ import {
   canRenderVideoToWebGL,
   type VideoWebglEligibility,
 } from "@/lib/creative-lut/video-webgl-eligibility";
+import { filePreviewLutDebugEnabled } from "@/lib/file-preview-lut-debug";
 import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
 import { logGalleryLutEvent } from "@/lib/gallery-lut-telemetry";
 
@@ -455,6 +456,61 @@ export default function VideoWithLUT({
     lutReady,
     videoWebglEligibility,
     lutEnabledInShader,
+  ]);
+
+  /**
+   * Dashboard / FilePreviewModal path (`galleryControlledLut` false): same debug gate as
+   * `[FilePreviewModal LUT]` — proves currentLutSource, previewOn, lutReady, and canvas gating.
+   */
+  useEffect(() => {
+    if (galleryControlledLut || !filePreviewLutDebugEnabled()) return;
+    const canvasShouldMount = previewOn && lutReady;
+    const canvasBlockReason = !previewOn
+      ? "previewOff"
+      : !lutReady
+        ? "lutNotReady"
+        : null;
+    const v = videoRef.current;
+    console.info("[VideoWithLUT modal LUT]", {
+      galleryControlledLut,
+      src: src.length > 120 ? `${src.slice(0, 120)}…` : src,
+      streamUrl: streamUrl
+        ? streamUrl.length > 120
+          ? `${streamUrl.slice(0, 120)}…`
+          : streamUrl
+        : null,
+      videoSrc: videoSrc.length > 120 ? `${videoSrc.slice(0, 120)}…` : videoSrc,
+      lutSource,
+      currentLutSource,
+      previewOn,
+      lutReady,
+      lutEnabledInShader,
+      videoWebglEligibility,
+      canvasShouldMount,
+      canvasBlockReason,
+      lutError,
+      showLUTOption,
+      creativePreviewOn: creativePreviewOn ?? null,
+      lutOptionsCount: lutOptions.length,
+      videoReadyState: v?.readyState,
+      videoWidth: v?.videoWidth,
+      videoHeight: v?.videoHeight,
+    });
+  }, [
+    galleryControlledLut,
+    src,
+    streamUrl,
+    videoSrc,
+    lutSource,
+    currentLutSource,
+    previewOn,
+    lutReady,
+    lutEnabledInShader,
+    videoWebglEligibility,
+    lutError,
+    showLUTOption,
+    creativePreviewOn,
+    lutOptions.length,
   ]);
 
   const [galleryHudTick, setGalleryHudTick] = useState(0);
