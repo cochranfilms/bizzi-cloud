@@ -165,6 +165,8 @@ export async function POST(
     null;
 
   const driveSnapPreComplete = await db.collection("linked_drives").doc(driveId).get();
+  const workspaceIdFromSessionEarly = data.workspace_id ?? data.workspaceId ?? null;
+
   const preGuard = await assertCreatorRawFinalizeOrAudit({
     uid,
     driveId,
@@ -177,7 +179,9 @@ export async function POST(
     objectKey,
     relativePath,
     organizationId: null,
-    workspaceId: null,
+    workspaceId: workspaceIdFromSessionEarly,
+    contentType,
+    skipMediaProbe: true,
   });
   if (!preGuard.ok) {
     return NextResponse.json({ error: preGuard.message }, { status: preGuard.status });
@@ -210,6 +214,29 @@ export async function POST(
     );
   }
 
+  const postMediaGuard = await assertCreatorRawFinalizeOrAudit({
+    uid,
+    driveId,
+    driveSnap: driveSnapPreComplete,
+    uploadIntent: sessionUploadIntent,
+    lockedDestination: sessionLocked,
+    destinationMode: sessionDestinationMode,
+    routeContext: sessionRouteContext,
+    sourceSurface: sessionSourceSurface,
+    objectKey,
+    relativePath,
+    organizationId: null,
+    workspaceId: workspaceIdFromSessionEarly,
+    contentType,
+    skipMediaProbe: false,
+  });
+  if (!postMediaGuard.ok) {
+    if (reservationId) {
+      await releaseReservation(reservationId, "finalize_failed").catch(() => {});
+    }
+    return NextResponse.json({ error: postMediaGuard.message }, { status: postMediaGuard.status });
+  }
+
   if (reservationId) {
     await commitReservation(reservationId);
   }
@@ -222,7 +249,7 @@ export async function POST(
     updatedAt: new Date().toISOString(),
   });
 
-  const workspaceIdFromSession = data.workspace_id ?? data.workspaceId ?? null;
+  const workspaceIdFromSession = workspaceIdFromSessionEarly;
   let organizationId: string | null = null;
   let workspaceIdResolved: string | null = null;
   let visibilityScope: "personal" | "private_org" | "org_shared" | "team" | "project" | "gallery" = "personal";

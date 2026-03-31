@@ -193,6 +193,8 @@ export async function POST(request: Request) {
     relativePath: safePath,
     organizationId: null,
     workspaceId: workspaceIdFromBody ?? null,
+    contentType,
+    skipMediaProbe: false,
   });
   if (!guard.ok) {
     await releaseIfPending("finalize_failed");

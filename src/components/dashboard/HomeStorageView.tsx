@@ -987,11 +987,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         )}
       </section>
 
-      {/* Section 2: Pinned */}
+      {/* Section 2: Pinned — only after user has at least one pin (no empty promo block) */}
+      {hasPinned ? (
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-3 sm:mb-4">Pinned</SectionTitle>
-        {hasPinned ? (
-          viewMode === "list" ? (
+        {viewMode === "list" ? (
             <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -1185,13 +1185,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 );
               })}
             </div>
-          )
-          ) : (
-            <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-              Pin files or folders from the All Files tab for quick access.
-            </p>
           )}
       </section>
+      ) : null}
 
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">

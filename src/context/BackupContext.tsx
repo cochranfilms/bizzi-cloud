@@ -28,7 +28,8 @@ import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { isPersonalScopeDriveDoc, isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import type { LinkedDrive, FileUploadProgress, FileUploadItem } from "@/types/backup";
 import { UploadManager, type QueuedFile } from "@/lib/upload-manager";
-import { isAllowedInCreatorRaw } from "@/lib/creator-raw-upload-policy";
+import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
+import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 import {
   useFileSystemAccess,
   isFileSystemAccessSupported,
@@ -1194,12 +1195,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       let filesToUpload = files;
       const rawId = linkedDrives.find((d) => d.is_creator_raw)?.id;
       if (targetDriveId && targetDriveId === rawId) {
-        const allowed = files.filter((f) => isAllowedInCreatorRaw(f.name));
+        const allowed = files.filter((f) => creatorRawClientAllowsUploadAttempt(f.name));
         const skipped = files.length - allowed.length;
         if (skipped > 0) {
-          setFileUploadError(
-            `${skipped} file(s) skipped. Creator RAW accepts formats Bizzi can preview and grade. Upload other files to Storage.`
-          );
+          setFileUploadError(`${skipped} file(s) skipped — ${CREATOR_RAW_REJECTION_MESSAGES.nonMediaLeaf}`);
         }
         filesToUpload = allowed;
         if (filesToUpload.length === 0) return;

@@ -1,9 +1,29 @@
 /**
- * Single policy for Creator RAW uploads: preview-pipeline-oriented, not ad-hoc extensions.
- * Client: early UX. Server: finalize enforcement (filename + pipeline rules; MIME is hint only).
+ * Creator RAW upload client hints (filename only). Server: `upload-finalize-guards` + ffprobe.
+ * Filename: `creator-raw-upload-policy.ts` (lowercase `.ts` — required for portable tooling).
  */
 
 import { getProxyCapability } from "@/lib/format-detection";
+import { CREATOR_RAW_MEDIA_POLICY } from "@/lib/creator-raw-media-config";
+
+const NON_MEDIA_LEAVES = new Set<string>(CREATOR_RAW_MEDIA_POLICY.nonCreatorRawLeafExtensions);
+
+function leafExt(fileName: string): string {
+  const base = fileName.split(/[/\\]/).pop() ?? fileName;
+  const i = base.lastIndexOf(".");
+  if (i < 0) return "";
+  return base.slice(i + 1).toLowerCase();
+}
+
+/**
+ * Client-only: skip obvious documents/archives on Creator RAW. Do not use for codec allow —
+ * `.mp4` / `.mov` must reach the server so ffprobe can run.
+ */
+export function creatorRawClientAllowsUploadAttempt(fileName: string): boolean {
+  const ext = leafExt(fileName);
+  if (!ext) return true;
+  return !NON_MEDIA_LEAVES.has(ext);
+}
 
 export type CreatorRawBucket = "fully_supported" | "conditional_raw" | "blocked";
 

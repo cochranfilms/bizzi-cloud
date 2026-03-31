@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["sharp", "ffmpeg-static", "@napi-rs/canvas", "pdfjs-dist"],
+  serverExternalPackages: [
+    "sharp",
+    "ffmpeg-static",
+    "ffprobe-static",
+    "@napi-rs/canvas",
+    "pdfjs-dist",
+  ],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.googleusercontent.com", pathname: "/**" },
@@ -30,7 +36,12 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     /** Required on Vercel: serverless bundle must include the ffmpeg binary or probes never run (list shows Not scanned yet / Unscanned forever). */
-    "/api/files/extract-metadata": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/api/files/extract-metadata": [
+      "./node_modules/ffmpeg-static/ffmpeg",
+      "./node_modules/ffprobe-static/bin/**",
+    ],
+    "/api/uppy/presigned-complete": ["./node_modules/ffprobe-static/bin/**"],
+    "/api/uppy/s3/multipart/[uploadId]/complete": ["./node_modules/ffprobe-static/bin/**"],
     "/api/backup/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/backup/generate-proxy": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/shares/[token]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],

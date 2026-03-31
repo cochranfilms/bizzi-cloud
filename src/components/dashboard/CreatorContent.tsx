@@ -24,6 +24,7 @@ import SectionTitle from "./SectionTitle";
 import { useAuth } from "@/context/AuthContext";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { isCreatorRawDriveId } from "@/lib/creator-raw-drive";
+import { CREATOR_RAW_TAB_INTRO } from "@/lib/creator-raw-media-config";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 
 type RawDriveLutPayload = {
@@ -365,41 +366,39 @@ export default function CreatorContent() {
       )}
 
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div
-            className="min-w-0 flex-1"
-            role={viewingCreatorRaw ? "status" : undefined}
-          >
-            <SectionTitle as="div" className="py-3 normal-case">
+        <div className="mb-5 w-full">
+          <div className="w-full" role={viewingCreatorRaw ? "status" : undefined}>
+            <SectionTitle as="div" className="w-full py-3 normal-case">
               <span className="block text-sm font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
                 {currentDrive ? "Files" : "Folders"}
               </span>
               {viewingCreatorRaw ? (
                 <>
                   <p className="mt-2 text-center text-xs font-semibold normal-case tracking-normal text-neutral-800 dark:text-neutral-100">
-                    Creator workspace — current upload destination: RAW
+                    {CREATOR_RAW_TAB_INTRO.line1}
                   </p>
                   <p className="mt-1 text-center text-xs font-normal normal-case leading-snug tracking-normal text-neutral-600 dark:text-neutral-400">
-                    File Upload and drag-and-drop while this folder is open store files in RAW.
-                    Creator RAW accepts formats Bizzi can preview and grade with LUTs; upload other
-                    files to Storage.
+                    {CREATOR_RAW_TAB_INTRO.line2}
                   </p>
                 </>
               ) : null}
             </SectionTitle>
           </div>
-          {currentDrive && driveFiles.length > 0 ? (
+        </div>
+
+        {currentDrive && driveFiles.length > 0 ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setSelectedFileIds(new Set(driveFiles.map((f) => f.id)))}
-              className="flex shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
               aria-label="Select all"
             >
               <CheckSquare className="h-4 w-4" />
               Select
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <DashboardRouteFade
           ready={currentDrive ? !driveFilesLoading : !loading}

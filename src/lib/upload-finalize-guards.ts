@@ -1,16 +1,25 @@
 /**
  * Server-side upload finalization guards for locked Creator RAW sessions.
  * Intent fields are client-supplied — they prevent accidental wrong-folder writes, not a determined attacker.
+ * Media allow/deny uses ffprobe + creator-raw-media-validator (codec identity); extension alone is never enough.
+ *
+ * Rejection path: we return `{ ok: false }` only after logging (and deleting the object on codec rejection).
+ * API routes must not create `backup_files` or commit quota after `{ ok: false }` — current callers
+ * guard before DB writes and release reservations before returning errors.
  */
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { logActivityEvent } from "@/lib/activity-log";
-import {
-  creatorRawFinalizeAllowsFileName,
-  leafNameFromRelativePath,
-} from "@/lib/creator-raw-upload-policy";
+import { logCreatorRawProductEvent } from "@/lib/creator-raw-product-analytics";
+import { deleteObject } from "@/lib/b2";
+import { CREATOR_RAW_MEDIA_POLICY, CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
+import { inspectMediaObjectKey } from "@/lib/creator-raw-media-probe";
+import { classifyCreatorRawMedia } from "@/lib/creator-raw-media-validator";
+import { leafNameFromRelativePath } from "@/lib/creator-raw-upload-policy";
 
 export const LOCKED_CREATOR_RAW_INTENTS = new Set(["creator_raw_video", "creator_raw_upload"]);
+
+const NON_RAW_LEAVES = new Set<string>(CREATOR_RAW_MEDIA_POLICY.nonCreatorRawLeafExtensions);
 
 export function isLockedCreatorRawPayload(input: {
   uploadIntent?: string | null;
@@ -63,8 +72,58 @@ export async function logUploadDestinationMismatch(input: {
   }).catch(() => {});
 }
 
-/** Returns HTTP status + body message when finalize must abort. */
-export async function assertCreatorRawFinalizeOrAudit(input: {
+async function logCreatorRawMediaRejected(input: {
+  actor_user_id: string;
+  organization_id?: string | null;
+  workspace_id?: string | null;
+  drive_id: string;
+  route_context?: string | null;
+  source_surface?: string | null;
+  object_key?: string | null;
+  original_filename: string;
+  extension: string;
+  detected_container: string | null;
+  detected_codec: string | null;
+  detected_mime: string | null;
+  allowed: boolean;
+  rejection_reason: string;
+      validation_code: string;
+}): Promise<void> {
+  logCreatorRawProductEvent("creator_raw_media_rejected", {
+    validation_code: input.validation_code,
+    rejection_reason: input.rejection_reason,
+    extension: input.extension,
+    detected_codec: input.detected_codec,
+    detected_container: input.detected_container,
+    route_context: input.route_context ?? null,
+    source_surface: input.source_surface ?? null,
+  });
+  await logActivityEvent({
+    event_type: "creator_raw_media_rejected",
+    actor_user_id: input.actor_user_id,
+    scope_type: input.organization_id ? "organization" : "personal_account",
+    organization_id: input.organization_id ?? null,
+    workspace_id: input.workspace_id ?? null,
+    linked_drive_id: input.drive_id,
+    drive_type: "raw",
+    visibility_scope: null,
+    metadata: {
+      route_context: input.route_context,
+      source_surface: input.source_surface,
+      object_key: input.object_key,
+      original_filename: input.original_filename,
+      extension: input.extension,
+      detected_container: input.detected_container,
+      detected_codec: input.detected_codec,
+      detected_mime: input.detected_mime,
+      allowed: input.allowed,
+      rejection_reason: input.rejection_reason,
+      validation_code: input.validation_code,
+    },
+  }).catch(() => {});
+}
+
+export type CreatorRawFinalizeGuardInput = {
   uid: string;
   driveId: string;
   driveSnap: DocumentSnapshot;
@@ -77,7 +136,18 @@ export async function assertCreatorRawFinalizeOrAudit(input: {
   relativePath?: string | null;
   organizationId?: string | null;
   workspaceId?: string | null;
-}): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  contentType?: string | null;
+  /**
+   * Multipart: call with true before `completeMultipartUpload` (object not readable yet).
+   * Presigned single PUT: false so ffprobe runs after the object exists.
+   */
+  skipMediaProbe?: boolean;
+};
+
+/** Returns HTTP status + body message when finalize must abort. */
+export async function assertCreatorRawFinalizeOrAudit(
+  input: CreatorRawFinalizeGuardInput
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
   const locked = isLockedCreatorRawPayload({
     uploadIntent: input.uploadIntent,
     lockedDestination: input.lockedDestination,
@@ -90,14 +160,61 @@ export async function assertCreatorRawFinalizeOrAudit(input: {
 
   if (input.driveSnap.exists && isRaw) {
     const leaf = input.relativePath ? leafNameFromRelativePath(input.relativePath) : "";
-    if (leaf && !creatorRawFinalizeAllowsFileName(leaf)) {
+    const ext = leaf.includes(".") ? leaf.slice(leaf.lastIndexOf(".") + 1).toLowerCase() : "";
+
+    if (leaf && NON_RAW_LEAVES.has(ext)) {
+      logCreatorRawProductEvent("creator_raw_media_rejected", {
+        validation_code: "non_media_leaf",
+        rejection_reason: "blocked_leaf_extension",
+        extension: ext,
+        detected_codec: null,
+        detected_container: null,
+        route_context: input.routeContext ?? null,
+        source_surface: input.sourceSurface ?? null,
+      });
+      const key = input.objectKey?.trim();
+      if (key) await deleteObject(key).catch(() => {});
       return {
         ok: false,
         status: 400,
-        message:
-          "This file type is not supported for Creator RAW. Upload it to Storage instead, or use a format Bizzi can preview and grade.",
+        message: CREATOR_RAW_REJECTION_MESSAGES.nonMediaLeaf,
       };
     }
+
+    const skipProbe = input.skipMediaProbe === true;
+    const objectKey = input.objectKey ?? "";
+
+    if (!skipProbe && objectKey) {
+      const inspected = await inspectMediaObjectKey(objectKey);
+      const verdict = classifyCreatorRawMedia(inspected, leaf || unknownLeafFallback(leaf, objectKey), input.contentType);
+
+      if (!verdict.allowed) {
+        await logCreatorRawMediaRejected({
+          actor_user_id: input.uid,
+          organization_id: input.organizationId,
+          workspace_id: input.workspaceId,
+          drive_id: input.driveId,
+          route_context: input.routeContext ?? null,
+          source_surface: input.sourceSurface ?? null,
+          object_key: objectKey,
+          original_filename: leaf,
+          extension: ext,
+          detected_container: verdict.detectedContainer,
+          detected_codec: verdict.detectedVideoCodec,
+          detected_mime: verdict.detectedMime,
+          allowed: false,
+          rejection_reason: verdict.reason,
+          validation_code: verdict.code,
+        });
+        await deleteObject(objectKey).catch(() => {});
+        return {
+          ok: false,
+          status: 400,
+          message: verdict.userMessage || CREATOR_RAW_REJECTION_MESSAGES.notSupported,
+        };
+      }
+    }
+
     return { ok: true };
   }
 
@@ -122,4 +239,10 @@ export async function assertCreatorRawFinalizeOrAudit(input: {
     message:
       "Upload destination does not match Creator RAW. Refresh the page and try again, or contact support if this persists.",
   };
+}
+
+function unknownLeafFallback(leaf: string, objectKey: string): string {
+  if (leaf) return leaf;
+  const seg = objectKey.split("/").pop() ?? "upload.bin";
+  return seg;
 }

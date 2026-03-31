@@ -103,6 +103,8 @@ export async function POST(request: Request) {
     relativePath: safePath,
     organizationId: null,
     workspaceId,
+    contentType: typeof type === "string" ? type : null,
+    skipMediaProbe: true,
   });
   if (!initGuard.ok) {
     return NextResponse.json({ error: initGuard.message }, { status: initGuard.status });

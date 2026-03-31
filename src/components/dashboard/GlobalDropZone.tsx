@@ -14,7 +14,8 @@ import {
   getDropOverlayCopy,
   isCreatorMainRoute,
 } from "@/lib/upload-destination-resolve";
-import { isAllowedInCreatorRaw } from "@/lib/creator-raw-upload-policy";
+import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
+import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 
 /**
  * Global drag-and-drop zone. Overlay copy and drop target both come from
@@ -151,11 +152,11 @@ export default function GlobalDropZone() {
 
         let files = fileList;
         if (resolved.destinationMode === "creator_raw" && resolved.isLocked) {
-          const allowed = files.filter((f) => isAllowedInCreatorRaw(f.name));
+          const allowed = files.filter((f) => creatorRawClientAllowsUploadAttempt(f.name));
           const skipped = files.length - allowed.length;
           if (skipped > 0) {
             setFileUploadErrorMessage(
-              `${skipped} file(s) skipped — Creator RAW accepts formats Bizzi can preview and grade. Upload unsupported files to Storage instead.`
+              `${skipped} file(s) skipped — ${CREATOR_RAW_REJECTION_MESSAGES.nonMediaLeaf}`
             );
           }
           files = allowed;

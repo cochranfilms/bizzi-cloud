@@ -20,10 +20,8 @@ import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-m
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
-import {
-  classifyCreatorRawUpload,
-  isAllowedInCreatorRaw,
-} from "@/lib/creator-raw-upload-policy";
+import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
+import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -206,13 +204,12 @@ export default function UppyUploadModal({
           const fd = file.data instanceof File ? file.data : null;
           if (fd && isLikelyFlatMacosPackageBrowserUpload(fd)) {
             // Removed in file-added with warning; do not gate here.
-          } else if (!isAllowedInCreatorRaw(leaf)) {
-            const c = classifyCreatorRawUpload(leaf);
+          } else if (!creatorRawClientAllowsUploadAttempt(leaf)) {
             queueMicrotask(() => {
               uppyRefLocal.current?.info(
                 {
-                  message: c.userMessage || "This format is not supported for Creator RAW.",
-                  details: c.code,
+                  message: CREATOR_RAW_REJECTION_MESSAGES.nonMediaLeaf,
+                  details: "non_media_leaf",
                 },
                 "error",
                 5000

@@ -8,6 +8,7 @@ import { FieldValue } from "firebase-admin/firestore";
 export type ActivityScopeType = "personal_account" | "organization";
 export type ActivityEventType =
   | "file_uploaded"
+  | "creator_raw_media_rejected"
   | "upload_destination_mismatch"
   | "folder_created"
   | "file_renamed"
