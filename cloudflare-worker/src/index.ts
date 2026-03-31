@@ -37,18 +37,21 @@ export default {
     const exp = url.searchParams.get("exp");
     const sig = url.searchParams.get("sig");
     const downloadFilename = url.searchParams.get("download") ?? undefined;
+    const inlinePreview = url.searchParams.get("inline") === "1" && !downloadFilename;
 
     if (!objectKey || !exp || !sig) {
       return new Response("Missing object_key, exp, or sig", { status: 400 });
     }
 
     const apiBase = env.API_BASE_URL?.replace(/\/$/, "") || "https://bizzicloud.io";
-    const presignedUrl = `${apiBase}/api/cdn-presigned?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${encodeURIComponent(sig)}${downloadFilename ? `&download=${encodeURIComponent(downloadFilename)}` : ""}`;
+    const presignedUrl = `${apiBase}/api/cdn-presigned?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${encodeURIComponent(sig)}${downloadFilename ? `&download=${encodeURIComponent(downloadFilename)}` : ""}${inlinePreview ? "&inline=1" : ""}`;
 
     const rangeHeader = request.headers.get("Range");
+    /** Separate keys: presigned URLs differ in Content-Disposition (inline vs attachment vs default). */
+    const cacheMode = downloadFilename ? `d:${downloadFilename}` : inlinePreview ? "i" : "n";
     const cacheKey = rangeHeader
-      ? `cdn:${objectKey}:${rangeHeader}`
-      : `cdn:${objectKey}`;
+      ? `cdn:${objectKey}:${cacheMode}:${rangeHeader}`
+      : `cdn:${objectKey}:${cacheMode}`;
 
     // Check edge cache first (reduces B2 egress and Cloudflare bandwidth)
     const cache = caches.default;

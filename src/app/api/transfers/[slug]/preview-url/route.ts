@@ -114,7 +114,7 @@ export async function POST(
   try {
     const proxyKey = getProxyObjectKey(objKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
-    const url = await getDownloadUrl(effectiveKey, PREVIEW_URL_EXPIRY);
+    const url = await getDownloadUrl(effectiveKey, PREVIEW_URL_EXPIRY, undefined, true);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Transfer preview URL error:", err);

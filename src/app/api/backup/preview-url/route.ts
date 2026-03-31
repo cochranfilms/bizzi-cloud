@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   try {
     const proxyKey = getProxyObjectKey(objectKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
-    const url = await getDownloadUrl(effectiveKey, 3600);
+    const url = await getDownloadUrl(effectiveKey, 3600, undefined, true);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("[preview-url] B2/CDN error:", err instanceof Error ? err.message : err, {

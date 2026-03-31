@@ -23,6 +23,8 @@ export async function GET(request: Request) {
   const expParam = url.searchParams.get("exp");
   const sig = url.searchParams.get("sig");
   const downloadFilename = url.searchParams.get("download") ?? undefined;
+  const inlineDisposition =
+    url.searchParams.get("inline") === "1" && !downloadFilename;
 
   if (!objectKey || !expParam || !sig) {
     return NextResponse.json(
@@ -32,7 +34,10 @@ export async function GET(request: Request) {
   }
 
   const exp = parseInt(expParam, 10);
-  if (isNaN(exp) || !verifyCdnSignature(objectKey, exp, sig, downloadFilename)) {
+  if (
+    isNaN(exp) ||
+    !verifyCdnSignature(objectKey, exp, sig, downloadFilename, inlineDisposition)
+  ) {
     return NextResponse.json(
       { error: "Invalid or expired CDN signature" },
       { status: 403 }
@@ -43,7 +48,8 @@ export async function GET(request: Request) {
     const presignedUrl = await createPresignedDownloadUrl(
       objectKey,
       300, // 5 min - Worker fetches immediately
-      downloadFilename
+      downloadFilename,
+      inlineDisposition
     );
     return NextResponse.json({ url: presignedUrl });
   } catch (err) {

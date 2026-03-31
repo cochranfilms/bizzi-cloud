@@ -11,7 +11,7 @@ export default function SectionTitle({
 }: {
   children: React.ReactNode;
   className?: string;
-  as?: "h2" | "h3";
+  as?: "h2" | "h3" | "div";
 }) {
   return (
     <Tag

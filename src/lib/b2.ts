@@ -357,15 +357,27 @@ export async function objectExists(objectKey: string): Promise<boolean> {
 export async function createPresignedDownloadUrl(
   objectKey: string,
   expiresIn = 3600,
-  /** When provided, adds ResponseContentDisposition to force download instead of inline display */
-  downloadFilename?: string
+  /** When provided, adds ResponseContentDisposition attachment (browser download). */
+  downloadFilename?: string,
+  /**
+   * When true (and downloadFilename is unset), sets ResponseContentDisposition: inline so PDFs/audio
+   * load in-browser (iframe / media) instead of triggering a download — required when object metadata
+   * or CDN caching would otherwise serve attachment.
+   */
+  inlineForBrowserPreview = false
 ): Promise<string> {
   const client = getB2Client();
+  let responseContentDisposition: string | undefined;
+  if (downloadFilename) {
+    responseContentDisposition = `attachment; filename="${downloadFilename.replace(/"/g, '\\"')}"`;
+  } else if (inlineForBrowserPreview) {
+    responseContentDisposition = "inline";
+  }
   const command = new GetObjectCommand({
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
-    ...(downloadFilename && {
-      ResponseContentDisposition: `attachment; filename="${downloadFilename.replace(/"/g, '\\"')}"`,
+    ...(responseContentDisposition && {
+      ResponseContentDisposition: responseContentDisposition,
     }),
   });
   return getSignedUrl(client, command, { expiresIn });

@@ -18,20 +18,25 @@ export const isCdnConfigured = () =>
 export function createCdnDownloadUrl(
   objectKey: string,
   expiresIn = 3600,
-  downloadFilename?: string
+  downloadFilename?: string,
+  inlineForBrowserPreview = false
 ): string {
   if (!isCdnConfigured() || !CDN_SECRET) {
     throw new Error("CDN not configured: set CDN_BASE_URL and CDN_SECRET");
   }
   const base = CDN_BASE_URL!.replace(/\/$/, "");
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
+  const inline = Boolean(inlineForBrowserPreview) && !downloadFilename;
   const payload = downloadFilename
     ? `${objectKey}|${exp}|${downloadFilename}`
-    : `${objectKey}|${exp}`;
+    : inline
+      ? `${objectKey}|${exp}|i`
+      : `${objectKey}|${exp}`;
   const sig = createHmac("sha256", CDN_SECRET).update(payload).digest("base64url");
   const path = encodeObjectKeyAsPath(objectKey);
   const params = new URLSearchParams({ exp: String(exp), sig });
   if (downloadFilename) params.set("download", downloadFilename);
+  if (inline) params.set("inline", "1");
   return `${base}${path}?${params.toString()}`;
 }
 
@@ -40,12 +45,17 @@ export function verifyCdnSignature(
   objectKey: string,
   exp: number,
   sig: string,
-  downloadFilename?: string
+  downloadFilename?: string,
+  /** Must agree with signing in createCdnDownloadUrl (CDN `inline=1` query). */
+  inlineDisposition?: boolean
 ): boolean {
   if (!CDN_SECRET) return false;
+  const inline = Boolean(inlineDisposition) && !downloadFilename;
   const payload = downloadFilename
     ? `${objectKey}|${exp}|${downloadFilename}`
-    : `${objectKey}|${exp}`;
+    : inline
+      ? `${objectKey}|${exp}|i`
+      : `${objectKey}|${exp}`;
   const expected = createHmac("sha256", CDN_SECRET).update(payload).digest("base64url");
   return sig === expected && exp > Math.floor(Date.now() / 1000);
 }
@@ -62,12 +72,14 @@ function encodeObjectKeyAsPath(objectKey: string): string {
 export async function getDownloadUrl(
   objectKey: string,
   expiresIn = 3600,
-  downloadFilename?: string
+  downloadFilename?: string,
+  inlineForBrowserPreview = false
 ): Promise<string> {
+  const inline = Boolean(inlineForBrowserPreview) && !downloadFilename;
   if (isCdnConfigured()) {
-    return createCdnDownloadUrl(objectKey, expiresIn, downloadFilename);
+    return createCdnDownloadUrl(objectKey, expiresIn, downloadFilename, inline);
   }
-  return createPresignedDownloadUrl(objectKey, expiresIn, downloadFilename);
+  return createPresignedDownloadUrl(objectKey, expiresIn, downloadFilename, inline);
 }
 
 /** Re-export for convenience. CDN routes need B2 check too. */

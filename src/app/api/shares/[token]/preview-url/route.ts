@@ -91,7 +91,7 @@ export async function POST(
   try {
     const proxyKey = getProxyObjectKey(objectKey);
     const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
-    const url = await getDownloadUrl(effectiveKey, 3600);
+    const url = await getDownloadUrl(effectiveKey, 3600, undefined, true);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Share preview URL error:", err);

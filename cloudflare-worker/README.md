@@ -2,9 +2,17 @@
 
 Cloudflare Worker that proxies B2 downloads through Cloudflare for **free B2 egress** via the [Bandwidth Alliance](https://www.backblaze.com/b2/docs/cloudflare.html).
 
+## Query parameters
+
+- `exp`, `sig` — required HMAC signed URL (see `src/lib/cdn.ts`).
+- `download=<filename>` — attachment download; signature uses `objectKey|exp|filename`.
+- `inline=1` — in-browser preview (PDF/audio in iframe); signature uses `objectKey|exp|i`. Omitted for legacy neutral URLs (`objectKey|exp`).
+
+The Worker **must** forward `inline` to `/api/cdn-presigned` and use a **cache key** that includes the disposition mode (`n` / `i` / `d:…`) so inline and attachment responses for the same object are not mixed.
+
 ## Flow
 
-1. Client requests `https://cdn.bizzicloud.io/content/abc123?exp=...&sig=...`
+1. Client requests `https://cdn.bizzicloud.io/content/abc123?exp=...&sig=...` (optional `&inline=1` or `&download=…`)
 2. Worker checks cache
 3. On cache miss: Worker calls your API `/api/cdn-presigned` to get a presigned B2 URL
 4. Worker fetches from B2 (egress is **free** to Cloudflare)
