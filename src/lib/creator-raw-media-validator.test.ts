@@ -70,6 +70,26 @@ describe("classifyCreatorRawMedia", () => {
     expect(r.code).toBe("allowed_tag");
   });
 
+  it("allows ProRes 422 HQ fourcc apch when codec_name is unknown", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({ detectedVideoCodec: "unknown", detectedCodecTag: "apch" }),
+      "JB22061.MP4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("allowed_tag");
+  });
+
+  it("allows ProRes via fourcc when ffprobe leaves codec_name empty", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({ detectedVideoCodec: null, detectedCodecTag: "apcn" }),
+      "take.MP4",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("allowed_tag");
+  });
+
   it("allows .braw when probe succeeded with video and codec is not a blocked delivery codec", () => {
     const r = classifyCreatorRawMedia(
       vbase({ detectedVideoCodec: "v_braw" }),

@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   User,
   Building2,
+  HelpCircle,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
@@ -49,6 +50,7 @@ import PersonalCredentialsSection from "@/components/settings/PersonalCredential
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import DashboardWorkspaceAccessSection from "@/components/settings/DashboardWorkspaceAccessSection";
+import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -57,6 +59,7 @@ const DASHBOARD_SETTINGS_NAV_BASE: SettingsNavItem[] = [
   { id: "storage", label: "Storage", icon: HardDrive },
   { id: "privacy", label: "Privacy", icon: Shield },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "help", label: "Help", icon: HelpCircle },
 ];
 
 function StorageSection() {
@@ -973,6 +976,16 @@ function SettingsContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    const section = searchParams.get("section");
+    if (section === "help" && navIds.has("help")) {
+      setActive("help");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", "#help");
+      }
+    }
+  }, [searchParams, navIds]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const raw = window.location.hash.replace(/^#/, "");
     if (!raw) return;
@@ -1020,6 +1033,11 @@ function SettingsContent() {
           </div>
           {active === "workspace-access" && showWorkspaceAccessNav && (
             <DashboardWorkspaceAccessSection />
+          )}
+          {active === "help" && (
+            <SettingsHelpSupportSection
+              supportContext={searchParams.get("supportContext")}
+            />
           )}
         </div>
       </div>

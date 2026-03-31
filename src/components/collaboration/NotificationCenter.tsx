@@ -25,6 +25,7 @@ import {
 import { getAuthToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import type { Notification } from "@/types/collaboration";
+import { supportSettingsHelpHref } from "@/lib/support-ticket";
 
 interface NotificationCenterProps {
   onClose: () => void;
@@ -74,6 +75,8 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
     case "lifecycle_storage_purged":
       return <Ban className="h-4 w-4 flex-shrink-0" />;
     case "support_ticket_submitted":
+    case "support_ticket_in_progress":
+    case "support_ticket_resolved":
       return <LifeBuoy className="h-4 w-4 flex-shrink-0" />;
     default:
       return <FileText className="h-4 w-4 flex-shrink-0" />;
@@ -158,8 +161,12 @@ function resolveNotificationHref(n: Notification, shareBasePath: string): string
     return shareBasePath === "/enterprise" ? "/enterprise" : "/dashboard";
   }
 
-  if (n.type === "support_ticket_submitted") {
-    return "/dashboard/settings";
+  if (
+    n.type === "support_ticket_submitted" ||
+    n.type === "support_ticket_in_progress" ||
+    n.type === "support_ticket_resolved"
+  ) {
+    return supportSettingsHelpHref(shareBasePath, n.type);
   }
 
   return "/dashboard";

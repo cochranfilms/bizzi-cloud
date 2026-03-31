@@ -102,6 +102,8 @@ export const NOTIFICATION_TYPE_ROUTING_CLASS = {
   transfer_expiring_soon: "consumer_default",
   lifecycle_storage_purged: "consumer_default",
   support_ticket_submitted: "consumer_default",
+  support_ticket_in_progress: "consumer_default",
+  support_ticket_resolved: "consumer_default",
 } as const satisfies Record<NotificationType, NotificationTypeRoutingClass>;
 
 function routingClassForStoredType(type: string | undefined): NotificationTypeRoutingClass | null {

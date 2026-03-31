@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import TopBar from "@/components/dashboard/TopBar";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
@@ -15,6 +16,7 @@ import {
   CreditCard,
   Zap,
   Users,
+  HelpCircle,
 } from "lucide-react";
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
@@ -26,15 +28,18 @@ import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
+import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
 
 type EnterpriseSettingsSectionId =
   | "branding"
   | "storage"
   | "subscription"
   | "profile-handle"
-  | "seats";
+  | "seats"
+  | "help";
 
-export default function EnterpriseSettingsPage() {
+function EnterpriseSettingsPageInner() {
+  const searchParams = useSearchParams();
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
   const [companyName, setCompanyName] = useState(org?.name ?? "");
@@ -54,6 +59,7 @@ export default function EnterpriseSettingsPage() {
       { id: "storage", label: "Storage", icon: HardDrive },
       { id: "subscription", label: "Subscription", icon: CreditCard },
       { id: "profile-handle", label: "Profile handle", icon: Globe },
+      { id: "help", label: "Help", icon: HelpCircle },
     ];
     if (isAdmin) {
       base.push({ id: "seats", label: "Seat management", icon: Users });
@@ -73,7 +79,9 @@ export default function EnterpriseSettingsPage() {
           ? "seats"
           : next === "profile-handle"
             ? "profile-handle"
-            : next;
+            : next === "help"
+              ? "help"
+              : next;
       window.history.replaceState(null, "", `#${hash}`);
     }
   }, [navItems]);
@@ -85,12 +93,22 @@ export default function EnterpriseSettingsPage() {
   }, [isAdmin, section]);
 
   useEffect(() => {
+    if (searchParams.get("section") === "help") {
+      setSection("help");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", "#help");
+      }
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !org) return;
     const h = window.location.hash.replace(/^#/, "");
     const ids = new Set(navItems.map((i) => i.id));
     if (h === "storage") setSection("storage");
     else if (h === "subscription") setSection("subscription");
     else if (h === "profile-handle" || h === "galleries") setSection("profile-handle");
+    else if (h === "help") setSection("help");
     else if ((h === "seats" || h === "seat-management") && ids.has("seats"))
       setSection("seats");
     else if (h === "branding" || h === "") setSection("branding");
@@ -412,11 +430,26 @@ export default function EnterpriseSettingsPage() {
                   </Link>
                 </section>
               ) : null}
+
+              {section === "help" ? (
+                <SettingsHelpSupportSection
+                  supportContext={searchParams.get("supportContext")}
+                  primaryClassName="bg-[var(--enterprise-primary)] px-4 py-2 text-white hover:opacity-90"
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
         </DashboardRouteFade>
       </main>
     </>
+  );
+}
+
+export default function EnterpriseSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <EnterpriseSettingsPageInner />
+    </Suspense>
   );
 }

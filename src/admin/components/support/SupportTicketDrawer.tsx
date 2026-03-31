@@ -72,10 +72,6 @@ export default function SupportTicketDrawer({
           </h4>
           <dl className="grid gap-2 text-sm">
             <div>
-              <dt className="text-neutral-500">Priority</dt>
-              <dd className="capitalize">{ticket.priority}</dd>
-            </div>
-            <div>
               <dt className="text-neutral-500">Issue type</dt>
               <dd className="capitalize">{ticket.issueType}</dd>
             </div>
@@ -93,6 +89,29 @@ export default function SupportTicketDrawer({
             </div>
           </dl>
         </div>
+
+        {ticket.statusHistory && ticket.statusHistory.length > 0 ? (
+          <div>
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              Status history
+            </h4>
+            <ul className="space-y-2 text-sm">
+              {ticket.statusHistory.map((e, i) => (
+                <li
+                  key={`${e.changedAt}-${i}`}
+                  className="rounded-lg border border-neutral-200 px-3 py-2 dark:border-neutral-700"
+                >
+                  <span className="font-medium capitalize">{e.status.replace("_", " ")}</span>
+                  <span className="text-neutral-500 dark:text-neutral-400">
+                    {" "}
+                    — {formatDateTime(e.changedAt)}
+                    {e.changedBy ? ` · ${e.changedBy}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <div>
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">

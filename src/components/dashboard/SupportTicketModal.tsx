@@ -4,18 +4,12 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Send } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { SUPPORT_CONTACT_EMAIL } from "@/lib/support-ticket";
 
 interface SupportTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const PRIORITIES = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "urgent", label: "Urgent" },
-] as const;
 
 const ISSUE_TYPES = [
   { value: "billing", label: "Billing" },
@@ -30,8 +24,9 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
   const { user } = useAuth();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
-  const [issueType, setIssueType] = useState<"billing" | "upload" | "storage" | "account" | "preview" | "other">("other");
+  const [issueType, setIssueType] = useState<
+    "billing" | "upload" | "storage" | "account" | "preview" | "other"
+  >("other");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -61,7 +56,6 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
         body: JSON.stringify({
           subject: subject.trim(),
           message: message.trim(),
-          priority,
           issueType,
         }),
       });
@@ -72,6 +66,7 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
       setSuccess(true);
       setSubject("");
       setMessage("");
+      setIssueType("other");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit ticket");
     } finally {
@@ -110,26 +105,46 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
 
         {success ? (
           <div className="px-6 py-8 text-center">
-            <p className="mb-6 text-green-600 dark:text-green-400">
-              ✓ Ticket submitted successfully. We&apos;ll get back to you soon.
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">
+              Ticket submitted successfully
+            </h3>
+            <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">
+              We have received your support request and our team is actively working on it. We will
+              have this resolved as soon as possible.
+            </p>
+            <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">
+              For additional support, contact{" "}
+              <a
+                href={`mailto:${SUPPORT_CONTACT_EMAIL}`}
+                className="text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+              >
+                {SUPPORT_CONTACT_EMAIL}
+              </a>
             </p>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+              className="mt-8 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
             >
               Close
             </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 p-6">
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Need help with your account or files? Submit a support ticket and our team will review it
+              as soon as possible.
+            </p>
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
                 {error}
               </p>
             )}
             <div>
-              <label htmlFor="support-subject" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              <label
+                htmlFor="support-subject"
+                className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
                 Subject
               </label>
               <input
@@ -145,7 +160,10 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
               />
             </div>
             <div>
-              <label htmlFor="support-message" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              <label
+                htmlFor="support-message"
+                className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
                 Message
               </label>
               <textarea
@@ -160,65 +178,54 @@ export default function SupportTicketModal({ isOpen, onClose }: SupportTicketMod
                 maxLength={2000}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="support-priority" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Priority
-                </label>
-                <select
-                  id="support-priority"
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as typeof priority)}
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="support-type" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                  Issue type
-                </label>
-                <select
-                  id="support-type"
-                  value={issueType}
-                  onChange={(e) => setIssueType(e.target.value as typeof issueType)}
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-                >
-                  {ISSUE_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label
+                htmlFor="support-type"
+                className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Issue type
+              </label>
+              <select
+                id="support-type"
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value as typeof issueType)}
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+              >
+                {ISSUE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={submitting}
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:hover:bg-neutral-800 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting || subject.trim().length < 3 || message.trim().length < 10}
-                className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50 dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
-              >
-                {submitting ? (
-                  "Sending…"
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Send ticket
-                  </>
-                )}
-              </button>
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-end">
+              <p className="order-2 text-center text-xs text-neutral-500 dark:text-neutral-400 sm:order-1 sm:mr-auto sm:text-left">
+                You will receive an email confirmation with the details of this request.
+              </p>
+              <div className="order-1 flex justify-end gap-2 sm:order-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={submitting}
+                  className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium dark:border-neutral-700 dark:hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting || subject.trim().length < 3 || message.trim().length < 10}
+                  className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50 dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan"
+                >
+                  {submitting ? (
+                    "Sending…"
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Submit ticket
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         )}

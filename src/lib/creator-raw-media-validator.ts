@@ -69,7 +69,7 @@ export function classifyCreatorRawMedia(
   const codec = (inspected.detectedVideoCodec ?? "").toLowerCase();
   const tag = (inspected.detectedCodecTag ?? "").toLowerCase();
 
-  if (!codec) {
+  if (!codec && !tag) {
     return baseResult(inspected, contentType, {
       allowed: false,
       reason: "unknown_codec",
@@ -78,7 +78,7 @@ export function classifyCreatorRawMedia(
     });
   }
 
-  if (BLOCKED_CODEC.has(codec)) {
+  if (codec && BLOCKED_CODEC.has(codec)) {
     return baseResult(inspected, contentType, {
       allowed: false,
       reason: `blocked_codec:${codec}`,
@@ -96,7 +96,7 @@ export function classifyCreatorRawMedia(
     });
   }
 
-  if (ALLOWED_CODEC.has(codec)) {
+  if (codec && ALLOWED_CODEC.has(codec)) {
     return baseResult(inspected, contentType, {
       allowed: true,
       reason: `allowed_codec:${codec}`,

@@ -23,13 +23,11 @@ export async function GET(request: Request) {
   const page = Math.min(50, Math.max(1, parseInt(searchParams.get("page") ?? "1", 10)));
   const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "25", 10)));
   const status = searchParams.get("status") ?? "";
-  const priority = searchParams.get("priority") ?? "";
 
   const db = getAdminFirestore();
 
   let q = db.collection("support_tickets").orderBy("createdAt", "desc");
   if (status) q = q.where("status", "==", status) as typeof q;
-  if (priority) q = q.where("priority", "==", priority) as typeof q;
 
   const totalSnap = await q.count().get();
   const total = totalSnap.data().count;
@@ -39,9 +37,30 @@ export async function GET(request: Request) {
 
   const tickets = pageDocs.map((d) => {
     const data = d.data();
+    const rawHistory = data.statusHistory;
+    const statusHistory = Array.isArray(rawHistory)
+      ? rawHistory
+          .filter(
+            (e): e is { status?: string; changedAt?: string; changedBy?: string } =>
+              e !== null && typeof e === "object"
+          )
+          .map((e) => ({
+            status: String(e.status ?? ""),
+            changedAt:
+              typeof e.changedAt === "string"
+                ? e.changedAt
+                : e.changedAt &&
+                    typeof e.changedAt === "object" &&
+                    "toDate" in e.changedAt &&
+                    typeof (e.changedAt as { toDate?: () => Date }).toDate === "function"
+                  ? (e.changedAt as { toDate: () => Date }).toDate().toISOString()
+                  : "",
+            changedBy: String(e.changedBy ?? ""),
+          }))
+          .filter((e) => e.status && e.changedAt)
+      : undefined;
     return {
       id: d.id,
-      priority: data.priority ?? "medium",
       subject: data.subject ?? "",
       message: data.message ?? "",
       issueType: data.issueType ?? "other",
@@ -50,6 +69,7 @@ export async function GET(request: Request) {
       status: data.status ?? "open",
       createdAt: toIso(data.createdAt),
       updatedAt: toIso(data.updatedAt),
+      ...(statusHistory && statusHistory.length > 0 ? { statusHistory } : {}),
     };
   });
 

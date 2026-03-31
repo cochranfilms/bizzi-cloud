@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, Folder } from "lucide-react";
-import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
+import { Check, Cloud, Folder } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import ItemActionsMenu from "./ItemActionsMenu";
 import ShareModal from "./ShareModal";
@@ -101,7 +100,7 @@ export default function FolderListRow({
   const Icon = item.customIcon
     ? item.customIcon
     : item.name === "Storage" || item.name === "Uploads"
-      ? BizzicloudStorageIcon
+      ? Cloud
       : Folder;
 
   const [isDragOver, setIsDragOver] = useState(false);

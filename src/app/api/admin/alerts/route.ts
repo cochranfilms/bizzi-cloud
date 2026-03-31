@@ -135,7 +135,7 @@ export async function GET(request: Request) {
       const data = d.data();
       const subject = (data.subject as string) ?? "";
       const issueType = (data.issueType as string) ?? "other";
-      const priority = (data.priority as string) ?? "medium";
+      const status = (data.status as string) ?? "open";
       const affectedUserId = (data.affectedUserId as string) ?? "";
       const createdAt = data.createdAt;
       const timestamp =
@@ -145,18 +145,22 @@ export async function GET(request: Request) {
             ? (createdAt as { toDate: () => Date }).toDate().toISOString()
             : now;
 
-      const severity: "critical" | "warning" | "info" =
-        priority === "urgent" ? "critical" : priority === "high" ? "warning" : "info";
+      const title =
+        status === "in_progress"
+          ? `Support ticket in progress: ${subject || "(no subject)"}`
+          : status === "open"
+            ? `Open support ticket: ${subject || "(no subject)"}`
+            : `Support ticket (${status}): ${subject || "(no subject)"}`;
 
       alerts.push({
         id: `support-${d.id}`,
-        severity,
-        title: `[${issueType}] ${subject}`,
+        severity: "info",
+        title,
         source: "Support",
         timestamp,
         targetUserId: affectedUserId || undefined,
-        recommendedAction: "View and respond in Support",
-        metadata: { ticketId: d.id, subject, issueType, priority },
+        recommendedAction: "Review in Support",
+        metadata: { ticketId: d.id, subject, issueType, status },
       });
     }
   } catch (_) {}

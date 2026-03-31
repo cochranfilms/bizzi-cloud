@@ -144,6 +144,14 @@ export function formatNotificationMessage(
       const sub = metadata?.supportSubject ?? "your request";
       return `Support ticket received: ${sub}`;
     }
+    case "support_ticket_in_progress": {
+      const sub = metadata?.supportSubject ?? "your request";
+      return `Support is now working on your ticket: ${sub}`;
+    }
+    case "support_ticket_resolved": {
+      const sub = metadata?.supportSubject ?? "your request";
+      return `Your support ticket was marked resolved: ${sub}`;
+    }
     default:
       return "New activity";
   }

@@ -32,7 +32,7 @@ export interface FetchSupportOptions {
 }
 
 export async function fetchSupportTickets(
-  filters?: { status?: string; priority?: string },
+  filters?: { status?: string },
   page = 1,
   limit = 25,
   options?: FetchSupportOptions
@@ -42,7 +42,6 @@ export async function fetchSupportTickets(
     limit: String(limit),
   };
   if (filters?.status) params.status = filters.status;
-  if (filters?.priority) params.priority = filters.priority;
 
   const data = await apiAdmin<{ tickets: SupportTicket[]; total: number }>(
     "/api/admin/support",

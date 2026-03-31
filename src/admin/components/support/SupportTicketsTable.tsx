@@ -20,23 +20,6 @@ export default function SupportTicketsTable({
 }: SupportTicketsTableProps) {
   const columns: Column<SupportTicket>[] = [
     {
-      id: "priority",
-      header: "Priority",
-      cell: (r) => (
-        <span
-          className={
-            r.priority === "urgent"
-              ? "text-red-600 dark:text-red-400"
-              : r.priority === "high"
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-neutral-500"
-          }
-        >
-          {r.priority}
-        </span>
-      ),
-    },
-    {
       id: "subject",
       header: "Subject",
       cell: (r) => <span className="font-medium">{r.subject}</span>,

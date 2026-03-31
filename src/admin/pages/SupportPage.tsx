@@ -10,13 +10,12 @@ import { useAdminSupport } from "../hooks/useAdminSupport";
 import type { SupportTicket } from "../types/adminSupport.types";
 
 export default function SupportPage() {
-  const { tickets, total, breakdown, loading, error, refresh } = useAdminSupport();
+  const { tickets, breakdown, loading, error, refresh } = useAdminSupport();
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const openCount = tickets.filter((t) => t.status === "open").length;
   const inProgressCount = tickets.filter((t) => t.status === "in_progress").length;
-  const urgentCount = tickets.filter((t) => t.priority === "urgent").length;
 
   const handleRowClick = (ticket: SupportTicket) => {
     setSelectedTicket(ticket);
@@ -39,11 +38,7 @@ export default function SupportPage() {
         }
       />
 
-      <SupportSummaryRow
-        total={openCount + inProgressCount}
-        open={inProgressCount}
-        urgent={urgentCount}
-      />
+      <SupportSummaryRow openCount={openCount} inProgressCount={inProgressCount} />
 
       <SupportIssueBreakdown breakdown={breakdown} />
 

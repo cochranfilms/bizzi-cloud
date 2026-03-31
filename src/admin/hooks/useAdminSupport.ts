@@ -20,7 +20,7 @@ export function useAdminSupport() {
     [user]
   );
 
-  const refresh = useCallback(async (filters?: { status?: string; priority?: string }) => {
+  const refresh = useCallback(async (filters?: { status?: string }) => {
     setLoading(true);
     setError(null);
     try {

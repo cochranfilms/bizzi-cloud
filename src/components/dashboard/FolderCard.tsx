@@ -4,8 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import type { CardSize, AspectRatio } from "@/context/LayoutSettingsContext";
 import type { CardPresentation } from "@/lib/card-presentation";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
-import { Check, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
-import BizzicloudStorageIcon from "@/components/icons/BizzicloudStorageIcon";
+import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useCallback, useState } from "react";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 import ShareModal from "./ShareModal";
@@ -251,7 +250,7 @@ export default function FolderCard({
                     {item.customIcon ? (
                       <item.customIcon className={iconInnerClass} />
                     ) : item.name === "Storage" || item.name === "Uploads" ? (
-                      <BizzicloudStorageIcon className={iconInnerClass} />
+                      <Cloud className={iconInnerClass} />
                     ) : (
                       <Folder className={iconInnerClass} />
                     )}
@@ -318,7 +317,7 @@ export default function FolderCard({
                   {item.customIcon ? (
                     <item.customIcon className={iconInnerClass} />
                   ) : item.name === "Storage" || item.name === "Uploads" ? (
-                    <BizzicloudStorageIcon className={iconInnerClass} />
+                    <Cloud className={iconInnerClass} />
                   ) : (
                     <Folder className={iconInnerClass} />
                   )}

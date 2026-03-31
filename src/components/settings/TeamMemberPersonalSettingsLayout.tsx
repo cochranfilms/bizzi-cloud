@@ -22,6 +22,7 @@ import PersonalProfileSettingsSection from "@/components/settings/PersonalProfil
 import PersonalAccountEmailSection from "@/components/settings/PersonalAccountEmailSection";
 import PersonalPasswordChangeSection from "@/components/settings/PersonalPasswordChangeSection";
 import SupportTicketModal from "@/components/dashboard/SupportTicketModal";
+import { SUPPORT_CONTACT_EMAIL } from "@/lib/support-ticket";
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 
@@ -361,6 +362,16 @@ export default function TeamMemberPersonalSettingsLayout({
             </h2>
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               Report an issue or ask a question—we’ll route it to the right team.
+            </p>
+            <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">
+              For additional support, contact{" "}
+              <a
+                href={`mailto:${SUPPORT_CONTACT_EMAIL}`}
+                className="text-[var(--enterprise-primary)] hover:underline"
+              >
+                {SUPPORT_CONTACT_EMAIL}
+              </a>
+              .
             </p>
             <button
               type="button"

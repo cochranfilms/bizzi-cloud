@@ -36,7 +36,9 @@ export type NotificationType =
   | "billing_subscription_canceled"
   | "billing_subscription_welcome"
   | "lifecycle_storage_purged"
-  | "support_ticket_submitted";
+  | "support_ticket_submitted"
+  | "support_ticket_in_progress"
+  | "support_ticket_resolved";
 
 export interface Notification {
   id: string;

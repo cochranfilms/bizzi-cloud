@@ -1,11 +1,15 @@
 /**
- * Admin support types.
- * TODO: Align with real Bizzi Cloud API responses.
+ * Admin support ticket row shape (API does not expose legacy `priority`).
  */
+
+export interface SupportTicketStatusHistoryEntry {
+  status: string;
+  changedAt: string;
+  changedBy: string;
+}
 
 export interface SupportTicket {
   id: string;
-  priority: "low" | "medium" | "high" | "urgent";
   subject: string;
   message?: string;
   issueType: "billing" | "upload" | "storage" | "account" | "preview" | "other";
@@ -14,4 +18,5 @@ export interface SupportTicket {
   status: "open" | "in_progress" | "resolved";
   createdAt: string;
   updatedAt: string;
+  statusHistory?: SupportTicketStatusHistoryEntry[];
 }

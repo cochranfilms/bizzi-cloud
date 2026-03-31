@@ -82,9 +82,23 @@ export const CREATOR_RAW_MEDIA_POLICY = {
   ] as const,
 
   /**
-   * codec_tag_string (fourcc) allowlist additions — ProRes RAW, etc.
+   * codec_tag_string (fourcc) allowlist — ProRes family, ProRes RAW, common DNx tags.
+   * Some MP4/MOV files report `codec_name` as `unknown` while the tag identifies mezzanine.
    */
-  allowedCodecTags: ["aprn", "aprx"] as const,
+  allowedCodecTags: [
+    "aprn",
+    "aprx",
+    "apco",
+    "apcs",
+    "apcn",
+    "apch",
+    "ap4h",
+    "ap4x",
+    "aprh",
+    "avdn",
+    "avdh",
+    "avd1",
+  ] as const,
 
   /**
    * Extensions that may be camera RAW / cinema; most still require an allowlisted codec from ffprobe.

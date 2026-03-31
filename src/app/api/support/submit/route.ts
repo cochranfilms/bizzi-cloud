@@ -1,14 +1,22 @@
 /**
  * POST /api/support/submit
- * User-facing: Submit a support ticket. Creates Firestore doc and sends EmailJS to support inbox.
+ * User-facing: Submit a support ticket. Creates Firestore doc; emails and notifications are best-effort.
  */
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
-import { sendSupportTicketEmail } from "@/lib/emailjs";
+import {
+  sendSupportTicketEmail,
+  sendSupportTicketConfirmationEmail,
+} from "@/lib/emailjs";
 import { createNotification } from "@/lib/notification-service";
+import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  SUPPORT_CONTACT_EMAIL,
+  SUPPORT_SUBMIT_RATE_LIMIT_MAX,
+  SUPPORT_SUBMIT_RATE_LIMIT_WINDOW_MS,
+  parseSupportSubmitBody,
+  truncateSupportSubject,
+} from "@/lib/support-ticket";
 import { NextResponse } from "next/server";
-
-const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
-const ISSUE_TYPES = ["billing", "upload", "storage", "account", "preview", "other"] as const;
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -27,28 +35,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
-  let body: { subject?: string; message?: string; priority?: string; issueType?: string };
+  const rl = checkRateLimit(
+    `support_submit:${uid}`,
+    SUPPORT_SUBMIT_RATE_LIMIT_MAX,
+    SUPPORT_SUBMIT_RATE_LIMIT_WINDOW_MS
+  );
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many support requests. Please try again later." },
+      { status: 429 }
+    );
+  }
+
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const subject = typeof body.subject === "string" ? body.subject.trim() : "";
-  const message = typeof body.message === "string" ? body.message.trim() : "";
-  const priority: string = PRIORITIES.includes(body.priority as (typeof PRIORITIES)[number])
-    ? (body.priority as string)
-    : "medium";
-  const issueType: string = ISSUE_TYPES.includes(body.issueType as (typeof ISSUE_TYPES)[number])
-    ? (body.issueType as string)
-    : "other";
+  const parsed = parseSupportSubmitBody(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
 
-  if (!subject || subject.length < 3) {
-    return NextResponse.json({ error: "Subject must be at least 3 characters" }, { status: 400 });
-  }
-  if (!message || message.length < 10) {
-    return NextResponse.json({ error: "Message must be at least 10 characters" }, { status: 400 });
-  }
+  const { subject, message, issueType } = parsed.data;
 
   try {
     const authUser = await getAdminAuth().getUser(uid);
@@ -66,7 +77,6 @@ export async function POST(request: Request) {
     const docRef = await db.collection("support_tickets").add({
       subject,
       message,
-      priority,
       issueType,
       status: "open",
       affectedUserId: uid,
@@ -82,32 +92,49 @@ export async function POST(request: Request) {
         user_email: userEmail,
         user_name: userName,
         user_id: uid,
-        priority,
         issue_type: issueType,
         created_at: now,
         created_at_formatted: createdAtFormatted,
       });
     } catch (err) {
-      console.error("[support/submit] EmailJS failed:", err);
-      // Ticket is saved; email failure is non-fatal
+      console.error("[support/submit] ops EmailJS failed:", err);
     }
 
-    const subjectShort = subject.length > 80 ? `${subject.slice(0, 77)}…` : subject;
-    await createNotification({
-      recipientUserId: uid,
-      actorUserId: uid,
-      type: "support_ticket_submitted",
-      allowSelfActor: true,
-      metadata: {
-        ticketId: docRef.id,
-        supportSubject: subjectShort,
-        actorDisplayName: "Support",
-      },
-    }).catch((err) => console.error("[support/submit] notification:", err));
+    try {
+      await sendSupportTicketConfirmationEmail({
+        to_email: userEmail,
+        ticket_id: docRef.id,
+        ticket_subject: subject,
+        ticket_message: message,
+        issue_type: issueType,
+        submitted_at: createdAtFormatted,
+        support_email: SUPPORT_CONTACT_EMAIL,
+      });
+    } catch (err) {
+      console.error("[support/submit] user confirmation EmailJS failed:", err);
+    }
+
+    const subjectShort = truncateSupportSubject(subject);
+    try {
+      await createNotification({
+        recipientUserId: uid,
+        actorUserId: uid,
+        type: "support_ticket_submitted",
+        allowSelfActor: true,
+        metadata: {
+          ticketId: docRef.id,
+          supportSubject: subjectShort,
+          actorDisplayName: "Support",
+        },
+      });
+    } catch (err) {
+      console.error("[support/submit] notification failed:", err);
+    }
 
     return NextResponse.json({
       id: docRef.id,
-      message: "Support ticket submitted successfully. We'll get back to you soon.",
+      message:
+        "Support ticket submitted successfully. We have received your request and are working on it.",
     });
   } catch (err) {
     console.error("[support/submit]", err);

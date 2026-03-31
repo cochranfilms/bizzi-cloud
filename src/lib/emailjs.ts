@@ -220,6 +220,26 @@ function getSupportTicketConfig(): {
   };
 }
 
+function getSupportTicketConfirmationConfig(): {
+  serviceId: string;
+  templateConfirmation: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateConfirmation = process.env.EMAILJS_TEMPLATE_ID_SUPPORT_CONFIRMATION;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateConfirmation || !publicKey) return null;
+  return {
+    serviceId,
+    templateConfirmation,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
 function getOrgSeatInviteConfig(): {
   serviceId: string;
   templateOrgSeatInvite: string;
@@ -1053,16 +1073,26 @@ export interface SupportTicketEmailParams {
   user_email: string;
   user_name: string;
   user_id: string;
-  priority: string;
   issue_type: string;
   created_at: string;
   created_at_formatted?: string;
 }
 
+/** User-facing confirmation after submit. Template To = submitting user (to_email). */
+export interface SupportTicketConfirmationEmailParams {
+  to_email: string;
+  ticket_id: string;
+  ticket_subject: string;
+  ticket_message: string;
+  issue_type: string;
+  submitted_at: string;
+  support_email: string;
+}
+
 /**
  * Send support ticket notification email to the configured support inbox.
  * Requires EMAILJS_TEMPLATE_ID_SUPPORT. In EmailJS dashboard, set To to your support email.
- * Template params: subject, message, user_email, user_name, user_id, priority, issue_type, created_at, logo_url
+ * Template params: subject, message, user_email, user_name, user_id, issue_type, created_at, logo_url
  */
 export async function sendSupportTicketEmail(
   params: SupportTicketEmailParams
@@ -1083,6 +1113,38 @@ export async function sendSupportTicketEmail(
   await emailjs.send(
     config.serviceId,
     config.templateSupport,
+    templateParams,
+    {
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
+    }
+  );
+}
+
+/**
+ * Confirmation email to the user who submitted the ticket.
+ * Requires EMAILJS_TEMPLATE_ID_SUPPORT_CONFIRMATION. Subject line e.g. "We received your BizziCloud support request"
+ * is usually set in the EmailJS template; pass dynamic fields below for template variables.
+ */
+export async function sendSupportTicketConfirmationEmail(
+  params: SupportTicketConfirmationEmailParams
+): Promise<void> {
+  const config = getSupportTicketConfirmationConfig();
+  if (!config) {
+    console.warn(
+      "[EmailJS] Support ticket confirmation skipped: EMAILJS_TEMPLATE_ID_SUPPORT_CONFIRMATION not set"
+    );
+    return;
+  }
+
+  const templateParams = {
+    ...params,
+    logo_url: getEmailLogoUrl(),
+  };
+
+  await emailjs.send(
+    config.serviceId,
+    config.templateConfirmation,
     templateParams,
     {
       publicKey: config.publicKey,
