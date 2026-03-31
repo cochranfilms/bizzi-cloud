@@ -6,6 +6,8 @@ import {
   CREATOR_RAW_MEDIA_POLICY,
   CREATOR_RAW_REJECTION_MESSAGES,
   looksLikeProfessionalMezzanineLongName,
+  looksLikeXavcOrSonyCameraOriginalHevcPackaging,
+  isCreatorRawHevcXavcCameraOriginalExtension,
 } from "@/lib/creator-raw-media-config";
 import type { InspectedMediaStreams } from "@/lib/creator-raw-media-types";
 import type { CreatorRawMediaValidationResult } from "@/lib/creator-raw-media-types";
@@ -98,6 +100,19 @@ export function classifyCreatorRawMedia(
       reason: "allowed_codec_long_name",
       userMessage: "",
       code: "allowed_codec_long_name",
+    });
+  }
+
+  if (
+    (codec === "hevc" || codec === "h265") &&
+    isCreatorRawHevcXavcCameraOriginalExtension(ext) &&
+    looksLikeXavcOrSonyCameraOriginalHevcPackaging(inspected.detectedCodecLongName)
+  ) {
+    return baseResult(inspected, contentType, {
+      allowed: true,
+      reason: "allowed_hevc_xavc_camera_mp4",
+      userMessage: "",
+      code: "allowed_hevc_xavc_mp4",
     });
   }
 

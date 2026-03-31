@@ -6,7 +6,6 @@ import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceCon
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useTheme } from "@/context/ThemeContext";
-import { getDashboardBackground } from "@/lib/dashboard-appearance-themes";
 import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 
@@ -75,10 +74,10 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
   const isDark = appTheme === "dark";
 
   return useMemo(() => {
+    /** Dashboard colors → "Theme" (section / accent tint), not page Background */
     const accentCanvas = appearance?.accentColor ?? "#00BFFF";
     const buttonColor = appearance?.buttonColor ?? null;
     const uiThemeOverride = appearance?.uiThemeOverride ?? null;
-    const backgroundThemeId = appearance?.backgroundThemeId ?? null;
 
     const chrome = resolveDashboardChromeThemeVariables(
       inherited,
@@ -91,9 +90,11 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
     const primaryHover = lightenHex(primary, 18);
     const primaryPressed = darkenHex(primary, 22);
 
-    const workspaceBg =
-      getDashboardBackground(backgroundThemeId, isDark) ??
-      (isDark ? "#0a0a0a" : "#f5f5f5");
+    const workspaceBg = /^#[0-9A-Fa-f]{6}$/.test(accentCanvas)
+      ? accentCanvas
+      : isDark
+        ? "#0a0a0a"
+        : "#f5f5f5";
 
     const elevatedSurface = isDark
       ? `color-mix(in srgb, ${workspaceBg} 78%, #ffffff 8%)`
@@ -104,6 +105,7 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
       : "rgba(255,255,255,0.45)";
 
     const { primary: textPrimary, muted: textMuted } = pickContrastingTextHex(workspaceBg);
+    const { primary: onPrimary } = pickContrastingTextHex(primary);
 
     return {
       ...chrome,
@@ -115,6 +117,7 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
       "--bizzi-upload-divider": isDark ? "rgba(255,255,255,0.12)" : "rgba(15,15,15,0.08)",
       "--bizzi-upload-border-subtle": hexToRgba(primary, isDark ? 0.22 : 0.18),
       "--bizzi-uppy-primary": primary,
+      "--bizzi-uppy-on-primary": onPrimary,
       "--bizzi-uppy-accent": accent,
       "--bizzi-uppy-primary-hover": primaryHover,
       "--bizzi-uppy-primary-pressed": primaryPressed,
@@ -126,12 +129,5 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
       "--bizzi-uppy-retry-bg": darkenHex(accent, 8),
       "--bizzi-uppy-retry-hover": lightenHex(accent, 12),
     } as React.CSSProperties;
-  }, [
-    appearance?.accentColor,
-    appearance?.backgroundThemeId,
-    appearance?.buttonColor,
-    appearance?.uiThemeOverride,
-    inherited,
-    isDark,
-  ]);
+  }, [appearance?.accentColor, appearance?.buttonColor, appearance?.uiThemeOverride, inherited, isDark]);
 }

@@ -1,7 +1,8 @@
 /**
  * Creator RAW media policy — **camera / cinema RAW plus approved professional source codecs**
  * (ProRes, DNx, uncompressed, some image-sequence families, etc.). It is intentionally **not**
- * “sensor RAW only”; delivery codecs (H.264, HEVC, AV1, …) are blocked regardless of container.
+ * “sensor RAW only”. Generic delivery codecs (H.264, consumer HEVC, AV1, …) stay blocked; a **narrow**
+ * exception allows **Sony XAVC‑branded HEVC in `.mp4` / `.m4v`** when ffprobe metadata proves camera-original packaging.
  *
  * Extension and MIME are hints only; server enforcement uses ffprobe (see creator-raw-media-probe.ts).
  */
@@ -10,7 +11,7 @@
 export const CREATOR_RAW_TAB_INTRO = {
   line1: "Creator workspace — current upload destination: RAW",
   line2:
-    "While this folder is open, uploads and drag-and-drop go here. This tab is for camera RAW and approved professional source formats (including common mezzanine codecs), not everyday H.264/H.265 exports — use Storage for those.",
+    "While this folder is open, uploads and drag-and-drop go here. This tab is for camera RAW and approved source formats (ProRes/DNx mezzanine, cinema RAW, and Sony XAVC‑branded HEVC in .mp4 from supported cameras). Everyday H.264 or phone/consumer HEVC — use Storage.",
 } as const;
 
 /** User-facing copy shared by API responses and UI hints. */
@@ -51,10 +52,39 @@ export function looksLikeProfessionalMezzanineLongName(longName: string | null |
   return MEZZANINE_CODEC_LONG_NAME_REGEXES.some((re) => re.test(s));
 }
 
+/**
+ * Product exception: Sony (and compatible) cameras record **XAVC HS / XAVC‑S** as **HEVC in MP4** with
+ * explicit XAVC branding in ffprobe metadata. Requires strong substring signals so consumer HEVC stays blocked.
+ */
+const CAMERA_ORIGINAL_HEVC_XAVC_HINT_REGEXES: readonly RegExp[] = [
+  /\bxavc\b/i,
+  /\bxavc[\s/_-]?(hs|s|i)\b/i,
+  /\bxavchs\b/i,
+  /\bsony\b[^\n]{0,160}\bxavc\b/i,
+  /\bxavc\b[^\n]{0,160}\bsony\b/i,
+];
+
+export function looksLikeXavcOrSonyCameraOriginalHevcPackaging(
+  hintBlob: string | null | undefined
+): boolean {
+  const s = hintBlob?.trim();
+  if (!s) return false;
+  return CAMERA_ORIGINAL_HEVC_XAVC_HINT_REGEXES.some((re) => re.test(s));
+}
+
+/** HEVC XAVC camera-original path is only for these leaves (product rule). */
+export const CREATOR_RAW_HEVC_XAVC_CAMERA_ORIGINAL_EXTENSIONS = new Set<string>(["mp4", "m4v"]);
+
+export function isCreatorRawHevcXavcCameraOriginalExtension(ext: string): boolean {
+  return CREATOR_RAW_HEVC_XAVC_CAMERA_ORIGINAL_EXTENSIONS.has(ext.toLowerCase());
+}
+
 /** Stream and/or format fields ffprobe may expose beyond `codec_long_name` (often ProRes is only in `encoder`). */
 export type FfprobeMezzanineHintSource = {
   codec_long_name?: string;
   tags?: Record<string, unknown> | null;
+  /** ffprobe `profile` (e.g. HEVC Main 10) — folded into hint blob for XAVC / policy checks. */
+  profile?: string;
 };
 
 export type FfprobeFormatForMezzanineHint = {
@@ -88,6 +118,7 @@ export function buildFfprobeMezzanineHintBlob(
 ): string {
   const parts: string[] = [];
   if (stream.codec_long_name?.trim()) parts.push(stream.codec_long_name.trim());
+  if (stream.profile?.trim()) parts.push(stream.profile.trim());
   appendMezzanineHintTagValues(stream.tags ?? undefined, parts);
   appendMezzanineHintTagValues(format?.tags ?? undefined, parts);
   return parts.join(" | ");

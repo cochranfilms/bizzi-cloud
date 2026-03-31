@@ -174,7 +174,7 @@
   font-weight: 600 !important;
   letter-spacing: 0.02em !important;
   background: var(--bizzi-uppy-primary) !important;
-  color: #fff !important;
+  color: var(--bizzi-uppy-on-primary) !important;
   border: none !important;
   box-shadow: 0 8px 20px -8px var(--bizzi-uppy-primary-focus) !important;
   transition:

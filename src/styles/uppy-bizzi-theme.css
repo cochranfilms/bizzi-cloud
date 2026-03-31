@@ -7,6 +7,7 @@
 /* --- @uppy/core: primary button --- */
 .bizzi-uppy-theme .uppy-c-btn-primary {
   background-color: var(--bizzi-uppy-primary) !important;
+  color: var(--bizzi-uppy-on-primary) !important;
 }
 .bizzi-uppy-theme .uppy-c-btn-primary:not(:disabled):hover {
   background-color: var(--bizzi-uppy-primary-hover) !important;
@@ -104,7 +105,9 @@
 .bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-StatusBar-actionCircleBtn:focus {
   box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
 }
-.bizzi-uppy-theme .uppy-StatusBar-actionBtn {
+/* Do not override label color on solid primary/retry buttons (would hide "Upload" / "Retry"). */
+.bizzi-uppy-theme
+  .uppy-StatusBar-actionBtn:not(.uppy-c-btn-primary):not(.uppy-StatusBar-actionBtn--retry) {
   color: var(--bizzi-uppy-primary) !important;
 }
 .bizzi-uppy-theme .uppy-StatusBar-actionBtn--retry {

@@ -206,4 +206,24 @@ describe("parseFfprobeVideoStream", () => {
     expect(inspected.detectedHeight).toBe(2160);
     expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
   });
+
+  it("classifies XAVC HS HEVC as allowed when metadata includes XAVC branding", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "hevc",
+          codec_tag_string: "hvc1",
+          codec_long_name: "H.265 / HEVC (MPEG-H Part 2)",
+          tags: { encoder: "XAVC HS 4:2:2 10bit" },
+          width: 3840,
+          height: 2160,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedVideoCodec).toBe("hevc");
+    expect(classifyCreatorRawMedia(inspected, "C0001.MP4", "video/mp4").allowed).toBe(true);
+  });
 });

@@ -10,6 +10,7 @@ import {
   CREATOR_RAW_MEDIA_POLICY,
   buildFfprobeMezzanineHintBlob,
   looksLikeProfessionalMezzanineLongName,
+  looksLikeXavcOrSonyCameraOriginalHevcPackaging,
 } from "@/lib/creator-raw-media-config";
 import { createPresignedDownloadUrl } from "@/lib/b2";
 import type { InspectedMediaStreams } from "@/lib/creator-raw-media-types";
@@ -41,6 +42,7 @@ type FfprobeStream = {
   r_frame_rate?: string;
   avg_frame_rate?: string;
   codec_long_name?: string;
+  profile?: string;
   tags?: Record<string, unknown> | null;
   disposition?: { attached_pic?: number };
 };
@@ -123,6 +125,13 @@ function categorizeFfprobeVideoStream(
   if (
     looksLikeProfessionalMezzanineLongName(mezzanineHintBlob) &&
     (!codec || codec === "mpeg4" || codec === "unknown")
+  ) {
+    return "allowed";
+  }
+  /** Product: Sony XAVC‑branded HEVC in MP4 — probe stream selection (validator enforces .mp4/.m4v leaf). */
+  if (
+    (codec === "hevc" || codec === "h265") &&
+    looksLikeXavcOrSonyCameraOriginalHevcPackaging(mezzanineHintBlob)
   ) {
     return "allowed";
   }
