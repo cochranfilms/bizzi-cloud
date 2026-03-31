@@ -3,6 +3,7 @@
  * and allowed file types.
  */
 import { describe, it, expect, vi } from "vitest";
+import type { DocumentSnapshot } from "firebase-admin/firestore";
 import {
   assertCreatorRawFinalizeOrAudit,
   isLockedCreatorRawPayload,
@@ -12,12 +13,11 @@ vi.mock("@/lib/activity-log", () => ({
   logActivityEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mockSnap(exists: boolean, isRaw: boolean): any {
+function mockSnap(exists: boolean, isRaw: boolean): DocumentSnapshot {
   return {
     exists,
     data: () => (exists ? { is_creator_raw: isRaw, name: isRaw ? "RAW" : "Storage" } : undefined),
-  };
+  } as DocumentSnapshot;
 }
 
 describe("isLockedCreatorRawPayload", () => {
