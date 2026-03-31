@@ -11,6 +11,8 @@ import {
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
+import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 
@@ -22,18 +24,13 @@ export const maxDuration = 60;
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
-function isVideoFile(name: string): boolean {
+function isDeliveryVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
 }
 
 export async function GET(request: Request) {
   if (!isB2Configured()) {
     return new NextResponse("B2 not configured", { status: 503 });
-  }
-
-  if (!ffmpegPath) {
-    console.error("[video-thumbnail] ffmpeg binary not found");
-    return new NextResponse("Video thumbnail not available", { status: 503 });
   }
 
   const url = new URL(request.url);
@@ -66,8 +63,12 @@ export async function GET(request: Request) {
     return new NextResponse("Not a video file", { status: 400 });
   }
 
-  // Resolve video check: filename, path from DB, or content_type (persists across rename)
-  let isVideo = isVideoFile(fileName || objectKey);
+  // Resolve video: delivery extensions, cinema RAW (see raw-video.ts), DB media_type / MIME (extensionless / renamed)
+  const leafGuess = fileName || objectKey;
+  let isVideo =
+    isDeliveryVideoFile(leafGuess) ||
+    isRawVideoFile(leafGuess);
+  let leafForFfmpeg = fileName || objectKey;
   if (!isVideo) {
     const db = getAdminFirestore();
     const snap = await db
@@ -81,9 +82,13 @@ export async function GET(request: Request) {
       const path = (data.relative_path as string) ?? "";
       const nameFromPath = path.split("/").filter(Boolean).pop() ?? "";
       const contentType = (data.content_type as string) ?? "";
+      const mediaType = (data.media_type as string) ?? "";
+      leafForFfmpeg = nameFromPath || fileName || objectKey;
       isVideo =
-        isVideoFile(nameFromPath) ||
-        contentType.startsWith("video/");
+        isDeliveryVideoFile(nameFromPath) ||
+        isRawVideoFile(nameFromPath) ||
+        contentType.startsWith("video/") ||
+        mediaType === "video";
     }
   }
   if (!isVideo) {
@@ -123,8 +128,18 @@ export async function GET(request: Request) {
 
     // Use proxy (720p H.264) when available - more reliable for FFmpeg than original codecs
     const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const hasProxy = await objectExists(proxyKey);
+    const effectiveKey = hasProxy ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
+
+    /** H.264 proxy decodes with stock ffmpeg; source cinema RAW may need FFMPEG_BRAW_PATH. */
+    const ffmpegBin = hasProxy
+      ? (ffmpegPath ?? null)
+      : resolveFfmpegExecutableForInput(leafForFfmpeg);
+    if (!ffmpegBin) {
+      console.error("[video-thumbnail] ffmpeg binary not found");
+      return new NextResponse("Video thumbnail not available", { status: 503 });
+    }
 
     const FFMPEG_TIMEOUT_MS = 45000;
 
@@ -155,7 +170,7 @@ export async function GET(request: Request) {
           "pipe:1",
         ];
 
-        const proc = spawn(ffmpegPath!, args, {
+        const proc = spawn(ffmpegBin, args, {
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
         });

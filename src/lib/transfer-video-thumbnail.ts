@@ -8,13 +8,11 @@ import {
   getProxyObjectKey,
 } from "@/lib/b2";
 import ffmpegPath from "ffmpeg-static";
+import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
 
 const FFMPEG_TIMEOUT_MS = 45000;
 
 export async function getTransferVideoThumbnail(objectKey: string): Promise<Buffer> {
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg binary not found");
-  }
 
   const cacheKey = getVideoThumbnailCacheKey(objectKey);
   try {
@@ -27,13 +25,21 @@ export async function getTransferVideoThumbnail(objectKey: string): Promise<Buff
   }
 
   const proxyKey = getProxyObjectKey(objectKey);
-  const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+  const hasProxy = await objectExists(proxyKey);
+  const effectiveKey = hasProxy ? proxyKey : objectKey;
   const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
+
+  const ffmpegBin = hasProxy
+    ? (ffmpegPath ?? null)
+    : resolveFfmpegExecutableForInput(objectKey);
+  if (!ffmpegBin) {
+    throw new Error("ffmpeg binary not found");
+  }
 
   const runFfmpeg = (seekSeconds: number): Promise<Buffer> =>
     new Promise((resolve, reject) => {
       const stderrChunks: string[] = [];
-      const proc = spawn(ffmpegPath!, [
+      const proc = spawn(ffmpegBin, [
         "-y", "-nostdin",
         "-probesize", "32K",
         "-analyzeduration", "500000",

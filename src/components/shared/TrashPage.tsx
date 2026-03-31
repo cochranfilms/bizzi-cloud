@@ -15,7 +15,7 @@ import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { useBackupVideoStreamUrl } from "@/hooks/useVideoStreamUrl";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
-import { GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { rectsIntersect, formatBytes, formatDate } from "@/lib/utils";
 import {
@@ -25,9 +25,6 @@ import {
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 
-function isVideoFile(name: string) {
-  return GALLERY_VIDEO_EXT.test(name.toLowerCase());
-}
 function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
@@ -153,7 +150,9 @@ function DeletedFileCard({
   const isVideo =
     !isMacosPackage &&
     !isAppleDoubleLeafName(file.name) &&
-    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+    (shouldUseVideoThumbnailPipeline(file.name) ||
+      (file.contentType?.startsWith("video/") ?? false) ||
+      file.mediaType === "video");
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,

@@ -1,7 +1,8 @@
 /**
  * Firestore-backed queue for proxy generation jobs.
  * Upload flows enqueue jobs; cron processes them to avoid serverless timeouts.
- * Skips RAW formats (BRAW, R3D, etc.) - they are marked raw_unsupported, not queued.
+ * `raw_try` extensions (BRAW, R3D, etc.) are enqueued via canGenerateProxy; only `raw_unsupported`
+ * short-circuits to an immediate backup_files update without a job.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey, objectExists } from "@/lib/b2";
@@ -21,7 +22,7 @@ export interface ProxyJobInput {
 
 /**
  * Add a proxy generation job to the queue. Idempotent per object_key.
- * Skips RAW formats (BRAW, R3D, etc.) - marks backup_files raw_unsupported, does not enqueue.
+ * For `raw_unsupported` capability only: marks backup_files and does not enqueue.
  */
 export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
   const { object_key, name, backup_file_id, user_id, media_type } = input;

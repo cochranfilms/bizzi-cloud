@@ -4,13 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { withThumbnailSlot } from "@/lib/thumbnailQueue";
-
-const VIDEO_EXT =
-  /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
-
-function isVideoFile(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
-}
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 
 /**
  * Returns a blob URL for a video thumbnail.
@@ -28,7 +22,8 @@ export function useVideoThumbnail(
 
   useEffect(() => {
     const isVideo =
-      !isAppleDoubleLeafName(fileName) && (isVideoOverride || isVideoFile(fileName));
+      !isAppleDoubleLeafName(fileName) &&
+      (isVideoOverride || shouldUseVideoThumbnailPipeline(fileName));
     if (!objectKey || !isVideo || !enabled) return;
 
     let cancelled = false;

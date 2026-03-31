@@ -2,15 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { withThumbnailSlot } from "@/lib/thumbnailQueue";
-
-const VIDEO_EXT =
-  /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 
 const BROWSER_PLAYABLE = /\.(mp4|webm|ogg|mov|m4v|3gp)$/i;
-
-function isVideoFile(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
-}
 
 function isBrowserPlayable(name: string): boolean {
   return BROWSER_PLAYABLE.test(name.toLowerCase());
@@ -38,7 +32,7 @@ export function useShareVideoThumbnail(
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!shareToken || !objectKey || !isVideoFile(fileName) || !enabled) return;
+    if (!shareToken || !objectKey || !shouldUseVideoThumbnailPipeline(fileName) || !enabled) return;
 
     let cancelled = false;
     let videoEl: HTMLVideoElement | null = null;

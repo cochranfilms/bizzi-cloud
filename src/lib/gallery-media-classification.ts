@@ -5,7 +5,7 @@
 import {
   GALLERY_IMAGE_EXT,
   GALLERY_VIDEO_EXT,
-  isRawFile,
+  isRawStillFile,
 } from "@/lib/gallery-file-types";
 
 export type GalleryMediaKind = "photo" | "video" | "other";
@@ -26,7 +26,7 @@ export function classifyGalleryFilename(fileName: string): ClassifiedFilename {
 
   const isVideo = GALLERY_VIDEO_EXT.test(fileName);
   const isImage = GALLERY_IMAGE_EXT.test(fileName);
-  const rawPhoto = isRawFile(fileName) && !isVideo;
+  const rawPhoto = isRawStillFile(fileName) && !isVideo;
 
   let kind: GalleryMediaKind = "other";
   if (isVideo) kind = "video";

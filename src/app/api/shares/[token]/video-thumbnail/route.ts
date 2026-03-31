@@ -10,6 +10,8 @@ import {
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
+import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 
@@ -17,7 +19,7 @@ export const maxDuration = 60;
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
-function isVideoFile(name: string): boolean {
+function isDeliveryVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
 }
 
@@ -27,11 +29,6 @@ export async function GET(
 ) {
   if (!isB2Configured()) {
     return new NextResponse("B2 not configured", { status: 503 });
-  }
-
-  if (!ffmpegPath) {
-    console.error("[share video-thumbnail] ffmpeg binary not found");
-    return new NextResponse("Video thumbnail not available", { status: 503 });
   }
 
   const { token: shareToken } = await params;
@@ -44,8 +41,8 @@ export async function GET(
   const objectKey = url.searchParams.get("object_key");
   const fileName = url.searchParams.get("name") ?? "";
 
-  if (!objectKey || !isVideoFile(fileName || objectKey)) {
-    return new NextResponse("object_key and video name required", {
+  if (!objectKey) {
+    return new NextResponse("object_key required", {
       status: 400,
     });
   }
@@ -104,6 +101,23 @@ export async function GET(
     return new NextResponse("Access denied", { status: 403 });
   }
 
+  const fileRow = fileSnap.docs[0].data();
+  const rel = (fileRow.relative_path as string) ?? "";
+  const nameFromPath = rel.split("/").filter(Boolean).pop() ?? "";
+  const leafForFfmpeg = nameFromPath || fileName || objectKey;
+  const contentType = (fileRow.content_type as string) ?? "";
+  const mediaType = (fileRow.media_type as string) ?? "";
+  const isVideo =
+    isDeliveryVideoFile(leafForFfmpeg) ||
+    isRawVideoFile(leafForFfmpeg) ||
+    contentType.startsWith("video/") ||
+    mediaType === "video";
+  if (!isVideo) {
+    return new NextResponse("object_key and video name required", {
+      status: 400,
+    });
+  }
+
   try {
     const cacheKey = getVideoThumbnailCacheKey(objectKey);
     try {
@@ -125,8 +139,17 @@ export async function GET(
 
     // Use proxy when available for more reliable FFmpeg processing
     const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const hasProxy = await objectExists(proxyKey);
+    const effectiveKey = hasProxy ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
+
+    const ffmpegBin = hasProxy
+      ? (ffmpegPath ?? null)
+      : resolveFfmpegExecutableForInput(leafForFfmpeg);
+    if (!ffmpegBin) {
+      console.error("[share video-thumbnail] ffmpeg binary not found");
+      return new NextResponse("Video thumbnail not available", { status: 503 });
+    }
 
     const FFMPEG_TIMEOUT_MS = 45000;
 
@@ -157,7 +180,7 @@ export async function GET(
           "pipe:1",
         ];
 
-        const proc = spawn(ffmpegPath!, args, {
+        const proc = spawn(ffmpegBin, args, {
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
         });

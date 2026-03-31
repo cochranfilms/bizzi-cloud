@@ -75,11 +75,7 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-import { GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
-
-function isVideoFile(name: string) {
-  return GALLERY_VIDEO_EXT.test(name.toLowerCase());
-}
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
@@ -154,7 +150,9 @@ export default function FileCard({
   const isVideo =
     !isMacosPackage &&
     !isAppleDoubleLeafName(file.name) &&
-    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+    (shouldUseVideoThumbnailPipeline(file.name) ||
+      (file.contentType?.startsWith("video/") ?? false) ||
+      file.mediaType === "video");
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,

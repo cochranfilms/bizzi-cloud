@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 
 export type ThumbnailSize = "thumb" | "preview";
 
@@ -11,12 +11,8 @@ function isImageFile(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name);
 }
 
-function isVideoFile(name: string): boolean {
-  return VIDEO_EXT.test(name.toLowerCase());
-}
-
 export function isPreviewableMedia(name: string): boolean {
-  return isImageFile(name) || isVideoFile(name);
+  return isImageFile(name) || shouldUseVideoThumbnailPipeline(name);
 }
 
 /**

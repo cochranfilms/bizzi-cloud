@@ -15,6 +15,8 @@ import {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
+import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 
@@ -22,7 +24,7 @@ export const maxDuration = 60;
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
 
-function isVideoFile(name: string): boolean {
+function isDeliveryVideoFile(name: string): boolean {
   return VIDEO_EXT.test(name.toLowerCase());
 }
 
@@ -34,18 +36,14 @@ export async function GET(
     return new NextResponse("B2 not configured", { status: 503 });
   }
 
-  if (!ffmpegPath) {
-    return new NextResponse("Video thumbnail not available", { status: 503 });
-  }
-
   const { id: galleryId } = await params;
   const url = new URL(request.url);
   const objectKey = url.searchParams.get("object_key");
   const fileName = url.searchParams.get("name") ?? "";
   const password = url.searchParams.get("password") ?? undefined;
 
-  if (!galleryId || !objectKey || !isVideoFile(fileName || objectKey)) {
-    return new NextResponse("gallery id, object_key and video name required", {
+  if (!galleryId || !objectKey) {
+    return new NextResponse("gallery id and object_key required", {
       status: 400,
     });
   }
@@ -85,6 +83,33 @@ export async function GET(
     return new NextResponse("Asset not found", { status: 404 });
   }
 
+  const assetData = assetSnap.docs[0]!.data();
+  const backupFileId = assetData.backup_file_id as string | undefined;
+  let leafForFfmpeg = fileName || objectKey;
+  let isVideo =
+    isDeliveryVideoFile(leafForFfmpeg) || isRawVideoFile(leafForFfmpeg);
+  if (!isVideo && backupFileId) {
+    const bfSnap = await db.collection("backup_files").doc(backupFileId).get();
+    if (bfSnap.exists) {
+      const d = bfSnap.data()!;
+      const path = (d.relative_path as string) ?? "";
+      const nameFromPath = path.split("/").filter(Boolean).pop() ?? "";
+      const contentType = (d.content_type as string) ?? "";
+      const mediaType = (d.media_type as string) ?? "";
+      leafForFfmpeg = nameFromPath || fileName || objectKey;
+      isVideo =
+        isDeliveryVideoFile(nameFromPath) ||
+        isRawVideoFile(nameFromPath) ||
+        contentType.startsWith("video/") ||
+        mediaType === "video";
+    }
+  }
+  if (!isVideo) {
+    return new NextResponse("gallery id, object_key and video name required", {
+      status: 400,
+    });
+  }
+
   try {
     const cacheKey = getVideoThumbnailCacheKey(objectKey);
     try {
@@ -105,8 +130,16 @@ export async function GET(
     }
 
     const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    const hasProxy = await objectExists(proxyKey);
+    const effectiveKey = hasProxy ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
+
+    const ffmpegBin = hasProxy
+      ? (ffmpegPath ?? null)
+      : resolveFfmpegExecutableForInput(leafForFfmpeg);
+    if (!ffmpegBin) {
+      return new NextResponse("Video thumbnail not available", { status: 503 });
+    }
 
     const runFfmpeg = async (seekSeconds: number): Promise<Buffer> =>
       new Promise((resolve, reject) => {
@@ -122,7 +155,7 @@ export async function GET(
           "-vf", "scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2",
           "-f", "image2", "-q:v", "3", "pipe:1",
         ];
-        const proc = spawn(ffmpegPath!, args, {
+        const proc = spawn(ffmpegBin, args, {
           stdio: ["ignore", "pipe", "pipe"],
           env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
         });

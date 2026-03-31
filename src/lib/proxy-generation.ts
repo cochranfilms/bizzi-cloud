@@ -17,21 +17,10 @@ import {
 import {
   canGenerateProxy,
   getProxyCapability,
-  isBrawFile,
   MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
+import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
 import ffmpegPath from "ffmpeg-static";
-
-/** BRAW-enabled FFmpeg path (e.g. from ffmpeg-braw fork). When set, .braw files use this binary. */
-const FFMPEG_BRAW_PATH = process.env.FFMPEG_BRAW_PATH || "";
-
-function getFfmpegPathForFile(nameOrPath: string): string | null {
-  const base = ffmpegPath ?? null;
-  if (!base) return null;
-  // Use BRAW-enabled FFmpeg for .braw when available
-  if (isBrawFile(nameOrPath) && FFMPEG_BRAW_PATH) return FFMPEG_BRAW_PATH;
-  return base;
-}
 
 export interface RunProxyGenerationOptions {
   objectKey: string;
@@ -170,7 +159,7 @@ export async function runProxyGeneration(
   }
 
   const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
-  const effectiveFfmpeg = getFfmpegPathForFile(nameOrPath);
+  const effectiveFfmpeg = resolveFfmpegExecutableForInput(nameOrPath);
   if (!effectiveFfmpeg) {
     return { ok: false, error: "FFmpeg not available" };
   }

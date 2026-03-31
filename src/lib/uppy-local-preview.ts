@@ -3,7 +3,8 @@
  */
 import type Uppy from "@uppy/core";
 import type { Meta, Body } from "@uppy/core";
-import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawStillFile } from "@/lib/gallery-file-types";
+import { isRawVideoFile } from "@/lib/raw-video";
 
 /** `skip` — large/extreme batch; `idle` — defer work to idle time; `eager` — normal small batches. */
 export type AttachPreviewMode = "eager" | "idle" | "skip";
@@ -88,6 +89,42 @@ function createRasterPlaceholderPreview(label: string): Promise<string | null> {
   });
 }
 
+/** Cinema RAW — no browser decode; proxy preview will appear after upload. */
+function createRawVideoPlaceholderPreview(label: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const w = 240;
+    const h = 160;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      resolve(null);
+      return;
+    }
+    const grd = ctx.createLinearGradient(0, 0, w, h);
+    grd.addColorStop(0, "#0f172a");
+    grd.addColorStop(1, "#1e1b4b");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(165, 180, 252, 0.95)";
+    ctx.font = "600 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("RAW video — generating proxy preview", w / 2, h / 2 - 8);
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(199, 210, 254, 0.85)";
+    const base = label.includes("/") ? label.slice(label.lastIndexOf("/") + 1) : label;
+    ctx.fillText(base.length > 36 ? `${base.slice(0, 34)}…` : base, w / 2, h / 2 + 10);
+    canvas.toBlob(
+      (blob) => {
+        resolve(blob ? URL.createObjectURL(blob) : null);
+      },
+      "image/png",
+      0.92
+    );
+  });
+}
+
 /**
  * Set `preview` on Uppy file state (blob/object URLs — callers must revoke on remove/close).
  */
@@ -102,8 +139,14 @@ export async function attachUppyLocalPreview(
   const run = async (): Promise<void> => {
     const name = fileData.name;
 
+    if (isRawVideoFile(name)) {
+      const ph = await createRawVideoPlaceholderPreview(name);
+      if (ph) setPreview(ph);
+      return;
+    }
+
     if (fileData.type.startsWith("image/") || isUppyPreviewableImageName(name)) {
-      if (isRawFile(name)) {
+      if (isRawStillFile(name)) {
         const url = URL.createObjectURL(fileData);
         const decodes = await probeRasterObjectUrl(url);
         if (!decodes) {

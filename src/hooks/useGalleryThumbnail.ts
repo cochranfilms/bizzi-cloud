@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
-import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawStillFile } from "@/lib/gallery-file-types";
 import { isGalleryPreviewUnavailableResponse } from "@/lib/gallery-preview-headers";
 
 function isImageFile(name: string): boolean {
@@ -41,7 +41,7 @@ export function useGalleryThumbnail(
   const isImage = objectKey && fileName && isImageFile(fileName);
   const isVideo = objectKey && fileName && isVideoFile(fileName);
   const canFetch = isImage || isVideo;
-  const isRawImage = !!(isImage && isRawFile(fileName));
+  const isRawImage = !!(isImage && isRawStillFile(fileName));
 
   const [url, setUrl] = useState<string | null>(null);
   const [rawPreviewUnavailable, setRawPreviewUnavailable] = useState(false);

@@ -22,7 +22,8 @@ import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
-import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import {
@@ -31,9 +32,6 @@ import {
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
-function isVideoFile(name: string) {
-  return GALLERY_VIDEO_EXT.test(name.toLowerCase());
-}
 function isImageFile(name: string) {
   return GALLERY_IMAGE_EXT.test(name);
 }
@@ -100,7 +98,9 @@ export default function FileListRow({
   const isVideo =
     !isMacosPackage &&
     !isAppleDoubleLeafName(file.name) &&
-    (isVideoFile(file.name) || (file.contentType?.startsWith("video/") ?? false));
+    (shouldUseVideoThumbnailPipeline(file.name) ||
+      (file.contentType?.startsWith("video/") ?? false) ||
+      file.mediaType === "video");
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo,
     isVideo,

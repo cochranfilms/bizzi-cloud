@@ -1,7 +1,8 @@
 import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, isRawStillFile } from "@/lib/gallery-file-types";
+import { isRawVideoFile, RAW_VIDEO_USE_VIDEO_THUMBNAIL_CODE } from "@/lib/raw-video";
 import { rawToThumbnail } from "@/lib/raw-thumbnail";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -74,7 +75,18 @@ async function handleThumbnail(request: Request) {
     return new NextResponse("object_key required", { status: 400 });
   }
 
-  if (!isImageFile(fileName || objectKey)) {
+  const nameForPolicy = fileName || objectKey || "";
+  if (isRawVideoFile(nameForPolicy)) {
+    return NextResponse.json(
+      {
+        error: "Cinema RAW video must use the video-thumbnail endpoint, not still-image extraction.",
+        code: RAW_VIDEO_USE_VIDEO_THUMBNAIL_CODE,
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!isImageFile(nameForPolicy)) {
     return new NextResponse("Not an image file", { status: 400 });
   }
 
@@ -86,7 +98,7 @@ async function handleThumbnail(request: Request) {
   }
 
   const nameForExt = (fileName || objectKey || "").toLowerCase();
-  const isRaw = isRawFile(nameForExt);
+  const isRaw = isRawStillFile(nameForExt);
 
   const THUMB_MAX_BYTES = 50 * 1024 * 1024; // 50 MB - enough for image/RAW thumbnail extraction
   try {

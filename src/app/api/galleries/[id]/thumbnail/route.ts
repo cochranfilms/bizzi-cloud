@@ -16,7 +16,8 @@ import {
 } from "@/lib/b2";
 import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
 import { getAdminFirestore } from "@/lib/firebase-admin";
-import { GALLERY_IMAGE_EXT, isRawFile } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, isRawStillFile } from "@/lib/gallery-file-types";
+import { isRawVideoFile, RAW_VIDEO_USE_VIDEO_THUMBNAIL_CODE } from "@/lib/raw-video";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import {
   GALLERY_PREVIEW_STATUS_HEADER,
@@ -70,7 +71,20 @@ export async function GET(
   const fileName = url.searchParams.get("name") ?? "";
   const password = url.searchParams.get("password") ?? undefined;
 
-  if (!galleryId || !objectKey || !isImageFile(fileName || objectKey)) {
+  const leafForPolicy = fileName || objectKey || "";
+  if (!galleryId || !objectKey) {
+    return new NextResponse("gallery id and object_key required", { status: 400 });
+  }
+  if (isRawVideoFile(leafForPolicy)) {
+    return NextResponse.json(
+      {
+        error: "Cinema RAW video must use the gallery video-thumbnail endpoint.",
+        code: RAW_VIDEO_USE_VIDEO_THUMBNAIL_CODE,
+      },
+      { status: 400 }
+    );
+  }
+  if (!isImageFile(leafForPolicy)) {
     return new NextResponse("gallery id, object_key and image name required", { status: 400 });
   }
 
@@ -127,7 +141,7 @@ export async function GET(
   }
 
   const nameForExt = (fileName || objectKey || "").toLowerCase();
-  const isRaw = isRawFile(nameForExt);
+  const isRaw = isRawStillFile(nameForExt);
 
   try {
     if (isCoverSize && coverWidth) {

@@ -15,6 +15,7 @@ import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreview
 import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 import { downloadMacosPackageZipStreaming } from "@/lib/macos-package-zip-download";
 import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/macos-package-synthetic-id";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
@@ -38,20 +39,20 @@ import {
 } from "@/lib/creator-raw-reel-presentation";
 import { creatorRawUsesProxyOnlyPlayback } from "@/lib/creator-raw-preview-contract";
 
-const IMAGE_EXT = GALLERY_IMAGE_EXT;
-const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
 
 function getPreviewType(
   name: string,
   contentType?: string | null,
-  assetType?: string | null
+  assetType?: string | null,
+  mediaType?: string | null
 ): "image" | "video" | "audio" | "pdf" | "project_file" | "other" {
   if (assetType === "project_file" || isProjectFile(name)) return "project_file";
   const lower = name.toLowerCase();
-  if (IMAGE_EXT.test(lower)) return "image";
-  if (VIDEO_EXT.test(lower)) return "video";
+  /** Cinema RAW + all backup video extensions — must win before still-RAW / image (see raw-video.ts). */
+  if (shouldUseVideoThumbnailPipeline(name) || mediaType === "video") return "video";
+  if (GALLERY_IMAGE_EXT.test(lower)) return "image";
   if (AUDIO_EXT.test(lower)) return "audio";
   if (PDF_EXT.test(lower)) return "pdf";
   if (contentType) {
@@ -121,7 +122,9 @@ export default function FilePreviewModal({
     null
   );
 
-  const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
+  const previewType = file
+    ? getPreviewType(file.name, file.contentType, file.assetType, file.mediaType ?? null)
+    : "other";
   const hearts = useHearts(file?.id ?? null);
   const pdfEmbed = usePdfBlobUrl(fullUrl, previewType === "pdf");
 
