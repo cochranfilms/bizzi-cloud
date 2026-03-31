@@ -10,32 +10,88 @@ import {
   type DocumentSnapshot,
 } from "firebase-admin/firestore";
 
-const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
-const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
-
-export function isMuxConfigured(): boolean {
-  return !!MUX_TOKEN_ID && !!MUX_TOKEN_SECRET;
+/** Read at call time so env can load after module init (tests, serverless). */
+function muxBasicAuthHeader(): string | null {
+  const id = process.env.MUX_TOKEN_ID;
+  const secret = process.env.MUX_TOKEN_SECRET;
+  if (!id || !secret) return null;
+  return Buffer.from(`${id}:${secret}`).toString("base64");
 }
 
-/** Delete a Mux asset. Stops storage/delivery billing. Originals remain in B2. */
-export async function deleteMuxAsset(assetId: string): Promise<boolean> {
-  if (!isMuxConfigured()) return false;
-  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
+export function isMuxConfigured(): boolean {
+  return muxBasicAuthHeader() !== null;
+}
+
+export type MuxDeleteResult =
+  | { outcome: "deleted"; httpStatus: 204 }
+  | { outcome: "already_missing"; httpStatus: 404 }
+  | { outcome: "skipped_not_configured" }
+  | {
+      outcome: "failed";
+      httpStatus?: number;
+      message: string;
+      retryable: boolean;
+      /** For logs only — truncated server snippet when useful */
+      logHint?: string;
+    };
+
+function muxDeleteRetryableForStatus(status: number): boolean {
+  if (status === 429) return true;
+  if (status >= 500) return true;
+  if (status === 401 || status === 403) return false;
+  if (status >= 400 && status !== 404) return false;
+  return false;
+}
+
+/** Structured Mux DELETE; use from purge pipeline. */
+export async function deleteMuxAssetWithResult(assetId: string): Promise<MuxDeleteResult> {
+  const basicAuth = muxBasicAuthHeader();
+  if (!basicAuth) {
+    return { outcome: "skipped_not_configured" };
+  }
   try {
     const res = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
       method: "DELETE",
       headers: { Authorization: `Basic ${basicAuth}` },
     });
-    return res.status === 204 || res.status === 404;
-  } catch {
-    return false;
+    if (res.status === 204) return { outcome: "deleted", httpStatus: 204 };
+    if (res.status === 404) return { outcome: "already_missing", httpStatus: 404 };
+
+    let logHint: string | undefined;
+    try {
+      const text = await res.text();
+      if (text) logHint = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+    } catch {
+      /* ignore */
+    }
+    const message = `Mux DELETE ${res.status}${logHint ? `: ${logHint}` : ""}`;
+    return {
+      outcome: "failed",
+      httpStatus: res.status,
+      message,
+      retryable: muxDeleteRetryableForStatus(res.status),
+      logHint,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      outcome: "failed",
+      message: `Mux DELETE network error: ${message}`,
+      retryable: true,
+    };
   }
+}
+
+/** Delete a Mux asset. Stops storage/delivery billing. Originals remain in B2. */
+export async function deleteMuxAsset(assetId: string): Promise<boolean> {
+  const r = await deleteMuxAssetWithResult(assetId);
+  return r.outcome === "deleted" || r.outcome === "already_missing";
 }
 
 /** Check if a Mux asset is ready for playback. Returns "ready" | "preparing" | "errored" | null (on error). */
 export async function getMuxAssetStatus(assetId: string): Promise<string | null> {
-  if (!isMuxConfigured()) return null;
-  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
+  const basicAuth = muxBasicAuthHeader();
+  if (!basicAuth) return null;
   try {
     const res = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
       headers: { Authorization: `Basic ${basicAuth}` },
@@ -57,11 +113,10 @@ export async function createMuxAssetFromUrl(
   playbackId: string;
   status: string;
 }> {
-  if (!isMuxConfigured()) {
+  const basicAuth = muxBasicAuthHeader();
+  if (!basicAuth) {
     throw new Error("Mux is not configured (MUX_TOKEN_ID, MUX_TOKEN_SECRET)");
   }
-
-  const basicAuth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString("base64");
 
   const body: Record<string, unknown> = {
     input: [{ url: sourceUrl }],

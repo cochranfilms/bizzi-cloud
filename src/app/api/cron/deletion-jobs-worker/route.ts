@@ -20,11 +20,12 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
-  const { totalPurged, passes } = await runDeletionJobsWorkerLoop(db, MAX_PASSES);
+  const { totalPurged, passes, muxOutcomes } = await runDeletionJobsWorkerLoop(db, MAX_PASSES);
 
   return NextResponse.json({
     ok: true,
     filesPurged: totalPurged,
     passes,
+    muxOutcomes,
   });
 }

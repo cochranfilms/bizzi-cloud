@@ -19,6 +19,7 @@ import {
 } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { logCreatorRawProxyIngest } from "@/lib/creator-raw-video-proxy-ingest";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import {
   isDocumentFile,
@@ -130,6 +131,12 @@ export async function POST(request: Request) {
   const relativePath = (fileData.relative_path ?? "") as string;
   const fileName = relativePath.split("/").filter(Boolean).pop() ?? objectKey;
   const contentType = (fileData.content_type ?? "") as string;
+  const linkedDriveId = (fileData.linked_drive_id as string) ?? "";
+  let driveIsCreatorRaw = false;
+  if (linkedDriveId) {
+    const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
+    driveIsCreatorRaw = driveSnap.exists && driveSnap.data()?.is_creator_raw === true;
+  }
 
   const isGenericType =
     !contentType || contentType === "application/octet-stream" || contentType === "binary/octet-stream";
@@ -303,6 +310,13 @@ export async function POST(request: Request) {
       user_id: uid,
       media_type: "video",
     }).catch(() => {});
+    if (driveIsCreatorRaw) {
+      logCreatorRawProxyIngest("ingest_extract_metadata_video", {
+        backup_file_id: backupFileId,
+        object_key_prefix: objectKey.slice(0, 72),
+        note: "proxy_job_queued_with_standard_pipeline",
+      });
+    }
     // Trigger immediate proxy processing (fire-and-forget; cron fallback if this fails)
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {

@@ -4,29 +4,44 @@
  */
 import type { Firestore } from "firebase-admin/firestore";
 import {
+  muxCounterFromStepSummary,
+  purgeMuxForBackupFileStep,
+  type MuxPurgeCounterBucket,
+} from "@/lib/backup-file-mux-purge";
+import {
   deleteObjectWithRetry,
   getProxyObjectKey,
   getVideoThumbnailCacheKey,
   isB2Configured,
 } from "@/lib/b2";
 import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
-import { deleteMuxAsset } from "@/lib/mux";
 
-export async function purgeBackupFilePhysicalAdmin(db: Firestore, fileId: string): Promise<void> {
+export type PurgeBackupFileWorkerResult = {
+  /** False when doc did not exist (idempotent no-op). */
+  processed: boolean;
+  /** Mux classification when this file was fully processed through the purge path. */
+  muxCounter: MuxPurgeCounterBucket | null;
+};
+
+export async function purgeBackupFilePhysicalAdmin(
+  db: Firestore,
+  fileId: string,
+  opts?: { purgeJobId?: string }
+): Promise<PurgeBackupFileWorkerResult> {
+  const purgeJobId = opts?.purgeJobId ?? "unknown";
   const ref = db.collection("backup_files").doc(fileId);
   const snap = await ref.get();
-  if (!snap.exists) return;
+  if (!snap.exists) return { processed: false, muxCounter: null };
   const data = snap.data()!;
 
   await applyMacosPackageStatsForActiveBackupFileRemoval(db, data);
 
-  const muxId = data.mux_asset_id as string | undefined;
-  if (typeof muxId === "string" && muxId.length > 0) {
-    const ok = await deleteMuxAsset(muxId);
-    if (!ok) {
-      console.error("[purge-backup-file] Mux delete failed or skipped:", muxId);
-    }
-  }
+  const muxSummary = await purgeMuxForBackupFileStep(data.mux_asset_id, {
+    purgeJobId,
+    backupFileId: fileId,
+    variant: "standard",
+  });
+  const muxCounter = muxCounterFromStepSummary(muxSummary);
 
   const objectKey = (data.object_key as string) ?? "";
   if (objectKey && isB2Configured()) {
@@ -48,4 +63,5 @@ export async function purgeBackupFilePhysicalAdmin(db: Firestore, fileId: string
   }
 
   await ref.delete();
+  return { processed: true, muxCounter };
 }

@@ -49,6 +49,8 @@ export interface ImmersiveFilePreviewShellProps {
   /** Extra full-width block below the fold when not using `rightRail`. */
   belowFold?: ReactNode | null;
   variant?: "gallery" | "app";
+  /** Optional class on the left media column (e.g. creator reel centering). */
+  leftStageClassName?: string;
 }
 
 /**
@@ -65,6 +67,7 @@ export default function ImmersiveFilePreviewShell({
   rightRail,
   belowFold,
   variant = "app",
+  leftStageClassName,
 }: ImmersiveFilePreviewShellProps) {
   const pathname = usePathname();
   const theme = useThemeResolved();
@@ -208,9 +211,11 @@ export default function ImmersiveFilePreviewShell({
   const toolsSide = toolsBottom == null ? sideControls : null;
 
   const mediaSlotMaxH = hasRight
-    ? isGallery && toolsBottom
-      ? "max-h-[min(94dvh,calc(100dvh-4.25rem))]"
-      : "max-h-[min(92dvh,calc(100dvh-5rem))]"
+    ? leftStageClassName?.includes("creator-reel-stage")
+      ? "max-h-[min(96dvh,calc(100dvh-4.5rem))]"
+      : isGallery && toolsBottom
+        ? "max-h-[min(94dvh,calc(100dvh-4.25rem))]"
+        : "max-h-[min(92dvh,calc(100dvh-5rem))]"
     : hasBelowOnly
       ? "max-h-[min(56dvh,calc(100dvh-13rem))] sm:max-h-[min(58dvh,calc(100dvh-13.5rem))] lg:max-h-[min(62dvh,calc(100dvh-12.5rem))]"
       : "max-h-[min(82dvh,calc(100dvh-6.5rem))] sm:max-h-[min(84dvh,calc(100dvh-7rem))]";
@@ -283,7 +288,9 @@ export default function ImmersiveFilePreviewShell({
 
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:gap-3">
           <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row lg:items-stretch lg:gap-4">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              className={`flex min-h-0 min-w-0 flex-1 flex-col ${leftStageClassName ?? ""}`}
+            >
               <div
                 className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center gap-2 lg:gap-3 ${hasBelowOnly ? "min-h-[min(200px,35dvh)]" : "min-h-0"}`}
               >

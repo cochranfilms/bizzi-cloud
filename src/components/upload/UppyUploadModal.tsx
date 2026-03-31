@@ -8,6 +8,7 @@ import {
   useCallback,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import Uppy from "@uppy/core";
 import AwsS3 from "@uppy/aws-s3";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -854,9 +855,14 @@ export default function UppyUploadModal({
             ? `${completedCount} succeeded, ${failedCount} failed`
             : "Upload complete";
 
-  return (
+  /**
+   * z-[110]: above dashboard TopNavbar/DesktopTopNavbar (z-[60]) and typical sheets; with GlobalDropZone (z-[100]) DOM order still favors this node after mount.
+   * max-height: reserve ~7.5rem for sticky workspace nav + gap so the sheet never grows under/clipped by the chrome; safe areas for notched devices.
+   * Portal: avoids clipping from any ancestor overflow/transform while staying fixed to the viewport.
+   */
+  const shell = (
     <div
-      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(48rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border sm:left-4 sm:w-full sm:max-w-3xl sm:translate-x-0"
+      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-[110] flex max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem))] w-[min(48rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border sm:left-4 sm:w-full sm:max-w-3xl sm:translate-x-0"
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
@@ -1026,4 +1032,6 @@ export default function UppyUploadModal({
       )}
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(shell, document.body) : null;
 }

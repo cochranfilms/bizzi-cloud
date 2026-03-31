@@ -119,6 +119,13 @@ interface VideoWithLUTProps {
   poster?: string | null;
   /** Match WebGL sampling to visible &lt;video&gt; (hero uses cover). Default contain / letterbox. */
   videoObjectFit?: "contain" | "cover";
+  /** Fired when intrinsic width/height are known (Creator RAW reel detection). */
+  onIntrinsicVideoSize?: (width: number, height: number) => void;
+  /**
+   * Creator RAW immersive: only attach remote playback from `streamUrl` / HLS — no `src` fallback,
+   * preload none until a stream exists (avoids accidental original fetches).
+   */
+  proxyOnlyPlayback?: boolean;
   /** With ?galleryVideoDebug or localStorage galleryVideoDebug=1, logs playback diagnostics. */
   playbackDebugLabel?: string;
   /**
@@ -159,6 +166,8 @@ export default function VideoWithLUT({
   preferMaxHlsQuality = false,
   poster = null,
   videoObjectFit = "contain",
+  onIntrinsicVideoSize,
+  proxyOnlyPlayback = false,
   playbackDebugLabel,
   galleryControlledLut = false,
   shouldApplyLut = false,
@@ -176,7 +185,7 @@ export default function VideoWithLUT({
   const webglProbeTriggerRef = useRef<(() => void) | null>(null);
   /** Dev HUD: last time `renderVideoFrameWithLUT` ran (gallery diagnostic). */
   const lastLutRenderFrameAtRef = useRef(0);
-  const videoSrc = streamUrl ?? src;
+  const videoSrc = proxyOnlyPlayback ? (streamUrl ?? "") : (streamUrl ?? src);
 
   const defaultSony = "sony_rec709";
   const effectiveLutSource = lutSource ?? (showLUTOption ? defaultSony : null);
@@ -766,6 +775,20 @@ export default function VideoWithLUT({
   }, [videoSrc, playbackDebugLabel]);
 
   useEffect(() => {
+    if (!onIntrinsicVideoSize) return;
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    const onMeta = () => {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (w > 0 && h > 0) onIntrinsicVideoSize(w, h);
+    };
+    video.addEventListener("loadedmetadata", onMeta);
+    if (video.readyState >= 1) onMeta();
+    return () => video.removeEventListener("loadedmetadata", onMeta);
+  }, [videoSrc, onIntrinsicVideoSize]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     const container = containerRef.current;
@@ -1230,7 +1253,7 @@ export default function VideoWithLUT({
           src={!videoSrc.includes(".m3u8") ? videoSrc : undefined}
           crossOrigin="anonymous"
           controls={false}
-          preload="metadata"
+          preload={proxyOnlyPlayback ? "none" : "metadata"}
           playsInline
           muted={compactPreview ? true : undefined}
           autoPlay={compactPreview ? true : undefined}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, FileIcon, FolderInput, ZoomIn, ZoomOut } from "lucide-react";
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
@@ -28,6 +28,15 @@ import {
   filePreviewLutDebugEnabled,
 } from "@/lib/file-preview-lut-debug";
 import { usePdfBlobUrl } from "@/hooks/usePdfBlobUrl";
+import {
+  CREATOR_RAW_PORTRAIT_STAGE,
+  CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE,
+  fileNameSuggestsPortraitReel,
+  parsePortraitDimensionsFromFileName,
+  resolveCreatorRawReelPortrait,
+  type CreatorRawReelEvidence,
+} from "@/lib/creator-raw-reel-presentation";
+import { creatorRawUsesProxyOnlyPlayback } from "@/lib/creator-raw-preview-contract";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -107,6 +116,10 @@ export default function FilePreviewModal({
   const [pdfFrameVisible, setPdfFrameVisible] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const imageZoomHostRef = useRef<HTMLDivElement | null>(null);
+  const [streamProbeDims, setStreamProbeDims] = useState<{ w: number; h: number } | null>(null);
+  const [intrinsicVideoDims, setIntrinsicVideoDims] = useState<{ w: number; h: number } | null>(
+    null
+  );
 
   const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
   const hearts = useHearts(file?.id ?? null);
@@ -124,6 +137,41 @@ export default function FilePreviewModal({
     "preview"
   );
 
+  useEffect(() => {
+    setStreamProbeDims(null);
+    setIntrinsicVideoDims(null);
+  }, [file?.id]);
+
+  const creatorRawReelPortrait = useMemo(() => {
+    if (!file || !showLUTForVideo || previewType !== "video") return false;
+    const evidences: CreatorRawReelEvidence[] = [];
+    const rw0 = file.resolution_w ?? file.width ?? null;
+    const rh0 = file.resolution_h ?? file.height ?? null;
+    if (rw0 != null && rh0 != null && rw0 > 0 && rh0 > 0) {
+      evidences.push({ source: "firestore", width: rw0, height: rh0 });
+    }
+    const fromName = parsePortraitDimensionsFromFileName(file.name);
+    if (fromName) evidences.push({ source: "filename", width: fromName.width, height: fromName.height });
+    if (fileNameSuggestsPortraitReel(file.name) && !fromName && rw0 == null && rh0 == null) {
+      evidences.push({ source: "filename", width: 9, height: 16 });
+    }
+    if (streamProbeDims) {
+      evidences.push({
+        source: "stream_api",
+        width: streamProbeDims.w,
+        height: streamProbeDims.h,
+      });
+    }
+    if (intrinsicVideoDims) {
+      evidences.push({
+        source: "video_element",
+        width: intrinsicVideoDims.w,
+        height: intrinsicVideoDims.h,
+      });
+    }
+    return resolveCreatorRawReelPortrait(evidences);
+  }, [file, showLUTForVideo, previewType, streamProbeDims, intrinsicVideoDims]);
+
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
     setLoading(true);
@@ -140,24 +188,63 @@ export default function FilePreviewModal({
       };
 
       if (previewType === "video") {
-        const [previewRes, streamRes] = await Promise.all([
-          fetch("/api/backup/preview-url", {
+        if (showLUTForVideo) {
+          setFullUrl(null);
+          const streamRes = await fetch("/api/backup/video-stream-url", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify(payload),
-          }),
-          fetch("/api/backup/video-stream-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify(payload),
-          }),
-        ]);
-        const previewData = await previewRes.json();
-        if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
-        setFullUrl(previewData.url);
-        const streamData = await streamRes.json().catch(() => ({}));
-        if (streamData?.processing) setVideoProcessing(true);
-        else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+          });
+          const streamData = (await streamRes.json().catch(() => ({}))) as {
+            streamUrl?: string;
+            processing?: boolean;
+            error?: string;
+            resolution_w?: number;
+            resolution_h?: number;
+          };
+          if (!streamRes.ok) {
+            throw new Error(
+              typeof streamData?.error === "string" && streamData.error.trim()
+                ? streamData.error
+                : "Failed to load preview stream"
+            );
+          }
+          if (
+            typeof streamData.resolution_w === "number" &&
+            typeof streamData.resolution_h === "number" &&
+            streamData.resolution_w > 0 &&
+            streamData.resolution_h > 0
+          ) {
+            setStreamProbeDims({ w: streamData.resolution_w, h: streamData.resolution_h });
+          }
+          if (streamData.streamUrl) {
+            setVideoStreamUrl(streamData.streamUrl);
+            setVideoProcessing(false);
+          } else if (streamData.processing) {
+            setVideoProcessing(true);
+          } else {
+            setVideoProcessing(true);
+          }
+        } else {
+          const [previewRes, streamRes] = await Promise.all([
+            fetch("/api/backup/preview-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify(payload),
+            }),
+            fetch("/api/backup/video-stream-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify(payload),
+            }),
+          ]);
+          const previewData = await previewRes.json();
+          if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
+          setFullUrl(previewData.url);
+          const streamData = await streamRes.json().catch(() => ({}));
+          if (streamData?.processing) setVideoProcessing(true);
+          else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+        }
       } else {
         const res = await fetch("/api/backup/preview-url", {
           method: "POST",
@@ -176,7 +263,7 @@ export default function FilePreviewModal({
     } finally {
       setLoading(false);
     }
-  }, [file?.objectKey, previewType]);
+  }, [file?.objectKey, previewType, showLUTForVideo]);
 
   useEffect(() => {
     setImageZoom(1);
@@ -226,6 +313,7 @@ export default function FilePreviewModal({
     const token = getFirebaseAuth().currentUser;
     if (!token) return;
     let pollCount = 0;
+    const intervalMs = showLUTForVideo ? 4000 : 6000;
     const interval = setInterval(async () => {
       pollCount += 1;
       try {
@@ -235,22 +323,35 @@ export default function FilePreviewModal({
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
           body: JSON.stringify({ object_key: file.objectKey, user_id: token.uid }),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => ({}))) as {
+          streamUrl?: string;
+          processing?: boolean;
+          resolution_w?: number;
+          resolution_h?: number;
+        };
+        if (
+          typeof data.resolution_w === "number" &&
+          typeof data.resolution_h === "number" &&
+          data.resolution_w > 0 &&
+          data.resolution_h > 0
+        ) {
+          setStreamProbeDims({ w: data.resolution_w, h: data.resolution_h });
+        }
         if (data?.streamUrl) {
           setVideoStreamUrl(data.streamUrl);
           setVideoProcessing(false);
         } else if (!data?.processing && res.ok) {
-          setVideoProcessing(false);
-        } else if (fullUrl && pollCount >= 10) {
-          // Fallback: after ~60s, if preview-url gave us a URL (proxy or original), show it
+          if (!showLUTForVideo) setVideoProcessing(false);
+        } else if (!showLUTForVideo && fullUrl && pollCount >= 10) {
+          // Non–Creator RAW: after ~60s fall back to preview-url (proxy or original)
           setVideoProcessing(false);
         }
       } catch {
         // ignore polling errors
       }
-    }, 6000);
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, [file?.objectKey, previewType, videoProcessing, fullUrl]);
+  }, [file?.objectKey, previewType, videoProcessing, fullUrl, showLUTForVideo]);
 
 
   const handleDownload = useCallback(async () => {
@@ -321,6 +422,10 @@ export default function FilePreviewModal({
       : lutOptions[0]?.source ?? null;
   const showLUT = lutOptions.length > 0;
 
+  const onIntrinsicVideoSize = useCallback((width: number, height: number) => {
+    if (width > 0 && height > 0) setIntrinsicVideoDims({ w: width, h: height });
+  }, []);
+
   useEffect(() => {
     if (!filePreviewLutDebugEnabled() || !file) return;
     if (getPreviewType(file.name, file.contentType, file.assetType) !== "video") return;
@@ -357,6 +462,9 @@ export default function FilePreviewModal({
   if (!file) return null;
 
   const fpCreative = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
+  const portraitProductStage =
+    showLUTForVideo && previewType === "video" && creatorRawReelPortrait;
+  const proxyOnlyPlayback = creatorRawUsesProxyOnlyPlayback(showLUTForVideo, previewType === "video");
 
   const headerActions = (
     <>
@@ -407,13 +515,48 @@ export default function FilePreviewModal({
       </div>
     );
   } else if (previewType === "video" && videoProcessing && !error) {
-    mediaBody = (
-      <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 py-8">
-        <p className="max-w-sm text-center text-sm text-neutral-600 dark:text-neutral-400">
-          Preparing playback…
-        </p>
-      </div>
-    );
+    if (showLUTForVideo && portraitProductStage) {
+      mediaBody = (
+        <div
+          className={`flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}`}
+        >
+          <div
+            className={`flex w-full max-w-[min(26.25rem,calc(100vw-1.25rem))] flex-col items-center justify-center lg:max-w-[min(28.75rem,34vw)] ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
+          >
+            <div
+              className="flex w-full flex-col items-center justify-center rounded-[1.75rem] border border-neutral-200/30 bg-black/45 px-4 py-10 shadow-[0_28px_90px_-20px_rgba(0,0,0,0.55)] backdrop-blur-md dark:border-white/12 dark:bg-black/55"
+              style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
+            >
+              <p className="max-w-[14rem] text-center text-xs leading-relaxed text-neutral-200 sm:text-sm">
+                Creating a lightweight streaming proxy.{" "}
+                <span className="font-semibold text-white">Originals are never played here</span> — use
+                Download for the camera file.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    } else if (showLUTForVideo) {
+      mediaBody = (
+        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 px-4 py-8 md:px-8">
+          <p className="max-w-lg text-center text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            Creating a lightweight streaming proxy for preview.{" "}
+            <span className="font-medium text-neutral-800 dark:text-neutral-200">
+              Full-resolution originals are not played in this viewer
+            </span>{" "}
+            — use Download for the camera file.
+          </p>
+        </div>
+      );
+    } else {
+      mediaBody = (
+        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 px-4 py-8">
+          <p className="max-w-md text-center text-sm text-neutral-600 dark:text-neutral-400">
+            Preparing playback…
+          </p>
+        </div>
+      );
+    }
   } else if (previewType === "pdf" && fullUrl && pdfEmbed.failed) {
     mediaBody = (
       <div className="flex min-h-[12rem] flex-col items-center justify-center gap-3 text-red-600 dark:text-red-400">
@@ -443,7 +586,9 @@ export default function FilePreviewModal({
     );
   } else if (
     (previewType === "image" && lowResPreviewUrl) ||
-    (previewType === "video" && fullUrl && !videoProcessing) ||
+    (previewType === "video" &&
+      !videoProcessing &&
+      (showLUTForVideo ? !!videoStreamUrl : !!fullUrl)) ||
     previewType === "project_file" ||
     ((previewType === "audio" || previewType === "other") && fullUrl) ||
     (previewType === "pdf" && fullUrl && !!pdfEmbed.blobUrl)
@@ -501,24 +646,67 @@ export default function FilePreviewModal({
           Low-resolution preview · Use Download for full quality
         </p>
       );
-    } else if (previewType === "video" && fullUrl) {
+    } else if (
+      previewType === "video" &&
+      (showLUTForVideo ? !!videoStreamUrl : !!fullUrl)
+    ) {
+      const videoSrc = showLUTForVideo ? (videoStreamUrl ?? "") : (fullUrl as string);
+      const effectiveStream =
+        showLUTForVideo ? videoStreamUrl : filePreviewForceProxyMp4() ? null : videoStreamUrl;
       mediaBody = (
         <div
-          className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"}`}
+          className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"} ${portraitProductStage ? `${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}` : showLUTForVideo ? "px-3 py-2 md:px-5" : ""}`}
         >
-          <VideoWithLUT
-            key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
-            src={fullUrl}
-            streamUrl={filePreviewForceProxyMp4() ? null : videoStreamUrl}
-            className=""
-            showLUTOption={showLUT}
-            lutSource={lutSource}
-            lutOptions={lutOptions}
-            onLutChange={setLutEnabled}
-            frameless
-            sideBySideLut={showLUT}
-            onDisplayReady={() => setVideoMediaVisible(true)}
-          />
+          <div
+            className={
+              portraitProductStage
+                ? `flex h-full min-h-0 w-full max-w-[min(26.25rem,calc(100vw-1.25rem))] flex-1 flex-col items-center justify-center lg:max-w-[min(28.75rem,34vw)] ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`
+                : showLUTForVideo
+                  ? "relative flex h-full min-h-0 w-full max-w-[min(96rem,100%)] flex-1 flex-col items-center justify-center md:px-2"
+                  : "relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center"
+            }
+          >
+            <div
+              className={
+                portraitProductStage
+                  ? "flex w-full flex-1 flex-col items-stretch justify-center"
+                  : "flex w-full flex-1 flex-col items-center justify-center"
+              }
+            >
+              <div
+                className={
+                  portraitProductStage
+                    ? "relative w-full overflow-hidden rounded-[1.75rem] bg-black shadow-[0_28px_90px_-20px_rgba(0,0,0,0.55)] ring-1 ring-black/25 dark:shadow-[0_36px_100px_-24px_rgba(0,0,0,0.78)] dark:ring-white/12"
+                    : ""
+                }
+                style={portraitProductStage ? CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE : undefined}
+              >
+                <VideoWithLUT
+                  key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
+                  src={videoSrc}
+                  streamUrl={effectiveStream}
+                  className={
+                    portraitProductStage
+                      ? "h-full min-h-0 w-full max-h-full !max-h-none"
+                      : showLUTForVideo
+                        ? "max-h-[min(85dvh,calc(100dvh-10rem))]"
+                        : ""
+                  }
+                  showLUTOption={showLUT}
+                  lutSource={lutSource}
+                  lutOptions={lutOptions}
+                  onLutChange={setLutEnabled}
+                  frameless
+                  sideBySideLut={showLUT && !portraitProductStage}
+                  videoObjectFit="contain"
+                  onDisplayReady={() => setVideoMediaVisible(true)}
+                  preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
+                  proxyOnlyPlayback={proxyOnlyPlayback}
+                  onIntrinsicVideoSize={showLUTForVideo ? onIntrinsicVideoSize : undefined}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       );
     } else if (previewType === "audio" && fullUrl) {
@@ -606,6 +794,11 @@ export default function FilePreviewModal({
       headerActions={headerActions}
       media={mediaBody}
       mediaFooter={mediaFooter}
+      leftStageClassName={
+        showLUTForVideo && previewType === "video"
+          ? `creator-reel-stage lg:justify-center ${portraitProductStage ? "md:py-1" : ""}`
+          : undefined
+      }
       rightRail={
         file.id ? (
           <div className="flex h-full min-h-0 flex-col">

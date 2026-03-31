@@ -21,6 +21,7 @@ import {
   releaseReservation,
 } from "@/lib/storage-quota-reservations";
 import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
+import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -290,6 +291,15 @@ export async function POST(request: Request) {
     });
 
     const baseUrl = new URL(request.url).origin;
+    await enqueueCreatorRawVideoProxyJob({
+      driveIsCreatorRaw: driveData?.is_creator_raw === true,
+      objectKey,
+      backupFileId: fileRef.id,
+      userId: uid,
+      relativePath: safePath,
+      source: "ingest_presigned_complete",
+    });
+
     fetch(`${baseUrl}/api/files/extract-metadata`, {
       method: "POST",
       headers: {

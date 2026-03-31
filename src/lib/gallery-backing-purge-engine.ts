@@ -5,6 +5,11 @@
  */
 import type { Firestore, Query } from "firebase-admin/firestore";
 import {
+  muxCounterFromStepSummary,
+  purgeMuxForBackupFileStep,
+  type MuxPurgeCounterBucket,
+} from "@/lib/backup-file-mux-purge";
+import {
   deleteObjectWithRetry,
   getCoverDerivativeCacheKey,
   getLutBakedObjectKey,
@@ -13,9 +18,9 @@ import {
   isB2Configured,
 } from "@/lib/b2";
 import { COVER_DERIVATIVE_WIDTHS } from "@/lib/cover-constants";
-import { deleteMuxAsset } from "@/lib/mux";
 import { logActivityEvent } from "@/lib/activity-log";
 import { applyMacosPackageStatsForActiveBackupFileRemoval } from "@/lib/macos-package-container-admin";
+import type { PurgeBackupFileWorkerResult } from "@/lib/backup-file-purge-engine";
 
 const CHUNK = 400;
 
@@ -40,8 +45,10 @@ export type GalleryPurgeContext = {
 export async function purgeGalleryStoredBackupFileAdmin(
   db: Firestore,
   backupFileId: string,
-  ctx: GalleryPurgeContext
-): Promise<void> {
+  ctx: GalleryPurgeContext,
+  opts?: { purgeJobId?: string }
+): Promise<PurgeBackupFileWorkerResult> {
+  const purgeJobId = opts?.purgeJobId ?? "unknown";
   const { gallery_id: galleryId, asset_id: assetId, owner_uid: ownerUid } = ctx;
 
   const galleryRef = db.collection("galleries").doc(galleryId);
@@ -50,20 +57,23 @@ export async function purgeGalleryStoredBackupFileAdmin(
 
   const fileRef = db.collection("backup_files").doc(backupFileId);
   const fileSnap = await fileRef.get();
-  if (!fileSnap.exists) return;
+  if (!fileSnap.exists) return { processed: false, muxCounter: null };
   const fileData = fileSnap.data()!;
   const docOwner =
     (fileData.userId as string | undefined) ?? (fileData.user_id as string | undefined);
-  if (docOwner !== ownerUid) return;
+  if (docOwner !== ownerUid) return { processed: false, muxCounter: null };
 
   const objectKey = (fileData.object_key as string) ?? "";
 
   const pathLabel =
     ((fileData.relative_path as string) ?? "").split("/").filter(Boolean).pop() ?? null;
-  const muxId = fileData.mux_asset_id as string | undefined;
-  if (muxId) {
-    await deleteMuxAsset(muxId);
-  }
+
+  const muxSummary = await purgeMuxForBackupFileStep(fileData.mux_asset_id, {
+    purgeJobId,
+    backupFileId,
+    variant: "gallery_rich",
+  });
+  const muxCounter: MuxPurgeCounterBucket = muxCounterFromStepSummary(muxSummary);
 
   if (objectKey && isB2Configured()) {
     const refsSnap = await db.collection("backup_files").where("object_key", "==", objectKey).get();
@@ -118,4 +128,6 @@ export async function purgeGalleryStoredBackupFileAdmin(
       deletion_job_async: true,
     },
   }).catch(() => {});
+
+  return { processed: true, muxCounter };
 }
