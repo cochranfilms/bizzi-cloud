@@ -10,6 +10,7 @@ import {
 } from "react";
 import UppyUploadModal from "@/components/upload/UppyUploadModal";
 import { useBackup } from "@/context/BackupContext";
+import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 
 export interface OpenPanelOptions {
   galleryId?: string;
@@ -17,6 +18,14 @@ export interface OpenPanelOptions {
   initialFiles?: File[];
   /** Called when upload completes (e.g. to refresh gallery) */
   onUploadComplete?: () => void | Promise<void>;
+  /**
+   * Gallery uploads only: called (debounced inside the modal) after each file successfully
+   * reaches storage and is linked to the gallery — keeps the asset grid live without waiting
+   * for the full Uppy queue to finish. Does not bump global storage version.
+   */
+  onGalleryAssetUploaded?: () => void | Promise<void>;
+  /** Optimistic manage-grid rows: Uppy file lifecycle while uploading to a gallery. */
+  onGalleryManageUploadLifecycle?: (event: GalleryManageUploadLifecycleEvent) => void;
   /** Display name for upload destination (e.g. "Shared Library") */
   workspaceName?: string | null;
   /** Visibility scope label (e.g. "Shared Library", "Private") */
@@ -56,6 +65,8 @@ interface UppyUploadContextValue {
     options?: OpenPanelOptions
   ) => void;
   closePanel: () => void;
+  /** True while the global Uppy modal is open (e.g. faster gallery asset polling during uploads). */
+  isUploadPanelOpen: boolean;
 }
 
 const UppyUploadContext = createContext<UppyUploadContextValue | null>(null);
@@ -104,6 +115,11 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [onUploadComplete, setOnUploadComplete] = useState<
     (() => void | Promise<void>) | null
   >(null);
+  const [onGalleryAssetUploaded, setOnGalleryAssetUploaded] = useState<
+    (() => void | Promise<void>) | null
+  >(null);
+  const [onGalleryManageUploadLifecycle, setOnGalleryManageUploadLifecycle] =
+    useState<((event: GalleryManageUploadLifecycleEvent) => void) | null>(null);
 
   const panelRef = useRef<PanelTarget>({
     open: false,
@@ -184,6 +200,15 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       const incoming = options?.initialFiles;
       if (same && incoming && incoming.length > 0) {
         setPendingFiles((prev) => [...prev, ...incoming]);
+        if (options && "onUploadComplete" in options) {
+          setOnUploadComplete(options.onUploadComplete ?? null);
+        }
+        if (options && "onGalleryAssetUploaded" in options) {
+          setOnGalleryAssetUploaded(options.onGalleryAssetUploaded ?? null);
+        }
+        if (options && "onGalleryManageUploadLifecycle" in options) {
+          setOnGalleryManageUploadLifecycle(options.onGalleryManageUploadLifecycle ?? null);
+        }
         setOpen(true);
         return;
       }
@@ -212,6 +237,12 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       if (options && "onUploadComplete" in options) {
         setOnUploadComplete(options.onUploadComplete ?? null);
       }
+      if (options && "onGalleryAssetUploaded" in options) {
+        setOnGalleryAssetUploaded(options.onGalleryAssetUploaded ?? null);
+      }
+      if (options && "onGalleryManageUploadLifecycle" in options) {
+        setOnGalleryManageUploadLifecycle(options.onGalleryManageUploadLifecycle ?? null);
+      }
       setPendingFiles(
         options?.initialFiles && options.initialFiles.length > 0 ? [...options.initialFiles] : []
       );
@@ -239,6 +270,8 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setResolvedBy(null);
     setPendingFiles([]);
     setOnUploadComplete(null);
+    setOnGalleryAssetUploaded(null);
+    setOnGalleryManageUploadLifecycle(null);
   }, []);
 
   const consumePendingFiles = useCallback(() => {
@@ -254,7 +287,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   }, [bumpStorageVersion, onUploadComplete]);
 
   return (
-    <UppyUploadContext.Provider value={{ openPanel, closePanel }}>
+    <UppyUploadContext.Provider value={{ openPanel, closePanel, isUploadPanelOpen: open }}>
       {children}
       {driveId && (
         <UppyUploadModal
@@ -277,6 +310,8 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           pendingFiles={pendingFiles}
           onPendingFilesConsumed={consumePendingFiles}
           onUploadComplete={handleUploadComplete}
+          onGalleryAssetUploaded={onGalleryAssetUploaded ?? undefined}
+          onGalleryManageUploadLifecycle={onGalleryManageUploadLifecycle ?? undefined}
         />
       )}
     </UppyUploadContext.Provider>

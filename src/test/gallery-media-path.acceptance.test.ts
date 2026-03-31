@@ -9,6 +9,9 @@ import {
   normalizeProofingRootSegmentForRead,
   relativePathBelongsToGalleryRoots,
   relativePathIsInPhotoProofingTree,
+  relativePathIsInGalleryRawArchiveSubfolder,
+  relativePathIsInVideoProofingTree,
+  resolveGalleryRawVideoArchiveDestinationRelativePath,
   resolveMediaFolderSegmentForPath,
 } from "@/lib/gallery-media-path";
 import { PROOFING_MERGED_SEGMENT } from "@/lib/gallery-proofing-types";
@@ -93,5 +96,24 @@ describe("gallery-media-path acceptance (invariants)", () => {
     expect(relativePathIsInPhotoProofingTree("spring-wedding/Favorited/c/f.jpg", g)).toBe(true);
     expect(relativePathIsInPhotoProofingTree("gid-abc/Favorites/c/f.jpg", g)).toBe(true);
     expect(relativePathIsInPhotoProofingTree("spring-wedding/Selected/c/f.jpg", g)).toBe(false);
+  });
+
+  it("video proofing tree + gallery RAW archive subfolder (Final conversion archival)", () => {
+    const g = { id: "gid-abc", media_folder_segment: "my-gallery" };
+    expect(relativePathIsInVideoProofingTree("my-gallery/Selected/jane/take.mov", g)).toBe(true);
+    expect(relativePathIsInVideoProofingTree("my-gallery/Selects/jane/take.mov", g)).toBe(true);
+    expect(relativePathIsInVideoProofingTree("my-gallery/source/take.mov", g)).toBe(false);
+    expect(relativePathIsInGalleryRawArchiveSubfolder("my-gallery/RAW/take.mov", g)).toBe(true);
+    expect(relativePathIsInGalleryRawArchiveSubfolder("my-gallery/raw/take.mov", g)).toBe(false);
+    expect(resolveGalleryRawVideoArchiveDestinationRelativePath("my-gallery/take.mov", g)).toBe(
+      "my-gallery/RAW/take.mov"
+    );
+    expect(resolveGalleryRawVideoArchiveDestinationRelativePath("my-gallery/sub/take.mov", g)).toBe(
+      "my-gallery/RAW/sub/take.mov"
+    );
+    expect(resolveGalleryRawVideoArchiveDestinationRelativePath("my-gallery/RAW/take.mov", g)).toBe(null);
+    expect(resolveGalleryRawVideoArchiveDestinationRelativePath("my-gallery/Selected/x.mov", g)).toBe(
+      null
+    );
   });
 });

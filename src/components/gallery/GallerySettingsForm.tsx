@@ -422,7 +422,7 @@ export default function GallerySettingsForm({
   const [showProfileChangePanel, setShowProfileChangePanel] = useState(false);
   const [profileConfirmOpen, setProfileConfirmOpen] = useState(false);
   const [pendingMediaMode, setPendingMediaMode] = useState<"final" | "raw" | null>(null);
-  const [profileSavedNotice, setProfileSavedNotice] = useState(false);
+  const [profileSavedMessage, setProfileSavedMessage] = useState<string | null>(null);
   const [assetNamesForHealth, setAssetNamesForHealth] = useState<string[]>([]);
 
   useEffect(() => {
@@ -515,7 +515,9 @@ export default function GallerySettingsForm({
       setMediaMode(next);
       return;
     }
-    if (totalAssetCount === 0) {
+    const isVideoRawToFinal =
+      isVideoGallery && committedMediaMode === "raw" && next === "final";
+    if (totalAssetCount === 0 && !isVideoRawToFinal) {
       setMediaMode(next);
       return;
     }
@@ -948,9 +950,10 @@ export default function GallerySettingsForm({
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user || saving) return;
     setSaving(true);
     setError(null);
+    setProfileSavedMessage(null);
     const hadProfileDirty = mediaMode !== committedMediaMode;
     try {
       const token = await user.getIdToken();
@@ -1023,15 +1026,25 @@ export default function GallerySettingsForm({
         },
         body: JSON.stringify(body),
       });
+      const saveData = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        code?: string;
+        gallery_raw_archive?: {
+          moved_count: number;
+          destination_relative_prefix: string | null;
+          skipped_count: number;
+          error_count: number;
+        };
+      };
       if (!res.ok) {
-        const data = await res.json();
         if (res.status === 409) {
           onRefetch?.();
           throw new Error(
-            data.error ?? "Gallery was modified by another user. Refreshed. Please try again."
+            saveData.error ?? "Gallery was modified by another user. Refreshed. Please try again."
           );
         }
-        throw new Error(data.error ?? "Failed to save");
+        throw new Error(saveData.error ?? "Failed to save");
       }
       setCommittedMediaMode(mediaMode);
       setSaved(true);
@@ -1040,8 +1053,13 @@ export default function GallerySettingsForm({
       versionRef.current += 1;
       onRefetch?.();
       if (hadProfileDirty) {
-        setProfileSavedNotice(true);
-        setTimeout(() => setProfileSavedNotice(false), 4500);
+        const apiMsg =
+          typeof saveData.message === "string" && saveData.message.trim() ? saveData.message.trim() : "";
+        setProfileSavedMessage(
+          apiMsg ||
+            "Gallery profile updated. Visitors to the public gallery will see the new profile."
+        );
+        setTimeout(() => setProfileSavedMessage(null), 6000);
       }
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -1139,9 +1157,11 @@ export default function GallerySettingsForm({
                 {isVideoGallery
                   ? "Switch between delivery-focused and source-style video review."
                   : "Switch between delivery-ready photos and source RAW review with optional LUT preview."}{" "}
-                {totalAssetCount > 0
-                  ? "You will be asked to confirm because this gallery already has assets."
-                  : null}
+                {isVideoGallery && committedMediaMode === "raw"
+                  ? "Switching to Final Delivery archives original source videos from this gallery into a folder named RAW inside this gallery’s folder in Gallery Media; nothing is permanently deleted. You will be asked to confirm before that switch."
+                  : totalAssetCount > 0
+                    ? "You will be asked to confirm because this gallery already has assets."
+                    : null}
               </p>
               <div className="flex flex-wrap gap-4">
                 <label className="flex cursor-pointer items-center gap-2">
@@ -2409,12 +2429,12 @@ export default function GallerySettingsForm({
       </>
       )}
 
-      {profileSavedNotice && (
+      {profileSavedMessage && (
         <div
           className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-200"
           role="status"
         >
-          Gallery profile updated. Visitors to the public gallery will see the new profile.
+          {profileSavedMessage}
         </div>
       )}
 
@@ -2457,13 +2477,23 @@ export default function GallerySettingsForm({
         setPendingMediaMode(null);
         setProfileConfirmOpen(false);
       }}
-      title="Change gallery profile?"
+      title={
+        isVideoGallery && committedMediaMode === "raw" && pendingMediaMode === "final"
+          ? "Switch to Final Delivery?"
+          : "Change gallery profile?"
+      }
       message={
         pendingMediaMode === "raw"
           ? "Switching to RAW enables source-review behavior and LUT preview tools for clients on supported files. Preview behavior and placeholders may change. Your stored files are not deleted.\n\nAny LUT configuration you add remains in your account; if you switch back to Final later, LUT preview may be hidden from clients while settings can stay saved."
-          : "Switching to Final moves the gallery to a delivery-focused viewing workflow. RAW-specific preview tools and client LUT options will no longer apply in the public gallery. Your stored files are not deleted.\n\nLUT configuration may remain stored but unused while the gallery is in Final mode."
+          : isVideoGallery && committedMediaMode === "raw"
+            ? "This will convert this RAW video gallery into a Final Delivery gallery.\n\nAll RAW source video files currently stored in this gallery will be archived into a folder named RAW inside this gallery’s folder in Gallery Media. Client selection areas and linked files are not archived there. Your files are not permanently deleted — they remain available under that RAW folder.\n\nRAW-specific preview tools and client LUT options will no longer apply in the public gallery; LUT settings may remain saved but unused while the gallery is in Final mode."
+            : "Switching to Final moves the gallery to a delivery-focused viewing workflow. RAW-specific preview tools and client LUT options will no longer apply in the public gallery. Your stored files are not deleted.\n\nLUT configuration may remain stored but unused while the gallery is in Final mode."
       }
-      confirmLabel="Change profile"
+      confirmLabel={
+        isVideoGallery && committedMediaMode === "raw" && pendingMediaMode === "final"
+          ? "Switch to Final Delivery"
+          : "Change profile"
+      }
       cancelLabel="Cancel"
     />
     </>

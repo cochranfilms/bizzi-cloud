@@ -314,6 +314,8 @@ export async function POST(request: Request) {
     download_settings: { ...DEFAULT_DOWNLOAD_SETTINGS, ...download_settings },
     watermark: { ...DEFAULT_WATERMARK, ...watermark },
     view_count: 0,
+    /** Monotonic counter for manage asset list invalidation (ETag / polling). */
+    assets_version: 0,
     unique_visitor_count: 0,
     favorite_count: 0,
     favorite_submission_count: 0,

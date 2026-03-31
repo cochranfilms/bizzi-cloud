@@ -12,6 +12,7 @@ import {
 import { classifyGalleryFilename } from "@/lib/gallery-media-classification";
 import { galleryUploadHelperPhoto, galleryUploadHelperVideo } from "@/lib/gallery-profile-copy";
 import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
+import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 
 interface GalleryUploadZoneProps {
   galleryId: string;
@@ -19,6 +20,9 @@ interface GalleryUploadZoneProps {
   /** Persisted storage folder (from gallery document); title used as legacy fallback. */
   mediaFolderSegment?: string | null;
   onUploadComplete?: () => void;
+  /** Refresh gallery assets as each file finishes (debounced in Uppy modal). */
+  onGalleryAssetUploaded?: () => void | Promise<void>;
+  onGalleryManageUploadLifecycle?: (event: GalleryManageUploadLifecycleEvent) => void;
   disabled?: boolean;
   /** From gallery profile — drives upload hints */
   mediaMode?: "final" | "raw";
@@ -31,6 +35,8 @@ export default function GalleryUploadZone({
   galleryTitle,
   mediaFolderSegment,
   onUploadComplete,
+  onGalleryAssetUploaded,
+  onGalleryManageUploadLifecycle,
   disabled,
   mediaMode = "final",
   galleryType = "photo",
@@ -85,6 +91,8 @@ export default function GalleryUploadZone({
         galleryId,
         initialFiles: droppedFiles && droppedFiles.length > 0 ? droppedFiles : undefined,
         onUploadComplete,
+        onGalleryAssetUploaded,
+        onGalleryManageUploadLifecycle,
       });
     } catch (err) {
       console.error("Failed to open upload panel:", err);

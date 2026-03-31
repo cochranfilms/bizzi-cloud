@@ -18,7 +18,7 @@ export function galleryProfileDetailDescription(
 ): string {
   if (kind === "video") {
     return mode === "raw"
-      ? "Original camera or log-style footage; on-screen LUT preview may help during review when enabled."
+      ? "Original camera or log-style footage; on-screen LUT preview may help during review when enabled. If you switch this gallery to Final Delivery, source video files you uploaded here are archived into a folder named RAW inside this gallery’s folder in Gallery Media — nothing is permanently deleted."
       : "Edited, client-ready video — best for delivery, playback, and standard client viewing.";
   }
   return mode === "raw"

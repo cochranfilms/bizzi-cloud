@@ -21,7 +21,12 @@ export type ActivityEventType =
   | "folder_restored"
   | "share_link_created"
   | "share_link_removed"
-  | "bulk_upload_completed";
+  | "bulk_upload_completed"
+  /** Video gallery RAW → Final: archival step + profile change (outcome in metadata). */
+  | "gallery_raw_video_final_conversion"
+  | "gallery_asset_added"
+  | "gallery_asset_updated"
+  | "gallery_asset_deleted";
 
 export interface LogActivityInput {
   event_type: ActivityEventType;

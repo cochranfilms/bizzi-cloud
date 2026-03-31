@@ -31,6 +31,7 @@ import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-po
 import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 import { useTheme } from "@/context/ThemeContext";
 import { useUppyBizziThemeVariables } from "@/hooks/useUppyBizziTheme";
+import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 import "@/styles/uppy-bizzi-theme.css";
 import "@/styles/uppy-bizzi-premium.css";
@@ -111,6 +112,9 @@ interface UppyUploadModalProps {
   pendingFiles: File[];
   onPendingFilesConsumed: () => void;
   onUploadComplete?: () => void;
+  /** Debounced per-file refresh for gallery asset grids (see UppyUploadContext). */
+  onGalleryAssetUploaded?: () => void | Promise<void>;
+  onGalleryManageUploadLifecycle?: (event: GalleryManageUploadLifecycleEvent) => void;
 }
 
 export default function UppyUploadModal({
@@ -133,6 +137,8 @@ export default function UppyUploadModal({
   pendingFiles,
   onPendingFilesConsumed,
   onUploadComplete,
+  onGalleryAssetUploaded,
+  onGalleryManageUploadLifecycle,
 }: UppyUploadModalProps) {
   const { theme: appTheme } = useTheme();
   const uppyChromeVars = useUppyBizziThemeVariables();
@@ -141,6 +147,11 @@ export default function UppyUploadModal({
   const uppyRef = useRef<Uppy | null>(null);
   const onUploadCompleteRef = useRef(onUploadComplete);
   onUploadCompleteRef.current = onUploadComplete;
+  const onGalleryAssetUploadedRef = useRef(onGalleryAssetUploaded);
+  onGalleryAssetUploadedRef.current = onGalleryAssetUploaded;
+  const galleryAssetDebouncedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onGalleryManageUploadLifecycleRef = useRef(onGalleryManageUploadLifecycle);
+  onGalleryManageUploadLifecycleRef.current = onGalleryManageUploadLifecycle;
 
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(true);
@@ -332,6 +343,14 @@ export default function UppyUploadModal({
         }, fileData);
       }
       queueMicrotask(() => resumeUploadIfNeeded(uppy));
+      if (galleryId) {
+        onGalleryManageUploadLifecycleRef.current?.({
+          type: "file_added",
+          clientId: file.id,
+          name: file.name ?? uniqueName,
+          size: file.size ?? 0,
+        });
+      }
     });
 
     uppy.on("file-removed", (removed) => {
@@ -376,8 +395,45 @@ export default function UppyUploadModal({
       });
     };
 
-    uppy.on("upload-progress", updateProgress);
-    uppy.on("upload-error", updateProgress);
+    uppy.on("upload-progress", (file, progress) => {
+      updateProgress();
+      if (galleryId && file && progress) {
+        const bytesUploaded = Number((progress as { bytesUploaded?: number }).bytesUploaded ?? 0);
+        const bytesTotal = Number(
+          (progress as { bytesTotal?: number }).bytesTotal ?? file.size ?? 0
+        );
+        onGalleryManageUploadLifecycleRef.current?.({
+          type: "upload_progress",
+          clientId: file.id,
+          bytesUploaded,
+          bytesTotal,
+        });
+      }
+    });
+    uppy.on("upload-error", (file, error) => {
+      updateProgress();
+      if (galleryId && file) {
+        onGalleryManageUploadLifecycleRef.current?.({
+          type: "upload_error",
+          clientId: file.id,
+          message: error?.message ?? "Upload failed",
+        });
+      }
+    });
+
+    const scheduleGalleryAssetListRefresh = () => {
+      if (!galleryId) return;
+      const cb = onGalleryAssetUploadedRef.current;
+      if (!cb) return;
+      if (galleryAssetDebouncedTimerRef.current) {
+        clearTimeout(galleryAssetDebouncedTimerRef.current);
+      }
+      galleryAssetDebouncedTimerRef.current = setTimeout(() => {
+        galleryAssetDebouncedTimerRef.current = null;
+        void cb();
+      }, 450);
+    };
+
     uppy.on("upload-success", async (file) => {
       if (!file) return;
       const size = file.size ?? 0;
@@ -405,6 +461,13 @@ export default function UppyUploadModal({
                 uppy.setFileState(file.id, { error: msg });
                 uppy.info({ message: msg, details: file.name }, "error", 12_000);
                 updateProgress();
+                if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
+                  onGalleryManageUploadLifecycleRef.current?.({
+                    type: "upload_error",
+                    clientId: file.id,
+                    message: msg,
+                  });
+                }
                 return;
               }
               const res = await fetch(
@@ -465,6 +528,13 @@ export default function UppyUploadModal({
                 });
                 uppy.info({ message: msg, details: file.name }, "error", 16_000);
                 updateProgress();
+                if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
+                  onGalleryManageUploadLifecycleRef.current?.({
+                    type: "upload_error",
+                    clientId: file.id,
+                    message: msg,
+                  });
+                }
               }
             } catch {
               const msg =
@@ -472,6 +542,14 @@ export default function UppyUploadModal({
               uppy.setFileState(file.id, { error: msg });
               uppy.info({ message: msg, details: file.name }, "error", 12_000);
               updateProgress();
+              const meta = file.meta ?? {};
+              if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
+                onGalleryManageUploadLifecycleRef.current?.({
+                  type: "upload_error",
+                  clientId: file.id,
+                  message: msg,
+                });
+              }
             }
           });
         }
@@ -480,6 +558,23 @@ export default function UppyUploadModal({
       // Intentionally do NOT call onUploadComplete here: it bumps storageVersion and
       // refetches dashboard data. Per-file callbacks during large folder uploads (e.g.
       // .fcpbundle) cause thousands of concurrent API requests and ERR_INSUFFICIENT_RESOURCES.
+      // Gallery uploads use a separate debounced callback (no storage bump) so the asset grid
+      // can update as each file finishes instead of waiting for the full Uppy "complete" event.
+      {
+        const cur = uppy.getFile(file.id);
+        const meta = file.meta ?? {};
+        if (
+          galleryId &&
+          (meta.galleryId ?? meta.gallery_id) &&
+          !cur?.error
+        ) {
+          onGalleryManageUploadLifecycleRef.current?.({
+            type: "upload_processing",
+            clientId: file.id,
+          });
+          scheduleGalleryAssetListRefresh();
+        }
+      }
     });
     uppy.on("complete", () => {
       updateProgress();
@@ -490,6 +585,10 @@ export default function UppyUploadModal({
     setReady(true);
 
     return () => {
+      if (galleryAssetDebouncedTimerRef.current) {
+        clearTimeout(galleryAssetDebouncedTimerRef.current);
+        galleryAssetDebouncedTimerRef.current = null;
+      }
       uppy.cancelAll();
       uppy.destroy();
       uppyRef.current = null;

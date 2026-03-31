@@ -7,6 +7,12 @@ import {
   legacySourceFormatFromMediaMode,
   normalizeGalleryMediaMode,
 } from "@/lib/gallery-media-mode";
+import { logActivityEvent } from "@/lib/activity-log";
+import {
+  archiveRawSourceVideosOnVideoGalleryFinalConversion,
+  patchRequestsVideoRawToFinalConversion,
+  type GalleryRawVideoArchiveResult,
+} from "@/lib/gallery-raw-video-final-archive";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
@@ -113,6 +119,109 @@ export async function PATCH(
 
   const db = getAdminFirestore();
   const ref = db.collection("galleries").doc(id);
+
+  const preSnap = await ref.get();
+  if (!preSnap.exists) return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
+  const preData = preSnap.data()!;
+  if (!(await userCanManageGalleryAsPhotographer(uid, preData))) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+  const preVersion = typeof preData.version === "number" ? preData.version : 1;
+  if (preVersion !== requestedVersion) {
+    return NextResponse.json(
+      { error: "Document was modified by another user; refetch and try again" },
+      { status: 409 }
+    );
+  }
+
+  if (body.media_mode !== undefined && !isValidMediaMode(body.media_mode)) {
+    return NextResponse.json({ error: "Invalid media_mode" }, { status: 400 });
+  }
+
+  const needsRawArchive = patchRequestsVideoRawToFinalConversion(preData, body);
+  let rawArchiveResult: GalleryRawVideoArchiveResult | null = null;
+
+  const galleryTitleForAudit =
+    typeof preData.title === "string" && preData.title.trim() ? preData.title.trim() : id;
+
+  const logRawConversionAudit = async (args: {
+    outcome: "completed" | "failed";
+    archive: GalleryRawVideoArchiveResult | null;
+    errorDetail?: string;
+  }) => {
+    const orgId =
+      (preData.organization_id as string | null | undefined) != null &&
+      String(preData.organization_id).trim() !== ""
+        ? String(preData.organization_id).trim()
+        : null;
+    const workspaceId =
+      typeof preData.workspace_id === "string" && preData.workspace_id.trim()
+        ? preData.workspace_id.trim()
+        : null;
+    await logActivityEvent({
+      event_type: "gallery_raw_video_final_conversion",
+      actor_user_id: uid,
+      scope_type: orgId ? "organization" : "personal_account",
+      organization_id: orgId,
+      workspace_id: workspaceId,
+      drive_type: "gallery",
+      target_type: "folder",
+      target_name: galleryTitleForAudit,
+      metadata: {
+        gallery_id: id,
+        outcome: args.outcome,
+        previous_profile: "raw",
+        next_profile: "final",
+        moved_count: args.archive?.moved_count ?? 0,
+        skipped_count: args.archive?.skipped.length ?? 0,
+        destination_relative_prefix: args.archive?.destination_relative_prefix ?? null,
+        errors_sample: (args.archive?.errors ?? []).slice(0, 12),
+        error_detail: args.errorDetail ?? null,
+      },
+    });
+  };
+
+  if (needsRawArchive) {
+    try {
+      rawArchiveResult = await archiveRawSourceVideosOnVideoGalleryFinalConversion(db, {
+        actorUid: uid,
+        galleryId: id,
+        galleryRow: preData,
+        previous_profile: "raw",
+        next_profile: "final",
+      });
+    } catch (archiveErr) {
+      const detail = archiveErr instanceof Error ? archiveErr.message : String(archiveErr);
+      await logRawConversionAudit({ outcome: "failed", archive: null, errorDetail: detail }).catch(
+        () => {}
+      );
+      return NextResponse.json(
+        {
+          error:
+            "RAW source videos could not be archived into this gallery’s RAW folder. The gallery is still a RAW video gallery. Check storage configuration and try Save again.",
+          code: "gallery_raw_archive_failed",
+          detail,
+        },
+        { status: 422 }
+      );
+    }
+
+    if (rawArchiveResult.errors.length > 0) {
+      await logRawConversionAudit({
+        outcome: "failed",
+        archive: rawArchiveResult,
+      }).catch(() => {});
+      return NextResponse.json(
+        {
+          error:
+            "RAW source videos could not be fully archived into this gallery’s RAW folder. The gallery profile was not changed. Fix the issue and click Save again.",
+          code: "gallery_raw_archive_failed",
+          archive_errors: rawArchiveResult.errors,
+        },
+        { status: 422 }
+      );
+    }
+  }
 
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -237,7 +346,33 @@ export async function PATCH(
       { status: 409 }
     );
   }
-  return NextResponse.json({ ok: true });
+
+  if (needsRawArchive && rawArchiveResult) {
+    await logRawConversionAudit({
+      outcome: "completed",
+      archive: rawArchiveResult,
+    }).catch(() => {});
+  }
+
+  return NextResponse.json({
+    ok: true,
+    ...(rawArchiveResult
+      ? {
+          gallery_raw_archive: {
+            moved_count: rawArchiveResult.moved_count,
+            destination_relative_prefix: rawArchiveResult.destination_relative_prefix,
+            skipped_count: rawArchiveResult.skipped.length,
+            error_count: rawArchiveResult.errors.length,
+          },
+        }
+      : {}),
+    ...(rawArchiveResult
+      ? {
+          message:
+            "Gallery switched to Final Delivery. RAW source files were archived to this gallery’s RAW folder in Gallery Media.",
+        }
+      : {}),
+  });
 }
 
 /** DELETE /api/galleries/[id]

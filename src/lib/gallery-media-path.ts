@@ -98,6 +98,9 @@ export function slugClientNameForFolder(clientName: string | null | undefined): 
 }
 
 /** True if path is under any gallery root and second segment is a photo proofing folder (canonical or legacy). */
+/** Subfolder inside a gallery folder where RAW video source files are archived after switching to Final Delivery. Not the account-level Creator RAW drive. */
+export const GALLERY_RAW_ARCHIVE_FOLDER_SEGMENT = "RAW";
+
 export function relativePathIsInPhotoProofingTree(
   relativePath: string,
   gallery: { id: string; media_folder_segment?: string | null }
@@ -112,6 +115,68 @@ export function relativePathIsInPhotoProofingTree(
     if (isAcceptedPhotoProofingSegment(seg)) return true;
   }
   return false;
+}
+
+/** True if path is under any gallery root and second segment is a video proofing folder (canonical or legacy). */
+export function relativePathIsInVideoProofingTree(
+  relativePath: string,
+  gallery: { id: string; media_folder_segment?: string | null }
+): boolean {
+  const roots = galleryStoragePathRoots(gallery);
+  const p = relativePath.replace(/^\/+/, "");
+  for (const root of roots) {
+    const prefix = `${root}/`;
+    if (!p.startsWith(prefix)) continue;
+    const rest = p.slice(prefix.length);
+    const seg = rest.split("/").filter(Boolean)[0] ?? "";
+    if (isAcceptedVideoProofingSegment(seg)) return true;
+  }
+  return false;
+}
+
+/**
+ * True if file already lives under this gallery's archival RAW subfolder (`{root}/RAW/...`).
+ * Uses exact segment "RAW" per product spec.
+ */
+export function relativePathIsInGalleryRawArchiveSubfolder(
+  relativePath: string,
+  gallery: { id: string; media_folder_segment?: string | null }
+): boolean {
+  const roots = galleryStoragePathRoots(gallery);
+  const p = relativePath.replace(/^\/+/, "");
+  for (const root of roots) {
+    const exact = `${root}/${GALLERY_RAW_ARCHIVE_FOLDER_SEGMENT}`;
+    if (p === exact || p.startsWith(`${exact}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * If this file should be archived into `{galleryRoot}/RAW/...`, returns the new relative_path; otherwise null.
+ * Skips proofing trees, linked-only paths, and paths already under the gallery RAW archive folder.
+ */
+export function resolveGalleryRawVideoArchiveDestinationRelativePath(
+  relativePath: string,
+  gallery: { id: string; media_folder_segment?: string | null }
+): string | null {
+  const p = relativePath.replace(/^\/+/, "");
+  const roots = galleryStoragePathRoots(gallery);
+  for (const root of roots) {
+    const prefix = `${root}/`;
+    if (!p.startsWith(prefix)) continue;
+    const rest = p.slice(prefix.length);
+    if (!rest) return null;
+    if (
+      rest === GALLERY_RAW_ARCHIVE_FOLDER_SEGMENT ||
+      rest.startsWith(`${GALLERY_RAW_ARCHIVE_FOLDER_SEGMENT}/`)
+    ) {
+      return null;
+    }
+    const seg0 = rest.split("/").filter(Boolean)[0] ?? "";
+    if (isAcceptedVideoProofingSegment(seg0)) return null;
+    return `${root}/${GALLERY_RAW_ARCHIVE_FOLDER_SEGMENT}/${rest}`;
+  }
+  return null;
 }
 
 export function buildMaterializedListPrefix(params: {

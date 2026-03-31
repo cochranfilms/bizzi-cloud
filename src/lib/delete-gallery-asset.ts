@@ -7,6 +7,10 @@ import type { Firestore, Query } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import {
+  bumpGalleryAssetsVersion,
+  fireAndForgetGalleryAssetActivity,
+} from "@/lib/gallery-asset-mutations";
 
 const CHUNK = 400;
 
@@ -96,7 +100,26 @@ export async function deleteGalleryAssetAndStorage(input: {
     await galleryRef.update(galleryPatch);
   }
 
+  const assetName = (asset.name as string) ?? assetId;
   await assetRef.delete();
+
+  {
+    const nv = await bumpGalleryAssetsVersion(db, galleryId);
+    fireAndForgetGalleryAssetActivity({
+      event_type: "gallery_asset_deleted",
+      actor_user_id: ownerUid,
+      gallery,
+      gallery_id: galleryId,
+      file_id: backupFileId,
+      target_name: assetName,
+      metadata: {
+        asset_id: assetId,
+        asset_origin: effectiveOrigin,
+        storage_action: storageAction,
+        assets_version: nv,
+      },
+    });
+  }
 
   if (effectiveOrigin === "linked") {
     return {

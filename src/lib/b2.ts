@@ -12,6 +12,7 @@ import {
   ListPartsCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
+  CopyObjectCommand,
   NoSuchUpload,
   type CompletedPart,
   type PutObjectCommandInput,
@@ -279,6 +280,28 @@ export async function completeMultipartUpload(
       Key: objectKey,
       UploadId: uploadId,
       MultipartUpload: { Parts: completedParts },
+    })
+  );
+}
+
+/**
+ * Server-side copy within the same bucket (used for gallery archival moves).
+ * CopySource uses per-segment encoding for keys that contain special characters.
+ */
+export async function copyObjectServerSide(sourceKey: string, destKey: string): Promise<void> {
+  const client = getB2Client();
+  const copySource = `${B2_BUCKET_NAME!}/${sourceKey
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join("/")}`;
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: destKey,
+      CopySource: copySource,
+      ...SSE_B2_HEADER,
+      MetadataDirective: "COPY",
     })
   );
 }

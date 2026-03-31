@@ -20,6 +20,7 @@ import {
   ImagePlus,
   Star,
   Trash2,
+  AlertCircle,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -101,9 +102,11 @@ import { isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import GalleryUploadZone from "@/components/gallery/GalleryUploadZone";
+import { useGalleryManageAssetsPoll } from "@/hooks/useGalleryManageAssetsPoll";
 import GalleryOwnerProfileBanner from "@/components/gallery/GalleryOwnerProfileBanner";
 import GalleryDetailHealthAdvisories from "@/components/gallery/GalleryDetailHealthAdvisories";
 import { GalleryVideoDetailStrip } from "@/components/gallery/GalleryVideoDetailStrip";
+import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
 
 interface GalleryData {
   id: string;
@@ -139,7 +142,16 @@ interface GalleryAsset {
   object_key: string;
   media_type: "image" | "video";
   sort_order: number;
+  is_visible?: boolean;
 }
+
+type ManagePendingUploadRow = {
+  clientId: string;
+  name: string;
+  phase: "uploading" | "processing" | "failed";
+  progressPct: number | null;
+  errorMessage?: string;
+};
 
 export default function GalleryDetailPage() {
   const params = useParams();
@@ -156,6 +168,7 @@ export default function GalleryDetailPage() {
 
   const [gallery, setGallery] = useState<GalleryData | null>(null);
   const [assets, setAssets] = useState<GalleryAsset[]>([]);
+  const [pendingUploads, setPendingUploads] = useState<ManagePendingUploadRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -271,16 +284,83 @@ export default function GalleryDetailPage() {
     if (!user || !id) return;
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`/api/galleries/${id}/view`, {
+      const res = await fetch(`/api/galleries/${id}/assets`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return;
-      const data = await res.json();
+      const data = (await res.json()) as { assets?: GalleryAsset[] };
       setAssets(data.assets ?? []);
     } catch {
       setAssets([]);
     }
   }, [user, id]);
+
+  const onManageUploadLifecycle = useCallback((e: GalleryManageUploadLifecycleEvent) => {
+    setPendingUploads((rows) => {
+      const ix = rows.findIndex((r) => r.clientId === e.clientId);
+      const next = [...rows];
+      if (e.type === "file_added") {
+        if (ix >= 0) return rows;
+        return [...rows, { clientId: e.clientId, name: e.name, phase: "uploading", progressPct: 0 }];
+      }
+      if (e.type === "upload_progress") {
+        const pct =
+          e.bytesTotal > 0 ? Math.min(100, Math.round((e.bytesUploaded / e.bytesTotal) * 100)) : null;
+        if (ix >= 0) {
+          next[ix] = { ...next[ix], phase: "uploading", progressPct: pct };
+          return next;
+        }
+        return rows;
+      }
+      if (e.type === "upload_processing") {
+        if (ix >= 0) {
+          next[ix] = { ...next[ix], phase: "processing", progressPct: 100 };
+          return next;
+        }
+        return rows;
+      }
+      if (e.type === "upload_error") {
+        if (ix >= 0) {
+          next[ix] = {
+            ...next[ix],
+            phase: "failed",
+            errorMessage: e.message,
+            progressPct: null,
+          };
+          return next;
+        }
+        return [
+          ...rows,
+          {
+            clientId: e.clientId,
+            name: "",
+            phase: "failed",
+            errorMessage: e.message,
+            progressPct: null,
+          },
+        ];
+      }
+      return rows;
+    });
+  }, []);
+
+  useEffect(() => {
+    setPendingUploads((rows) =>
+      rows.filter((r) => {
+        if (r.phase === "failed") return true;
+        const name = r.name.trim().toLowerCase();
+        if (!name) return true;
+        return !assets.some((a) => a.name.toLowerCase() === name);
+      })
+    );
+  }, [assets]);
+
+  useGalleryManageAssetsPoll({
+    galleryId: id,
+    user,
+    enabled: !loading && !!gallery && !!user,
+    setAssets,
+  });
 
   useEffect(() => {
     if (!user || !id) {
@@ -488,6 +568,11 @@ export default function GalleryDetailPage() {
                 mediaFolderSegment={gallery?.media_folder_segment}
                 mediaMode={gallery?.media_mode ?? "final"}
                 galleryType={isVideoGallery ? "video" : "photo"}
+                onGalleryManageUploadLifecycle={onManageUploadLifecycle}
+                onGalleryAssetUploaded={() => {
+                  void fetchAssets();
+                  void fetchGallery();
+                }}
                 onUploadComplete={() => {
                   fetchAssets();
                   fetchGallery();
@@ -499,7 +584,7 @@ export default function GalleryDetailPage() {
                 }}
               />
             </div>
-            {assets.length === 0 ? (
+            {assets.length === 0 && pendingUploads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                   {isVideoGallery
@@ -509,6 +594,42 @@ export default function GalleryDetailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {pendingUploads.map((p) => (
+                  <div
+                    key={p.clientId}
+                    className="relative flex aspect-square flex-col overflow-hidden rounded-lg border border-dashed border-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue/40 dark:bg-bizzi-blue/10"
+                  >
+                    <div className="flex flex-1 flex-col items-center justify-center p-2 text-center">
+                      {p.phase === "failed" ? (
+                        <AlertCircle className="mb-1 h-8 w-8 text-red-500" />
+                      ) : isVideoGallery ? (
+                        <Film className="mb-1 h-8 w-8 text-bizzi-blue" />
+                      ) : (
+                        <ImageIcon className="mb-1 h-8 w-8 text-bizzi-blue" />
+                      )}
+                      <span className="line-clamp-2 text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                        {p.name || "Uploading…"}
+                      </span>
+                      <span className="mt-1 text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                        {p.phase === "uploading"
+                          ? p.progressPct != null
+                            ? `Uploading ${p.progressPct}%`
+                            : "Uploading…"
+                          : p.phase === "processing"
+                            ? "Processing…"
+                            : p.errorMessage ?? "Failed"}
+                      </span>
+                      {p.phase === "uploading" && p.progressPct != null && (
+                        <div className="mt-2 h-1 w-full max-w-[90%] overflow-hidden rounded bg-neutral-200 dark:bg-neutral-700">
+                          <div
+                            className="h-full bg-bizzi-blue transition-all"
+                            style={{ width: `${p.progressPct}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
                 {assets.map((a) => {
                   const isImage = a.media_type === "image" || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i.test(a.name);
                   const isVideo = a.media_type === "video" || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(a.name);
@@ -529,6 +650,11 @@ export default function GalleryDetailPage() {
                         mediaType={a.media_type}
                         className="w-full rounded-lg"
                       />
+                      {a.is_visible === false && (
+                        <div className="absolute right-0 top-0 rounded-bl bg-neutral-800/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                          Hidden
+                        </div>
+                      )}
                       {isCover && (
                         <div className="absolute left-0 top-0 rounded-br bg-bizzi-blue px-2 py-0.5 text-xs font-medium text-white">
                           Cover

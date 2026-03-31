@@ -12,6 +12,11 @@ import {
   deleteGalleryAssetAndStorage,
   type GalleryAssetStorageAction,
 } from "@/lib/delete-gallery-asset";
+import {
+  bumpGalleryAssetsVersion,
+  fireAndForgetGalleryAssetActivity,
+  getRequestCorrelationId,
+} from "@/lib/gallery-asset-mutations";
 import { NextResponse } from "next/server";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
@@ -61,6 +66,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   }
 
+  const before = assetSnap.data()!;
+  const correlationId = getRequestCorrelationId(request);
+
   const updates: Record<string, unknown> = { updated_at: new Date() };
   if (
     proofingStatus &&
@@ -76,6 +84,30 @@ export async function PATCH(
   }
 
   await assetRef.update(updates);
+  const newVersion = await bumpGalleryAssetsVersion(db, galleryId);
+  fireAndForgetGalleryAssetActivity({
+    event_type: "gallery_asset_updated",
+    actor_user_id: uid,
+    gallery: gallerySnap.data()!,
+    gallery_id: galleryId,
+    correlation_id: correlationId,
+    file_id: (before.backup_file_id as string | undefined) ?? null,
+    target_name: (before.name as string) ?? null,
+    metadata: {
+      asset_id: assetId,
+      assets_version: newVersion,
+      changes: {
+        proofing_status: (updates as { proofing_status?: string }).proofing_status,
+        is_visible: (updates as { is_visible?: boolean }).is_visible,
+        is_hero: (updates as { is_hero?: boolean }).is_hero,
+      },
+      previous: {
+        proofing_status: before.proofing_status,
+        is_visible: before.is_visible,
+        is_hero: before.is_hero,
+      },
+    },
+  });
 
   if (
     proofingStatus &&
