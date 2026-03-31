@@ -1,0 +1,171 @@
+/**
+ * Bizzi Cloud — Uppy Dashboard/Core overrides.
+ * Primary actions and links use var(--bizzi-uppy-*) from useUppyBizziTheme (dashboard color settings).
+ * Scoped under .bizzi-uppy-theme on the upload modal root.
+ */
+
+/* --- @uppy/core: primary button --- */
+.bizzi-uppy-theme .uppy-c-btn-primary {
+  background-color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-c-btn-primary:not(:disabled):hover {
+  background-color: var(--bizzi-uppy-primary-hover) !important;
+}
+.bizzi-uppy-theme .uppy-c-btn-primary:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-c-btn-primary:focus {
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
+}
+
+/* --- Dashboard: Provider browser (remote sources) --- */
+.bizzi-uppy-theme .uppy-ProviderBrowser-viewType--grid .uppy-ProviderBrowserItem-checkbox,
+.bizzi-uppy-theme
+  .uppy-ProviderBrowser-viewType--unsplash
+  .uppy-ProviderBrowserItem-checkbox {
+  background-color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme
+  .uppy-ProviderBrowser-viewType--grid
+  .uppy-ProviderBrowserItem-checkbox--grid:focus
+  + label,
+.bizzi-uppy-theme
+  .uppy-ProviderBrowser-viewType--unsplash
+  .uppy-ProviderBrowserItem-checkbox--grid:focus
+  + label {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme .uppy-ProviderBrowser-searchFilterReset:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme .uppy-ProviderBrowser-userLogout {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-ProviderBrowser-userLogout:hover {
+  color: var(--bizzi-uppy-primary-hover) !important;
+}
+
+/* --- Dashboard: bar actions (Cancel / Save / Add more) --- */
+.bizzi-uppy-theme .uppy-DashboardContent-back,
+.bizzi-uppy-theme .uppy-DashboardContent-save {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-DashboardContent-back:hover,
+.bizzi-uppy-theme .uppy-DashboardContent-save:hover {
+  color: var(--bizzi-uppy-primary-hover) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-DashboardContent-back,
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-DashboardContent-save {
+  color: var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme .uppy-DashboardContent-addMore {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-DashboardContent-addMore:hover {
+  color: var(--bizzi-uppy-primary-hover) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-DashboardContent-addMore {
+  color: var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-Item-reSelect {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-Item-action:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-Item-action:focus {
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-Item-previewLink:focus {
+  box-shadow: inset 0 0 0 3px var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-Item-previewLink:focus {
+  box-shadow: inset 0 0 0 3px var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme
+  button.uppy-Dashboard-Item-progressIndicator:focus
+  .uppy-Dashboard-Item-progressIcon--bg,
+.bizzi-uppy-theme
+  button.uppy-Dashboard-Item-progressIndicator:focus
+  .uppy-Dashboard-Item-progressIcon--retry {
+  fill: var(--bizzi-uppy-primary) !important;
+}
+
+/* --- Status bar: progress, links, retry --- */
+.bizzi-uppy-theme .uppy-StatusBar-progress {
+  background-color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-spinner {
+  fill: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionCircleBtn:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-StatusBar-actionCircleBtn:focus {
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionBtn {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionBtn--retry {
+  background-color: var(--bizzi-uppy-retry-bg) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionBtn--retry:hover {
+  background-color: var(--bizzi-uppy-retry-hover) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionBtn--retry:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-StatusBar-actionBtn--retry:focus {
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar:not(.is-waiting) .uppy-StatusBar-actionBtn--upload {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-StatusBar-actionBtn--uploadNewlyAdded:focus {
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-StatusBar-actionBtn--uploadNewlyAdded:focus {
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-focus-ring-dark) !important;
+}
+
+/* --- Add files / browse --- */
+.bizzi-uppy-theme .uppy-Dashboard-serviceMsg-actionBtn {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-serviceMsg-actionBtn {
+  color: var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-browse {
+  color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-browse:hover,
+.bizzi-uppy-theme .uppy-Dashboard-browse:focus {
+  border-bottom-color: var(--bizzi-uppy-primary) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-browse {
+  color: var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-browse:hover,
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-browse:focus {
+  border-bottom-color: var(--bizzi-uppy-accent) !important;
+}
+.bizzi-uppy-theme [data-uppy-drag-drop-supported="true"] .uppy-Dashboard-AddFiles {
+  border-color: color-mix(in srgb, var(--bizzi-uppy-primary) 35%, transparent) !important;
+}
+.bizzi-uppy-theme .uppy-Dashboard-dropFilesHereHint {
+  border-color: var(--bizzi-uppy-primary) !important;
+  background-color: var(--bizzi-uppy-primary-muted) !important;
+  background-image: none !important;
+}
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-dropFilesHereHint {
+  border-color: var(--bizzi-uppy-accent) !important;
+  background-color: color-mix(in srgb, var(--bizzi-uppy-primary) 22%, transparent) !important;
+  background-image: none !important;
+}
+
+/* --- Misc links --- */
+.bizzi-uppy-theme .uppy-Informer a,
+.bizzi-uppy-theme .uppy-Dashboard-note a {
+  color: var(--bizzi-uppy-primary) !important;
+}

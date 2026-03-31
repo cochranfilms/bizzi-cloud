@@ -221,7 +221,14 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                         {displayName}
                       </p>
                       {queueDestinationChip ? (
-                        <span className="shrink-0 rounded-md bg-bizzi-blue/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan">
+                        <span
+                          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                          style={{
+                            backgroundColor:
+                              "color-mix(in srgb, var(--bizzi-uppy-primary) 18%, transparent)",
+                            color: "var(--bizzi-uppy-primary)",
+                          }}
+                        >
                           {queueDestinationChip}
                         </span>
                       ) : null}
@@ -262,9 +269,16 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                 <div className="mt-2 h-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
                   <div
                     className={`h-full transition-all ${
-                      anyFailed ? "bg-amber-500 dark:bg-amber-600" : "bg-bizzi-blue dark:bg-bizzi-cyan"
+                      anyFailed ? "bg-amber-500 dark:bg-amber-600" : ""
                     }`}
-                    style={{ width: `${pct}%` }}
+                    style={
+                      anyFailed
+                        ? { width: `${pct}%` }
+                        : {
+                            width: `${pct}%`,
+                            backgroundColor: "var(--bizzi-uppy-primary)",
+                          }
+                    }
                   />
                 </div>
               </div>
@@ -313,15 +327,29 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                   <div className="flex min-w-0 items-center gap-1.5">
                     <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
                     {queueDestinationChip ? (
-                      <span className="shrink-0 rounded bg-bizzi-blue/15 px-1 py-px text-[9px] font-semibold uppercase text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan">
+                      <span
+                        className="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase"
+                        style={{
+                          backgroundColor:
+                            "color-mix(in srgb, var(--bizzi-uppy-primary) 18%, transparent)",
+                          color: "var(--bizzi-uppy-primary)",
+                        }}
+                      >
                         {queueDestinationChip}
                       </span>
                     ) : null}
                   </div>
                   <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
                     <div
-                      className={`h-full ${f.error ? "bg-red-500" : "bg-bizzi-blue dark:bg-bizzi-cyan"}`}
-                      style={{ width: `${f.error ? 100 : pct}%` }}
+                      className={`h-full ${f.error ? "bg-red-500" : ""}`}
+                      style={
+                        f.error
+                          ? { width: "100%" }
+                          : {
+                              width: `${pct}%`,
+                              backgroundColor: "var(--bizzi-uppy-primary)",
+                            }
+                      }
                     />
                   </div>
                 </div>

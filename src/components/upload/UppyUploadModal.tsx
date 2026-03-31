@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+  type CSSProperties,
+} from "react";
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
@@ -22,7 +29,10 @@ import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
 import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
+import { useTheme } from "@/context/ThemeContext";
+import { useUppyBizziThemeVariables } from "@/hooks/useUppyBizziTheme";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
+import "@/styles/uppy-bizzi-theme.css";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
  * We track failed files and surface them so users can retry from the Dashboard. */
@@ -123,6 +133,10 @@ export default function UppyUploadModal({
   onPendingFilesConsumed,
   onUploadComplete,
 }: UppyUploadModalProps) {
+  const { theme: appTheme } = useTheme();
+  const uppyChromeVars = useUppyBizziThemeVariables();
+  const uppyDataTheme = appTheme === "dark" ? "dark" : "light";
+
   const uppyRef = useRef<Uppy | null>(null);
   const onUploadCompleteRef = useRef(onUploadComplete);
   onUploadCompleteRef.current = onUploadComplete;
@@ -590,7 +604,9 @@ export default function UppyUploadModal({
 
   return (
     <div
-      className="fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(42rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900 sm:left-4 sm:w-full sm:max-w-2xl sm:translate-x-0"
+      className="bizzi-uppy-theme fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(42rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900 sm:left-4 sm:w-full sm:max-w-2xl sm:translate-x-0"
+      style={uppyChromeVars as CSSProperties}
+      data-uppy-theme={uppyDataTheme}
       role="status"
       aria-live="polite"
       aria-label="Upload panel"
@@ -604,19 +620,34 @@ export default function UppyUploadModal({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-              allComplete && hasFiles
-                ? "bg-green-500/10 dark:bg-green-500/20"
-                : "bg-bizzi-blue/10 dark:bg-bizzi-blue/20"
+              allComplete && hasFiles ? "bg-green-500/10 dark:bg-green-500/20" : ""
             }`}
+            style={
+              allComplete && hasFiles
+                ? undefined
+                : { backgroundColor: "var(--bizzi-uppy-primary-muted)" }
+            }
           >
             {allComplete && hasFiles ? (
               <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
             ) : hasFiles && uploadingCount === 0 && completedCount === 0 ? (
-              <Upload className="h-4 w-4 text-bizzi-blue dark:text-bizzi-cyan" />
+              <Upload
+                className="h-4 w-4"
+                style={{ color: "var(--bizzi-uppy-primary)" }}
+                aria-hidden
+              />
             ) : hasFiles ? (
-              <Loader2 className="h-4 w-4 animate-spin text-bizzi-blue dark:text-bizzi-cyan" />
+              <Loader2
+                className="h-4 w-4 animate-spin"
+                style={{ color: "var(--bizzi-uppy-primary)" }}
+                aria-hidden
+              />
             ) : (
-              <Upload className="h-4 w-4 text-bizzi-blue dark:text-bizzi-cyan" />
+              <Upload
+                className="h-4 w-4"
+                style={{ color: "var(--bizzi-uppy-primary)" }}
+                aria-hidden
+              />
             )}
           </div>
           <div className="min-w-0">
@@ -685,9 +716,13 @@ export default function UppyUploadModal({
         <div className="h-1 bg-neutral-100 dark:bg-neutral-800">
           <div
             className={`h-full transition-all duration-300 ${
-              allComplete ? "bg-green-500 dark:bg-green-600" : "bg-bizzi-blue dark:bg-bizzi-cyan"
+              allComplete ? "bg-green-500 dark:bg-green-600" : ""
             }`}
-            style={{ width: `${pct}%` }}
+            style={
+              allComplete
+                ? { width: `${pct}%` }
+                : { width: `${pct}%`, backgroundColor: "var(--bizzi-uppy-primary)" }
+            }
           />
         </div>
       )}
@@ -713,6 +748,7 @@ export default function UppyUploadModal({
             />
             <Dashboard
               uppy={uppyRef.current}
+              theme={uppyDataTheme}
               proudlyDisplayPoweredByUppy={false}
               height={hasFiles ? dashboardHeight + 32 : dashboardHeight}
               showSelectedFiles
