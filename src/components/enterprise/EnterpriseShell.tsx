@@ -34,7 +34,7 @@ export default function EnterpriseShell({
     <UppyUploadProvider>
     <GlobalDropZone />
     <div
-      className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 border-l-4 border-[var(--enterprise-primary)]"
+      className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
       data-org-theme={theme}
       data-context="enterprise"
       style={{ ...orgVars, ...cssVariables } as React.CSSProperties}

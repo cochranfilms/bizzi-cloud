@@ -1,13 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, Film } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, CheckSquare, ChevronLeft, Film } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import FolderCard from "./FolderCard";
 import FileCard from "./FileCard";
 import FileListRow from "./FileListRow";
 import FilePreviewModal from "./FilePreviewModal";
+import BulkMoveModal from "./BulkMoveModal";
+import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
+import ShareModal from "./ShareModal";
+import { BulkActionBar } from "./BulkActionBar";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
+import { useBulkDownload } from "@/hooks/useBulkDownload";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
+import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -18,8 +25,6 @@ import { useAuth } from "@/context/AuthContext";
 import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creative-lut";
 import { isCreatorRawDriveId } from "@/lib/creator-raw-drive";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
-
-const DRAG_THRESHOLD_PX = 5;
 
 type RawDriveLutPayload = {
   config: CreativeLUTConfig;
@@ -41,8 +46,12 @@ export default function CreatorContent() {
     loading,
     fetchDriveFiles,
     deleteFile,
+    deleteFiles,
     deleteFolder,
     refetch,
+    fetchFilesByIds,
+    getFileIdsForBulkShare,
+    moveFilesToFolder,
   } = useCloudFiles({ creatorOnly: true });
   const {
     linkedDrives,
@@ -53,6 +62,47 @@ export default function CreatorContent() {
   const { user } = useAuth();
   const { setCurrentDrive: setCurrentFolderDriveId } = useCurrentFolder();
   const { confirm } = useConfirm();
+  const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
+  const { download: bulkDownload, isLoading: isBulkDownloading } = useBulkDownload({
+    fetchFilesByIds,
+  });
+
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareFolderName, setShareFolderName] = useState("");
+  const [shareDriveId, setShareDriveId] = useState<string | null>(null);
+  const [shareReferencedFileIds, setShareReferencedFileIds] = useState<string[]>([]);
+  const [shareInitialData, setShareInitialData] = useState<{
+    token: string;
+    accessLevel: "private" | "public";
+    permission: "view" | "edit";
+    invitedEmails: string[];
+  } | null>(null);
+  const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
+  const didAutoOpenRawRef = useRef(false);
+
+  const clearSelection = useCallback(() => setSelectedFileIds(new Set()), []);
+  const toggleFileSelection = useCallback((id: string) => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!moveNotice) return;
+    const t = window.setTimeout(() => setMoveNotice(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [moveNotice]);
+
+  useEffect(() => {
+    setSelectedFileIds(new Set());
+  }, [currentDrive?.id]);
 
   const creatorDrives = linkedDrives.filter(
     (d) => d.creator_section && d.is_org_shared !== true
@@ -89,6 +139,107 @@ export default function CreatorContent() {
     setCurrentDrive(null);
     setDriveFiles([]);
   }, [setCurrentFolderDriveId]);
+
+  useEffect(() => {
+    if (didAutoOpenRawRef.current || !creatorRawDriveId) return;
+    const rawDrive = linkedDrives.find((d) => d.id === creatorRawDriveId);
+    if (!rawDrive) return;
+    didAutoOpenRawRef.current = true;
+    openDrive(creatorRawDriveId, rawDrive.name?.trim() || "RAW");
+  }, [creatorRawDriveId, linkedDrives, openDrive]);
+
+  const visibleLinkedDrives = useMemo(
+    () => filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
+
+  const handleBulkDownload = useCallback(() => {
+    bulkDownload(Array.from(selectedFileIds));
+  }, [bulkDownload, selectedFileIds]);
+
+  const handleBulkDelete = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    if (fileIds.length === 0) return;
+    const ok = await confirm({
+      message: `Move ${fileIds.length} file${fileIds.length === 1 ? "" : "s"} to trash? You can restore from the Deleted files tab.`,
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteFiles(fileIds);
+      clearSelection();
+      await refetch();
+      if (currentDrive) await loadDriveFiles(currentDrive.id);
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+    }
+  }, [
+    selectedFileIds,
+    confirm,
+    deleteFiles,
+    clearSelection,
+    refetch,
+    currentDrive,
+    loadDriveFiles,
+  ]);
+
+  const performMove = useCallback(
+    async (fileIds: string[], targetDriveId: string) => {
+      if (fileIds.length > 0) {
+        await moveFilesToFolder(fileIds, targetDriveId);
+      }
+      clearSelection();
+      await refetch();
+      if (currentDrive) await loadDriveFiles(currentDrive.id);
+      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+      setMoveNotice(`Items moved into the "${destName}" folder`);
+    },
+    [moveFilesToFolder, clearSelection, refetch, currentDrive, loadDriveFiles, linkedDrives]
+  );
+
+  const handleBulkMoveConfirm = useCallback(
+    async (targetDriveId: string) => {
+      await performMove(Array.from(selectedFileIds), targetDriveId);
+      setMoveModalOpen(false);
+    },
+    [selectedFileIds, performMove]
+  );
+
+  const handleBulkMove = useCallback(() => setMoveModalOpen(true), []);
+
+  const handleBulkNewTransfer = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    if (fileIds.length === 0) return;
+    const files = await fetchFilesByIds(fileIds);
+    setTransferInitialFiles(
+      files.map((f) => ({
+        name: f.name,
+        path: `${f.driveName}/${f.path}`.replace(/\/+/g, "/"),
+        type: "file" as const,
+        backupFileId: f.id,
+        objectKey: f.objectKey,
+      }))
+    );
+    setTransferModalOpen(true);
+  }, [selectedFileIds, fetchFilesByIds]);
+
+  const handleBulkShare = useCallback(async () => {
+    const fileIds = Array.from(selectedFileIds);
+    try {
+      const allFileIds = await getFileIdsForBulkShare(fileIds, []);
+      if (allFileIds.length === 0) return;
+      const defaultFolderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
+      setShareFolderName(defaultFolderName);
+      setShareReferencedFileIds(allFileIds);
+      setShareDriveId(null);
+      setShareInitialData(null);
+      setShareModalOpen(true);
+      clearSelection();
+      await refetch();
+    } catch (err) {
+      console.error("Bulk share failed:", err);
+    }
+  }, [selectedFileIds, getFileIdsForBulkShare, clearSelection, refetch]);
 
   // Ensure RAW drive exists on mount
   useEffect(() => {
@@ -214,8 +365,19 @@ export default function CreatorContent() {
       )}
 
       <section className="border-b border-neutral-200/60 py-6 last:border-b-0 dark:border-neutral-800/60">
-        <div className="mb-5">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <SectionTitle>{currentDrive ? "Files" : "Folders"}</SectionTitle>
+          {currentDrive && driveFiles.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSelectedFileIds(new Set(driveFiles.map((f) => f.id)))}
+              className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              aria-label="Select all"
+            >
+              <CheckSquare className="h-4 w-4" />
+              Select
+            </button>
+          ) : null}
         </div>
 
         {viewingCreatorRaw ? (
@@ -262,6 +424,9 @@ export default function CreatorContent() {
                         key={file.id}
                         file={file}
                         displayContext={storageDisplayContext}
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
                         onClick={() => setPreviewFile(file)}
                         onDelete={async () => {
                           await deleteFile(file.id);
@@ -279,6 +444,9 @@ export default function CreatorContent() {
                   <div key={file.id} className="h-full min-h-0">
                     <FileCard
                       file={file}
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
                       onClick={() => setPreviewFile(file)}
                       onDelete={async () => {
                         await deleteFile(file.id);
@@ -375,6 +543,69 @@ export default function CreatorContent() {
         )}
         </DashboardRouteFade>
       </section>
+
+      {moveNotice ? (
+        <div
+          role="status"
+          className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg dark:border-emerald-800/60 dark:bg-emerald-950/90 dark:text-emerald-100"
+        >
+          <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden />
+          <span className="text-left">{moveNotice}</span>
+        </div>
+      ) : null}
+
+      {selectedFileIds.size > 0 ? (
+        <BulkActionBar
+          selectedFileCount={selectedFileIds.size}
+          selectedFolderCount={0}
+          onMove={handleBulkMove}
+          onNewTransfer={handleBulkNewTransfer}
+          onShare={handleBulkShare}
+          onDownload={handleBulkDownload}
+          isDownloading={isBulkDownloading}
+          onDelete={handleBulkDelete}
+          onClear={clearSelection}
+        />
+      ) : null}
+
+      <BulkMoveModal
+        open={moveModalOpen}
+        onClose={() => setMoveModalOpen(false)}
+        selectedFileCount={selectedFileIds.size}
+        selectedFolderCount={0}
+        excludeDriveIds={currentDrive ? [currentDrive.id] : []}
+        folders={visibleLinkedDrives}
+        onMove={handleBulkMoveConfirm}
+      />
+
+      <CreateTransferModal
+        open={transferModalOpen}
+        onClose={() => {
+          setTransferModalOpen(false);
+          setTransferInitialFiles([]);
+        }}
+        onCreated={() => setTransferModalOpen(false)}
+        initialFiles={transferInitialFiles}
+      />
+
+      {shareModalOpen ? (
+        <ShareModal
+          open={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setShareDriveId(null);
+            setShareReferencedFileIds([]);
+            setShareInitialData(null);
+          }}
+          folderName={shareFolderName}
+          linkedDriveId={shareDriveId ?? undefined}
+          referencedFileIds={shareReferencedFileIds.length > 0 ? shareReferencedFileIds : undefined}
+          initialShareToken={shareInitialData?.token}
+          initialAccessLevel={shareInitialData?.accessLevel}
+          initialPermission={shareInitialData?.permission}
+          initialInvitedEmails={shareInitialData?.invitedEmails}
+        />
+      ) : null}
 
       <FilePreviewModal
         file={previewFile}

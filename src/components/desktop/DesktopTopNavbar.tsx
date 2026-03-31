@@ -79,7 +79,7 @@ export default function DesktopTopNavbar({
 
   return (
     <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-      <div className="flex min-h-12 w-full min-w-0 items-center gap-3 md:min-h-0 md:gap-4">
+      <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0 md:gap-3">
         <button
           type="button"
           onClick={() => setMobileOpen((o) => !o)}
@@ -89,37 +89,43 @@ export default function DesktopTopNavbar({
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
 
-        <div className="flex min-w-0 flex-shrink-0 items-center gap-2">
-          {onMountPanelToggle && (
-            <button
-              type="button"
-              onClick={onMountPanelToggle}
-              className={`shrink-0 rounded-lg p-2 transition-colors ${
-                mountPanelOpen
-                  ? "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
-                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              }`}
-              title={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
-              aria-label={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
-            >
-              <HardDrive className="h-5 w-5" />
-            </button>
-          )}
+        {onMountPanelToggle && (
+          <button
+            type="button"
+            onClick={onMountPanelToggle}
+            className={`shrink-0 rounded-lg p-2 transition-colors ${
+              mountPanelOpen
+                ? "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
+                : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+            }`}
+            title={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
+            aria-label={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
+          >
+            <HardDrive className="h-5 w-5" />
+          </button>
+        )}
+        <Link
+          href="/desktop/app"
+          className="flex shrink-0 items-center"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Bizzi Cloud home"
+        >
+          <Image
+            src="/logo.png"
+            alt="Bizzi Byte"
+            width={24}
+            height={24}
+            className="object-contain"
+          />
+        </Link>
+
+        <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[min(14rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2">
           <Link
             href="/desktop/app"
-            className="flex items-center gap-2"
+            className="pointer-events-auto block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
             onClick={() => setMobileOpen(false)}
           >
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
-            <span className="whitespace-nowrap font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
-              Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
-            </span>
+            Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
           </Link>
         </div>
 
@@ -130,7 +136,7 @@ export default function DesktopTopNavbar({
       </div>
 
       <nav
-        className="-mx-1 hidden min-h-9 w-full min-w-0 gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
+        className="-mx-1 hidden min-h-9 w-full min-w-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
         aria-label="Workspace"
       >
         {filteredItems.map((item) => {

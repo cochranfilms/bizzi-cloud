@@ -81,7 +81,7 @@ export default function EnterpriseNavbar() {
       className="sticky top-0 z-50 flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2"
       data-org-theme={theme}
     >
-      <div className="flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
+      <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
         <button
           type="button"
           onClick={() => setMobileOpen((o) => !o)}
@@ -93,9 +93,10 @@ export default function EnterpriseNavbar() {
 
         <Link
           href="/enterprise"
-          className="flex min-w-0 max-w-[min(100%,14rem)] shrink items-center gap-2 sm:max-w-[min(100%,18rem)] md:max-w-[min(20rem,45vw)] lg:max-w-[24rem]"
+          className="flex shrink-0 items-center"
           onClick={() => setMobileOpen(false)}
           title={org?.name ?? "Enterprise"}
+          aria-label={`${org?.name ?? "Enterprise"} home`}
         >
           {logoUrl ? (
             <Image
@@ -115,16 +116,26 @@ export default function EnterpriseNavbar() {
               className="flex-shrink-0 object-contain"
             />
           )}
-          <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
-            {org?.name ?? "Enterprise"}
-          </span>
-          <span
-            className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs"
-            aria-label="Enterprise workspace"
-          >
-            Enterprise
-          </span>
         </Link>
+
+        <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[min(24rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2">
+          <Link
+            href="/enterprise"
+            className="pointer-events-auto flex min-w-0 max-w-full items-center justify-center gap-2"
+            onClick={() => setMobileOpen(false)}
+            title={org?.name ?? "Enterprise"}
+          >
+            <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
+              {org?.name ?? "Enterprise"}
+            </span>
+            <span
+              className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs"
+              aria-label="Enterprise workspace"
+            >
+              Enterprise
+            </span>
+          </Link>
+        </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 md:gap-3">
           <NotificationBell />
@@ -134,7 +145,7 @@ export default function EnterpriseNavbar() {
       </div>
 
       <nav
-        className="-mx-1 hidden min-h-9 w-full min-w-0 gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
+        className="-mx-1 hidden min-h-9 w-full min-w-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
         aria-label="Workspace"
       >
         {filteredNavItems.map((item) => {

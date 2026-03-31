@@ -56,9 +56,7 @@ export default function DashboardShell({
         value={{ rightPanelOpen, setRightPanelOpen }}
       >
         <div
-          className={`flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950 ${
-            teamWs ? "border-l-4 border-[var(--enterprise-primary)]" : ""
-          }`}
+          className="flex h-screen flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-950"
           data-team-theme={effectiveUiTheme}
           style={{ ...themeVars, ...cssVariables } as React.CSSProperties}
         >

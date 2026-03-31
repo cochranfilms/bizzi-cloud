@@ -112,7 +112,7 @@ export default function TopNavbar() {
 
   const desktopNav = (
     <nav
-      className="-mx-1 hidden min-h-9 w-full min-w-0 gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
+      className="-mx-1 hidden min-h-9 w-full min-w-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
       aria-label="Workspace"
     >
       {filteredItems.map((item) => {
@@ -146,7 +146,7 @@ export default function TopNavbar() {
     const homeHref = teamNavBase;
     return (
       <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-        <div className="flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
+        <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
@@ -157,9 +157,10 @@ export default function TopNavbar() {
           </button>
           <Link
             href={homeHref}
-            className="flex min-w-0 max-w-[min(100%,14rem)] shrink items-center gap-2 sm:max-w-[min(100%,18rem)] md:max-w-[min(20rem,45vw)] lg:max-w-[24rem]"
+            className="flex shrink-0 items-center"
             onClick={() => setMobileOpen(false)}
             title={teamWs.teamName}
+            aria-label={`${teamWs.teamName} home`}
           >
             {teamWs.teamLogoUrl ? (
               <Image
@@ -179,13 +180,22 @@ export default function TopNavbar() {
                 className="flex-shrink-0 object-contain"
               />
             )}
-            <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
-              {teamWs.teamName}
-            </span>
-            <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs">
-              Team
-            </span>
           </Link>
+          <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[min(22rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2">
+            <Link
+              href={homeHref}
+              className="pointer-events-auto flex min-w-0 max-w-full items-center justify-center gap-2"
+              onClick={() => setMobileOpen(false)}
+              title={teamWs.teamName}
+            >
+              <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
+                {teamWs.teamName}
+              </span>
+              <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs">
+                Team
+              </span>
+            </Link>
+          </div>
           {accountTools}
         </div>
         {desktopNav}
@@ -250,7 +260,7 @@ export default function TopNavbar() {
 
   return (
     <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-      <div className="flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
+      <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
         <button
           type="button"
           onClick={() => setMobileOpen((o) => !o)}
@@ -262,8 +272,9 @@ export default function TopNavbar() {
 
         <Link
           href="/"
-          className="flex min-w-0 shrink-0 items-center gap-2"
+          className="flex shrink-0 items-center"
           onClick={() => setMobileOpen(false)}
+          aria-label="Bizzi Cloud home"
         >
           <Image
             src="/logo.png"
@@ -272,10 +283,17 @@ export default function TopNavbar() {
             height={24}
             className="object-contain"
           />
-          <span className="whitespace-nowrap font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
-            Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
-          </span>
         </Link>
+
+        <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[min(14rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2">
+          <Link
+            href="/"
+            className="pointer-events-auto block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
+            onClick={() => setMobileOpen(false)}
+          >
+            Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
+          </Link>
+        </div>
 
         {accountTools}
       </div>
