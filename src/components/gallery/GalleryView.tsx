@@ -1378,9 +1378,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
       media_mode: data.gallery.media_mode ?? null,
       source_format: data.gallery.source_format ?? null,
     });
-    const lutWorkflowActive = mediaMode === "raw";
-    const isVideoGallery = data.gallery.gallery_type === "video";
-    const clientLutEligible = lutWorkflowActive || isVideoGallery;
+    /** Preview LUT is for RAW workflows only. Final Delivery video is already graded—no client LUT toggles. */
+    const clientLutEligible = mediaMode === "raw";
     const lutOn = resolveGalleryCreativeLutEnabledFromPayload(data.gallery);
 
     if (!clientLutEligible || !lutOn) {
@@ -2203,6 +2202,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   const videoLutDisplay = useMemo(() => {
     if (!galleryForLut || galleryForLut.gallery_type !== "video") return null;
+    const videoMediaMode = normalizeGalleryMediaMode({
+      media_mode: galleryForLut.media_mode ?? null,
+      source_format: galleryForLut.source_format ?? null,
+    });
+    if (videoMediaMode !== "raw") return null;
     const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(galleryForLut);
     return resolvePublicVideoGalleryLutDisplayState({
       creativeLutOn,
@@ -2234,6 +2238,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
 
   useEffect(() => {
     if (!galleryForLut || galleryForLut.gallery_type !== "video") return;
+    const videoMode = normalizeGalleryMediaMode({
+      media_mode: galleryForLut.media_mode ?? null,
+      source_format: galleryForLut.source_format ?? null,
+    });
+    if (videoMode !== "raw") return;
     const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(galleryForLut);
     const opts = buildGalleryLUTOptions(
       galleryForLut.creative_lut_library,
@@ -2407,8 +2416,8 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
     source_format: gallery.source_format ?? null,
   });
   const lutWorkflowActive = mediaMode === "raw";
-  const galleryClientLutEligible =
-    lutWorkflowActive || gallery.gallery_type === "video";
+  /** Matches hydration: RAW photo + RAW video only; never Final Delivery video. */
+  const galleryClientLutEligible = lutWorkflowActive;
 
   const creativeLutOn = resolveGalleryCreativeLutEnabledFromPayload(gallery);
 

@@ -9,22 +9,31 @@ import {
   type CSSProperties,
 } from "react";
 import Uppy from "@uppy/core";
-import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { getAuthToken } from "@/lib/auth-token";
 import {
   attachUppyLocalPreview,
   getUploadRelativePath,
+  revokeAllUppyPreviewsFromUppy,
   revokeUppyPreview,
 } from "@/lib/uppy-local-preview";
+import { runChunkedIngest } from "@/lib/uppy-chunked-ingest";
+import {
+  getAggregateProgressThrottleMs,
+  getBatchTierFromCount,
+  getGalleryProgressMinIntervalMs,
+  maxBatchTier,
+  type BatchTier,
+} from "@/lib/uppy-mass-upload-constants";
+import { createMassUploadDebug } from "@/lib/uppy-mass-upload-debug";
 import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
 import { shouldUseUppyS3Multipart } from "@/lib/uppy-multipart-policy";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
-import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
+import UppyUploadPanelExpanded from "./UppyUploadPanelExpanded";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
@@ -74,6 +83,11 @@ async function uploadPartBytesCompat(
 
 /** Uppy Dashboard uses @uppy/utils getDroppedFiles(), which can miss files when items.length < files.length (Chrome). */
 const dashboardOriginalHandleDrop = new WeakMap<object, (event: DragEvent) => Promise<void>>();
+
+/** Guarded fallback: stock browse / internal paths that still call `addFiles`. */
+const dashboardOriginalAddFiles = new WeakMap<object, (files: File[]) => void>();
+
+type IngestPhase = "idle" | "queued" | "adding";
 
 function resumeUploadIfNeeded(uppy: Uppy): void {
   const { currentUploads, files } = uppy.getState();
@@ -166,9 +180,36 @@ export default function UppyUploadModal({
     allComplete: false,
   });
   const [macosPackageWarning, setMacosPackageWarning] = useState<string | null>(null);
+  const [ingestPhase, setIngestPhase] = useState<IngestPhase>("idle");
+  const [ingestAdded, setIngestAdded] = useState(0);
+  const [ingestTotal, setIngestTotal] = useState(0);
+  /** Peak tier this modal session — drives virtual grid progress throttle. */
+  const [sessionGridTier, setSessionGridTier] = useState<BatchTier>("normal");
+
+  const previewPolicyRef = useRef<BatchTier>("normal");
+  const sessionGridTierRef = useRef<BatchTier>("normal");
+  const ingestAbortRef = useRef<AbortController | null>(null);
+  const runChunkedAddRef = useRef<(files: File[]) => Promise<void>>(async () => {});
+  const ingestChainRef = useRef(Promise.resolve());
+  const galleryProgressLastRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    sessionGridTierRef.current = sessionGridTier;
+  }, [sessionGridTier]);
 
   useEffect(() => {
     if (!open) setMacosPackageWarning(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setIngestPhase("idle");
+      setIngestAdded(0);
+      setIngestTotal(0);
+      setSessionGridTier("normal");
+      previewPolicyRef.current = "normal";
+      ingestAbortRef.current = null;
+    }
   }, [open]);
 
   useEffect(() => {
@@ -279,7 +320,109 @@ export default function UppyUploadModal({
       plugin?.setOptions({ headers });
     });
 
+    const massDebug = createMassUploadDebug();
     const usedNames = new Map<string, number>();
+
+    let lastAggFlush = 0;
+    let aggTimeout: ReturnType<typeof setTimeout> | null = null;
+    const flushProgress = () => {
+      massDebug?.progressPing();
+      lastAggFlush = Date.now();
+      const files = uppy.getFiles();
+      const bytesTotal = files.reduce((s, f) => s + (f.size ?? 0), 0);
+      let bytesUploaded = 0;
+      let completedCount = 0;
+      let uploadingCount = 0;
+      let failedCount = 0;
+      for (const f of files) {
+        if (f.error) {
+          failedCount++;
+          continue;
+        }
+        const size = f.size ?? 0;
+        const up = Number(f.progress?.bytesUploaded ?? 0);
+        const done =
+          f.progress?.uploadComplete === true ||
+          (size > 0 && up >= size) ||
+          uppy.getState().totalProgress === 100;
+        bytesUploaded += done ? size : up;
+        if (done) completedCount++;
+        else if (up > 0) uploadingCount++;
+      }
+      if (bytesTotal > 0 && bytesUploaded > bytesTotal) bytesUploaded = bytesTotal;
+      const allComplete =
+        files.length > 0 &&
+        (completedCount + failedCount === files.length || uppy.getState().totalProgress === 100);
+
+      setProgress({
+        bytesUploaded,
+        bytesTotal,
+        fileCount: files.length,
+        uploadingCount,
+        completedCount,
+        failedCount,
+        allComplete,
+      });
+    };
+
+    const scheduleProgress = () => {
+      const ms = getAggregateProgressThrottleMs(sessionGridTierRef.current);
+      const now = Date.now();
+      if (now - lastAggFlush >= ms) {
+        flushProgress();
+        return;
+      }
+      if (aggTimeout != null) return;
+      aggTimeout = setTimeout(() => {
+        aggTimeout = null;
+        flushProgress();
+      }, Math.max(16, ms - (now - lastAggFlush)));
+    };
+
+    runChunkedAddRef.current = async (incoming: File[]) => {
+      if (incoming.length === 0) return;
+      const prev = ingestChainRef.current;
+      const task = async () => {
+        await prev;
+        const tier = getBatchTierFromCount(incoming.length);
+        previewPolicyRef.current = tier;
+        setSessionGridTier((p) => maxBatchTier(p, tier));
+        massDebug?.log("ingest_start", { count: incoming.length, tier });
+        setIngestPhase("queued");
+        setIngestTotal(incoming.length);
+        setIngestAdded(0);
+        queueMicrotask(() => setIngestPhase("adding"));
+        const ac = new AbortController();
+        ingestAbortRef.current = ac;
+        const toDescriptors = (slice: File[]) =>
+          slice.map((f) => {
+            const rel = f.webkitRelativePath?.trim() || "";
+            return { name: rel || f.name, data: f };
+          });
+        await runChunkedIngest({
+          uppy,
+          files: incoming,
+          toDescriptors,
+          batchTier: tier,
+          signal: ac.signal,
+          debug: massDebug,
+          onProgress: (a, t) => {
+            setIngestAdded(a);
+            setIngestTotal(t);
+          },
+        });
+        setIngestPhase("idle");
+        setIngestTotal(0);
+        setIngestAdded(0);
+        previewPolicyRef.current = "normal";
+        ingestAbortRef.current = null;
+        flushProgress();
+        queueMicrotask(() => resumeUploadIfNeeded(uppy));
+      };
+      ingestChainRef.current = task().catch(() => {});
+      await ingestChainRef.current;
+    };
+
     uppy.on("file-added", (file) => {
       const fileData = file.data instanceof File ? file.data : null;
       if (fileData && isLikelyFlatMacosPackageBrowserUpload(fileData)) {
@@ -338,9 +481,16 @@ export default function UppyUploadModal({
         },
       });
       if (fileData && !isMacosPackageMember) {
-        void attachUppyLocalPreview((preview) => {
-          uppy.setFileState(file.id, { preview });
-        }, fileData);
+        const tier = previewPolicyRef.current;
+        const mode =
+          tier === "extreme" ? "skip" : tier === "large" ? "idle" : "eager";
+        void attachUppyLocalPreview(
+          (preview) => {
+            uppy.setFileState(file.id, { preview });
+          },
+          fileData,
+          { mode }
+        );
       }
       queueMicrotask(() => resumeUploadIfNeeded(uppy));
       if (galleryId) {
@@ -357,47 +507,15 @@ export default function UppyUploadModal({
       revokeUppyPreview(removed.preview);
     });
 
-    const updateProgress = () => {
-      const files = uppy.getFiles();
-      const bytesTotal = files.reduce((s, f) => s + (f.size ?? 0), 0);
-      let bytesUploaded = 0;
-      let completedCount = 0;
-      let uploadingCount = 0;
-      let failedCount = 0;
-      for (const f of files) {
-        if (f.error) {
-          failedCount++;
-          continue;
-        }
-        const size = f.size ?? 0;
-        const up = Number(f.progress?.bytesUploaded ?? 0);
-        const done =
-          f.progress?.uploadComplete === true ||
-          (size > 0 && up >= size) ||
-          uppy.getState().totalProgress === 100;
-        bytesUploaded += done ? size : up;
-        if (done) completedCount++;
-        else if (up > 0) uploadingCount++;
-      }
-      if (bytesTotal > 0 && bytesUploaded > bytesTotal) bytesUploaded = bytesTotal;
-      const allComplete =
-        files.length > 0 &&
-        (completedCount + failedCount === files.length || uppy.getState().totalProgress === 100);
-
-      setProgress({
-        bytesUploaded,
-        bytesTotal,
-        fileCount: files.length,
-        uploadingCount,
-        completedCount,
-        failedCount,
-        allComplete,
-      });
-    };
-
     uppy.on("upload-progress", (file, progress) => {
-      updateProgress();
+      scheduleProgress();
       if (galleryId && file && progress) {
+        const minI = getGalleryProgressMinIntervalMs(sessionGridTierRef.current);
+        const now = Date.now();
+        const map = galleryProgressLastRef.current;
+        const last = map.get(file.id) ?? 0;
+        if (now - last < minI) return;
+        map.set(file.id, now);
         const bytesUploaded = Number((progress as { bytesUploaded?: number }).bytesUploaded ?? 0);
         const bytesTotal = Number(
           (progress as { bytesTotal?: number }).bytesTotal ?? file.size ?? 0
@@ -411,7 +529,7 @@ export default function UppyUploadModal({
       }
     });
     uppy.on("upload-error", (file, error) => {
-      updateProgress();
+      flushProgress();
       if (galleryId && file) {
         onGalleryManageUploadLifecycleRef.current?.({
           type: "upload_error",
@@ -460,7 +578,7 @@ export default function UppyUploadModal({
                 const msg = "Sign in again to finish saving this upload to your library.";
                 uppy.setFileState(file.id, { error: msg });
                 uppy.info({ message: msg, details: file.name }, "error", 12_000);
-                updateProgress();
+                flushProgress();
                 if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
                   onGalleryManageUploadLifecycleRef.current?.({
                     type: "upload_error",
@@ -527,7 +645,7 @@ export default function UppyUploadModal({
                       },
                 });
                 uppy.info({ message: msg, details: file.name }, "error", 16_000);
-                updateProgress();
+                flushProgress();
                 if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
                   onGalleryManageUploadLifecycleRef.current?.({
                     type: "upload_error",
@@ -541,7 +659,7 @@ export default function UppyUploadModal({
                 "Could not reach the server to finish saving your upload. Check your connection and try again.";
               uppy.setFileState(file.id, { error: msg });
               uppy.info({ message: msg, details: file.name }, "error", 12_000);
-              updateProgress();
+              flushProgress();
               const meta = file.meta ?? {};
               if (galleryId && (meta.galleryId ?? meta.gallery_id)) {
                 onGalleryManageUploadLifecycleRef.current?.({
@@ -554,7 +672,7 @@ export default function UppyUploadModal({
           });
         }
       }
-      updateProgress();
+      flushProgress();
       // Intentionally do NOT call onUploadComplete here: it bumps storageVersion and
       // refetches dashboard data. Per-file callbacks during large folder uploads (e.g.
       // .fcpbundle) cause thousands of concurrent API requests and ERR_INSUFFICIENT_RESOURCES.
@@ -577,7 +695,7 @@ export default function UppyUploadModal({
       }
     });
     uppy.on("complete", () => {
-      updateProgress();
+      flushProgress();
       onUploadCompleteRef.current?.();
     });
 
@@ -589,6 +707,12 @@ export default function UppyUploadModal({
         clearTimeout(galleryAssetDebouncedTimerRef.current);
         galleryAssetDebouncedTimerRef.current = null;
       }
+      if (aggTimeout != null) {
+        clearTimeout(aggTimeout);
+        aggTimeout = null;
+      }
+      massDebug?.resetProgressMeter();
+      revokeAllUppyPreviewsFromUppy(uppy);
       uppy.cancelAll();
       uppy.destroy();
       uppyRef.current = null;
@@ -621,40 +745,68 @@ export default function UppyUploadModal({
           addFiles: (files: File[]) => void;
         }
       | undefined;
-    if (!plugin || dashboardOriginalHandleDrop.has(plugin)) return;
+    if (!plugin) return;
 
-    const original = plugin.handleDrop.bind(plugin);
-    dashboardOriginalHandleDrop.set(plugin, original);
+    if (!dashboardOriginalHandleDrop.has(plugin)) {
+      const original = plugin.handleDrop.bind(plugin);
+      dashboardOriginalHandleDrop.set(plugin, original);
 
-    plugin.handleDrop = async (event: DragEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      plugin.setPluginState({ isDraggingOver: false });
-      uppy.iteratePlugins((p) => {
-        if (p.type === "acquirer") {
-          (p as { handleRootDrop?: (e: DragEvent) => void }).handleRootDrop?.(event);
+      plugin.handleDrop = async (event: DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        plugin.setPluginState({ isDraggingOver: false });
+        uppy.iteratePlugins((p) => {
+          if (p.type === "acquirer") {
+            (p as { handleRootDrop?: (e: DragEvent) => void }).handleRootDrop?.(event);
+          }
+        });
+        setIngestPhase("queued");
+        setIngestTotal(0);
+        setIngestAdded(0);
+        uppy.log("[Dashboard] Processing dropped files");
+        const files = await collectFilesFromDataTransfer(event.dataTransfer);
+        if (files.length > 0) {
+          uppy.log("[Dashboard] Files dropped");
+          await runChunkedAddRef.current(files);
+        } else {
+          setIngestPhase("idle");
         }
-      });
-      uppy.log("[Dashboard] Processing dropped files");
-      const files = await collectFilesFromDataTransfer(event.dataTransfer);
-      if (files.length > 0) {
-        uppy.log("[Dashboard] Files dropped");
-        plugin.addFiles(files);
-      }
-      plugin.opts.onDrop?.(event);
-    };
+        plugin.opts.onDrop?.(event);
+      };
+    }
 
-    // Preact was given the previous `handleDrop` reference on first paint; bump plugin state so it re-renders with ours.
+    /** Guarded fallback if a future Uppy build bypasses our custom browse UI. */
+    if (!dashboardOriginalAddFiles.has(plugin) && typeof plugin.addFiles === "function") {
+      const origAdd = plugin.addFiles.bind(plugin);
+      dashboardOriginalAddFiles.set(plugin, origAdd);
+      plugin.addFiles = (files: File[]) => {
+        try {
+          if (Array.isArray(files) && files.length > 0) {
+            void runChunkedAddRef.current(files);
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+        origAdd(files);
+      };
+    }
+
     (plugin as { setPluginState: (patch: Record<string, unknown>) => void }).setPluginState({
       bizziFullDropList: 1,
     });
 
     return () => {
       const dash = uppyRef.current?.getPlugin("Dashboard") as typeof plugin | undefined;
-      const orig = dash ? dashboardOriginalHandleDrop.get(dash) : undefined;
-      if (dash && orig) {
-        dash.handleDrop = orig;
+      const origDrop = dash ? dashboardOriginalHandleDrop.get(dash) : undefined;
+      if (dash && origDrop) {
+        dash.handleDrop = origDrop;
         dashboardOriginalHandleDrop.delete(dash);
+      }
+      const origAdd = dash ? dashboardOriginalAddFiles.get(dash) : undefined;
+      if (dash && origAdd) {
+        dash.addFiles = origAdd;
+        dashboardOriginalAddFiles.delete(dash);
       }
     };
   }, [open, ready]);
@@ -665,21 +817,21 @@ export default function UppyUploadModal({
 
   useEffect(() => {
     if (!open || !ready || !uppyRef.current || pendingFiles.length === 0) return;
-    const uppy = uppyRef.current;
-    for (const f of pendingFiles) {
-      try {
-        const rel = f instanceof File ? f.webkitRelativePath?.trim() : "";
-        uppy.addFile({ name: rel || f.name, data: f });
-      } catch {
-        // ignore restriction / duplicate
-      }
-    }
+    const batch = [...pendingFiles];
     consumePending();
     setExpanded(true);
-    queueMicrotask(() => resumeUploadIfNeeded(uppy));
+    void runChunkedAddRef.current(batch);
   }, [open, ready, pendingFiles, consumePending]);
 
+  const handlePanelClose = useCallback(() => {
+    ingestAbortRef.current?.abort();
+    if (uppyRef.current) revokeAllUppyPreviewsFromUppy(uppyRef.current);
+    onClose();
+  }, [onClose]);
+
   if (!open) return null;
+
+  const batchUiHint = sessionGridTier === "normal" ? null : sessionGridTier;
 
   const { bytesUploaded, bytesTotal, fileCount, uploadingCount, completedCount, failedCount, allComplete } =
     progress;
@@ -814,7 +966,7 @@ export default function UppyUploadModal({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onClose();
+              handlePanelClose();
             }}
             className="bizzi-upload-panel-icon-btn p-2"
             aria-label="Close"
@@ -849,26 +1001,25 @@ export default function UppyUploadModal({
               {macosPackageWarning}
             </div>
           )}
-          <div className="mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] mt-2 overflow-hidden rounded-2xl">
-            <HiddenMacosPackageRowsStyle uppy={uppyRef.current} />
-            <UppyGroupedQueueList
+          <div className="mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl">
+            <UppyUploadPanelExpanded
               uppy={uppyRef.current}
-              bundlesOnly
+              uppyRef={uppyRef}
+              uppyDataTheme={uppyDataTheme}
+              dashboardHeight={dashboardHeight}
+              hasFiles={hasFiles}
+              sessionGridTier={sessionGridTier}
+              ingestPhase={ingestPhase}
+              ingestAdded={ingestAdded}
+              ingestTotal={ingestTotal}
+              batchUiHint={batchUiHint}
+              onAddFiles={(files) => void runChunkedAddRef.current(files)}
               queueDestinationChip={
                 destinationMode === "creator_raw" && lockedDestination
                   ? (targetDriveName || driveName || "RAW").trim()
                   : null
               }
-            />
-            <Dashboard
-              uppy={uppyRef.current}
-              theme={uppyDataTheme}
-              proudlyDisplayPoweredByUppy={false}
-              height={hasFiles ? dashboardHeight + 40 : dashboardHeight}
-              showSelectedFiles
-              note="macOS libraries (.lrlibrary, .fcpbundle, …) upload with full folder structure when you drag the package from Finder onto this panel or use Browse folders and select the library folder (not only Browse files)."
-              fileManagerSelectionType="both"
-              className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[152px]"
+              dashboardNote="macOS libraries (.lrlibrary, .fcpbundle, …) upload with full folder structure when you drag the package from Finder onto this panel or use Add folder and select the library folder (not only Add files)."
             />
           </div>
         </div>

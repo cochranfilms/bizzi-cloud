@@ -1,7 +1,12 @@
 /**
- * Client-side previews for Uppy Dashboard (images, RAW stills where the browser can decode, video poster frame).
+ * Client-side previews for Uppy (images, RAW stills where the browser can decode, video poster frame).
  */
+import type Uppy from "@uppy/core";
+import type { Meta, Body } from "@uppy/core";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT, isRawFile } from "@/lib/gallery-file-types";
+
+/** `skip` — large/extreme batch; `idle` — defer work to idle time; `eager` — normal small batches. */
+export type AttachPreviewMode = "eager" | "idle" | "skip";
 
 export function isUppyPreviewableImageName(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name.toLowerCase());
@@ -84,35 +89,65 @@ function createRasterPlaceholderPreview(label: string): Promise<string | null> {
 }
 
 /**
- * Set `preview` on Uppy file state for Dashboard thumbnails.
+ * Set `preview` on Uppy file state (blob/object URLs — callers must revoke on remove/close).
  */
 export async function attachUppyLocalPreview(
   setPreview: (preview: string) => void,
-  fileData: File
+  fileData: File,
+  options?: { mode?: AttachPreviewMode }
 ): Promise<void> {
-  const name = fileData.name;
+  const mode = options?.mode ?? "eager";
+  if (mode === "skip") return;
 
-  if (fileData.type.startsWith("image/") || isUppyPreviewableImageName(name)) {
-    if (isRawFile(name)) {
-      const url = URL.createObjectURL(fileData);
-      const decodes = await probeRasterObjectUrl(url);
-      if (!decodes) {
-        URL.revokeObjectURL(url);
-        const ph = await createRasterPlaceholderPreview(name);
-        if (ph) setPreview(ph);
+  const run = async (): Promise<void> => {
+    const name = fileData.name;
+
+    if (fileData.type.startsWith("image/") || isUppyPreviewableImageName(name)) {
+      if (isRawFile(name)) {
+        const url = URL.createObjectURL(fileData);
+        const decodes = await probeRasterObjectUrl(url);
+        if (!decodes) {
+          URL.revokeObjectURL(url);
+          const ph = await createRasterPlaceholderPreview(name);
+          if (ph) setPreview(ph);
+          return;
+        }
+        setPreview(url);
         return;
       }
+      const url = URL.createObjectURL(fileData);
       setPreview(url);
       return;
     }
-    const url = URL.createObjectURL(fileData);
-    setPreview(url);
+
+    if (fileData.type.startsWith("video/") || isUppyPreviewableVideoName(name)) {
+      const poster = await extractVideoPosterFrame(fileData);
+      if (poster) setPreview(poster);
+    }
+  };
+
+  if (mode === "idle") {
+    await new Promise<void>((resolve, reject) => {
+      const start = () => {
+        void run().then(resolve, reject);
+      };
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(() => start(), { timeout: 3000 });
+      } else {
+        setTimeout(start, 0);
+      }
+    });
     return;
   }
 
-  if (fileData.type.startsWith("video/") || isUppyPreviewableVideoName(name)) {
-    const poster = await extractVideoPosterFrame(fileData);
-    if (poster) setPreview(poster);
+  await run();
+}
+
+/** Revoke every blob preview on the instance — modal close, teardown, or queue reset. */
+export function revokeAllUppyPreviewsFromUppy<M extends Meta, B extends Body>(uppy: Uppy<M, B> | null): void {
+  if (!uppy) return;
+  for (const f of uppy.getFiles()) {
+    revokeIfBlobUrl(f.preview);
   }
 }
 

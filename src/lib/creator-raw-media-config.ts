@@ -1,8 +1,9 @@
 /**
  * Creator RAW media policy — **camera / cinema RAW plus approved professional source codecs**
  * (ProRes, DNx, uncompressed, some image-sequence families, etc.). It is intentionally **not**
- * “sensor RAW only”. Generic delivery codecs (H.264, consumer HEVC, AV1, …) stay blocked; a **narrow**
- * exception allows **Sony XAVC‑branded HEVC in `.mp4` / `.m4v`** when ffprobe metadata proves camera-original packaging.
+ * “sensor RAW only”. Generic delivery codecs (H.264, consumer HEVC, AV1, …) stay blocked; **narrow**
+ * exceptions allow **Sony XAVC camera-original `.mp4` / `.m4v`** — **H.264 XAVC‑S/I** and **HEVC XAVC HS/S** —
+ * when ffprobe metadata proves XAVC packaging (not generic consumer MP4).
  *
  * Extension and MIME are hints only; server enforcement uses ffprobe (see creator-raw-media-probe.ts).
  */
@@ -11,7 +12,7 @@
 export const CREATOR_RAW_TAB_INTRO = {
   line1: "Creator workspace — current upload destination: RAW",
   line2:
-    "While this folder is open, uploads and drag-and-drop go here. This tab is for camera RAW and approved source formats (ProRes/DNx mezzanine, cinema RAW, and Sony XAVC‑branded HEVC in .mp4 from supported cameras). Everyday H.264 or phone/consumer HEVC — use Storage.",
+    "While this folder is open, uploads and drag-and-drop go here. This tab is for camera RAW and approved source formats (ProRes/DNx mezzanine, cinema RAW, and Sony XAVC camera-original .mp4/.m4v — H.264 XAVC‑S/I or HEVC XAVC HS/S). Re-encoded or generic phone H.264/HEVC — use Storage.",
 } as const;
 
 /** User-facing copy shared by API responses and UI hints. */
@@ -53,10 +54,10 @@ export function looksLikeProfessionalMezzanineLongName(longName: string | null |
 }
 
 /**
- * Product exception: Sony (and compatible) cameras record **XAVC HS / XAVC‑S** as **HEVC in MP4** with
- * explicit XAVC branding in ffprobe metadata. Requires strong substring signals so consumer HEVC stays blocked.
+ * Sony cameras record **XAVC** (XAVC‑S/I H.264, XAVC HS / XAVC‑S HEVC) in MP4 with explicit branding in
+ * ffprobe tags (`major_brand`, `compatible_brands`, `encoder`, etc.). Strong substrings so consumer AVC/HEVC stays blocked.
  */
-const CAMERA_ORIGINAL_HEVC_XAVC_HINT_REGEXES: readonly RegExp[] = [
+const CAMERA_ORIGINAL_SONY_XAVC_HINT_REGEXES: readonly RegExp[] = [
   /\bxavc\b/i,
   /\bxavc[\s/_-]?(hs|s|i)\b/i,
   /\bxavchs\b/i,
@@ -64,19 +65,18 @@ const CAMERA_ORIGINAL_HEVC_XAVC_HINT_REGEXES: readonly RegExp[] = [
   /\bxavc\b[^\n]{0,160}\bsony\b/i,
 ];
 
-export function looksLikeXavcOrSonyCameraOriginalHevcPackaging(
-  hintBlob: string | null | undefined
-): boolean {
+/** True when combined ffprobe hint blob (stream + format tags, long name, profile) indicates Sony XAVC camera file. */
+export function looksLikeSonyXavcCameraOriginalPackaging(hintBlob: string | null | undefined): boolean {
   const s = hintBlob?.trim();
   if (!s) return false;
-  return CAMERA_ORIGINAL_HEVC_XAVC_HINT_REGEXES.some((re) => re.test(s));
+  return CAMERA_ORIGINAL_SONY_XAVC_HINT_REGEXES.some((re) => re.test(s));
 }
 
-/** HEVC XAVC camera-original path is only for these leaves (product rule). */
-export const CREATOR_RAW_HEVC_XAVC_CAMERA_ORIGINAL_EXTENSIONS = new Set<string>(["mp4", "m4v"]);
+/** XAVC camera-original carve-outs (H.264 + HEVC) apply only to these leaves. */
+export const CREATOR_RAW_XAVC_CAMERA_ORIGINAL_MP4_EXTENSIONS = new Set<string>(["mp4", "m4v"]);
 
-export function isCreatorRawHevcXavcCameraOriginalExtension(ext: string): boolean {
-  return CREATOR_RAW_HEVC_XAVC_CAMERA_ORIGINAL_EXTENSIONS.has(ext.toLowerCase());
+export function isCreatorRawXavcCameraOriginalMp4Extension(ext: string): boolean {
+  return CREATOR_RAW_XAVC_CAMERA_ORIGINAL_MP4_EXTENSIONS.has(ext.toLowerCase());
 }
 
 /** Stream and/or format fields ffprobe may expose beyond `codec_long_name` (often ProRes is only in `encoder`). */

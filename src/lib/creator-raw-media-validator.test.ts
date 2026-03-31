@@ -57,6 +57,35 @@ describe("classifyCreatorRawMedia", () => {
     expect(r.code).toBe("allowed_hevc_xavc_mp4");
   });
 
+  it("allows .mp4 when H.264 is XAVC-S/I branded (Sony ILCE-style packaging)", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "h264",
+        detectedCodecTag: "avc1",
+        detectedCodecLongName:
+          "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 | Sony | AVC Coding | isom | XAVC | mp42",
+      }),
+      "C0260.MP4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("allowed_h264_xavc_mp4");
+  });
+
+  it("rejects XAVC-branded H.264 when container leaf is not .mp4/.m4v", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "h264",
+        detectedCodecTag: "avc1",
+        detectedCodecLongName: "XAVC | Sony",
+      }),
+      "clip.mov",
+      "video/quicktime"
+    );
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("delivery_codec");
+  });
+
   it("rejects XAVC-branded HEVC when container leaf is not .mp4/.m4v", () => {
     const r = classifyCreatorRawMedia(
       vbase({
@@ -77,6 +106,20 @@ describe("classifyCreatorRawMedia", () => {
         detectedVideoCodec: "hevc",
         detectedCodecTag: "hvc1",
         detectedCodecLongName: "Sony ILCE-7M4",
+      }),
+      "clip.mp4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(false);
+    expect(r.code).toMatch(/delivery/);
+  });
+
+  it("rejects generic H.264 .mp4 even with Sony in metadata if XAVC is absent", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "h264",
+        detectedCodecTag: "avc1",
+        detectedCodecLongName: "H.264 | Sony ILCE-7SM3",
       }),
       "clip.mp4",
       "video/mp4"

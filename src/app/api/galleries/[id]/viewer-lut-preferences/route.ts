@@ -70,11 +70,10 @@ export async function PATCH(
     media_mode: g.media_mode as string | null | undefined,
     source_format: g.source_format as string | null | undefined,
   });
-  const viewerLutPrefsAllowed =
-    mediaMode === "raw" || galleryType === "video";
+  const viewerLutPrefsAllowed = mediaMode === "raw";
   if (!viewerLutPrefsAllowed) {
     return NextResponse.json(
-      { error: "Viewer LUT preferences apply only to RAW or video galleries" },
+      { error: "Viewer LUT preferences apply only to galleries in RAW profile" },
       { status: 400 }
     );
   }

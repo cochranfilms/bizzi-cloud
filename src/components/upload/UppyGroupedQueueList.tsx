@@ -47,6 +47,70 @@ export function useUppyFileList<M extends Meta, B extends Body>(uppy: Uppy<M, B>
   return uppy?.getFiles() ?? [];
 }
 
+/** Bundle / meta rows: throttle upload-progress so huge queues do not rerender on every XHR tick. */
+export function useUppyFileListThrottled<M extends Meta, B extends Body>(
+  uppy: Uppy<M, B> | null,
+  progressThrottleMs: number
+): UppyFile<M, B>[] {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    if (!uppy) return;
+    const bump = () => setV((x) => x + 1);
+    let progTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleProg = () => {
+      if (progTimer != null) return;
+      progTimer = setTimeout(() => {
+        progTimer = null;
+        bump();
+      }, progressThrottleMs);
+    };
+    uppy.on("file-added", bump);
+    uppy.on("file-removed", bump);
+    uppy.on("files-added", bump);
+    uppy.on("upload-success", bump);
+    uppy.on("upload-error", bump);
+    uppy.on("complete", bump);
+    uppy.on("upload-progress", scheduleProg);
+    return () => {
+      uppy.off("file-added", bump);
+      uppy.off("file-removed", bump);
+      uppy.off("files-added", bump);
+      uppy.off("upload-success", bump);
+      uppy.off("upload-error", bump);
+      uppy.off("complete", bump);
+      uppy.off("upload-progress", scheduleProg);
+      if (progTimer != null) clearTimeout(progTimer);
+    };
+  }, [uppy, progressThrottleMs]);
+  return uppy?.getFiles() ?? [];
+}
+
+/** CSS helpers only — no upload-progress subscription (native file list is hidden in mass-upload UI). */
+export function useUppyFileListStructureOnly<M extends Meta, B extends Body>(
+  uppy: Uppy<M, B> | null
+): UppyFile<M, B>[] {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    if (!uppy) return;
+    const bump = () => setV((x) => x + 1);
+    uppy.on("file-added", bump);
+    uppy.on("file-removed", bump);
+    uppy.on("files-added", bump);
+    uppy.on("upload-success", bump);
+    uppy.on("upload-error", bump);
+    uppy.on("complete", bump);
+    return () => {
+      uppy.off("file-added", bump);
+      uppy.off("file-removed", bump);
+      uppy.off("files-added", bump);
+      uppy.off("upload-success", bump);
+      uppy.off("upload-error", bump);
+      uppy.off("complete", bump);
+    };
+  }, [uppy]);
+  return uppy?.getFiles() ?? [];
+}
+
 function aggregateFileProgress<M extends Meta, B extends Body>(files: UppyFile<M, B>[]) {
   let bytesTotal = 0;
   let bytesUploaded = 0;
@@ -91,7 +155,7 @@ export function HiddenMacosPackageRowsStyle<M extends Meta, B extends Body>({
 }: {
   uppy: Uppy<M, B> | null;
 }) {
-  const files = useUppyFileList(uppy);
+  const files = useUppyFileListStructureOnly(uppy);
   const rules = useMemo(() => {
     const hiddenIds = files
       .filter((f) => Boolean((f.meta as PkgMeta).macosPackageGroupRoot?.trim()))
@@ -124,7 +188,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   /** e.g. "RAW" — shown per row for locked Creator RAW sessions */
   queueDestinationChip?: string | null;
 }) {
-  const files = useUppyFileList(uppy);
+  const files = useUppyFileListThrottled(uppy, 220);
 
   const { bundleGroups, loose } = useMemo(() => {
     const groups = new Map<string, { root: string; kind: string; members: typeof files }>();

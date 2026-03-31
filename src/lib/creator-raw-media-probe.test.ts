@@ -226,4 +226,28 @@ describe("parseFfprobeVideoStream", () => {
     expect(inspected.detectedVideoCodec).toBe("hevc");
     expect(classifyCreatorRawMedia(inspected, "C0001.MP4", "video/mp4").allowed).toBe(true);
   });
+
+  it("classifies XAVC-S H.264 as allowed when format.major_brand is Sony XAVC", () => {
+    const json = {
+      format: {
+        format_name: "mov,mp4,m4a,3gp,3g2,mj2",
+        tags: { major_brand: "XAVC", compatible_brands: "XAVC mp42 iso6" },
+      },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "h264",
+          codec_tag_string: "avc1",
+          codec_long_name: "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+          tags: { encoder: "AVC Coding" },
+          width: 3840,
+          height: 2160,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedVideoCodec).toBe("h264");
+    expect(inspected.detectedCodecLongName).toMatch(/xavc/i);
+    expect(classifyCreatorRawMedia(inspected, "C0260.MP4", "video/mp4").allowed).toBe(true);
+  });
 });
