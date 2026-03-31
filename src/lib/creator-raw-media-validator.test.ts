@@ -99,6 +99,20 @@ describe("classifyCreatorRawMedia", () => {
     expect(r.code).toBe("delivery_codec");
   });
 
+  it("does not allow H.264 when hint blob includes encoder claiming ProRes", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "h264",
+        detectedCodecTag: "avc1",
+        detectedCodecLongName: "H.264 | Apple ProRes 422",
+      }),
+      "fake.mp4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("delivery_codec");
+  });
+
   it("allows ProRes RAW fourcc aprn when codec_name is not on the codec allowlist (tag path)", () => {
     const r = classifyCreatorRawMedia(
       vbase({ detectedVideoCodec: "huffyuv", detectedCodecTag: "aprn" }),

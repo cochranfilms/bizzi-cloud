@@ -51,6 +51,48 @@ export function looksLikeProfessionalMezzanineLongName(longName: string | null |
   return MEZZANINE_CODEC_LONG_NAME_REGEXES.some((re) => re.test(s));
 }
 
+/** Stream and/or format fields ffprobe may expose beyond `codec_long_name` (often ProRes is only in `encoder`). */
+export type FfprobeMezzanineHintSource = {
+  codec_long_name?: string;
+  tags?: Record<string, unknown> | null;
+};
+
+export type FfprobeFormatForMezzanineHint = {
+  tags?: Record<string, unknown> | null;
+} | null | undefined;
+
+const MEZZANINE_HINT_TAG_KEYS = [
+  "encoder",
+  "handler_name",
+  "vendor_id",
+  "com.apple.proapps.codec",
+  "major_brand",
+  "minor_version",
+  "compatible_brands",
+] as const;
+
+function appendMezzanineHintTagValues(tags: Record<string, unknown> | null | undefined, parts: string[]): void {
+  if (!tags || typeof tags !== "object") return;
+  for (const key of MEZZANINE_HINT_TAG_KEYS) {
+    const v = tags[key as string];
+    if (v == null) continue;
+    const s = typeof v === "string" ? v.trim() : String(v).trim();
+    if (s) parts.push(s);
+  }
+}
+
+/** Join long name + selected `tags` + format `tags` for mezzanine regexes (same gated codec rules in validator). */
+export function buildFfprobeMezzanineHintBlob(
+  stream: FfprobeMezzanineHintSource,
+  format?: FfprobeFormatForMezzanineHint
+): string {
+  const parts: string[] = [];
+  if (stream.codec_long_name?.trim()) parts.push(stream.codec_long_name.trim());
+  appendMezzanineHintTagValues(stream.tags ?? undefined, parts);
+  appendMezzanineHintTagValues(format?.tags ?? undefined, parts);
+  return parts.join(" | ");
+}
+
 /**
  * Single config object: allowed sets use normalized lowercase codec names / tags from ffprobe.
  */

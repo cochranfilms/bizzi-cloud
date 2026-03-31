@@ -6,7 +6,10 @@ export type InspectedMediaStreams = {
   detectedContainer: string | null;
   /** Primary video stream codec_name from ffprobe */
   detectedVideoCodec: string | null;
-  /** ffprobe `codec_long_name` for the chosen video stream (mezzanine hint when codec_name is generic). */
+  /**
+   * Mezzanine detection hints: `codec_long_name` plus selected stream/format tag values (e.g. encoder).
+   * Used only when codec_name is generic (`mpeg4` / `unknown` / empty) in policy — not for H.264/HEVC.
+   */
   detectedCodecLongName: string | null;
   detectedCodecTag: string | null;
   detectedPixelFormat: string | null;

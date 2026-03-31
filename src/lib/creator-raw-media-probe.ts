@@ -8,6 +8,7 @@ import { promisify } from "util";
 import { existsSync } from "fs";
 import {
   CREATOR_RAW_MEDIA_POLICY,
+  buildFfprobeMezzanineHintBlob,
   looksLikeProfessionalMezzanineLongName,
 } from "@/lib/creator-raw-media-config";
 import { createPresignedDownloadUrl } from "@/lib/b2";
@@ -40,6 +41,7 @@ type FfprobeStream = {
   r_frame_rate?: string;
   avg_frame_rate?: string;
   codec_long_name?: string;
+  tags?: Record<string, unknown> | null;
   disposition?: { attached_pic?: number };
 };
 
@@ -112,14 +114,14 @@ function normalizedCodecName(stream: FfprobeStream): string | undefined {
 function categorizeFfprobeVideoStream(
   codecName: string | undefined,
   tagStr: string | undefined,
-  codecLongName?: string | undefined
+  mezzanineHintBlob?: string | undefined
 ): StreamCategory {
   const codec = (codecName ?? "").trim().toLowerCase();
   const tag = (tagStr ?? "").trim().toLowerCase();
   /** ProRes/DNx fourccs win over generic codec_name (ProRes-in-MP4 often reports `mpeg4`). */
   if (tag && ALLOWED_TAG.has(tag)) return "allowed";
   if (
-    looksLikeProfessionalMezzanineLongName(codecLongName) &&
+    looksLikeProfessionalMezzanineLongName(mezzanineHintBlob) &&
     (!codec || codec === "mpeg4" || codec === "unknown")
   ) {
     return "allowed";
@@ -167,14 +169,15 @@ function betterRankedStream(
 
 function bestStreamByCategory(
   videos: { stream: FfprobeStream; index: number }[],
-  cat: StreamCategory
+  cat: StreamCategory,
+  format?: FfprobeJson["format"]
 ): FfprobeStream | undefined {
   const matches = videos.filter(
     (v) =>
       categorizeFfprobeVideoStream(
         normalizedCodecName(v.stream),
         effectiveCodecTagString(v.stream),
-        v.stream.codec_long_name
+        buildFfprobeMezzanineHintBlob(v.stream, format)
       ) === cat
   );
   if (matches.length === 0) return undefined;
@@ -186,7 +189,11 @@ const execFileAsync = promisify(execFile);
 const FFPROBE_TIMEOUT_MS = 120_000;
 
 type FfprobeJson = {
-  format?: { format_name?: string; format_long_name?: string };
+  format?: {
+    format_name?: string;
+    format_long_name?: string;
+    tags?: Record<string, unknown> | null;
+  };
   streams?: FfprobeStream[];
 };
 
@@ -200,7 +207,11 @@ function normalizeDimension(
   return null;
 }
 
-function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | null): InspectedMediaStreams {
+function ffprobeStreamToInspected(
+  video: FfprobeStream,
+  formatName: string | null,
+  format?: FfprobeJson["format"]
+): InspectedMediaStreams {
   const rateStr = video.avg_frame_rate || video.r_frame_rate || "0/1";
   const [num, den] = rateStr.split("/").map((x) => parseInt(x, 10) || 0);
   const fps = den > 0 ? num / den : null;
@@ -215,11 +226,11 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
   }
 
   const tag = effectiveCodecTagString(video);
-  const longName = video.codec_long_name?.trim() || null;
+  const hintBlob = buildFfprobeMezzanineHintBlob(video, format);
   return {
     detectedContainer: formatName,
     detectedVideoCodec: normalizedCodecName(video) ?? null,
-    detectedCodecLongName: longName,
+    detectedCodecLongName: hintBlob.trim() || null,
     detectedCodecTag: tag ? tag.toLowerCase() : null,
     detectedPixelFormat: video.pix_fmt ? video.pix_fmt.toLowerCase() : null,
     detectedBitDepth: bitDepth,
@@ -237,7 +248,8 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
  */
 export function parseFfprobeVideoStream(json: FfprobeJson): InspectedMediaStreams {
   const streams = json.streams ?? [];
-  const formatName = json.format?.format_name ?? null;
+  const format = json.format;
+  const formatName = format?.format_name ?? null;
   const videos: { stream: FfprobeStream; index: number }[] = [];
   for (let i = 0; i < streams.length; i++) {
     const s = streams[i];
@@ -261,14 +273,14 @@ export function parseFfprobeVideoStream(json: FfprobeJson): InspectedMediaStream
     };
   }
 
-  const allowed = bestStreamByCategory(videos, "allowed");
-  if (allowed) return ffprobeStreamToInspected(allowed, formatName);
+  const allowed = bestStreamByCategory(videos, "allowed", format);
+  if (allowed) return ffprobeStreamToInspected(allowed, formatName, format);
 
-  const blocked = bestStreamByCategory(videos, "blocked");
-  if (blocked) return ffprobeStreamToInspected(blocked, formatName);
+  const blocked = bestStreamByCategory(videos, "blocked", format);
+  if (blocked) return ffprobeStreamToInspected(blocked, formatName, format);
 
-  const neutral = bestStreamByCategory(videos, "neutral");
-  return ffprobeStreamToInspected(neutral ?? videos[0].stream, formatName);
+  const neutral = bestStreamByCategory(videos, "neutral", format);
+  return ffprobeStreamToInspected(neutral ?? videos[0].stream, formatName, format);
 }
 
 /**

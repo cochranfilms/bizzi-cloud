@@ -115,8 +115,48 @@ describe("parseFfprobeVideoStream", () => {
       ],
     };
     const inspected = parseFfprobeVideoStream(json);
-    expect(inspected.detectedCodecLongName).toBe("Apple ProRes 422 (HQ)");
+    expect(inspected.detectedCodecLongName).toContain("Apple ProRes 422 (HQ)");
     expect(inspected.detectedCodecTag).toBeNull();
+    expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
+  });
+
+  it("allows mpeg4 when ProRes appears only in stream tags.encoder", () => {
+    const json = {
+      format: { format_name: "mp4", tags: { major_brand: "isom", minor_version: "512" } },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_long_name: "MPEG-4 part 2",
+          tags: { encoder: "Apple ProRes 422 (HQ)", handler_name: "VideoHandler" },
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecLongName).toMatch(/Apple ProRes/i);
+    expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
+  });
+
+  it("allows mpeg4 when ProRes appears only in format.tags.encoder", () => {
+    const json = {
+      format: {
+        format_name: "mp4",
+        tags: { encoder: "Apple ProRes 422", compatible_brands: "isomiso2" },
+      },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_long_name: "unknown",
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecLongName).toMatch(/Apple ProRes/i);
     expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
   });
 
