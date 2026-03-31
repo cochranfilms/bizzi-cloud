@@ -23,7 +23,10 @@ import {
   resolveCreativeProjectTile,
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
-import { filePreviewLutDebugEnabled } from "@/lib/file-preview-lut-debug";
+import {
+  filePreviewForceProxyMp4,
+  filePreviewLutDebugEnabled,
+} from "@/lib/file-preview-lut-debug";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -479,7 +482,7 @@ export default function FilePreviewModal({
           <VideoWithLUT
             key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
             src={fullUrl}
-            streamUrl={videoStreamUrl}
+            streamUrl={filePreviewForceProxyMp4() ? null : videoStreamUrl}
             className=""
             showLUTOption={showLUT}
             lutSource={lutSource}

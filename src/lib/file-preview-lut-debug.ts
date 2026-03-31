@@ -10,3 +10,16 @@ export function filePreviewLutDebugEnabled(): boolean {
     return process.env.NODE_ENV === "development";
   }
 }
+
+/**
+ * Diagnostic: set `localStorage.bizziFilePreviewForceProxyMp4 = "1"` to skip Mux HLS in file preview
+ * and play the proxy MP4 only (isolates HLS attach vs LUT).
+ */
+export function filePreviewForceProxyMp4(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem("bizziFilePreviewForceProxyMp4") === "1";
+  } catch {
+    return false;
+  }
+}

@@ -3,6 +3,7 @@
 import {
   useRef,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
@@ -62,6 +63,10 @@ function bypassVideoWebglSamplingGate(): boolean {
 
 function galleryLutDevHudEnabled(): boolean {
   return process.env.NODE_ENV === "development" || isGalleryVideoDebugEnabled();
+}
+
+function videoHlsDiagEnabled(): boolean {
+  return filePreviewLutDebugEnabled() || isGalleryVideoDebugEnabled();
 }
 
 /** Blend time between two 3D LUTs in the shader (dual-LUT crossfade). */
@@ -464,11 +469,11 @@ export default function VideoWithLUT({
    */
   useEffect(() => {
     if (galleryControlledLut || !filePreviewLutDebugEnabled()) return;
-    const canvasShouldMount = previewOn && lutReady;
-    const canvasBlockReason = !previewOn
+    const canvasInDom = previewOn && !!currentLutSource;
+    const canvasDomBlockReason = !previewOn
       ? "previewOff"
-      : !lutReady
-        ? "lutNotReady"
+      : !currentLutSource
+        ? "noLutSource"
         : null;
     const v = videoRef.current;
     console.info("[VideoWithLUT modal LUT]", {
@@ -486,8 +491,9 @@ export default function VideoWithLUT({
       lutReady,
       lutEnabledInShader,
       videoWebglEligibility,
-      canvasShouldMount,
-      canvasBlockReason,
+      canvasInDom,
+      canvasDomBlockReason,
+      lutPipelineReady: lutReady,
       lutError,
       showLUTOption,
       creativePreviewOn: creativePreviewOn ?? null,
@@ -583,7 +589,7 @@ export default function VideoWithLUT({
     return () => window.clearTimeout(tid);
   }, [previewOn]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!previewOn) return;
 
     if (!currentLutSource) {
@@ -718,6 +724,46 @@ export default function VideoWithLUT({
       }
     };
   }, []);
+
+  /** HLS.js lifecycle + native video readiness (file preview debug or ?galleryVideoDebug). */
+  useEffect(() => {
+    if (!videoHlsDiagEnabled()) return;
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    const label = playbackDebugLabel ?? "VideoWithLUT";
+    const snap = (event: string) => {
+      console.info(`[VideoWithLUT video] ${event}`, {
+        label,
+        videoSrc: videoSrc.length > 120 ? `${videoSrc.slice(0, 120)}…` : videoSrc,
+        readyState: video.readyState,
+        networkState: video.networkState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        currentSrc:
+          video.currentSrc && video.currentSrc.length > 120
+            ? `${video.currentSrc.slice(0, 120)}…`
+            : video.currentSrc,
+      });
+    };
+    const onLoadedMeta = () => snap("loadedmetadata");
+    const onLoadedData = () => snap("loadeddata");
+    const onCanPlay = () => snap("canplay");
+    const onPlaying = () => snap("playing");
+    const onError = () =>
+      snap(`error code=${video.error?.code ?? "?"} msg=${video.error?.message ?? ""}`);
+    video.addEventListener("loadedmetadata", onLoadedMeta);
+    video.addEventListener("loadeddata", onLoadedData);
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("error", onError);
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMeta);
+      video.removeEventListener("loadeddata", onLoadedData);
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("error", onError);
+    };
+  }, [videoSrc, playbackDebugLabel]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -977,9 +1023,39 @@ export default function VideoWithLUT({
         maxBufferTopRung: 60,
       });
       hlsRef.current = hls;
+      const logHls = (msg: string, extra?: Record<string, unknown>) => {
+        if (!videoHlsDiagEnabled()) return;
+        console.info("[VideoWithLUT HLS]", msg, {
+          videoSrc: videoSrc.length > 120 ? `${videoSrc.slice(0, 120)}…` : videoSrc,
+          ...extra,
+        });
+      };
+      logHls("hls.js: instance created");
       const probe = () => webglProbeTriggerRef.current?.();
-      hls.on(Hls.Events.MEDIA_ATTACHED, probe);
-      hls.on(Hls.Events.MANIFEST_PARSED, probe);
+      hls.on(Hls.Events.MEDIA_ATTACHING, () => logHls("MEDIA_ATTACHING"));
+      hls.on(Hls.Events.MEDIA_ATTACHED, (_, data) => {
+        logHls("MEDIA_ATTACHED", { hasMedia: data != null });
+        probe();
+      });
+      hls.on(Hls.Events.MANIFEST_LOADING, () => logHls("MANIFEST_LOADING"));
+      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        logHls("MANIFEST_PARSED", { levelCount: data?.levels?.length });
+        probe();
+      });
+      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+        logHls("LEVEL_LOADED", { level: data?.level });
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        logHls("ERROR", {
+          type: data?.type,
+          details: data?.details,
+          fatal: data?.fatal,
+          errMessage:
+            data?.error != null && typeof data.error === "object" && "message" in data.error
+              ? String((data.error as { message?: string }).message)
+              : undefined,
+        });
+      });
       hls.loadSource(videoSrc);
       hls.attachMedia(video);
       return () => {
@@ -1172,12 +1248,16 @@ export default function VideoWithLUT({
             )
           }
         />
-        {previewOn && lutReady && (
+        {/*
+          Mount the WebGL canvas whenever we intend to grade (lut pipeline init needs the canvas ref).
+          Do not gate on lutReady — that deadlocks: LUT init requires canvas, but lutReady was only set after init.
+        */}
+        {previewOn && currentLutSource && (
           <canvas
             ref={canvasRef}
             className="pointer-events-none absolute left-0 top-0 z-[15] will-change-[opacity,transform] [transform:translateZ(0)]"
             style={{
-              opacity: lutError ? 0 : gradeLayerOpacity,
+              opacity: lutError ? 0 : lutReady ? gradeLayerOpacity : 0,
               transition: `opacity ${GRADE_LAYER_FADE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
             }}
           />
