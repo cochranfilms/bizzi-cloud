@@ -12,6 +12,7 @@ import {
   ListPartsCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
+  NoSuchUpload,
   type CompletedPart,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
@@ -25,6 +26,14 @@ const B2_REGION = process.env.B2_REGION ?? "us-west-004";
 
 export const isB2Configured = () =>
   !!B2_ACCESS_KEY_ID && !!B2_SECRET_ACCESS_KEY && !!B2_BUCKET_NAME && !!B2_ENDPOINT;
+
+/** Multipart upload already completed, aborted, or expired — abort is a no-op (B2/S3). */
+function isMultipartAbortNoSuchUpload(err: unknown): boolean {
+  if (err instanceof NoSuchUpload) return true;
+  if (!err || typeof err !== "object") return false;
+  const o = err as { name?: string; Code?: string };
+  return o.name === "NoSuchUpload" || o.Code === "NoSuchUpload";
+}
 
 function getB2Client(): S3Client {
   if (!isB2Configured()) {
@@ -240,13 +249,18 @@ export async function abortMultipartUpload(
   uploadId: string
 ): Promise<void> {
   const client = getB2Client();
-  await client.send(
-    new AbortMultipartUploadCommand({
-      Bucket: B2_BUCKET_NAME,
-      Key: objectKey,
-      UploadId: uploadId,
-    })
-  );
+  try {
+    await client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: B2_BUCKET_NAME,
+        Key: objectKey,
+        UploadId: uploadId,
+      })
+    );
+  } catch (err) {
+    if (isMultipartAbortNoSuchUpload(err)) return;
+    throw err;
+  }
 }
 
 /** Complete multipart upload with part ETags. */

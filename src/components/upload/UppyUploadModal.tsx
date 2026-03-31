@@ -33,6 +33,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useUppyBizziThemeVariables } from "@/hooks/useUppyBizziTheme";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 import "@/styles/uppy-bizzi-theme.css";
+import "@/styles/uppy-bizzi-premium.css";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
  * We track failed files and surface them so users can retry from the Dashboard. */
@@ -165,8 +166,8 @@ export default function UppyUploadModal({
       const narrow = window.matchMedia("(max-width: 639px)").matches;
       const vh = window.visualViewport?.height ?? window.innerHeight;
       const target = narrow
-        ? Math.max(180, Math.min(300, Math.round(vh * 0.34)))
-        : Math.max(260, Math.min(380, Math.round(vh * 0.38)));
+        ? Math.max(180, Math.min(320, Math.round(vh * 0.36)))
+        : Math.max(280, Math.min(440, Math.round(vh * 0.42)));
       setDashboardHeight(target);
     };
     update();
@@ -604,8 +605,11 @@ export default function UppyUploadModal({
 
   return (
     <div
-      className="bizzi-uppy-theme fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(42rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900 sm:left-4 sm:w-full sm:max-w-2xl sm:translate-x-0"
-      style={uppyChromeVars as CSSProperties}
+      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex max-h-[min(90dvh,calc(100dvh-1rem))] w-[min(48rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border sm:left-4 sm:w-full sm:max-w-3xl sm:translate-x-0"
+      style={{
+        ...(uppyChromeVars as CSSProperties),
+        backgroundColor: "var(--bizzi-upload-workspace-bg)",
+      }}
       data-uppy-theme={uppyDataTheme}
       role="status"
       aria-live="polite"
@@ -615,36 +619,39 @@ export default function UppyUploadModal({
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+        className="bizzi-upload-panel-header flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-[background-color] duration-200"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <div
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-              allComplete && hasFiles ? "bg-green-500/10 dark:bg-green-500/20" : ""
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+              allComplete && hasFiles ? "border-emerald-500/35 bg-emerald-500/12" : "border-transparent"
             }`}
             style={
               allComplete && hasFiles
                 ? undefined
-                : { backgroundColor: "var(--bizzi-uppy-primary-muted)" }
+                : {
+                    backgroundColor: "var(--bizzi-uppy-primary-muted)",
+                    borderColor: "var(--bizzi-upload-border-subtle)",
+                  }
             }
           >
             {allComplete && hasFiles ? (
-              <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <Check className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" />
             ) : hasFiles && uploadingCount === 0 && completedCount === 0 ? (
               <Upload
-                className="h-4 w-4"
+                className="h-[18px] w-[18px]"
                 style={{ color: "var(--bizzi-uppy-primary)" }}
                 aria-hidden
               />
             ) : hasFiles ? (
               <Loader2
-                className="h-4 w-4 animate-spin"
+                className="h-[18px] w-[18px] animate-spin"
                 style={{ color: "var(--bizzi-uppy-primary)" }}
                 aria-hidden
               />
             ) : (
               <Upload
-                className="h-4 w-4"
+                className="h-[18px] w-[18px]"
                 style={{ color: "var(--bizzi-uppy-primary)" }}
                 aria-hidden
               />
@@ -653,17 +660,23 @@ export default function UppyUploadModal({
           <div className="min-w-0">
             {destinationMode === "creator_raw" && lockedDestination ? (
               <>
-                <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                <span className="bizzi-upload-panel-eyebrow block">Creator RAW</span>
+                <p className="truncate text-[0.9375rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)]">
                   Uploading to Creator RAW
                 </p>
-                <p className="truncate text-xs text-neutral-600 dark:text-neutral-300">
+                <p className="bizzi-upload-panel-subtitle mt-0.5 truncate text-xs">
                   Stored in {(targetDriveName || driveName || "RAW").trim()} · source footage and LUT preview workflow
                 </p>
               </>
             ) : (
-              <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{headerLabel}</p>
+              <>
+                <span className="bizzi-upload-panel-eyebrow block">Upload</span>
+                <p className="truncate text-[0.9375rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)]">
+                  {headerLabel}
+                </p>
+              </>
             )}
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="bizzi-upload-panel-subtitle mt-0.5 text-xs">
               {hasFiles
                 ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
                     fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
@@ -671,31 +684,32 @@ export default function UppyUploadModal({
                 : "Drop files or click to browse"}
             </p>
             {(workspaceName || scopeLabel || driveName) && (
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+              <div className="bizzi-upload-panel-meta mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
                 {driveName && (
-                  <span className="text-neutral-600 dark:text-neutral-300">
-                    Drive: <strong>{driveName}</strong>
+                  <span>
+                    Drive: <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
                   </span>
                 )}
                 {workspaceName && (
-                  <span className="text-neutral-600 dark:text-neutral-300">
-                    Destination: <strong>{workspaceName}</strong>
+                  <span>
+                    Destination:{" "}
+                    <strong className="font-semibold text-[var(--bizzi-upload-text)]">{workspaceName}</strong>
                   </span>
                 )}
                 {scopeLabel && (
-                  <span className="text-neutral-600 dark:text-neutral-300">
-                    Visibility: <strong>{scopeLabel}</strong>
+                  <span>
+                    Visibility: <strong className="font-semibold text-[var(--bizzi-upload-text)]">{scopeLabel}</strong>
                   </span>
                 )}
               </div>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           {expanded ? (
-            <ChevronDown className="h-4 w-4 text-neutral-400" />
+            <ChevronDown className="bizzi-upload-panel-icon-btn h-4 w-4 opacity-70" aria-hidden />
           ) : (
-            <ChevronUp className="h-4 w-4 text-neutral-400" />
+            <ChevronUp className="bizzi-upload-panel-icon-btn h-4 w-4 opacity-70" aria-hidden />
           )}
           <button
             type="button"
@@ -703,7 +717,7 @@ export default function UppyUploadModal({
               e.stopPropagation();
               onClose();
             }}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+            className="bizzi-upload-panel-icon-btn p-2"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -713,11 +727,9 @@ export default function UppyUploadModal({
 
       {/* Progress bar - show when there are files */}
       {hasFiles && (
-        <div className="h-1 bg-neutral-100 dark:bg-neutral-800">
+        <div className="bizzi-upload-panel-progress-track h-1 w-full shrink-0">
           <div
-            className={`h-full transition-all duration-300 ${
-              allComplete ? "bg-green-500 dark:bg-green-600" : ""
-            }`}
+            className={`h-full transition-all duration-300 ${allComplete ? "bg-emerald-500 dark:bg-emerald-500" : ""}`}
             style={
               allComplete
                 ? { width: `${pct}%` }
@@ -729,13 +741,16 @@ export default function UppyUploadModal({
 
       {/* Expanded: Uppy Dashboard */}
       {expanded && ready && uppyRef.current && (
-        <div className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-100 dark:border-neutral-800">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          style={{ borderTop: "1px solid var(--bizzi-upload-divider)" }}
+        >
           {macosPackageWarning && (
-            <div className="mx-3 mt-2 whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100">
+            <div className="mx-4 mt-3 whitespace-pre-wrap rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/45 dark:text-amber-100">
               {macosPackageWarning}
             </div>
           )}
-          <div className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900/80">
+          <div className="mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] mt-2 overflow-hidden rounded-2xl">
             <HiddenMacosPackageRowsStyle uppy={uppyRef.current} />
             <UppyGroupedQueueList
               uppy={uppyRef.current}
@@ -750,11 +765,11 @@ export default function UppyUploadModal({
               uppy={uppyRef.current}
               theme={uppyDataTheme}
               proudlyDisplayPoweredByUppy={false}
-              height={hasFiles ? dashboardHeight + 32 : dashboardHeight}
+              height={hasFiles ? dashboardHeight + 40 : dashboardHeight}
               showSelectedFiles
               note="macOS libraries (.lrlibrary, .fcpbundle, …) upload with full folder structure when you drag the package from Finder onto this panel or use Browse folders and select the library folder (not only Browse files)."
               fileManagerSelectionType="both"
-              className="bizzi-uppy-dashboard-stack [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[140px]"
+              className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[152px]"
             />
           </div>
         </div>

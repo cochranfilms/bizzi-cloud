@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import { useTheme } from "@/context/ThemeContext";
+import { getDashboardBackground } from "@/lib/dashboard-appearance-themes";
 import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 import type { EnterpriseThemeId } from "@/types/enterprise";
 
@@ -40,6 +42,17 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
+/** Prefer dark copy on light panels, light copy on dark panels */
+function pickContrastingTextHex(bgHex: string): { primary: string; muted: string } {
+  const rgb = hexToRgb(bgHex);
+  if (!rgb) return { primary: "#171717", muted: "rgba(23,23,23,0.62)" };
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  if (luminance > 0.58) {
+    return { primary: "#0c0a09", muted: "rgba(12,10,9,0.58)" };
+  }
+  return { primary: "#fafaf9", muted: "rgba(250,250,249,0.65)" };
+}
+
 function useInheritedEnterpriseThemeId(): EnterpriseThemeId {
   const pathname = usePathname() ?? "";
   const teamWs = usePersonalTeamWorkspace();
@@ -58,11 +71,14 @@ function useInheritedEnterpriseThemeId(): EnterpriseThemeId {
 export function useUppyBizziThemeVariables(): React.CSSProperties {
   const appearance = useDashboardAppearanceOptional();
   const inherited = useInheritedEnterpriseThemeId();
+  const { theme: appTheme } = useTheme();
+  const isDark = appTheme === "dark";
 
   return useMemo(() => {
     const accentCanvas = appearance?.accentColor ?? "#00BFFF";
     const buttonColor = appearance?.buttonColor ?? null;
     const uiThemeOverride = appearance?.uiThemeOverride ?? null;
+    const backgroundThemeId = appearance?.backgroundThemeId ?? null;
 
     const chrome = resolveDashboardChromeThemeVariables(
       inherited,
@@ -75,8 +91,29 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
     const primaryHover = lightenHex(primary, 18);
     const primaryPressed = darkenHex(primary, 22);
 
+    const workspaceBg =
+      getDashboardBackground(backgroundThemeId, isDark) ??
+      (isDark ? "#0a0a0a" : "#f5f5f5");
+
+    const elevatedSurface = isDark
+      ? `color-mix(in srgb, ${workspaceBg} 78%, #ffffff 8%)`
+      : `color-mix(in srgb, ${workspaceBg} 82%, #ffffff 18%)`;
+
+    const innerWell = isDark
+      ? "rgba(255,255,255,0.04)"
+      : "rgba(255,255,255,0.45)";
+
+    const { primary: textPrimary, muted: textMuted } = pickContrastingTextHex(workspaceBg);
+
     return {
       ...chrome,
+      "--bizzi-upload-workspace-bg": workspaceBg,
+      "--bizzi-upload-surface-elevated": elevatedSurface,
+      "--bizzi-upload-inner-well": innerWell,
+      "--bizzi-upload-text": textPrimary,
+      "--bizzi-upload-text-muted": textMuted,
+      "--bizzi-upload-divider": isDark ? "rgba(255,255,255,0.12)" : "rgba(15,15,15,0.08)",
+      "--bizzi-upload-border-subtle": hexToRgba(primary, isDark ? 0.22 : 0.18),
       "--bizzi-uppy-primary": primary,
       "--bizzi-uppy-accent": accent,
       "--bizzi-uppy-primary-hover": primaryHover,
@@ -91,8 +128,10 @@ export function useUppyBizziThemeVariables(): React.CSSProperties {
     } as React.CSSProperties;
   }, [
     appearance?.accentColor,
+    appearance?.backgroundThemeId,
     appearance?.buttonColor,
     appearance?.uiThemeOverride,
     inherited,
+    isDark,
   ]);
 }

@@ -1,0 +1,297 @@
+/**
+ * Bizzi premium chrome for inline Uppy Dashboard (workflow unchanged).
+ * Uses vars from useUppyBizziTheme: workspace bg, elevated surfaces, typography.
+ */
+
+.bizzi-uppy-theme.bizzi-upload-panel-shell {
+  border-color: var(--bizzi-upload-divider) !important;
+  box-shadow:
+    0 0 0 1px var(--bizzi-upload-border-subtle),
+    0 24px 52px -22px rgba(0, 0, 0, 0.45);
+}
+
+.bizzi-uppy-theme.bizzi-upload-panel-shell[data-uppy-theme="light"] {
+  box-shadow:
+    0 0 0 1px var(--bizzi-upload-border-subtle),
+    0 22px 46px -18px rgba(15, 23, 42, 0.22);
+}
+
+/* macOS package / loose queue rows (React list above Uppy) */
+.bizzi-uppy-theme .bizzi-uppy-queue-card {
+  border: 1px solid var(--bizzi-upload-divider);
+  background: var(--bizzi-upload-inner-well);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.18);
+}
+
+.bizzi-uppy-theme[data-uppy-theme="dark"] .bizzi-uppy-queue-card {
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.55);
+}
+
+.bizzi-uppy-theme .bizzi-uppy-queue-thumb-well {
+  background: color-mix(in srgb, var(--bizzi-upload-inner-well) 92%, var(--bizzi-upload-workspace-bg));
+  border: 1px solid var(--bizzi-upload-divider);
+}
+
+.bizzi-uppy-theme .bizzi-uppy-queue-title {
+  color: var(--bizzi-upload-text);
+}
+
+.bizzi-uppy-theme .bizzi-uppy-queue-muted {
+  color: var(--bizzi-upload-text-muted);
+}
+
+.bizzi-uppy-theme .bizzi-uppy-queue-icon-btn {
+  color: var(--bizzi-upload-text-muted);
+  border-radius: 8px;
+}
+
+.bizzi-uppy-theme .bizzi-uppy-queue-icon-btn:hover {
+  background: var(--bizzi-upload-inner-well);
+  color: var(--bizzi-upload-text);
+}
+
+/* Shell: inline dashboard fills width */
+.bizzi-uppy-theme .uppy-Dashboard:not(.uppy-Dashboard--modal) {
+  width: 100% !important;
+  font-family: inherit;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-inner {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-innerWrap {
+  border-radius: 0 0 1.25rem 1.25rem !important;
+  background: var(--bizzi-upload-surface-elevated) !important;
+  border: 1px solid var(--bizzi-upload-divider) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 14px 40px -18px rgba(0, 0, 0, 0.35) !important;
+}
+
+.bizzi-uppy-theme[data-uppy-theme="light"] .uppy-Dashboard-innerWrap {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.65),
+    0 16px 42px -20px rgba(15, 23, 42, 0.18) !important;
+}
+
+/* Top bar (Cancel / title / Add more) */
+.bizzi-uppy-theme .uppy-DashboardContent-bar {
+  height: 48px !important;
+  background: var(--bizzi-upload-inner-well) !important;
+  border-bottom: 1px solid var(--bizzi-upload-divider) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.bizzi-uppy-theme .uppy-DashboardContent-title {
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  color: var(--bizzi-upload-text) !important;
+}
+
+/* File list area */
+.bizzi-uppy-theme .uppy-Dashboard-files {
+  padding: 12px 14px 14px !important;
+  background: transparent !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-filesInner {
+  gap: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* File row cards */
+.bizzi-uppy-theme .uppy-Dashboard-Item {
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 14px !important;
+  background: var(--bizzi-upload-inner-well) !important;
+  border: 1px solid var(--bizzi-upload-divider) !important;
+  box-shadow: 0 2px 10px -4px rgba(0, 0, 0, 0.14);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-Dashboard-Item {
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.45);
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-Item:hover {
+  border-color: var(--bizzi-upload-border-subtle) !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-Item-name,
+.bizzi-uppy-theme .uppy-Dashboard-Item-fileName,
+.bizzi-uppy-theme .uppy-Dashboard-Item-status {
+  color: var(--bizzi-upload-text) !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-Item-statusSize,
+.bizzi-uppy-theme .uppy-Dashboard-Item-statusSecondary {
+  color: var(--bizzi-upload-text-muted) !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-Item-preview {
+  border-radius: 10px !important;
+  overflow: hidden !important;
+}
+
+/* Drop / add-files empty state */
+.bizzi-uppy-theme .uppy-Dashboard-AddFiles {
+  padding: 8px 12px 16px !important;
+}
+
+.bizzi-uppy-theme [data-uppy-drag-drop-supported="true"] .uppy-Dashboard-AddFiles {
+  margin: 10px !important;
+  border-radius: 16px !important;
+  border: 1px dashed var(--bizzi-upload-border-subtle) !important;
+  background: var(--bizzi-upload-inner-well) !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-note {
+  color: var(--bizzi-upload-text-muted) !important;
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Browse / primary CTA in drop zone */
+.bizzi-uppy-theme .uppy-Dashboard-browseBtn {
+  border-radius: 9999px !important;
+  margin-top: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  background: var(--bizzi-uppy-primary) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 8px 20px -8px var(--bizzi-uppy-primary-focus) !important;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease !important;
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-browseBtn:hover {
+  background: var(--bizzi-uppy-primary-hover) !important;
+  transform: translateY(-1px);
+}
+
+.bizzi-uppy-theme .uppy-Dashboard-browseBtn:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px var(--bizzi-uppy-primary-focus) !important;
+}
+
+/* Status bar: floating strip */
+.bizzi-uppy-theme .uppy-Dashboard-progressindicators {
+  padding: 0 12px 12px !important;
+  background: transparent !important;
+}
+
+.bizzi-uppy-theme .uppy-StatusBar {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  border: 1px solid var(--bizzi-upload-divider) !important;
+  background: var(--bizzi-upload-inner-well) !important;
+  margin-top: 4px !important;
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.25);
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content {
+  color: var(--bizzi-upload-text) !important;
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-statusSecondary {
+  color: var(--bizzi-upload-text-muted) !important;
+}
+
+.bizzi-uppy-theme .uppy-StatusBar:not([aria-hidden="true"]).is-waiting {
+  background: var(--bizzi-upload-inner-well) !important;
+  border-top: none !important;
+}
+
+.bizzi-uppy-theme .uppy-StatusBar.is-waiting .uppy-StatusBar-actions {
+  background: transparent !important;
+}
+
+/* Tabs (My Device, etc.) */
+.bizzi-uppy-theme .uppy-DashboardTab-btn:hover {
+  background: var(--bizzi-upload-inner-well) !important;
+}
+
+.bizzi-uppy-theme .uppy-DashboardTab-iconMyDevice {
+  color: var(--bizzi-uppy-primary) !important;
+}
+
+.bizzi-uppy-theme[data-uppy-theme="dark"] .uppy-DashboardTab-iconMyDevice {
+  color: var(--bizzi-uppy-accent) !important;
+}
+
+.bizzi-uppy-theme .uppy-DashboardTab-name {
+  color: var(--bizzi-upload-text-muted) !important;
+}
+
+/* Add-files overlay panel */
+.bizzi-uppy-theme .uppy-Dashboard-AddFilesPanel,
+.bizzi-uppy-theme .uppy-DashboardContent-panel {
+  background: var(--bizzi-upload-surface-elevated) !important;
+  background-image: none !important;
+  border: 1px solid var(--bizzi-upload-divider) !important;
+}
+
+.bizzi-uppy-theme .uppy-DashboardContent-panel {
+  background-color: var(--bizzi-upload-surface-elevated) !important;
+}
+
+/* Upload panel chrome (React wrapper) */
+.bizzi-uppy-theme .bizzi-upload-panel-header {
+  color: var(--bizzi-upload-text);
+  border-bottom: 1px solid var(--bizzi-upload-divider);
+  background: color-mix(in srgb, var(--bizzi-upload-workspace-bg) 92%, transparent);
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-header:hover {
+  background: color-mix(in srgb, var(--bizzi-upload-workspace-bg) 82%, #000 4%);
+}
+
+.bizzi-uppy-theme[data-uppy-theme="light"] .bizzi-upload-panel-header:hover {
+  background: color-mix(in srgb, var(--bizzi-upload-workspace-bg) 88%, #fff 10%);
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-eyebrow {
+  color: var(--bizzi-upload-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-subtitle,
+.bizzi-uppy-theme .bizzi-upload-panel-meta {
+  color: var(--bizzi-upload-text-muted);
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-icon-btn {
+  color: var(--bizzi-upload-text-muted);
+  border-radius: 8px;
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-icon-btn:hover {
+  background: var(--bizzi-upload-inner-well);
+  color: var(--bizzi-upload-text);
+}
+
+.bizzi-uppy-theme .bizzi-upload-panel-progress-track {
+  background: var(--bizzi-upload-divider);
+}

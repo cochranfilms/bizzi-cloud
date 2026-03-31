@@ -172,7 +172,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   };
 
   const outerClass = bundlesOnly
-    ? `space-y-2 px-2 pt-2 ${listClassName}`.trim()
+    ? `space-y-2.5 px-1 pb-0.5 pt-2 ${listClassName}`.trim()
     : `max-h-[280px] space-y-3 overflow-y-auto px-3 pb-3 ${listClassName}`.trim();
 
   return (
@@ -191,12 +191,9 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
           id: "macos-pkg:uppy-bundle",
         });
         return (
-          <div
-            key={g.root}
-            className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <div className="flex gap-3 p-2">
-              <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+          <div key={g.root} className="bizzi-uppy-queue-card overflow-hidden">
+            <div className="flex gap-3 p-2.5">
+              <div className="bizzi-uppy-queue-thumb-well relative h-20 w-28 shrink-0 overflow-hidden rounded-xl">
                 {bundleTile.mode === "branded_project" ? (
                   <BrandedProjectTile
                     brandId={bundleTile.brandId}
@@ -217,7 +214,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={displayName}>
+                      <p className="bizzi-uppy-queue-title truncate text-sm font-semibold" title={displayName}>
                         {displayName}
                       </p>
                       {queueDestinationChip ? (
@@ -233,10 +230,10 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="bizzi-uppy-queue-muted text-xs">
                       {formatBytes(bytesTotal)} · {members.length} file{members.length === 1 ? "" : "s"} · {label}
                     </p>
-                    <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+                    <p className="bizzi-uppy-queue-muted mt-0.5 text-xs opacity-80">
                       {anyFailed
                         ? `${failed} failed, ${complete} complete`
                         : allDone
@@ -249,7 +246,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                       <button
                         type="button"
                         onClick={() => void retryBundle(members)}
-                        className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                        className="bizzi-uppy-queue-icon-btn p-1"
                         aria-label={`Retry failed uploads for ${displayName}`}
                         title="Retry failed"
                       >
@@ -259,14 +256,14 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                     <button
                       type="button"
                       onClick={() => removeBundle(members)}
-                      className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800 dark:hover:text-red-400"
+                      className="bizzi-uppy-queue-icon-btn p-1 hover:!text-red-600 dark:hover:!text-red-400"
                       aria-label={`Remove ${displayName} from queue`}
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-                <div className="mt-2 h-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+                <div className="bizzi-upload-panel-progress-track mt-2 h-1 overflow-hidden rounded-full">
                   <div
                     className={`h-full transition-all ${
                       anyFailed ? "bg-amber-500 dark:bg-amber-600" : ""
@@ -301,9 +298,9 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
             return (
               <div
                 key={f.id}
-                className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+                className="bizzi-uppy-queue-card flex items-center gap-2.5 px-2.5 py-2"
               >
-                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-800">
+                <div className="bizzi-uppy-queue-thumb-well relative h-10 w-10 shrink-0 overflow-hidden rounded-lg">
                   {f.preview ? (
                     // eslint-disable-next-line @next/next/no-img-element -- Uppy blob/object URL
                     <img src={f.preview} alt="" className="h-full w-full object-cover" />
@@ -318,14 +315,14 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                       className="h-full w-full"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center text-neutral-400">
+                    <div className="bizzi-uppy-queue-muted flex h-full w-full items-center justify-center">
                       <FileIcon className="h-5 w-5" />
                     </div>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
+                    <p className="bizzi-uppy-queue-title truncate text-xs font-semibold">{name}</p>
                     {queueDestinationChip ? (
                       <span
                         className="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase"
@@ -339,7 +336,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+                  <div className="bizzi-upload-panel-progress-track mt-1 h-0.5 overflow-hidden rounded-full">
                     <div
                       className={`h-full ${f.error ? "bg-red-500" : ""}`}
                       style={
@@ -357,7 +354,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                   <button
                     type="button"
                     onClick={() => void uppy?.retryUpload(f.id)}
-                    className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    className="bizzi-uppy-queue-icon-btn shrink-0 p-1"
                     aria-label={`Retry ${name}`}
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
@@ -366,7 +363,7 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                 <button
                   type="button"
                   onClick={() => removeLoose(f.id)}
-                  className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800"
+                  className="bizzi-uppy-queue-icon-btn shrink-0 p-1 hover:!text-red-600 dark:hover:!text-red-400"
                   aria-label={`Remove ${name}`}
                 >
                   <X className="h-3.5 w-3.5" />
