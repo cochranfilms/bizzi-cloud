@@ -20,6 +20,10 @@ import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-m
 import UppyGroupedQueueList, { HiddenMacosPackageRowsStyle } from "./UppyGroupedQueueList";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
+import {
+  classifyCreatorRawUpload,
+  isAllowedInCreatorRaw,
+} from "@/lib/creator-raw-upload-policy";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 
 /** Uppy AwsS3 uses Promise.allSettled: when one file fails, others continue.
@@ -88,6 +92,13 @@ interface UppyUploadModalProps {
   scopeLabel?: string | null;
   driveName?: string | null;
   galleryId?: string | null;
+  uploadIntent?: string | null;
+  lockedDestination?: boolean;
+  sourceSurface?: string | null;
+  destinationMode?: string | null;
+  routeContext?: string | null;
+  targetDriveName?: string | null;
+  resolvedBy?: string | null;
   pendingFiles: File[];
   onPendingFilesConsumed: () => void;
   onUploadComplete?: () => void;
@@ -103,6 +114,13 @@ export default function UppyUploadModal({
   scopeLabel = null,
   driveName = null,
   galleryId = null,
+  uploadIntent = null,
+  lockedDestination = false,
+  sourceSurface = null,
+  destinationMode = null,
+  routeContext = null,
+  targetDriveName = null,
+  resolvedBy = null,
   pendingFiles,
   onPendingFilesConsumed,
   onUploadComplete,
@@ -161,6 +179,11 @@ export default function UppyUploadModal({
       return token ? { Authorization: `Bearer ${token}` } : {};
     };
 
+    const creatorRawLocked =
+      destinationMode === "creator_raw" && lockedDestination === true;
+
+    const uppyRefLocal = { current: null as Uppy | null };
+
     const uppy = new Uppy({
       id: "uppy-upload",
       autoProceed: false,
@@ -175,6 +198,29 @@ export default function UppyUploadModal({
       // Uppy default ids use leaf name + size + mtime, not path. FCP bundles repeat names like
       // "Frame 0 - 1023" / AppleDouble "._…" across many folders with identical size/mtime → false "duplicate" errors.
       onBeforeFileAdded: (file) => {
+        const leaf =
+          file.name ||
+          (file.data instanceof File ? file.data.name : "") ||
+          "";
+        if (creatorRawLocked && leaf) {
+          const fd = file.data instanceof File ? file.data : null;
+          if (fd && isLikelyFlatMacosPackageBrowserUpload(fd)) {
+            // Removed in file-added with warning; do not gate here.
+          } else if (!isAllowedInCreatorRaw(leaf)) {
+            const c = classifyCreatorRawUpload(leaf);
+            queueMicrotask(() => {
+              uppyRefLocal.current?.info(
+                {
+                  message: c.userMessage || "This format is not supported for Creator RAW.",
+                  details: c.code,
+                },
+                "error",
+                5000
+              );
+            });
+            return false;
+          }
+        }
         const data = file.data;
         if (data instanceof File) {
           const wr =
@@ -199,6 +245,7 @@ export default function UppyUploadModal({
       uploadPartBytes: uploadPartBytesCompat,
     };
     uppy.use(AwsS3, awsS3Opts);
+    uppyRefLocal.current = uppy;
 
     uppy.addPreProcessor(async () => {
       const plugin = uppy.getPlugin("AwsS3");
@@ -248,6 +295,13 @@ export default function UppyUploadModal({
           sizeBytes: file.size ?? 0,
           workspaceId: workspaceId ?? undefined,
           galleryId: galleryId ?? undefined,
+          uploadIntent: uploadIntent ?? "",
+          lockedDestination: lockedDestination ? "true" : "false",
+          sourceSurface: sourceSurface ?? "",
+          destinationMode: destinationMode ?? "",
+          routeContext: routeContext ?? "",
+          targetDriveName: targetDriveName ?? driveName ?? "",
+          resolvedBy: resolvedBy ?? "",
           lastModified:
             (file.data instanceof File ? file.data.lastModified : null) ??
             (file as { lastModified?: number }).lastModified ??
@@ -348,6 +402,13 @@ export default function UppyUploadModal({
                   lastModified: lastModified != null ? Number(lastModified) : null,
                   workspaceId: meta.workspaceId ?? null,
                   galleryId: meta.galleryId ?? null,
+                  uploadIntent: meta.uploadIntent ?? null,
+                  lockedDestination: meta.lockedDestination ?? null,
+                  destinationMode: meta.destinationMode ?? null,
+                  routeContext: meta.routeContext ?? null,
+                  sourceSurface: meta.sourceSurface ?? null,
+                  targetDriveName: meta.targetDriveName ?? null,
+                  resolvedBy: meta.resolvedBy ?? null,
                 }),
               });
             } catch {
@@ -375,7 +436,21 @@ export default function UppyUploadModal({
       uppyRef.current = null;
       setReady(false);
     };
-  }, [open, driveId, pathPrefix, workspaceId, galleryId]);
+  }, [
+    open,
+    driveId,
+    pathPrefix,
+    workspaceId,
+    galleryId,
+    uploadIntent,
+    lockedDestination,
+    sourceSurface,
+    destinationMode,
+    routeContext,
+    targetDriveName,
+    resolvedBy,
+    driveName,
+  ]);
 
   useLayoutEffect(() => {
     if (!open || !ready || !uppyRef.current) return;
@@ -501,9 +576,18 @@ export default function UppyUploadModal({
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
-              {headerLabel}
-            </p>
+            {destinationMode === "creator_raw" && lockedDestination ? (
+              <>
+                <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                  Uploading to Creator RAW
+                </p>
+                <p className="truncate text-xs text-neutral-600 dark:text-neutral-300">
+                  Stored in {(targetDriveName || driveName || "RAW").trim()} · source footage and LUT preview workflow
+                </p>
+              </>
+            ) : (
+              <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{headerLabel}</p>
+            )}
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {hasFiles
                 ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
@@ -574,7 +658,15 @@ export default function UppyUploadModal({
           )}
           <div className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900/80">
             <HiddenMacosPackageRowsStyle uppy={uppyRef.current} />
-            <UppyGroupedQueueList uppy={uppyRef.current} bundlesOnly />
+            <UppyGroupedQueueList
+              uppy={uppyRef.current}
+              bundlesOnly
+              queueDestinationChip={
+                destinationMode === "creator_raw" && lockedDestination
+                  ? (targetDriveName || driveName || "RAW").trim()
+                  : null
+              }
+            />
             <Dashboard
               uppy={uppyRef.current}
               proudlyDisplayPoweredByUppy={false}

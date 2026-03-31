@@ -191,6 +191,11 @@ export default function CreatorContent() {
   );
   const previewRawDriveId = previewFile?.driveId;
 
+  const viewingCreatorRaw = Boolean(
+    currentDrive &&
+      linkedDrives.find((d) => d.id === currentDrive.id)?.is_creator_raw === true
+  );
+
   return (
     <div className="w-full space-y-0">
       {currentDrive && (
@@ -212,6 +217,21 @@ export default function CreatorContent() {
         <div className="mb-5">
           <SectionTitle>{currentDrive ? "Files" : "Folders"}</SectionTitle>
         </div>
+
+        {viewingCreatorRaw ? (
+          <div
+            className="mb-5 rounded-xl border border-bizzi-blue/25 bg-bizzi-blue/[0.06] px-4 py-3 text-sm dark:border-bizzi-cyan/25 dark:bg-bizzi-cyan/[0.08]"
+            role="status"
+          >
+            <p className="font-medium text-neutral-900 dark:text-white">
+              Creator workspace — current upload destination: RAW
+            </p>
+            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+              File Upload and drag-and-drop while this folder is open store files in RAW. Creator RAW
+              accepts formats Bizzi can preview and grade with LUTs; upload other files to Storage.
+            </p>
+          </div>
+        ) : null}
 
         <DashboardRouteFade
           ready={currentDrive ? !driveFilesLoading : !loading}

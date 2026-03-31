@@ -20,6 +20,7 @@ import {
   getReservationDoc,
   releaseReservation,
 } from "@/lib/storage-quota-reservations";
+import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -42,6 +43,13 @@ export async function POST(request: Request) {
     galleryId?: string | null;
     reservation_id?: string | null;
     reservationId?: string | null;
+    uploadIntent?: string | null;
+    lockedDestination?: boolean | string | null;
+    destinationMode?: string | null;
+    routeContext?: string | null;
+    sourceSurface?: string | null;
+    targetDriveName?: string | null;
+    resolvedBy?: string | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -171,6 +179,26 @@ export async function POST(request: Request) {
     await releaseIfPending("finalize_failed");
     return NextResponse.json({ error: "Drive not found" }, { status: 404 });
   }
+
+  const guard = await assertCreatorRawFinalizeOrAudit({
+    uid,
+    driveId,
+    driveSnap,
+    uploadIntent: body.uploadIntent,
+    lockedDestination: body.lockedDestination,
+    destinationMode: body.destinationMode,
+    routeContext: body.routeContext,
+    sourceSurface: body.sourceSurface,
+    objectKey,
+    relativePath: safePath,
+    organizationId: null,
+    workspaceId: workspaceIdFromBody ?? null,
+  });
+  if (!guard.ok) {
+    await releaseIfPending("finalize_failed");
+    return NextResponse.json({ error: guard.message }, { status: guard.status });
+  }
+
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
 

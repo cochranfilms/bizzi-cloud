@@ -16,6 +16,7 @@ import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
 import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { releaseReservation } from "@/lib/storage-quota-reservations";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -48,6 +49,13 @@ export async function POST(request: Request) {
   const galleryId = metadata.galleryId ?? metadata.gallery_id ?? null;
   const lastModified =
     metadata.lastModified != null ? parseInt(String(metadata.lastModified), 10) : null;
+  const uploadIntent = metadata.uploadIntent ?? metadata.upload_intent ?? null;
+  const lockedDestinationRaw = metadata.lockedDestination ?? metadata.locked_destination ?? "";
+  const destinationMode = metadata.destinationMode ?? metadata.destination_mode ?? null;
+  const routeContext = metadata.routeContext ?? metadata.route_context ?? null;
+  const sourceSurface = metadata.sourceSurface ?? metadata.source_surface ?? null;
+  const targetDriveName = metadata.targetDriveName ?? metadata.target_drive_name ?? null;
+  const resolvedByMeta = metadata.resolvedBy ?? metadata.resolved_by ?? null;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -79,6 +87,26 @@ export async function POST(request: Request) {
   const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
 
   const objectKey = `backups/${uid}/${driveId}/${safePath}`;
+
+  const dbPre = getAdminFirestore();
+  const driveSnapPre = await dbPre.collection("linked_drives").doc(String(driveId)).get();
+  const initGuard = await assertCreatorRawFinalizeOrAudit({
+    uid,
+    driveId: String(driveId),
+    driveSnap: driveSnapPre,
+    uploadIntent,
+    lockedDestination: lockedDestinationRaw,
+    destinationMode,
+    routeContext,
+    sourceSurface,
+    objectKey,
+    relativePath: safePath,
+    organizationId: null,
+    workspaceId,
+  });
+  if (!initGuard.ok) {
+    return NextResponse.json({ error: initGuard.message }, { status: initGuard.status });
+  }
   let reservation_id: string | null = null;
   try {
     const r = await checkAndReserveUploadBytes(uid, sizeBytes, driveId, objectKey);
@@ -130,6 +158,14 @@ export async function POST(request: Request) {
     objectKey,
     uploadId,
     galleryId: galleryId ?? null,
+    upload_intent: uploadIntent,
+    locked_destination:
+      lockedDestinationRaw === "true" || lockedDestinationRaw === "1",
+    destination_mode: destinationMode,
+    route_context: routeContext,
+    source_surface: sourceSurface,
+    target_drive_name: targetDriveName,
+    resolved_by: resolvedByMeta,
     status: "pending",
     fileFingerprint: null,
     /** Full path inside the drive (same as B2 key suffix); Uppy often sends leaf-only `filename` — do not use that alone. */

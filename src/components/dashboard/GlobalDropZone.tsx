@@ -10,19 +10,20 @@ import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useAuth } from "@/context/AuthContext";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import {
-  pickStrictPersonalStorageDrive,
-  pickTeamWorkspaceStorageDrive,
-} from "@/lib/pick-storage-drive";
+  resolveUploadDestination,
+  getDropOverlayCopy,
+  isCreatorMainRoute,
+} from "@/lib/upload-destination-resolve";
+import { isAllowedInCreatorRaw } from "@/lib/creator-raw-upload-policy";
 
 /**
- * Global drag-and-drop zone for file uploads. Shows "Drop File to Upload" overlay
- * when dragging files over the page, then opens the Uppy uploader on drop.
- * Active on Home, Creator, and All files views; uploads go to storage (or current folder when in All files).
+ * Global drag-and-drop zone. Overlay copy and drop target both come from
+ * resolveUploadDestination — one source of truth.
  */
 export default function GlobalDropZone() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { linkedDrives, getOrCreateStorageDrive } = useBackup();
+  const { linkedDrives, getOrCreateStorageDrive, setFileUploadErrorMessage } = useBackup();
   const { currentDriveId, currentDrivePath, selectedWorkspaceId } = useCurrentFolder();
   const { org } = useEnterprise();
   const { user } = useAuth();
@@ -30,6 +31,10 @@ export default function GlobalDropZone() {
 
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
+  const overlayCancelRef = useRef(0);
+  const [dropOverlay, setDropOverlay] = useState<{ title: string; subtitle: string } | null>(
+    null
+  );
 
   const isGalleryMediaDrive = Boolean(
     currentDriveId && linkedDrives.find((d) => d.id === currentDriveId)?.name === "Gallery Media"
@@ -54,11 +59,51 @@ export default function GlobalDropZone() {
   const shouldShowOverlay =
     isActiveRoute && !isGalleryMediaDrive && !isEnterpriseFilesNoDrive;
 
+  const refreshOverlayCopy = useCallback(async () => {
+    const gen = ++overlayCancelRef.current;
+    const resolved = await resolveUploadDestination({
+      pathname,
+      searchParams,
+      currentDriveId,
+      currentDrivePath: currentDrivePath ?? "",
+      linkedDrives,
+      sourceSurface: (() => {
+        const files =
+          pathname === "/dashboard/files" ||
+          pathname === "/enterprise/files" ||
+          pathname === "/desktop/app/files" ||
+          (!!pathname?.startsWith("/team/") && pathname.includes("/files"));
+        if (files) return "files_global_drop";
+        if (isCreatorMainRoute(pathname)) return "creator_global_drop";
+        return "home_global_drop";
+      })(),
+      isEnterpriseFilesNoDrive,
+      isGalleryMediaDrive,
+      getOrCreateStorageDrive: async () => {
+        const d = await getOrCreateStorageDrive();
+        return { id: d.id, name: d.name };
+      },
+    });
+    if (gen !== overlayCancelRef.current) return;
+    setDropOverlay(getDropOverlayCopy(resolved));
+  }, [
+    pathname,
+    searchParams,
+    currentDriveId,
+    currentDrivePath,
+    linkedDrives,
+    isEnterpriseFilesNoDrive,
+    isGalleryMediaDrive,
+    getOrCreateStorageDrive,
+  ]);
+
   const handleDrop = useCallback(
     async (e: DragEvent) => {
       e.preventDefault();
       dragCounterRef.current = 0;
       setIsDragging(false);
+      overlayCancelRef.current += 1;
+      setDropOverlay(null);
 
       if (!shouldShowOverlay || !openPanel) return;
 
@@ -80,24 +125,55 @@ export default function GlobalDropZone() {
           pathname === "/desktop/app/files" ||
           (!!pathname?.startsWith("/team/") && pathname.includes("/files"));
 
-        // Home: Storage root. Prefer strict personal vs team pillar so uploads meter to the right workspace.
-        const teamOwnerFromPath =
-          typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
-        const storageDrive = teamOwnerFromPath
-          ? pickTeamWorkspaceStorageDrive(linkedDrives, teamOwnerFromPath)
-          : pickStrictPersonalStorageDrive(linkedDrives);
-        const effectiveDriveId =
-          storageDrive?.id ?? (await getOrCreateStorageDrive()).id;
-        const driveId = isFilesView
-          ? currentDriveId &&
-            linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
-            ? currentDriveId
-            : effectiveDriveId
-          : effectiveDriveId;
+        const resolved = await resolveUploadDestination({
+          pathname,
+          searchParams,
+          currentDriveId,
+          currentDrivePath: currentDrivePath ?? "",
+          linkedDrives,
+          sourceSurface: isFilesView
+            ? "files_global_drop"
+            : isCreatorMainRoute(pathname)
+              ? "creator_global_drop"
+              : "home_global_drop",
+          isEnterpriseFilesNoDrive,
+          isGalleryMediaDrive,
+          getOrCreateStorageDrive: async () => {
+            const d = await getOrCreateStorageDrive();
+            return { id: d.id, name: d.name };
+          },
+        });
 
-        const pathPrefix = isFilesView ? (currentDrivePath ?? "") : "";
+        if (!resolved.success) {
+          setFileUploadErrorMessage(resolved.userMessage);
+          return;
+        }
+
+        let files = fileList;
+        if (resolved.destinationMode === "creator_raw" && resolved.isLocked) {
+          const allowed = files.filter((f) => isAllowedInCreatorRaw(f.name));
+          const skipped = files.length - allowed.length;
+          if (skipped > 0) {
+            setFileUploadErrorMessage(
+              `${skipped} file(s) skipped — Creator RAW accepts formats Bizzi can preview and grade. Upload unsupported files to Storage instead.`
+            );
+          }
+          files = allowed;
+          if (files.length === 0) return;
+        }
+
+        let finalDriveId = resolved.driveId;
         let workspaceId: string | null = null;
-        let finalDriveId = driveId;
+        const panelOptionsBase = {
+          uploadIntent: resolved.uploadIntent,
+          lockedDestination: resolved.isLocked,
+          sourceSurface: resolved.sourceSurface,
+          destinationMode: resolved.destinationMode,
+          routeContext: resolved.routeContext,
+          targetDriveName: resolved.driveName,
+          resolvedBy: resolved.resolvedBy,
+          driveName: resolved.driveName,
+        };
 
         if ((pathname?.startsWith("/enterprise") || pathname?.startsWith("/desktop")) && org?.id && user) {
           try {
@@ -121,21 +197,24 @@ export default function GlobalDropZone() {
             };
             workspaceId = data.workspace_id;
             finalDriveId = data.drive_id ?? finalDriveId;
-            openPanel(finalDriveId, pathPrefix, workspaceId, {
-              initialFiles: fileList,
+            openPanel(finalDriveId, resolved.pathPrefix, workspaceId, {
+              ...panelOptionsBase,
+              initialFiles: files,
+              driveName: data.drive_name ?? panelOptionsBase.driveName,
               workspaceName: data.workspace_name ?? null,
               scopeLabel: data.scope_label ?? null,
-              driveName: data.drive_name ?? null,
             });
             return;
           } catch (err) {
             console.error("Workspace resolve failed:", err);
+            setFileUploadErrorMessage("Could not resolve workspace for upload. Try again.");
             return;
           }
         }
 
-        openPanel(finalDriveId, pathPrefix, workspaceId, {
-          initialFiles: fileList,
+        openPanel(finalDriveId, resolved.pathPrefix, workspaceId, {
+          ...panelOptionsBase,
+          initialFiles: files,
         });
       } catch (err) {
         console.error("Global drop upload failed:", err);
@@ -150,8 +229,12 @@ export default function GlobalDropZone() {
       linkedDrives,
       getOrCreateStorageDrive,
       pathname,
+      searchParams,
       org?.id,
       user,
+      isEnterpriseFilesNoDrive,
+      isGalleryMediaDrive,
+      setFileUploadErrorMessage,
     ]
   );
 
@@ -163,8 +246,15 @@ export default function GlobalDropZone() {
       e.preventDefault();
       dragCounterRef.current += 1;
       setIsDragging(true);
+      if (dragCounterRef.current === 1) {
+        setDropOverlay({
+          title: "Drop files to upload",
+          subtitle: "Resolving upload destination…",
+        });
+        void refreshOverlayCopy();
+      }
     },
-    [shouldShowOverlay]
+    [shouldShowOverlay, refreshOverlayCopy]
   );
 
   const handleDragLeave = useCallback((e: DragEvent) => {
@@ -173,6 +263,8 @@ export default function GlobalDropZone() {
     if (dragCounterRef.current <= 0) {
       dragCounterRef.current = 0;
       setIsDragging(false);
+      overlayCancelRef.current += 1;
+      setDropOverlay(null);
     }
   }, []);
 
@@ -206,6 +298,11 @@ export default function GlobalDropZone() {
 
   if (!isDragging) return null;
 
+  const title = dropOverlay?.title ?? "Drop files to upload";
+  const subtitle =
+    dropOverlay?.subtitle ??
+    "Release to add them to the uploader. Final Cut (.fcpbundle), Lightroom Library (.lrlibrary), and other macOS packages keep folder structure when supported.";
+
   return (
     <div
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -213,12 +310,8 @@ export default function GlobalDropZone() {
     >
       <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-white/50 bg-white/10 px-12 py-10">
         <Upload className="h-16 w-16 text-white" strokeWidth={1.5} />
-        <p className="text-xl font-semibold text-white">Drop files to upload</p>
-        <p className="text-sm text-white/80">
-          Release to add them to the uploader. Final Cut (.fcpbundle), Lightroom Library (.lrlibrary), and other
-          macOS packages keep folder structure when the browser exposes the package as a directory (or use Browse
-          folders in the upload panel).
-        </p>
+        <p className="text-xl font-semibold text-white">{title}</p>
+        <p className="max-w-lg text-center text-sm text-white/80">{subtitle}</p>
       </div>
     </div>
   );

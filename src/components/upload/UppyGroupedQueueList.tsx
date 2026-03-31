@@ -115,11 +115,14 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   uppy,
   bundlesOnly = false,
   listClassName = "",
+  queueDestinationChip = null,
 }: {
   uppy: Uppy<M, B> | null;
   /** When true, only macOS package cards (loose files use the native Uppy list). */
   bundlesOnly?: boolean;
   listClassName?: string;
+  /** e.g. "RAW" — shown per row for locked Creator RAW sessions */
+  queueDestinationChip?: string | null;
 }) {
   const files = useUppyFileList(uppy);
 
@@ -213,9 +216,16 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
               <div className="min-w-0 flex-1 py-0.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={displayName}>
-                      {displayName}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white" title={displayName}>
+                        {displayName}
+                      </p>
+                      {queueDestinationChip ? (
+                        <span className="shrink-0 rounded-md bg-bizzi-blue/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan">
+                          {queueDestinationChip}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       {formatBytes(bytesTotal)} · {members.length} file{members.length === 1 ? "" : "s"} · {label}
                     </p>
@@ -300,7 +310,14 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate text-xs font-medium text-neutral-900 dark:text-white">{name}</p>
+                    {queueDestinationChip ? (
+                      <span className="shrink-0 rounded bg-bizzi-blue/15 px-1 py-px text-[9px] font-semibold uppercase text-bizzi-blue dark:bg-bizzi-cyan/20 dark:text-bizzi-cyan">
+                        {queueDestinationChip}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
                     <div
                       className={`h-full ${f.error ? "bg-red-500" : "bg-bizzi-blue dark:bg-bizzi-cyan"}`}

@@ -23,6 +23,14 @@ export interface OpenPanelOptions {
   scopeLabel?: string | null;
   /** Display name for drive (e.g. "Gallery Media", "RAW") */
   driveName?: string | null;
+  /** Locked Creator RAW session metadata (single destination system) */
+  uploadIntent?: string | null;
+  lockedDestination?: boolean;
+  sourceSurface?: string | null;
+  destinationMode?: string | null;
+  routeContext?: string | null;
+  targetDriveName?: string | null;
+  resolvedBy?: string | null;
 }
 
 type PanelTarget = {
@@ -31,6 +39,13 @@ type PanelTarget = {
   pathPrefix: string;
   workspaceId: string | null;
   galleryId: string | null;
+  uploadIntent: string | null;
+  lockedDestination: boolean;
+  sourceSurface: string | null;
+  destinationMode: string | null;
+  routeContext: string | null;
+  targetDriveName: string | null;
+  resolvedBy: string | null;
 };
 
 interface UppyUploadContextValue {
@@ -50,6 +65,20 @@ export function useUppyUpload() {
   return ctx;
 }
 
+function sessionKeysMatch(a: PanelTarget, b: PanelTarget): boolean {
+  return (
+    a.driveId === b.driveId &&
+    a.pathPrefix === b.pathPrefix &&
+    a.workspaceId === b.workspaceId &&
+    a.galleryId === b.galleryId &&
+    a.uploadIntent === b.uploadIntent &&
+    a.lockedDestination === b.lockedDestination &&
+    a.sourceSurface === b.sourceSurface &&
+    a.destinationMode === b.destinationMode &&
+    a.routeContext === b.routeContext
+  );
+}
+
 /**
  * Renders the Uppy upload panel and provides context. State lives here so the
  * panel persists across tab/navigation changes (TopBar unmounts, Shell does not).
@@ -63,6 +92,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [scopeLabel, setScopeLabel] = useState<string | null>(null);
   const [driveName, setDriveName] = useState<string | null>(null);
   const [galleryId, setGalleryId] = useState<string | null>(null);
+  const [uploadIntent, setUploadIntent] = useState<string | null>(null);
+  const [lockedDestination, setLockedDestination] = useState(false);
+  const [sourceSurface, setSourceSurface] = useState<string | null>(null);
+  const [destinationMode, setDestinationMode] = useState<string | null>(null);
+  const [routeContext, setRouteContext] = useState<string | null>(null);
+  const [targetDriveName, setTargetDriveName] = useState<string | null>(null);
+  const [resolvedBy, setResolvedBy] = useState<string | null>(null);
   /** Files dropped or chosen while the panel is open; drained by UppyUploadModal — not part of Uppy's instance key */
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [onUploadComplete, setOnUploadComplete] = useState<
@@ -75,6 +111,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     pathPrefix: "",
     workspaceId: null,
     galleryId: null,
+    uploadIntent: null,
+    lockedDestination: false,
+    sourceSurface: null,
+    destinationMode: null,
+    routeContext: null,
+    targetDriveName: null,
+    resolvedBy: null,
   });
 
   useEffect(() => {
@@ -84,21 +127,59 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       pathPrefix,
       workspaceId,
       galleryId,
+      uploadIntent,
+      lockedDestination,
+      sourceSurface,
+      destinationMode,
+      routeContext,
+      targetDriveName,
+      resolvedBy,
     };
-  }, [open, driveId, pathPrefix, workspaceId, galleryId]);
+  }, [
+    open,
+    driveId,
+    pathPrefix,
+    workspaceId,
+    galleryId,
+    uploadIntent,
+    lockedDestination,
+    sourceSurface,
+    destinationMode,
+    routeContext,
+    targetDriveName,
+    resolvedBy,
+  ]);
 
   const { bumpStorageVersion } = useBackup();
 
   const openPanel = useCallback(
     (d: string, prefix = "", ws: string | null = null, options?: OpenPanelOptions) => {
       const galleryIdOpt = options?.galleryId ?? null;
+      const intent = options?.uploadIntent ?? null;
+      const locked = options?.lockedDestination === true;
+      const surface = options?.sourceSurface ?? null;
+      const mode = options?.destinationMode ?? null;
+      const rc = options?.routeContext ?? null;
+      const tdn = options?.targetDriveName ?? null;
+      const rb = options?.resolvedBy ?? null;
+
       const p = panelRef.current;
-      const same =
-        p.open &&
-        p.driveId === d &&
-        p.pathPrefix === prefix &&
-        p.workspaceId === ws &&
-        p.galleryId === galleryIdOpt;
+      const nextTarget: PanelTarget = {
+        open: true,
+        driveId: d,
+        pathPrefix: prefix,
+        workspaceId: ws,
+        galleryId: galleryIdOpt,
+        uploadIntent: intent,
+        lockedDestination: locked,
+        sourceSurface: surface,
+        destinationMode: mode,
+        routeContext: rc,
+        targetDriveName: tdn,
+        resolvedBy: rb,
+      };
+
+      const same = p.open && sessionKeysMatch(p, nextTarget);
 
       const incoming = options?.initialFiles;
       if (same && incoming && incoming.length > 0) {
@@ -112,13 +193,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
-      panelRef.current = {
-        open: true,
-        driveId: d,
-        pathPrefix: prefix,
-        workspaceId: ws,
-        galleryId: galleryIdOpt,
-      };
+      panelRef.current = nextTarget;
 
       setDriveId(d);
       setPathPrefix(prefix);
@@ -127,6 +202,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       setScopeLabel(options?.scopeLabel ?? null);
       setDriveName(options?.driveName ?? null);
       setGalleryId(galleryIdOpt);
+      setUploadIntent(intent);
+      setLockedDestination(locked);
+      setSourceSurface(surface);
+      setDestinationMode(mode);
+      setRouteContext(rc);
+      setTargetDriveName(tdn);
+      setResolvedBy(rb);
       if (options && "onUploadComplete" in options) {
         setOnUploadComplete(options.onUploadComplete ?? null);
       }
@@ -148,6 +230,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setScopeLabel(null);
     setDriveName(null);
     setGalleryId(null);
+    setUploadIntent(null);
+    setLockedDestination(false);
+    setSourceSurface(null);
+    setDestinationMode(null);
+    setRouteContext(null);
+    setTargetDriveName(null);
+    setResolvedBy(null);
     setPendingFiles([]);
     setOnUploadComplete(null);
   }, []);
@@ -178,6 +267,13 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           scopeLabel={scopeLabel}
           driveName={driveName}
           galleryId={galleryId}
+          uploadIntent={uploadIntent}
+          lockedDestination={lockedDestination}
+          sourceSurface={sourceSurface}
+          destinationMode={destinationMode}
+          routeContext={routeContext}
+          targetDriveName={targetDriveName}
+          resolvedBy={resolvedBy}
           pendingFiles={pendingFiles}
           onPendingFilesConsumed={consumePendingFiles}
           onUploadComplete={handleUploadComplete}

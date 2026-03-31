@@ -28,6 +28,7 @@ import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { isPersonalScopeDriveDoc, isTeamContainerDriveDoc } from "@/lib/backup-scope";
 import type { LinkedDrive, FileUploadProgress, FileUploadItem } from "@/types/backup";
 import { UploadManager, type QueuedFile } from "@/lib/upload-manager";
+import { isAllowedInCreatorRaw } from "@/lib/creator-raw-upload-policy";
 import {
   useFileSystemAccess,
   isFileSystemAccessSupported,
@@ -84,6 +85,8 @@ interface BackupContextValue {
   cancelFileUpload: (fileId: string) => void;
   fileUploadProgress: FileUploadProgress | null;
   clearFileUploadError: () => void;
+  /** Surface destination-resolution errors (e.g. Creator RAW not ready) without starting upload. */
+  setFileUploadErrorMessage: (message: string | null) => void;
   fsAccessSupported: boolean;
   /** Create a new empty folder (linked drive). */
   createFolder: (name: string, options?: { creatorSection?: boolean }) => Promise<LinkedDrive>;
@@ -1191,12 +1194,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       let filesToUpload = files;
       const rawId = linkedDrives.find((d) => d.is_creator_raw)?.id;
       if (targetDriveId && targetDriveId === rawId) {
-        const videoFiles = files.filter((f) => VIDEO_EXT.test(f.name));
-        const skipped = files.length - videoFiles.length;
+        const allowed = files.filter((f) => isAllowedInCreatorRaw(f.name));
+        const skipped = files.length - allowed.length;
         if (skipped > 0) {
-          setFileUploadError(`${skipped} non-video file(s) skipped. RAW folder accepts videos only.`);
+          setFileUploadError(
+            `${skipped} file(s) skipped. Creator RAW accepts formats Bizzi can preview and grade. Upload other files to Storage.`
+          );
         }
-        filesToUpload = videoFiles;
+        filesToUpload = allowed;
         if (filesToUpload.length === 0) return;
       }
 
@@ -1789,6 +1794,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
 
   const clearFileUploadError = useCallback(() => setFileUploadError(null), []);
+  const setFileUploadErrorMessage = useCallback((message: string | null) => {
+    setFileUploadError(message);
+  }, []);
 
   const bumpStorageVersion = useCallback(
     () => setStorageVersion((v) => v + 1),
@@ -1813,6 +1821,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       cancelFileUpload,
       fileUploadProgress,
       clearFileUploadError,
+      setFileUploadErrorMessage,
       fsAccessSupported,
       createFolder,
       getOrCreateStorageDrive,
@@ -1836,6 +1845,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       cancelFileUpload,
       fileUploadProgress,
       clearFileUploadError,
+      setFileUploadErrorMessage,
       fileUploadError,
       fsAccessSupported,
       createFolder,

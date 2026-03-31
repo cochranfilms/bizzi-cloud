@@ -15,6 +15,7 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
+import { resolveUploadDestination } from "@/lib/upload-destination-resolve";
 
 interface TopBarProps {
   title?: string;
@@ -46,7 +47,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     !searchParams?.get("drive_id");
   const showCreateTransfer =
     pathname === "/dashboard/transfers" || pathname === "/enterprise/transfers" || pathname === "/desktop/app/transfers";
-  const { currentDriveId, selectedWorkspaceId } = useCurrentFolder();
+  const { currentDriveId, currentDrivePath, selectedWorkspaceId } = useCurrentFolder();
   const {
     linkedDrives,
     uploadFiles,
@@ -55,6 +56,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     createFolder,
     fileUploadError,
     clearFileUploadError,
+    setFileUploadErrorMessage,
     creatorRawDriveId,
     getOrCreateStorageDrive,
     bumpStorageVersion,
@@ -82,17 +84,45 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
 
   const handleFileUploadClick = async () => {
     setNewDropdownOpen(false);
+    clearFileUploadError();
     if (isEnterpriseFilesNoDrive) return;
     if (isGalleryMediaDrive) {
       fileInputRef.current?.click();
       return;
     }
-    let driveId =
-      currentDriveId && linkedDrives.some((d) => d.id === currentDriveId && d.name !== "Gallery Media")
-        ? currentDriveId
-        : (await getOrCreateStorageDrive()).id;
 
+    const resolved = await resolveUploadDestination({
+      pathname,
+      searchParams,
+      currentDriveId,
+      currentDrivePath: currentDrivePath ?? "",
+      linkedDrives,
+      sourceSurface: "topbar_file_upload",
+      isEnterpriseFilesNoDrive,
+      isGalleryMediaDrive,
+      getOrCreateStorageDrive: async () => {
+        const d = await getOrCreateStorageDrive();
+        return { id: d.id, name: d.name };
+      },
+    });
+
+    if (!resolved.success) {
+      setFileUploadErrorMessage(resolved.userMessage);
+      return;
+    }
+
+    let driveId = resolved.driveId;
     let workspaceId: string | null = null;
+    const panelOptionsBase = {
+      uploadIntent: resolved.uploadIntent,
+      lockedDestination: resolved.isLocked,
+      sourceSurface: resolved.sourceSurface,
+      destinationMode: resolved.destinationMode,
+      routeContext: resolved.routeContext,
+      targetDriveName: resolved.driveName,
+      resolvedBy: resolved.resolvedBy,
+      driveName: resolved.driveName,
+    };
 
     if ((pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id) {
       try {
@@ -120,22 +150,24 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         };
         workspaceId = data.workspace_id;
         driveId = data.drive_id ?? driveId;
-        uppyUpload?.openPanel(driveId, "", workspaceId, {
+        uppyUpload?.openPanel(driveId, resolved.pathPrefix, workspaceId, {
+          ...panelOptionsBase,
+          driveName: data.drive_name ?? panelOptionsBase.driveName,
           workspaceName: data.workspace_name ?? null,
           scopeLabel: data.scope_label ?? null,
-          driveName: data.drive_name ?? null,
         });
         return;
       } catch (err) {
         console.error("Workspace resolve failed:", err);
+        setFileUploadErrorMessage("Could not resolve workspace for upload. Try again.");
         return;
       }
     }
 
-    uppyUpload?.openPanel(driveId, "");
+    uppyUpload?.openPanel(driveId, resolved.pathPrefix, null, panelOptionsBase);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     const files = fileList ? Array.from(fileList) : [];
     e.target.value = "";
@@ -144,9 +176,27 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
       setGalleryPickerFiles(files);
       return;
     }
+    clearFileUploadError();
+    const resolved = await resolveUploadDestination({
+      pathname,
+      searchParams,
+      currentDriveId,
+      currentDrivePath: currentDrivePath ?? "",
+      linkedDrives,
+      sourceSurface: "topbar_file_upload",
+      isEnterpriseFilesNoDrive,
+      isGalleryMediaDrive,
+      getOrCreateStorageDrive: async () => {
+        const d = await getOrCreateStorageDrive();
+        return { id: d.id, name: d.name };
+      },
+    });
+    if (!resolved.success) {
+      setFileUploadErrorMessage(resolved.userMessage);
+      return;
+    }
     setFileUploading(true);
-    const driveId = currentDriveId ?? undefined;
-    uploadFiles(files, driveId).finally(() => setFileUploading(false));
+    uploadFiles(files, resolved.driveId).finally(() => setFileUploading(false));
   };
 
   const handleCreateFolderClick = () => {
@@ -278,7 +328,11 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         open={createFolderOpen}
         onClose={() => setCreateFolderOpen(false)}
         onCreateEmpty={async (folderName) => {
-          const isCreator = pathname === "/dashboard/creator" || pathname === "/enterprise/creator" || pathname === "/desktop/app/creator";
+          const isCreator =
+            pathname === "/dashboard/creator" ||
+            pathname === "/enterprise/creator" ||
+            pathname === "/desktop/app/creator" ||
+            (!!pathname?.startsWith("/team/") && pathname.includes("/creator"));
           await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
           setCreateFolderOpen(false);
         }}

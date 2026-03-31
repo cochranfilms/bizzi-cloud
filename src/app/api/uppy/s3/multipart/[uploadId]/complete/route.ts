@@ -20,6 +20,7 @@ import {
   commitReservation,
   releaseReservation,
 } from "@/lib/storage-quota-reservations";
+import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -142,6 +143,46 @@ export async function POST(
   const reservationId =
     typeof reservationRaw === "string" && reservationRaw.length > 0 ? reservationRaw : null;
 
+  const sessionUploadIntent =
+    (data.upload_intent as string | undefined) ??
+    (data.uploadIntent as string | undefined) ??
+    null;
+  const sessionLocked =
+    data.locked_destination === true ||
+    data.lockedDestination === true ||
+    data.locked_destination === "true";
+  const sessionDestinationMode =
+    (data.destination_mode as string | undefined) ??
+    (data.destinationMode as string | undefined) ??
+    null;
+  const sessionRouteContext =
+    (data.route_context as string | undefined) ??
+    (data.routeContext as string | undefined) ??
+    null;
+  const sessionSourceSurface =
+    (data.source_surface as string | undefined) ??
+    (data.sourceSurface as string | undefined) ??
+    null;
+
+  const driveSnapPreComplete = await db.collection("linked_drives").doc(driveId).get();
+  const preGuard = await assertCreatorRawFinalizeOrAudit({
+    uid,
+    driveId,
+    driveSnap: driveSnapPreComplete,
+    uploadIntent: sessionUploadIntent,
+    lockedDestination: sessionLocked,
+    destinationMode: sessionDestinationMode,
+    routeContext: sessionRouteContext,
+    sourceSurface: sessionSourceSurface,
+    objectKey,
+    relativePath,
+    organizationId: null,
+    workspaceId: null,
+  });
+  if (!preGuard.ok) {
+    return NextResponse.json({ error: preGuard.message }, { status: preGuard.status });
+  }
+
   try {
     await completeMultipartUpload(objectKey, uploadId, validatedParts);
   } catch (completeErr) {
@@ -204,8 +245,9 @@ export async function POST(
     visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");
   }
 
-  const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+  const driveSnap = driveSnapPreComplete;
   const driveData = driveSnap.data();
+
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const uploadMeta = await resolveBackupUploadMetadata(db, {
     uid,
