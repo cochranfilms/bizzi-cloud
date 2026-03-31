@@ -1821,6 +1821,21 @@
       ]
     },
     {
+      "collectionGroup": "support_tickets",
+      "queryScope": "COLLECTION",
+      "density": "SPARSE_ALL",
+      "fields": [
+        {
+          "fieldPath": "priority",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "cold_storage_files",
       "queryScope": "COLLECTION",
       "fields": [
