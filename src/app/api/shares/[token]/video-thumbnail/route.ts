@@ -11,9 +11,11 @@ import {
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isBrawFile } from "@/lib/format-detection";
 import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
+import sharp from "sharp";
 
 export const maxDuration = 60;
 
@@ -140,6 +142,29 @@ export async function GET(
     // Use proxy when available for more reliable FFmpeg processing
     const proxyKey = getProxyObjectKey(objectKey);
     const hasProxy = await objectExists(proxyKey);
+
+    const brawForkConfigured = Boolean(process.env.FFMPEG_BRAW_PATH?.trim());
+    if (isBrawFile(leafForFfmpeg) && !hasProxy && !brawForkConfigured) {
+      const placeholder = await sharp({
+        create: {
+          width: 480,
+          height: 270,
+          channels: 3,
+          background: { r: 64, g: 64, b: 64 },
+        },
+      })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      return new NextResponse(new Uint8Array(placeholder), {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "private, max-age=30, must-revalidate",
+          "X-Bizzi-Video-Thumbnail": "braw_proxy_pending",
+        },
+      });
+    }
+
     const effectiveKey = hasProxy ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 

@@ -12,9 +12,11 @@ import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/bac
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isBrawFile } from "@/lib/format-detection";
 import { isRawVideoFile } from "@/lib/raw-video";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
+import sharp from "sharp";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -129,6 +131,38 @@ export async function GET(request: Request) {
     // Use proxy (720p H.264) when available - more reliable for FFmpeg than original codecs
     const proxyKey = getProxyObjectKey(objectKey);
     const hasProxy = await objectExists(proxyKey);
+
+    /**
+     * Vercel / stock ffmpeg-static cannot decode BRAW from source. Without a generated proxy and
+     * without FFMPEG_BRAW_PATH, FFmpeg always fails → 503. Serve a neutral placeholder so cards load;
+     * client can retry after proxy generation (short cache).
+     */
+    const brawForkConfigured = Boolean(process.env.FFMPEG_BRAW_PATH?.trim());
+    if (
+      isBrawFile(leafForFfmpeg) &&
+      !hasProxy &&
+      !brawForkConfigured
+    ) {
+      const placeholder = await sharp({
+        create: {
+          width: 480,
+          height: 270,
+          channels: 3,
+          background: { r: 64, g: 64, b: 64 },
+        },
+      })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      return new NextResponse(new Uint8Array(placeholder), {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "private, max-age=30, must-revalidate",
+          "X-Bizzi-Video-Thumbnail": "braw_proxy_pending",
+        },
+      });
+    }
+
     const effectiveKey = hasProxy ? proxyKey : objectKey;
     const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 
