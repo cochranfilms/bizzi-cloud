@@ -57,7 +57,17 @@ describe("classifyCreatorRawMedia", () => {
       "video/quicktime"
     );
     expect(r.allowed).toBe(true);
-    expect(r.code).toBe("allowed_codec");
+    expect(r.code).toBe("allowed_tag");
+  });
+
+  it("allows ProRes-in-MP4 when ffprobe reports generic mpeg4 codec but ProRes fourcc", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({ detectedVideoCodec: "mpeg4", detectedCodecTag: "apch" }),
+      "JB22061.MP4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("allowed_tag");
   });
 
   it("allows ProRes RAW fourcc aprn when codec_name is not on the codec allowlist (tag path)", () => {

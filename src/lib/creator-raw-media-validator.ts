@@ -78,6 +78,16 @@ export function classifyCreatorRawMedia(
     });
   }
 
+  /** Match probe: professional fourcc wins before generic blocked codec (`mpeg4` + ProRes tag). */
+  if (tag && ALLOWED_TAG.has(tag)) {
+    return baseResult(inspected, contentType, {
+      allowed: true,
+      reason: `allowed_tag:${tag}`,
+      userMessage: "",
+      code: "allowed_tag",
+    });
+  }
+
   if (codec && BLOCKED_CODEC.has(codec)) {
     return baseResult(inspected, contentType, {
       allowed: false,
@@ -102,15 +112,6 @@ export function classifyCreatorRawMedia(
       reason: `allowed_codec:${codec}`,
       userMessage: "",
       code: "allowed_codec",
-    });
-  }
-
-  if (tag && ALLOWED_TAG.has(tag)) {
-    return baseResult(inspected, contentType, {
-      allowed: true,
-      reason: `allowed_tag:${tag}`,
-      userMessage: "",
-      code: "allowed_tag",
     });
   }
 

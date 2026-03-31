@@ -26,15 +26,17 @@ const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
+/** Uppy companion-client throws `UserFacingApiError` for 4xx only when the JSON body includes `message`. */
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message, message }, { status });
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ uploadId: string }> }
 ) {
   if (!isB2Configured()) {
-    return NextResponse.json(
-      { error: "Backblaze B2 is not configured" },
-      { status: 503 }
-    );
+    return jsonError("Backblaze B2 is not configured", 503);
   }
 
   const { uploadId } = await params;
@@ -42,22 +44,19 @@ export async function POST(
   const key = url.searchParams.get("key");
 
   if (!uploadId || !key) {
-    return NextResponse.json(
-      { error: "uploadId and key (query) required" },
-      { status: 400 }
-    );
+    return jsonError("uploadId and key (query) required", 400);
   }
 
   let body: { parts?: Array<{ PartNumber: number; ETag: string }> };
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError("Invalid JSON", 400);
   }
 
   const partsInput = body.parts;
   if (!Array.isArray(partsInput) || partsInput.length === 0) {
-    return NextResponse.json({ error: "parts array required" }, { status: 400 });
+    return jsonError("parts array required", 400);
   }
 
   const validatedParts: { partNumber: number; etag: string }[] = [];
@@ -69,7 +68,7 @@ export async function POST(
     }
   }
   if (validatedParts.length === 0) {
-    return NextResponse.json({ error: "No valid parts" }, { status: 400 });
+    return jsonError("No valid parts", 400);
   }
 
   let uid: string;
@@ -85,18 +84,18 @@ export async function POST(
       .limit(1)
       .get();
     if (snap.empty) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return jsonError("Session not found", 404);
     }
     uid = snap.docs[0].data().userId;
   } else if (!token) {
-    return NextResponse.json({ error: "Missing Authorization" }, { status: 401 });
+    return jsonError("Missing Authorization", 401);
   } else {
     try {
       const decoded = await verifyIdToken(token);
       uid = decoded.uid;
       authEmail = decoded.email;
     } catch {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+      return jsonError("Invalid or expired token", 401);
     }
   }
 
@@ -111,7 +110,7 @@ export async function POST(
     .get();
 
   if (snap.empty) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    return jsonError("Session not found", 404);
   }
 
   const sessionDoc = snap.docs[0];
@@ -120,7 +119,7 @@ export async function POST(
   const sessionKey = data.objectKey;
 
   if (sessionKey !== objectKey) {
-    return NextResponse.json({ error: "Key mismatch" }, { status: 403 });
+    return jsonError("Key mismatch", 403);
   }
 
   const driveId = data.driveId;
@@ -184,7 +183,7 @@ export async function POST(
     skipMediaProbe: true,
   });
   if (!preGuard.ok) {
-    return NextResponse.json({ error: preGuard.message }, { status: preGuard.status });
+    return jsonError(preGuard.message, preGuard.status);
   }
 
   try {
@@ -208,10 +207,7 @@ export async function POST(
       expected: fileSize,
       actual,
     });
-    return NextResponse.json(
-      { error: "Uploaded size does not match expected size." },
-      { status: 400 }
-    );
+    return jsonError("Uploaded size does not match expected size.", 400);
   }
 
   const postMediaGuard = await assertCreatorRawFinalizeOrAudit({
@@ -234,7 +230,7 @@ export async function POST(
     if (reservationId) {
       await releaseReservation(reservationId, "finalize_failed").catch(() => {});
     }
-    return NextResponse.json({ error: postMediaGuard.message }, { status: postMediaGuard.status });
+    return jsonError(postMediaGuard.message, postMediaGuard.status);
   }
 
   if (reservationId) {
@@ -257,16 +253,16 @@ export async function POST(
   if (workspaceIdFromSession) {
     const wsSnap = await db.collection("workspaces").doc(workspaceIdFromSession).get();
     if (!wsSnap.exists) {
-      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+      return jsonError("Workspace not found", 404);
     }
     const wsData = wsSnap.data();
     organizationId = (wsData?.organization_id as string) ?? null;
     if (!organizationId) {
-      return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
+      return jsonError("Invalid workspace", 400);
     }
     const canWrite = await userCanWriteWorkspace(uid, workspaceIdFromSession);
     if (!canWrite) {
-      return NextResponse.json({ error: "No write access to workspace" }, { status: 403 });
+      return jsonError("No write access to workspace", 403);
     }
     workspaceIdResolved = workspaceIdFromSession;
     visibilityScope = visibilityScopeFromWorkspaceType((wsData?.workspace_type as string) ?? "private");

@@ -65,6 +65,7 @@ import { isGalleryVideoDebugEnabled } from "@/lib/gallery-video-debug";
 import { isRawFile } from "@/lib/gallery-file-types";
 import RawPreviewPlaceholder from "@/components/gallery/RawPreviewPlaceholder";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
+import { usePdfBlobUrl } from "@/hooks/usePdfBlobUrl";
 import DashboardRouteFade from "@/components/dashboard/DashboardRouteFade";
 import { usePathname } from "next/navigation";
 import { shellContextFromClientPathname } from "@/lib/gallery-proofing-types";
@@ -441,6 +442,51 @@ function PreviewModal({
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [galleryPdfSourceUrl, setGalleryPdfSourceUrl] = useState<string | null>(null);
+  const [galleryPdfUrlFailed, setGalleryPdfUrlFailed] = useState(false);
+  const assetIsPdf = isPdf(asset.name);
+  const pdfEmbed = usePdfBlobUrl(galleryPdfSourceUrl, assetIsPdf && !isVideo);
+
+  useEffect(() => {
+    if (!assetIsPdf || isVideo || !asset.object_key) {
+      setGalleryPdfSourceUrl(null);
+      setGalleryPdfUrlFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setGalleryPdfSourceUrl(null);
+    setGalleryPdfUrlFailed(false);
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          object_key: asset.object_key,
+          name: asset.name,
+        });
+        if (password) params.set("password", password);
+        const headers: Record<string, string> = {};
+        if (getAuthToken) {
+          const t = await getAuthToken();
+          if (t) headers.Authorization = `Bearer ${t}`;
+        }
+        const res = await fetch(`/api/galleries/${galleryId}/preview-url?${params}`, {
+          headers,
+        });
+        const body = (await res.json().catch(() => ({}))) as { url?: string };
+        if (cancelled) return;
+        if (!res.ok || !body.url) {
+          setGalleryPdfUrlFailed(true);
+          return;
+        }
+        const u = body.url;
+        setGalleryPdfSourceUrl(u.startsWith("/") ? `${window.location.origin}${u}` : u);
+      } catch {
+        if (!cancelled) setGalleryPdfUrlFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assetIsPdf, isVideo, asset.object_key, asset.name, galleryId, password, getAuthToken]);
 
   useEffect(() => {
     if (!isVideo || !asset.object_key) return;
@@ -662,6 +708,29 @@ function PreviewModal({
         <p className="text-sm text-white/80">Video unavailable</p>
       ) : null}
     </div>
+  ) : assetIsPdf ? (
+    galleryPdfUrlFailed ? (
+      <div className="w-full max-w-lg rounded-lg bg-white/[0.06] px-4 py-6 text-center">
+        <p className="text-sm text-white/85">Could not load this PDF.</p>
+      </div>
+    ) : pdfEmbed.failed ? (
+      <div className="w-full max-w-lg rounded-lg bg-white/[0.06] px-4 py-6 text-center">
+        <p className="text-sm text-white/85">Could not display this PDF in the browser.</p>
+      </div>
+    ) : !galleryPdfSourceUrl || pdfEmbed.loading || !pdfEmbed.blobUrl ? (
+      <div className="flex min-h-[16rem] flex-col items-center justify-center gap-3">
+        <Loader2 className="h-10 w-10 animate-spin text-bizzi-cyan" />
+        <p className="text-sm text-white/80">Loading PDF…</p>
+      </div>
+    ) : (
+      <div className="flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-lg border border-white/15 bg-black/40 shadow-lg">
+        <iframe
+          title={asset.name}
+          src={pdfEmbed.blobUrl}
+          className="h-full min-h-[480px] w-full flex-1 border-0 bg-white"
+        />
+      </div>
+    )
   ) : previewRawUnavailableProp ? (
     <div className="w-full max-w-lg rounded-lg bg-white/[0.06] px-4 py-6">
       <RawPreviewPlaceholder fileName={asset.name} />
@@ -780,6 +849,9 @@ function isImage(name: string) {
 }
 function isVideo(name: string) {
   return GALLERY_VIDEO_EXT.test(name);
+}
+function isPdf(name: string) {
+  return /\.pdf$/i.test(name);
 }
 
 function GalleryAssetCard({

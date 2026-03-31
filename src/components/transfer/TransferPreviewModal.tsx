@@ -8,6 +8,7 @@ import type { TransferFile } from "@/types/transfer";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { usePdfBlobUrl } from "@/hooks/usePdfBlobUrl";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -55,6 +56,7 @@ export default function TransferPreviewModal({
 
   const objectKey = file?.objectKey;
   const previewType = file ? getPreviewType(file.name) : "other";
+  const pdfEmbed = usePdfBlobUrl(fullUrl, previewType === "pdf");
 
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
@@ -227,7 +229,29 @@ export default function TransferPreviewModal({
         ) : null}
       </div>
     );
-  } else if (loading) {
+  } else if (previewType === "pdf" && fullUrl && pdfEmbed.failed) {
+    mediaBody = (
+      <div className="flex min-h-[12rem] flex-col items-center justify-center gap-3 text-red-600 dark:text-red-400">
+        <FileIcon className="h-12 w-12" />
+        <p className="text-sm">Could not load PDF preview</p>
+        {canDownload ? (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+          >
+            Download
+          </button>
+        ) : null}
+      </div>
+    );
+  } else if (
+    loading ||
+    (previewType === "pdf" &&
+      fullUrl &&
+      (pdfEmbed.loading || (!pdfEmbed.blobUrl && !pdfEmbed.failed)))
+  ) {
     mediaBody = (
       <div className="flex min-h-[12rem] w-full flex-col items-center justify-center gap-4 py-10">
         <Loader2 className="h-10 w-10 animate-spin text-bizzi-blue" />
@@ -266,7 +290,11 @@ export default function TransferPreviewModal({
         ) : null}
       </div>
     );
-  } else if (fullUrl && !(previewType === "video" && videoProcessing)) {
+  } else if (
+    fullUrl &&
+    !(previewType === "video" && videoProcessing) &&
+    (previewType !== "pdf" || !!pdfEmbed.blobUrl)
+  ) {
     if (previewType === "image") {
       mediaBody = (
         /* eslint-disable-next-line @next/next/no-img-element */
@@ -292,10 +320,10 @@ export default function TransferPreviewModal({
           <audio src={fullUrl} controls className="w-full" />
         </div>
       );
-    } else if (previewType === "pdf") {
+    } else if (previewType === "pdf" && pdfEmbed.blobUrl) {
       mediaBody = (
         <iframe
-          src={fullUrl}
+          src={pdfEmbed.blobUrl}
           title={file.name}
           className="h-full max-h-full min-h-[200px] w-full max-w-4xl rounded-lg border-0 bg-white shadow-lg"
         />

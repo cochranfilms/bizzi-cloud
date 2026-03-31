@@ -62,4 +62,52 @@ describe("parseFfprobeVideoStream", () => {
     });
     expect(inspected.detectedVideoCodec).toBe("h264");
   });
+
+  it("prefers ProRes track when ffprobe reports mpeg4 + apch (common in MP4 mezzanine)", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_tag_string: "apch",
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedVideoCodec).toBe("mpeg4");
+    expect(inspected.detectedCodecTag).toBe("apch");
+    expect(classifyCreatorRawMedia(inspected, "take.MP4", "video/mp4").allowed).toBe(true);
+  });
+
+  it("uses coded_width/coded_height when display width/height are unknown (-1)", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_tag_string: "apch",
+          width: -1,
+          height: -1,
+          coded_width: 3840,
+          coded_height: 2160,
+        },
+        {
+          codec_type: "video",
+          codec_name: "h264",
+          codec_tag_string: "avc1",
+          width: 960,
+          height: 540,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecTag).toBe("apch");
+    expect(inspected.detectedWidth).toBe(3840);
+    expect(inspected.detectedHeight).toBe(2160);
+    expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
+  });
 });

@@ -26,27 +26,58 @@ function categorizeFfprobeVideoStream(
 ): StreamCategory {
   const codec = codecName ? codecName.toLowerCase() : "";
   const tag = tagStr ? tagStr.toLowerCase() : "";
-  if (BLOCKED_CODEC.has(codec)) return "blocked";
-  if (tag && BLOCKED_TAG.has(tag)) return "blocked";
-  if (ALLOWED_CODEC.has(codec)) return "allowed";
+  /** ProRes/DNx fourccs win over generic codec_name (ProRes-in-MP4 often reports `mpeg4`). */
   if (tag && ALLOWED_TAG.has(tag)) return "allowed";
+  if (codec && BLOCKED_CODEC.has(codec)) return "blocked";
+  if (tag && BLOCKED_TAG.has(tag)) return "blocked";
+  if (codec && ALLOWED_CODEC.has(codec)) return "allowed";
   if (!codec && !tag) return "neutral";
   return "neutral";
 }
 
-function pixelArea(s: FfprobeStream): number {
-  const w = typeof s.width === "number" ? s.width : 0;
-  const h = typeof s.height === "number" ? s.height : 0;
-  return w * h;
+function parseBitRate(v: string | number | undefined): number {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : parseInt(String(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function effectivePixelArea(s: FfprobeStream): number {
+  const validDim = (n: number | undefined) => typeof n === "number" && n > 0;
+  const w = validDim(s.width) ? (s.width as number) : 0;
+  const h = validDim(s.height) ? (s.height as number) : 0;
+  if (w > 0 && h > 0) return w * h;
+  const cw = validDim(s.coded_width) ? (s.coded_width as number) : 0;
+  const ch = validDim(s.coded_height) ? (s.coded_height as number) : 0;
+  if (cw > 0 && ch > 0) return cw * ch;
+  return 0;
+}
+
+/** Prefer larger frame / bitrate; tie-break earlier stream index (main program often first). */
+function streamRankTuple(s: FfprobeStream, streamIndex: number): [number, number, number] {
+  return [effectivePixelArea(s), parseBitRate(s.bit_rate), -streamIndex];
+}
+
+function betterRankedStream(
+  a: { stream: FfprobeStream; index: number },
+  b: { stream: FfprobeStream; index: number }
+): { stream: FfprobeStream; index: number } {
+  const ta = streamRankTuple(a.stream, a.index);
+  const tb = streamRankTuple(b.stream, b.index);
+  for (let i = 0; i < ta.length; i++) {
+    if (tb[i] !== ta[i]) return tb[i] > ta[i] ? b : a;
+  }
+  return a;
 }
 
 function bestStreamByCategory(
-  streams: FfprobeStream[],
+  videos: { stream: FfprobeStream; index: number }[],
   cat: StreamCategory
 ): FfprobeStream | undefined {
-  const matches = streams.filter((s) => categorizeFfprobeVideoStream(s.codec_name, s.codec_tag_string) === cat);
+  const matches = videos.filter(
+    (v) => categorizeFfprobeVideoStream(v.stream.codec_name, v.stream.codec_tag_string) === cat
+  );
   if (matches.length === 0) return undefined;
-  return matches.reduce((a, b) => (pixelArea(b) > pixelArea(a) ? b : a));
+  return matches.reduce((a, b) => betterRankedStream(a, b)).stream;
 }
 
 const execFileAsync = promisify(execFile);
@@ -60,6 +91,9 @@ type FfprobeStream = {
   pix_fmt?: string;
   width?: number;
   height?: number;
+  coded_width?: number;
+  coded_height?: number;
+  bit_rate?: string | number;
   bits_per_raw_sample?: string | number;
   r_frame_rate?: string;
   avg_frame_rate?: string;
@@ -70,6 +104,16 @@ type FfprobeJson = {
   format?: { format_name?: string; format_long_name?: string };
   streams?: FfprobeStream[];
 };
+
+function normalizeDimension(
+  display: number | undefined,
+  coded: number | undefined
+): number | null {
+  const valid = (n: number | undefined) => typeof n === "number" && n > 0;
+  if (valid(display)) return display as number;
+  if (valid(coded)) return coded as number;
+  return null;
+}
 
 function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | null): InspectedMediaStreams {
   const rateStr = video.avg_frame_rate || video.r_frame_rate || "0/1";
@@ -91,8 +135,8 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
     detectedCodecTag: video.codec_tag_string ? video.codec_tag_string.toLowerCase() : null,
     detectedPixelFormat: video.pix_fmt ? video.pix_fmt.toLowerCase() : null,
     detectedBitDepth: bitDepth,
-    detectedWidth: typeof video.width === "number" ? video.width : null,
-    detectedHeight: typeof video.height === "number" ? video.height : null,
+    detectedWidth: normalizeDimension(video.width, video.coded_width),
+    detectedHeight: normalizeDimension(video.height, video.coded_height),
     detectedFrameRate: fps,
     hasVideoStream: true,
   };
@@ -106,11 +150,13 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
 export function parseFfprobeVideoStream(json: FfprobeJson): InspectedMediaStreams {
   const streams = json.streams ?? [];
   const formatName = json.format?.format_name ?? null;
-  const videos = streams.filter((s) => {
-    if (s.codec_type !== "video") return false;
-    if (s.disposition?.attached_pic === 1) return false;
-    return true;
-  });
+  const videos: { stream: FfprobeStream; index: number }[] = [];
+  for (let i = 0; i < streams.length; i++) {
+    const s = streams[i];
+    if (s.codec_type !== "video") continue;
+    if (s.disposition?.attached_pic === 1) continue;
+    videos.push({ stream: s, index: i });
+  }
 
   if (videos.length === 0) {
     return {
@@ -133,7 +179,7 @@ export function parseFfprobeVideoStream(json: FfprobeJson): InspectedMediaStream
   if (blocked) return ffprobeStreamToInspected(blocked, formatName);
 
   const neutral = bestStreamByCategory(videos, "neutral");
-  return ffprobeStreamToInspected(neutral ?? videos[0], formatName);
+  return ffprobeStreamToInspected(neutral ?? videos[0].stream, formatName);
 }
 
 /**

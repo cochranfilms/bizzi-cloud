@@ -27,6 +27,7 @@ import {
   filePreviewForceProxyMp4,
   filePreviewLutDebugEnabled,
 } from "@/lib/file-preview-lut-debug";
+import { usePdfBlobUrl } from "@/hooks/usePdfBlobUrl";
 
 const IMAGE_EXT = GALLERY_IMAGE_EXT;
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -109,6 +110,7 @@ export default function FilePreviewModal({
 
   const previewType = file ? getPreviewType(file.name, file.contentType, file.assetType) : "other";
   const hearts = useHearts(file?.id ?? null);
+  const pdfEmbed = usePdfBlobUrl(fullUrl, previewType === "pdf");
 
   useEffect(() => {
     if (file?.id) {
@@ -185,6 +187,10 @@ export default function FilePreviewModal({
     setPdfFrameVisible(false);
     setAudioReady(false);
   }, [file?.id]);
+
+  useEffect(() => {
+    setPdfFrameVisible(false);
+  }, [pdfEmbed.blobUrl]);
 
   useEffect(() => {
     setVideoMediaVisible(false);
@@ -408,7 +414,27 @@ export default function FilePreviewModal({
         </p>
       </div>
     );
-  } else if (loading && !(previewType === "image" && lowResPreviewUrl)) {
+  } else if (previewType === "pdf" && fullUrl && pdfEmbed.failed) {
+    mediaBody = (
+      <div className="flex min-h-[12rem] flex-col items-center justify-center gap-3 text-red-600 dark:text-red-400">
+        <FileIcon className="h-12 w-12" />
+        <p className="text-sm">Could not load PDF preview</p>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-blue/90 disabled:opacity-50"
+        >
+          Download
+        </button>
+      </div>
+    );
+  } else if (
+    (loading && !(previewType === "image" && lowResPreviewUrl)) ||
+    (previewType === "pdf" &&
+      fullUrl &&
+      (pdfEmbed.loading || (!pdfEmbed.blobUrl && !pdfEmbed.failed)))
+  ) {
     mediaBody = (
       <div
         className="flex min-h-[12rem] w-full flex-1 items-center justify-center"
@@ -419,7 +445,8 @@ export default function FilePreviewModal({
     (previewType === "image" && lowResPreviewUrl) ||
     (previewType === "video" && fullUrl && !videoProcessing) ||
     previewType === "project_file" ||
-    ((previewType === "audio" || previewType === "pdf" || previewType === "other") && fullUrl)
+    ((previewType === "audio" || previewType === "other") && fullUrl) ||
+    (previewType === "pdf" && fullUrl && !!pdfEmbed.blobUrl)
   ) {
     if (previewType === "image" && lowResPreviewUrl) {
       mediaBody = (
@@ -508,13 +535,13 @@ export default function FilePreviewModal({
           />
         </div>
       );
-    } else if (previewType === "pdf" && fullUrl) {
+    } else if (previewType === "pdf" && fullUrl && pdfEmbed.blobUrl) {
       mediaBody = (
         <div
           className={`flex h-[min(88dvh,calc(100dvh-5.5rem))] w-full max-w-[min(56rem,96vw)] min-h-[320px] flex-col overflow-hidden rounded-lg border border-neutral-300/50 bg-neutral-100/25 shadow-lg transition-opacity duration-300 ease-out dark:border-neutral-600/40 dark:bg-neutral-950/50 ${pdfFrameVisible ? "opacity-100" : "opacity-0"}`}
         >
           <iframe
-            src={fullUrl}
+            src={pdfEmbed.blobUrl}
             title={file.name}
             onLoad={() => setPdfFrameVisible(true)}
             className="h-full min-h-[480px] w-full flex-1 border-0 bg-white dark:bg-neutral-950"

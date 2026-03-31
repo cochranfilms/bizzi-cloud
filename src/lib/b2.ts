@@ -354,6 +354,47 @@ export async function objectExists(objectKey: string): Promise<boolean> {
   return meta !== null;
 }
 
+/** Quoted-string escaping for RFC 2616 filename in Content-Disposition. */
+function quotedDispositionFilename(name: string): string {
+  return name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * For inline browser preview, prefer explicit filename + Content-Type so Chrome/Safari
+ * embed PDFs/audio instead of downloading (object metadata may be octet-stream or attachment).
+ */
+function inlinePreviewResponseParams(objectKey: string): {
+  ResponseContentDisposition: string;
+  ResponseContentType?: string;
+} | null {
+  const segment = objectKey.split("/").pop() ?? "";
+  const lower = segment.toLowerCase();
+  const name = quotedDispositionFilename(segment);
+  if (lower.endsWith(".pdf")) {
+    return {
+      ResponseContentDisposition: `inline; filename="${name}"`,
+      ResponseContentType: "application/pdf",
+    };
+  }
+  const audio: Array<{ ext: string; type: string }> = [
+    { ext: ".mp3", type: "audio/mpeg" },
+    { ext: ".wav", type: "audio/wav" },
+    { ext: ".ogg", type: "audio/ogg" },
+    { ext: ".m4a", type: "audio/mp4" },
+    { ext: ".aac", type: "audio/aac" },
+    { ext: ".flac", type: "audio/flac" },
+  ];
+  for (const { ext, type } of audio) {
+    if (lower.endsWith(ext)) {
+      return {
+        ResponseContentDisposition: `inline; filename="${name}"`,
+        ResponseContentType: type,
+      };
+    }
+  }
+  return null;
+}
+
 export async function createPresignedDownloadUrl(
   objectKey: string,
   expiresIn = 3600,
@@ -368,16 +409,26 @@ export async function createPresignedDownloadUrl(
 ): Promise<string> {
   const client = getB2Client();
   let responseContentDisposition: string | undefined;
+  let responseContentType: string | undefined;
   if (downloadFilename) {
     responseContentDisposition = `attachment; filename="${downloadFilename.replace(/"/g, '\\"')}"`;
   } else if (inlineForBrowserPreview) {
-    responseContentDisposition = "inline";
+    const hint = inlinePreviewResponseParams(objectKey);
+    if (hint) {
+      responseContentDisposition = hint.ResponseContentDisposition;
+      responseContentType = hint.ResponseContentType;
+    } else {
+      responseContentDisposition = "inline";
+    }
   }
   const command = new GetObjectCommand({
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
     ...(responseContentDisposition && {
       ResponseContentDisposition: responseContentDisposition,
+    }),
+    ...(responseContentType && {
+      ResponseContentType: responseContentType,
     }),
   });
   return getSignedUrl(client, command, { expiresIn });
