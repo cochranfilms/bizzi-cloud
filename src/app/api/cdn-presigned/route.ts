@@ -34,10 +34,7 @@ export async function GET(request: Request) {
   }
 
   const exp = parseInt(expParam, 10);
-  if (
-    isNaN(exp) ||
-    !verifyCdnSignature(objectKey, exp, sig, downloadFilename, inlineDisposition)
-  ) {
+  if (isNaN(exp) || !verifyCdnSignature(objectKey, exp, sig, downloadFilename)) {
     return NextResponse.json(
       { error: "Invalid or expired CDN signature" },
       { status: 403 }

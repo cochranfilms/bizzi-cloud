@@ -4,11 +4,11 @@ Cloudflare Worker that proxies B2 downloads through Cloudflare for **free B2 egr
 
 ## Query parameters
 
-- `exp`, `sig` — required HMAC signed URL (see `src/lib/cdn.ts`).
-- `download=<filename>` — attachment download; signature uses `objectKey|exp|filename`.
-- `inline=1` — in-browser preview (PDF/audio in iframe); signature uses `objectKey|exp|i`. Omitted for legacy neutral URLs (`objectKey|exp`).
+- `exp`, `sig` — required HMAC (see `src/lib/cdn.ts`): payload is `objectKey|exp` or `objectKey|exp|filename` when `download=` is set.
+- `download=<filename>` — attachment disposition on the B2 presign.
+- `inline=1` — **not** part of the HMAC; forwarded to `/api/cdn-presigned` so B2 presign uses `Content-Disposition: inline` (PDF/audio in iframe). Safe: anyone who can forge `exp`/`sig` already had access to the object.
 
-The Worker **must** forward `inline` to `/api/cdn-presigned` and use a **cache key** that includes the disposition mode (`n` / `i` / `d:…`) so inline and attachment responses for the same object are not mixed.
+The Worker **should** forward `inline=1` to `/api/cdn-presigned` and use a **cache key** that includes the disposition mode (`n` / `i` / `d:…`) so inline and attachment responses for the same object are not mixed.
 
 ## Flow
 

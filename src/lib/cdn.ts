@@ -27,11 +27,14 @@ export function createCdnDownloadUrl(
   const base = CDN_BASE_URL!.replace(/\/$/, "");
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
   const inline = Boolean(inlineForBrowserPreview) && !downloadFilename;
+  /**
+   * HMAC must not depend on `inline`: the Worker may omit `inline=1` until deployed; the browser
+   * still has `inline=1` from the app, which would make verification fail. `inline=1` is only a
+   * hint for /api/cdn-presigned (same object, Content-Disposition: inline).
+   */
   const payload = downloadFilename
     ? `${objectKey}|${exp}|${downloadFilename}`
-    : inline
-      ? `${objectKey}|${exp}|i`
-      : `${objectKey}|${exp}`;
+    : `${objectKey}|${exp}`;
   const sig = createHmac("sha256", CDN_SECRET).update(payload).digest("base64url");
   const path = encodeObjectKeyAsPath(objectKey);
   const params = new URLSearchParams({ exp: String(exp), sig });
@@ -45,17 +48,12 @@ export function verifyCdnSignature(
   objectKey: string,
   exp: number,
   sig: string,
-  downloadFilename?: string,
-  /** Must agree with signing in createCdnDownloadUrl (CDN `inline=1` query). */
-  inlineDisposition?: boolean
+  downloadFilename?: string
 ): boolean {
   if (!CDN_SECRET) return false;
-  const inline = Boolean(inlineDisposition) && !downloadFilename;
   const payload = downloadFilename
     ? `${objectKey}|${exp}|${downloadFilename}`
-    : inline
-      ? `${objectKey}|${exp}|i`
-      : `${objectKey}|${exp}`;
+    : `${objectKey}|${exp}`;
   const expected = createHmac("sha256", CDN_SECRET).update(payload).digest("base64url");
   return sig === expected && exp > Math.floor(Date.now() / 1000);
 }
