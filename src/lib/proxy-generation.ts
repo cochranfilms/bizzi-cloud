@@ -171,12 +171,13 @@ export async function runProxyGeneration(
     let ffmpegStderr = "";
 
     await new Promise<void>((resolve, reject) => {
+      /** Remote RAW needs a larger probe than defaults or FFmpeg may not see the stream. */
+      const probePrefix = isRawTry
+        ? (["-probesize", "100M", "-analyzeduration", "100M"] as const)
+        : (["-probesize", "32K", "-analyzeduration", "500000"] as const);
       const args = [
         "-y",
-        "-probesize",
-        "32K",
-        "-analyzeduration",
-        "500000",
+        ...probePrefix,
         "-i",
         presignedUrl,
         "-t",

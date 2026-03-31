@@ -202,6 +202,8 @@ export default function FilePreviewModal({
             streamUrl?: string;
             processing?: boolean;
             error?: string;
+            proxyUnavailable?: boolean;
+            message?: string;
             resolution_w?: number;
             resolution_h?: number;
           };
@@ -211,6 +213,15 @@ export default function FilePreviewModal({
                 ? streamData.error
                 : "Failed to load preview stream"
             );
+          }
+          if (streamData.proxyUnavailable) {
+            setVideoProcessing(false);
+            setError(
+              typeof streamData.message === "string" && streamData.message.trim()
+                ? streamData.message
+                : "Cloud preview isn’t available for this file. Use Download for the original."
+            );
+            return;
           }
           if (
             typeof streamData.resolution_w === "number" &&
@@ -329,9 +340,20 @@ export default function FilePreviewModal({
         const data = (await res.json().catch(() => ({}))) as {
           streamUrl?: string;
           processing?: boolean;
+          proxyUnavailable?: boolean;
+          message?: string;
           resolution_w?: number;
           resolution_h?: number;
         };
+        if (data?.proxyUnavailable) {
+          setVideoProcessing(false);
+          setError(
+            typeof data.message === "string" && data.message.trim()
+              ? data.message
+              : "Cloud preview isn’t available for this file. Use Download for the original."
+          );
+          return;
+        }
         if (
           typeof data.resolution_w === "number" &&
           typeof data.resolution_h === "number" &&

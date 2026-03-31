@@ -47,6 +47,13 @@ export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
 
   const db = getAdminFirestore();
 
+  /** Terminal outcomes: do not enqueue again or we overwrite proxy_status and loop forever (e.g. BRAW without FFMPEG_BRAW_PATH). */
+  if (backup_file_id) {
+    const bf = await db.collection("backup_files").doc(backup_file_id).get();
+    const ps = bf.data()?.proxy_status as string | undefined;
+    if (ps === "raw_unsupported") return;
+  }
+
   // Avoid duplicates: check if job already pending
   const existing = await db
     .collection(PROXY_JOBS_COLLECTION)

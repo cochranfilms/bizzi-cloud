@@ -137,6 +137,16 @@ describe("Creator RAW preview: processing until stream, no original fallback", (
     ).toBe(false);
   });
 
+  it("leaves processing when proxy is terminally unavailable (e.g. RAW decode not configured)", () => {
+    expect(
+      creatorRawVideoRemainsProcessingUntilStream(true, true, {
+        processing: false,
+        proxyUnavailable: true,
+        streamUrl: "",
+      })
+    ).toBe(false);
+  });
+
   it("does not allow non-creator poll logic to clear processing without stream", () => {
     expect(nonCreatorRawPollMayEndProcessingWithoutStream(true, 99, true)).toBe(false);
   });

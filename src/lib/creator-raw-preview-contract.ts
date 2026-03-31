@@ -8,6 +8,7 @@ export type VideoStreamUrlBody = {
   processing?: boolean;
   resolution_w?: number;
   resolution_h?: number;
+  proxyUnavailable?: boolean;
 };
 
 /** After a successful stream-url response, Creator RAW should keep “processing” until a stream URL exists. */
@@ -17,6 +18,7 @@ export function creatorRawVideoRemainsProcessingUntilStream(
   body: VideoStreamUrlBody | null | undefined
 ): boolean {
   if (!showLUTForVideo || !resOk) return true;
+  if (body?.proxyUnavailable) return false;
   const url = body?.streamUrl;
   if (typeof url === "string" && url.length > 0) return false;
   return true;

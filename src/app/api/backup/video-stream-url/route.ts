@@ -27,6 +27,29 @@ function backupDimensionsPayload(doc: { data: () => Record<string, unknown> } | 
   return o;
 }
 
+/** Proxy pipeline will not succeed — surface to client instead of “processing” + safety-net spam. */
+function terminalProxyPreviewFailurePayload(
+  metaDoc: { data: () => Record<string, unknown> } | undefined,
+  dim: ReturnType<typeof backupDimensionsPayload>
+): Record<string, unknown> | null {
+  if (!metaDoc) return null;
+  const d = metaDoc.data();
+  const ps = d.proxy_status as string | undefined;
+  if (ps !== "raw_unsupported" && ps !== "failed") return null;
+  const reason = (d.proxy_error_reason as string | null) ?? null;
+  const defaultMsg =
+    ps === "raw_unsupported"
+      ? "Cloud preview can’t decode this camera RAW with the current server setup. Download the original, or configure a BRAW-capable FFmpeg (FFMPEG_BRAW_PATH) for proxy generation."
+      : "Proxy generation failed. Try Download, or try again later.";
+  return {
+    processing: false,
+    proxyUnavailable: true,
+    proxyStatus: ps,
+    message: reason?.trim() ? reason : defaultMsg,
+    ...dim,
+  };
+}
+
 async function driveIsCreatorRaw(linkedDriveId: string | undefined): Promise<boolean> {
   if (!linkedDriveId) return false;
   const db = getAdminFirestore();
@@ -174,6 +197,8 @@ export async function POST(request: Request) {
         const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
         return NextResponse.json({ streamUrl, ...dim });
       }
+      const termMux = terminalProxyPreviewFailurePayload(metaDoc ?? muxSnap.docs[0], dim);
+      if (termMux) return NextResponse.json(termMux);
       await ensureVideoProxyJobQueued(objectKey, uid, muxSnap.docs);
       return NextResponse.json({
         processing: true,
@@ -185,6 +210,8 @@ export async function POST(request: Request) {
     const proxyKey = getProxyObjectKey(objectKey);
     const proxyExists = await objectExists(proxyKey);
     if (!proxyExists) {
+      const term = terminalProxyPreviewFailurePayload(metaDoc, dim);
+      if (term) return NextResponse.json(term);
       await ensureVideoProxyJobQueued(objectKey, uid, muxSnap.docs);
       return NextResponse.json({
         processing: true,
