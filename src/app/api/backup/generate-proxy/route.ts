@@ -12,6 +12,7 @@ import {
 import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { runProxyGeneration } from "@/lib/proxy-generation";
+import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -65,15 +66,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "object_key required" }, { status: 400 });
   }
 
-  const accessResult = await verifyBackupFileAccessWithLifecycle(uid, objectKey);
+  const bfId = typeof backupFileId === "string" ? backupFileId : null;
+  const resolvedPreviewKey =
+    bfId != null
+      ? ((
+          await getAdminFirestore().collection("backup_files").doc(bfId).get()
+        ).data()?.object_key as string | undefined) ?? objectKey
+      : objectKey;
+
+  const accessResult = await verifyBackupFileAccessWithLifecycle(uid, resolvedPreviewKey);
   if (!accessResult.allowed) {
     return NextResponse.json(
       { error: accessResult.message ?? "Access denied" },
       { status: accessResult.status ?? 403 }
     );
   }
-
-  const proxyKey = getProxyObjectKey(objectKey);
+  const proxyKey = getProxyObjectKey(resolvedPreviewKey);
   if (await objectExists(proxyKey)) {
     return NextResponse.json({ ok: true, alreadyExists: true });
   }
@@ -83,7 +91,7 @@ export async function POST(request: Request) {
     await queueProxyJob({
       object_key: objectKey,
       name: typeof fileName === "string" ? fileName : undefined,
-      backup_file_id: typeof backupFileId === "string" ? backupFileId : undefined,
+      backup_file_id: bfId ?? undefined,
       user_id: uid,
     });
     return NextResponse.json({ ok: true, queued: true });
@@ -93,17 +101,17 @@ export async function POST(request: Request) {
   const result = await runProxyGeneration({
     objectKey,
     fileName: typeof fileName === "string" ? fileName : null,
-    backupFileId: typeof backupFileId === "string" ? backupFileId : null,
+    backupFileId: bfId,
   });
 
   const now = new Date().toISOString();
-  const bfId = typeof backupFileId === "string" ? backupFileId : null;
+  const effectiveProxyKey = getProxyObjectKey(result.resolvedSourceObjectKey ?? objectKey);
 
   if (result.ok && bfId) {
     const db = getAdminFirestore();
     await db.collection("backup_files").doc(bfId).update({
       proxy_status: "ready",
-      proxy_object_key: proxyKey,
+      proxy_object_key: effectiveProxyKey,
       proxy_size_bytes: result.proxySizeBytes ?? null,
       proxy_duration_sec: result.proxyDurationSec ?? null,
       proxy_generated_at: now,
@@ -121,6 +129,21 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: result.error ?? "RAW format not supported for proxy" },
       { status: 400 }
+    );
+  }
+  if (isTerminalProxySourceInputError(result.proxyErrorCode) && bfId) {
+    const db = getAdminFirestore();
+    await db.collection("backup_files").doc(bfId).update({
+      proxy_status: "failed",
+      proxy_error_reason: result.error ?? result.proxyErrorCode ?? "source input error",
+      proxy_generated_at: now,
+    });
+    return NextResponse.json(
+      {
+        error: result.error ?? "Source file missing or URL not readable",
+        proxyErrorCode: result.proxyErrorCode,
+      },
+      { status: 404 }
     );
   }
   if (!result.ok && bfId) {

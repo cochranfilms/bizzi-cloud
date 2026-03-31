@@ -8,6 +8,7 @@
  */
 import { NextResponse } from "next/server";
 import { getProxyObjectKey } from "@/lib/b2";
+import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import {
   getPendingProxyJobs,
@@ -48,8 +49,15 @@ async function handleCron(request: Request) {
   for (const job of jobs) {
     processed++;
 
-    // Verify user still has access (file could have been deleted)
-    const hasAccess = await verifyBackupFileAccess(job.user_id, job.object_key);
+    /** Prefer Firestore object_key when we have backup_file_id (see runProxyGeneration). */
+    let accessObjectKey = job.object_key;
+    if (job.backup_file_id) {
+      const bf = await getAdminFirestore().collection("backup_files").doc(job.backup_file_id).get();
+      const k = bf.data()?.object_key as string | undefined;
+      if (typeof k === "string" && k.trim()) accessObjectKey = k;
+    }
+
+    const hasAccess = await verifyBackupFileAccess(job.user_id, accessObjectKey);
     if (!hasAccess) {
       await updateProxyJobStatus(job.id, "completed"); // Treat as completed (skip)
       completed++;
@@ -63,7 +71,8 @@ async function handleCron(request: Request) {
     });
 
     const now = new Date().toISOString();
-    const proxyKey = getProxyObjectKey(job.object_key);
+    const effectiveSourceKey = result.resolvedSourceObjectKey ?? job.object_key;
+    const proxyKey = getProxyObjectKey(effectiveSourceKey);
 
     if (result.ok) {
       await updateProxyJobStatus(job.id, "completed");
@@ -93,6 +102,14 @@ async function handleCron(request: Request) {
         proxy_generated_at: now,
       });
       completed++;
+    } else if (isTerminalProxySourceInputError(result.proxyErrorCode)) {
+      await updateProxyJobStatus(job.id, "completed");
+      completed++;
+      await updateBackupFileProxyStatus(job.backup_file_id, {
+        proxy_status: "failed",
+        proxy_error_reason: result.error ?? result.proxyErrorCode ?? "source input error",
+        proxy_generated_at: now,
+      });
     } else {
       const errMsg = result.error ?? "Unknown error";
       await incrementProxyJobRetry(job.id, errMsg);

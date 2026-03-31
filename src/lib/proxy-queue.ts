@@ -3,6 +3,9 @@
  * Upload flows enqueue jobs; cron processes them to avoid serverless timeouts.
  * `raw_try` extensions (BRAW, R3D, etc.) are enqueued via canGenerateProxy; only `raw_unsupported`
  * short-circuits to an immediate backup_files update without a job.
+ *
+ * Enqueue only after backup_files.object_key matches the final B2 key (post-finalize).
+ * The worker resolves the canonical key from backup_files when backup_file_id is set.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey, objectExists } from "@/lib/b2";

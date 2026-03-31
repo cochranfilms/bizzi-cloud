@@ -20,6 +20,7 @@ import {
   MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import type { ProxySourceInputErrorCode } from "@/lib/proxy-input-errors";
 import ffmpegPath from "ffmpeg-static";
 
 export interface RunProxyGenerationOptions {
@@ -35,6 +36,13 @@ export interface RunProxyGenerationResult {
   alreadyExists?: boolean;
   rawUnsupported?: boolean;
   error?: string;
+  /**
+   * Canonical B2 source key used (from backup_files.object_key when backupFileId is set).
+   * Callers must use this for getProxyObjectKey(), not the queued job’s object_key, which may be stale.
+   */
+  resolvedSourceObjectKey?: string;
+  /** Terminal input / storage failure — do not retry as generic transcode; not raw_unsupported. */
+  proxyErrorCode?: ProxySourceInputErrorCode;
   /** Set when ok: true; used to update backup_files */
   proxySizeBytes?: number;
   proxyDurationSec?: number;
@@ -109,9 +117,18 @@ async function validateProxyFile(tmpPath: string): Promise<
   return { valid: true, durationSec: duration && duration > 0 ? duration : undefined };
 }
 
+function presignedUrlForLog(url: string): { host: string; path: string } {
+  try {
+    const u = new URL(url);
+    return { host: u.host, path: u.pathname };
+  } catch {
+    return { host: "", path: "" };
+  }
+}
+
 /**
  * Run proxy generation for a video file. Skips if proxy already exists.
- * Rejects RAW formats (BRAW, R3D, etc.) - does not attempt transcode.
+ * Resolves source object_key from backup_files when backupFileId is set (queued job key may be stale).
  * Caller must verify access before calling.
  */
 export async function runProxyGeneration(
@@ -120,42 +137,72 @@ export async function runProxyGeneration(
   const { objectKey, fileName, backupFileId } = options;
 
   if (!isB2Configured()) {
-    return { ok: false, error: "B2 not configured" };
+    return { ok: false, error: "B2 not configured", resolvedSourceObjectKey: objectKey };
   }
 
   if (!ffmpegPath) {
-    return { ok: false, error: "FFmpeg not available" };
+    return { ok: false, error: "FFmpeg not available", resolvedSourceObjectKey: objectKey };
   }
 
-  const nameOrPath = (fileName ?? "") || objectKey;
   let mediaType: string | null = null;
+  let sourceObjectKey = objectKey;
+  let objectKeyStaleVersusJob = false;
+
   if (backupFileId) {
     const { getAdminFirestore } = await import("@/lib/firebase-admin");
     const db = getAdminFirestore();
     const doc = await db.collection("backup_files").doc(backupFileId).get();
-    mediaType = doc.exists ? (doc.data()?.media_type as string) ?? null : null;
+    if (doc.exists) {
+      const d = doc.data()!;
+      mediaType = (d.media_type as string) ?? null;
+      const dbKey = (d.object_key as string) ?? "";
+      if (typeof dbKey === "string" && dbKey.trim()) {
+        if (dbKey !== objectKey) objectKeyStaleVersusJob = true;
+        sourceObjectKey = dbKey;
+      }
+    }
   }
 
+  console.info(
+    JSON.stringify({
+      scope: "proxy_generation",
+      event: "source_key_resolved",
+      backup_file_id: backupFileId ?? null,
+      object_key_from_job: objectKey,
+      object_key_resolved: sourceObjectKey,
+      object_key_stale_versus_job: objectKeyStaleVersusJob,
+    })
+  );
+
+  const nameOrPath = (fileName ?? "") || sourceObjectKey;
   const capability = getProxyCapability(nameOrPath, mediaType);
   if (capability === "raw_unsupported") {
-    return { ok: false, rawUnsupported: true, error: "RAW format requires dedicated transcode pipeline" };
+    return {
+      ok: false,
+      rawUnsupported: true,
+      error: "RAW format requires dedicated transcode pipeline",
+      resolvedSourceObjectKey: sourceObjectKey,
+    };
   }
-  // raw_try: we attempt; on FFmpeg decode failure we return rawUnsupported below
   if (capability === "unsupported") {
     const allowVideo = isVideoFile(nameOrPath) || mediaType === "video";
     if (!allowVideo) {
-      return { ok: false, error: "Not a video file" };
+      return { ok: false, error: "Not a video file", resolvedSourceObjectKey: sourceObjectKey };
     }
   }
 
   const canProxy = canGenerateProxy(nameOrPath, mediaType);
   if (!canProxy && capability !== "direct") {
-    return { ok: false, error: "Format not supported for proxy generation" };
+    return {
+      ok: false,
+      error: "Format not supported for proxy generation",
+      resolvedSourceObjectKey: sourceObjectKey,
+    };
   }
 
-  const proxyKey = getProxyObjectKey(objectKey);
+  const proxyKey = getProxyObjectKey(sourceObjectKey);
   if (await objectExists(proxyKey)) {
-    return { ok: true, alreadyExists: true };
+    return { ok: true, alreadyExists: true, resolvedSourceObjectKey: sourceObjectKey };
   }
 
   const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
@@ -167,7 +214,42 @@ export async function runProxyGeneration(
   const isRawTry = capability === "raw_try";
 
   try {
-    const presignedUrl = await createPresignedDownloadUrl(objectKey, 600);
+    const sourceExists = await objectExists(sourceObjectKey);
+
+    if (!sourceExists) {
+      console.info(
+        JSON.stringify({
+          scope: "proxy_generation",
+          event: "source_b2_head",
+          backup_file_id: backupFileId ?? null,
+          object_key_resolved: sourceObjectKey,
+          existence_check_passed: false,
+          presigned_host: "",
+          presigned_path_prefix: "",
+        })
+      );
+      return {
+        ok: false,
+        proxyErrorCode: "source_object_missing",
+        error:
+          "source_object_missing: no object at resolved backup_files.object_key in B2 (wrong key, not finalized, or deleted)",
+        resolvedSourceObjectKey: sourceObjectKey,
+      };
+    }
+
+    const presignedUrl = await createPresignedDownloadUrl(sourceObjectKey, 600);
+    const { host: presignedHost, path: presignedPath } = presignedUrlForLog(presignedUrl);
+    console.info(
+      JSON.stringify({
+        scope: "proxy_generation",
+        event: "source_b2_head",
+        backup_file_id: backupFileId ?? null,
+        object_key_resolved: sourceObjectKey,
+        existence_check_passed: true,
+        presigned_host: presignedHost,
+        presigned_path_prefix: presignedPath.slice(0, 160),
+      })
+    );
     let ffmpegStderr = "";
 
     await new Promise<void>((resolve, reject) => {
@@ -218,14 +300,18 @@ export async function runProxyGeneration(
     const validation = await validateProxyFile(tmpPath);
     if (!validation.valid) {
       await unlink(tmpPath).catch(() => {});
-      return { ok: false, error: validation.error };
+      return { ok: false, error: validation.error, resolvedSourceObjectKey: sourceObjectKey };
     }
 
     const buffer = await readFile(tmpPath);
     await unlink(tmpPath).catch(() => {});
 
     if (buffer.length < MIN_PROXY_SIZE_BYTES) {
-      return { ok: false, error: `Proxy buffer too small (${buffer.length} bytes)` };
+      return {
+        ok: false,
+        error: `Proxy buffer too small (${buffer.length} bytes)`,
+        resolvedSourceObjectKey: sourceObjectKey,
+      };
     }
 
     await putObject(proxyKey, buffer, "video/mp4");
@@ -234,19 +320,46 @@ export async function runProxyGeneration(
       ok: true,
       proxySizeBytes: buffer.length,
       proxyDurationSec: validation.durationSec,
+      resolvedSourceObjectKey: sourceObjectKey,
     };
   } catch (err) {
     await unlink(tmpPath).catch(() => {});
     const msg = err instanceof Error ? err.message : "Proxy generation failed";
+
+    const http404 = /HTTP error 404|404 Not Found|Server returned 404/i.test(msg);
+    if (http404) {
+      console.error(
+        JSON.stringify({
+          scope: "proxy_generation",
+          event: "ffmpeg_input_http_404",
+          backup_file_id: backupFileId ?? null,
+          object_key_resolved: sourceObjectKey,
+          existence_head_was_true: true,
+        })
+      );
+      return {
+        ok: false,
+        proxyErrorCode: "source_url_404",
+        error: "source_url_404: storage returned 404 when FFmpeg opened the signed input URL",
+        resolvedSourceObjectKey: sourceObjectKey,
+      };
+    }
+
     console.error("[proxy-generation] Error:", msg);
-    // RAW formats: on decode failure, mark raw_unsupported to avoid retries
     if (capability === "raw_try") {
       const decodeFailure =
-        /invalid data|could not find codec|format not found|no decoder|unknown decoder|not supported|does not support/i.test(msg);
+        /invalid data|could not find codec|format not found|no decoder|unknown decoder|not supported|does not support/i.test(
+          msg
+        );
       if (decodeFailure) {
-        return { ok: false, rawUnsupported: true, error: msg };
+        return {
+          ok: false,
+          rawUnsupported: true,
+          error: msg,
+          resolvedSourceObjectKey: sourceObjectKey,
+        };
       }
     }
-    return { ok: false, error: msg };
+    return { ok: false, error: msg, resolvedSourceObjectKey: sourceObjectKey };
   }
 }
