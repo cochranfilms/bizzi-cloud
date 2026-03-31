@@ -28,6 +28,30 @@ export const CREATOR_RAW_REJECTION_MESSAGES = {
 } as const;
 
 /**
+ * ffprobe `codec_long_name` often names mezzanine codecs while `codec_name` stays `mpeg4` or `unknown`.
+ * Only used when codec_name is missing, `mpeg4`, or `unknown` — never overrides H.264/HEVC/AV1 (see validator).
+ */
+const MEZZANINE_CODEC_LONG_NAME_REGEXES: readonly RegExp[] = [
+  /\bapple\s+prores\b/i,
+  /\bprores\b/i,
+  /\bdnxhd\b/i,
+  /\bdnxhr\b/i,
+  /\bdnx\s*hd\b/i,
+  /\bavdn\b/i,
+  /\bvc[-\s]?3\b/i,
+  /\bdigital\s+dnxhd\b/i,
+  /\bcineform\b/i,
+  /\bjpeg[\s-]?2000\b/i,
+  /\bj2k\b/i,
+];
+
+export function looksLikeProfessionalMezzanineLongName(longName: string | null | undefined): boolean {
+  const s = longName?.trim();
+  if (!s) return false;
+  return MEZZANINE_CODEC_LONG_NAME_REGEXES.some((re) => re.test(s));
+}
+
+/**
  * Single config object: allowed sets use normalized lowercase codec names / tags from ffprobe.
  */
 export const CREATOR_RAW_MEDIA_POLICY = {

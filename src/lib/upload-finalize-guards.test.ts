@@ -82,6 +82,7 @@ describe("assertCreatorRawFinalizeOrAudit", () => {
     mockInspect.mockResolvedValue({
       detectedContainer: "mov,mp4,m4a,3gp,3g2,mj2",
       detectedVideoCodec: "prores",
+      detectedCodecLongName: null,
       detectedCodecTag: "apch",
       detectedPixelFormat: "yuv422p10le",
       detectedBitDepth: 10,
@@ -110,6 +111,7 @@ describe("assertCreatorRawFinalizeOrAudit", () => {
     mockInspect.mockResolvedValue({
       detectedContainer: "mov,mp4,m4a,3gp,3g2,mj2",
       detectedVideoCodec: "h264",
+      detectedCodecLongName: null,
       detectedCodecTag: "avc1",
       detectedPixelFormat: "yuv420p",
       detectedBitDepth: 8,

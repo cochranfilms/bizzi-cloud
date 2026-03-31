@@ -6,6 +6,8 @@ export type InspectedMediaStreams = {
   detectedContainer: string | null;
   /** Primary video stream codec_name from ffprobe */
   detectedVideoCodec: string | null;
+  /** ffprobe `codec_long_name` for the chosen video stream (mezzanine hint when codec_name is generic). */
+  detectedCodecLongName: string | null;
   detectedCodecTag: string | null;
   detectedPixelFormat: string | null;
   detectedBitDepth: number | null;

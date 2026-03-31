@@ -5,6 +5,7 @@
 import {
   CREATOR_RAW_MEDIA_POLICY,
   CREATOR_RAW_REJECTION_MESSAGES,
+  looksLikeProfessionalMezzanineLongName,
 } from "@/lib/creator-raw-media-config";
 import type { InspectedMediaStreams } from "@/lib/creator-raw-media-types";
 import type { CreatorRawMediaValidationResult } from "@/lib/creator-raw-media-types";
@@ -85,6 +86,18 @@ export function classifyCreatorRawMedia(
       reason: `allowed_tag:${tag}`,
       userMessage: "",
       code: "allowed_tag",
+    });
+  }
+
+  if (
+    looksLikeProfessionalMezzanineLongName(inspected.detectedCodecLongName) &&
+    (!codec || codec === "mpeg4" || codec === "unknown")
+  ) {
+    return baseResult(inspected, contentType, {
+      allowed: true,
+      reason: "allowed_codec_long_name",
+      userMessage: "",
+      code: "allowed_codec_long_name",
     });
   }
 

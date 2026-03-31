@@ -101,6 +101,25 @@ describe("parseFfprobeVideoStream", () => {
     expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
   });
 
+  it("allows mpeg4 when codec_long_name is Apple ProRes and fourcc is absent", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_long_name: "Apple ProRes 422 (HQ)",
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecLongName).toBe("Apple ProRes 422 (HQ)");
+    expect(inspected.detectedCodecTag).toBeNull();
+    expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
+  });
+
   it("derives avc1 from LE hex when codec_tag_string is missing (delivery still rejected)", () => {
     const json = {
       format: { format_name: "mp4" },

@@ -6,7 +6,10 @@ import { execFile } from "child_process";
 import { createRequire } from "module";
 import { promisify } from "util";
 import { existsSync } from "fs";
-import { CREATOR_RAW_MEDIA_POLICY } from "@/lib/creator-raw-media-config";
+import {
+  CREATOR_RAW_MEDIA_POLICY,
+  looksLikeProfessionalMezzanineLongName,
+} from "@/lib/creator-raw-media-config";
 import { createPresignedDownloadUrl } from "@/lib/b2";
 import type { InspectedMediaStreams } from "@/lib/creator-raw-media-types";
 
@@ -36,6 +39,7 @@ type FfprobeStream = {
   bits_per_raw_sample?: string | number;
   r_frame_rate?: string;
   avg_frame_rate?: string;
+  codec_long_name?: string;
   disposition?: { attached_pic?: number };
 };
 
@@ -107,12 +111,19 @@ function normalizedCodecName(stream: FfprobeStream): string | undefined {
 
 function categorizeFfprobeVideoStream(
   codecName: string | undefined,
-  tagStr: string | undefined
+  tagStr: string | undefined,
+  codecLongName?: string | undefined
 ): StreamCategory {
   const codec = (codecName ?? "").trim().toLowerCase();
   const tag = (tagStr ?? "").trim().toLowerCase();
   /** ProRes/DNx fourccs win over generic codec_name (ProRes-in-MP4 often reports `mpeg4`). */
   if (tag && ALLOWED_TAG.has(tag)) return "allowed";
+  if (
+    looksLikeProfessionalMezzanineLongName(codecLongName) &&
+    (!codec || codec === "mpeg4" || codec === "unknown")
+  ) {
+    return "allowed";
+  }
   if (codec && BLOCKED_CODEC.has(codec)) return "blocked";
   if (tag && BLOCKED_TAG.has(tag)) return "blocked";
   if (codec && ALLOWED_CODEC.has(codec)) return "allowed";
@@ -160,8 +171,11 @@ function bestStreamByCategory(
 ): FfprobeStream | undefined {
   const matches = videos.filter(
     (v) =>
-      categorizeFfprobeVideoStream(normalizedCodecName(v.stream), effectiveCodecTagString(v.stream)) ===
-      cat
+      categorizeFfprobeVideoStream(
+        normalizedCodecName(v.stream),
+        effectiveCodecTagString(v.stream),
+        v.stream.codec_long_name
+      ) === cat
   );
   if (matches.length === 0) return undefined;
   return matches.reduce((a, b) => betterRankedStream(a, b)).stream;
@@ -201,9 +215,11 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
   }
 
   const tag = effectiveCodecTagString(video);
+  const longName = video.codec_long_name?.trim() || null;
   return {
     detectedContainer: formatName,
     detectedVideoCodec: normalizedCodecName(video) ?? null,
+    detectedCodecLongName: longName,
     detectedCodecTag: tag ? tag.toLowerCase() : null,
     detectedPixelFormat: video.pix_fmt ? video.pix_fmt.toLowerCase() : null,
     detectedBitDepth: bitDepth,
@@ -234,6 +250,7 @@ export function parseFfprobeVideoStream(json: FfprobeJson): InspectedMediaStream
     return {
       detectedContainer: formatName,
       detectedVideoCodec: null,
+      detectedCodecLongName: null,
       detectedCodecTag: null,
       detectedPixelFormat: null,
       detectedBitDepth: null,
@@ -263,6 +280,7 @@ export async function inspectMediaObjectKey(objectKey: string): Promise<Inspecte
     return {
       detectedContainer: null,
       detectedVideoCodec: null,
+      detectedCodecLongName: null,
       detectedCodecTag: null,
       detectedPixelFormat: null,
       detectedBitDepth: null,
@@ -281,6 +299,7 @@ export async function inspectMediaObjectKey(objectKey: string): Promise<Inspecte
     return {
       detectedContainer: null,
       detectedVideoCodec: null,
+      detectedCodecLongName: null,
       detectedCodecTag: null,
       detectedPixelFormat: null,
       detectedBitDepth: null,
@@ -320,6 +339,7 @@ export async function inspectMediaObjectKey(objectKey: string): Promise<Inspecte
     return {
       detectedContainer: null,
       detectedVideoCodec: null,
+      detectedCodecLongName: null,
       detectedCodecTag: null,
       detectedPixelFormat: null,
       detectedBitDepth: null,

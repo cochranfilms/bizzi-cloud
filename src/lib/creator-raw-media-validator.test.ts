@@ -9,6 +9,7 @@ function vbase(overrides: Partial<InspectedMediaStreams> = {}): InspectedMediaSt
   return {
     detectedContainer: "mov,mp4,m4a,3gp,3g2,mj2",
     detectedVideoCodec: null,
+    detectedCodecLongName: null,
     detectedCodecTag: null,
     detectedPixelFormat: null,
     detectedBitDepth: null,
@@ -68,6 +69,34 @@ describe("classifyCreatorRawMedia", () => {
     );
     expect(r.allowed).toBe(true);
     expect(r.code).toBe("allowed_tag");
+  });
+
+  it("allows mpeg4 when codec_long_name identifies Apple ProRes (no fourcc)", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "mpeg4",
+        detectedCodecTag: null,
+        detectedCodecLongName: "Apple ProRes 422 HQ",
+      }),
+      "JB22061.MP4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("allowed_codec_long_name");
+  });
+
+  it("does not allow H.264 even if codec_long_name mentions ProRes (spoof)", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: "h264",
+        detectedCodecTag: "avc1",
+        detectedCodecLongName: "Apple ProRes 422 HQ",
+      }),
+      "fake.mp4",
+      "video/mp4"
+    );
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("delivery_codec");
   });
 
   it("allows ProRes RAW fourcc aprn when codec_name is not on the codec allowlist (tag path)", () => {
