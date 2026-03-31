@@ -82,6 +82,43 @@ describe("parseFfprobeVideoStream", () => {
     expect(classifyCreatorRawMedia(inspected, "take.MP4", "video/mp4").allowed).toBe(true);
   });
 
+  it("allows ProRes when only codec_tag hex is present (empty codec_tag_string)", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mpeg4",
+          codec_tag_string: "",
+          codec_tag: "0x61706368",
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecTag).toBe("apch");
+    expect(classifyCreatorRawMedia(inspected, "JB22061.MP4", "video/mp4").allowed).toBe(true);
+  });
+
+  it("derives avc1 from LE hex when codec_tag_string is missing (delivery still rejected)", () => {
+    const json = {
+      format: { format_name: "mp4" },
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "h264",
+          codec_tag: "0x31637661",
+          width: 1920,
+          height: 1080,
+        },
+      ],
+    };
+    const inspected = parseFfprobeVideoStream(json);
+    expect(inspected.detectedCodecTag).toBe("avc1");
+    expect(classifyCreatorRawMedia(inspected, "clip.mp4", "video/mp4").allowed).toBe(false);
+  });
+
   it("uses coded_width/coded_height when display width/height are unknown (-1)", () => {
     const json = {
       format: { format_name: "mp4" },

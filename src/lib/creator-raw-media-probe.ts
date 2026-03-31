@@ -17,15 +17,100 @@ const ALLOWED_CODEC = new Set<string>(CREATOR_RAW_MEDIA_POLICY.allowedVideoCodec
 const ALLOWED_TAG = new Set<string>(CREATOR_RAW_MEDIA_POLICY.allowedCodecTags);
 const BLOCKED_CODEC = new Set<string>(CREATOR_RAW_MEDIA_POLICY.blockedVideoCodecs);
 const BLOCKED_TAG = new Set<string>(CREATOR_RAW_MEDIA_POLICY.blockedCodecTags);
+/** Used to disambiguate BE vs LE when `codec_tag_string` is missing (common for ProRes in MP4). */
+const POLICY_CODEC_TAGS = new Set<string>([...ALLOWED_TAG, ...BLOCKED_TAG]);
 
 type StreamCategory = "allowed" | "blocked" | "neutral";
+
+type FfprobeStream = {
+  codec_type?: string;
+  codec_name?: string;
+  codec_tag?: string | number;
+  codec_tag_string?: string;
+  pix_fmt?: string;
+  width?: number;
+  height?: number;
+  coded_width?: number;
+  coded_height?: number;
+  bit_rate?: string | number;
+  bits_per_raw_sample?: string | number;
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
+  disposition?: { attached_pic?: number };
+};
+
+function fourccFromBigEndianU32(n: number): string | null {
+  const b0 = (n >>> 24) & 0xff;
+  const b1 = (n >>> 16) & 0xff;
+  const b2 = (n >>> 8) & 0xff;
+  const b3 = n & 0xff;
+  if ([b0, b1, b2, b3].some((b) => b < 32 || b > 126)) return null;
+  return String.fromCharCode(b0, b1, b2, b3).toLowerCase();
+}
+
+function fourccFromLittleEndianU32(n: number): string | null {
+  const b0 = n & 0xff;
+  const b1 = (n >>> 8) & 0xff;
+  const b2 = (n >>> 16) & 0xff;
+  const b3 = (n >>> 24) & 0xff;
+  if ([b0, b1, b2, b3].some((b) => b < 32 || b > 126)) return null;
+  return String.fromCharCode(b0, b1, b2, b3).toLowerCase();
+}
+
+/**
+ * When ffprobe omits `codec_tag_string`, derive a fourcc from `codec_tag` (hex or u32).
+ * MP4 often stores LE tags (e.g. avc1 → 0x31637661); ProRes tags match big-endian unpack.
+ */
+function fourccFromCodecTagField(raw: string | number | undefined): string | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (s.length === 4 && /^[\x20-\x7e]+$/.test(s)) return s.toLowerCase();
+    if (/^0x[0-9a-f]+$/i.test(s)) {
+      const n = (parseInt(s, 16) >>> 0) || 0;
+      return pickPolicyFourccEndian(n);
+    }
+    if (/^\d+$/.test(s)) {
+      const n = (parseInt(s, 10) >>> 0) || 0;
+      return pickPolicyFourccEndian(n);
+    }
+    return null;
+  }
+  return pickPolicyFourccEndian((raw as number) >>> 0);
+}
+
+function pickPolicyFourccEndian(n: number): string | null {
+  if (n === 0) return null;
+  const be = fourccFromBigEndianU32(n);
+  const le = fourccFromLittleEndianU32(n);
+  const beHit = be != null && POLICY_CODEC_TAGS.has(be);
+  const leHit = le != null && POLICY_CODEC_TAGS.has(le);
+  if (beHit && !leHit) return be;
+  if (leHit && !beHit) return le;
+  if (beHit && leHit) return be;
+  /** Printable fourcc outside known policy — still expose to validator (may be a new mezzanine tag). */
+  return be ?? le ?? null;
+}
+
+function effectiveCodecTagString(stream: FfprobeStream): string | undefined {
+  const explicit = stream.codec_tag_string?.trim();
+  if (explicit) return explicit;
+  const derived = fourccFromCodecTagField(stream.codec_tag);
+  return derived ?? undefined;
+}
+
+function normalizedCodecName(stream: FfprobeStream): string | undefined {
+  const c = stream.codec_name?.trim();
+  if (!c) return undefined;
+  return c.toLowerCase();
+}
 
 function categorizeFfprobeVideoStream(
   codecName: string | undefined,
   tagStr: string | undefined
 ): StreamCategory {
-  const codec = codecName ? codecName.toLowerCase() : "";
-  const tag = tagStr ? tagStr.toLowerCase() : "";
+  const codec = (codecName ?? "").trim().toLowerCase();
+  const tag = (tagStr ?? "").trim().toLowerCase();
   /** ProRes/DNx fourccs win over generic codec_name (ProRes-in-MP4 often reports `mpeg4`). */
   if (tag && ALLOWED_TAG.has(tag)) return "allowed";
   if (codec && BLOCKED_CODEC.has(codec)) return "blocked";
@@ -74,7 +159,9 @@ function bestStreamByCategory(
   cat: StreamCategory
 ): FfprobeStream | undefined {
   const matches = videos.filter(
-    (v) => categorizeFfprobeVideoStream(v.stream.codec_name, v.stream.codec_tag_string) === cat
+    (v) =>
+      categorizeFfprobeVideoStream(normalizedCodecName(v.stream), effectiveCodecTagString(v.stream)) ===
+      cat
   );
   if (matches.length === 0) return undefined;
   return matches.reduce((a, b) => betterRankedStream(a, b)).stream;
@@ -83,22 +170,6 @@ function bestStreamByCategory(
 const execFileAsync = promisify(execFile);
 
 const FFPROBE_TIMEOUT_MS = 120_000;
-
-type FfprobeStream = {
-  codec_type?: string;
-  codec_name?: string;
-  codec_tag_string?: string;
-  pix_fmt?: string;
-  width?: number;
-  height?: number;
-  coded_width?: number;
-  coded_height?: number;
-  bit_rate?: string | number;
-  bits_per_raw_sample?: string | number;
-  r_frame_rate?: string;
-  avg_frame_rate?: string;
-  disposition?: { attached_pic?: number };
-};
 
 type FfprobeJson = {
   format?: { format_name?: string; format_long_name?: string };
@@ -129,10 +200,11 @@ function ffprobeStreamToInspected(video: FfprobeStream, formatName: string | nul
     if (!Number.isNaN(n) && n > 0) bitDepth = n;
   }
 
+  const tag = effectiveCodecTagString(video);
   return {
     detectedContainer: formatName,
-    detectedVideoCodec: video.codec_name ? video.codec_name.toLowerCase() : null,
-    detectedCodecTag: video.codec_tag_string ? video.codec_tag_string.toLowerCase() : null,
+    detectedVideoCodec: normalizedCodecName(video) ?? null,
+    detectedCodecTag: tag ? tag.toLowerCase() : null,
     detectedPixelFormat: video.pix_fmt ? video.pix_fmt.toLowerCase() : null,
     detectedBitDepth: bitDepth,
     detectedWidth: normalizeDimension(video.width, video.coded_width),

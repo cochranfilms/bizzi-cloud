@@ -66,8 +66,8 @@ export function classifyCreatorRawMedia(
     });
   }
 
-  const codec = (inspected.detectedVideoCodec ?? "").toLowerCase();
-  const tag = (inspected.detectedCodecTag ?? "").toLowerCase();
+  const codec = (inspected.detectedVideoCodec ?? "").trim().toLowerCase();
+  const tag = (inspected.detectedCodecTag ?? "").trim().toLowerCase();
 
   if (!codec && !tag) {
     return baseResult(inspected, contentType, {
