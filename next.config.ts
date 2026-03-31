@@ -38,10 +38,14 @@ const nextConfig: NextConfig = {
     /** Required on Vercel: serverless bundle must include the ffmpeg binary or probes never run (list shows Not scanned yet / Unscanned forever). */
     "/api/files/extract-metadata": [
       "./node_modules/ffmpeg-static/ffmpeg",
-      "./node_modules/ffprobe-static/bin/**",
     ],
-    "/api/uppy/presigned-complete": ["./node_modules/ffprobe-static/bin/**"],
-    "/api/uppy/s3/multipart/[uploadId]/complete": ["./node_modules/ffprobe-static/bin/**"],
+    /** Creator RAW finalize: ffprobe only; trace linux/x64 binary (not full ffprobe-static/bin ~335 MB). */
+    "/api/uppy/presigned-complete": [
+      "./node_modules/ffprobe-static/bin/linux/x64/ffprobe",
+    ],
+    "/api/uppy/s3/multipart/[uploadId]/complete": [
+      "./node_modules/ffprobe-static/bin/linux/x64/ffprobe",
+    ],
     "/api/backup/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/backup/generate-proxy": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/api/shares/[token]/video-thumbnail": ["./node_modules/ffmpeg-static/ffmpeg"],
