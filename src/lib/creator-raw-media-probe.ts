@@ -3,13 +3,14 @@
  */
 
 import { execFile } from "child_process";
+import { createRequire } from "module";
 import { promisify } from "util";
 import { existsSync } from "fs";
-// CommonJS module — default import resolves to `{ path: string }` with esModuleInterop.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffprobeStatic = require("ffprobe-static") as { path: string };
 import { createPresignedDownloadUrl } from "@/lib/b2";
 import type { InspectedMediaStreams } from "@/lib/creator-raw-media-types";
+
+/** `ffprobe-static` ships as CommonJS. */
+const ffprobeStatic = createRequire(import.meta.url)("ffprobe-static") as { path: string };
 
 const execFileAsync = promisify(execFile);
 
