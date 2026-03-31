@@ -291,6 +291,7 @@ export default function EnterpriseGalleryDetailPage() {
 
   const onManageUploadLifecycle = useCallback((e: GalleryManageUploadLifecycleEvent) => {
     setPendingUploads((rows) => {
+      if (e == null || typeof e !== "object" || !("type" in e)) return rows;
       const ix = rows.findIndex((r) => r.clientId === e.clientId);
       const next = [...rows];
       if (e.type === "file_added") {

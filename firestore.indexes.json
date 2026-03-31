@@ -1455,6 +1455,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "sort_order",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "gallery_assets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "gallery_id",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "object_key",
           "order": "ASCENDING"
         }

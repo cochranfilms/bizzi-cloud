@@ -131,13 +131,21 @@ export async function GET(
     return new NextResponse(null, { status: 304, headers: baseHeaders });
   }
 
+  // Equality-only query: avoid composite index requirement (we removed is_visible filter for manage).
+  // Existing indexes cover (gallery_id, is_visible, sort_order) and (gallery_id, object_key) only.
   const assetsSnap = await db
     .collection("gallery_assets")
     .where("gallery_id", "==", galleryId)
-    .orderBy("sort_order", "asc")
     .get();
 
-  const assets = assetsSnap.docs.map((d) => {
+  const sortedDocs = [...assetsSnap.docs].sort((a, b) => {
+    const ao = (a.data().sort_order as number | undefined) ?? 0;
+    const bo = (b.data().sort_order as number | undefined) ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.id.localeCompare(b.id);
+  });
+
+  const assets = sortedDocs.map((d) => {
     const a = d.data();
     return {
       id: d.id,
