@@ -6,10 +6,13 @@ Headless Linux CLI: decode Blackmagic RAW (`.braw`) with the official **Blackmag
 
 - Ubuntu **24.04** x86_64 (or compatible).
 - **Blackmagic RAW SDK** installed for Linux; this tree only ships **source**. Do not commit proprietary `.so` files.
-- **Canonical runtime / header root** on the worker: `/opt/braw-sdk/BlackmagicRawAPI` (other copies under `BlackmagicRAWPlayer` / `BlackmagicRAWSpeedTest` are duplicates—use this path for builds and `LD_LIBRARY_PATH`).
+- **Linux SDK tree** for CMake: directory that contains **`Include/BlackmagicRawAPI.h`** and **`Libraries/libBlackmagicRawAPI.so`** (official layout). Example from an RPM extract: `.../BlackmagicRAWSDK/Linux`.
+- **Canonical runtime** on the worker (RPATH + wrapper): `/opt/braw-sdk/BlackmagicRawAPI` — copy or symlink SDK `.so` files there for production runs; the wrapper adjusts `LD_LIBRARY_PATH` if needed.
 - **FFmpeg** with `libx264` (e.g. `apt install ffmpeg`).
 
 ## Build (exact)
+
+`BRAW_SDK_ROOT` must be the **`Linux/`** folder inside the SDK (not the repository root), so `Include/` and `Libraries/` resolve correctly.
 
 ```bash
 sudo apt install -y build-essential cmake ffmpeg
@@ -17,7 +20,7 @@ sudo apt install -y build-essential cmake ffmpeg
 cd /path/to/bizzi-cloud
 
 cmake -S native/braw-proxy-cli -B build-braw-cli -DCMAKE_BUILD_TYPE=Release \
-  -DBRAW_SDK_ROOT=/opt/braw-sdk/BlackmagicRawAPI
+  -DBRAW_SDK_ROOT=/home/ubuntu/braw-rpm-extract/usr/lib64/blackmagic/BlackmagicRAWSDK/Linux
 
 cmake --build build-braw-cli -j
 ```
@@ -105,7 +108,8 @@ ffprobe -hide_banner /tmp/profile-proxy.mp4
 
 ## Troubleshooting (compile / link)
 
-- **`BlackmagicRawAPI.h` not found** — set `-DBRAW_SDK_ROOT=` to the directory that contains `Include/BlackmagicRawAPI.h`.
+- **`BlackmagicRawAPI.h` not found** — set `-DBRAW_SDK_ROOT=` to the SDK **`Linux/`** root so **`${BRAW_SDK_ROOT}/Include/BlackmagicRawAPI.h`** exists.
+- **`libBlackmagicRawAPI` not found** — ensure **`${BRAW_SDK_ROOT}/Libraries/libBlackmagicRawAPI.so`** exists (official Linux layout).
 - **`CreateBlackmagicRawFactoryInstance`** — if your header uses `void**`, change the call sites to  
   `CreateBlackmagicRawFactoryInstance(reinterpret_cast<void**>(&factory))`.
 - **`GetFrameRate(uint32_t*, uint32_t*)`** — if your SDK only exposes `GetFrameRate(float*)`, remove the rational overload block at the top of `read_timing()` in `src/bmd_decode.cpp` and keep the `float` branch only (FFmpeg still gets a decimal `-framerate` string).
