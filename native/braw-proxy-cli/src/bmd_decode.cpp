@@ -86,9 +86,9 @@ static int read_timing(IBlackmagicRawClip* clip, ClipMeta& meta) {
     return EX_CLIP;
   meta.fps = static_cast<double>(fr);
 
-  float fps_inte = 0.F;
-  const float fps_frac = std::modff(fr, &fps_inte);
-  if (fps_frac == 0.F) {
+  double fps_inte = 0.0;
+  const double fps_frac = std::modf(static_cast<double>(fr), &fps_inte);
+  if (fps_frac == 0.0) {
     meta.fps_num = static_cast<uint32_t>(fps_inte);
     meta.fps_den = 1;
   } else {
@@ -113,8 +113,8 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void DecodeComplete(IBlackmagicRawJob*, HRESULT) override {}
   void TrimProgress(IBlackmagicRawJob*, float) override {}
   void TrimComplete(IBlackmagicRawJob*, HRESULT) override {}
-  void SidecarMetadataParseWarning(IBlackmagicRawClip*, CFStringRef, uint32_t, CFStringRef) override {}
-  void SidecarMetadataParseError(IBlackmagicRawClip*, CFStringRef, uint32_t, CFStringRef) override {}
+  void SidecarMetadataParseWarning(IBlackmagicRawClip*, const char*, uint32_t, const char*) override {}
+  void SidecarMetadataParseError(IBlackmagicRawClip*, const char*, uint32_t, const char*) override {}
   void PreparePipelineComplete(void*, HRESULT) override {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
@@ -457,7 +457,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       safe_release(factory);
       return EX_DECODE;
     }
-    last_frame = std::min(last_frame, cap - 1ULL);
+    last_frame = std::min<uint64_t>(last_frame, static_cast<uint64_t>(cap - static_cast<uint64_t>(1)));
   }
 
   for (uint64_t i = 0; i <= last_frame; ++i) {
