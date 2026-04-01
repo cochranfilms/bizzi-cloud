@@ -191,8 +191,11 @@ export async function POST(request: Request) {
       const relativePath = data.relative_path ?? "";
       if (!relativePath.startsWith(prefix) || relativePath === prefix) continue;
       const after = relativePath.slice(prefix.length);
+      /** Only count real subdirectories: e.g. root "a.mp4" has no "/", do not synthesize folder "a.mp4". */
+      if (!after.includes("/")) continue;
       const firstSegment = after.split("/")[0];
-      if (firstSegment) immediateSubfolders.add(requestedPath ? `${requestedPath}/${firstSegment}` : firstSegment);
+      if (firstSegment)
+        immediateSubfolders.add(requestedPath ? `${requestedPath}/${firstSegment}` : firstSegment);
     }
 
     for (const folderPath of immediateSubfolders) {
