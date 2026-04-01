@@ -6,23 +6,61 @@
  *   BIZZI_API_BASE      — e.g. https://your-app.vercel.app (no trailing slash)
  *   MEDIA_STANDARD_WORKER_SECRET — same as Vercel
  *   WORKER_ID           — stable id per instance (default: hostname-pid)
- *   FFMPEG_PATH         — optional; default: ffmpeg-static
+ *   FFMPEG_PATH         — optional; else PATH `ffmpeg`, else ffmpeg-static
+ *   FFPROBE_PATH        — optional; else PATH `ffprobe`, else ffprobe-static (logged at startup; transcoding uses ffmpeg only)
  *
  * Example:
  *   BIZZI_API_BASE=https://example.com MEDIA_STANDARD_WORKER_SECRET=xxx node scripts/standard-proxy-worker.mjs
  */
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { createReadStream } from "fs";
-import { stat } from "fs/promises";
+import { constants as fsConstants } from "fs";
+import { stat, access } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import ffmpegStatic from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
 
 const base = (process.env.BIZZI_API_BASE || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_STANDARD_WORKER_SECRET || "";
 const workerId = process.env.WORKER_ID || `${process.env.HOSTNAME || "worker"}-${process.pid}`;
-const ffmpegBin = process.env.FFMPEG_PATH || ffmpegStatic;
 const preset = process.env.PROXY_FFMPEG_PRESET || "veryfast";
+
+/** @param {string} bin */
+function resolveOnPath(bin) {
+  try {
+    const out = execFileSync("sh", ["-c", `command -v ${bin} 2>/dev/null`], {
+      encoding: "utf8",
+      maxBuffer: 4096,
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveFfmpeg() {
+  const env = (process.env.FFMPEG_PATH || "").trim();
+  if (env) return { path: env, via: "FFMPEG_PATH" };
+  const pathBin = resolveOnPath("ffmpeg");
+  if (pathBin) return { path: pathBin, via: "PATH" };
+  if (ffmpegStatic) return { path: ffmpegStatic, via: "ffmpeg-static" };
+  return { path: null, via: "none" };
+}
+
+function resolveFfprobe() {
+  const env = (process.env.FFPROBE_PATH || "").trim();
+  if (env) return { path: env, via: "FFPROBE_PATH" };
+  const pathBin = resolveOnPath("ffprobe");
+  if (pathBin) return { path: pathBin, via: "PATH" };
+  const p = ffprobeStatic?.path;
+  if (p) return { path: p, via: "ffprobe-static" };
+  return { path: null, via: "none" };
+}
+
+const ffmpegResolved = resolveFfmpeg();
+const ffprobeResolved = resolveFfprobe();
+const ffmpegBin = ffmpegResolved.path;
 
 if (!base || !secret) {
   console.error("Set BIZZI_API_BASE and MEDIA_STANDARD_WORKER_SECRET");
@@ -30,8 +68,124 @@ if (!base || !secret) {
 }
 
 if (!ffmpegBin) {
-  console.error("ffmpeg binary not found (install ffmpeg-static or set FFMPEG_PATH)");
+  console.error("ffmpeg binary not found (set FFMPEG_PATH, install system ffmpeg, or use ffmpeg-static)");
   process.exit(1);
+}
+
+console.log(
+  "[standard-proxy-worker] binaries",
+  JSON.stringify({
+    ffmpeg: { path: ffmpegBin, selected_via: ffmpegResolved.via },
+    ffprobe: ffprobeResolved.path
+      ? { path: ffprobeResolved.path, selected_via: ffprobeResolved.via }
+      : { path: null, selected_via: ffprobeResolved.via },
+  })
+);
+
+/** @param {string} raw */
+function redactUrl(raw) {
+  if (!raw || typeof raw !== "string") return "<invalid-url>";
+  try {
+    const u = new URL(raw);
+    const q = u.search ? "?<redacted>" : "";
+    const h = u.hash ? "#<redacted>" : "";
+    return `${u.protocol}//${u.host}${u.pathname}${q}${h}`;
+  } catch {
+    return "<unparseable-url>";
+  }
+}
+
+/** @param {string[]} args */
+function ffmpegArgsForLog(args) {
+  return args.map((a) => (/^https?:\/\//i.test(a) ? redactUrl(a) : a));
+}
+
+async function pathExists(p) {
+  try {
+    await access(p, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function logLocalIoDebug(phase, tmpPath, extra = {}) {
+  const exists = await pathExists(tmpPath);
+  let size = null;
+  if (exists) {
+    try {
+      const st = await stat(tmpPath);
+      size = st.size;
+    } catch {
+      size = "stat_failed";
+    }
+  }
+  console.log(
+    "[standard-proxy-worker] local_io",
+    JSON.stringify({
+      phase,
+      output_temp_path: tmpPath,
+      output_exists: exists,
+      output_size_bytes: size,
+      input_local_path: null,
+      note: "input is remote URL (presigned GET); no local input file",
+      ...extra,
+    })
+  );
+}
+
+class FfmpegFailureError extends Error {
+  /**
+   * @param {string} message
+   * @param {object} detail
+   */
+  constructor(message, detail) {
+    super(message);
+    this.name = "FfmpegFailureError";
+    Object.assign(this, detail);
+  }
+}
+
+/**
+ * @param {string[]} args
+ * @param {Record<string, unknown>} ctx
+ */
+function runFfmpeg(args, ctx) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegBin, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+    let stderr = "";
+    let stdout = "";
+    proc.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    proc.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
+    proc.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve({ stderr, stdout });
+        return;
+      }
+      const stderrTail = stderr.slice(-12_000);
+      const excerpt =
+        stderrTail.slice(-2000) || stdout.slice(-2000) || `(no stderr/stdout)`;
+      const err = new FfmpegFailureError(
+        `ffmpeg failed: exit=${code} signal=${signal ?? "null"} — ${excerpt.replace(/\s+/g, " ").trim().slice(0, 600)}`,
+        {
+          exitCode: code,
+          exitSignal: signal,
+          stderr,
+          stdout,
+          ...ctx,
+        }
+      );
+      reject(err);
+    });
+    proc.on("error", reject);
+  });
 }
 
 async function postJson(path, body) {
@@ -56,24 +210,6 @@ async function postJson(path, body) {
   return data;
 }
 
-function runFfmpeg(args) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegBin, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, FFREPORT: "file=/dev/null:level=0" },
-    });
-    let err = "";
-    proc.stderr?.on("data", (d) => {
-      err += d.toString();
-    });
-    proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(err.slice(-4000) || `ffmpeg exit ${code}`));
-    });
-    proc.on("error", reject);
-  });
-}
-
 async function putFile(url, filePath, headers) {
   const st = await stat(filePath);
   const res = await fetch(url, {
@@ -91,6 +227,36 @@ async function putFile(url, filePath, headers) {
   }
 }
 
+function logFfmpegFailure(err, payload) {
+  const job = payload.job;
+  const claimIso = payload.claimed_at;
+  const claimedBy = payload.worker_id ?? workerId;
+  const profile = payload.transcode_profile ?? job?.transcode_profile;
+  const sourceUrl = payload.sourceDownloadUrl;
+  const tmpPath = err.outputTempPath;
+  const stderr = err.stderr || "";
+  const stdout = err.stdout && String(err.stdout).trim() ? err.stdout : "";
+
+  console.error(
+    "[standard-proxy-worker] ffmpeg_failure",
+    JSON.stringify({
+      exit_code: err.exitCode,
+      signal: err.exitSignal,
+      job_id: job?.id,
+      backup_file_id: job?.backup_file_id,
+      claimed_by: claimedBy,
+      claimed_at: claimIso,
+      transcode_profile: profile,
+      source_redacted: sourceUrl ? redactUrl(sourceUrl) : null,
+      output_temp_path: tmpPath,
+      stderr_bytes: stderr.length,
+      stdout_bytes: stdout.length,
+    })
+  );
+  console.error("[standard-proxy-worker] ffmpeg_stderr_full\n", stderr);
+  if (stdout) console.error("[standard-proxy-worker] ffmpeg_stdout_full\n", stdout);
+}
+
 async function processJob(payload) {
   const job = payload.job;
   const claimIso = payload.claimed_at;
@@ -100,6 +266,8 @@ async function processJob(payload) {
   const uploadUrl = payload.proxyUploadUrl;
   const uploadHeaders = payload.proxyUploadHeaders || {};
   const tmpPath = join(tmpdir(), `proxy-worker-${job.id}-${Date.now()}.mp4`);
+  const transcodeProfile = payload.transcode_profile ?? job.transcode_profile;
+  const claimedBy = payload.worker_id ?? workerId;
 
   let iv = setInterval(() => {
     postJson("/api/workers/standard-proxy/heartbeat", {
@@ -113,6 +281,8 @@ async function processJob(payload) {
 
   const args = [
     "-y",
+    "-loglevel",
+    "warning",
     "-probesize",
     "32K",
     "-analyzeduration",
@@ -138,6 +308,19 @@ async function processJob(payload) {
     tmpPath,
   ];
 
+  console.log(
+    "[standard-proxy-worker] ffmpeg_invoke",
+    JSON.stringify({
+      bin: ffmpegBin,
+      args: ffmpegArgsForLog(args),
+      job_id: job.id,
+      backup_file_id: job.backup_file_id,
+      claimed_by: claimedBy,
+      claimed_at: claimIso,
+      transcode_profile: transcodeProfile,
+    })
+  );
+
   try {
     await postJson("/api/workers/standard-proxy/heartbeat", {
       job_id: job.id,
@@ -146,7 +329,26 @@ async function processJob(payload) {
       status: "downloading",
       progress_pct: 5,
     });
-    await runFfmpeg(args);
+
+    await logLocalIoDebug("before_ffmpeg", tmpPath, {
+      job_id: job.id,
+      source_redacted: redactUrl(sourceUrl),
+    });
+
+    const ffCtx = {
+      jobId: job.id,
+      backupFileId: job.backup_file_id,
+      claimedBy,
+      claimedAt: claimIso,
+      transcodeProfile,
+      sourceRedacted: redactUrl(sourceUrl),
+      outputTempPath: tmpPath,
+    };
+
+    await runFfmpeg(args, ffCtx);
+
+    await logLocalIoDebug("after_ffmpeg_ok", tmpPath, { job_id: job.id });
+
     await postJson("/api/workers/standard-proxy/heartbeat", {
       job_id: job.id,
       worker_id: workerId,
@@ -164,6 +366,13 @@ async function processJob(payload) {
       proxy_size_bytes: st.size,
     });
   } catch (e) {
+    if (e instanceof FfmpegFailureError) {
+      await logLocalIoDebug("after_ffmpeg_fail", tmpPath, {
+        job_id: job.id,
+        source_redacted: redactUrl(sourceUrl),
+      });
+      logFfmpegFailure(e, { ...payload, transcode_profile: transcodeProfile });
+    }
     const msg = e instanceof Error ? e.message : String(e);
     await postJson("/api/workers/standard-proxy/complete", {
       job_id: job.id,
@@ -189,7 +398,9 @@ async function loop() {
       }
       await processJob(claim);
     } catch (e) {
-      console.error("[standard-proxy-worker]", e);
+      if (!(e instanceof FfmpegFailureError)) {
+        console.error("[standard-proxy-worker]", e);
+      }
       await new Promise((r) => setTimeout(r, 10_000));
     }
   }
