@@ -73,6 +73,24 @@ export async function googleListChildren(
   return { nextPageToken: json.nextPageToken, files: json.files ?? [] };
 }
 
+export async function googleGetFileMeta(
+  accessToken: string,
+  fileId: string
+): Promise<GoogleDriveFileMeta> {
+  const params = new URLSearchParams({
+    fields: "id, name, mimeType, size, md5Checksum, shortcutDetails, capabilities/canDownload",
+  });
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const json = (await res.json()) as GoogleDriveFileMeta & { error?: { message?: string } };
+  if (!res.ok) {
+    throw new Error(json.error?.message ?? "Drive file metadata failed");
+  }
+  return json;
+}
+
 export function classifyGoogleDriveItem(meta: GoogleDriveFileMeta): {
   supported: boolean;
   reason: MigrationUnsupportedReason;

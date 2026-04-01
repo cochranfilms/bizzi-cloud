@@ -9,7 +9,7 @@ import { sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logMigrationJobCreated } from "@/lib/migration-log-activity";
 
-type SourceEntry = { ref: string; label: string };
+type SourceEntry = { ref: string; label: string; kind?: "folder" | "file" };
 
 export async function POST(request: Request) {
   const auth = await migrationRequireUid(request);
@@ -78,16 +78,32 @@ export async function POST(request: Request) {
   const contract = resolved.contract;
   const scan_queue =
     provider === "google_drive"
-      ? sources.map((s) => ({
-          kind: "google" as const,
-          folder_id: s.ref,
-          dest_prefix: sanitizeBackupRelativePath(s.label || "imported"),
-        }))
-      : sources.map((s) => ({
-          kind: "dropbox" as const,
-          path_lower: s.ref,
-          dest_prefix: sanitizeBackupRelativePath(s.label || "imported"),
-        }));
+      ? sources.map((s) =>
+          s.kind === "file"
+            ? ({
+                kind: "google_file" as const,
+                file_id: s.ref,
+                dest_prefix: "",
+              } as const)
+            : ({
+                kind: "google" as const,
+                folder_id: s.ref,
+                dest_prefix: sanitizeBackupRelativePath(s.label || "imported"),
+              } as const)
+        )
+      : sources.map((s) =>
+          s.kind === "file"
+            ? ({
+                kind: "dropbox_file" as const,
+                path_lower: s.ref,
+                dest_prefix: "",
+              } as const)
+            : ({
+                kind: "dropbox" as const,
+                path_lower: s.ref,
+                dest_prefix: sanitizeBackupRelativePath(s.label || "imported"),
+              } as const)
+        );
 
   const ref = await db.collection(MIGRATION_JOBS_COLLECTION).add({
     user_id: auth.uid,

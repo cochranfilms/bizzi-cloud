@@ -18,11 +18,13 @@ import { getUploadBillingSnapshot } from "@/lib/enterprise-storage";
 import {
   classifyGoogleDriveItem,
   googleDownloadFileMedia,
+  googleGetFileMeta,
   googleListChildren,
 } from "@/lib/migration-google-drive-api";
 import {
   classifyDropboxItem,
   dropboxDownload,
+  dropboxGetMetadata,
   dropboxListFolder,
 } from "@/lib/migration-dropbox-api";
 import { getGoogleAccessToken, getDropboxAccessToken } from "@/lib/migration-provider-account";
@@ -43,8 +45,14 @@ import { createHash } from "crypto";
 const LEASE_MS = 120_000;
 
 type ScanQueueGoogle = { kind: "google"; folder_id: string; dest_prefix: string };
+type ScanQueueGoogleFile = { kind: "google_file"; file_id: string; dest_prefix: string };
 type ScanQueueDropbox = { kind: "dropbox"; path_lower: string; dest_prefix: string };
-type ScanQueueEntry = ScanQueueGoogle | ScanQueueDropbox;
+type ScanQueueDropboxFile = { kind: "dropbox_file"; path_lower: string; dest_prefix: string };
+type ScanQueueEntry =
+  | ScanQueueGoogle
+  | ScanQueueGoogleFile
+  | ScanQueueDropbox
+  | ScanQueueDropboxFile;
 
 async function actorHasWriteAccess(
   db: Firestore,
@@ -136,7 +144,68 @@ async function scanTickGoogle(
     await finishScanAndPreflight(jobRef, contract, uid);
     return;
   }
-  const head = queue[0] as ScanQueueGoogle;
+
+  const head0 = queue[0]!;
+  if (head0.kind === "google_file") {
+    const gf = head0;
+    const access = await getGoogleAccessToken(db, uid);
+    let filesTotal = typeof job.files_total_scanned === "number" ? job.files_total_scanned : 0;
+    const meta = await googleGetFileMeta(access, gf.file_id);
+    if (meta.mimeType === "application/vnd.google-apps.folder") {
+      queue = queue.slice(1);
+      queue.unshift({
+        kind: "google",
+        folder_id: meta.id,
+        dest_prefix: sanitizeBackupRelativePath("imported"),
+      });
+      await jobRef.update({
+        scan_queue: queue,
+        updated_at: FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+    if (filesTotal >= migrationMaxFilesPerJob()) {
+      await failJob(jobRef, "MIGRATION_FILE_LIMIT", "Too many files in this migration job.", "failed", {
+        uid,
+        contract,
+      });
+      return;
+    }
+    const cls = classifyGoogleDriveItem(meta);
+    const safeLeaf = sanitizeBackupRelativePath(meta.name);
+    const destRelative = contract.destination_path_prefix
+      ? `${contract.destination_path_prefix}/${safeLeaf}`
+      : safeLeaf;
+    const sizeNum = meta.size != null ? parseInt(meta.size, 10) : 0;
+    const reason: MigrationUnsupportedReason = cls.supported ? "supported" : cls.reason;
+    await jobRef.collection(MIGRATION_FILES_SUBCOLLECTION).add({
+      provider: "google_drive",
+      provider_file_id: meta.id,
+      source_path_label: safeLeaf,
+      dest_relative_path: destRelative,
+      size_bytes: Number.isFinite(sizeNum) ? sizeNum : 0,
+      mime_type: meta.mimeType,
+      unsupported_reason: reason,
+      transfer_status: cls.supported ? "pending" : "skipped",
+      retry_count: 0,
+      provider_checksum_md5: meta.md5Checksum ?? null,
+      transfer_verification_status: "none",
+      created_at: FieldValue.serverTimestamp(),
+    });
+    filesTotal++;
+    queue = queue.slice(1);
+    await jobRef.update({
+      scan_queue: queue,
+      files_total_scanned: filesTotal,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+    if (queue.length === 0) {
+      await finishScanAndPreflight(jobRef, contract, uid);
+    }
+    return;
+  }
+
+  const head = head0 as ScanQueueGoogle;
   if (head.kind !== "google") return;
 
   const folderId = head.folder_id;
@@ -224,7 +293,67 @@ async function scanTickDropbox(
     await finishScanAndPreflight(jobRef, contract, uid);
     return;
   }
-  const head = queue[0] as ScanQueueDropbox;
+
+  const head0 = queue[0]!;
+  if (head0.kind === "dropbox_file") {
+    const df = head0;
+    let filesTotal = typeof job.files_total_scanned === "number" ? job.files_total_scanned : 0;
+    if (filesTotal >= migrationMaxFilesPerJob()) {
+      await failJob(jobRef, "MIGRATION_FILE_LIMIT", "Too many files in this migration job.", "failed", {
+        uid,
+        contract,
+      });
+      return;
+    }
+    const meta = await dropboxGetMetadata(access, df.path_lower);
+    if (meta[".tag"] === "folder") {
+      queue = queue.slice(1);
+      queue.unshift({
+        kind: "dropbox",
+        path_lower: meta.path_lower,
+        dest_prefix: sanitizeBackupRelativePath("imported"),
+      });
+      await jobRef.update({
+        scan_queue: queue,
+        updated_at: FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+    const cls = classifyDropboxItem(meta);
+    const safeLeaf = sanitizeBackupRelativePath(meta.name);
+    const destRelative = contract.destination_path_prefix
+      ? `${contract.destination_path_prefix}/${safeLeaf}`
+      : safeLeaf;
+    const reason: MigrationUnsupportedReason = cls.supported ? "supported" : cls.reason;
+    await jobRef.collection(MIGRATION_FILES_SUBCOLLECTION).add({
+      provider: "dropbox",
+      provider_file_id: meta.id ?? meta.path_lower,
+      source_path_label: safeLeaf,
+      dest_relative_path: destRelative,
+      size_bytes: typeof meta.size === "number" ? meta.size : 0,
+      mime_type: "application/octet-stream",
+      unsupported_reason: reason,
+      transfer_status: cls.supported ? "pending" : "skipped",
+      retry_count: 0,
+      dropbox_path_lower: meta.path_lower,
+      transfer_verification_status: "none",
+      created_at: FieldValue.serverTimestamp(),
+    });
+    filesTotal++;
+    queue = queue.slice(1);
+    await jobRef.update({
+      scan_queue: queue,
+      dropbox_list_cursors: cursors,
+      files_total_scanned: filesTotal,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+    if (queue.length === 0) {
+      await finishScanAndPreflight(jobRef, contract, uid);
+    }
+    return;
+  }
+
+  const head = head0 as ScanQueueDropbox;
   if (head.kind !== "dropbox") return;
 
   const pathKey = head.path_lower;

@@ -89,6 +89,25 @@ export async function dropboxListFolder(
   };
 }
 
+export async function dropboxGetMetadata(
+  accessToken: string,
+  pathLower: string
+): Promise<DropboxListEntry> {
+  const res = await fetch("https://api.dropboxapi.com/2/files/get_metadata", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ path: pathLower === "" ? "" : pathLower }),
+  });
+  const json = (await res.json()) as DropboxListEntry & { error_summary?: string };
+  if (!res.ok) {
+    throw new Error(json.error_summary ?? "Dropbox get_metadata failed");
+  }
+  return json;
+}
+
 export async function dropboxDownload(
   accessToken: string,
   pathLower: string

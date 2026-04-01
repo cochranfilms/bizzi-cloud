@@ -1,24 +1,56 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
+import { useBackup } from "@/context/BackupContext";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import { CloudUpload } from "lucide-react";
+import { ChevronRight, CloudUpload, Folder, FolderOpen, File, Loader2 } from "lucide-react";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
-import { MIGRATION_JOBS_COLLECTION } from "@/lib/migration-constants";
+import { MIGRATION_JOBS_COLLECTION, migrationMaxFoldersPerJob } from "@/lib/migration-constants";
+import type { MigrationProvider } from "@/lib/migration-constants";
 
-type Provider = "google_drive" | "dropbox";
+type Provider = MigrationProvider;
 
 export type WorkspaceMigrationSectionProps = {
-  /** Path + optional hash, e.g. `/dashboard/settings#migration` */
   oauthReturnPath: string;
-  /** Prefills org workspace id when importing into organization Storage */
   defaultWorkspaceId?: string | null;
   scopeLabel?: string;
 };
+
+type SourcePick = { ref: string; name: string; kind: "folder" | "file" };
+
+type ProviderEntry = {
+  id: string;
+  name: string;
+  isFolder: boolean;
+  mimeType?: string;
+  path_lower?: string;
+};
+
+function oauthStartErrorMessage(
+  status: number,
+  code: string | undefined,
+  error: string | undefined,
+  providerLabel: string
+): string {
+  if (code === "oauth_not_configured") {
+    return `${providerLabel} import is not enabled on this server yet (OAuth credentials missing). Your admin needs to configure migration OAuth environment variables.`;
+  }
+  if (code === "app_url_missing") {
+    return "OAuth cannot start: set NEXT_PUBLIC_APP_URL or MIGRATION_PUBLIC_APP_URL so the callback URL is known.";
+  }
+  if (code === "rate_limited") {
+    return "Too many connection attempts. Please wait a minute and try again.";
+  }
+  if (error) return error;
+  if (status === 503) {
+    return "Import service is unavailable (503). Check server configuration and logs.";
+  }
+  return `Could not start OAuth (${status}).`;
+}
 
 export default function WorkspaceMigrationSection({
   oauthReturnPath,
@@ -26,25 +58,38 @@ export default function WorkspaceMigrationSection({
   scopeLabel = productSettingsCopy.scopes.personalAccountOnly,
 }: WorkspaceMigrationSectionProps) {
   const { user } = useAuth();
+  const { linkedDrives } = useBackup();
   const searchParams = useSearchParams();
+
+  const storageDrive = useMemo(
+    () =>
+      linkedDrives.find(
+        (d) => (d.name === "Storage" || d.name === "Uploads") && !d.is_creator_raw
+      ),
+    [linkedDrives]
+  );
+
   const [accounts, setAccounts] = useState<{ provider: Provider; connected: boolean }[] | null>(null);
   const [jobs, setJobs] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
-    provider: "google_drive" as Provider,
-    drive_id: "",
-    workspace_id: "",
-    destination_path_prefix: "",
-    sources: [{ ref: "", label: "imported" }],
-    duplicate_mode: "skip" as "skip" | "rename",
-  });
+  const [browseLoading, setBrowseLoading] = useState(false);
+
+  const [provider, setProvider] = useState<Provider>("google_drive");
+  const [googleFolderId, setGoogleFolderId] = useState("root");
+  const [dropboxPath, setDropboxPath] = useState("");
+  const [providerEntries, setProviderEntries] = useState<ProviderEntry[]>([]);
+  const [providerTrail, setProviderTrail] = useState<{ id: string; name: string; dropboxPath?: string }[]>(
+    [{ id: "root", name: "Drive", dropboxPath: "" }]
+  );
+
+  const [picks, setPicks] = useState<SourcePick[]>([]);
+  const [destRelPath, setDestRelPath] = useState("");
+  const [destTrail, setDestTrail] = useState<{ path: string; name: string }[]>([{ path: "", name: "Storage" }]);
+  const [newSubfolder, setNewSubfolder] = useState("");
+  const [duplicate_mode, setDuplicateMode] = useState<"skip" | "rename">("skip");
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (defaultWorkspaceId) {
-      setForm((f) => ({ ...f, workspace_id: defaultWorkspaceId }));
-    }
-  }, [defaultWorkspaceId]);
+  const workspace_id = defaultWorkspaceId?.trim() || "";
 
   const authHeader = useCallback(async () => {
     const t = await user?.getIdToken();
@@ -105,7 +150,7 @@ export default function WorkspaceMigrationSection({
     const connected = searchParams.get("connected");
     const oauthErr = searchParams.get("oauth_error");
     if (connected) {
-      setMessage(`Connected: ${connected}`);
+      setMessage(`Connected: ${connected.replace("_", " ")}`);
       void refreshAccounts();
     } else if (oauthErr) {
       setMessage(`OAuth error: ${oauthErr}`);
@@ -118,6 +163,145 @@ export default function WorkspaceMigrationSection({
     }
   }, [searchParams, refreshAccounts]);
 
+  const loadProviderFolder = useCallback(async () => {
+    const h = await authHeader();
+    if (!h) return;
+    setBrowseLoading(true);
+    try {
+      const body =
+        provider === "google_drive"
+          ? { provider, google_folder_id: googleFolderId }
+          : { provider, dropbox_path: dropboxPath };
+      const res = await fetch("/api/migrations/browse", {
+        method: "POST",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(d.error ?? "browse_failed");
+      }
+      const d = (await res.json()) as { entries: ProviderEntry[] };
+      const list = d.entries ?? [];
+      list.sort((a, b) => {
+        if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      });
+      setProviderEntries(list);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not list cloud folder");
+      setProviderEntries([]);
+    } finally {
+      setBrowseLoading(false);
+    }
+  }, [authHeader, provider, googleFolderId, dropboxPath]);
+
+  const [destFolderChoices, setDestFolderChoices] = useState<{ path: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const h = await authHeader();
+      if (!storageDrive?.id || !h) {
+        setDestFolderChoices([]);
+        return;
+      }
+      const res = await fetch("/api/mount/metadata", {
+        method: "POST",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify({ drive_id: storageDrive.id, paths: [destRelPath] }),
+      });
+      if (!res.ok || cancelled) return;
+      const d = (await res.json()) as {
+        entries: Array<{ type: string; path: string; name: string }>;
+      };
+      const folders = (d.entries ?? [])
+        .filter((e) => e.type === "folder")
+        .map((e) => ({ path: e.path, name: e.name }));
+      folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      if (!cancelled) setDestFolderChoices(folders);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authHeader, storageDrive?.id, destRelPath]);
+
+  useEffect(() => {
+    const connected = accounts?.find((a) => a.provider === provider)?.connected;
+    if (connected) void loadProviderFolder();
+  }, [accounts, provider, googleFolderId, dropboxPath, loadProviderFolder]);
+
+  useEffect(() => {
+    setPicks([]);
+    setProviderEntries([]);
+    setProviderTrail([{ id: "root", name: provider === "google_drive" ? "My Drive" : "Dropbox", dropboxPath: "" }]);
+    if (provider === "google_drive") {
+      setGoogleFolderId("root");
+      setDropboxPath("");
+    } else {
+      setGoogleFolderId("root");
+      setDropboxPath("");
+    }
+  }, [provider]);
+
+  function enterProviderFolder(entry: ProviderEntry) {
+    if (!entry.isFolder) return;
+    if (provider === "google_drive") {
+      setGoogleFolderId(entry.id);
+      setProviderTrail((t) => [...t, { id: entry.id, name: entry.name }]);
+    } else {
+      setDropboxPath(entry.path_lower ?? entry.id);
+      setProviderTrail((t) => [
+        ...t,
+        { id: entry.path_lower ?? entry.id, name: entry.name, dropboxPath: entry.path_lower ?? "" },
+      ]);
+    }
+  }
+
+  function goProviderCrumb(idx: number) {
+    const crumb = providerTrail[idx];
+    if (!crumb) return;
+    setProviderTrail((t) => t.slice(0, idx + 1));
+    if (provider === "google_drive") {
+      setGoogleFolderId(crumb.id === "root" ? "root" : crumb.id);
+    } else {
+      setDropboxPath(crumb.dropboxPath ?? "");
+    }
+  }
+
+  function togglePick(entry: ProviderEntry) {
+    const ref = provider === "google_drive" ? entry.id : entry.path_lower ?? entry.id;
+    const kind = entry.isFolder ? "folder" : "file";
+    setPicks((prev) => {
+      const i = prev.findIndex((p) => p.ref === ref && p.kind === kind);
+      if (i >= 0) return prev.filter((_, j) => j !== i);
+      if (prev.length >= migrationMaxFoldersPerJob()) {
+        setMessage(`You can select at most ${migrationMaxFoldersPerJob()} items per import.`);
+        return prev;
+      }
+      return [...prev, { ref, name: entry.name, kind }];
+    });
+  }
+
+  function enterDestFolder(path: string, name: string) {
+    setDestRelPath(path);
+    setDestTrail((t) => [...t, { path, name }]);
+  }
+
+  function goDestCrumb(idx: number) {
+    const crumb = destTrail[idx];
+    if (!crumb) return;
+    setDestTrail((t) => t.slice(0, idx + 1));
+    setDestRelPath(crumb.path);
+  }
+
+  function composedDestinationPrefix(): string {
+    const base = destRelPath.trim();
+    const sub = newSubfolder.trim().replace(/^\/+|\/+$/g, "").replace(/\.\./g, "");
+    if (!sub) return base;
+    return base ? `${base}/${sub}` : sub;
+  }
+
   async function connectGoogle() {
     setLoading(true);
     setMessage(null);
@@ -129,8 +313,10 @@ export default function WorkspaceMigrationSection({
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({ return_path: oauthReturnPath }),
       });
-      const d = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok) throw new Error(d.error ?? "start_failed");
+      const d = (await res.json().catch(() => ({}))) as { url?: string; error?: string; code?: string };
+      if (!res.ok) {
+        throw new Error(oauthStartErrorMessage(res.status, d.code, d.error, "Google Drive"));
+      }
       if (d.url) window.location.href = d.url;
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
@@ -150,8 +336,10 @@ export default function WorkspaceMigrationSection({
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({ return_path: oauthReturnPath }),
       });
-      const d = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok) throw new Error(d.error ?? "start_failed");
+      const d = (await res.json().catch(() => ({}))) as { url?: string; error?: string; code?: string };
+      if (!res.ok) {
+        throw new Error(oauthStartErrorMessage(res.status, d.code, d.error, "Dropbox"));
+      }
       if (d.url) window.location.href = d.url;
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
@@ -164,23 +352,32 @@ export default function WorkspaceMigrationSection({
     setLoading(true);
     setMessage(null);
     try {
+      if (!storageDrive?.id) throw new Error("No Storage drive found for this workspace. Open Files once, then try again.");
+      if (picks.length === 0) throw new Error("Select at least one folder or file from Google Drive or Dropbox.");
       const h = await authHeader();
       if (!h) throw new Error("Sign in first");
+      const destination_path_prefix = composedDestinationPrefix();
+      const sources = picks.map((p) => ({
+        ref: p.ref,
+        label: p.kind === "folder" ? p.name.replace(/[/\\]/g, "_") : p.name.replace(/[/\\]/g, "_"),
+        kind: p.kind,
+      }));
       const res = await fetch("/api/migrations/jobs", {
         method: "POST",
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider: form.provider,
-          duplicate_mode: form.duplicate_mode,
-          drive_id: form.drive_id.trim(),
-          workspace_id: form.workspace_id.trim() || null,
-          destination_path_prefix: form.destination_path_prefix.trim(),
-          sources: form.sources.filter((s) => s.ref.trim()),
+          provider,
+          duplicate_mode,
+          drive_id: storageDrive.id,
+          workspace_id: workspace_id || null,
+          destination_path_prefix,
+          sources,
         }),
       });
       const d = (await res.json()) as { job_id?: string; error?: string; code?: string };
       if (!res.ok) throw new Error(d.error ?? "create_failed");
-      setMessage(`Job created: ${d.job_id}`);
+      setMessage(`Import started — job ${d.job_id}. It will scan, then you can start transfer when ready.`);
+      setPicks([]);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -206,12 +403,16 @@ export default function WorkspaceMigrationSection({
     await fetch(`/api/migrations/jobs/${id}/resume`, { method: "POST", headers: h });
   }
 
-  async function disconnectProvider(provider: Provider) {
+  async function disconnectProvider(p: Provider) {
     const h = await authHeader();
     if (!h) return;
-    await fetch(`/api/migrations/accounts?provider=${provider}`, { method: "DELETE", headers: h });
+    await fetch(`/api/migrations/accounts?provider=${p}`, { method: "DELETE", headers: h });
     await refreshAccounts();
   }
+
+  const googleConnected = accounts?.find((a) => a.provider === "google_drive")?.connected;
+  const dropboxConnected = accounts?.find((a) => a.provider === "dropbox")?.connected;
+  const providerConnected = provider === "google_drive" ? googleConnected : dropboxConnected;
 
   return (
     <section
@@ -221,23 +422,21 @@ export default function WorkspaceMigrationSection({
       <SettingsSectionScope label={scopeLabel} />
       <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
         <CloudUpload className="h-5 w-5 text-bizzi-blue" />
-        Migration
+        Cloud import
       </h2>
       <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6">
-        One-time copy from Google Drive or Dropbox into your <strong>Storage</strong> area only (not RAW or
-        Gallery Media). File data moves server-side; refresh this page to update job status. In production,
-        configure <code className="text-xs">MIGRATION_TOKEN_ENCRYPTION_KEY</code>, OAuth client IDs, and{" "}
-        <code className="text-xs">MIGRATION_PUBLIC_APP_URL</code>.
+        Copy files from Google Drive or Dropbox into your <strong>Storage</strong> workspace (not RAW or Gallery).
+        Connect your account, tick what you want, choose where it lands in Bizzi, then start the import.
       </p>
 
       <div className="space-y-4 mb-8">
-        <h3 className="font-semibold text-neutral-900 dark:text-white">1. Connect provider</h3>
+        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 1 — Connect</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={loading || !user}
             onClick={() => void connectGoogle()}
-            className="rounded-lg bg-white dark:bg-zinc-800 border border-neutral-200 dark:border-neutral-600 px-3 py-2 text-sm"
+            className="rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
           >
             Google Drive
           </button>
@@ -245,7 +444,7 @@ export default function WorkspaceMigrationSection({
             type="button"
             disabled={loading || !user}
             onClick={() => void connectDropbox()}
-            className="rounded-lg bg-white dark:bg-zinc-800 border border-neutral-200 dark:border-neutral-600 px-3 py-2 text-sm"
+            className="rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
           >
             Dropbox
           </button>
@@ -255,7 +454,8 @@ export default function WorkspaceMigrationSection({
             {accounts.map((a) => (
               <li key={a.provider} className="flex flex-wrap items-center gap-2">
                 <span>
-                  {a.provider}: {a.connected ? "connected" : "not connected"}
+                  {a.provider === "google_drive" ? "Google Drive" : "Dropbox"}:{" "}
+                  {a.connected ? "connected" : "not connected"}
                 </span>
                 {a.connected && (
                   <button
@@ -272,94 +472,184 @@ export default function WorkspaceMigrationSection({
         )}
       </div>
 
-      <div className="space-y-3 mb-8">
-        <h3 className="font-semibold text-neutral-900 dark:text-white">2. New import job</h3>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Provider
-          <select
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.provider}
-            onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value as Provider }))}
-          >
-            <option value="google_drive">Google Drive</option>
-            <option value="dropbox">Dropbox</option>
-          </select>
-        </label>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Destination Storage <code className="text-xs">drive_id</code>
-          <input
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.drive_id}
-            onChange={(e) => setForm((f) => ({ ...f, drive_id: e.target.value }))}
-            placeholder="linked_drives document id"
-          />
-        </label>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Organization workspace id (optional; required for org Storage)
-          <input
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.workspace_id}
-            onChange={(e) => setForm((f) => ({ ...f, workspace_id: e.target.value }))}
-          />
-        </label>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Destination folder path under Storage (optional prefix)
-          <input
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.destination_path_prefix}
-            onChange={(e) => setForm((f) => ({ ...f, destination_path_prefix: e.target.value }))}
-          />
-        </label>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Duplicate handling
-          <select
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.duplicate_mode}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, duplicate_mode: e.target.value as "skip" | "rename" }))
-            }
-          >
-            <option value="skip">Skip if exists</option>
-            <option value="rename">Rename if exists</option>
-          </select>
-        </label>
-        <label className="block text-sm text-neutral-800 dark:text-neutral-200">
-          Source folder{" "}
-          {form.provider === "google_drive" ? "(Google folder id, e.g. from URL)" : "(Dropbox path_lower)"}
-          <input
-            className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-neutral-900 dark:text-white"
-            value={form.sources[0]?.ref ?? ""}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                sources: [{ ref: e.target.value, label: f.sources[0]?.label ?? "imported" }],
-              }))
-            }
-          />
-        </label>
-        <button
-          type="button"
-          disabled={loading || !user}
-          onClick={() => void createJob()}
-          className="rounded-lg bg-bizzi-blue text-white px-4 py-2 text-sm font-medium hover:bg-bizzi-cyan disabled:opacity-60"
-        >
-          Create job (starts scan)
-        </button>
+      <div className="space-y-4 mb-8 border-t border-neutral-200 dark:border-neutral-700 pt-6">
+        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 2 — Pick from cloud</h3>
+        <div className="flex flex-wrap gap-3 items-center">
+          <label className="text-sm text-neutral-700 dark:text-neutral-300">
+            From{" "}
+            <select
+              className="ml-1 border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as Provider)}
+              disabled={!user}
+            >
+              <option value="google_drive">Google Drive</option>
+              <option value="dropbox">Dropbox</option>
+            </select>
+          </label>
+          {!providerConnected ? (
+            <span className="text-sm text-amber-700 dark:text-amber-300">Connect this provider above first.</span>
+          ) : browseLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
+          ) : (
+            <button
+              type="button"
+              className="text-sm text-bizzi-blue hover:underline"
+              onClick={() => void loadProviderFolder()}
+            >
+              Refresh list
+            </button>
+          )}
+        </div>
+
+        {providerConnected && (
+          <>
+            <nav className="flex flex-wrap items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
+              {providerTrail.map((c, idx) => (
+                <span key={`${c.id}-${idx}`} className="flex items-center gap-1">
+                  {idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                  <button
+                    type="button"
+                    className="hover:underline"
+                    onClick={() => goProviderCrumb(idx)}
+                  >
+                    {c.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+            <div className="max-h-56 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-600 divide-y divide-neutral-100 dark:divide-neutral-800">
+              {providerEntries.length === 0 && !browseLoading ? (
+                <p className="p-3 text-sm text-neutral-500">This folder is empty.</p>
+              ) : (
+                providerEntries.map((e) => {
+                  const picked = picks.some(
+                    (p) => p.ref === (provider === "google_drive" ? e.id : e.path_lower ?? e.id) && p.kind === (e.isFolder ? "folder" : "file")
+                  );
+                  return (
+                    <div
+                      key={`${e.id}-${e.path_lower ?? ""}`}
+                      className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-zinc-800/80"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={picked}
+                        onChange={() => togglePick(e)}
+                        className="rounded border-neutral-300"
+                        aria-label={`Select ${e.name}`}
+                      />
+                      {e.isFolder ? (
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => enterProviderFolder(e)}
+                        >
+                          <FolderOpen className="h-4 w-4 shrink-0 text-amber-600" />
+                          <span className="truncate text-neutral-900 dark:text-white">{e.name}</span>
+                          <span className="text-xs text-neutral-400">Open</span>
+                        </button>
+                      ) : (
+                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                          <File className="h-4 w-4 shrink-0 text-neutral-400" />
+                          <span className="truncate text-neutral-800 dark:text-neutral-200">{e.name}</span>
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            {picks.length > 0 && (
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                Selected: {picks.length} item(s). Folders import everything inside them; files import one file each.
+              </p>
+            )}
+          </>
+        )}
       </div>
+
+      <div className="space-y-4 mb-8 border-t border-neutral-200 dark:border-neutral-700 pt-6">
+        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 3 — Where in Bizzi Storage</h3>
+        {!storageDrive?.id ? (
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            No Storage drive loaded yet. Open the Files page for this workspace, then return here.
+          </p>
+        ) : (
+          <>
+            <nav className="flex flex-wrap items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
+              {destTrail.map((c, idx) => (
+                <span key={`${c.path}-${idx}`} className="flex items-center gap-1">
+                  {idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                  <button type="button" className="hover:underline" onClick={() => goDestCrumb(idx)}>
+                    {c.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+            <div className="max-h-40 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-600">
+              {destFolderChoices.length === 0 ? (
+                <p className="p-3 text-sm text-neutral-500">No subfolders here — you can still add a new subfolder name below.</p>
+              ) : (
+                destFolderChoices.map((f) => (
+                  <button
+                    key={f.path}
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50 dark:hover:bg-zinc-800"
+                    onClick={() => enterDestFolder(f.path, f.name)}
+                  >
+                    <Folder className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span className="truncate">{f.name}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <label className="block text-sm text-neutral-700 dark:text-neutral-300">
+              New subfolder (optional)
+              <input
+                type="text"
+                className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-sm"
+                placeholder="e.g. From Google — creates this folder inside the location above"
+                value={newSubfolder}
+                onChange={(e) => setNewSubfolder(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <label className="block text-sm text-neutral-700 dark:text-neutral-300">
+              If a file already exists
+              <select
+                className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900"
+                value={duplicate_mode}
+                onChange={(e) => setDuplicateMode(e.target.value as "skip" | "rename")}
+              >
+                <option value="skip">Skip</option>
+                <option value="rename">Rename</option>
+              </select>
+            </label>
+          </>
+        )}
+      </div>
+
+      <button
+        type="button"
+        disabled={loading || !user || !providerConnected || !storageDrive?.id || picks.length === 0}
+        onClick={() => void createJob()}
+        className="rounded-lg bg-bizzi-blue text-white px-4 py-2 text-sm font-medium hover:bg-bizzi-cyan disabled:opacity-60 mb-6"
+      >
+        Start import (scan)
+      </button>
 
       {message && <p className="text-sm mb-4 text-amber-700 dark:text-amber-300">{message}</p>}
 
       <div>
-        <h3 className="font-semibold mb-2 text-neutral-900 dark:text-white">Recent jobs</h3>
+        <h3 className="font-semibold mb-2 text-neutral-900 dark:text-white">Your import jobs</h3>
         <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-          Jobs update in real time while this page stays open. The migration worker cron drives scan and
-          transfer on the server.
+          Status updates live while this page is open. Use <strong>Start transfer</strong> when a job is ready.
         </p>
         <ul className="space-y-2 text-sm">
           {jobs.map((j) => {
             const id = (j as { id?: string }).id ?? "";
             const st = String(j.status ?? "");
-            const provider = String((j as { provider?: string }).provider ?? "");
+            const prov = String((j as { provider?: string }).provider ?? "");
             const scanned =
               typeof (j as { files_total_scanned?: unknown }).files_total_scanned === "number"
                 ? (j as { files_total_scanned: number }).files_total_scanned
@@ -376,22 +666,16 @@ export default function WorkspaceMigrationSection({
                 <div className="min-w-0 text-neutral-800 dark:text-neutral-200">
                   <div>
                     <code className="text-xs">{id}</code>
-                    {provider ? (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 ml-1">
-                        · {provider.replace("_", " ")}
-                      </span>
+                    {prov ? (
+                      <span className="text-xs text-neutral-500 ml-1">· {prov.replace("_", " ")}</span>
                     ) : null}{" "}
                     — {st}
                   </div>
                   {scanned != null && st === "scanning" ? (
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                      Discovered files (approx.): {scanned}
-                    </div>
+                    <div className="text-xs text-neutral-500 mt-0.5">Discovered files (approx.): {scanned}</div>
                   ) : null}
                   {supported != null && (st === "ready" || st === "running" || st === "paused") ? (
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                      Supported files queued: {supported}
-                    </div>
+                    <div className="text-xs text-neutral-500 mt-0.5">Queued files: {supported}</div>
                   ) : null}
                 </div>
                 <span className="flex flex-wrap gap-2">
