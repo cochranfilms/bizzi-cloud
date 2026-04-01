@@ -1,6 +1,7 @@
 /**
- * Resolve FFmpeg binary for a given input by leaf extension (e.g. BRAW-capable build).
- * Shared by proxy generation and video-thumbnail routes.
+ * Resolve FFmpeg binary for a given input by leaf extension.
+ * Note: `.braw` **proxy transcode** uses the dedicated Linux worker (`/api/workers/braw-proxy/*`), not this path.
+ * `FFMPEG_BRAW_PATH` still applies to **video-thumbnail** and any non–BRAW-worker flows that spawn FFmpeg on `.braw`.
  * @module ffmpeg-binary
  */
 import ffmpegPath from "ffmpeg-static";

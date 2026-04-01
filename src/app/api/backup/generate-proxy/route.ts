@@ -11,6 +11,7 @@ import {
 } from "@/lib/b2";
 import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { isBrawFile } from "@/lib/format-detection";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { queueProxyJob } from "@/lib/proxy-queue";
@@ -81,6 +82,18 @@ export async function POST(request: Request) {
       { status: accessResult.status ?? 403 }
     );
   }
+
+  const leaf = resolvedPreviewKey.split("/").filter(Boolean).pop() ?? resolvedPreviewKey;
+  if (isBrawFile(leaf) && queueParam !== true) {
+    return NextResponse.json(
+      {
+        error:
+          "Blackmagic RAW (.braw) cannot be transcoded synchronously on the app. Use queue: true, then run the dedicated Linux worker (POST /api/workers/braw-proxy/claim).",
+      },
+      { status: 501 }
+    );
+  }
+
   const proxyKey = getProxyObjectKey(resolvedPreviewKey);
   if (await objectExists(proxyKey)) {
     return NextResponse.json({ ok: true, alreadyExists: true });
@@ -118,6 +131,19 @@ export async function POST(request: Request) {
       proxy_error_reason: null,
     });
     return NextResponse.json({ ok: true, alreadyExists: result.alreadyExists });
+  }
+  if (result.brawRequiresDedicatedWorker && bfId) {
+    const db = getAdminFirestore();
+    await db.collection("backup_files").doc(bfId).update({
+      proxy_status: "failed",
+      proxy_error_reason:
+        result.error ?? "raw_decoder_unavailable: use dedicated BRAW worker",
+      proxy_generated_at: now,
+    });
+    return NextResponse.json(
+      { error: result.error ?? "Use dedicated BRAW worker", brawWorker: true },
+      { status: 501 }
+    );
   }
   if (result.rawUnsupported && bfId) {
     const db = getAdminFirestore();

@@ -9,10 +9,24 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getProxyObjectKey, objectExists } from "@/lib/b2";
-import { canGenerateProxy, getProxyCapability } from "@/lib/format-detection";
+import { canGenerateProxy, getProxyCapability, isBrawFile } from "@/lib/format-detection";
+import type { ProxyJobMediaWorker } from "@/lib/braw-media-worker";
 
 const PROXY_JOBS_COLLECTION = "proxy_jobs";
 const MAX_RETRIES = 5;
+
+/** True if this job must be processed by the Linux BRAW worker, not Vercel FFmpeg. */
+export function proxyJobRowIsBrawQueue(
+  data: Record<string, unknown> | undefined,
+  object_key: string,
+  name: string | null
+): boolean {
+  if (!data) return false;
+  if (data.media_worker === "braw") return true;
+  const leaf = name ?? object_key;
+  if (isBrawFile(leaf) && data.media_worker !== "standard") return true;
+  return false;
+}
 
 export interface ProxyJobInput {
   object_key: string;
@@ -71,12 +85,14 @@ export async function queueProxyJob(input: ProxyJobInput): Promise<void> {
   const proxyKey = getProxyObjectKey(object_key);
   if (await objectExists(proxyKey)) return;
 
+  const media_worker: ProxyJobMediaWorker = isBrawFile(nameOrPath) ? "braw" : "standard";
   const now = new Date().toISOString();
   await db.collection(PROXY_JOBS_COLLECTION).add({
     object_key,
     name: name ?? null,
     backup_file_id: backup_file_id ?? null,
     user_id,
+    media_worker,
     status: "pending",
     retry_count: 0,
     created_at: now,
@@ -101,6 +117,7 @@ export async function getProxyJobByObjectKey(object_key: string): Promise<{
   backup_file_id: string | null;
   user_id: string;
   retry_count: number;
+  media_worker: string | null;
 } | null> {
   const db = getAdminFirestore();
   const snap = await db
@@ -115,11 +132,12 @@ export async function getProxyJobByObjectKey(object_key: string): Promise<{
   if ((data.retry_count ?? 0) >= MAX_RETRIES) return null;
   return {
     id: d.id,
-    object_key: data.object_key,
-    name: data.name ?? null,
-    backup_file_id: data.backup_file_id ?? null,
-    user_id: data.user_id,
+    object_key: data.object_key as string,
+    name: (data.name as string | null) ?? null,
+    backup_file_id: (data.backup_file_id as string | null) ?? null,
+    user_id: data.user_id as string,
     retry_count: data.retry_count ?? 0,
+    media_worker: (data.media_worker as string | null) ?? null,
   };
 }
 
@@ -142,7 +160,7 @@ export async function getPendingProxyJobs(limit: number): Promise<
     .collection(PROXY_JOBS_COLLECTION)
     .where("status", "==", "pending")
     .orderBy("created_at")
-    .limit(limit * 2) // Fetch extra in case we filter some out
+    .limit(limit * 4)
     .get();
 
   const jobs = snap.docs
@@ -150,14 +168,17 @@ export async function getPendingProxyJobs(limit: number): Promise<
       const data = d.data();
       return {
         id: d.id,
-        object_key: data.object_key,
-        name: data.name ?? null,
-        backup_file_id: data.backup_file_id ?? null,
-        user_id: data.user_id,
+        object_key: data.object_key as string,
+        name: (data.name as string | null) ?? null,
+        backup_file_id: (data.backup_file_id as string | null) ?? null,
+        user_id: data.user_id as string,
         retry_count: data.retry_count ?? 0,
+        _row: data as Record<string, unknown>,
       };
     })
     .filter((j) => j.retry_count < MAX_RETRIES)
+    .filter((j) => !proxyJobRowIsBrawQueue(j._row, j.object_key, j.name))
+    .map(({ _row: _ignored, ...rest }) => rest)
     .slice(0, limit);
 
   return jobs;

@@ -94,6 +94,14 @@ async function handleCron(request: Request) {
           proxy_error_reason: null,
         });
       }
+    } else if (result.brawRequiresDedicatedWorker) {
+      await updateProxyJobStatus(job.id, "completed");
+      completed++;
+      await updateBackupFileProxyStatus(job.backup_file_id, {
+        proxy_status: "failed",
+        proxy_error_reason: result.error ?? "raw_decoder_unavailable: use dedicated BRAW worker",
+        proxy_generated_at: now,
+      });
     } else if (result.rawUnsupported) {
       await updateProxyJobStatus(job.id, "completed"); // Don't retry RAW
       await updateBackupFileProxyStatus(job.backup_file_id, {

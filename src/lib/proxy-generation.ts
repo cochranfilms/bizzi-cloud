@@ -21,6 +21,7 @@ import {
   MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { formatRawDecoderUnavailableMessage } from "@/lib/braw-media-worker";
 import type { ProxySourceInputErrorCode } from "@/lib/proxy-input-errors";
 import ffmpegPath from "ffmpeg-static";
 
@@ -44,6 +45,8 @@ export interface RunProxyGenerationResult {
   resolvedSourceObjectKey?: string;
   /** Terminal input / storage failure — do not retry as generic transcode; not raw_unsupported. */
   proxyErrorCode?: ProxySourceInputErrorCode;
+  /** .braw is only transcoded on the dedicated Linux media worker, not this path. */
+  brawRequiresDedicatedWorker?: boolean;
   /** Set when ok: true; used to update backup_files */
   proxySizeBytes?: number;
   proxyDurationSec?: number;
@@ -148,10 +151,10 @@ export function summarizeRawDecodeFailureForUser(
     isBrawFile(leafForExt) ||
     /\(brxq\s*\/|brxq\b|braw_codec|blackmagic design film/i.test(s);
   if (looksBraw && !usedBrawCapableBinary) {
-    return "Blackmagic RAW (.braw) needs a BRAW-capable FFmpeg on the proxy worker. Set the FFMPEG_BRAW_PATH environment variable, or use Download for the original file.";
+    return "Blackmagic RAW (brxq) needs the dedicated Linux media worker (POST /api/workers/braw-proxy/claim) with Blackmagic RAW SDK / BRAW-capable FFmpeg — not stock serverless transcoding. Or use Download.";
   }
   if (looksBraw && usedBrawCapableBinary) {
-    return "Blackmagic RAW decode failed with the configured BRAW FFmpeg. Check server logs or use Download.";
+    return "Blackmagic RAW decode failed with the configured BRAW FFmpeg. Check worker logs or use Download.";
   }
   const codecLine = s
     .split("\n")
@@ -238,6 +241,18 @@ export async function runProxyGeneration(
   const proxyKey = getProxyObjectKey(sourceObjectKey);
   if (await objectExists(proxyKey)) {
     return { ok: true, alreadyExists: true, resolvedSourceObjectKey: sourceObjectKey };
+  }
+
+  /** Blackmagic RAW: brxq decode runs only on the dedicated worker (`/api/workers/braw-proxy/*`). */
+  if (isBrawFile(nameOrPath)) {
+    return {
+      ok: false,
+      brawRequiresDedicatedWorker: true,
+      error: formatRawDecoderUnavailableMessage(
+        "Use the dedicated BRAW media worker (POST /api/workers/braw-proxy/claim). In-app serverless proxy does not decode brxq."
+      ),
+      resolvedSourceObjectKey: sourceObjectKey,
+    };
   }
 
   const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);

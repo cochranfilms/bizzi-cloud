@@ -3,7 +3,9 @@ import { getDownloadUrl } from "@/lib/cdn";
 import { getMuxAssetStatus } from "@/lib/mux";
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
+import { BRAW_WORKER_NOT_CONFIGURED_USER_MESSAGE, isBrawMediaWorkerConfigured } from "@/lib/braw-media-worker";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
+import { isBrawFile } from "@/lib/format-detection";
 import { queueProxyJob } from "@/lib/proxy-queue";
 import { NextResponse } from "next/server";
 
@@ -28,6 +30,23 @@ function backupDimensionsPayload(doc: { data: () => Record<string, unknown> } | 
 }
 
 /** Proxy pipeline will not succeed — surface to client instead of “processing” + safety-net spam. */
+function leafFromObjectKey(key: string): string {
+  return key.split("/").filter(Boolean).pop() ?? key;
+}
+
+function brawWorkerNotConfiguredPayload(
+  objectKey: string,
+  dim: ReturnType<typeof backupDimensionsPayload>
+): Record<string, unknown> | null {
+  if (!isBrawFile(leafFromObjectKey(objectKey)) || isBrawMediaWorkerConfigured()) return null;
+  return {
+    processing: false,
+    proxyUnavailable: true,
+    message: BRAW_WORKER_NOT_CONFIGURED_USER_MESSAGE,
+    ...dim,
+  };
+}
+
 function terminalProxyPreviewFailurePayload(
   metaDoc: { data: () => Record<string, unknown> } | undefined,
   dim: ReturnType<typeof backupDimensionsPayload>
@@ -39,8 +58,10 @@ function terminalProxyPreviewFailurePayload(
   const reason = (d.proxy_error_reason as string | null) ?? null;
   const defaultMsg =
     ps === "raw_unsupported"
-      ? "Cloud preview can’t decode this camera RAW with the current server setup. Download the original, or configure a BRAW-capable FFmpeg (FFMPEG_BRAW_PATH) for proxy generation."
-      : "Proxy generation failed. Try Download, or try again later.";
+      ? "Cloud preview can’t decode this camera RAW with the current server setup. Download the original, or use the dedicated BRAW Linux worker."
+      : reason?.includes("raw_decoder_unavailable")
+        ? "Dedicated RAW transcode did not produce a proxy. Try Download, or verify MEDIA_BRAW_WORKER_SECRET and the Linux worker / Blackmagic RAW SDK pipeline."
+        : "Proxy generation failed. Try Download, or try again later.";
   return {
     processing: false,
     proxyUnavailable: true,
@@ -199,6 +220,8 @@ export async function POST(request: Request) {
       }
       const termMux = terminalProxyPreviewFailurePayload(metaDoc ?? muxSnap.docs[0], dim);
       if (termMux) return NextResponse.json(termMux);
+      const brawNoWorkerMux = brawWorkerNotConfiguredPayload(objectKey, dim);
+      if (brawNoWorkerMux) return NextResponse.json(brawNoWorkerMux);
       await ensureVideoProxyJobQueued(objectKey, uid, muxSnap.docs);
       return NextResponse.json({
         processing: true,
@@ -212,6 +235,8 @@ export async function POST(request: Request) {
     if (!proxyExists) {
       const term = terminalProxyPreviewFailurePayload(metaDoc, dim);
       if (term) return NextResponse.json(term);
+      const brawNoWorker = brawWorkerNotConfiguredPayload(objectKey, dim);
+      if (brawNoWorker) return NextResponse.json(brawNoWorker);
       await ensureVideoProxyJobQueued(objectKey, uid, muxSnap.docs);
       return NextResponse.json({
         processing: true,

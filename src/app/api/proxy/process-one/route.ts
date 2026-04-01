@@ -10,6 +10,7 @@ import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import {
   getProxyJobByObjectKey,
+  proxyJobRowIsBrawQueue,
   updateProxyJobStatus,
   incrementProxyJobRetry,
 } from "@/lib/proxy-queue";
@@ -54,6 +55,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, processed: false, reason: "no_pending_job" });
   }
 
+  if (
+    proxyJobRowIsBrawQueue(
+      { media_worker: job.media_worker },
+      job.object_key,
+      job.name
+    )
+  ) {
+    return NextResponse.json({
+      ok: true,
+      processed: false,
+      reason: "braw_use_dedicated_worker",
+    });
+  }
+
   let accessObjectKey = job.object_key;
   if (job.backup_file_id) {
     const bf = await getAdminFirestore().collection("backup_files").doc(job.backup_file_id).get();
@@ -96,6 +111,19 @@ export async function POST(request: Request) {
       });
     }
     return NextResponse.json({ ok: true, processed: true, completed: true });
+  } else if (result.brawRequiresDedicatedWorker) {
+    await updateProxyJobStatus(job.id, "completed");
+    await updateBackupFileProxyStatus(job.backup_file_id, {
+      proxy_status: "failed",
+      proxy_error_reason:
+        result.error ?? "raw_decoder_unavailable: use dedicated BRAW worker",
+      proxy_generated_at: now,
+    });
+    return NextResponse.json({
+      ok: true,
+      processed: true,
+      reason: "braw_dedicated_worker_required",
+    });
   } else if (result.rawUnsupported) {
     await updateProxyJobStatus(job.id, "completed");
     await updateBackupFileProxyStatus(job.backup_file_id, {
