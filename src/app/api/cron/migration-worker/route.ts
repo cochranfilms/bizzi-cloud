@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 const CRON_SECRET = process.env.CRON_SECRET;
 const MAX_PASSES = 8;
 
+/** Vercel Cron invokes scheduled routes with GET; manual runs may use POST. */
 async function handleCron(request: Request) {
   if (CRON_SECRET) {
     const authHeader = request.headers.get("Authorization");
@@ -29,7 +30,6 @@ async function handleCron(request: Request) {
   return NextResponse.json({ ok: true, passes, claimed_jobs: claimed });
 }
 
-/** Vercel Cron invokes scheduled routes with GET */
 export async function GET(request: Request) {
   return handleCron(request);
 }
