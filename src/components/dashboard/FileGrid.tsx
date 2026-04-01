@@ -58,6 +58,12 @@ import {
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import { filterFilesForVirtualFolder } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
+import {
+  buildGalleryMediaPathSegmentIndex,
+  canonicalGalleryIdForGalleryMediaPath,
+  formatGalleryMediaFolderBreadcrumb,
+  galleryMediaStorageRootForCanonicalId,
+} from "@/lib/gallery-media-path";
 
 function mergeDisplayedFilesWithMacosPackages(
   displayedFiles: RecentFile[],
@@ -233,6 +239,10 @@ export default function FileGrid() {
     moveFolderContentsToFolder,
   } = useCloudFiles();
   const { galleries } = useGalleries();
+  const galleryMediaPathSegmentIndex = useMemo(
+    () => buildGalleryMediaPathSegmentIndex(galleries),
+    [galleries]
+  );
   const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
   const {
     files: heartedFiles,
@@ -257,7 +267,6 @@ export default function FileGrid() {
     currentY: number;
   } | null>(null);
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
-  const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [macosPackagesForFolder, setMacosPackagesForFolder] = useState<MacosPackageListEntry[]>([]);
   const [creativeFilterPackagesByDrive, setCreativeFilterPackagesByDrive] = useState<
     Record<string, MacosPackageListEntry[]>
@@ -743,37 +752,61 @@ export default function FileGrid() {
       return { subfolderItems: nestedSubfolders, displayedFiles: directFiles };
     }
     const galleryTitleMap = new Map(galleries.map((g) => [g.id, g.title]));
-    const seen = new Map<string, { count: number; displayName: string }>();
+    const seen = new Map<
+      string,
+      {
+        count: number;
+        displayName: string;
+        storageRoot?: string;
+        galleryMediaCanonicalId?: string;
+      }
+    >();
     for (const f of driveFiles) {
       const parts = f.path.split("/").filter(Boolean);
-      if (parts.length >= 2) {
-        const folderKey = isGalleryMediaDrive ? (f.galleryId ?? parts[0]) : parts[0];
-        const existing = seen.get(folderKey);
-        const displayName =
-          isGalleryMediaDrive && f.galleryId && galleryTitleMap.has(f.galleryId)
-            ? galleryTitleMap.get(f.galleryId)!
-            : folderKey;
-        if (existing) {
-          seen.set(folderKey, { count: existing.count + 1, displayName: existing.displayName });
+      if (parts.length < 2) continue;
+      if (isGalleryMediaDrive) {
+        const canonicalId = canonicalGalleryIdForGalleryMediaPath(
+          f.path,
+          f.galleryId ?? null,
+          galleryMediaPathSegmentIndex
+        );
+        const storageRoot = galleryMediaStorageRootForCanonicalId(canonicalId, galleries);
+        const displayName = galleryTitleMap.get(canonicalId) ?? canonicalId;
+        const cur = seen.get(canonicalId);
+        if (cur) {
+          seen.set(canonicalId, { ...cur, count: cur.count + 1 });
+        } else {
+          seen.set(canonicalId, {
+            count: 1,
+            displayName,
+            storageRoot,
+            galleryMediaCanonicalId: canonicalId,
+          });
+        }
+      } else {
+        const folderKey = parts[0];
+        const displayName = folderKey;
+        const cur = seen.get(folderKey);
+        if (cur) {
+          seen.set(folderKey, { ...cur, count: cur.count + 1 });
         } else {
           seen.set(folderKey, { count: 1, displayName });
         }
       }
     }
-    const subfolderList: FolderItem[] = Array.from(seen.entries()).map(
-      ([folderKey, { count, displayName }]) => ({
-        name: displayName,
-        type: "folder" as const,
-        key: `path-subfolder-${currentDrive.id}|${folderKey}`,
-        items: count,
-        driveId: undefined,
-        virtualFolder: true,
-        hideShare: true,
-        preventDelete: true,
-        preventRename: true,
-        pathPrefix: folderKey,
-      })
-    );
+    const subfolderList: FolderItem[] = Array.from(seen.entries()).map(([folderKey, v]) => ({
+      name: v.displayName,
+      type: "folder" as const,
+      key: `path-subfolder-${currentDrive.id}|${folderKey}`,
+      items: v.count,
+      driveId: undefined,
+      virtualFolder: true,
+      hideShare: true,
+      preventDelete: true,
+      preventRename: true,
+      pathPrefix: isGalleryMediaDrive ? (v.storageRoot ?? folderKey) : folderKey,
+      galleryMediaCanonicalId: v.galleryMediaCanonicalId,
+    }));
     const rootFiles = driveFiles.filter((f) => !f.path.includes("/"));
     return { subfolderItems: subfolderList, displayedFiles: rootFiles };
   }, [
@@ -783,6 +816,7 @@ export default function FileGrid() {
     currentDrivePath,
     isGalleryMediaDrive,
     galleries,
+    galleryMediaPathSegmentIndex,
   ]);
 
   const virtualFolderRollupByKey = useMemo(() => {
@@ -791,9 +825,11 @@ export default function FileGrid() {
     const coverage: FolderRollupCoverage = driveListTruncated ? "partial" : "full";
     for (const item of subfolderItems) {
       if (!item.virtualFolder || item.pathPrefix == null) continue;
-      const descendants = filterFilesForVirtualFolder(driveFiles, item.pathPrefix, {
+      const descendants = filterFilesForVirtualFolder(driveFiles, item.pathPrefix ?? "", {
         isGalleryMediaDrive,
         currentDrivePath,
+        galleryMediaCanonicalId: item.galleryMediaCanonicalId ?? null,
+        galleryMediaPathSegmentIndex,
       });
       map.set(item.key, { descendants, coverage });
     }
@@ -806,6 +842,7 @@ export default function FileGrid() {
     driveListTruncated,
     isGalleryMediaDrive,
     currentDrivePath,
+    galleryMediaPathSegmentIndex,
   ]);
 
   useEffect(() => {
@@ -934,14 +971,11 @@ export default function FileGrid() {
       setPinnedFiles([]);
       return;
     }
-    setPinnedFilesLoading(true);
     try {
       const files = await fetchPinnedFiles(ids);
       setPinnedFiles(files);
     } catch {
       setPinnedFiles([]);
-    } finally {
-      setPinnedFilesLoading(false);
     }
   }, [pinnedFileIds]);
 
@@ -1453,7 +1487,9 @@ export default function FileGrid() {
             <>
               <span className="text-neutral-400 dark:text-neutral-500">/</span>
               <span className="font-medium text-neutral-900 dark:text-white">
-                {(isGalleryMediaDrive ? galleries.find((g) => g.id === currentDrivePath)?.title : null) ?? currentDrivePath}
+                {isGalleryMediaDrive
+                  ? formatGalleryMediaFolderBreadcrumb(currentDrivePath, galleries)
+                  : currentDrivePath}
               </span>
             </>
           )}
@@ -1461,14 +1497,9 @@ export default function FileGrid() {
       )}
 
       {/* Pinned shortcuts (only at root) - compact section */}
-      {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0 || pinnedFilesLoading) && (
-        <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
+      {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0) && (
+        <section className="motion-safe:transition-opacity motion-safe:duration-500 motion-safe:ease-out border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Pinned</h3>
-          <DashboardRouteFade
-            ready={pinnedFileIds.size === 0 || !pinnedFilesLoading}
-            srOnlyMessage="Loading pinned items"
-            compact
-          >
           {viewMode === "list" ? (
             <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
@@ -1635,7 +1666,6 @@ export default function FileGrid() {
               ))}
             </div>
           )}
-          </DashboardRouteFade>
         </section>
       )}
 

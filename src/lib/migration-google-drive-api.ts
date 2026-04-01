@@ -5,6 +5,12 @@ import {
 import type { MigrationUnsupportedReason } from "@/lib/migration-constants";
 import { migrationMaxFileBytes } from "@/lib/migration-constants";
 
+export interface GoogleDriveImageMediaMetadata {
+  width?: number;
+  height?: number;
+  time?: string;
+}
+
 export interface GoogleDriveFileMeta {
   id: string;
   name: string;
@@ -12,6 +18,11 @@ export interface GoogleDriveFileMeta {
   size?: string;
   md5Checksum?: string;
   modifiedTime?: string;
+  /** Short-lived direct thumbnail URL (suitable for <img src> in many cases). */
+  thumbnailLink?: string;
+  /** Google-provided MIME icon URL. */
+  iconLink?: string;
+  imageMediaMetadata?: GoogleDriveImageMediaMetadata;
   /** Drive revision / version when present (stringified for stable compares). */
   version?: string | number;
   shortcutDetails?: { targetId?: string; targetMimeType?: string };
@@ -62,7 +73,7 @@ export async function googleListChildren(
   const params = new URLSearchParams({
     q,
     fields:
-      "nextPageToken, files(id, name, mimeType, size, md5Checksum, shortcutDetails, capabilities/canDownload)",
+      "nextPageToken, files(id, name, mimeType, size, md5Checksum, modifiedTime, thumbnailLink, iconLink, imageMediaMetadata(width,height,time), shortcutDetails, capabilities/canDownload)",
     pageSize: "100",
   });
   if (pageToken) params.set("pageToken", pageToken);
@@ -76,13 +87,23 @@ export async function googleListChildren(
   return { nextPageToken: json.nextPageToken, files: json.files ?? [] };
 }
 
+/**
+ * Fetch a Drive thumbnail or icon URL using the user access token (required for many lh3/googleusercontent URLs).
+ */
+export async function googleFetchDrivePreviewImage(accessToken: string, imageUrl: string): Promise<Response> {
+  return fetch(imageUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: "follow",
+  });
+}
+
 export async function googleGetFileMeta(
   accessToken: string,
   fileId: string
 ): Promise<GoogleDriveFileMeta> {
   const params = new URLSearchParams({
     fields:
-      "id, name, mimeType, size, md5Checksum, modifiedTime, version, shortcutDetails, capabilities/canDownload",
+      "id, name, mimeType, size, md5Checksum, modifiedTime, thumbnailLink, iconLink, imageMediaMetadata(width,height,time), version, shortcutDetails, capabilities/canDownload",
   });
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`,

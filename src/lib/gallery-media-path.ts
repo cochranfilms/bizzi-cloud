@@ -197,3 +197,59 @@ export function buildMergeRelativePrefix(params: {
   const root = canonicalProofingRootSegment(params.galleryKind);
   return `${params.mediaFolderSegment}/${root}/${params.mergedSegment}/${params.mergeSlug}`;
 }
+
+/** Maps first path segment (media_folder_segment or legacy gallery id) → canonical galleries doc id. */
+export function buildGalleryMediaPathSegmentIndex(
+  galleries: ReadonlyArray<{ id: string; media_folder_segment?: string | null }>
+): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const g of galleries) {
+    m.set(g.id, g.id);
+    const seg = typeof g.media_folder_segment === "string" ? g.media_folder_segment.trim() : "";
+    if (seg) m.set(seg, g.id);
+  }
+  return m;
+}
+
+/**
+ * One logical gallery folder in UI: merge rows that use Firestore gallery_id with rows that only have
+ * media_folder_segment as the first path segment (avoids duplicate tiles after materialize / mixed writes).
+ */
+export function canonicalGalleryIdForGalleryMediaPath(
+  relativePath: string,
+  galleryIdOnFile: string | null | undefined,
+  pathTopToGalleryId: Map<string, string>
+): string {
+  if (galleryIdOnFile) return galleryIdOnFile;
+  const seg0 = relativePath.split("/").filter(Boolean)[0] ?? "";
+  return pathTopToGalleryId.get(seg0) ?? seg0;
+}
+
+/** Object storage path root under Gallery Media drive for a gallery (segment, or id for legacy paths). */
+export function galleryMediaStorageRootForCanonicalId(
+  canonicalId: string,
+  galleries: ReadonlyArray<{ id: string; media_folder_segment?: string | null }>
+): string {
+  const g = galleries.find((x) => x.id === canonicalId);
+  const seg = typeof g?.media_folder_segment === "string" ? g.media_folder_segment.trim() : "";
+  if (seg) return seg;
+  return canonicalId;
+}
+
+export function formatGalleryMediaFolderBreadcrumb(
+  currentDrivePath: string,
+  galleries: ReadonlyArray<{ id: string; title: string; media_folder_segment?: string | null }>
+): string {
+  const trimmed = currentDrivePath.replace(/^\/+/, "");
+  if (!trimmed) return "";
+  const segments = trimmed.split("/").filter(Boolean);
+  const firstSeg = segments[0] ?? "";
+  const rest = segments.slice(1);
+  const g = galleries.find(
+    (x) =>
+      x.id === firstSeg ||
+      (typeof x.media_folder_segment === "string" && x.media_folder_segment === firstSeg)
+  );
+  const head = g?.title ?? firstSeg;
+  return rest.length > 0 ? `${head}/${rest.join("/")}` : head;
+}

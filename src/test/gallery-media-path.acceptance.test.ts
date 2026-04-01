@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildGalleryMediaPathSegmentIndex,
   buildMaterializedListPrefix,
   buildMergeRelativePrefix,
+  canonicalGalleryIdForGalleryMediaPath,
   canonicalProofingRootSegment,
+  formatGalleryMediaFolderBreadcrumb,
+  galleryMediaStorageRootForCanonicalId,
   galleryStoragePathRoots,
   isAcceptedPhotoProofingSegment,
   isAcceptedVideoProofingSegment,
@@ -96,6 +100,23 @@ describe("gallery-media-path acceptance (invariants)", () => {
     expect(relativePathIsInPhotoProofingTree("spring-wedding/Favorited/c/f.jpg", g)).toBe(true);
     expect(relativePathIsInPhotoProofingTree("gid-abc/Favorites/c/f.jpg", g)).toBe(true);
     expect(relativePathIsInPhotoProofingTree("spring-wedding/Selected/c/f.jpg", g)).toBe(false);
+  });
+
+  it("dedupes Gallery Media folder tiles when some rows use gallery_id and others only path segment", () => {
+    const galleries = [
+      { id: "gid-abc", media_folder_segment: "my-wedding", title: "My Wedding" },
+    ];
+    const index = buildGalleryMediaPathSegmentIndex(galleries);
+    expect(
+      canonicalGalleryIdForGalleryMediaPath("my-wedding/clips/a.mov", "gid-abc", index)
+    ).toBe("gid-abc");
+    expect(
+      canonicalGalleryIdForGalleryMediaPath("my-wedding/clips/a.mov", null, index)
+    ).toBe("gid-abc");
+    expect(galleryMediaStorageRootForCanonicalId("gid-abc", galleries)).toBe("my-wedding");
+    expect(formatGalleryMediaFolderBreadcrumb("my-wedding/Selected", galleries)).toBe(
+      "My Wedding/Selected"
+    );
   });
 
   it("video proofing tree + gallery RAW archive subfolder (Final conversion archival)", () => {

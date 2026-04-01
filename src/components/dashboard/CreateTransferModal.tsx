@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap } from "lucide-react";
+import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap, ListPlus } from "lucide-react";
 import type { CreateTransferInput, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
@@ -14,6 +14,40 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import UploadProgressPanel from "./UploadProgressPanel";
+import TransferModalPickThumbnail from "./TransferModalPickThumbnail";
+
+function transferFileKey(f: { path: string; name: string }) {
+  return `${f.path}::${f.name}`;
+}
+
+function filesInFolderScope<T extends { driveId: string; fullPath: string }>(
+  files: T[],
+  driveId: string,
+  pathPrefix?: string
+): T[] {
+  const prefix = pathPrefix !== undefined ? (pathPrefix ? `${pathPrefix}/` : "") : null;
+  return files.filter((f) => {
+    if (f.driveId !== driveId) return false;
+    if (prefix === null) return true;
+    return f.fullPath === pathPrefix || f.fullPath.startsWith(prefix);
+  });
+}
+
+function sampleFilesInFolder<T extends { driveId: string; fullPath: string; objectKey?: string; name: string }>(
+  files: T[],
+  driveId: string,
+  pathPrefix?: string
+) {
+  return filesInFolderScope(files, driveId, pathPrefix).slice(0, 4);
+}
+
+function countFilesInFolder<T extends { driveId: string; fullPath: string }>(
+  files: T[],
+  driveId: string,
+  pathPrefix?: string
+) {
+  return filesInFolderScope(files, driveId, pathPrefix).length;
+}
 
 export type TransferModalFile = {
   name: string;
@@ -91,10 +125,10 @@ export default function CreateTransferModal({
 
   const toggleFile = useCallback(
     (file: { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }) => {
-      const key = `${file.path}::${file.name}`;
+      const key = transferFileKey(file);
       setSelectedFiles((prev) =>
-        prev.some((f) => `${f.path}::${f.name}` === key)
-          ? prev.filter((f) => `${f.path}::${f.name}` !== key)
+        prev.some((f) => transferFileKey(f) === key)
+          ? prev.filter((f) => transferFileKey(f) !== key)
           : [...prev, file]
       );
     },
@@ -111,9 +145,6 @@ export default function CreateTransferModal({
     backupFileId: f.id,
     objectKey: f.objectKey,
   }));
-
-  const pendingFolderClickRef = useRef<{ driveId: string; pathPrefix?: string } | null>(null);
-  const pendingFolderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const attachFolder = useCallback(
     (driveId: string, pathPrefix?: string) => {
@@ -133,40 +164,18 @@ export default function CreateTransferModal({
         objectKey: f.objectKey,
       }));
       setSelectedFiles((prev) => {
-        const existingKeys = new Set(prev.map((f) => `${f.path}::${f.name}`));
-        const newFiles = toAdd.filter((f) => !existingKeys.has(`${f.path}::${f.name}`));
+        const existingKeys = new Set(prev.map((f) => transferFileKey(f)));
+        const newFiles = toAdd.filter((f) => !existingKeys.has(transferFileKey(f)));
         return newFiles.length > 0 ? [...prev, ...newFiles] : prev;
       });
     },
     [allFilesForSelection]
   );
 
-  const handleFolderSingleClick = useCallback(
-    (driveId: string, pathPrefix?: string) => {
-      if (pendingFolderTimerRef.current) clearTimeout(pendingFolderTimerRef.current);
-      pendingFolderClickRef.current = { driveId, pathPrefix };
-      pendingFolderTimerRef.current = setTimeout(() => {
-        pendingFolderTimerRef.current = null;
-        const pending = pendingFolderClickRef.current;
-        pendingFolderClickRef.current = null;
-        if (pending) attachFolder(pending.driveId, pending.pathPrefix);
-      }, 250);
-    },
-    [attachFolder]
-  );
-
-  const handleFolderDoubleClick = useCallback(
-    (driveId: string, pathPrefix?: string) => {
-      if (pendingFolderTimerRef.current) {
-        clearTimeout(pendingFolderTimerRef.current);
-        pendingFolderTimerRef.current = null;
-      }
-      pendingFolderClickRef.current = null;
-      setBrowseDriveId(driveId);
-      setBrowsePath(pathPrefix ?? "");
-    },
-    []
-  );
+  const openFolderInBrowser = useCallback((driveId: string, pathPrefix?: string) => {
+    setBrowseDriveId(driveId);
+    setBrowsePath(pathPrefix ?? "");
+  }, []);
 
   const fileSearchLower = fileSearch.trim().toLowerCase();
   const hasSearch = fileSearchLower !== "";
@@ -582,19 +591,26 @@ export default function CreateTransferModal({
                 </>
               ) : (
                 <>
-                  <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
-                    {selectedFiles.slice(0, 5).map((f) => (
-                      <span
-                        key={f.path}
-                        className="truncate max-w-[140px] rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300"
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {selectedFiles.slice(0, 8).map((f) => (
+                      <div
+                        key={transferFileKey(f)}
+                        className="flex flex-col items-center gap-1"
                         title={f.name}
                       >
-                        {f.name}
-                      </span>
+                        <TransferModalPickThumbnail
+                          objectKey={f.objectKey}
+                          fileName={f.name}
+                          sizeClassName="h-11 w-11"
+                        />
+                        <span className="max-w-[4.5rem] truncate text-center text-[10px] text-neutral-600 dark:text-neutral-400">
+                          {f.name}
+                        </span>
+                      </div>
                     ))}
-                    {selectedFiles.length > 5 && (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                        +{selectedFiles.length - 5} more
+                    {selectedFiles.length > 8 && (
+                      <span className="self-center text-xs text-neutral-500 dark:text-neutral-400">
+                        +{selectedFiles.length - 8} more
                       </span>
                     )}
                   </div>
@@ -678,7 +694,7 @@ export default function CreateTransferModal({
                   </p>
                 </div>
               ) : (
-                <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-900">
+                <div className="max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-900">
                   {!hasSearch && browseDriveId && (
                     <div className="mb-2 flex items-center gap-1">
                       <button
@@ -705,68 +721,137 @@ export default function CreateTransferModal({
                       )}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {!hasSearch && !browseDriveId && visibleDriveFolders.map((folder) => {
-                      const folderKey = `drive:${folder.id}`;
-                      const isSelected = selectedFolderKeys.has(folderKey);
-                      return (
-                      <button
-                        key={folder.key}
-                        type="button"
-                        onClick={() => handleFolderSingleClick(folder.id)}
-                        onDoubleClick={() => handleFolderDoubleClick(folder.id)}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 ${
-                          isSelected
-                            ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
-                            : "border-neutral-200 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                        }`}
-                      >
-                        <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                        <span className="min-w-0 truncate" title={folder.name}>
-                          {folder.name}
-                        </span>
-                        <span className="ml-auto shrink-0 text-xs text-neutral-400">{folder.items}</span>
-                      </button>
-                    );})}
-                    {!hasSearch && browseDriveId && filteredBrowseSubfolders.map((folder) => {
-                      const folderKey = `drive:${browseDriveId}:${folder.pathPrefix}`;
-                      const isSelected = selectedFolderKeys.has(folderKey);
-                      return (
-                      <button
-                        key={folder.pathPrefix}
-                        type="button"
-                        onClick={() => handleFolderSingleClick(browseDriveId, folder.pathPrefix)}
-                        onDoubleClick={() => handleFolderDoubleClick(browseDriveId, folder.pathPrefix)}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors hover:bg-neutral-100 ${
-                          isSelected
-                            ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
-                            : "border-neutral-200 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                        }`}
-                      >
-                        <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                        <span className="min-w-0 truncate" title={folder.name}>
-                          {folder.name}
-                        </span>
-                      </button>
-                    );})}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {!hasSearch &&
+                      !browseDriveId &&
+                      visibleDriveFolders.map((folder) => {
+                        const folderKey = `drive:${folder.id}`;
+                        const isSelected = selectedFolderKeys.has(folderKey);
+                        const previews = sampleFilesInFolder(allFilesForSelection, folder.id);
+                        const n = countFilesInFolder(allFilesForSelection, folder.id);
+                        return (
+                          <div
+                            key={folder.key}
+                            className={`flex flex-col overflow-hidden rounded-lg border text-left transition-colors ${
+                              isSelected
+                                ? "border-bizzi-blue bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                                : "border-neutral-200 dark:border-neutral-600"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openFolderInBrowser(folder.id)}
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800/80"
+                            >
+                              <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                              <span className="min-w-0 flex-1 truncate font-medium text-neutral-800 dark:text-neutral-200" title={folder.name}>
+                                {folder.name}
+                              </span>
+                              <span className="shrink-0 text-xs text-neutral-400">{folder.items}</span>
+                            </button>
+                            {previews.length > 0 ? (
+                              <div className="flex gap-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-700/80">
+                                {previews.map((pf) => (
+                                  <TransferModalPickThumbnail
+                                    key={`${pf.fullPath}::${pf.name}`}
+                                    objectKey={pf.objectKey}
+                                    fileName={pf.name}
+                                    sizeClassName="h-8 w-8"
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                attachFolder(folder.id);
+                              }}
+                              className="flex w-full items-center justify-center gap-1.5 border-t border-neutral-100 bg-neutral-50/90 py-2 text-xs font-medium text-bizzi-blue hover:bg-bizzi-blue/10 dark:border-neutral-700/80 dark:bg-neutral-900/60 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/15"
+                            >
+                              <ListPlus className="h-3.5 w-3.5" />
+                              Add all {n} file{n !== 1 ? "s" : ""}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    {!hasSearch &&
+                      browseDriveId &&
+                      filteredBrowseSubfolders.map((folder) => {
+                        const folderKey = `drive:${browseDriveId}:${folder.pathPrefix}`;
+                        const isSelected = selectedFolderKeys.has(folderKey);
+                        const previews = sampleFilesInFolder(allFilesForSelection, browseDriveId, folder.pathPrefix);
+                        const n = countFilesInFolder(allFilesForSelection, browseDriveId, folder.pathPrefix);
+                        return (
+                          <div
+                            key={folder.pathPrefix}
+                            className={`flex flex-col overflow-hidden rounded-lg border text-left transition-colors ${
+                              isSelected
+                                ? "border-bizzi-blue bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+                                : "border-neutral-200 dark:border-neutral-600"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openFolderInBrowser(browseDriveId, folder.pathPrefix)}
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800/80"
+                            >
+                              <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                              <span className="min-w-0 flex-1 truncate font-medium text-neutral-800 dark:text-neutral-200" title={folder.name}>
+                                {folder.name}
+                              </span>
+                              <span className="shrink-0 text-xs text-neutral-400">{n}</span>
+                            </button>
+                            {previews.length > 0 ? (
+                              <div className="flex gap-1 border-t border-neutral-100 px-3 py-2 dark:border-neutral-700/80">
+                                {previews.map((pf) => (
+                                  <TransferModalPickThumbnail
+                                    key={`${pf.fullPath}::${pf.name}`}
+                                    objectKey={pf.objectKey}
+                                    fileName={pf.name}
+                                    sizeClassName="h-8 w-8"
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                attachFolder(browseDriveId, folder.pathPrefix);
+                              }}
+                              className="flex w-full items-center justify-center gap-1.5 border-t border-neutral-100 bg-neutral-50/90 py-2 text-xs font-medium text-bizzi-blue hover:bg-bizzi-blue/10 dark:border-neutral-700/80 dark:bg-neutral-900/60 dark:text-bizzi-cyan dark:hover:bg-bizzi-blue/15"
+                            >
+                              <ListPlus className="h-3.5 w-3.5" />
+                              Add all {n} file{n !== 1 ? "s" : ""}
+                            </button>
+                          </div>
+                        );
+                      })}
                     {displayFiles.map((file) => {
-                      const selected = selectedFiles.some((f) => f.path === file.path && f.name === file.name);
+                      const selected = selectedFiles.some(
+                        (f) => f.path === file.path && f.name === file.name
+                      );
                       return (
                         <button
-                          key={`${file.path}::${file.name}`}
+                          key={transferFileKey(file)}
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleFile(file);
                           }}
-                          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                          className={`flex min-h-[4.25rem] items-center gap-3 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${
                             selected
                               ? "border-bizzi-blue bg-bizzi-blue/10 text-bizzi-blue dark:border-bizzi-blue dark:bg-bizzi-blue/20"
                               : "border-neutral-200 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-700"
                           }`}
                         >
-                          <File className="h-4 w-4 shrink-0" />
-                          <span className="min-w-0 truncate" title={file.name}>
+                          <TransferModalPickThumbnail
+                            objectKey={file.objectKey}
+                            fileName={file.name}
+                            sizeClassName="h-11 w-11"
+                          />
+                          <span className="min-w-0 flex-1 truncate" title={file.name}>
                             {file.name}
                           </span>
                         </button>
@@ -779,32 +864,47 @@ export default function CreateTransferModal({
                 <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                   {allFilesForSelection.length} file{allFilesForSelection.length !== 1 ? "s" : ""} available
                   {fileSearch.trim() && ` • ${displayFiles.length} match${displayFiles.length !== 1 ? "es" : ""}`}
-                  {!hasSearch && " • Single-click folder to add all • Double-click to open"}
+                  {!hasSearch &&
+                    " • Open a folder to browse with previews • Use “Add all” only when you want everything in that folder"}
                 </p>
               )}
             </div>
 
             {selectedFiles.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedFiles.map((f) => (
-                  <span
-                    key={f.path}
-                    className="inline-flex items-center gap-1 rounded-full bg-neutral-200 px-2 py-0.5 text-xs dark:bg-neutral-700"
-                  >
-                    {f.name}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFiles((p) => p.filter((x) => x.path !== f.path));
-                      }}
-                      className="hover:text-red-600"
-                      aria-label="Remove"
+              <div className="mt-3">
+                <p className="mb-2 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                  Selected for transfer ({selectedFiles.length})
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {selectedFiles.map((f) => (
+                    <div
+                      key={transferFileKey(f)}
+                      className="group relative flex w-[5.5rem] flex-col items-center gap-1"
                     >
-                      ×
-                    </button>
-                  </span>
-                ))}
+                      <div className="relative">
+                        <TransferModalPickThumbnail
+                          objectKey={f.objectKey}
+                          fileName={f.name}
+                          sizeClassName="h-14 w-14"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedFiles((p) => p.filter((x) => transferFileKey(x) !== transferFileKey(f)));
+                          }}
+                          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-neutral-200 bg-white text-xs font-semibold text-neutral-600 shadow-sm hover:bg-red-50 hover:text-red-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-red-950/50"
+                          aria-label={`Remove ${f.name}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <span className="w-full truncate text-center text-[10px] text-neutral-600 dark:text-neutral-400" title={f.name}>
+                        {f.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

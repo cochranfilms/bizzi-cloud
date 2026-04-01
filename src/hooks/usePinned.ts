@@ -169,7 +169,6 @@ export function usePinned() {
 
   const refetch = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
     const db = getFirebaseFirestore();
     const snap = await getDocs(
       query(
@@ -187,7 +186,6 @@ export function usePinned() {
     });
     setPinnedFolderIds(folders);
     setPinnedFileIds(files);
-    setLoading(false);
   }, [user]);
 
   return {

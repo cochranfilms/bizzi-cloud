@@ -100,7 +100,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   } = useLayoutSettings();
   const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
   const [pinnedFiles, setPinnedFiles] = useState<RecentFile[]>([]);
-  const [pinnedFilesLoading, setPinnedFilesLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [packageInfoId, setPackageInfoId] = useState<string | null>(null);
   const [packageInfoJson, setPackageInfoJson] = useState<Record<string, unknown> | null>(null);
@@ -315,14 +314,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setPinnedFiles([]);
       return;
     }
-    setPinnedFilesLoading(true);
     try {
       const files = await fetchPinnedFiles(ids);
       setPinnedFiles(files);
     } catch {
       setPinnedFiles([]);
-    } finally {
-      setPinnedFilesLoading(false);
     }
   }, [pinnedFileIds]);
 
@@ -862,15 +858,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   ]);
 
   const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
-  const pinnedContentReady =
-    !pinnedLoading && (pinnedFileIds.size === 0 || !pinnedFilesLoading);
+  // Do not wait on pinned *file* hydration — that refetch toggled the whole dashboard fade and unmounted
+  // the route (jumpy). Firestore pin list (`pinnedLoading`) is enough for initial layout; pinned rows refresh in place.
   // Enterprise org add-ons come from `useEffectivePowerUps`, not the signed-in user's personal subscription.
   // Waiting on personal `subscriptionLoading` only delayed the folder grid without benefit.
   // Align folder fade with linked_drives resolution (same idea as team: no empty grid before drives exist).
   const homeViewReady =
     !loading &&
     !powerUpContextLoading &&
-    pinnedContentReady &&
+    !pinnedLoading &&
     (isEnterpriseHome ? !backupDrivesLoading : !subscriptionLoading);
 
   const showDragRect =
@@ -1015,7 +1011,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
       {/* Section 2: Pinned — only after user has at least one pin (no empty promo block) */}
       {hasPinned ? (
-      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
+      <section className="motion-safe:transition-opacity motion-safe:duration-500 motion-safe:ease-out border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-3 sm:mb-4">Pinned</SectionTitle>
         {viewMode === "list" ? (
             <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">

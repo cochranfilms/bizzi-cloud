@@ -79,6 +79,7 @@ export default function ShareModal({
   const hasValidShareName = shareName.trim().length > 0;
   const lastFetchedForRef = useRef<string | null>(null);
   const prevOpenRef = useRef(false);
+  const shareNameInputRef = useRef<HTMLInputElement>(null);
 
   const shareUrl =
     shareToken && typeof window !== "undefined"
@@ -235,6 +236,13 @@ export default function ShareModal({
     routeTeamOwnerId,
     pathname,
   ]);
+
+  // After opening from the item menu, focus can remain on a file/folder card; Space/Enter then
+  // opens immersive preview behind the modal. Move focus into the share name field immediately.
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => shareNameInputRef.current?.focus());
+  }, [open]);
 
   useEffect(() => {
     if (!open || !linkedDriveId || !user || initialShareToken) return;
@@ -622,6 +630,7 @@ export default function ShareModal({
         <div
           className="relative z-10 my-auto flex w-full max-w-3xl max-h-[calc(100dvh-7rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col rounded-xl border border-neutral-200 bg-white shadow-xl sm:max-h-[calc(100dvh-8rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] dark:border-neutral-700 dark:bg-neutral-900"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
           <h3 id="share-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
@@ -652,6 +661,7 @@ export default function ShareModal({
               Share name <span className="text-red-500">*</span>
             </label>
             <input
+              ref={shareNameInputRef}
               id="share-name"
               type="text"
               value={shareName}
@@ -661,6 +671,7 @@ export default function ShareModal({
               }}
               placeholder="e.g. Client Deliverables March 2026"
               className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+              autoFocus
               disabled={loading}
             />
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">

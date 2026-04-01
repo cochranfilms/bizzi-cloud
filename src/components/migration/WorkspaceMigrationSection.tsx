@@ -7,7 +7,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import { ChevronRight, CloudUpload, Folder, FolderOpen, File as FileGlyph, Loader2 } from "lucide-react";
+import {
+  ChevronRight,
+  CloudUpload,
+  Folder,
+  FolderOpen,
+  File as FileGlyph,
+  Loader2,
+  LayoutGrid,
+  List,
+} from "lucide-react";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import {
   MIGRATION_FILES_SUBCOLLECTION,
@@ -16,6 +25,18 @@ import {
 } from "@/lib/migration-constants";
 import MigrationCloudProgressBar from "./MigrationCloudProgressBar";
 import type { MigrationProvider } from "@/lib/migration-constants";
+import {
+  GoogleDriveImportThumbArea,
+  formatGoogleDriveBytes,
+  formatGoogleDriveShortMime,
+  formatGoogleDriveWhen,
+  type GoogleDriveBrowseEntry,
+} from "./GoogleDriveImportThumbArea";
+import {
+  clearGoogleBrowseCache,
+  getCachedGoogleBrowse,
+  setCachedGoogleBrowse,
+} from "@/lib/migration-google-browse-cache";
 
 type Provider = MigrationProvider;
 
@@ -33,6 +54,12 @@ type ProviderEntry = {
   isFolder: boolean;
   mimeType?: string;
   path_lower?: string;
+  /** Google Drive only — from files.list */
+  size?: string;
+  modifiedTime?: string;
+  thumbnailLink?: string;
+  iconLink?: string;
+  imageMediaMetadata?: { width?: number; height?: number; time?: string };
 };
 
 function oauthStartErrorMessage(
@@ -289,6 +316,7 @@ export default function WorkspaceMigrationSection({
   const [googleFolderId, setGoogleFolderId] = useState("root");
   const [dropboxPath, setDropboxPath] = useState("");
   const [providerEntries, setProviderEntries] = useState<ProviderEntry[]>([]);
+  const [googleBrowseView, setGoogleBrowseView] = useState<"list" | "grid">("list");
   const [providerTrail, setProviderTrail] = useState<{ id: string; name: string; dropboxPath?: string }[]>(
     [{ id: "root", name: "Drive", dropboxPath: "" }]
   );
@@ -374,38 +402,57 @@ export default function WorkspaceMigrationSection({
     }
   }, [searchParams, refreshAccounts]);
 
-  const loadProviderFolder = useCallback(async () => {
-    const h = await authHeader();
-    if (!h) return;
-    setBrowseLoading(true);
-    try {
-      const body =
-        provider === "google_drive"
-          ? { provider, google_folder_id: googleFolderId }
-          : { provider, dropbox_path: dropboxPath };
-      const res = await fetch("/api/migrations/browse", {
-        method: "POST",
-        headers: { ...h, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "browse_failed");
+  const loadProviderFolder = useCallback(
+    async (options?: { force?: boolean }) => {
+      const h = await authHeader();
+      if (!h) return;
+      const force = options?.force === true;
+      if (provider === "google_drive" && !force) {
+        const cached = getCachedGoogleBrowse<ProviderEntry[]>(googleFolderId);
+        if (cached !== null) {
+          const list = [...cached];
+          list.sort((a, b) => {
+            if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+            return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+          });
+          setProviderEntries(list);
+          return;
+        }
       }
-      const d = (await res.json()) as { entries: ProviderEntry[] };
-      const list = d.entries ?? [];
-      list.sort((a, b) => {
-        if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      });
-      setProviderEntries(list);
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Could not list cloud folder");
-      setProviderEntries([]);
-    } finally {
-      setBrowseLoading(false);
-    }
-  }, [authHeader, provider, googleFolderId, dropboxPath]);
+      setBrowseLoading(true);
+      try {
+        const body =
+          provider === "google_drive"
+            ? { provider, google_folder_id: googleFolderId }
+            : { provider, dropbox_path: dropboxPath };
+        const res = await fetch("/api/migrations/browse", {
+          method: "POST",
+          headers: { ...h, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const d = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(d.error ?? "browse_failed");
+        }
+        const d = (await res.json()) as { entries: ProviderEntry[] };
+        const list = d.entries ?? [];
+        list.sort((a, b) => {
+          if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        });
+        if (provider === "google_drive") {
+          setCachedGoogleBrowse(googleFolderId, list);
+        }
+        setProviderEntries(list);
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : "Could not list cloud folder");
+        setProviderEntries([]);
+      } finally {
+        setBrowseLoading(false);
+      }
+    },
+    [authHeader, provider, googleFolderId, dropboxPath]
+  );
 
   const [destFolderChoices, setDestFolderChoices] = useState<{ path: string; name: string }[]>([]);
 
@@ -445,6 +492,7 @@ export default function WorkspaceMigrationSection({
   useEffect(() => {
     setPicks([]);
     setProviderEntries([]);
+    clearGoogleBrowseCache();
     setProviderTrail([{ id: "root", name: provider === "google_drive" ? "My Drive" : "Dropbox", dropboxPath: "" }]);
     if (provider === "google_drive") {
       setGoogleFolderId("root");
@@ -737,7 +785,10 @@ export default function WorkspaceMigrationSection({
               <button
                 type="button"
                 className="text-sm font-semibold text-bizzi-blue underline-offset-2 hover:underline dark:text-bizzi-cyan"
-                onClick={() => void loadProviderFolder()}
+                onClick={() => {
+                  clearGoogleBrowseCache();
+                  void loadProviderFolder({ force: true });
+                }}
               >
                 Refresh list
               </button>
@@ -760,13 +811,54 @@ export default function WorkspaceMigrationSection({
                 </span>
               ))}
             </nav>
-            <div className="max-h-56 overflow-auto rounded-xl border border-bizzi-blue/15 bg-white/50 divide-y divide-neutral-100 dark:divide-neutral-800 dark:bg-neutral-950/40">
+            {provider === "google_drive" && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div
+                  className="inline-flex rounded-lg border border-neutral-200/80 bg-white p-0.5 shadow-sm dark:border-neutral-600 dark:bg-neutral-800"
+                  role="group"
+                  aria-label="Browse layout"
+                >
+                  <button
+                    type="button"
+                    title="List view"
+                    onClick={() => setGoogleBrowseView("list")}
+                    className={`rounded-md p-2 transition ${
+                      googleBrowseView === "list"
+                        ? "bg-bizzi-blue/15 text-bizzi-blue shadow-sm dark:text-bizzi-cyan"
+                        : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    }`}
+                  >
+                    <List className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    title="Grid view"
+                    onClick={() => setGoogleBrowseView("grid")}
+                    className={`rounded-md p-2 transition ${
+                      googleBrowseView === "grid"
+                        ? "bg-bizzi-blue/15 text-bizzi-blue shadow-sm dark:text-bizzi-cyan"
+                        : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    }`}
+                  >
+                    <LayoutGrid className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
+              </div>
+            )}
+            <div
+              className={`overflow-auto rounded-xl border border-bizzi-blue/15 bg-white/50 dark:bg-neutral-950/40 ${
+                provider === "google_drive" && googleBrowseView === "grid"
+                  ? "max-h-[min(24rem,55vh)] p-3"
+                  : "max-h-[min(24rem,55vh)] divide-y divide-neutral-100 dark:divide-neutral-800"
+              }`}
+            >
               {providerEntries.length === 0 && !browseLoading ? (
                 <p className="p-3 text-sm text-neutral-500">This folder is empty.</p>
-              ) : (
+              ) : provider === "dropbox" ? (
                 providerEntries.map((e) => {
                   const picked = picks.some(
-                    (p) => p.ref === (provider === "google_drive" ? e.id : e.path_lower ?? e.id) && p.kind === (e.isFolder ? "folder" : "file")
+                    (p) =>
+                      p.ref === (e.path_lower ?? e.id) && p.kind === (e.isFolder ? "folder" : "file")
                   );
                   return (
                     <div
@@ -799,6 +891,130 @@ export default function WorkspaceMigrationSection({
                     </div>
                   );
                 })
+              ) : googleBrowseView === "list" ? (
+                providerEntries.map((e) => {
+                  const picked = picks.some(
+                    (p) => p.ref === e.id && p.kind === (e.isFolder ? "folder" : "file")
+                  );
+                  const mimeShort = formatGoogleDriveShortMime(e.mimeType);
+                  const sizeStr = formatGoogleDriveBytes(e.size);
+                  const whenStr = formatGoogleDriveWhen(e.modifiedTime);
+                  const gEntry = e as GoogleDriveBrowseEntry;
+                  return (
+                    <div
+                      key={`${e.id}-${e.path_lower ?? ""}`}
+                      onClick={() => {
+                        if (e.isFolder) enterProviderFolder(e);
+                        else togglePick(e);
+                      }}
+                      className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm transition hover:bg-neutral-50/90 dark:hover:bg-zinc-800/80 ${
+                        picked
+                          ? "bg-bizzi-blue/[0.07] ring-1 ring-bizzi-blue/35 dark:bg-bizzi-blue/10"
+                          : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={picked}
+                        onChange={() => togglePick(e)}
+                        className="rounded border-neutral-300"
+                        aria-label={`Select ${e.name}`}
+                        onClick={(ev) => ev.stopPropagation()}
+                      />
+                      <GoogleDriveImportThumbArea entry={gEntry} variant="list" previewAuth={authHeader} />
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                        <span
+                          className={`truncate font-medium ${
+                            e.isFolder ? "text-neutral-900 dark:text-white" : "text-neutral-800 dark:text-neutral-200"
+                          }`}
+                        >
+                          {e.name}
+                        </span>
+                        {e.isFolder ? (
+                          <span className="text-xs text-bizzi-blue dark:text-bizzi-cyan">Open folder</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                            {mimeShort ? (
+                              <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 font-medium dark:bg-neutral-800/90">
+                                {mimeShort}
+                              </span>
+                            ) : null}
+                            {sizeStr ? <span>{sizeStr}</span> : null}
+                            {whenStr ? <span>{whenStr}</span> : null}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {providerEntries.map((e) => {
+                    const picked = picks.some(
+                      (p) => p.ref === e.id && p.kind === (e.isFolder ? "folder" : "file")
+                    );
+                    const mimeShort = formatGoogleDriveShortMime(e.mimeType);
+                    const sizeStr = formatGoogleDriveBytes(e.size);
+                    const whenStr = formatGoogleDriveWhen(e.modifiedTime);
+                    const gEntry = e as GoogleDriveBrowseEntry;
+                    return (
+                      <div
+                        key={`${e.id}-grid`}
+                        onClick={() => {
+                          if (e.isFolder) enterProviderFolder(e);
+                          else togglePick(e);
+                        }}
+                        className={`group relative flex cursor-pointer flex-col rounded-xl border bg-white/70 p-2 shadow-sm transition dark:bg-neutral-900/60 ${
+                          picked
+                            ? "border-bizzi-blue ring-2 ring-bizzi-blue/40 dark:border-bizzi-blue"
+                            : "border-neutral-200/90 hover:border-bizzi-blue/25 dark:border-neutral-700"
+                        }`}
+                      >
+                        <div className="absolute left-2 top-2 z-10">
+                          <input
+                            type="checkbox"
+                            checked={picked}
+                            onChange={() => togglePick(e)}
+                            className="h-4 w-4 rounded border-neutral-300 bg-white/90 shadow-sm dark:bg-neutral-900"
+                            aria-label={`Select ${e.name}`}
+                            onClick={(ev) => ev.stopPropagation()}
+                          />
+                        </div>
+                        {e.isFolder ? (
+                          <div className="flex w-full flex-col items-stretch pt-6 text-left">
+                            <GoogleDriveImportThumbArea entry={gEntry} variant="grid" previewAuth={authHeader} />
+                            <span className="mt-2 truncate px-0.5 text-xs font-semibold text-neutral-900 dark:text-white">
+                              {e.name}
+                            </span>
+                            <span className="px-0.5 text-[10px] font-medium text-bizzi-blue dark:text-bizzi-cyan">
+                              Open
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col pt-6">
+                            <GoogleDriveImportThumbArea entry={gEntry} variant="grid" previewAuth={authHeader} />
+                            <span className="mt-2 truncate px-0.5 text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                              {e.name}
+                            </span>
+                            <div className="mt-1 flex min-h-[2.25rem] flex-wrap content-start gap-1 px-0.5">
+                              {mimeShort ? (
+                                <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                                  {mimeShort}
+                                </span>
+                              ) : null}
+                              {sizeStr ? (
+                                <span className="text-[10px] text-neutral-500 dark:text-neutral-400">{sizeStr}</span>
+                              ) : null}
+                              {whenStr ? (
+                                <span className="text-[10px] text-neutral-500 dark:text-neutral-400">{whenStr}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
             {picks.length > 0 && (

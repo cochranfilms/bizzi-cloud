@@ -16,6 +16,7 @@ import { isLightroomCreativeApp } from "@/lib/creative-file-registry";
 import { LIGHTROOM_LIBRARY_DISPLAY_LABEL } from "@/lib/lightroom-display";
 import { getMacosPackageKindFromFileName } from "@/lib/macos-package-bundles";
 import type { FolderItem } from "@/components/dashboard/FolderCard";
+import { canonicalGalleryIdForGalleryMediaPath } from "@/lib/gallery-media-path";
 
 export type MetadataCompleteness = "full" | "derived" | "fallback";
 export type FieldApplicability = "applicable" | "not_applicable";
@@ -382,7 +383,13 @@ export function buildDisplayMetadata(file: RecentFile, ctx?: DisplayContext): Di
 export function filterFilesForVirtualFolder(
   files: RecentFile[],
   pathPrefix: string,
-  opts: { isGalleryMediaDrive: boolean; currentDrivePath: string }
+  opts: {
+    isGalleryMediaDrive: boolean;
+    currentDrivePath: string;
+    /** Gallery Media root tile: match canonical gallery id (dedupes segment vs gallery_id on file row). */
+    galleryMediaCanonicalId?: string | null;
+    galleryMediaPathSegmentIndex?: Map<string, string>;
+  }
 ): RecentFile[] {
   if (opts.currentDrivePath) {
     return files.filter((f) => f.path === pathPrefix || f.path.startsWith(`${pathPrefix}/`));
@@ -390,6 +397,14 @@ export function filterFilesForVirtualFolder(
   return files.filter((f) => {
     const parts = f.path.split("/").filter(Boolean);
     if (parts.length < 2) return false;
+    if (opts.isGalleryMediaDrive && opts.galleryMediaCanonicalId != null && opts.galleryMediaPathSegmentIndex) {
+      const canon = canonicalGalleryIdForGalleryMediaPath(
+        f.path,
+        f.galleryId ?? null,
+        opts.galleryMediaPathSegmentIndex
+      );
+      return canon === opts.galleryMediaCanonicalId;
+    }
     if (opts.isGalleryMediaDrive) {
       const top = f.galleryId ?? parts[0];
       return top === pathPrefix;

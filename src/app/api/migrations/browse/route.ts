@@ -39,6 +39,21 @@ export async function POST(request: Request) {
       name: f.name,
       isFolder: f.mimeType === "application/vnd.google-apps.folder",
       mimeType: f.mimeType,
+      size: f.size,
+      modifiedTime: f.modifiedTime,
+      thumbnailLink: f.thumbnailLink,
+      iconLink: f.iconLink,
+      imageMediaMetadata:
+        f.imageMediaMetadata &&
+        (f.imageMediaMetadata.width != null ||
+          f.imageMediaMetadata.height != null ||
+          f.imageMediaMetadata.time)
+          ? {
+              width: f.imageMediaMetadata.width,
+              height: f.imageMediaMetadata.height,
+              time: f.imageMediaMetadata.time,
+            }
+          : undefined,
     }));
     return NextResponse.json({ entries });
   }
