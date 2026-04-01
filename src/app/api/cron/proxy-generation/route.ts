@@ -98,7 +98,8 @@ async function handleCron(request: Request) {
       await updateProxyJobStatus(job.id, "completed"); // Don't retry RAW
       await updateBackupFileProxyStatus(job.backup_file_id, {
         proxy_status: "raw_unsupported",
-        proxy_error_reason: "RAW format requires dedicated transcode pipeline",
+        proxy_error_reason:
+          result.error?.trim() || "RAW format requires dedicated transcode pipeline",
         proxy_generated_at: now,
       });
       completed++;

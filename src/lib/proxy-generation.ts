@@ -17,6 +17,7 @@ import {
 import {
   canGenerateProxy,
   getProxyCapability,
+  isBrawFile,
   MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
@@ -126,6 +127,40 @@ function presignedUrlForLog(url: string): { host: string; path: string } {
   }
 }
 
+const MAX_PROXY_ERROR_REASON_LEN = 1800;
+
+function clampProxyErrorReason(s: string): string {
+  if (s.length <= MAX_PROXY_ERROR_REASON_LEN) return s;
+  return `${s.slice(0, MAX_PROXY_ERROR_REASON_LEN - 1)}…`;
+}
+
+/**
+ * User-facing reason for raw_try decode failure. Stock FFmpeg demuxes BRAW (brxq) but has no decoder —
+ * do not dump multi-kB stderr into Firestore or the preview modal.
+ */
+export function summarizeRawDecodeFailureForUser(
+  ffmpegStderr: string,
+  leafForExt: string,
+  usedBrawCapableBinary: boolean
+): string {
+  const s = ffmpegStderr;
+  const looksBraw =
+    isBrawFile(leafForExt) ||
+    /\(brxq\s*\/|brxq\b|braw_codec|blackmagic design film/i.test(s);
+  if (looksBraw && !usedBrawCapableBinary) {
+    return "Blackmagic RAW (.braw) needs a BRAW-capable FFmpeg on the proxy worker. Set the FFMPEG_BRAW_PATH environment variable, or use Download for the original file.";
+  }
+  if (looksBraw && usedBrawCapableBinary) {
+    return "Blackmagic RAW decode failed with the configured BRAW FFmpeg. Check server logs or use Download.";
+  }
+  const codecLine = s
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => /could not find codec|no decoder found|unknown codec/i.test(l));
+  if (codecLine && codecLine.length <= 520) return codecLine;
+  return "This camera RAW format could not be decoded for a cloud proxy. Use Download or an external transcode pipeline.";
+}
+
 /**
  * Run proxy generation for a video file. Skips if proxy already exists.
  * Resolves source object_key from backup_files when backupFileId is set (queued job key may be stale).
@@ -208,8 +243,12 @@ export async function runProxyGeneration(
   const tmpPath = join(tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
   const effectiveFfmpeg = resolveFfmpegExecutableForInput(nameOrPath);
   if (!effectiveFfmpeg) {
-    return { ok: false, error: "FFmpeg not available" };
+    return { ok: false, error: "FFmpeg not available", resolvedSourceObjectKey: sourceObjectKey };
   }
+
+  /** True when .braw and FFMPEG_BRAW_PATH selected a different binary than ffmpeg-static. */
+  const usedBrawCapableBinary =
+    isBrawFile(nameOrPath) && Boolean(ffmpegPath && effectiveFfmpeg !== ffmpegPath);
 
   const isRawTry = capability === "raw_try";
 
@@ -345,17 +384,31 @@ export async function runProxyGeneration(
       };
     }
 
-    console.error("[proxy-generation] Error:", msg);
+    console.error("[proxy-generation] Error:", msg.slice(0, 500));
     if (capability === "raw_try") {
       const decodeFailure =
-        /invalid data|could not find codec|format not found|no decoder|unknown decoder|not supported|does not support/i.test(
+        /invalid data|could not find codec|format not found|no decoder|unknown decoder|not supported|does not support|simple filtergraph/i.test(
           msg
         );
       if (decodeFailure) {
+        const userMsg = clampProxyErrorReason(
+          summarizeRawDecodeFailureForUser(msg, nameOrPath, usedBrawCapableBinary)
+        );
+        console.error(
+          JSON.stringify({
+            scope: "proxy_generation",
+            event: "raw_proxy_decode_failed",
+            backup_file_id: backupFileId ?? null,
+            object_key_resolved: sourceObjectKey,
+            used_braw_ffmpeg: usedBrawCapableBinary,
+            user_message: userMsg,
+            stderr_tail: msg.slice(-3500),
+          })
+        );
         return {
           ok: false,
           rawUnsupported: true,
-          error: msg,
+          error: userMsg,
           resolvedSourceObjectKey: sourceObjectKey,
         };
       }
