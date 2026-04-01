@@ -12,7 +12,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 template <typename T>
@@ -29,6 +31,10 @@ static bool braw_iid_eq(REFIID a, REFIID b) {
 
 static bool fps_valid(double fps) {
   return std::isfinite(fps) && fps > 1e-6 && fps < 1e6;
+}
+
+static size_t braw_trace_tid_hash() {
+  return std::hash<std::thread::id>{}(std::this_thread::get_id());
 }
 
 /** Same scaling idea as SDK samples (BlackmagicRawResolutionScale). */
@@ -143,6 +149,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   }
 
   void reset_wait() {
+    std::lock_guard<std::mutex> hf(handoff_mu_);
     std::lock_guard<std::mutex> lk(mu_);
     signaled_ = false;
     last_hr_ = S_OK;
@@ -170,6 +177,8 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 
  private:
   std::atomic<ULONG> ref_count_{1};
+  /** Serializes SDK scratch_ writes vs main-thread export to frame_owned (SDK callbacks may use worker threads). */
+  std::mutex handoff_mu_;
   std::mutex mu_;
   std::condition_variable cv_;
   bool signaled_ = false;
@@ -184,6 +193,9 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 
 bool DecodeCallback::export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w,
   uint32_t& h) {
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff wait locks (tid=%zu main-path)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
+  std::lock_guard<std::mutex> hf(handoff_mu_);
   std::lock_guard<std::mutex> lk(mu_);
   if (!SUCCEEDED(last_hr_) || scratch_.empty() || out_w_ == 0 || out_h_ == 0)
     return false;
@@ -193,24 +205,37 @@ bool DecodeCallback::export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, 
   const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
   if (nbytes == 0 || nbytes > scratch_.size())
     return false;
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy start (row_bytes=%u h=%u nbytes=%zu)\n", row_bytes, h,
-    nbytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff before owned.resize (nbytes=%zu tid=%zu)\n", nbytes,
+    braw_trace_tid_hash());
   std::fflush(stderr);
   owned.resize(nbytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff after owned.resize (owned.size=%zu tid=%zu)\n", owned.size(),
+    braw_trace_tid_hash());
+  std::fflush(stderr);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy start (row_bytes=%u h=%u nbytes=%zu tid=%zu)\n", row_bytes,
+    h, nbytes, braw_trace_tid_hash());
+  std::fflush(stderr);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff before memcpy (dst=%p src=%p tid=%zu)\n",
+    static_cast<void*>(owned.data()), static_cast<void*>(scratch_.data()), braw_trace_tid_hash());
+  std::fflush(stderr);
   std::memcpy(owned.data(), scratch_.data(), nbytes);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy complete (nbytes=%zu)\n", nbytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff after memcpy (nbytes=%zu tid=%zu)\n", nbytes,
+    braw_trace_tid_hash());
+  std::fflush(stderr);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy complete (nbytes=%zu tid=%zu)\n", nbytes,
+    braw_trace_tid_hash());
   std::fflush(stderr);
   return true;
 }
 
 void DecodeCallback::DecodeComplete(IBlackmagicRawJob* job, HRESULT result) {
-  std::fprintf(stderr, "[ffmpeg-braw trace] decode callback fired (DecodeComplete job=%p hr=0x%08x)\n",
-    static_cast<void*>(job), static_cast<unsigned int>(result));
+  std::fprintf(stderr, "[ffmpeg-braw trace] decode callback fired (DecodeComplete job=%p hr=0x%08x tid=%zu)\n",
+    static_cast<void*>(job), static_cast<unsigned int>(result), braw_trace_tid_hash());
   std::fflush(stderr);
 }
 
 void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IBlackmagicRawFrame* frame) {
-  std::fprintf(stderr, "[ffmpeg-braw trace] read callback fired (ReadComplete)\n");
+  std::fprintf(stderr, "[ffmpeg-braw trace] read callback fired (ReadComplete tid=%zu)\n", braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawJob* decodeAndProcessJob = nullptr;
@@ -305,8 +330,8 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
 
 void DecodeCallback::ProcessComplete(
   IBlackmagicRawJob* job, HRESULT result, IBlackmagicRawProcessedImage* processedImage) {
-  std::fprintf(stderr, "[ffmpeg-braw trace] process callback fired (ProcessComplete)\n");
-  std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered\n");
+  std::fprintf(stderr, "[ffmpeg-braw trace] process callback fired (ProcessComplete tid=%zu)\n", braw_trace_tid_hash());
+  std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered (tid=%zu)\n", braw_trace_tid_hash());
   std::fflush(stderr);
 
   DecodeCallback* self = nullptr;
@@ -409,27 +434,49 @@ void DecodeCallback::ProcessComplete(
   }
   const size_t plane_bytes = static_cast<size_t>(plane_u64);
 
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy start (src=%p plane_bytes=%zu sizeBytes=%u)\n",
-    static_cast<void*>(imageData), plane_bytes, sizeBytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy start (src=%p plane_bytes=%zu sizeBytes=%u tid=%zu)\n",
+    static_cast<void*>(imageData), plane_bytes, sizeBytes, braw_trace_tid_hash());
   std::fflush(stderr);
 
-  /** Copy full image plane while processedImage is alive — SDK may reuse this memory for the next frame. */
+  /** Serialize scratch_ mutation vs main export; same lock order as export_owned_frame_for_ffmpeg (handoff then mu). */
   {
+    std::lock_guard<std::mutex> hf(self->handoff_mu_);
     std::lock_guard<std::mutex> lk(self->mu_);
+    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before scratch_.resize (plane_bytes=%zu tid=%zu)\n", plane_bytes,
+      braw_trace_tid_hash());
+    std::fflush(stderr);
     self->scratch_.resize(plane_bytes);
+    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after scratch_.resize (scratch_.size=%zu tid=%zu)\n",
+      self->scratch_.size(), braw_trace_tid_hash());
+    std::fflush(stderr);
+    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before memcpy (dst=%p src=%p tid=%zu)\n",
+      static_cast<void*>(self->scratch_.data()), static_cast<void*>(imageData), braw_trace_tid_hash());
+    std::fflush(stderr);
     std::memcpy(self->scratch_.data(), imageData, plane_bytes);
+    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after memcpy (plane_bytes=%zu tid=%zu)\n", plane_bytes,
+      braw_trace_tid_hash());
+    std::fflush(stderr);
     self->out_w_ = width;
     self->out_h_ = height;
     self->out_row_bytes_ = rowBytes;
   }
 
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu)\n", plane_bytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu tid=%zu)\n", plane_bytes,
+    braw_trace_tid_hash());
   std::fflush(stderr);
 
+  std::fprintf(stderr, "[ffmpeg-braw trace] before processedImage->Release (tid=%zu)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
   processedImage->Release();
   processedImage = nullptr;
+  std::fprintf(stderr, "[ffmpeg-braw trace] after processedImage->Release (tid=%zu)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
 
+  std::fprintf(stderr, "[ffmpeg-braw trace] before job->Release (tid=%zu)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
   job->Release();
+  std::fprintf(stderr, "[ffmpeg-braw trace] after job->Release (tid=%zu)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
 
   std::lock_guard<std::mutex> lk(self->mu_);
   self->last_hr_ = S_OK;
@@ -646,6 +693,10 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       safe_release(factory);
       return EX_DECODE;
     }
+
+    std::fprintf(stderr, "[ffmpeg-braw trace] main after wait_processed (frame=%llu tid=%zu)\n",
+      static_cast<unsigned long long>(i), braw_trace_tid_hash());
+    std::fflush(stderr);
 
     std::vector<uint8_t> frame_owned;
     uint32_t rb = 0;
