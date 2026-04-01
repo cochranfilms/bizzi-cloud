@@ -12,7 +12,8 @@
  *   BIZZI_API_BASE=https://example.com MEDIA_STANDARD_WORKER_SECRET=xxx node scripts/standard-proxy-worker.mjs
  */
 import { spawn } from "child_process";
-import { createReadStream, stat } from "fs/promises";
+import { createReadStream } from "fs";
+import { stat } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import ffmpegStatic from "ffmpeg-static";
