@@ -8,6 +8,7 @@ import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
 import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { releaseReservation } from "@/lib/storage-quota-reservations";
+import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -69,9 +70,12 @@ export async function GET(request: Request) {
     );
   }
 
-  const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-
-  const objectKey = `backups/${uid}/${driveId}/${safePath}`;
+  const safePath = sanitizeBackupRelativePath(relativePath);
+  const objectKey = buildBackupObjectKey({
+    pathSubjectUid: uid,
+    driveId: String(driveId),
+    relativePath: safePath,
+  });
 
   let reservation_id: string | null = null;
   try {

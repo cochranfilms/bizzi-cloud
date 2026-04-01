@@ -206,6 +206,31 @@ export async function createPresignedPartUrl(
 }
 
 /**
+ * Server-side multipart part upload (migration worker). Uses IAM credentials — no presign.
+ */
+export async function uploadMultipartPartServerSide(
+  objectKey: string,
+  uploadId: string,
+  partNumber: number,
+  body: Buffer
+): Promise<{ etag: string }> {
+  const client = getB2Client();
+  const response = await client.send(
+    new UploadPartCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      UploadId: uploadId,
+      PartNumber: partNumber,
+      Body: body,
+    })
+  );
+  const etagRaw = response.ETag ?? "";
+  const etag = String(etagRaw).replace(/^"|"$/g, "");
+  if (!etag) throw new Error("UploadPart did not return ETag");
+  return { etag };
+}
+
+/**
  * List uploaded parts for an in-progress multipart upload (S3 ListParts).
  * Required for Uppy resume: client clears chunk memory after each part; resume must
  * reconcile with storage, not Firestore (partEtags are only written on complete).

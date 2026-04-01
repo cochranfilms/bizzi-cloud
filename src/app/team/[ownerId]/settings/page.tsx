@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
@@ -16,18 +16,20 @@ import TeamMemberPersonalSettingsLayout from "@/components/settings/TeamMemberPe
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import { Building2, Image as ImageIcon, Loader2, Users } from "lucide-react";
+import { Building2, Image as ImageIcon, Loader2, Users, CloudUpload } from "lucide-react";
+import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
 
 const OWNER_TEAM_NAV: SettingsNavItem[] = [
   { id: "branding", label: "Workspace branding", icon: Building2 },
   { id: "management", label: "Team administration", icon: Users },
+  { id: "migration", label: "Migration", icon: CloudUpload },
 ];
 
 export default function TeamSettingsPage() {
   const { user } = useAuth();
   const teamWs = usePersonalTeamWorkspaceRequired();
   const { teamOwnerUid, teamName, teamLogoUrl, roleLabel } = teamWs;
-  const [ownerSection, setOwnerSection] = useState<"branding" | "management">("branding");
+  const [ownerSection, setOwnerSection] = useState<"branding" | "management" | "migration">("branding");
   const [ready, setReady] = useState(false);
   const [teamNameState, setTeamNameState] = useState("");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -78,14 +80,21 @@ export default function TeamSettingsPage() {
   }, [loadSettings]);
 
   const setOwnerNav = useCallback((id: string) => {
-    const next = id === "management" ? "management" : "branding";
+    const next =
+      id === "management"
+        ? "management"
+        : id === "migration"
+          ? "migration"
+          : "branding";
     setOwnerSection(next);
     if (typeof window !== "undefined") {
-      window.history.replaceState(
-        null,
-        "",
-        `#${next === "management" ? "team-management" : "branding"}`
-      );
+      const hash =
+        next === "management"
+          ? "team-management"
+          : next === "migration"
+            ? "migration"
+            : "branding";
+      window.history.replaceState(null, "", `#${hash}`);
     }
   }, []);
 
@@ -94,6 +103,8 @@ export default function TeamSettingsPage() {
     const h = window.location.hash.replace(/^#/, "");
     if (h === "team-management" || h === "management" || h === "team") {
       setOwnerSection("management");
+    } else if (h === "migration") {
+      setOwnerSection("migration");
     } else if (h === "branding") {
       setOwnerSection("branding");
     }
@@ -320,6 +331,15 @@ export default function TeamSettingsPage() {
               )}
 
               {ownerSection === "management" && <TeamManagementSection />}
+
+              {ownerSection === "migration" && (
+                <Suspense fallback={null}>
+                  <WorkspaceMigrationSection
+                    oauthReturnPath={`/team/${teamOwnerUid}/settings#migration`}
+                    scopeLabel={productSettingsCopy.scopes.thisTeamWorkspaceOnly}
+                  />
+                </Suspense>
+              )}
             </div>
           </div>
         </DashboardRouteFade>

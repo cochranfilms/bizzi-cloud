@@ -17,6 +17,7 @@ import {
   Zap,
   Users,
   HelpCircle,
+  CloudUpload,
 } from "lucide-react";
 import Link from "next/link";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
@@ -29,10 +30,13 @@ import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
 import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
+import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
 
 type EnterpriseSettingsSectionId =
   | "branding"
   | "storage"
+  | "migration"
   | "subscription"
   | "profile-handle"
   | "seats"
@@ -42,6 +46,7 @@ function EnterpriseSettingsPageInner() {
   const searchParams = useSearchParams();
   const { org, role, refetch } = useEnterprise();
   const { user } = useAuth();
+  const { selectedWorkspaceId } = useCurrentFolder();
   const [companyName, setCompanyName] = useState(org?.name ?? "");
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -57,6 +62,7 @@ function EnterpriseSettingsPageInner() {
     const base: SettingsNavItem[] = [
       { id: "branding", label: "Branding", icon: Building2 },
       { id: "storage", label: "Storage", icon: HardDrive },
+      { id: "migration", label: "Migration", icon: CloudUpload },
       { id: "subscription", label: "Subscription", icon: CreditCard },
       { id: "profile-handle", label: "Profile handle", icon: Globe },
       { id: "help", label: "Help", icon: HelpCircle },
@@ -81,7 +87,9 @@ function EnterpriseSettingsPageInner() {
             ? "profile-handle"
             : next === "help"
               ? "help"
-              : next;
+              : next === "migration"
+                ? "migration"
+                : next;
       window.history.replaceState(null, "", `#${hash}`);
     }
   }, [navItems]);
@@ -106,6 +114,7 @@ function EnterpriseSettingsPageInner() {
     const h = window.location.hash.replace(/^#/, "");
     const ids = new Set(navItems.map((i) => i.id));
     if (h === "storage") setSection("storage");
+    else if (h === "migration") setSection("migration");
     else if (h === "subscription") setSection("subscription");
     else if (h === "profile-handle" || h === "galleries") setSection("profile-handle");
     else if (h === "help") setSection("help");
@@ -341,6 +350,14 @@ function EnterpriseSettingsPageInner() {
                   <StorageAnalyticsPage basePath="/enterprise" />
                 </section>
               )}
+
+              {section === "migration" ? (
+                <WorkspaceMigrationSection
+                  oauthReturnPath="/enterprise/settings#migration"
+                  defaultWorkspaceId={selectedWorkspaceId}
+                  scopeLabel={productSettingsCopy.scopes.organizationWide}
+                />
+              ) : null}
 
               {section === "subscription" && (
                 <section className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900">

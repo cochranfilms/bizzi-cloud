@@ -11,6 +11,7 @@ import { StorageQuotaDeniedError } from "@/lib/storage-quota-denied-error";
 import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
 import { storageQuotaErrorJson } from "@/lib/storage-quota-http";
 import { releaseReservation } from "@/lib/storage-quota-reservations";
+import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -96,12 +97,16 @@ async function handleMultipartInit(request: Request) {
     );
   }
 
-  const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-
-  const objectKey =
-    contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
-      ? `content/${contentHash.toLowerCase()}`
-      : `backups/${uid}/${driveId}/${safePath}`;
+  const safePath = sanitizeBackupRelativePath(relativePath);
+  const objectKey = buildBackupObjectKey({
+    pathSubjectUid: uid,
+    driveId: String(driveId),
+    relativePath: safePath,
+    contentHash:
+      contentHash && typeof contentHash === "string" && /^[a-f0-9]{64}$/i.test(contentHash)
+        ? contentHash
+        : null,
+  });
 
   if (objectKey.startsWith("content/")) {
     const exists = await objectExists(objectKey);

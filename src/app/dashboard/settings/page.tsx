@@ -24,6 +24,7 @@ import {
   User,
   Building2,
   HelpCircle,
+  CloudUpload,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
@@ -51,12 +52,14 @@ import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import DashboardWorkspaceAccessSection from "@/components/settings/DashboardWorkspaceAccessSection";
 import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
+import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
 const DASHBOARD_SETTINGS_NAV_BASE: SettingsNavItem[] = [
   { id: "account", label: "Account", icon: User },
   { id: "storage", label: "Storage", icon: HardDrive },
+  { id: "migration", label: "Migration", icon: CloudUpload },
   { id: "privacy", label: "Privacy", icon: Shield },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "help", label: "Help", icon: HelpCircle },
@@ -998,6 +1001,10 @@ function SettingsContent() {
       navIds.has("workspace-access")
     ) {
       setActive("workspace-access");
+      return;
+    }
+    if (raw === "migration" && navIds.has("migration")) {
+      setActive("migration");
     }
   }, [navIds]);
 
@@ -1026,6 +1033,9 @@ function SettingsContent() {
           )}
 
           {active === "storage" && <StorageSection />}
+          {active === "migration" && (
+            <WorkspaceMigrationSection oauthReturnPath="/dashboard/settings#migration" />
+          )}
           {active === "privacy" && <PrivacySection />}
           {/* Keep mounted so Stripe return query params still trigger refetch/banners. */}
           <div className={active === "billing" ? "space-y-6" : "hidden"}>

@@ -78,4 +78,13 @@ export const PLATFORM_ACTIVITY_EVENT_TYPES: ActivityEventType[] = [
   "share_link_created",
   "share_link_removed",
   "bulk_upload_completed",
+  "migration_job_created",
+  "migration_job_scan_completed",
+  "migration_transfer_started",
+  "migration_job_paused",
+  "migration_job_resumed",
+  "migration_job_completed",
+  "migration_job_failed",
+  "migration_provider_connected",
+  "migration_provider_disconnected",
 ];

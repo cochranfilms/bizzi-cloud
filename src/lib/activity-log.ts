@@ -26,7 +26,16 @@ export type ActivityEventType =
   | "gallery_raw_video_final_conversion"
   | "gallery_asset_added"
   | "gallery_asset_updated"
-  | "gallery_asset_deleted";
+  | "gallery_asset_deleted"
+  | "migration_job_created"
+  | "migration_job_scan_completed"
+  | "migration_transfer_started"
+  | "migration_job_paused"
+  | "migration_job_resumed"
+  | "migration_job_completed"
+  | "migration_job_failed"
+  | "migration_provider_connected"
+  | "migration_provider_disconnected";
 
 export interface LogActivityInput {
   event_type: ActivityEventType;

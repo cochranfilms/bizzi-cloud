@@ -10,7 +10,8 @@ export type CreatorRawProxyEnqueueSource =
   | "ingest_presigned_complete"
   | "ingest_multipart_complete"
   | "ingest_extract_metadata_video"
-  | "playback_safety_net";
+  | "playback_safety_net"
+  | "migration";
 
 export function logCreatorRawProxyIngest(
   source: CreatorRawProxyEnqueueSource,

@@ -21,6 +21,7 @@ import {
   releaseReservation,
 } from "@/lib/storage-quota-reservations";
 import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
+import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
 import { NextResponse } from "next/server";
 
@@ -113,8 +114,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
-  const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-  const objectKey = `backups/${uid}/${driveId}/${safePath}`;
+  const safePath = sanitizeBackupRelativePath(relativePath);
+  const objectKey = buildBackupObjectKey({
+    pathSubjectUid: uid,
+    driveId: String(driveId),
+    relativePath: safePath,
+  });
 
   const meta = await getObjectMetadata(objectKey);
   if (!meta) {

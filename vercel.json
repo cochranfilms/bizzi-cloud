@@ -45,6 +45,14 @@
     {
       "path": "/api/cron/proxy-generation",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/migration-worker",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/migration-reconciliation",
+      "schedule": "0 7 * * *"
     }
   ]
 }

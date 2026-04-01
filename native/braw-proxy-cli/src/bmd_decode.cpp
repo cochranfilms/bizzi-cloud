@@ -108,6 +108,15 @@ static int read_timing(IBlackmagicRawClip* clip, ClipMeta& meta) {
   return 0;
 }
 
+/** Single-slot handoff: worker fills under mu_, main moves out before FFmpeg I/O. */
+struct FrameHandoffPacket {
+  std::vector<uint8_t> pixels;
+  uint32_t w = 0;
+  uint32_t h = 0;
+  uint32_t row_bytes = 0;
+  bool valid = false;
+};
+
 /**
  * Codec callback matching ProcessClipCPU: COM refcounting, ReadComplete → decode+process job,
  * ProcessComplete copies CPU RGBA8 while IBlackmagicRawProcessedImage is still alive, then releases it.
@@ -149,80 +158,80 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   }
 
   void reset_wait() {
-    std::lock_guard<std::mutex> hf(handoff_mu_);
     std::lock_guard<std::mutex> lk(mu_);
-    signaled_ = false;
+    std::fprintf(stderr, "[ffmpeg-braw trace] reset_wait: clear pending (tid=%zu)\n", braw_trace_tid_hash());
+    std::fflush(stderr);
+    pending_ = FrameHandoffPacket{};
+    frame_ready_ = false;
     last_hr_ = S_OK;
-    scratch_.clear();
-    out_w_ = out_h_ = out_row_bytes_ = 0;
   }
 
   bool wait_processed() {
     std::unique_lock<std::mutex> lk(mu_);
-    const bool ok = cv_.wait_for(lk, std::chrono::minutes(30), [&] { return signaled_; });
-    return ok && SUCCEEDED(last_hr_) && !scratch_.empty();
+    const bool ok = cv_.wait_for(lk, std::chrono::minutes(30), [&] { return frame_ready_; });
+    if (ok) {
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] wait_processed: woke (frame_ready=1 last_hr=0x%08x valid=%d tid=%zu)\n",
+        static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid), braw_trace_tid_hash());
+      std::fflush(stderr);
+    }
+    return ok && SUCCEEDED(last_hr_) && pending_.valid;
   }
 
-  HRESULT last_hr() const { return last_hr_; }
-  const std::vector<uint8_t>& pixels() const { return scratch_; }
-  uint32_t out_w() const { return out_w_; }
-  uint32_t out_h() const { return out_h_; }
-  uint32_t out_row_bytes() const { return out_row_bytes_; }
-
   /**
-   * After wait_processed(), copy the last decoded plane from scratch_ into owned storage for FFmpeg.
-   * The SDK reuses internal processed buffers across frames; always I/O from this copy, not from pixels().
+   * After successful wait_processed(), move the completed frame out of the callback under mu_.
+   * Caller writes to FFmpeg after this returns (no callback locks held).
    */
-  bool export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h);
+  bool take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h);
 
  private:
   std::atomic<ULONG> ref_count_{1};
-  /** Serializes SDK scratch_ writes vs main-thread export to frame_owned (SDK callbacks may use worker threads). */
-  std::mutex handoff_mu_;
   std::mutex mu_;
   std::condition_variable cv_;
-  bool signaled_ = false;
+  bool frame_ready_ = false;
   HRESULT last_hr_ = S_OK;
-  std::vector<uint8_t> scratch_;
-  uint32_t out_w_ = 0;
-  uint32_t out_h_ = 0;
-  uint32_t out_row_bytes_ = 0;
+  FrameHandoffPacket pending_{};
 
   ~DecodeCallback() = default;
 };
 
-bool DecodeCallback::export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w,
-  uint32_t& h) {
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff wait locks (tid=%zu main-path)\n", braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::lock_guard<std::mutex> hf(handoff_mu_);
+bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h) {
   std::lock_guard<std::mutex> lk(mu_);
-  if (!SUCCEEDED(last_hr_) || scratch_.empty() || out_w_ == 0 || out_h_ == 0)
+  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: enter (tid=%zu)\n", braw_trace_tid_hash());
+  std::fflush(stderr);
+  if (!frame_ready_) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: !frame_ready_\n");
+    std::fflush(stderr);
     return false;
-  row_bytes = out_row_bytes_;
-  w = out_w_;
-  h = out_h_;
-  const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
-  if (nbytes == 0 || nbytes > scratch_.size())
+  }
+  if (!SUCCEEDED(last_hr_) || !pending_.valid) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: bad packet (last_hr=0x%08x valid=%d)\n",
+      static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid));
+    std::fflush(stderr);
+    pending_ = FrameHandoffPacket{};
+    frame_ready_ = false;
     return false;
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff before owned.resize (nbytes=%zu tid=%zu)\n", nbytes,
+  }
+  const size_t psz = pending_.pixels.size();
+  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: before move (pending_pixels=%zu tid=%zu)\n", psz,
     braw_trace_tid_hash());
   std::fflush(stderr);
-  owned.resize(nbytes);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff after owned.resize (owned.size=%zu tid=%zu)\n", owned.size(),
-    braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy start (row_bytes=%u h=%u nbytes=%zu tid=%zu)\n", row_bytes,
-    h, nbytes, braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff before memcpy (dst=%p src=%p tid=%zu)\n",
-    static_cast<void*>(owned.data()), static_cast<void*>(scratch_.data()), braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::memcpy(owned.data(), scratch_.data(), nbytes);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff after memcpy (nbytes=%zu tid=%zu)\n", nbytes,
-    braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy complete (nbytes=%zu tid=%zu)\n", nbytes,
+  row_bytes = pending_.row_bytes;
+  w = pending_.w;
+  h = pending_.h;
+  const size_t expect = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
+  if (expect != pending_.pixels.size()) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: size mismatch expect=%zu got=%zu\n", expect,
+      pending_.pixels.size());
+    std::fflush(stderr);
+    pending_ = FrameHandoffPacket{};
+    frame_ready_ = false;
+    return false;
+  }
+  owned = std::move(pending_.pixels);
+  pending_ = FrameHandoffPacket{};
+  frame_ready_ = false;
+  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n", owned.size(),
     braw_trace_tid_hash());
   std::fflush(stderr);
   return true;
@@ -243,8 +252,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
     if (readJob)
       readJob->Release();
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = E_POINTER;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -252,8 +262,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
   if (FAILED(result)) {
     readJob->Release();
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = result;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -265,8 +276,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
     safe_release(frame);
     readJob->Release();
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = FAILED(hr) ? hr : E_FAIL;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -284,8 +296,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
     safe_release(frame);
     readJob->Release();
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = FAILED(hr) ? hr : E_FAIL;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -296,8 +309,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
     safe_release(frame);
     readJob->Release();
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = hr;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -318,8 +332,9 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
   if (FAILED(hr)) {
     safe_release(decodeAndProcessJob);
     std::lock_guard<std::mutex> lk(mu_);
+    pending_ = FrameHandoffPacket{};
     last_hr_ = hr;
-    signaled_ = true;
+    frame_ready_ = true;
     cv_.notify_one();
     return;
   }
@@ -343,8 +358,9 @@ void DecodeCallback::ProcessComplete(
       job->Release();
     if (self != nullptr) {
       std::lock_guard<std::mutex> lk(self->mu_);
+      self->pending_ = FrameHandoffPacket{};
       self->last_hr_ = E_POINTER;
-      self->signaled_ = true;
+      self->frame_ready_ = true;
       self->cv_.notify_one();
     }
     return;
@@ -353,8 +369,9 @@ void DecodeCallback::ProcessComplete(
   if (FAILED(result)) {
     job->Release();
     std::lock_guard<std::mutex> lk(self->mu_);
+    self->pending_ = FrameHandoffPacket{};
     self->last_hr_ = result;
-    self->signaled_ = true;
+    self->frame_ready_ = true;
     self->cv_.notify_one();
     return;
   }
@@ -393,8 +410,9 @@ void DecodeCallback::ProcessComplete(
     processedImage->Release();
     job->Release();
     std::lock_guard<std::mutex> lk(self->mu_);
+    self->pending_ = FrameHandoffPacket{};
     self->last_hr_ = FAILED(hr) ? hr : E_FAIL;
-    self->signaled_ = true;
+    self->frame_ready_ = true;
     self->cv_.notify_one();
     return;
   }
@@ -403,8 +421,9 @@ void DecodeCallback::ProcessComplete(
     processedImage->Release();
     job->Release();
     std::lock_guard<std::mutex> lk(self->mu_);
+    self->pending_ = FrameHandoffPacket{};
     self->last_hr_ = E_FAIL;
-    self->signaled_ = true;
+    self->frame_ready_ = true;
     self->cv_.notify_one();
     return;
   }
@@ -415,8 +434,9 @@ void DecodeCallback::ProcessComplete(
     processedImage->Release();
     job->Release();
     std::lock_guard<std::mutex> lk(self->mu_);
+    self->pending_ = FrameHandoffPacket{};
     self->last_hr_ = E_FAIL;
-    self->signaled_ = true;
+    self->frame_ready_ = true;
     self->cv_.notify_one();
     return;
   }
@@ -427,8 +447,9 @@ void DecodeCallback::ProcessComplete(
     processedImage->Release();
     job->Release();
     std::lock_guard<std::mutex> lk(self->mu_);
+    self->pending_ = FrameHandoffPacket{};
     self->last_hr_ = E_FAIL;
-    self->signaled_ = true;
+    self->frame_ready_ = true;
     self->cv_.notify_one();
     return;
   }
@@ -438,29 +459,14 @@ void DecodeCallback::ProcessComplete(
     static_cast<void*>(imageData), plane_bytes, sizeBytes, braw_trace_tid_hash());
   std::fflush(stderr);
 
-  /** Serialize scratch_ mutation vs main export; same lock order as export_owned_frame_for_ffmpeg (handoff then mu). */
-  {
-    std::lock_guard<std::mutex> hf(self->handoff_mu_);
-    std::lock_guard<std::mutex> lk(self->mu_);
-    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before scratch_.resize (plane_bytes=%zu tid=%zu)\n", plane_bytes,
-      braw_trace_tid_hash());
-    std::fflush(stderr);
-    self->scratch_.resize(plane_bytes);
-    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after scratch_.resize (scratch_.size=%zu tid=%zu)\n",
-      self->scratch_.size(), braw_trace_tid_hash());
-    std::fflush(stderr);
-    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before memcpy (dst=%p src=%p tid=%zu)\n",
-      static_cast<void*>(self->scratch_.data()), static_cast<void*>(imageData), braw_trace_tid_hash());
-    std::fflush(stderr);
-    std::memcpy(self->scratch_.data(), imageData, plane_bytes);
-    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after memcpy (plane_bytes=%zu tid=%zu)\n", plane_bytes,
-      braw_trace_tid_hash());
-    std::fflush(stderr);
-    self->out_w_ = width;
-    self->out_h_ = height;
-    self->out_row_bytes_ = rowBytes;
-  }
-
+  std::vector<uint8_t> plane(plane_bytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before memcpy (dst=%p src=%p tid=%zu)\n",
+    static_cast<void*>(plane.data()), static_cast<void*>(imageData), braw_trace_tid_hash());
+  std::fflush(stderr);
+  std::memcpy(plane.data(), imageData, plane_bytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after memcpy (plane_bytes=%zu tid=%zu)\n", plane_bytes,
+    braw_trace_tid_hash());
+  std::fflush(stderr);
   std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu tid=%zu)\n", plane_bytes,
     braw_trace_tid_hash());
   std::fflush(stderr);
@@ -478,10 +484,25 @@ void DecodeCallback::ProcessComplete(
   std::fprintf(stderr, "[ffmpeg-braw trace] after job->Release (tid=%zu)\n", braw_trace_tid_hash());
   std::fflush(stderr);
 
-  std::lock_guard<std::mutex> lk(self->mu_);
-  self->last_hr_ = S_OK;
-  self->signaled_ = true;
-  self->cv_.notify_one();
+  {
+    std::lock_guard<std::mutex> lk(self->mu_);
+    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: publish packet (pixels=%zu w=%u h=%u row=%u tid=%zu)\n",
+      plane.size(), width, height, rowBytes, braw_trace_tid_hash());
+    std::fflush(stderr);
+    self->pending_ = FrameHandoffPacket{};
+    self->pending_.pixels = std::move(plane);
+    self->pending_.w = width;
+    self->pending_.h = height;
+    self->pending_.row_bytes = rowBytes;
+    self->pending_.valid = true;
+    self->last_hr_ = S_OK;
+    self->frame_ready_ = true;
+    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
+    std::fflush(stderr);
+    self->cv_.notify_one();
+    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
+    std::fflush(stderr);
+  }
 }
 
 /**
@@ -702,7 +723,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     uint32_t rb = 0;
     uint32_t ow = 0;
     uint32_t oh = 0;
-    if (!callback->export_owned_frame_for_ffmpeg(frame_owned, rb, ow, oh)) {
+    if (!callback->take_completed_frame(frame_owned, rb, ow, oh)) {
       safe_release(clip_attrs);
       safe_release(clip);
       safe_release(codec);

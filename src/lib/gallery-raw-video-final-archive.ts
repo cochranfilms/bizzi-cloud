@@ -29,6 +29,7 @@ import {
 } from "@/lib/gallery-media-path";
 import { reconcileMacosPackageMembershipForBackupFile } from "@/lib/macos-package-container-admin";
 import { bumpGalleryAssetsVersion } from "@/lib/gallery-asset-mutations";
+import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 
 const LOG_EVENT = "gallery_raw_video_archive_on_final_conversion";
 
@@ -51,8 +52,11 @@ export type GalleryRawVideoArchiveResult = {
 };
 
 function buildObjectKey(uid: string, driveId: string, relativePath: string): string {
-  const safePath = relativePath.replace(/^\/+/, "").replace(/\.\./g, "");
-  return `backups/${uid}/${driveId}/${safePath}`;
+  return buildBackupObjectKey({
+    pathSubjectUid: uid,
+    driveId,
+    relativePath: sanitizeBackupRelativePath(relativePath),
+  });
 }
 
 function fileBasenameFromRelativePath(relativePath: string): string {

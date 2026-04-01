@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -12,6 +12,7 @@ import {
   HelpCircle,
   LogOut,
   Loader2,
+  CloudUpload,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -25,6 +26,7 @@ import SupportTicketModal from "@/components/dashboard/SupportTicketModal";
 import { SUPPORT_CONTACT_EMAIL } from "@/lib/support-ticket";
 import SettingsSidebarNav from "@/components/settings/SettingsSidebarNav";
 import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
+import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
 
 const MEMBER_NAV_ITEMS: SettingsNavItem[] = [
   { id: "account", label: "Account", icon: User },
@@ -32,6 +34,7 @@ const MEMBER_NAV_ITEMS: SettingsNavItem[] = [
   { id: "security", label: "Security", icon: Lock },
   { id: "apps", label: "Apps and devices", icon: Monitor },
   { id: "workspace", label: "Workspace access", icon: Building2 },
+  { id: "migration", label: "Migration", icon: CloudUpload },
   { id: "help", label: "Help", icon: HelpCircle },
 ];
 
@@ -238,6 +241,15 @@ export default function TeamMemberPersonalSettingsLayout({
               Desktop app settings (when installed) apply to this browser or device only.
             </p>
           </section>
+        )}
+
+        {active === "migration" && (
+          <Suspense fallback={null}>
+            <WorkspaceMigrationSection
+              oauthReturnPath={`/team/${teamOwnerUid}/settings#migration`}
+              scopeLabel={productSettingsCopy.scopes.thisTeamWorkspaceOnly}
+            />
+          </Suspense>
         )}
 
         {active === "workspace" && (
