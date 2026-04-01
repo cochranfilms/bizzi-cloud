@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-/** 1 col default (mobile), 2 from 768px, 3 from 1024px — matches plan md/lg. */
+/** 1 col default (mobile + SSR), 2 from 768px, 3 from 1024px — matches plan md/lg. */
 export function useUploadPanelColumnCount(): number {
-  const [cols, setCols] = useState(3);
+  const [cols, setCols] = useState(1);
 
   useEffect(() => {
     const mqLg = window.matchMedia("(min-width: 1024px)");

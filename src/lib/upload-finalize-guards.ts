@@ -1,7 +1,7 @@
 /**
  * Server-side upload finalization guards for locked Creator RAW sessions.
  * Intent fields are client-supplied — they prevent accidental wrong-folder writes, not a determined attacker.
- * Media allow/deny uses ffprobe + creator-raw-media-validator (codec identity); extension alone is never enough.
+ * Media allow/deny uses ffprobe + creator-raw-media-validator; RED `.r3d` may finalize by trusted extension when ffprobe is incomplete.
  *
  * Rejection path: we return `{ ok: false }` only after logging (and deleting the object on codec rejection).
  * API routes must not create `backup_files` or commit quota after `{ ok: false }` — current callers

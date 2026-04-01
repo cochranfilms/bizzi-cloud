@@ -299,7 +299,9 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                     </p>
                     <p className="bizzi-uppy-queue-muted mt-0.5 text-xs opacity-80">
                       {anyFailed
-                        ? `${failed} failed, ${complete} complete`
+                        ? allDone
+                          ? `${failed} failed, ${complete} complete`
+                          : `${failed} failed — other files in this package may still be uploading`
                         : allDone
                           ? "Upload complete"
                           : "Uploading…"}
@@ -311,8 +313,8 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                         type="button"
                         onClick={() => void retryBundle(members)}
                         className="bizzi-uppy-queue-icon-btn p-1"
-                        aria-label={`Retry failed uploads for ${displayName}`}
-                        title="Retry failed"
+                        aria-label={`Retry only failed files in ${displayName}`}
+                        title="Retry failed files only"
                       >
                         <RotateCcw className="h-4 w-4" />
                       </button>

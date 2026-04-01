@@ -12,11 +12,19 @@ import { useUploadPanelColumnCount } from "@/hooks/useUploadPanelColumnCount";
 import UppyGroupedQueueList from "@/components/upload/UppyGroupedQueueList";
 import VirtualizedUploadFileGrid from "@/components/upload/VirtualizedUploadFileGrid";
 
+/** Viewport-tuned sizes for the inline Dashboard and file grid (updated on resize). */
+export type UploadPanelMetrics = {
+  dashboardBaseHeight: number;
+  fileGridMin: number;
+  fileGridMax: number;
+  addDropMinPx: number;
+};
+
 type UppyUploadPanelExpandedProps<M extends Meta, B extends Body> = {
   uppy: Uppy<M, B>;
   uppyRef: MutableRefObject<Uppy<M, B> | null>;
   uppyDataTheme: "dark" | "light";
-  dashboardHeight: number;
+  panelMetrics: UploadPanelMetrics;
   hasFiles: boolean;
   sessionGridTier: BatchTier;
   ingestPhase: "idle" | "queued" | "adding";
@@ -33,7 +41,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
   uppy,
   uppyRef,
   uppyDataTheme,
-  dashboardHeight,
+  panelMetrics,
   hasFiles,
   sessionGridTier,
   ingestPhase,
@@ -125,35 +133,41 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         queueDestinationChip={queueDestinationChip}
       />
 
-      <div
-        className="min-h-[200px] shrink-0 overflow-hidden rounded-xl border border-[var(--bizzi-upload-border-subtle)]/40"
-        style={{
-          height: Math.min(
-            420,
-            Math.max(260, Math.ceil(looseFileIds.length / columnCount) * UPLOAD_GRID_VIRTUAL_ROW_STRIDE)
-          ),
-        }}
-      >
-        <VirtualizedUploadFileGrid
-          uppyRef={uppyRef}
-          looseFileIds={looseFileIds}
-          columnCount={columnCount}
-          progressEpoch={progressEpoch}
-          batchTier={sessionGridTier}
-          queueDestinationChip={queueDestinationChip}
-        />
-      </div>
+      {looseFileIds.length > 0 ? (
+        <div
+          className="min-h-0 shrink-0 overflow-hidden rounded-xl border border-[var(--bizzi-upload-border-subtle)]/40 max-sm:rounded-lg"
+          style={{
+            height: Math.min(
+              panelMetrics.fileGridMax,
+              Math.max(
+                panelMetrics.fileGridMin,
+                Math.ceil(looseFileIds.length / columnCount) * UPLOAD_GRID_VIRTUAL_ROW_STRIDE
+              )
+            ),
+          }}
+        >
+          <VirtualizedUploadFileGrid
+            uppyRef={uppyRef}
+            looseFileIds={looseFileIds}
+            columnCount={columnCount}
+            progressEpoch={progressEpoch}
+            batchTier={sessionGridTier}
+            queueDestinationChip={queueDestinationChip}
+          />
+        </div>
+      ) : null}
 
       <Dashboard
         uppy={uppy}
         theme={uppyDataTheme}
         proudlyDisplayPoweredByUppy={false}
-        height={hasFiles ? dashboardHeight + 40 : dashboardHeight}
+        height={hasFiles ? panelMetrics.dashboardBaseHeight + 36 : panelMetrics.dashboardBaseHeight}
         showSelectedFiles={false}
         disableThumbnailGenerator
+        disableStatusBar
         note={dashboardNote}
         fileManagerSelectionType="both"
-        className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0 [&_.uppy-Dashboard-AddFiles]:min-h-[152px]"
+        className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
       />
     </div>
   );

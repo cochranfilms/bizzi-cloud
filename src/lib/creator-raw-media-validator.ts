@@ -5,6 +5,7 @@
 import {
   CREATOR_RAW_MEDIA_POLICY,
   CREATOR_RAW_REJECTION_MESSAGES,
+  isCreatorRawTrustExtensionWhenProbeIncomplete,
   looksLikeProfessionalMezzanineLongName,
   looksLikeSonyXavcCameraOriginalPackaging,
   isCreatorRawXavcCameraOriginalMp4Extension,
@@ -17,6 +18,22 @@ const ALLOWED_TAG = new Set<string>(CREATOR_RAW_MEDIA_POLICY.allowedCodecTags);
 const BLOCKED_CODEC = new Set<string>(CREATOR_RAW_MEDIA_POLICY.blockedVideoCodecs);
 const BLOCKED_TAG = new Set<string>(CREATOR_RAW_MEDIA_POLICY.blockedCodecTags);
 const RAW_EXT = new Set<string>(CREATOR_RAW_MEDIA_POLICY.rawCaptureExtensions);
+
+/**
+ * When ffprobe cannot reliably classify REDCODE / MXF (probe error, no video stream, or no codec/tag),
+ * allow by extension — delivery codecs are still rejected earlier when ffprobe identifies them.
+ */
+function trustedRawExtensionAllowsIncompleteProbe(
+  inspected: InspectedMediaStreams,
+  ext: string
+): boolean {
+  if (!isCreatorRawTrustExtensionWhenProbeIncomplete(ext) || !RAW_EXT.has(ext)) return false;
+  if (inspected.probeError) return true;
+  if (!inspected.hasVideoStream) return true;
+  const codec = (inspected.detectedVideoCodec ?? "").trim().toLowerCase();
+  const tag = (inspected.detectedCodecTag ?? "").trim().toLowerCase();
+  return !codec && !tag;
+}
 
 function leafExtension(fileName: string): string {
   const base = fileName.split(/[/\\]/).pop() ?? fileName;
@@ -50,6 +67,15 @@ export function classifyCreatorRawMedia(
   contentType?: string | null
 ): CreatorRawMediaValidationResult {
   const ext = leafExtension(fileName);
+
+  if (trustedRawExtensionAllowsIncompleteProbe(inspected, ext)) {
+    return baseResult(inspected, contentType, {
+      allowed: true,
+      reason: "trusted_raw_extension_incomplete_probe",
+      userMessage: "",
+      code: "trusted_raw_extension",
+    });
+  }
 
   if (inspected.probeError) {
     return baseResult(inspected, contentType, {
@@ -166,6 +192,19 @@ export function classifyCreatorRawMedia(
       reason: `braw_probe_ok:${codec}`,
       userMessage: "",
       code: "braw_verified",
+    });
+  }
+
+  /**
+   * MXF: camera and broadcast sources often report codec_name values ffprobe does not map to our
+   * allowlist even when the essence is professional. Delivery codecs/tags are rejected above.
+   */
+  if (ext === "mxf") {
+    return baseResult(inspected, contentType, {
+      allowed: true,
+      reason: `mxf_probe_ok:${codec}`,
+      userMessage: "",
+      code: "mxf_verified",
     });
   }
 

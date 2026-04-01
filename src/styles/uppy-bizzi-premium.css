@@ -167,6 +167,27 @@
   margin-inline: auto;
 }
 
+/* Drop zone min height driven by React (--bizzi-uppy-add-files-min on panel ancestor). */
+.bizzi-uppy-dashboard-premium .uppy-Dashboard-AddFiles {
+  min-height: var(--bizzi-uppy-add-files-min, 152px) !important;
+}
+
+@media (max-width: 639px) {
+  .bizzi-uppy-theme .uppy-Dashboard-note {
+    max-width: none;
+    padding-inline: 2px;
+    font-size: 0.6875rem !important;
+  }
+
+  .bizzi-uppy-theme .uppy-Dashboard-files {
+    padding: 8px 10px 10px !important;
+  }
+
+  .bizzi-uppy-theme .uppy-DashboardContent-bar {
+    height: 44px !important;
+  }
+}
+
 /* Browse / primary CTA in drop zone */
 .bizzi-uppy-theme .uppy-Dashboard-browseBtn {
   border-radius: 9999px !important;

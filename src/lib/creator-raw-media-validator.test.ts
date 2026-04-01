@@ -239,7 +239,7 @@ describe("classifyCreatorRawMedia", () => {
     expect(r.code).toBe("braw_verified");
   });
 
-  it("fails closed on probe error", () => {
+  it("fails closed on probe error for non-excepted extensions", () => {
     const r = classifyCreatorRawMedia(
       { ...vbase({ hasVideoStream: false }), probeError: "exec failed" },
       "mystery.mp4",
@@ -247,6 +247,70 @@ describe("classifyCreatorRawMedia", () => {
     );
     expect(r.allowed).toBe(false);
     expect(r.code).toBe("probe_error");
+  });
+
+  it("allows .r3d when ffprobe reports probe_error (REDCODE not parsed)", () => {
+    const r = classifyCreatorRawMedia(
+      { ...vbase({ hasVideoStream: false }), probeError: "exec failed" },
+      "A003_C027.R3D",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("trusted_raw_extension");
+  });
+
+  it("allows .r3d when ffprobe finds no video stream", () => {
+    const r = classifyCreatorRawMedia(
+      { ...vbase(), hasVideoStream: false, detectedVideoCodec: null, detectedCodecTag: null },
+      "clip.r3d",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("trusted_raw_extension");
+  });
+
+  it("allows .r3d when probe succeeds but codec and fourcc are absent", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({
+        detectedVideoCodec: null,
+        detectedCodecTag: null,
+        detectedCodecLongName: null,
+      }),
+      "take.r3d",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("trusted_raw_extension");
+  });
+
+  it("allows .mxf when ffprobe reports probe_error", () => {
+    const r = classifyCreatorRawMedia(
+      { ...vbase({ hasVideoStream: false }), probeError: "exec failed" },
+      "clip.MXF",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("trusted_raw_extension");
+  });
+
+  it("allows .mxf when codec_name is not on the allowlist but is not a blocked delivery codec", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({ detectedVideoCodec: "ffvhuff", detectedCodecTag: null }),
+      "take.mxf",
+      null
+    );
+    expect(r.allowed).toBe(true);
+    expect(r.code).toBe("mxf_verified");
+  });
+
+  it("rejects H.264 in .mxf", () => {
+    const r = classifyCreatorRawMedia(
+      vbase({ detectedVideoCodec: "h264", detectedCodecTag: "avc1" }),
+      "delivery.mxf",
+      null
+    );
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("delivery_codec");
   });
 
   it("fails closed when there is no video stream", () => {

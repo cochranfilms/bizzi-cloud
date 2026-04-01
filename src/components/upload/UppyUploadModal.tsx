@@ -25,6 +25,7 @@ import {
   getBatchTierFromCount,
   getGalleryProgressMinIntervalMs,
   maxBatchTier,
+  UPLOAD_GRID_VIRTUAL_ROW_STRIDE,
   type BatchTier,
 } from "@/lib/uppy-mass-upload-constants";
 import { createMassUploadDebug } from "@/lib/uppy-mass-upload-debug";
@@ -34,7 +35,7 @@ import {
 } from "@/lib/macos-package-bundles";
 import { shouldUseUppyS3Multipart } from "@/lib/uppy-multipart-policy";
 import { macosPackageFirestoreFieldsFromRelativePath } from "@/lib/backup-file-macos-package-metadata";
-import UppyUploadPanelExpanded from "./UppyUploadPanelExpanded";
+import UppyUploadPanelExpanded, { type UploadPanelMetrics } from "./UppyUploadPanelExpanded";
 import { enqueuePresignedComplete } from "@/lib/presigned-complete-queue";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
 import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
@@ -51,6 +52,14 @@ import "@/styles/uppy-bizzi-premium.css";
 
 import "@uppy/core/css/style.min.css";
 import "@uppy/dashboard/css/style.min.css";
+
+/** Conservative mobile-first defaults until the resize observer runs. */
+const DEFAULT_PANEL_METRICS: UploadPanelMetrics = {
+  dashboardBaseHeight: 160,
+  fileGridMin: UPLOAD_GRID_VIRTUAL_ROW_STRIDE,
+  fileGridMax: 220,
+  addDropMinPx: 96,
+};
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -170,7 +179,7 @@ export default function UppyUploadModal({
 
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [dashboardHeight, setDashboardHeight] = useState(300);
+  const [panelMetrics, setPanelMetrics] = useState<UploadPanelMetrics>(DEFAULT_PANEL_METRICS);
   const [progress, setProgress] = useState({
     bytesUploaded: 0,
     bytesTotal: 0,
@@ -216,12 +225,34 @@ export default function UppyUploadModal({
   useEffect(() => {
     if (!open) return;
     const update = () => {
-      const narrow = window.matchMedia("(max-width: 639px)").matches;
+      const w = window.innerWidth;
       const vh = window.visualViewport?.height ?? window.innerHeight;
-      const target = narrow
-        ? Math.max(180, Math.min(320, Math.round(vh * 0.36)))
-        : Math.max(280, Math.min(440, Math.round(vh * 0.42)));
-      setDashboardHeight(target);
+      const isNarrow = w < 640;
+      const isCompact = w < 900;
+
+      let dashboardBaseHeight: number;
+      let fileGridMin: number;
+      let fileGridMax: number;
+      let addDropMinPx: number;
+
+      if (isNarrow) {
+        dashboardBaseHeight = Math.max(110, Math.min(210, Math.round(vh * 0.25)));
+        fileGridMin = UPLOAD_GRID_VIRTUAL_ROW_STRIDE;
+        fileGridMax = Math.min(240, Math.max(140, Math.round(vh * 0.3)));
+        addDropMinPx = 92;
+      } else if (isCompact) {
+        dashboardBaseHeight = Math.max(200, Math.min(330, Math.round(vh * 0.35)));
+        fileGridMin = 160;
+        fileGridMax = Math.min(360, Math.max(220, Math.round(vh * 0.34)));
+        addDropMinPx = 120;
+      } else {
+        dashboardBaseHeight = Math.max(280, Math.min(460, Math.round(vh * 0.42)));
+        fileGridMin = 200;
+        fileGridMax = 420;
+        addDropMinPx = 152;
+      }
+
+      setPanelMetrics({ dashboardBaseHeight, fileGridMin, fileGridMax, addDropMinPx });
     };
     update();
     window.addEventListener("resize", update);
@@ -857,15 +888,16 @@ export default function UppyUploadModal({
 
   /**
    * z-[110]: above dashboard TopNavbar/DesktopTopNavbar (z-[60]) and typical sheets; with GlobalDropZone (z-[100]) DOM order still favors this node after mount.
-   * max-height: reserve ~7.5rem for sticky workspace nav + gap so the sheet never grows under/clipped by the chrome; safe areas for notched devices.
+   * max-height: tighter reserve on narrow viewports (~5.5rem); sm+ uses ~7.5rem for workspace nav + gap. Safe areas for notched devices.
    * Portal: avoids clipping from any ancestor overflow/transform while staying fixed to the viewport.
    */
   const shell = (
     <div
-      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 z-[110] flex max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem))] w-[min(48rem,calc(100vw-env(safe-area-inset-left)-env(safe-area-inset-right)-1rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border sm:left-4 sm:w-full sm:max-w-3xl sm:translate-x-0"
+      className="bizzi-uppy-theme bizzi-upload-panel-shell fixed bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-[max(0.5rem,env(safe-area-inset-left))] right-[max(0.5rem,env(safe-area-inset-right))] z-[110] flex max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-5.5rem))] w-auto max-w-none flex-col overflow-hidden rounded-xl border sm:left-[max(1rem,env(safe-area-inset-left))] sm:right-auto sm:max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem))] sm:w-[min(48rem,calc(100vw-2rem))] sm:rounded-2xl"
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
+        ["--bizzi-uppy-add-files-min" as string]: `${panelMetrics.addDropMinPx}px`,
       }}
       data-uppy-theme={uppyDataTheme}
       role="status"
@@ -876,11 +908,11 @@ export default function UppyUploadModal({
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="bizzi-upload-panel-header flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-[background-color] duration-200"
+        className="bizzi-upload-panel-header flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-[background-color] duration-200 sm:gap-3 sm:px-4 sm:py-3"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border sm:h-10 sm:w-10 sm:rounded-xl ${
               allComplete && hasFiles ? "border-emerald-500/35 bg-emerald-500/12" : "border-transparent"
             }`}
             style={
@@ -917,31 +949,36 @@ export default function UppyUploadModal({
           <div className="min-w-0">
             {destinationMode === "creator_raw" && lockedDestination ? (
               <>
-                <span className="bizzi-upload-panel-eyebrow block">Creator RAW</span>
-                <p className="truncate text-[0.9375rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)]">
+                <span className="bizzi-upload-panel-eyebrow block max-sm:text-[9px] max-sm:tracking-[0.16em]">Creator RAW</span>
+                <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
                   Uploading to Creator RAW
                 </p>
-                <p className="bizzi-upload-panel-subtitle mt-0.5 truncate text-xs">
+                <p className="bizzi-upload-panel-subtitle mt-0.5 line-clamp-2 text-[11px] leading-snug sm:line-clamp-none sm:truncate sm:text-xs">
                   Stored in {(targetDriveName || driveName || "RAW").trim()} · source footage and LUT preview workflow
                 </p>
               </>
             ) : (
               <>
-                <span className="bizzi-upload-panel-eyebrow block">Upload</span>
-                <p className="truncate text-[0.9375rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)]">
+                <span className="bizzi-upload-panel-eyebrow block max-sm:text-[9px] max-sm:tracking-[0.16em]">Upload</span>
+                <p className="truncate text-[0.875rem] font-semibold tracking-tight text-[var(--bizzi-upload-text)] sm:text-[0.9375rem]">
                   {headerLabel}
                 </p>
               </>
             )}
-            <p className="bizzi-upload-panel-subtitle mt-0.5 text-xs">
+            <p className="bizzi-upload-panel-subtitle mt-0.5 text-[11px] sm:text-xs">
               {hasFiles
                 ? `${formatBytes(bytesUploaded)} / ${formatBytes(bytesTotal)}${
                     fileCount > 0 ? ` · ${completedCount} of ${fileCount} files` : ""
                   }`
                 : "Drop files or click to browse"}
             </p>
+            {hasFiles && hasFailures && uploadingCount > 0 ? (
+              <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-200/95 sm:text-xs">
+                Some files failed. Your other files are still uploading.
+              </p>
+            ) : null}
             {(workspaceName || scopeLabel || driveName) && (
-              <div className="bizzi-upload-panel-meta mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+              <div className="bizzi-upload-panel-meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] sm:gap-x-4 sm:text-xs">
                 {driveName && (
                   <span>
                     Drive: <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
@@ -1007,12 +1044,12 @@ export default function UppyUploadModal({
               {macosPackageWarning}
             </div>
           )}
-          <div className="mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl">
+          <div className="mx-2 mb-[max(0.65rem,env(safe-area-inset-bottom))] mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl sm:mx-3 sm:rounded-2xl">
             <UppyUploadPanelExpanded
               uppy={uppyRef.current}
               uppyRef={uppyRef}
               uppyDataTheme={uppyDataTheme}
-              dashboardHeight={dashboardHeight}
+              panelMetrics={panelMetrics}
               hasFiles={hasFiles}
               sessionGridTier={sessionGridTier}
               ingestPhase={ingestPhase}

@@ -5,7 +5,8 @@
  * exceptions allow **Sony XAVC camera-original `.mp4` / `.m4v`** — **H.264 XAVC‑S/I** and **HEVC XAVC HS/S** —
  * when ffprobe metadata proves XAVC packaging (not generic consumer MP4).
  *
- * Extension and MIME are hints only; server enforcement uses ffprobe (see creator-raw-media-probe.ts).
+ * Extension and MIME are hints only; server enforcement primarily uses ffprobe (see creator-raw-media-probe.ts).
+ * REDCODE `.r3d` and professional `.mxf` may finalize when ffprobe is incomplete or omits a standard codec id (see creator-raw-media-validator.ts).
  */
 
 /** Short copy for the Creator tab banner (single source for product messaging). */
@@ -28,6 +29,17 @@ export const CREATOR_RAW_REJECTION_MESSAGES = {
   nonMediaLeaf:
     "This file type does not belong in Creator RAW. Use Storage for documents and other files.",
 } as const;
+
+/**
+ * Cinema / professional leaves allowed to finalize when ffprobe cannot expose a reliable video codec/stream.
+ * Must stay a subset of `rawCaptureExtensions`. (.braw is handled separately after a successful probe.)
+ */
+export const CREATOR_RAW_TRUST_EXTENSION_WHEN_PROBE_INCOMPLETE = new Set<string>(["r3d", "mxf"]);
+
+export function isCreatorRawTrustExtensionWhenProbeIncomplete(ext: string): boolean {
+  const e = ext.toLowerCase();
+  return CREATOR_RAW_TRUST_EXTENSION_WHEN_PROBE_INCOMPLETE.has(e);
+}
 
 /**
  * ffprobe `codec_long_name` often names mezzanine codecs while `codec_name` stays `mpeg4` or `unknown`.

@@ -107,6 +107,34 @@ describe("assertCreatorRawFinalizeOrAudit", () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
+  it("allows .r3d when ffprobe fails (trusted extension path)", async () => {
+    mockInspect.mockResolvedValue({
+      detectedContainer: null,
+      detectedVideoCodec: null,
+      detectedCodecLongName: null,
+      detectedCodecTag: null,
+      detectedPixelFormat: null,
+      detectedBitDepth: null,
+      detectedWidth: null,
+      detectedHeight: null,
+      detectedFrameRate: null,
+      hasVideoStream: false,
+      probeError: "ffprobe_failed",
+    });
+    const r = await assertCreatorRawFinalizeOrAudit({
+      uid: "u1",
+      driveId: "raw1",
+      driveSnap: mockSnap(true, true),
+      uploadIntent: "creator_raw_video",
+      lockedDestination: true,
+      destinationMode: "creator_raw",
+      relativePath: "footage/A001.R3D",
+      objectKey: "backups/u1/raw1/A001.R3D",
+    });
+    expect(r).toEqual({ ok: true });
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
   it("rejects H.264 in .mp4 and deletes object", async () => {
     mockInspect.mockResolvedValue({
       detectedContainer: "mov,mp4,m4a,3gp,3g2,mj2",

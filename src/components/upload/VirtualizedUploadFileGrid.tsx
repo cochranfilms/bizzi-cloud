@@ -36,12 +36,6 @@ export type VirtualizedUploadFileGridProps<M extends Meta, B extends Body> = {
 
 type CellData<M extends Meta, B extends Body> = VirtualizedUploadFileGridProps<M, B>;
 
-function clampErr(s: string, max: number): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
-}
-
 const UploadFileCardInner = memo(function UploadFileCardInner({
   fileId,
   uppyRef,
@@ -128,10 +122,13 @@ const UploadFileCardInner = memo(function UploadFileCardInner({
               </span>
             ) : null}
           </div>
-          <p className="line-clamp-1 text-[10px] text-opacity-80 opacity-80">
+          <p
+            className="line-clamp-2 text-[10px] leading-snug text-opacity-80 opacity-80"
+            title={file.error ? file.error : undefined}
+          >
             {file.error ? (
-              <span className="text-red-600 dark:text-red-400" title={file.error}>
-                {clampErr(file.error, 42)}
+              <span className="block text-red-600 dark:text-red-400">
+                This file failed to upload. Retry this file only.
               </span>
             ) : done ? (
               "Complete"
@@ -156,15 +153,20 @@ const UploadFileCardInner = memo(function UploadFileCardInner({
           }
         />
       </div>
-      <div className="mt-1.5 flex h-7 shrink-0 items-center justify-end gap-0.5 border-t border-transparent pt-1">
+      <div className="mt-1.5 flex h-7 shrink-0 items-center justify-end gap-1 border-t border-transparent pt-1">
         {file.error ? (
           <button
             type="button"
             onClick={() => void uppy.retryUpload(fileId)}
-            className="bizzi-uppy-queue-icon-btn rounded p-1"
-            aria-label={`Retry ${name}`}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--bizzi-uppy-primary) 16%, transparent)",
+              color: "var(--bizzi-uppy-primary)",
+            }}
+            aria-label={`Retry upload for ${name}`}
           >
-            <RotateCcw className="h-3.5 w-3.5" />
+            <RotateCcw className="h-3 w-3" aria-hidden />
+            Retry
           </button>
         ) : null}
         <button
@@ -281,7 +283,7 @@ export default function VirtualizedUploadFileGrid<M extends Meta, B extends Body
   return (
     <div
       ref={containerRef}
-      className="w-full min-h-[200px] flex-1"
+      className="h-full min-h-0 w-full flex-1"
       role="grid"
       aria-label="Files to upload"
       aria-rowcount={rowCount}
