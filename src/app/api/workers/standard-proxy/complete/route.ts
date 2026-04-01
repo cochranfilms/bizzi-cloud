@@ -1,24 +1,24 @@
 /**
- * BRAW worker completion — same playability validation + CAS as standard proxy.
+ * Standard proxy worker: mark job success or failure after B2 upload.
  * POST { job_id, worker_id, claimed_at, ok: boolean, error?, proxy_size_bytes?, proxy_duration_sec? }
  */
 import { NextResponse } from "next/server";
 import {
-  formatRawDecoderUnavailableMessage,
-  verifyMediaBrawWorkerRequest,
-} from "@/lib/braw-media-worker";
-import {
   completeProxyJobFailure,
   completeProxyJobSuccess,
 } from "@/lib/proxy-job-pipeline";
+import {
+  isStandardMediaWorkerConfigured,
+  verifyMediaStandardWorkerRequest,
+} from "@/lib/standard-media-worker";
 
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  if (!process.env.MEDIA_BRAW_WORKER_SECRET?.trim()) {
+  if (!isStandardMediaWorkerConfigured()) {
     return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
-  if (!verifyMediaBrawWorkerRequest(request)) {
+  if (!verifyMediaStandardWorkerRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const errMsg = formatRawDecoderUnavailableMessage(body.error ?? "transcode failed");
+  const errMsg = body.error?.trim() || "worker reported transcode failure";
   const r = await completeProxyJobFailure({
     jobId,
     workerId,

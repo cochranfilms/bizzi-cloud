@@ -317,15 +317,6 @@ export async function POST(request: Request) {
         note: "proxy_job_queued_with_standard_pipeline",
       });
     }
-    // Trigger immediate proxy processing (fire-and-forget; cron fallback if this fails)
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
-      fetch(`${base}/api/proxy/process-one`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cronSecret}` },
-        body: JSON.stringify({ object_key: objectKey }),
-      }).catch(() => {});
-    }
     fetch(`${base}/api/mux/create-asset`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader },

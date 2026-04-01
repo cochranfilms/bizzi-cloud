@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { proxyJobRowIsBrawQueue } from "@/lib/proxy-queue";
+import { proxyJobRowIsBrawQueue } from "@/lib/proxy-queue-braw";
 
 describe("proxyJobRowIsBrawQueue", () => {
   it("routes explicit media_worker braw", () => {

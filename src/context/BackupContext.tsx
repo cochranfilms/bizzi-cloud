@@ -1419,7 +1419,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify({ object_key: ev.objectKey, name: file.name, queue: true }),
+                body: JSON.stringify({
+                  object_key: ev.objectKey,
+                  name: file.name,
+                  backup_file_id: fileRef.id,
+                  queue: true,
+                }),
               }).catch(() => {});
               // Mux: extract-metadata (above) triggers /api/mux/create-asset for videos
             }

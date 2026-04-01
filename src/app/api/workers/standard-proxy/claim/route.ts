@@ -1,27 +1,24 @@
 /**
- * Dedicated Linux media worker: claim next BRAW proxy job.
- * POST JSON { worker_id: string } — Authorization: Bearer MEDIA_BRAW_WORKER_SECRET
+ * Standard FFmpeg proxy worker: claim next queued job (not BRAW).
+ * POST JSON { worker_id: string } — Authorization: Bearer MEDIA_STANDARD_WORKER_SECRET
  */
 import { NextResponse } from "next/server";
+import { claimStandardProxyJob } from "@/lib/proxy-job-pipeline";
 import {
-  BRAW_WORKER_NOT_CONFIGURED_USER_MESSAGE,
-  verifyMediaBrawWorkerRequest,
-} from "@/lib/braw-media-worker";
-import { claimBrawProxyJob } from "@/lib/proxy-job-pipeline";
+  isStandardMediaWorkerConfigured,
+  verifyMediaStandardWorkerRequest,
+} from "@/lib/standard-media-worker";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  if (!process.env.MEDIA_BRAW_WORKER_SECRET?.trim()) {
+  if (!isStandardMediaWorkerConfigured()) {
     return NextResponse.json(
-      {
-        error: "MEDIA_BRAW_WORKER_SECRET is not configured",
-        detail: BRAW_WORKER_NOT_CONFIGURED_USER_MESSAGE,
-      },
+      { error: "MEDIA_STANDARD_WORKER_SECRET is not configured" },
       { status: 503 }
     );
   }
-  if (!verifyMediaBrawWorkerRequest(request)) {
+  if (!verifyMediaStandardWorkerRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -29,14 +26,14 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as { worker_id?: string };
   } catch {
-    body = {};
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const workerId = typeof body.worker_id === "string" ? body.worker_id.trim() : "";
   if (!workerId) {
     return NextResponse.json({ error: "worker_id is required" }, { status: 400 });
   }
 
-  const result = await claimBrawProxyJob(workerId);
+  const result = await claimStandardProxyJob(workerId);
   if (!result) {
     return NextResponse.json({ job: null });
   }
@@ -53,5 +50,6 @@ export async function POST(request: Request) {
     max_attempt_deadline_at: result.max_attempt_deadline_at,
     heartbeat_interval_ms: result.heartbeat_interval_ms,
     worker_id: result.worker_id,
+    transcode_profile: result.job.transcode_profile,
   });
 }

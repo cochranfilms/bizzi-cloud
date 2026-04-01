@@ -19,6 +19,7 @@
     "b2:cors": "node scripts/set-b2-cors.mjs",
     "firebase:cors": "bash scripts/set-firebase-storage-cors.sh",
     "download:ffmpeg-braw": "node scripts/download-ffmpeg-braw.js",
+    "worker:standard-proxy": "node scripts/standard-proxy-worker.mjs",
     "k6:smoke": "./scripts/k6-with-env.sh run -e K6_EXECUTOR=constant-vus -e K6_VUS=5 -e K6_DURATION=45s k6/bizzi-api.js",
     "k6:ramp": "./scripts/k6-with-env.sh run k6/bizzi-api.js",
     "k6:arrival": "./scripts/k6-with-env.sh run -e K6_EXECUTOR=ramping-arrival-rate k6/bizzi-api.js",

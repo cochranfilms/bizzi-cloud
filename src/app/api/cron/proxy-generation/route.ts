@@ -1,42 +1,19 @@
 /**
- * Cron: Process proxy generation queue.
- * Picks pending jobs and runs FFmpeg to create 720p H.264 proxies.
+ * Cron: normalize legacy proxy_jobs rows + reclaim expired leases.
  * Schedule: every 5 min. Requires CRON_SECRET.
- * Updates backup_files with proxy_status, proxy_object_key, etc.
- *
- * Proxy jobs are enqueued by upload-complete, extract-metadata, BackupContext.
- *
- * Each job is one full transcode (download → encode → upload). Vercel caps this route at
- * maxDuration seconds (300), so we process one job per invocation — otherwise multiple
- * stacked jobs guarantee runtime timeouts on large sources.
+ * Does not run FFmpeg — dedicated workers claim jobs via /api/workers/* /claim.
  */
 import { NextResponse } from "next/server";
-import { getProxyObjectKey } from "@/lib/b2";
-import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
-import { runProxyGeneration } from "@/lib/proxy-generation";
 import {
-  getPendingProxyJobs,
-  updateProxyJobStatus,
-  incrementProxyJobRetry,
-} from "@/lib/proxy-queue";
-import { verifyBackupFileAccess } from "@/lib/backup-access";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+  normalizeLegacyProxyJobStatuses,
+  reclaimExpiredProxyJobLeases,
+} from "@/lib/proxy-job-pipeline";
 
 const CRON_SECRET = process.env.CRON_SECRET;
-const BATCH_SIZE = 1;
 
-export const maxDuration = 300;
+export const maxDuration = 120;
 
-async function updateBackupFileProxyStatus(
-  backupFileId: string | null,
-  updates: Record<string, unknown>
-): Promise<void> {
-  if (!backupFileId) return;
-  const db = getAdminFirestore();
-  await db.collection("backup_files").doc(backupFileId).update(updates);
-}
-
-async function handleCron(request: Request) {
+export async function GET(request: Request) {
   if (CRON_SECRET) {
     const authHeader = request.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -45,108 +22,16 @@ async function handleCron(request: Request) {
     }
   }
 
-  const jobs = await getPendingProxyJobs(BATCH_SIZE);
-  let processed = 0;
-  let completed = 0;
-  let failed = 0;
-
-  for (const job of jobs) {
-    processed++;
-
-    /** Prefer Firestore object_key when we have backup_file_id (see runProxyGeneration). */
-    let accessObjectKey = job.object_key;
-    if (job.backup_file_id) {
-      const bf = await getAdminFirestore().collection("backup_files").doc(job.backup_file_id).get();
-      const k = bf.data()?.object_key as string | undefined;
-      if (typeof k === "string" && k.trim()) accessObjectKey = k;
-    }
-
-    const hasAccess = await verifyBackupFileAccess(job.user_id, accessObjectKey);
-    if (!hasAccess) {
-      await updateProxyJobStatus(job.id, "completed"); // Treat as completed (skip)
-      completed++;
-      continue;
-    }
-
-    const result = await runProxyGeneration({
-      objectKey: job.object_key,
-      fileName: job.name,
-      backupFileId: job.backup_file_id,
-    });
-
-    const now = new Date().toISOString();
-    const effectiveSourceKey = result.resolvedSourceObjectKey ?? job.object_key;
-    const proxyKey = getProxyObjectKey(effectiveSourceKey);
-
-    if (result.ok) {
-      await updateProxyJobStatus(job.id, "completed");
-      completed++;
-      if (result.alreadyExists) {
-        // Ensure backup_files has proxy_status=ready for existing proxies
-        await updateBackupFileProxyStatus(job.backup_file_id, {
-          proxy_status: "ready",
-          proxy_object_key: proxyKey,
-          proxy_generated_at: now,
-        });
-      } else {
-        await updateBackupFileProxyStatus(job.backup_file_id, {
-          proxy_status: "ready",
-          proxy_object_key: proxyKey,
-          proxy_size_bytes: result.proxySizeBytes ?? null,
-          proxy_duration_sec: result.proxyDurationSec ?? null,
-          proxy_generated_at: now,
-          proxy_error_reason: null,
-        });
-      }
-    } else if (result.brawRequiresDedicatedWorker) {
-      await updateProxyJobStatus(job.id, "completed");
-      completed++;
-      await updateBackupFileProxyStatus(job.backup_file_id, {
-        proxy_status: "failed",
-        proxy_error_reason: result.error ?? "raw_decoder_unavailable: use dedicated BRAW worker",
-        proxy_generated_at: now,
-      });
-    } else if (result.rawUnsupported) {
-      await updateProxyJobStatus(job.id, "completed"); // Don't retry RAW
-      await updateBackupFileProxyStatus(job.backup_file_id, {
-        proxy_status: "raw_unsupported",
-        proxy_error_reason:
-          result.error?.trim() || "RAW format requires dedicated transcode pipeline",
-        proxy_generated_at: now,
-      });
-      completed++;
-    } else if (isTerminalProxySourceInputError(result.proxyErrorCode)) {
-      await updateProxyJobStatus(job.id, "completed");
-      completed++;
-      await updateBackupFileProxyStatus(job.backup_file_id, {
-        proxy_status: "failed",
-        proxy_error_reason: result.error ?? result.proxyErrorCode ?? "source input error",
-        proxy_generated_at: now,
-      });
-    } else {
-      const errMsg = result.error ?? "Unknown error";
-      await incrementProxyJobRetry(job.id, errMsg);
-      failed++;
-      await updateBackupFileProxyStatus(job.backup_file_id, {
-        proxy_status: "failed",
-        proxy_error_reason: errMsg,
-        proxy_generated_at: now,
-      });
-    }
-  }
+  const migrated = await normalizeLegacyProxyJobStatuses(200);
+  const { reclaimed } = await reclaimExpiredProxyJobLeases(100);
 
   return NextResponse.json({
-    processed,
-    completed,
-    failed,
+    ok: true,
+    legacy_rows_normalized: migrated,
+    leases_reclaimed: reclaimed,
   });
 }
 
-/** Vercel cron sends GET requests */
-export async function GET(request: Request) {
-  return handleCron(request);
-}
-
 export async function POST(request: Request) {
-  return handleCron(request);
+  return GET(request);
 }

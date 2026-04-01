@@ -1803,6 +1803,20 @@
       ]
     },
     {
+      "collectionGroup": "proxy_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "next_attempt_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "project_rendition_state",
       "queryScope": "COLLECTION",
       "fields": [

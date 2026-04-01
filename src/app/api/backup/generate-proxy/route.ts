@@ -1,27 +1,27 @@
 /**
  * POST /api/backup/generate-proxy
- * Generates 720p H.264 proxy for video files.
- * With queue: true — enqueues to background job (recommended for upload flows).
- * Without queue — runs synchronously (for manual/backfill triggers).
+ * Production: enqueues a durable proxy_jobs row and returns immediately (no FFmpeg).
+ * Non-production: optional sync transcode when ALLOW_SYNC_PROXY_GENERATION=true.
  */
-import {
-  getProxyObjectKey,
-  isB2Configured,
-  objectExists,
-} from "@/lib/b2";
+import { getProxyObjectKey, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isBrawFile } from "@/lib/format-detection";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { queueProxyJob } from "@/lib/proxy-queue";
+import { validateStandardProxyPlayability } from "@/lib/proxy-playability";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
-export const maxDuration = 300;
+const allowSyncProxy =
+  process.env.ALLOW_SYNC_PROXY_GENERATION === "true" &&
+  process.env.NODE_ENV !== "production";
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   if (!isB2Configured()) {
@@ -84,33 +84,59 @@ export async function POST(request: Request) {
   }
 
   const leaf = resolvedPreviewKey.split("/").filter(Boolean).pop() ?? resolvedPreviewKey;
-  if (isBrawFile(leaf) && queueParam !== true) {
+  if (isBrawFile(leaf) && queueParam !== true && !allowSyncProxy) {
     return NextResponse.json(
       {
         error:
-          "Blackmagic RAW (.braw) cannot be transcoded synchronously on the app. Use queue: true, then run the dedicated Linux worker (POST /api/workers/braw-proxy/claim).",
+          "Blackmagic RAW (.braw) must be queued. Use queue: true and the dedicated Linux worker (POST /api/workers/braw-proxy/claim with worker_id).",
       },
       { status: 501 }
     );
   }
 
   const proxyKey = getProxyObjectKey(resolvedPreviewKey);
-  if (await objectExists(proxyKey)) {
-    return NextResponse.json({ ok: true, alreadyExists: true });
+  const playability = await validateStandardProxyPlayability(proxyKey, {
+    skipFirstFrameDecode: false,
+  });
+  if (playability.ok) {
+    if (bfId) {
+      const db = getAdminFirestore();
+      await db
+        .collection("backup_files")
+        .doc(bfId)
+        .update({
+          proxy_status: "ready",
+          proxy_object_key: proxyKey,
+          proxy_size_bytes: playability.sizeBytes,
+          proxy_duration_sec: playability.durationSec,
+          proxy_generated_at: new Date().toISOString(),
+          proxy_error_reason: null,
+        })
+        .catch(() => {});
+    }
+    return NextResponse.json({
+      ok: true,
+      alreadyExists: true,
+      validated: true,
+    });
   }
 
-  // Queue mode: enqueue and return immediately (used by upload flows)
-  if (queueParam === true) {
+  const wantSync = queueParam === false && allowSyncProxy;
+  const shouldEnqueue = process.env.NODE_ENV === "production" || !wantSync;
+  if (shouldEnqueue) {
     await queueProxyJob({
       object_key: objectKey,
       name: typeof fileName === "string" ? fileName : undefined,
       backup_file_id: bfId ?? undefined,
       user_id: uid,
     });
-    return NextResponse.json({ ok: true, queued: true });
+    return NextResponse.json({
+      ok: true,
+      queued: true,
+      job_id: bfId ?? null,
+    });
   }
 
-  // Synchronous mode: run now (for manual triggers, backfill)
   const result = await runProxyGeneration({
     objectKey,
     fileName: typeof fileName === "string" ? fileName : null,

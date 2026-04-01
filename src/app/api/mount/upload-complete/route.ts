@@ -306,14 +306,6 @@ export async function POST(request: Request) {
       backup_file_id: fileRef.id,
       user_id: uid,
     }).catch((e) => console.error("[upload-complete] queueProxyJob:", e));
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
-      fetch(`${base}/api/proxy/process-one`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cronSecret}` },
-        body: JSON.stringify({ object_key: objectKey }),
-      }).catch(() => {});
-    }
   }
 
   return NextResponse.json({

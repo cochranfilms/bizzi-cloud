@@ -1,6 +1,6 @@
 /**
  * Core proxy generation logic - runs FFmpeg to create 720p H.264 proxy from source.
- * Used by both the generate-proxy API (sync) and the proxy cron worker (async).
+ * Used for optional dev-only sync generate-proxy; production uses the dedicated standard-proxy worker.
  * Validates output before upload; rejects empty or corrupt proxies.
  */
 import { spawn } from "child_process";
