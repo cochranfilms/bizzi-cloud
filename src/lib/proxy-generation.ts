@@ -25,6 +25,12 @@ import { formatRawDecoderUnavailableMessage } from "@/lib/braw-media-worker";
 import type { ProxySourceInputErrorCode } from "@/lib/proxy-input-errors";
 import ffmpegPath from "ffmpeg-static";
 
+/**
+ * libx264 preset for 720p proxies. Default `veryfast` is tuned for serverless time limits
+ * (e.g. Vercel max 300s). Set PROXY_FFMPEG_PRESET=faster|fast|medium|slow for quality vs speed.
+ */
+const PROXY_FFMPEG_PRESET = process.env.PROXY_FFMPEG_PRESET?.trim() || "veryfast";
+
 export interface RunProxyGenerationOptions {
   objectKey: string;
   /** File name for extension check (e.g. clip.mov) */
@@ -323,7 +329,7 @@ export async function runProxyGeneration(
         "-c:v",
         "libx264",
         "-preset",
-        "fast",
+        PROXY_FFMPEG_PRESET,
         "-crf",
         "23",
         "-c:a",

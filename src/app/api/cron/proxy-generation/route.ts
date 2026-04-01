@@ -5,6 +5,10 @@
  * Updates backup_files with proxy_status, proxy_object_key, etc.
  *
  * Proxy jobs are enqueued by upload-complete, extract-metadata, BackupContext.
+ *
+ * Each job is one full transcode (download → encode → upload). Vercel caps this route at
+ * maxDuration seconds (300), so we process one job per invocation — otherwise multiple
+ * stacked jobs guarantee runtime timeouts on large sources.
  */
 import { NextResponse } from "next/server";
 import { getProxyObjectKey } from "@/lib/b2";
@@ -19,7 +23,7 @@ import { verifyBackupFileAccess } from "@/lib/backup-access";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 
 const CRON_SECRET = process.env.CRON_SECRET;
-const BATCH_SIZE = 6; // Process up to 6 per run; immediate trigger handles new uploads
+const BATCH_SIZE = 1;
 
 export const maxDuration = 300;
 

@@ -1,6 +1,20 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run build",
+  "functions": {
+    "src/app/api/cron/proxy-generation/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
+    "src/app/api/proxy/process-one/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
+    "src/app/api/backup/generate-proxy/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/uploads/cleanup",
