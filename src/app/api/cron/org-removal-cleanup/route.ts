@@ -12,7 +12,8 @@ import { Timestamp } from "firebase-admin/firestore";
 const CRON_SECRET = process.env.CRON_SECRET;
 const MAX_ORGS_PER_RUN = 5;
 
-export async function POST(request: Request) {
+/** Vercel Cron invokes scheduled routes with GET; manual runs may use POST. */
+async function handleCron(request: Request) {
   if (CRON_SECRET) {
     const authHeader = request.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -73,4 +74,12 @@ export async function POST(request: Request) {
     processed: results.length,
     results,
   });
+}
+
+export async function GET(request: Request) {
+  return handleCron(request);
+}
+
+export async function POST(request: Request) {
+  return handleCron(request);
 }
