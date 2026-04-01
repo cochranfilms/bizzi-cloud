@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
   dcfg.max_frames = opt.max_frames;
 
   const int dr = braw_decode_frames(opt.input, dcfg, meta,
-    [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t /*frame_index*/) -> bool {
+    [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index) -> bool {
       if (w != dec_w || h != dec_h) {
         std::cerr << "Decoded frame size " << w << "x" << h << " != expected " << dec_w << "x" << dec_h << "\n";
         return false;
@@ -224,6 +224,10 @@ int main(int argc, char** argv) {
       if (write_all(pipefd[1], pixels, nbytes) < 0) {
         std::cerr << "Write to ffmpeg pipe failed (broken pipe or disk full)\n";
         return false;
+      }
+      if (frame_index == 0) {
+        braw_runtime_debug_log(
+          "first frame handed to ffmpeg (%ux%u row_bytes=%u bytes=%zu)", w, h, row_bytes, nbytes);
       }
       return true;
     });
