@@ -167,9 +167,13 @@
   margin-inline: auto;
 }
 
-/* Drop zone min height driven by React (--bizzi-uppy-add-files-min on panel ancestor). */
-.bizzi-uppy-dashboard-premium .uppy-Dashboard-AddFiles {
-  min-height: var(--bizzi-uppy-add-files-min, 152px) !important;
+/* Hide Uppy's inline drop/browse UI; we use top actions + document-level global drop. */
+.bizzi-uppy-dashboard-hide-inline-drop .uppy-Dashboard-AddFiles {
+  display: none !important;
+}
+
+.bizzi-uppy-dashboard-hide-inline-drop .uppy-Dashboard-progressindicators {
+  padding-top: 6px !important;
 }
 
 @media (max-width: 639px) {

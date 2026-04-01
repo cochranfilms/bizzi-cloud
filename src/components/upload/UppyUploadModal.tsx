@@ -55,10 +55,8 @@ import "@uppy/dashboard/css/style.min.css";
 
 /** Conservative mobile-first defaults until the resize observer runs. */
 const DEFAULT_PANEL_METRICS: UploadPanelMetrics = {
-  dashboardBaseHeight: 160,
   fileGridMin: UPLOAD_GRID_VIRTUAL_ROW_STRIDE,
   fileGridMax: 220,
-  addDropMinPx: 96,
 };
 
 function formatBytes(n: number): string {
@@ -230,29 +228,21 @@ export default function UppyUploadModal({
       const isNarrow = w < 640;
       const isCompact = w < 900;
 
-      let dashboardBaseHeight: number;
       let fileGridMin: number;
       let fileGridMax: number;
-      let addDropMinPx: number;
 
       if (isNarrow) {
-        dashboardBaseHeight = Math.max(110, Math.min(210, Math.round(vh * 0.25)));
         fileGridMin = UPLOAD_GRID_VIRTUAL_ROW_STRIDE;
         fileGridMax = Math.min(240, Math.max(140, Math.round(vh * 0.3)));
-        addDropMinPx = 92;
       } else if (isCompact) {
-        dashboardBaseHeight = Math.max(200, Math.min(330, Math.round(vh * 0.35)));
         fileGridMin = 160;
         fileGridMax = Math.min(360, Math.max(220, Math.round(vh * 0.34)));
-        addDropMinPx = 120;
       } else {
-        dashboardBaseHeight = Math.max(280, Math.min(460, Math.round(vh * 0.42)));
         fileGridMin = 200;
         fileGridMax = 420;
-        addDropMinPx = 152;
       }
 
-      setPanelMetrics({ dashboardBaseHeight, fileGridMin, fileGridMax, addDropMinPx });
+      setPanelMetrics({ fileGridMin, fileGridMax });
     };
     update();
     window.addEventListener("resize", update);
@@ -897,7 +887,6 @@ export default function UppyUploadModal({
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
-        ["--bizzi-uppy-add-files-min" as string]: `${panelMetrics.addDropMinPx}px`,
       }}
       data-uppy-theme={uppyDataTheme}
       role="status"
@@ -1062,7 +1051,7 @@ export default function UppyUploadModal({
                   ? (targetDriveName || driveName || "RAW").trim()
                   : null
               }
-              dashboardNote="macOS libraries (.lrlibrary, .fcpbundle, …) upload with full folder structure when you drag the package from Finder onto this panel or use Add folder and select the library folder (not only Add files)."
+              dashboardNote="macOS libraries (.lrlibrary, .fcpbundle, …) keep folder structure when you drop them anywhere on the window, or use Add folder and pick the library folder (not only Add files)."
             />
           </div>
         </div>

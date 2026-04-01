@@ -12,12 +12,10 @@ import { useUploadPanelColumnCount } from "@/hooks/useUploadPanelColumnCount";
 import UppyGroupedQueueList from "@/components/upload/UppyGroupedQueueList";
 import VirtualizedUploadFileGrid from "@/components/upload/VirtualizedUploadFileGrid";
 
-/** Viewport-tuned sizes for the inline Dashboard and file grid (updated on resize). */
+/** Viewport-tuned sizes for the file grid (updated on resize). */
 export type UploadPanelMetrics = {
-  dashboardBaseHeight: number;
   fileGridMin: number;
   fileGridMax: number;
-  addDropMinPx: number;
 };
 
 type UppyUploadPanelExpandedProps<M extends Meta, B extends Body> = {
@@ -127,6 +125,12 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         </button>
       </div>
 
+      {dashboardNote ? (
+        <p className="mx-1 text-[11px] leading-snug text-[var(--bizzi-upload-text-muted)] sm:text-xs">
+          {dashboardNote}
+        </p>
+      ) : null}
+
       <UppyGroupedQueueList
         uppy={uppy}
         bundlesOnly
@@ -161,13 +165,12 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         uppy={uppy}
         theme={uppyDataTheme}
         proudlyDisplayPoweredByUppy={false}
-        height={hasFiles ? panelMetrics.dashboardBaseHeight + 36 : panelMetrics.dashboardBaseHeight}
+        height={hasFiles ? 120 : 56}
         showSelectedFiles={false}
         disableThumbnailGenerator
-        disableStatusBar
-        note={dashboardNote}
+        note={null}
         fileManagerSelectionType="both"
-        className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
+        className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium bizzi-uppy-dashboard-hide-inline-drop [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
       />
     </div>
   );
