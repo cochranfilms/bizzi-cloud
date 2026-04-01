@@ -73,6 +73,31 @@ static void sdk_release_after_process_complete(IBlackmagicRawProcessedImage*& re
   std::fflush(stderr);
 }
 
+/**
+ * COM Release for deferred IBlackmagicRawJob + IBlackmagicRawProcessedImage.
+ * Call only with DecodeCallback::mu_ NOT held — SDK may recurse; avoids deadlock with worker threads.
+ */
+static void release_bmd_deferred_sdk_pair(IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* img, const char* ctx) {
+  if (img != nullptr) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] %s: processedImage->Release (ptr=%p tid=%zu)\n", ctx,
+      static_cast<void*>(img), braw_trace_tid_hash());
+    std::fflush(stderr);
+    img->Release();
+    std::fprintf(stderr, "[ffmpeg-braw trace] %s: processedImage Release finished (tid=%zu)\n", ctx, braw_trace_tid_hash());
+    std::fflush(stderr);
+  }
+  if (job != nullptr) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] %s: job->Release (ptr=%p tid=%zu)\n", ctx, static_cast<void*>(job),
+      braw_trace_tid_hash());
+    std::fflush(stderr);
+    job->Release();
+    std::fprintf(stderr, "[ffmpeg-braw trace] %s: job Release finished (tid=%zu)\n", ctx, braw_trace_tid_hash());
+    std::fflush(stderr);
+  }
+  std::fprintf(stderr, "[ffmpeg-braw trace] %s: deferred pair drain complete (tid=%zu)\n", ctx, braw_trace_tid_hash());
+  std::fflush(stderr);
+}
+
 /** Same scaling idea as SDK samples (BlackmagicRawResolutionScale). */
 static BlackmagicRawResolutionScale pick_resolution_scale(uint32_t clip_w, int target_w) {
   if (target_w <= 0 || clip_w == 0)
@@ -156,8 +181,9 @@ struct FrameHandoffPacket {
 /**
  * Codec callback matching ProcessClipCPU: COM refcounting, ReadComplete → decode+process job,
  * ProcessComplete copies CPU RGBA8 while IBlackmagicRawProcessedImage is still alive.
- * Job/processedImage COM Release is deferred to the main thread (take_completed_frame / failed-wait cleanup)
- * so pointers stay valid until after ProcessComplete returns to the SDK runtime.
+ * Job/processedImage COM Release is deferred to the main decode thread: steal pointers under mu_, then
+ * IUnknown::Release with mu_ unlocked (avoids SDK deadlocks). take_completed_frame releases after moving
+ * the pixel packet; ProcessComplete may release only the prior swapped-out pair (normally null).
  */
 class DecodeCallback final : public IBlackmagicRawCallback {
  public:
@@ -195,16 +221,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
     return now;
   }
 
-  void reset_wait() {
-    std::lock_guard<std::mutex> lk(mu_);
-    std::fprintf(stderr, "[ffmpeg-braw trace] reset_wait: clear pending + deferred (tid=%zu)\n",
-      braw_trace_tid_hash());
-    std::fflush(stderr);
-    drain_deferred_process_sdk_nolock();
-    pending_ = FrameHandoffPacket{};
-    frame_ready_ = false;
-    last_hr_ = S_OK;
-  }
+  void reset_wait();
 
   bool wait_processed() {
     std::unique_lock<std::mutex> lk(mu_);
@@ -228,12 +245,6 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void release_deferred_process_sdk_main();
 
  private:
-  /** REQUIRES mu_ held. Release objects from last ProcessComplete (main or reset_wait). */
-  void drain_deferred_process_sdk_nolock();
-
-  /** REQUIRES mu_ held. Replace deferred pointers; drains any stale pair first. */
-  void assign_deferred_process_sdk_nolock(IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* processed_image);
-
   std::atomic<ULONG> ref_count_{1};
   std::mutex mu_;
   std::condition_variable cv_;
@@ -247,88 +258,126 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 };
 
 DecodeCallback::~DecodeCallback() {
-  std::lock_guard<std::mutex> lk(mu_);
-  drain_deferred_process_sdk_nolock();
-}
-
-void DecodeCallback::drain_deferred_process_sdk_nolock() {
-  if (deferred_process_image_ != nullptr) {
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] deferred: processedImage->Release (after ProcessComplete returned; tid=%zu)\n",
-      braw_trace_tid_hash());
-    std::fflush(stderr);
-    deferred_process_image_->Release();
+  IBlackmagicRawJob* j = nullptr;
+  IBlackmagicRawProcessedImage* im = nullptr;
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    j = deferred_process_job_;
+    im = deferred_process_image_;
+    deferred_process_job_ = nullptr;
     deferred_process_image_ = nullptr;
   }
-  if (deferred_process_job_ != nullptr) {
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] deferred: job->Release (after ProcessComplete returned; tid=%zu)\n",
-      braw_trace_tid_hash());
-    std::fflush(stderr);
-    deferred_process_job_->Release();
-    deferred_process_job_ = nullptr;
-  }
+  release_bmd_deferred_sdk_pair(j, im, "~DecodeCallback");
 }
 
-void DecodeCallback::assign_deferred_process_sdk_nolock(IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* processed_image) {
-  drain_deferred_process_sdk_nolock();
-  deferred_process_job_ = job;
-  deferred_process_image_ = processed_image;
-  if (job != nullptr || processed_image != nullptr) {
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: deferred job/processedImage to main (job=%p img=%p) — no SDK Release "
-      "in callback\n",
-      static_cast<void*>(job), static_cast<void*>(processed_image));
+void DecodeCallback::reset_wait() {
+  IBlackmagicRawJob* j = nullptr;
+  IBlackmagicRawProcessedImage* im = nullptr;
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    std::fprintf(stderr, "[ffmpeg-braw trace] reset_wait: steal deferred + clear pending (tid=%zu)\n",
+      braw_trace_tid_hash());
     std::fflush(stderr);
+    j = deferred_process_job_;
+    im = deferred_process_image_;
+    deferred_process_job_ = nullptr;
+    deferred_process_image_ = nullptr;
+    pending_ = FrameHandoffPacket{};
+    frame_ready_ = false;
+    last_hr_ = S_OK;
   }
+  release_bmd_deferred_sdk_pair(j, im, "reset_wait(between frames)");
 }
 
 void DecodeCallback::release_deferred_process_sdk_main() {
-  std::lock_guard<std::mutex> lk(mu_);
-  drain_deferred_process_sdk_nolock();
+  IBlackmagicRawJob* j = nullptr;
+  IBlackmagicRawProcessedImage* im = nullptr;
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    j = deferred_process_job_;
+    im = deferred_process_image_;
+    deferred_process_job_ = nullptr;
+    deferred_process_image_ = nullptr;
+  }
+  release_bmd_deferred_sdk_pair(j, im, "wait_processed failed cleanup");
 }
 
 bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h) {
-  std::lock_guard<std::mutex> lk(mu_);
-  drain_deferred_process_sdk_nolock();
-  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: enter (tid=%zu)\n", braw_trace_tid_hash());
-  std::fflush(stderr);
-  if (!frame_ready_) {
-    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: !frame_ready_\n");
+  IBlackmagicRawJob* rel_j = nullptr;
+  IBlackmagicRawProcessedImage* rel_im = nullptr;
+  bool ok = false;
+
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: enter (tid=%zu)\n", braw_trace_tid_hash());
     std::fflush(stderr);
-    return false;
+    if (!frame_ready_) {
+      std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: !frame_ready_\n");
+      std::fflush(stderr);
+      return false;
+    }
+    if (!SUCCEEDED(last_hr_) || !pending_.valid) {
+      std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: bad packet (last_hr=0x%08x valid=%d)\n",
+        static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid));
+      std::fflush(stderr);
+      rel_j = deferred_process_job_;
+      rel_im = deferred_process_image_;
+      deferred_process_job_ = nullptr;
+      deferred_process_image_ = nullptr;
+      pending_ = FrameHandoffPacket{};
+      frame_ready_ = false;
+    } else {
+      const size_t psz = pending_.pixels.size();
+      std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: before move (pending_pixels=%zu tid=%zu)\n", psz,
+        braw_trace_tid_hash());
+      std::fflush(stderr);
+      row_bytes = pending_.row_bytes;
+      w = pending_.w;
+      h = pending_.h;
+      const size_t expect = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
+      if (expect != pending_.pixels.size()) {
+        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: size mismatch expect=%zu got=%zu\n", expect,
+          pending_.pixels.size());
+        std::fflush(stderr);
+        rel_j = deferred_process_job_;
+        rel_im = deferred_process_image_;
+        deferred_process_job_ = nullptr;
+        deferred_process_image_ = nullptr;
+        pending_ = FrameHandoffPacket{};
+        frame_ready_ = false;
+      } else {
+        owned = std::move(pending_.pixels);
+        pending_ = FrameHandoffPacket{};
+        frame_ready_ = false;
+        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: packet moved to owner; stealing deferred SDK ptrs "
+                                      "(tid=%zu)\n",
+          braw_trace_tid_hash());
+        std::fflush(stderr);
+        rel_j = deferred_process_job_;
+        rel_im = deferred_process_image_;
+        deferred_process_job_ = nullptr;
+        deferred_process_image_ = nullptr;
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] take_completed_frame: deferred slots nulled under mu_ (job was=%p img was=%p tid=%zu)\n",
+          static_cast<void*>(rel_j), static_cast<void*>(rel_im), braw_trace_tid_hash());
+        std::fflush(stderr);
+        ok = true;
+        std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n",
+          owned.size(), braw_trace_tid_hash());
+        std::fflush(stderr);
+      }
+    }
   }
-  if (!SUCCEEDED(last_hr_) || !pending_.valid) {
-    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: bad packet (last_hr=0x%08x valid=%d)\n",
-      static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid));
+
+  release_bmd_deferred_sdk_pair(rel_j, rel_im,
+    ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
+  if (ok) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] take_completed_frame: SDK deferred pair released on main; members already null (tid=%zu)\n",
+      braw_trace_tid_hash());
     std::fflush(stderr);
-    pending_ = FrameHandoffPacket{};
-    frame_ready_ = false;
-    return false;
   }
-  const size_t psz = pending_.pixels.size();
-  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: before move (pending_pixels=%zu tid=%zu)\n", psz,
-    braw_trace_tid_hash());
-  std::fflush(stderr);
-  row_bytes = pending_.row_bytes;
-  w = pending_.w;
-  h = pending_.h;
-  const size_t expect = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
-  if (expect != pending_.pixels.size()) {
-    std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: size mismatch expect=%zu got=%zu\n", expect,
-      pending_.pixels.size());
-    std::fflush(stderr);
-    pending_ = FrameHandoffPacket{};
-    frame_ready_ = false;
-    return false;
-  }
-  owned = std::move(pending_.pixels);
-  pending_ = FrameHandoffPacket{};
-  frame_ready_ = false;
-  std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n", owned.size(),
-    braw_trace_tid_hash());
-  std::fflush(stderr);
-  return true;
+  return ok;
 }
 
 void DecodeCallback::DecodeComplete(IBlackmagicRawJob* job, HRESULT result) {
@@ -453,12 +502,24 @@ void DecodeCallback::ProcessComplete(
 
   if (self == nullptr || rel_job == nullptr || rel_img == nullptr) {
     if (self != nullptr) {
-      std::lock_guard<std::mutex> lk(self->mu_);
-      self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-      self->pending_ = FrameHandoffPacket{};
-      self->last_hr_ = E_POINTER;
-      self->frame_ready_ = true;
-      self->cv_.notify_one();
+      IBlackmagicRawJob* prev_j = nullptr;
+      IBlackmagicRawProcessedImage* prev_im = nullptr;
+      {
+        std::lock_guard<std::mutex> lk(self->mu_);
+        prev_j = self->deferred_process_job_;
+        prev_im = self->deferred_process_image_;
+        self->deferred_process_job_ = rel_job;
+        self->deferred_process_image_ = rel_img;
+        self->pending_ = FrameHandoffPacket{};
+        self->last_hr_ = E_POINTER;
+        self->frame_ready_ = true;
+        self->cv_.notify_one();
+        std::fprintf(stderr,
+          "[ffmpeg-braw trace] ProcessComplete: installed deferred for main (job=%p img=%p tid=%zu)\n",
+          static_cast<void*>(rel_job), static_cast<void*>(rel_img), braw_trace_tid_hash());
+        std::fflush(stderr);
+      }
+      release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior before E_POINTER signal)");
     } else {
       sdk_release_after_process_complete(rel_img, rel_job);
     }
@@ -470,14 +531,25 @@ void DecodeCallback::ProcessComplete(
   }
 
   if (FAILED(result)) {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->pending_ = FrameHandoffPacket{};
-    self->last_hr_ = result;
-    self->frame_ready_ = true;
-    self->cv_.notify_one();
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      self->pending_ = FrameHandoffPacket{};
+      self->last_hr_ = result;
+      self->frame_ready_ = true;
+      self->cv_.notify_one();
+      std::fprintf(stderr, "[ffmpeg-braw trace] ProcessComplete: installed deferred (FAILED result; tid=%zu)\n",
+        braw_trace_tid_hash());
+      std::fflush(stderr);
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior FAILED result)");
     std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning after FAILED(result); job/img deferred to main (tid=%zu)\n",
+      "[ffmpeg-braw trace] ProcessComplete: returning after FAILED(result); prior pair released outside lock (tid=%zu)\n",
       braw_trace_tid_hash());
     std::fflush(stderr);
     return;
@@ -514,28 +586,42 @@ void DecodeCallback::ProcessComplete(
   }
 
   if (FAILED(hr) || imageData == nullptr || width == 0 || height == 0 || sizeBytes == 0) {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->pending_ = FrameHandoffPacket{};
-    self->last_hr_ = FAILED(hr) ? hr : E_FAIL;
-    self->frame_ready_ = true;
-    self->cv_.notify_one();
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      self->pending_ = FrameHandoffPacket{};
+      self->last_hr_ = FAILED(hr) ? hr : E_FAIL;
+      self->frame_ready_ = true;
+      self->cv_.notify_one();
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior resource error)");
     std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning after resource/ dimension error; deferred to main (tid=%zu)\n",
-      braw_trace_tid_hash());
+      "[ffmpeg-braw trace] ProcessComplete: returning after resource/dimension error (tid=%zu)\n", braw_trace_tid_hash());
     std::fflush(stderr);
     return;
   }
 
   if (resourceType != blackmagicRawResourceTypeBufferCPU || resourceFormat != blackmagicRawResourceFormatRGBAU8) {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->pending_ = FrameHandoffPacket{};
-    self->last_hr_ = E_FAIL;
-    self->frame_ready_ = true;
-    self->cv_.notify_one();
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning after format mismatch; deferred to main (tid=%zu)\n",
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      self->pending_ = FrameHandoffPacket{};
+      self->last_hr_ = E_FAIL;
+      self->frame_ready_ = true;
+      self->cv_.notify_one();
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior format error)");
+    std::fprintf(stderr, "[ffmpeg-braw trace] ProcessComplete: returning after format mismatch (tid=%zu)\n",
       braw_trace_tid_hash());
     std::fflush(stderr);
     return;
@@ -544,14 +630,21 @@ void DecodeCallback::ProcessComplete(
   /** Stride: bytes-per-row from total size; plane size is rowBytes * height (must fit in GetResourceSizeBytes). */
   uint32_t rowBytes = sizeBytes / height;
   if (rowBytes < width * 4u) {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->pending_ = FrameHandoffPacket{};
-    self->last_hr_ = E_FAIL;
-    self->frame_ready_ = true;
-    self->cv_.notify_one();
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning after rowBytes check; deferred to main (tid=%zu)\n",
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      self->pending_ = FrameHandoffPacket{};
+      self->last_hr_ = E_FAIL;
+      self->frame_ready_ = true;
+      self->cv_.notify_one();
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior rowBytes error)");
+    std::fprintf(stderr, "[ffmpeg-braw trace] ProcessComplete: returning after rowBytes check (tid=%zu)\n",
       braw_trace_tid_hash());
     std::fflush(stderr);
     return;
@@ -560,14 +653,21 @@ void DecodeCallback::ProcessComplete(
   const uint64_t plane_u64 = static_cast<uint64_t>(rowBytes) * static_cast<uint64_t>(height);
   if (plane_u64 == 0ULL || plane_u64 > static_cast<uint64_t>(sizeBytes)
       || plane_u64 > static_cast<uint64_t>((std::numeric_limits<size_t>::max)())) {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->pending_ = FrameHandoffPacket{};
-    self->last_hr_ = E_FAIL;
-    self->frame_ready_ = true;
-    self->cv_.notify_one();
-    std::fprintf(stderr,
-      "[ffmpeg-braw trace] ProcessComplete: returning after plane size check; deferred to main (tid=%zu)\n",
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      self->pending_ = FrameHandoffPacket{};
+      self->last_hr_ = E_FAIL;
+      self->frame_ready_ = true;
+      self->cv_.notify_one();
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior plane size error)");
+    std::fprintf(stderr, "[ffmpeg-braw trace] ProcessComplete: returning after plane size check (tid=%zu)\n",
       braw_trace_tid_hash());
     std::fflush(stderr);
     return;
@@ -591,29 +691,40 @@ void DecodeCallback::ProcessComplete(
   std::fflush(stderr);
 
   {
-    std::lock_guard<std::mutex> lk(self->mu_);
-    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: publish packet (pixels=%zu w=%u h=%u row=%u tid=%zu)\n",
-      plane.size(), width, height, rowBytes, braw_trace_tid_hash());
-    std::fflush(stderr);
-    self->pending_ = FrameHandoffPacket{};
-    self->pending_.pixels = std::move(plane);
-    self->pending_.w = width;
-    self->pending_.h = height;
-    self->pending_.row_bytes = rowBytes;
-    self->pending_.valid = true;
-    self->last_hr_ = S_OK;
-    self->assign_deferred_process_sdk_nolock(rel_job, rel_img);
-    self->frame_ready_ = true;
-    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
-    std::fflush(stderr);
-    self->cv_.notify_one();
-    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
-    std::fflush(stderr);
+    IBlackmagicRawJob* prev_j = nullptr;
+    IBlackmagicRawProcessedImage* prev_im = nullptr;
+    {
+      std::lock_guard<std::mutex> lk(self->mu_);
+      std::fprintf(stderr, "[ffmpeg-braw trace] handoff: publish packet (pixels=%zu w=%u h=%u row=%u tid=%zu)\n",
+        plane.size(), width, height, rowBytes, braw_trace_tid_hash());
+      std::fflush(stderr);
+      prev_j = self->deferred_process_job_;
+      prev_im = self->deferred_process_image_;
+      self->deferred_process_job_ = rel_job;
+      self->deferred_process_image_ = rel_img;
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] handoff: deferred install for main Release after packet move (job=%p img=%p tid=%zu)\n",
+        static_cast<void*>(rel_job), static_cast<void*>(rel_img), braw_trace_tid_hash());
+      std::fflush(stderr);
+      self->pending_ = FrameHandoffPacket{};
+      self->pending_.pixels = std::move(plane);
+      self->pending_.w = width;
+      self->pending_.h = height;
+      self->pending_.row_bytes = rowBytes;
+      self->pending_.valid = true;
+      self->last_hr_ = S_OK;
+      self->frame_ready_ = true;
+      std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
+      std::fflush(stderr);
+      self->cv_.notify_one();
+      std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
+      std::fflush(stderr);
+    }
+    release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior success handoff)");
   }
 
   std::fprintf(stderr,
-    "[ffmpeg-braw trace] ProcessComplete: returning to Blackmagic SDK runtime — job/processedImage NOT Released "
-    "here; main thread will Release after callback returns (tid=%zu)\n",
+    "[ffmpeg-braw trace] ProcessComplete: returning to SDK — new job/img held in deferred_* for main only (tid=%zu)\n",
     braw_trace_tid_hash());
   std::fflush(stderr);
 }
@@ -845,6 +956,12 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       safe_release(factory);
       return EX_DECODE;
     }
+
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] main: frame %llu — packet moved out; ProcessComplete deferred job/img released inside "
+      "take_completed_frame (before on_frame / next Submit) (tid=%zu)\n",
+      static_cast<unsigned long long>(i), braw_trace_tid_hash());
+    std::fflush(stderr);
 
     if (!on_frame(frame_owned.data(), rb, ow, oh, i)) {
       safe_release(clip_attrs);
