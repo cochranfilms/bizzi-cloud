@@ -8,6 +8,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -161,6 +162,12 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   uint32_t out_h() const { return out_h_; }
   uint32_t out_row_bytes() const { return out_row_bytes_; }
 
+  /**
+   * After wait_processed(), copy the last decoded plane from scratch_ into owned storage for FFmpeg.
+   * The SDK reuses internal processed buffers across frames; always I/O from this copy, not from pixels().
+   */
+  bool export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h);
+
  private:
   std::atomic<ULONG> ref_count_{1};
   std::mutex mu_;
@@ -174,6 +181,27 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 
   ~DecodeCallback() = default;
 };
+
+bool DecodeCallback::export_owned_frame_for_ffmpeg(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w,
+  uint32_t& h) {
+  std::lock_guard<std::mutex> lk(mu_);
+  if (!SUCCEEDED(last_hr_) || scratch_.empty() || out_w_ == 0 || out_h_ == 0)
+    return false;
+  row_bytes = out_row_bytes_;
+  w = out_w_;
+  h = out_h_;
+  const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
+  if (nbytes == 0 || nbytes > scratch_.size())
+    return false;
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy start (row_bytes=%u h=%u nbytes=%zu)\n", row_bytes, h,
+    nbytes);
+  std::fflush(stderr);
+  owned.resize(nbytes);
+  std::memcpy(owned.data(), scratch_.data(), nbytes);
+  std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg-handoff copy complete (nbytes=%zu)\n", nbytes);
+  std::fflush(stderr);
+  return true;
+}
 
 void DecodeCallback::DecodeComplete(IBlackmagicRawJob* job, HRESULT result) {
   std::fprintf(stderr, "[ffmpeg-braw trace] decode callback fired (DecodeComplete job=%p hr=0x%08x)\n",
@@ -356,7 +384,7 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
-  /** Stride: prefer bytes-per-row from total size (may include padding), else width×4 for RGBAU8. */
+  /** Stride: bytes-per-row from total size; plane size is rowBytes * height (must fit in GetResourceSizeBytes). */
   uint32_t rowBytes = sizeBytes / height;
   if (rowBytes < width * 4u) {
     processedImage->Release();
@@ -368,15 +396,35 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
-  /** Must copy while processedImage is alive — buffer is not valid after Release (ProcessClipCPU). */
+  const uint64_t plane_u64 = static_cast<uint64_t>(rowBytes) * static_cast<uint64_t>(height);
+  if (plane_u64 == 0ULL || plane_u64 > static_cast<uint64_t>(sizeBytes)
+      || plane_u64 > static_cast<uint64_t>((std::numeric_limits<size_t>::max)())) {
+    processedImage->Release();
+    job->Release();
+    std::lock_guard<std::mutex> lk(self->mu_);
+    self->last_hr_ = E_FAIL;
+    self->signaled_ = true;
+    self->cv_.notify_one();
+    return;
+  }
+  const size_t plane_bytes = static_cast<size_t>(plane_u64);
+
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy start (src=%p plane_bytes=%zu sizeBytes=%u)\n",
+    static_cast<void*>(imageData), plane_bytes, sizeBytes);
+  std::fflush(stderr);
+
+  /** Copy full image plane while processedImage is alive — SDK may reuse this memory for the next frame. */
   {
     std::lock_guard<std::mutex> lk(self->mu_);
-    self->scratch_.resize(static_cast<size_t>(sizeBytes));
-    std::memcpy(self->scratch_.data(), imageData, static_cast<size_t>(sizeBytes));
+    self->scratch_.resize(plane_bytes);
+    std::memcpy(self->scratch_.data(), imageData, plane_bytes);
     self->out_w_ = width;
     self->out_h_ = height;
     self->out_row_bytes_ = rowBytes;
   }
+
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu)\n", plane_bytes);
+  std::fflush(stderr);
 
   processedImage->Release();
   processedImage = nullptr;
@@ -599,8 +647,20 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       return EX_DECODE;
     }
 
-    const auto& px = callback->pixels();
-    if (!on_frame(px.data(), callback->out_row_bytes(), callback->out_w(), callback->out_h(), i)) {
+    std::vector<uint8_t> frame_owned;
+    uint32_t rb = 0;
+    uint32_t ow = 0;
+    uint32_t oh = 0;
+    if (!callback->export_owned_frame_for_ffmpeg(frame_owned, rb, ow, oh)) {
+      safe_release(clip_attrs);
+      safe_release(clip);
+      safe_release(codec);
+      callback->Release();
+      safe_release(factory);
+      return EX_DECODE;
+    }
+
+    if (!on_frame(frame_owned.data(), rb, ow, oh, i)) {
       safe_release(clip_attrs);
       safe_release(clip);
       safe_release(codec);

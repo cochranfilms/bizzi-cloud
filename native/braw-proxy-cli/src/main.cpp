@@ -221,10 +221,16 @@ int main(int argc, char** argv) {
         return false;
       }
       const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
+      std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write start (frame=%llu row_bytes=%u h=%u nbytes=%zu)\n",
+        static_cast<unsigned long long>(frame_index), row_bytes, h, nbytes);
+      std::fflush(stderr);
       if (write_all(pipefd[1], pixels, nbytes) < 0) {
         std::cerr << "Write to ffmpeg pipe failed (broken pipe or disk full)\n";
         return false;
       }
+      std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write complete (frame=%llu nbytes=%zu)\n",
+        static_cast<unsigned long long>(frame_index), nbytes);
+      std::fflush(stderr);
       if (frame_index == 0) {
         std::fprintf(stderr, "[ffmpeg-braw trace] 11 first frame written to ffmpeg stdin (%ux%u row_bytes=%u bytes=%zu)\n",
           static_cast<unsigned>(w), static_cast<unsigned>(h), row_bytes, nbytes);
