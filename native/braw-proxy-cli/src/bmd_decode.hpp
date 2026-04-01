@@ -1,0 +1,55 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <string>
+
+/** Stable exit codes (see README). */
+constexpr int EX_USAGE = 2;
+constexpr int EX_SDK_INIT = 3;
+constexpr int EX_CLIP = 4;
+constexpr int EX_DECODE = 5;
+constexpr int EX_FFMPEG_SPAWN = 6;
+constexpr int EX_FFMPEG_EXIT = 7;
+constexpr int EX_OUTPUT = 8;
+
+struct BrawDecodeConfig {
+  /** Target width in pixels (used to pick SDK scale + FFmpeg scale=W:-2). <= 0 disables target-based scaling (full decode width). */
+  int target_width = 1280;
+  /** Cap frames for debugging; <= 0 means full clip. */
+  int max_frames = 0;
+};
+
+struct ClipMeta {
+  uint32_t clip_width = 0;
+  uint32_t clip_height = 0;
+  uint64_t frame_count = 0;
+  /** Exact frames per second; must be valid (> 0, finite) or probe fails. */
+  double fps = 0.0;
+  /** If non-zero, pass numerator/denominator to FFmpeg -framerate for exact timing. */
+  uint32_t fps_num = 0;
+  uint32_t fps_den = 0;
+};
+
+/**
+ * Predict decoded frame dimensions after SDK resolution scale for a target proxy width.
+ * Uses the same scale selection as braw_decode_frames (integer rounding matches common BMD behavior).
+ */
+void braw_dimensions_for_target_width(uint32_t clip_w, uint32_t clip_h, int target_width, uint32_t& out_w,
+  uint32_t& out_h);
+
+/**
+ * Open clip and read dimensions, frame count, and frame rate.
+ * @return 0 on success, EX_CLIP on failure (incl. invalid/missing FPS).
+ */
+int braw_probe_clip(const std::string& input_path, ClipMeta& meta);
+
+/**
+ * Decode clip to CPU-processed RGBA8 and invoke on_frame for each frame in order.
+ * Re-opens the clip internally. Use metadata from braw_probe_clip.
+ * @return 0 on success, EX_SDK_INIT / EX_CLIP / EX_DECODE on failure.
+ */
+int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
+  const std::function<bool(const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index)>&
+    on_frame);

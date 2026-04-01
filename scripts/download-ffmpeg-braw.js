@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
  * Downloads ffmpeg-braw Linux x86_64 binary from adinbied/ffmpeg-braw releases.
+ * In-house alternative: build `native/braw-proxy-cli` on a Linux worker with the
+ * Blackmagic RAW SDK and install as `/opt/braw-worker/bin/ffmpeg-braw` (see that README).
  * Used for BRAW (Blackmagic RAW) proxy generation. Run on Linux or in CI before deploy.
  *
  * Usage: node scripts/download-ffmpeg-braw.js
