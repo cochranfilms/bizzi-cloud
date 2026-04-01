@@ -112,7 +112,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 
   void ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IBlackmagicRawFrame* frame) override;
   void ProcessComplete(IBlackmagicRawJob* job, HRESULT result, IBlackmagicRawProcessedImage* processedImage) override;
-  void DecodeComplete(IBlackmagicRawJob*, HRESULT) override {}
+  void DecodeComplete(IBlackmagicRawJob* job, HRESULT result) override;
   void TrimProgress(IBlackmagicRawJob*, float) override {}
   void TrimComplete(IBlackmagicRawJob*, HRESULT) override {}
   void SidecarMetadataParseWarning(IBlackmagicRawClip*, const char*, uint32_t, const char*) override {}
@@ -175,7 +175,16 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   ~DecodeCallback() = default;
 };
 
+void DecodeCallback::DecodeComplete(IBlackmagicRawJob* job, HRESULT result) {
+  std::fprintf(stderr, "[ffmpeg-braw trace] decode callback fired (DecodeComplete job=%p hr=0x%08x)\n",
+    static_cast<void*>(job), static_cast<unsigned int>(result));
+  std::fflush(stderr);
+}
+
 void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IBlackmagicRawFrame* frame) {
+  std::fprintf(stderr, "[ffmpeg-braw trace] read callback fired (ReadComplete)\n");
+  std::fflush(stderr);
+
   IBlackmagicRawJob* decodeAndProcessJob = nullptr;
   if (readJob == nullptr || frame == nullptr) {
     if (readJob)
@@ -241,9 +250,16 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
   }
 
   hr = decodeAndProcessJob->Submit();
+  if (SUCCEEDED(hr)) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] decode job submitted (CreateJobDecodeAndProcessFrame)\n");
+    std::fprintf(stderr, "[ffmpeg-braw trace] process job submitted (decode+process combined; same job)\n");
+    std::fflush(stderr);
+  }
 
-  /** Read job is complete once read callback runs; same as sample — release before decode finishes. */
-  safe_release(frame);
+  /**
+   * BRAWconverter / SDK contract: do not Release the IBlackmagicRawFrame here after Submit.
+   * The decode+process job owns the frame until the pipeline completes; releasing early segfaults inside the SDK.
+   */
   readJob->Release();
 
   if (FAILED(hr)) {
@@ -255,11 +271,13 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
     return;
   }
 
-  /** Submitted decode job: released in ProcessComplete after pixel copy (ProcessClipCPU ownership). */
+  std::fprintf(stderr, "[ffmpeg-braw trace] process pipeline queued (await ProcessComplete)\n");
+  std::fflush(stderr);
 }
 
 void DecodeCallback::ProcessComplete(
   IBlackmagicRawJob* job, HRESULT result, IBlackmagicRawProcessedImage* processedImage) {
+  std::fprintf(stderr, "[ffmpeg-braw trace] process callback fired (ProcessComplete)\n");
   std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered\n");
   std::fflush(stderr);
 
@@ -314,6 +332,7 @@ void DecodeCallback::ProcessComplete(
   if (SUCCEEDED(hr) && imageData != nullptr) {
     std::fprintf(stderr, "[ffmpeg-braw trace] 10 pixel/resource buffer acquired (ptr=%p sizeBytes=%u)\n",
       static_cast<void*>(imageData), sizeBytes);
+    std::fprintf(stderr, "[ffmpeg-braw trace] processed buffer acquired\n");
     std::fflush(stderr);
   }
 
@@ -370,26 +389,20 @@ void DecodeCallback::ProcessComplete(
   self->cv_.notify_one();
 }
 
+/**
+ * CPU decode path matches BRAWconverter / ProcessClipCPU default: CreateCodec only.
+ * Do not call SetPipeline(blackmagicRawPipelineCPU) unless a GPU pipeline was set first — the public
+ * macOS reference app never sets CPU explicitly; forcing CPU twice can misconfigure the Linux codec.
+ */
 static int init_factory_codec_cpu(IBlackmagicRawFactory*& factory, IBlackmagicRaw*& codec) {
   factory = CreateBlackmagicRawFactoryInstance();
   if (factory == nullptr)
     return EX_SDK_INIT;
 
-  HRESULT hr = factory->CreateCodec(&codec);
+  const HRESULT hr = factory->CreateCodec(&codec);
   if (FAILED(hr) || codec == nullptr) {
     safe_release(factory);
     return EX_SDK_INIT;
-  }
-
-  IBlackmagicRawConfiguration* config = nullptr;
-  if (SUCCEEDED(codec->QueryInterface(IID_IBlackmagicRawConfiguration, reinterpret_cast<void**>(&config)))) {
-    hr = config->SetPipeline(blackmagicRawPipelineCPU, nullptr, nullptr);
-    config->Release();
-    if (FAILED(hr)) {
-      safe_release(codec);
-      safe_release(factory);
-      return EX_SDK_INIT;
-    }
   }
 
   return 0;
@@ -469,27 +482,10 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr, "[ffmpeg-braw trace] 2 factory created\n");
   std::fflush(stderr);
 
-  /** ProcessClipCPU: register callback before OpenClip so sidecar / async notifications are safe. */
-  auto* callback = new DecodeCallback();
-  std::fprintf(stderr, "[ffmpeg-braw trace] 4 callback created\n");
-  std::fflush(stderr);
-
-  callback->scale = pick_resolution_scale(meta.clip_width, cfg.target_width);
-
-  HRESULT hr = codec->SetCallback(callback);
-  if (FAILED(hr)) {
-    callback->Release();
-    safe_release(codec);
-    safe_release(factory);
-    return EX_SDK_INIT;
-  }
-  std::fprintf(stderr, "[ffmpeg-braw trace] 6 callback registered\n");
-  std::fflush(stderr);
-
+  HRESULT hr = S_OK;
   const int oc = open_clip_on_codec(codec, input_path, clip);
   if (oc != 0) {
     safe_release(codec);
-    callback->Release();
     safe_release(factory);
     return oc;
   }
@@ -501,11 +497,28 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   if (FAILED(hr) || clip_attrs == nullptr) {
     safe_release(clip);
     safe_release(codec);
-    callback->Release();
     safe_release(factory);
     return EX_SDK_INIT;
   }
+
+  auto* callback = new DecodeCallback();
+  std::fprintf(stderr, "[ffmpeg-braw trace] 4 callback created\n");
+  std::fflush(stderr);
+
+  callback->scale = pick_resolution_scale(meta.clip_width, cfg.target_width);
   callback->clip_attrs = clip_attrs;
+
+  hr = codec->SetCallback(callback);
+  if (FAILED(hr)) {
+    callback->Release();
+    safe_release(clip_attrs);
+    safe_release(clip);
+    safe_release(codec);
+    safe_release(factory);
+    return EX_SDK_INIT;
+  }
+  std::fprintf(stderr, "[ffmpeg-braw trace] 6 callback registered\n");
+  std::fflush(stderr);
 
   if (meta.frame_count == 0) {
     safe_release(clip_attrs);
@@ -552,6 +565,11 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     std::fflush(stderr);
 
     hr = readJob->Submit();
+    if (SUCCEEDED(hr)) {
+      std::fprintf(stderr, "[ffmpeg-braw trace] read job submitted (frame index %llu)\n",
+        static_cast<unsigned long long>(i));
+      std::fflush(stderr);
+    }
     if (FAILED(hr)) {
       readJob->Release();
       safe_release(clip_attrs);
