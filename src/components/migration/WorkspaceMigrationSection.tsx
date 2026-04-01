@@ -7,9 +7,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useBackup } from "@/context/BackupContext";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
-import { ChevronRight, CloudUpload, Folder, FolderOpen, File, Loader2 } from "lucide-react";
+import { ChevronRight, CloudUpload, Folder, FolderOpen, File as FileGlyph, Loader2 } from "lucide-react";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
-import { MIGRATION_JOBS_COLLECTION, migrationMaxFoldersPerJob } from "@/lib/migration-constants";
+import {
+  MIGRATION_FILES_SUBCOLLECTION,
+  MIGRATION_JOBS_COLLECTION,
+  migrationMaxFoldersPerJob,
+} from "@/lib/migration-constants";
+import MigrationCloudProgressBar from "./MigrationCloudProgressBar";
 import type { MigrationProvider } from "@/lib/migration-constants";
 
 type Provider = MigrationProvider;
@@ -50,6 +55,204 @@ function oauthStartErrorMessage(
     return "Import service is unavailable (503). Check server configuration and logs.";
   }
   return `Could not start OAuth (${status}).`;
+}
+
+function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boolean) {
+  const [agg, setAgg] = useState({ total: 0, done: 0, failed: 0, inFlight: 0 });
+  useEffect(() => {
+    if (!jobId || !subscribe || !isFirebaseConfigured()) return;
+    const db = getFirebaseFirestore();
+    const coll = collection(db, MIGRATION_JOBS_COLLECTION, jobId, MIGRATION_FILES_SUBCOLLECTION);
+    const unsub = onSnapshot(
+      coll,
+      (snap) => {
+        let done = 0;
+        let failed = 0;
+        let inFlight = 0;
+        for (const doc of snap.docs) {
+          const t = doc.data().transfer_status as string;
+          if (t === "completed" || t === "skipped") done += 1;
+          else if (t === "failed") failed += 1;
+          else if (t === "in_progress") inFlight += 1;
+        }
+        setAgg({ total: snap.size, done, failed, inFlight });
+      },
+      (err) => console.warn("[migration] files snapshot", err)
+    );
+    return () => unsub();
+  }, [jobId, subscribe]);
+  return agg;
+}
+
+function formatProviderLabel(p: string): string {
+  if (p === "google_drive") return "Google Drive";
+  if (p === "dropbox") return "Dropbox";
+  return p.replace(/_/g, " ");
+}
+
+function formatJobStatusTitle(status: string): string {
+  const labels: Record<string, string> = {
+    queued: "Queued",
+    scanning: "1. Scanning your cloud",
+    scan_completed: "Scan complete",
+    ready: "Ready to copy",
+    running: "2. Copying into Storage",
+    paused: "Paused",
+    completed: "Import finished",
+    completed_with_issues: "Finished with some issues",
+    failed: "Import failed",
+    canceled: "Canceled",
+    blocked_quota: "Needs more storage",
+    blocked_destination_invalid: "Destination unavailable",
+  };
+  return labels[status] ?? status.replace(/_/g, " ");
+}
+
+function jobDestinationLabel(j: Record<string, unknown>): string {
+  const c = j.destination_contract as { destination_path_prefix?: string; drive_name_snapshot?: string } | undefined;
+  const path = typeof c?.destination_path_prefix === "string" ? c.destination_path_prefix.trim() : "";
+  const drive = typeof c?.drive_name_snapshot === "string" ? c.drive_name_snapshot.trim() : "";
+  if (path && drive) return `${drive} → ${path}`;
+  if (path) return path;
+  if (drive) return drive;
+  return "Storage";
+}
+
+type MigrationJobCardProps = {
+  job: Record<string, unknown> & { id?: string };
+  onStart: (id: string) => void;
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+};
+
+function MigrationJobCard({ job, onStart, onPause, onResume }: MigrationJobCardProps) {
+  const id = String(job.id ?? "");
+  const status = String(job.status ?? "");
+  const scanned = typeof job.files_total_scanned === "number" ? job.files_total_scanned : null;
+  const supported = typeof job.files_supported_count === "number" ? job.files_supported_count : null;
+  const prov = String((job as { provider?: string }).provider ?? "");
+  const dest = jobDestinationLabel(job);
+  const showFileListener = [
+    "scanning",
+    "ready",
+    "running",
+    "paused",
+    "completed",
+    "completed_with_issues",
+  ].includes(status);
+  const fileAgg = useMigrationJobFileProgress(id, showFileListener && !!id);
+
+  const scanComplete = !["scanning", "queued"].includes(status);
+  const scanPercent = scanComplete ? 100 : null;
+  const scanSubtitle =
+    status === "scanning"
+      ? scanned != null && scanned > 0
+        ? `Discovered ${scanned.toLocaleString()} item${scanned === 1 ? "" : "s"} so far…`
+        : "Listing folders and files from your connected account…"
+      : scanComplete
+        ? supported != null
+          ? `${supported.toLocaleString()} file${supported === 1 ? "" : "s"} ready to copy.`
+          : "Scan complete."
+        : null;
+
+  const showTransferBar = ["ready", "running", "paused", "completed", "completed_with_issues"].includes(status);
+
+  let transferPercent: number | null = 0;
+  let transferSubtitle: string | null = null;
+  if (showTransferBar) {
+    const totalFiles = fileAgg.total > 0 ? fileAgg.total : supported ?? 0;
+    if (status === "ready") {
+      transferPercent = 0;
+      transferSubtitle =
+        totalFiles > 0
+          ? `${totalFiles.toLocaleString()} file${totalFiles === 1 ? "" : "s"} ready — press Start import when you want them copied into Bizzi.`
+          : "Preparing your file list…";
+    } else if (status === "running" || status === "paused") {
+      if (fileAgg.total > 0) {
+        transferPercent = (fileAgg.done / fileAgg.total) * 100;
+        transferSubtitle = `${fileAgg.done.toLocaleString()} of ${fileAgg.total.toLocaleString()} files copied`;
+        if (fileAgg.inFlight > 0) transferSubtitle += ` · ${fileAgg.inFlight} in progress`;
+        if (fileAgg.failed > 0) transferSubtitle += ` · ${fileAgg.failed} could not finish`;
+      } else {
+        transferPercent = null;
+        transferSubtitle = "Starting copy…";
+      }
+    } else if (status === "completed" || status === "completed_with_issues") {
+      transferPercent =
+        fileAgg.total > 0 ? Math.min(100, (fileAgg.done / fileAgg.total) * 100) : 100;
+      transferSubtitle =
+        fileAgg.total > 0
+          ? `${fileAgg.done.toLocaleString()} of ${fileAgg.total.toLocaleString()} files done${fileAgg.failed > 0 ? ` · ${fileAgg.failed} failed` : ""}`
+          : "Done.";
+    }
+  }
+
+  const failedBlock = ["failed", "canceled", "blocked_quota", "blocked_destination_invalid"].includes(status);
+
+  return (
+    <li className="list-none rounded-2xl border border-bizzi-blue/20 bg-white/90 p-5 shadow-md shadow-bizzi-blue/5 dark:border-bizzi-blue/25 dark:bg-neutral-900/85">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-base font-semibold text-bizzi-navy dark:text-white">{formatJobStatusTitle(status)}</p>
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+            <span className="font-medium text-bizzi-blue dark:text-bizzi-cyan">{formatProviderLabel(prov)}</span>
+            <span className="text-neutral-400 dark:text-neutral-500"> · </span>
+            <span className="text-neutral-800 dark:text-neutral-200">Into {dest}</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {status === "ready" && (
+            <button
+              type="button"
+              className="rounded-lg bg-gradient-to-r from-bizzi-blue to-bizzi-cyan px-4 py-2 text-xs font-semibold text-white shadow-md shadow-bizzi-blue/25 hover:brightness-110"
+              onClick={() => onStart(id)}
+            >
+              Start import
+            </button>
+          )}
+          {(status === "scanning" || status === "running") && (
+            <button
+              type="button"
+              className="rounded-lg border border-amber-400/60 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/40 dark:text-amber-100"
+              onClick={() => onPause(id)}
+            >
+              Pause
+            </button>
+          )}
+          {status === "paused" && (
+            <button
+              type="button"
+              className="rounded-lg border border-emerald-500/40 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/30 dark:text-emerald-100"
+              onClick={() => onResume(id)}
+            >
+              Resume
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <MigrationCloudProgressBar label="Scan cloud library" subtitle={scanSubtitle} percent={scanPercent} />
+        {showTransferBar && !failedBlock ? (
+          <MigrationCloudProgressBar
+            label="Copy into Bizzi Storage"
+            subtitle={transferSubtitle}
+            percent={transferPercent}
+          />
+        ) : null}
+      </div>
+      {failedBlock && job.failure_message ? (
+        <p className="mt-4 text-sm text-red-600 dark:text-red-400">{String(job.failure_message)}</p>
+      ) : null}
+      <details className="mt-4 text-xs text-neutral-400">
+        <summary className="cursor-pointer select-none text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">
+          Technical details
+        </summary>
+        <p className="mt-2 break-all font-mono text-[10px] text-neutral-500 dark:text-neutral-500">
+          Reference: {id}
+        </p>
+      </details>
+    </li>
+  );
 }
 
 export default function WorkspaceMigrationSection({
@@ -376,7 +579,7 @@ export default function WorkspaceMigrationSection({
       });
       const d = (await res.json()) as { job_id?: string; error?: string; code?: string };
       if (!res.ok) throw new Error(d.error ?? "create_failed");
-      setMessage(`Import started — job ${d.job_id}. It will scan, then you can start transfer when ready.`);
+      setMessage("Import started — track scan and copy progress below.");
       setPicks([]);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
@@ -414,103 +617,134 @@ export default function WorkspaceMigrationSection({
   const dropboxConnected = accounts?.find((a) => a.provider === "dropbox")?.connected;
   const providerConnected = provider === "google_drive" ? googleConnected : dropboxConnected;
 
+  const canStartScan = !!(user && providerConnected && storageDrive?.id && picks.length > 0 && !loading);
+
   return (
     <section
       id="migration"
-      className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-900"
+      className="relative overflow-hidden rounded-2xl border border-bizzi-blue/25 bg-gradient-to-br from-white via-bizzi-sky/35 to-white p-6 shadow-lg shadow-bizzi-blue/10 sm:p-8 dark:from-neutral-950 dark:via-bizzi-navy/25 dark:to-neutral-950 dark:border-bizzi-blue/30 dark:shadow-bizzi-blue/5"
     >
-      <SettingsSectionScope label={scopeLabel} />
-      <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-white">
-        <CloudUpload className="h-5 w-5 text-bizzi-blue" />
-        Cloud import
-      </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6">
-        Copy files from Google Drive or Dropbox into your <strong>Storage</strong> workspace (not RAW or Gallery).
-        Connect your account, tick what you want, choose where it lands in Bizzi, then start the import.
-      </p>
+      <div className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-bizzi-blue/15 blur-3xl dark:bg-bizzi-cyan/10" />
+      <div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl dark:bg-bizzi-navy/30" />
 
-      <div className="space-y-4 mb-8">
-        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 1 — Connect</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={loading || !user}
-            onClick={() => void connectGoogle()}
-            className="rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
-          >
-            Google Drive
-          </button>
-          <button
-            type="button"
-            disabled={loading || !user}
-            onClick={() => void connectDropbox()}
-            className="rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm"
-          >
-            Dropbox
-          </button>
+      <div className="relative">
+        <SettingsSectionScope label={scopeLabel} />
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="mb-2 flex items-center gap-2 text-xl font-bold tracking-tight text-bizzi-navy dark:text-white sm:text-2xl">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-bizzi-blue to-sky-400 shadow-md shadow-bizzi-blue/30">
+                <CloudUpload className="h-5 w-5 text-white" />
+              </span>
+              Cloud import
+            </h2>
+            <p className="max-w-xl text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+              Bring Google Drive or Dropbox into your <strong className="text-bizzi-navy dark:text-white">Storage</strong>{" "}
+              space. Connect once, choose files, pick a destination — we handle the rest.
+            </p>
+          </div>
         </div>
-        {accounts && (
-          <ul className="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
-            {accounts.map((a) => (
-              <li key={a.provider} className="flex flex-wrap items-center gap-2">
-                <span>
-                  {a.provider === "google_drive" ? "Google Drive" : "Dropbox"}:{" "}
-                  {a.connected ? "connected" : "not connected"}
-                </span>
-                {a.connected && (
-                  <button
-                    type="button"
-                    className="text-xs underline text-red-600 dark:text-red-400"
-                    onClick={() => void disconnectProvider(a.provider)}
-                  >
-                    Disconnect
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
 
-      <div className="space-y-4 mb-8 border-t border-neutral-200 dark:border-neutral-700 pt-6">
-        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 2 — Pick from cloud</h3>
-        <div className="flex flex-wrap gap-3 items-center">
-          <label className="text-sm text-neutral-700 dark:text-neutral-300">
-            From{" "}
-            <select
-              className="ml-1 border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as Provider)}
-              disabled={!user}
-            >
-              <option value="google_drive">Google Drive</option>
-              <option value="dropbox">Dropbox</option>
-            </select>
-          </label>
-          {!providerConnected ? (
-            <span className="text-sm text-amber-700 dark:text-amber-300">Connect this provider above first.</span>
-          ) : browseLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
-          ) : (
+        <div className="relative mb-8 space-y-4 rounded-2xl border border-white/60 bg-white/85 p-5 shadow-sm backdrop-blur-sm dark:border-neutral-700/80 dark:bg-neutral-900/80">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-bizzi-blue dark:text-bizzi-cyan">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-bizzi-sky/80 text-[11px] text-bizzi-navy dark:bg-bizzi-navy/50 dark:text-white">
+              1
+            </span>
+            Connect
+          </div>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">Link the account you want to pull from.</p>
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="text-sm text-bizzi-blue hover:underline"
-              onClick={() => void loadProviderFolder()}
+              disabled={loading || !user}
+              onClick={() => void connectGoogle()}
+              className="rounded-xl border border-neutral-200/80 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 shadow-sm transition hover:border-bizzi-blue/40 hover:shadow-md disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
             >
-              Refresh list
+              Google Drive
             </button>
+            <button
+              type="button"
+              disabled={loading || !user}
+              onClick={() => void connectDropbox()}
+              className="rounded-xl border border-neutral-200/80 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 shadow-sm transition hover:border-bizzi-blue/40 hover:shadow-md disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+            >
+              Dropbox
+            </button>
+          </div>
+          {accounts && (
+            <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+              {accounts.map((a) => (
+                <li key={a.provider} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                    {a.provider === "google_drive" ? "Google Drive" : "Dropbox"}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      a.connected
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                    }`}
+                  >
+                    {a.connected ? "Connected" : "Not connected"}
+                  </span>
+                  {a.connected && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+                      onClick={() => void disconnectProvider(a.provider)}
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
+        <div className="relative mb-8 space-y-4 rounded-2xl border border-white/60 bg-white/85 p-5 shadow-sm backdrop-blur-sm dark:border-neutral-700/80 dark:bg-neutral-900/80">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-bizzi-blue dark:text-bizzi-cyan">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-bizzi-sky/80 text-[11px] text-bizzi-navy dark:bg-bizzi-navy/50 dark:text-white">
+              2
+            </span>
+            Choose from cloud
+          </div>
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              Source{" "}
+              <select
+                className="ml-1 rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm shadow-sm"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as Provider)}
+                disabled={!user}
+              >
+                <option value="google_drive">Google Drive</option>
+                <option value="dropbox">Dropbox</option>
+              </select>
+            </label>
+            {!providerConnected ? (
+              <span className="text-sm text-amber-800 dark:text-amber-200">Connect a provider in step 1 first.</span>
+            ) : browseLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-bizzi-blue" />
+            ) : (
+              <button
+                type="button"
+                className="text-sm font-semibold text-bizzi-blue underline-offset-2 hover:underline dark:text-bizzi-cyan"
+                onClick={() => void loadProviderFolder()}
+              >
+                Refresh list
+              </button>
+            )}
+          </div>
+
         {providerConnected && (
           <>
-            <nav className="flex flex-wrap items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
+            <nav className="flex flex-wrap items-center gap-1 rounded-lg bg-bizzi-sky/30 px-2 py-1.5 text-xs text-neutral-700 dark:bg-neutral-800/80 dark:text-neutral-300">
               {providerTrail.map((c, idx) => (
                 <span key={`${c.id}-${idx}`} className="flex items-center gap-1">
-                  {idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                  {idx > 0 ? <ChevronRight className="h-3 w-3 opacity-60" /> : null}
                   <button
                     type="button"
-                    className="hover:underline"
+                    className="font-medium hover:text-bizzi-blue dark:hover:text-bizzi-cyan"
                     onClick={() => goProviderCrumb(idx)}
                   >
                     {c.name}
@@ -518,7 +752,7 @@ export default function WorkspaceMigrationSection({
                 </span>
               ))}
             </nav>
-            <div className="max-h-56 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-600 divide-y divide-neutral-100 dark:divide-neutral-800">
+            <div className="max-h-56 overflow-auto rounded-xl border border-bizzi-blue/15 bg-white/50 divide-y divide-neutral-100 dark:divide-neutral-800 dark:bg-neutral-950/40">
               {providerEntries.length === 0 && !browseLoading ? (
                 <p className="p-3 text-sm text-neutral-500">This folder is empty.</p>
               ) : (
@@ -550,7 +784,7 @@ export default function WorkspaceMigrationSection({
                         </button>
                       ) : (
                         <span className="flex min-w-0 flex-1 items-center gap-2">
-                          <File className="h-4 w-4 shrink-0 text-neutral-400" />
+                          <FileGlyph className="h-4 w-4 shrink-0 text-neutral-400" />
                           <span className="truncate text-neutral-800 dark:text-neutral-200">{e.name}</span>
                         </span>
                       )}
@@ -568,25 +802,34 @@ export default function WorkspaceMigrationSection({
         )}
       </div>
 
-      <div className="space-y-4 mb-8 border-t border-neutral-200 dark:border-neutral-700 pt-6">
-        <h3 className="font-semibold text-neutral-900 dark:text-white">Step 3 — Where in Bizzi Storage</h3>
+        <div className="relative mb-8 space-y-4 rounded-2xl border border-white/60 bg-white/85 p-5 shadow-sm backdrop-blur-sm dark:border-neutral-700/80 dark:bg-neutral-900/80">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-bizzi-blue dark:text-bizzi-cyan">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-bizzi-sky/80 text-[11px] text-bizzi-navy dark:bg-bizzi-navy/50 dark:text-white">
+              3
+            </span>
+            Destination in Bizzi Storage
+          </div>
         {!storageDrive?.id ? (
-          <p className="text-sm text-amber-700 dark:text-amber-300">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
             No Storage drive loaded yet. Open the Files page for this workspace, then return here.
           </p>
         ) : (
           <>
-            <nav className="flex flex-wrap items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
+            <nav className="flex flex-wrap items-center gap-1 rounded-lg bg-bizzi-sky/30 px-2 py-1.5 text-xs text-neutral-700 dark:bg-neutral-800/80 dark:text-neutral-300">
               {destTrail.map((c, idx) => (
                 <span key={`${c.path}-${idx}`} className="flex items-center gap-1">
                   {idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}
-                  <button type="button" className="hover:underline" onClick={() => goDestCrumb(idx)}>
+                  <button
+                    type="button"
+                    className="font-medium hover:text-bizzi-blue dark:hover:text-bizzi-cyan"
+                    onClick={() => goDestCrumb(idx)}
+                  >
                     {c.name}
                   </button>
                 </span>
               ))}
             </nav>
-            <div className="max-h-40 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-600">
+            <div className="max-h-40 overflow-auto rounded-xl border border-bizzi-blue/15 bg-white/50 dark:bg-neutral-950/40">
               {destFolderChoices.length === 0 ? (
                 <p className="p-3 text-sm text-neutral-500">No subfolders here — you can still add a new subfolder name below.</p>
               ) : (
@@ -594,30 +837,30 @@ export default function WorkspaceMigrationSection({
                   <button
                     key={f.path}
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50 dark:hover:bg-zinc-800"
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-bizzi-sky/40 dark:hover:bg-neutral-800"
                     onClick={() => enterDestFolder(f.path, f.name)}
                   >
-                    <Folder className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span className="truncate">{f.name}</span>
+                    <Folder className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span className="truncate font-medium">{f.name}</span>
                   </button>
                 ))
               )}
             </div>
-            <label className="block text-sm text-neutral-700 dark:text-neutral-300">
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               New subfolder (optional)
               <input
                 type="text"
-                className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900 text-sm"
-                placeholder="e.g. From Google — creates this folder inside the location above"
+                className="mt-1.5 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-bizzi-blue dark:border-neutral-600 dark:bg-zinc-900 dark:focus:border-bizzi-cyan"
+                placeholder="Creates inside the folder shown above — e.g. From Google"
                 value={newSubfolder}
                 onChange={(e) => setNewSubfolder(e.target.value)}
                 autoComplete="off"
               />
             </label>
-            <label className="block text-sm text-neutral-700 dark:text-neutral-300">
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               If a file already exists
               <select
-                className="mt-1 w-full border border-neutral-200 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-900"
+                className="mt-1.5 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm dark:border-neutral-600 dark:bg-zinc-900"
                 value={duplicate_mode}
                 onChange={(e) => setDuplicateMode(e.target.value as "skip" | "rename")}
               >
@@ -627,90 +870,68 @@ export default function WorkspaceMigrationSection({
             </label>
           </>
         )}
-      </div>
+        </div>
 
-      <button
-        type="button"
-        disabled={loading || !user || !providerConnected || !storageDrive?.id || picks.length === 0}
-        onClick={() => void createJob()}
-        className="rounded-lg bg-bizzi-blue text-white px-4 py-2 text-sm font-medium hover:bg-bizzi-cyan disabled:opacity-60 mb-6"
-      >
-        Start import (scan)
-      </button>
+        <div className="relative mb-8">
+          <button
+            type="button"
+            disabled={!canStartScan}
+            onClick={() => void createJob()}
+            title={
+              !user
+                ? "Sign in to continue"
+                : !providerConnected
+                  ? "Connect a cloud provider first"
+                  : !storageDrive?.id
+                    ? "Load Storage from Files first"
+                    : picks.length === 0
+                      ? "Select files or folders in step 2"
+                      : "Start cloud scan"
+            }
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-base font-semibold shadow-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-bizzi-blue focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 sm:w-auto sm:min-w-[240px] ${
+              canStartScan
+                ? "bg-gradient-to-r from-bizzi-blue via-sky-500 to-bizzi-cyan text-white shadow-bizzi-blue/35 hover:brightness-110 active:scale-[0.99]"
+                : "cursor-not-allowed bg-neutral-200 text-neutral-500 shadow-none dark:bg-neutral-800 dark:text-neutral-500"
+            }`}
+          >
+            <CloudUpload className="h-5 w-5 opacity-90" />
+            Start cloud scan
+          </button>
+          <p className="mt-2 max-w-lg text-xs text-neutral-500 dark:text-neutral-400">
+            After the scan finishes, use <strong className="text-neutral-700 dark:text-neutral-300">Start import</strong> on
+            your job card to copy files into Storage.
+          </p>
+        </div>
 
-      {message && <p className="text-sm mb-4 text-amber-700 dark:text-amber-300">{message}</p>}
+        {message && (
+          <p className="mb-6 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-100">
+            {message}
+          </p>
+        )}
 
-      <div>
-        <h3 className="font-semibold mb-2 text-neutral-900 dark:text-white">Your import jobs</h3>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-          Status updates live while this page is open. Use <strong>Start transfer</strong> when a job is ready.
-        </p>
-        <ul className="space-y-2 text-sm">
-          {jobs.map((j) => {
-            const id = (j as { id?: string }).id ?? "";
-            const st = String(j.status ?? "");
-            const prov = String((j as { provider?: string }).provider ?? "");
-            const scanned =
-              typeof (j as { files_total_scanned?: unknown }).files_total_scanned === "number"
-                ? (j as { files_total_scanned: number }).files_total_scanned
-                : null;
-            const supported =
-              typeof (j as { files_supported_count?: unknown }).files_supported_count === "number"
-                ? (j as { files_supported_count: number }).files_supported_count
-                : null;
-            return (
-              <li
-                key={id}
-                className="border border-neutral-200 dark:border-neutral-600 rounded-md p-2 flex flex-wrap items-center justify-between gap-2"
-              >
-                <div className="min-w-0 text-neutral-800 dark:text-neutral-200">
-                  <div>
-                    <code className="text-xs">{id}</code>
-                    {prov ? (
-                      <span className="text-xs text-neutral-500 ml-1">· {prov.replace("_", " ")}</span>
-                    ) : null}{" "}
-                    — {st}
-                  </div>
-                  {scanned != null && st === "scanning" ? (
-                    <div className="text-xs text-neutral-500 mt-0.5">Discovered files (approx.): {scanned}</div>
-                  ) : null}
-                  {supported != null && (st === "ready" || st === "running" || st === "paused") ? (
-                    <div className="text-xs text-neutral-500 mt-0.5">Queued files: {supported}</div>
-                  ) : null}
-                </div>
-                <span className="flex flex-wrap gap-2">
-                  {st === "ready" && (
-                    <button
-                      type="button"
-                      className="text-bizzi-blue dark:text-bizzi-cyan underline text-xs"
-                      onClick={() => void startJob(id)}
-                    >
-                      Start transfer
-                    </button>
-                  )}
-                  {(st === "scanning" || st === "running") && (
-                    <button
-                      type="button"
-                      className="text-amber-700 dark:text-amber-300 underline text-xs"
-                      onClick={() => void pauseJob(id)}
-                    >
-                      Pause
-                    </button>
-                  )}
-                  {st === "paused" && (
-                    <button
-                      type="button"
-                      className="text-green-700 dark:text-green-400 underline text-xs"
-                      onClick={() => void resumeJob(id)}
-                    >
-                      Resume
-                    </button>
-                  )}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="relative rounded-2xl border border-bizzi-blue/20 bg-white/75 p-5 backdrop-blur-sm dark:border-bizzi-blue/25 dark:bg-neutral-900/75">
+          <h3 className="mb-1 text-lg font-bold text-bizzi-navy dark:text-white">Your imports</h3>
+          <p className="mb-5 text-xs text-neutral-500 dark:text-neutral-400">
+            Progress updates live on this page — no need to watch raw database fields.
+          </p>
+          {jobs.length === 0 ? (
+            <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              No imports yet. Complete the steps above to start one.
+            </p>
+          ) : (
+            <ul className="space-y-4">
+              {jobs.map((j) => (
+                <MigrationJobCard
+                  key={String((j as { id?: string }).id ?? "")}
+                  job={j as Record<string, unknown> & { id?: string }}
+                  onStart={(id) => void startJob(id)}
+                  onPause={(id) => void pauseJob(id)}
+                  onResume={(id) => void resumeJob(id)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </section>
   );

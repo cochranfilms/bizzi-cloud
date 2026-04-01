@@ -165,6 +165,17 @@
   .animate-logo-scroll {
     animation: logo-scroll 30s linear infinite;
   }
+  @keyframes migration-bar-sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(350%);
+    }
+  }
+  .animate-migration-bar-sweep {
+    animation: migration-bar-sweep 1.45s ease-in-out infinite;
+  }
   /* Seamless infinite horizontal scroll (strip is duplicated; -50% = one full set) */
   @keyframes teams-marquee {
     0% {

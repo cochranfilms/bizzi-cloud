@@ -65,6 +65,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   }, [pathname]);
   const {
     driveFolders,
+    storageTopFolders,
     loading,
     authQuotaExceeded,
     recentUploads,
@@ -281,6 +282,31 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     const drive = driveFolders.find((d) => d.id === f.driveId);
     return drive ? !isSystemDrive(drive) : false;
   });
+
+  const storagePathVirtualFolderItems: FolderItem[] = useMemo(
+    () =>
+      storageTopFolders.map((t) => ({
+        name: t.name,
+        type: "folder" as const,
+        key: `storage-path-${t.driveId}-${t.pathPrefix}`,
+        items: t.itemCount,
+        hideShare: false,
+        driveId: t.driveId,
+        virtualFolder: true,
+        pathPrefix: t.pathPrefix,
+        preventDelete: true,
+        preventRename: true,
+        preventMove: true,
+        isSystemFolder: false,
+      })),
+    [storageTopFolders]
+  );
+
+  const bizziCloudFolderItems = useMemo(() => {
+    return [...driveFolderItems, ...storagePathVirtualFolderItems].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  }, [driveFolderItems, storagePathVirtualFolderItems]);
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadPinnedFiles = useCallback(async () => {
@@ -1192,7 +1218,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
-        {driveFolderItems.length > 0 ? (
+        {bizziCloudFolderItems.length > 0 ? (
           viewMode === "list" ? (
             <div className="mb-6 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
@@ -1211,12 +1237,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   </tr>
                 </thead>
                 <tbody data-selectable-grid>
-                  {driveFolderItems.map((item) => {
+                  {bizziCloudFolderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                     const driveId = item.driveId ?? "";
                     const isFolderInSelection = selectedFolderKeys.has(item.key);
                     const isDropTarget =
                       !!driveId &&
+                      !item.virtualFolder &&
                       !isFolderInSelection &&
                       linkedDrives.some((d) => d.id === driveId);
                     const canDragFolder = !!item.driveId && !item.preventMove;
@@ -1225,7 +1252,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         key={item.key}
                         item={item}
                         displayContext={storageDisplayContext}
-                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onClick={() => item.driveId && openDrive(item.driveId, item.name, item.pathPrefix ?? "")}
                         onDelete={
                           drive && !item.preventDelete
                             ? async () => {
@@ -1267,12 +1294,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     : "sm:grid-cols-3 md:grid-cols-4"
             }`}
           >
-            {driveFolderItems.map((item) => {
+            {bizziCloudFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
               const driveId = item.driveId ?? "";
               const isFolderInSelection = selectedFolderKeys.has(item.key);
               const isDropTarget =
                 !!driveId &&
+                !item.virtualFolder &&
                 !isFolderInSelection &&
                 linkedDrives.some((d) => d.id === driveId);
               const canDragFolder = !!item.driveId && !item.preventMove;
@@ -1290,7 +1318,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     item={item}
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
-                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    onClick={() => item.driveId && openDrive(item.driveId, item.name, item.pathPrefix ?? "")}
                     layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     showCardInfo={showCardInfo}

@@ -205,6 +205,12 @@ service cloud.firestore {
     match /migration_jobs/{jobId} {
       allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
       allow write: if false;
+
+      match /files/{fileId} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/migration_jobs/$(jobId)).data.user_id == request.auth.uid;
+        allow write: if false;
+      }
     }
     match /user_recent_opens/{docId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;

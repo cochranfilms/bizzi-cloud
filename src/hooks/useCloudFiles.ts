@@ -194,6 +194,14 @@ export interface DriveFolder {
   isCreatorRaw?: boolean;
 }
 
+/** First-level folder path inside a Storage linked drive (e.g. migration subfolders) for home "Bizzi Cloud Folders". */
+export interface StorageTopFolderEntry {
+  driveId: string;
+  name: string;
+  pathPrefix: string;
+  itemCount: number;
+}
+
 export interface DeletedDrive {
   id: string;
   name: string;
@@ -436,6 +444,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     loading: backupDrivesLoading,
   } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
+  const [storageTopFolders, setStorageTopFolders] = useState<StorageTopFolderEntry[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [recentUploads, setRecentUploads] = useState<RecentFile[]>([]);
   const [recentUploadsLoading, setRecentUploadsLoading] = useState(false);
@@ -452,6 +461,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const fetchCloudFiles = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) {
       setDriveFolders([]);
+      setStorageTopFolders([]);
       setRecentFiles([]);
       setLoading(false);
       return;
@@ -530,6 +540,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           isCreatorRaw: drive.is_creator_raw === true,
         }));
         setDriveFolders(folders);
+        setStorageTopFolders([]);
 
         const recentData = await recentP;
         const recent: RecentFile[] = (recentData.files ?? [])
@@ -568,6 +579,29 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           isCreatorRaw: drive.is_creator_raw === true,
         }));
         setDriveFolders(folders);
+
+        const storageIdsTeam = scoped
+          .filter((d) => (d.name === "Storage" || d.name === "Uploads") && d.is_creator_raw !== true)
+          .map((d) => d.id);
+        let topsTeam: StorageTopFolderEntry[] = [];
+        if (storageIdsTeam.length > 0) {
+          const rootsRes = await fetch(
+            `${base}/api/files/storage-folder-roots?team_owner_id=${ownerParam}&drive_ids=${encodeURIComponent(storageIdsTeam.join(","))}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (rootsRes.ok) {
+            const rootsData = (await rootsRes.json()) as {
+              folders?: Array<{ drive_id: string; name: string; path: string; file_count: number }>;
+            };
+            topsTeam = (rootsData.folders ?? []).map((f) => ({
+              driveId: f.drive_id,
+              name: f.name,
+              pathPrefix: f.path,
+              itemCount: f.file_count,
+            }));
+          }
+        }
+        setStorageTopFolders(topsTeam);
 
         const recentData = await recentP;
         const recent: RecentFile[] = (recentData.files ?? [])
@@ -608,6 +642,30 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           isCreatorRaw: drive.is_creator_raw === true,
         }));
         setDriveFolders(folders);
+
+        const storageIdsPers = scoped
+          .filter((d) => (d.name === "Storage" || d.name === "Uploads") && d.is_creator_raw !== true)
+          .map((d) => d.id);
+        let topsPers: StorageTopFolderEntry[] = [];
+        if (storageIdsPers.length > 0) {
+          const rootsRes = await fetch(
+            `${base}/api/files/storage-folder-roots?personal=1&drive_ids=${encodeURIComponent(storageIdsPers.join(","))}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (rootsRes.ok) {
+            const rootsData = (await rootsRes.json()) as {
+              folders?: Array<{ drive_id: string; name: string; path: string; file_count: number }>;
+            };
+            topsPers = (rootsData.folders ?? []).map((f) => ({
+              driveId: f.drive_id,
+              name: f.name,
+              pathPrefix: f.path,
+              itemCount: f.file_count,
+            }));
+          }
+        }
+        setStorageTopFolders(topsPers);
+
         const recentList = await recentP;
         setRecentFiles(recentList);
       }
@@ -618,6 +676,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         setAuthQuotaExceeded(true);
       } else {
         setDriveFolders([]);
+        setStorageTopFolders([]);
         setRecentFiles([]);
       }
     } finally {
@@ -1666,6 +1725,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
 
   return {
     driveFolders,
+    /** Top-level path segments inside Storage (migration subfolders, etc.) for home folder grid. */
+    storageTopFolders,
     recentFiles,
     recentUploads,
     fetchRecentUploads,
