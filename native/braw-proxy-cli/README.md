@@ -110,10 +110,9 @@ ffprobe -hide_banner /tmp/profile-proxy.mp4
 
 - **`BlackmagicRawAPI.h` not found** — set `-DBRAW_SDK_ROOT=` to the SDK **`Linux/`** root so **`${BRAW_SDK_ROOT}/Include/BlackmagicRawAPI.h`** exists.
 - **`libBlackmagicRawAPI` not found** — ensure **`${BRAW_SDK_ROOT}/Libraries/libBlackmagicRawAPI.so`** exists (official Linux layout).
-- **`CreateBlackmagicRawFactoryInstance`** — if your header uses `void**`, change the call sites to  
-  `CreateBlackmagicRawFactoryInstance(reinterpret_cast<void**>(&factory))`.
+- **Linux SDK API shape** — `bmd_decode.cpp` follows the RPM layout samples (`Samples/ProcessClipCPU`, `ProcessClipManualFlow*`) and the **`Linux/Include`** headers: `CreateBlackmagicRawFactoryInstance()` returns **`IBlackmagicRawFactory*`**; clips are **`IBlackmagicRawClip*`** from **`CreateOpenClip`**; enums use **`blackmagicRawResolutionScale*`** / **`blackmagicRawProcessedImageFormatRGBAU8`** (not `kBlackmagicRaw…`); decoded pixels are read from **`IBlackmagicRawProcessedImage`** via **`IBlackmagicRawFrame::GetProcessedImage`** / **`GetResource`**. If your SDK uses different method names, mirror the matching calls in those sample `.cpp` files.
+- **`IBlackmagicRawCallback`** — you must implement every pure virtual from **`BlackmagicRawAPI.h`**. If the linker reports missing vtable entries, add stub overrides (return `S_OK`) for the extra methods shown in the header.
+- **`CreateBlackmagicRawFactoryInstance`** — older headers might return `HRESULT` with an out-parameter instead of a raw pointer; adjust the factory lines in `bmd_decode.cpp` if needed.
 - **`GetFrameRate(uint32_t*, uint32_t*)`** — if your SDK only exposes `GetFrameRate(float*)`, remove the rational overload block at the top of `read_timing()` in `src/bmd_decode.cpp` and keep the `float` branch only (FFmpeg still gets a decimal `-framerate` string).
-- **`IBlackmagicRawCallback::ReadComplete`** — if the vtable method name differs, open `BlackmagicRawAPI.h`, find `interface IBlackmagicRawCallback`, and rename `FrameSink::ReadComplete` to match (same parameters if possible).
-- **`CreateJobFromClip` / `GetResource` / `ReadFrame`** — align names with your SDK; the decode path follows the official **job + callback** pattern from the SDK samples (no Qt).
 
 GPU decode (**CUDA** / **OpenCL**) is intentionally **out of scope** for v1.

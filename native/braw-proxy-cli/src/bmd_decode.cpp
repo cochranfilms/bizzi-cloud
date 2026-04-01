@@ -23,21 +23,22 @@ static bool fps_valid(double fps) {
   return std::isfinite(fps) && fps > 1e-6 && fps < 1e6;
 }
 
+/** Matches ProcessClipCPU-style resolution scale selection (Linux SDK enums). */
 static BlackmagicRawResolutionScale pick_resolution_scale(uint32_t clip_w, int target_w) {
   if (target_w <= 0 || clip_w == 0)
-    return kBlackmagicRawResolutionScaleFull;
+    return blackmagicRawResolutionScaleFull;
   if (clip_w <= static_cast<uint32_t>(target_w))
-    return kBlackmagicRawResolutionScaleFull;
+    return blackmagicRawResolutionScaleFull;
   unsigned div = 1;
   while (clip_w / (div * 2) >= static_cast<uint32_t>(target_w) && div < 8)
     div *= 2;
   if (div >= 8)
-    return kBlackmagicRawResolutionScaleEighth;
+    return blackmagicRawResolutionScaleEighth;
   if (div >= 4)
-    return kBlackmagicRawResolutionScaleQuarter;
+    return blackmagicRawResolutionScaleQuarter;
   if (div >= 2)
-    return kBlackmagicRawResolutionScaleHalf;
-  return kBlackmagicRawResolutionScaleFull;
+    return blackmagicRawResolutionScaleHalf;
+  return blackmagicRawResolutionScaleFull;
 }
 
 static void dimensions_for_scale(BlackmagicRawResolutionScale scale, uint32_t cw, uint32_t ch, uint32_t& dw,
@@ -45,19 +46,19 @@ static void dimensions_for_scale(BlackmagicRawResolutionScale scale, uint32_t cw
   dw = std::max(1u, cw);
   dh = std::max(1u, ch);
   switch (scale) {
-    case kBlackmagicRawResolutionScaleFull:
+    case blackmagicRawResolutionScaleFull:
       dw = cw;
       dh = ch;
       break;
-    case kBlackmagicRawResolutionScaleHalf:
+    case blackmagicRawResolutionScaleHalf:
       dw = std::max(1u, (cw + 1u) / 2u);
       dh = std::max(1u, (ch + 1u) / 2u);
       break;
-    case kBlackmagicRawResolutionScaleQuarter:
+    case blackmagicRawResolutionScaleQuarter:
       dw = std::max(1u, (cw + 3u) / 4u);
       dh = std::max(1u, (ch + 3u) / 4u);
       break;
-    case kBlackmagicRawResolutionScaleEighth:
+    case blackmagicRawResolutionScaleEighth:
       dw = std::max(1u, (cw + 7u) / 8u);
       dh = std::max(1u, (ch + 7u) / 8u);
       break;
@@ -74,7 +75,7 @@ void braw_dimensions_for_target_width(uint32_t clip_w, uint32_t clip_h, int targ
   dimensions_for_scale(s, clip_w, clip_h, out_w, out_h);
 }
 
-static int read_timing(IBlackmagicRawOpenClip* clip, ClipMeta& meta) {
+static int read_timing(IBlackmagicRawClip* clip, ClipMeta& meta) {
   uint32_t num = 0;
   uint32_t den = 0;
   HRESULT hr = clip->GetFrameRate(&num, &den);
@@ -100,8 +101,8 @@ static int read_timing(IBlackmagicRawOpenClip* clip, ClipMeta& meta) {
 }
 
 /**
- * Frame delivery: SDK invokes ReadComplete from a decoder thread.
- * Align the method signature with IBlackmagicRawCallback in your BlackmagicRawAPI.h if build fails.
+ * CPU decode completion: mirrors SDK samples (ProcessClipCPU / ManualFlow*) —
+ * IBlackmagicRawCallback must match BlackmagicRawAPI.h (all pure virtuals implemented).
  */
 class FrameSink final : public IBlackmagicRawCallback {
  public:
@@ -143,17 +144,22 @@ class FrameSink final : public IBlackmagicRawCallback {
       return S_OK;
     }
 
-    uint32_t rb = 0;
-    uint32_t w = 0;
-    uint32_t h = 0;
-    if (FAILED(frame->GetRowBytes(&rb)) || FAILED(frame->GetWidth(&w)) || FAILED(frame->GetHeight(&h))) {
+    IBlackmagicRawProcessedImage* processed = nullptr;
+    HRESULT pr = frame->GetProcessedImage(&processed);
+    if (FAILED(pr) || processed == nullptr) {
       safe_release(frame);
-      last_hr_ = E_FAIL;
+      last_hr_ = FAILED(pr) ? pr : E_FAIL;
       signaled_ = true;
       cv_.notify_one();
       return S_OK;
     }
-    if (rb < w * 4u) {
+
+    uint32_t w = 0;
+    uint32_t h = 0;
+    uint32_t rb = 0;
+    if (FAILED(processed->GetWidth(&w)) || FAILED(processed->GetHeight(&h)) || FAILED(processed->GetRowBytes(&rb))
+        || w == 0 || h == 0 || rb < w * 4u) {
+      safe_release(processed);
       safe_release(frame);
       last_hr_ = E_FAIL;
       signaled_ = true;
@@ -162,7 +168,8 @@ class FrameSink final : public IBlackmagicRawCallback {
     }
 
     void* res = nullptr;
-    if (FAILED(frame->GetResource(&res)) || res == nullptr) {
+    if (FAILED(processed->GetResource(&res)) || res == nullptr) {
+      safe_release(processed);
       safe_release(frame);
       last_hr_ = E_FAIL;
       signaled_ = true;
@@ -176,6 +183,8 @@ class FrameSink final : public IBlackmagicRawCallback {
     row_bytes_ = rb;
     decoded_w_ = w;
     decoded_h_ = h;
+
+    safe_release(processed);
     safe_release(frame);
 
     signaled_ = true;
@@ -216,13 +225,12 @@ class FrameSink final : public IBlackmagicRawCallback {
 };
 
 int braw_probe_clip(const std::string& input_path, ClipMeta& meta) {
-  IBlackmagicRawFactory* factory = nullptr;
-  HRESULT hr = CreateBlackmagicRawFactoryInstance(&factory);
-  if (FAILED(hr) || factory == nullptr)
+  IBlackmagicRawFactory* factory = CreateBlackmagicRawFactoryInstance();
+  if (factory == nullptr)
     return EX_SDK_INIT;
 
-  IBlackmagicRawOpenClip* clip = nullptr;
-  hr = factory->CreateOpenClip(input_path.c_str(), &clip);
+  IBlackmagicRawClip* clip = nullptr;
+  HRESULT hr = factory->CreateOpenClip(input_path.c_str(), &clip);
   if (FAILED(hr) || clip == nullptr) {
     safe_release(factory);
     return EX_CLIP;
@@ -239,7 +247,8 @@ int braw_probe_clip(const std::string& input_path, ClipMeta& meta) {
   meta.clip_height = h;
 
   uint32_t fc = 0;
-  if (FAILED(clip->GetFrameCount(&fc))) {
+  hr = clip->GetFrameCount(&fc);
+  if (FAILED(hr)) {
     safe_release(clip);
     safe_release(factory);
     return EX_CLIP;
@@ -260,13 +269,12 @@ int braw_probe_clip(const std::string& input_path, ClipMeta& meta) {
 int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
   const std::function<bool(const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index)>&
     on_frame) {
-  IBlackmagicRawFactory* factory = nullptr;
-  HRESULT hr = CreateBlackmagicRawFactoryInstance(&factory);
-  if (FAILED(hr) || factory == nullptr)
+  IBlackmagicRawFactory* factory = CreateBlackmagicRawFactoryInstance();
+  if (factory == nullptr)
     return EX_SDK_INIT;
 
-  IBlackmagicRawOpenClip* clip = nullptr;
-  hr = factory->CreateOpenClip(input_path.c_str(), &clip);
+  IBlackmagicRawClip* clip = nullptr;
+  HRESULT hr = factory->CreateOpenClip(input_path.c_str(), &clip);
   if (FAILED(hr) || clip == nullptr) {
     safe_release(factory);
     return EX_CLIP;
@@ -282,7 +290,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
 
   FrameSink* sink = new FrameSink();
   if (FAILED(job->SetCallback(sink))) {
-    safe_release(sink);
+    sink->Release();
     safe_release(job);
     safe_release(clip);
     safe_release(factory);
@@ -297,7 +305,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     return EX_SDK_INIT;
   }
 
-  if (FAILED(job->SetProcessFormat(kBlackmagicRawProcessedImageFormatRGBAU8))) {
+  if (FAILED(job->SetProcessFormat(blackmagicRawProcessedImageFormatRGBAU8))) {
     safe_release(job);
     safe_release(clip);
     safe_release(factory);
