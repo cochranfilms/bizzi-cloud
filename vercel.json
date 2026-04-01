@@ -52,7 +52,7 @@
     },
     {
       "path": "/api/cron/migration-reconciliation",
-      "schedule": "0 7 * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -1,7 +1,11 @@
 /**
- * Processes cloud migration scan + transfer. Short runs; schedule every 1–2 minutes.
+ * Processes cloud migration scan + transfer. Schedule every 1–2 minutes.
+ * Large single-file transfers need as much wall time as the host allows (still far below multi‑GB videos).
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+
+/** Vercel Pro: up to 300s; required for multi‑minute streams. Hobby is often lower — use a long‑running worker for huge files. */
+export const maxDuration = 300;
 import { runMigrationWorkerOnce } from "@/lib/migration-worker";
 import { NextResponse } from "next/server";
 

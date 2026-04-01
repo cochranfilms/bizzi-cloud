@@ -440,7 +440,12 @@ async function transferOneFile(
   const docToSend = pending.docs.find((d) => String(d.data().unsupported_reason ?? "") === "supported");
   if (!docToSend) {
     const anyPending = await jobRef.collection(MIGRATION_FILES_SUBCOLLECTION).where("transfer_status", "==", "pending").limit(1).get();
-    if (anyPending.empty) {
+    const anyInProgress = await jobRef
+      .collection(MIGRATION_FILES_SUBCOLLECTION)
+      .where("transfer_status", "==", "in_progress")
+      .limit(1)
+      .get();
+    if (anyPending.empty && anyInProgress.empty) {
       await jobRef.update({
         status: "completed",
         completed_at: new Date().toISOString(),
