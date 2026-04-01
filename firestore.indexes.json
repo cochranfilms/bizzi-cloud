@@ -19,6 +19,38 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "migration_finalize_key",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycle_state",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "linked_drive_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "object_key",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycle_state",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "organization_id",
           "order": "ASCENDING"
         },
@@ -3556,6 +3588,20 @@
         {
           "fieldPath": "updated_at",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "unsupported_reason",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "transfer_status",
+          "order": "ASCENDING"
         }
       ]
     },

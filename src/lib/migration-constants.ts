@@ -2,6 +2,8 @@
 export const MIGRATION_PROVIDER_ACCOUNTS_COLLECTION = "migration_provider_accounts";
 export const MIGRATION_JOBS_COLLECTION = "migration_jobs";
 export const MIGRATION_FILES_SUBCOLLECTION = "files";
+/** Per-part upload checkpoints for resumable multipart (`parts/{partNumber}`). */
+export const MIGRATION_FILES_PARTS_SUBCOLLECTION = "parts";
 export const MIGRATION_OAUTH_STATES_COLLECTION = "migration_oauth_states";
 
 export type MigrationProvider = "google_drive" | "dropbox";
@@ -35,12 +37,77 @@ export type MigrationDuplicateMode = "skip" | "rename";
 
 export type MigrationFileTransferStatus =
   | "pending"
+  | "session_initializing"
   | "in_progress"
+  | "needs_repair"
+  | "verifying"
+  | "finalizing"
   | "completed"
   | "skipped"
   | "failed";
 
+/** Session terminal disposition (separate from `transfer_status`). */
+export type MigrationTransferSessionResult = "active" | "completed" | "failed" | "aborted";
+
+export type MigrationTransferSessionWorkerState =
+  | "session_initializing"
+  | "uploading"
+  | "completing"
+  | "verifying"
+  | "finalizing"
+  | "repairing";
+
 export type MigrationVerificationOutcome = "none" | "size_ok" | "checksum_ok" | "checksum_mismatch";
+
+/** File statuses that block marking the parent job `completed`. */
+export const MIGRATION_FILE_BLOCKING_TRANSFER_STATUSES: MigrationFileTransferStatus[] = [
+  "pending",
+  "session_initializing",
+  "in_progress",
+  "needs_repair",
+  "verifying",
+  "finalizing",
+];
+
+/** Use resumable Range + multipart checkpoints for Google at/above this size (bytes). */
+export function migrationResumableThresholdBytes(): number {
+  const raw = process.env.MIGRATION_RESUMABLE_THRESHOLD_BYTES?.trim();
+  if (raw && /^\d+$/.test(raw)) return parseInt(raw, 10);
+  return 20 * 1024 * 1024;
+}
+
+/** Wall-clock budget per cron transfer pass (multipart parts). */
+export function migrationTransferBudgetMs(): number {
+  const raw = process.env.MIGRATION_TRANSFER_BUDGET_MS?.trim();
+  if (raw && /^\d+$/.test(raw)) return parseInt(raw, 10);
+  return 240_000;
+}
+
+export function migrationFileClaimMs(): number {
+  const raw = process.env.MIGRATION_FILE_CLAIM_MS?.trim();
+  if (raw && /^\d+$/.test(raw)) return parseInt(raw, 10);
+  return 120_000;
+}
+
+export function migrationMaxPartsPerPass(): number {
+  const raw = process.env.MIGRATION_MAX_PARTS_PER_PASS?.trim();
+  if (raw && /^\d+$/.test(raw)) return Math.max(1, parseInt(raw, 10));
+  return 2;
+}
+
+/** After this many consecutive worker passes touching the same file, pick a different `pending` file if available. */
+export function migrationFairnessMaxConsecutivePassesPerFile(): number {
+  const raw = process.env.MIGRATION_FAIRNESS_MAX_CONSECUTIVE_PASSES_PER_FILE?.trim();
+  if (raw && /^\d+$/.test(raw)) return Math.max(1, parseInt(raw, 10));
+  return 4;
+}
+
+/** Reconciliation abandonment: no `checkpoint_at` progress for this many reconciliation runs (~15 min each). */
+export function migrationReconcileAbandonAfterWindows(): number {
+  const raw = process.env.MIGRATION_RECONCILE_ABANDON_AFTER_WINDOWS?.trim();
+  if (raw && /^\d+$/.test(raw)) return Math.max(1, parseInt(raw, 10));
+  return 8;
+}
 
 export function migrationMaxFileBytes(): number {
   const raw = process.env.MIGRATION_MAX_FILE_BYTES?.trim();

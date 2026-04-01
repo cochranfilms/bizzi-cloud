@@ -73,7 +73,15 @@ function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boole
           const t = doc.data().transfer_status as string;
           if (t === "completed" || t === "skipped") done += 1;
           else if (t === "failed") failed += 1;
-          else if (t === "in_progress") inFlight += 1;
+          else if (
+            t === "in_progress" ||
+            t === "session_initializing" ||
+            t === "needs_repair" ||
+            t === "verifying" ||
+            t === "finalizing"
+          ) {
+            inFlight += 1;
+          }
         }
         setAgg({ total: snap.size, done, failed, inFlight });
       },

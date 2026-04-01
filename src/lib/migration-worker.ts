@@ -1,11 +1,12 @@
 import { FieldValue, Timestamp, type Firestore, type DocumentReference } from "firebase-admin/firestore";
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
-import { getObjectMetadata, isB2Configured, getObjectBuffer } from "@/lib/b2";
+import { isB2Configured } from "@/lib/b2";
 import {
   MIGRATION_FILES_SUBCOLLECTION,
   MIGRATION_JOBS_COLLECTION,
+  MIGRATION_FILE_BLOCKING_TRANSFER_STATUSES,
   migrationMaxFilesPerJob,
-  migrationMaxRetriesPerFile,
+  migrationFairnessMaxConsecutivePassesPerFile,
   type MigrationJobStatus,
   type MigrationUnsupportedReason,
 } from "@/lib/migration-constants";
@@ -17,31 +18,22 @@ import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { getUploadBillingSnapshot } from "@/lib/enterprise-storage";
 import {
   classifyGoogleDriveItem,
-  googleDownloadFileMedia,
   googleGetFileMeta,
   googleListChildren,
 } from "@/lib/migration-google-drive-api";
-import {
-  classifyDropboxItem,
-  dropboxDownload,
-  dropboxGetMetadata,
-  dropboxListFolder,
-} from "@/lib/migration-dropbox-api";
+import { classifyDropboxItem, dropboxGetMetadata, dropboxListFolder } from "@/lib/migration-dropbox-api";
 import { getGoogleAccessToken, getDropboxAccessToken } from "@/lib/migration-provider-account";
 import { runMigrationPreflightQuota } from "@/lib/migration-preflight-quota";
-import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
-import { checkAndReserveUploadBytes } from "@/lib/storage-upload-reservation";
-import { releaseReservation } from "@/lib/storage-quota-reservations";
-import { streamWebBodyToB2Multipart } from "@/lib/migration-stream-to-b2";
-import { finalizeMigrationBackupFile } from "@/lib/migration-finalize-backup-file";
-import { resolveMigrationDuplicatePath } from "@/lib/migration-duplicate-path";
+import { sanitizeBackupRelativePath } from "@/lib/backup-object-key";
+import {
+  runMigrationFileTransferPass,
+  selectNextMigrationFileCandidate,
+} from "@/lib/migration-resumable-transfer";
 import {
   logMigrationJobCompleted,
   logMigrationJobFailed,
   logMigrationJobScanCompleted,
 } from "@/lib/migration-log-activity";
-import { createHash } from "crypto";
-
 const LEASE_MS = 120_000;
 
 type ScanQueueGoogle = { kind: "google"; folder_id: string; dest_prefix: string };
@@ -431,169 +423,70 @@ async function transferOneFile(
   contract: MigrationDestinationContract,
   provider: string
 ): Promise<void> {
-  const pending = await jobRef
+  const blockingSnap = await jobRef
     .collection(MIGRATION_FILES_SUBCOLLECTION)
-    .where("transfer_status", "==", "pending")
-    .limit(40)
+    .where("unsupported_reason", "==", "supported")
+    .where("transfer_status", "in", MIGRATION_FILE_BLOCKING_TRANSFER_STATUSES)
+    .limit(100)
     .get();
 
-  const docToSend = pending.docs.find((d) => String(d.data().unsupported_reason ?? "") === "supported");
-  if (!docToSend) {
-    const anyPending = await jobRef.collection(MIGRATION_FILES_SUBCOLLECTION).where("transfer_status", "==", "pending").limit(1).get();
-    const anyInProgress = await jobRef
+  const fairnessLast =
+    typeof job.migration_fairness_last_file_id === "string" ? job.migration_fairness_last_file_id : null;
+  const fairnessConsecutive =
+    typeof job.migration_fairness_consecutive_passes === "number" ? job.migration_fairness_consecutive_passes : 0;
+
+  const candidate = selectNextMigrationFileCandidate({
+    docs: blockingSnap.docs,
+    fairnessLastFileId: fairnessLast,
+    fairnessConsecutive,
+    maxConsecutive: migrationFairnessMaxConsecutivePassesPerFile(),
+  });
+
+  if (!candidate) {
+    const anyBlocking = await jobRef
       .collection(MIGRATION_FILES_SUBCOLLECTION)
-      .where("transfer_status", "==", "in_progress")
+      .where("unsupported_reason", "==", "supported")
+      .where("transfer_status", "in", MIGRATION_FILE_BLOCKING_TRANSFER_STATUSES)
       .limit(1)
       .get();
-    if (anyPending.empty && anyInProgress.empty) {
+    if (anyBlocking.empty) {
       await jobRef.update({
         status: "completed",
         completed_at: new Date().toISOString(),
         updated_at: FieldValue.serverTimestamp(),
         lease_expires_at: null,
+        migration_fairness_last_file_id: null,
+        migration_fairness_consecutive_passes: 0,
       });
       logMigrationJobCompleted(uid, contract, jobRef.id);
     }
     return;
   }
 
-  const fileRef = docToSend.ref;
-  const f = docToSend.data();
   const dupMode = (job.duplicate_mode as "skip" | "rename") ?? "skip";
-
-  await fileRef.update({ transfer_status: "in_progress", updated_at: FieldValue.serverTimestamp() });
-
   const driveSnap = await db.collection("linked_drives").doc(contract.linked_drive_id).get();
-  const destRelativeRaw = (f.dest_relative_path as string) ?? "";
-  const dup = await resolveMigrationDuplicatePath(
+
+  await runMigrationFileTransferPass({
     db,
-    contract.linked_drive_id,
-    destRelativeRaw,
-    dupMode
-  );
-  if (dup.action === "skip") {
-    await fileRef.update({
-      transfer_status: "skipped",
-      duplicate_skipped: true,
-      updated_at: FieldValue.serverTimestamp(),
-    });
-    return;
-  }
-  const relativePath = dup.relative_path;
-  const objectKey = buildBackupObjectKey({
-    pathSubjectUid: contract.path_subject_uid,
-    driveId: contract.linked_drive_id,
-    relativePath,
+    jobId: jobRef.id,
+    jobRef,
+    fileRef: candidate.ref,
+    fileSnap: candidate,
+    uid,
+    contract,
+    provider: provider === "google_drive" ? "google_drive" : "dropbox",
+    dupMode,
+    driveSnap,
   });
 
-  const sizeBytes = typeof f.size_bytes === "number" ? f.size_bytes : 0;
-  let reservationId: string | null = null;
-  try {
-    const r = await checkAndReserveUploadBytes(uid, sizeBytes, contract.linked_drive_id, objectKey);
-    reservationId = r.reservation_id;
-  } catch (e) {
-    await fileRef.update({
-      transfer_status: "failed",
-      last_error: e instanceof Error ? e.message : "quota_or_reserve_failed",
-      updated_at: FieldValue.serverTimestamp(),
-    });
-    return;
-  }
-
-  let contentType = (f.mime_type as string) || "application/octet-stream";
-  try {
-    if (provider === "google_drive") {
-      const access = await getGoogleAccessToken(db, uid);
-      const fileId = f.provider_file_id as string;
-      const res = await googleDownloadFileMedia(access, fileId);
-      if (!res.ok) {
-        throw new Error(`google_download_${res.status}`);
-      }
-      const cl = res.headers.get("content-length");
-      const contentLength = cl ? parseInt(cl, 10) : null;
-      const body = res.body;
-      const ct = res.headers.get("content-type");
-      if (ct) contentType = ct.split(";")[0]!.trim();
-      await streamWebBodyToB2Multipart({
-        objectKey,
-        contentType,
-        contentLength: Number.isFinite(contentLength!) ? contentLength : null,
-        body,
-      });
-    } else {
-      const access = await getDropboxAccessToken(db, uid);
-      const pathLower = (f.dropbox_path_lower as string) ?? "";
-      const res = await dropboxDownload(access, pathLower);
-      if (!res.ok) {
-        throw new Error(`dropbox_download_${res.status}`);
-      }
-      const cl = res.headers.get("content-length");
-      const contentLength = cl ? parseInt(cl, 10) : null;
-      const body = res.body;
-      await streamWebBodyToB2Multipart({
-        objectKey,
-        contentType,
-        contentLength: Number.isFinite(contentLength!) ? contentLength : null,
-        body,
-      });
-    }
-
-    const meta = await getObjectMetadata(objectKey);
-    const actual = meta?.contentLength ?? -1;
-    if (actual !== sizeBytes && sizeBytes > 0) {
-      if (reservationId) await releaseReservation(reservationId, "size_mismatch").catch(() => {});
-      throw new Error("size_mismatch_after_upload");
-    }
-
-    let verification: "size_ok" | "checksum_ok" | "checksum_mismatch" = "size_ok";
-    const md5Expected = f.provider_checksum_md5 as string | undefined;
-    if (
-      md5Expected &&
-      /^[a-f0-9]{32}$/i.test(md5Expected) &&
-      sizeBytes > 0 &&
-      sizeBytes <= 50 * 1024 * 1024
-    ) {
-      const buf = await getObjectBuffer(objectKey, 50 * 1024 * 1024);
-      const h = createHash("md5").update(buf).digest("hex");
-      verification =
-        h.toLowerCase() === md5Expected.toLowerCase() ? "checksum_ok" : "checksum_mismatch";
-    }
-
-    const { backup_file_id } = await finalizeMigrationBackupFile({
-      db,
-      uid,
-      driveId: contract.linked_drive_id,
-      driveSnap,
-      objectKey,
-      relativePath,
-      fileSize: actual >= 0 ? actual : sizeBytes,
-      contentType,
-      organizationId: contract.organization_id,
-      workspaceId: contract.workspace_id,
-      visibilityScope: contract.visibility_scope,
-      reservationId,
-      appOrigin: null,
-      idToken: null,
-    });
-
-    await fileRef.update({
-      transfer_status: "completed",
-      backup_file_id,
-      backup_file_object_key: objectKey,
-      transfer_verification_status: verification,
-      updated_at: FieldValue.serverTimestamp(),
-    });
-  } catch (err) {
-    if (reservationId) await releaseReservation(reservationId, "finalize_failed").catch(() => {});
-    const retryCount = (typeof f.retry_count === "number" ? f.retry_count : 0) + 1;
-    const terminal = retryCount >= migrationMaxRetriesPerFile();
-    await fileRef.update({
-      transfer_status: terminal ? "failed" : "pending",
-      last_error: err instanceof Error ? err.message : "transfer_failed",
-      retry_count: retryCount,
-      updated_at: FieldValue.serverTimestamp(),
-    });
-  }
+  const nextLast = candidate.id;
+  const nextConsecutive =
+    fairnessLast === nextLast ? fairnessConsecutive + 1 : 1;
+  await jobRef.update({
+    migration_fairness_last_file_id: nextLast,
+    migration_fairness_consecutive_passes: nextConsecutive,
+    updated_at: FieldValue.serverTimestamp(),
+  });
 }
 
 export async function runMigrationWorkerOnce(db: Firestore): Promise<{ claimed: boolean }> {

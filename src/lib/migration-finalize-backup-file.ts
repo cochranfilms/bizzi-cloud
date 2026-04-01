@@ -23,6 +23,8 @@ export interface FinalizeMigrationBackupFileParams {
   workspaceId: string | null;
   visibilityScope: string;
   reservationId: string | null;
+  /** Idempotency: `${jobId}:${fileId}:${sessionId}` from migration file row. */
+  migrationFinalizeKey?: string | null;
   appOrigin?: string | null;
   idToken?: string | null;
 }
@@ -48,9 +50,37 @@ export async function finalizeMigrationBackupFile(
     workspaceId,
     visibilityScope,
     reservationId,
+    migrationFinalizeKey,
     appOrigin,
     idToken,
   } = params;
+
+  if (migrationFinalizeKey && migrationFinalizeKey.trim()) {
+    const byKey = await db
+      .collection("backup_files")
+      .where("migration_finalize_key", "==", migrationFinalizeKey.trim())
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+      .limit(1)
+      .get();
+    if (!byKey.empty) {
+      const id = byKey.docs[0]!.id;
+      if (reservationId) await commitReservation(reservationId);
+      return { backup_file_id: id };
+    }
+  }
+
+  const byObject = await db
+    .collection("backup_files")
+    .where("linked_drive_id", "==", driveId)
+    .where("object_key", "==", objectKey)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+    .limit(1)
+    .get();
+  if (!byObject.empty) {
+    const id = byObject.docs[0]!.id;
+    if (reservationId) await commitReservation(reservationId);
+    return { backup_file_id: id };
+  }
 
   const guard = await assertCreatorRawFinalizeOrAudit({
     uid,
@@ -96,12 +126,14 @@ export async function finalizeMigrationBackupFile(
   });
 
   const lastModified = new Date().toISOString();
+  const finalizeKey = migrationFinalizeKey?.trim() || null;
   const fileRef = await db.collection("backup_files").add({
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
     userId: uid,
     relative_path: relativePath,
     object_key: objectKey,
+    migration_finalize_key: finalizeKey,
     size_bytes: fileSize,
     content_type: contentType,
     modified_at: lastModified,
