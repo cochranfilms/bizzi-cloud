@@ -7,29 +7,12 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
-#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <vector>
-
-bool braw_runtime_debug_enabled() {
-  const char* e = std::getenv("BRAW_PROXY_DEBUG");
-  return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
-}
-
-void braw_runtime_debug_log(const char* fmt, ...) {
-  if (!braw_runtime_debug_enabled())
-    return;
-  std::fputs("[ffmpeg-braw] ", stderr);
-  va_list ap;
-  va_start(ap, fmt);
-  std::vfprintf(stderr, fmt, ap);
-  va_end(ap);
-  std::fputc('\n', stderr);
-}
 
 template <typename T>
 static void safe_release(T*& p) {
@@ -277,8 +260,8 @@ void DecodeCallback::ReadComplete(IBlackmagicRawJob* readJob, HRESULT result, IB
 
 void DecodeCallback::ProcessComplete(
   IBlackmagicRawJob* job, HRESULT result, IBlackmagicRawProcessedImage* processedImage) {
-  braw_runtime_debug_log("ProcessComplete entered (job=%p processedImage=%p hr=0x%08x)", static_cast<void*>(job),
-    static_cast<void*>(processedImage), static_cast<unsigned int>(result));
+  std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered\n");
+  std::fflush(stderr);
 
   DecodeCallback* self = nullptr;
   if (job != nullptr)
@@ -315,6 +298,10 @@ void DecodeCallback::ProcessComplete(
   HRESULT hr = processedImage->GetWidth(&width);
   if (SUCCEEDED(hr))
     hr = processedImage->GetHeight(&height);
+  if (SUCCEEDED(hr)) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] 9 width/height acquired (w=%u h=%u)\n", width, height);
+    std::fflush(stderr);
+  }
   if (SUCCEEDED(hr))
     hr = processedImage->GetResourceSizeBytes(&sizeBytes);
   if (SUCCEEDED(hr))
@@ -323,6 +310,12 @@ void DecodeCallback::ProcessComplete(
     hr = processedImage->GetResourceType(&resourceType);
   if (SUCCEEDED(hr))
     hr = processedImage->GetResource(&imageData);
+
+  if (SUCCEEDED(hr) && imageData != nullptr) {
+    std::fprintf(stderr, "[ffmpeg-braw trace] 10 pixel/resource buffer acquired (ptr=%p sizeBytes=%u)\n",
+      static_cast<void*>(imageData), sizeBytes);
+    std::fflush(stderr);
+  }
 
   if (FAILED(hr) || imageData == nullptr || width == 0 || height == 0 || sizeBytes == 0) {
     processedImage->Release();
@@ -356,9 +349,6 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
-  braw_runtime_debug_log(
-    "pixel buffer acquired w=%u h=%u sizeBytes=%u rowBytes=%u ptr=%p", width, height, sizeBytes, rowBytes, imageData);
-
   /** Must copy while processedImage is alive — buffer is not valid after Release (ProcessClipCPU). */
   {
     std::lock_guard<std::mutex> lk(self->mu_);
@@ -384,14 +374,12 @@ static int init_factory_codec_cpu(IBlackmagicRawFactory*& factory, IBlackmagicRa
   factory = CreateBlackmagicRawFactoryInstance();
   if (factory == nullptr)
     return EX_SDK_INIT;
-  braw_runtime_debug_log("factory created");
 
   HRESULT hr = factory->CreateCodec(&codec);
   if (FAILED(hr) || codec == nullptr) {
     safe_release(factory);
     return EX_SDK_INIT;
   }
-  braw_runtime_debug_log("codec created");
 
   IBlackmagicRawConfiguration* config = nullptr;
   if (SUCCEEDED(codec->QueryInterface(IID_IBlackmagicRawConfiguration, reinterpret_cast<void**>(&config)))) {
@@ -404,7 +392,6 @@ static int init_factory_codec_cpu(IBlackmagicRawFactory*& factory, IBlackmagicRa
     }
   }
 
-  braw_runtime_debug_log("CPU pipeline configured");
   return 0;
 }
 
@@ -413,7 +400,6 @@ static int open_clip_on_codec(IBlackmagicRaw* codec, const std::string& input_pa
   if (FAILED(hr) || clip == nullptr) {
     return EX_CLIP;
   }
-  braw_runtime_debug_log("clip opened");
   return 0;
 }
 
@@ -470,6 +456,9 @@ int braw_probe_clip(const std::string& input_path, ClipMeta& meta) {
 int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
   const std::function<bool(const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index)>&
     on_frame) {
+  std::fprintf(stderr, "[ffmpeg-braw trace] 1 entering braw_decode_frames\n");
+  std::fflush(stderr);
+
   IBlackmagicRawFactory* factory = nullptr;
   IBlackmagicRaw* codec = nullptr;
   IBlackmagicRawClip* clip = nullptr;
@@ -477,10 +466,13 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   const int init = init_factory_codec_cpu(factory, codec);
   if (init != 0)
     return init;
+  std::fprintf(stderr, "[ffmpeg-braw trace] 2 factory created\n");
+  std::fflush(stderr);
 
   /** ProcessClipCPU: register callback before OpenClip so sidecar / async notifications are safe. */
   auto* callback = new DecodeCallback();
-  braw_runtime_debug_log("callback instantiated (heap, ref_count=1)");
+  std::fprintf(stderr, "[ffmpeg-braw trace] 4 callback created\n");
+  std::fflush(stderr);
 
   callback->scale = pick_resolution_scale(meta.clip_width, cfg.target_width);
 
@@ -491,7 +483,8 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     safe_release(factory);
     return EX_SDK_INIT;
   }
-  braw_runtime_debug_log("SetCallback ok (ProcessClipCPU order: before OpenClip)");
+  std::fprintf(stderr, "[ffmpeg-braw trace] 6 callback registered\n");
+  std::fflush(stderr);
 
   const int oc = open_clip_on_codec(codec, input_path, clip);
   if (oc != 0) {
@@ -500,6 +493,8 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     safe_release(factory);
     return oc;
   }
+  std::fprintf(stderr, "[ffmpeg-braw trace] 3 clip opened\n");
+  std::fflush(stderr);
 
   IBlackmagicRawClipProcessingAttributes* clip_attrs = nullptr;
   hr = clip->CloneClipProcessingAttributes(&clip_attrs);
@@ -536,9 +531,6 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   }
 
   for (uint64_t i = 0; i <= last_frame; ++i) {
-    if (i == 0)
-      braw_runtime_debug_log("processing started (first frame index %llu)", static_cast<unsigned long long>(i));
-
     callback->reset_wait();
 
     IBlackmagicRawJob* readJob = nullptr;
@@ -551,6 +543,13 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       safe_release(factory);
       return EX_DECODE;
     }
+    std::fprintf(stderr, "[ffmpeg-braw trace] 5 processing job created (read frame job, frame index %llu)\n",
+      static_cast<unsigned long long>(i));
+    std::fflush(stderr);
+
+    std::fprintf(stderr, "[ffmpeg-braw trace] 7 processing started (frame index %llu)\n",
+      static_cast<unsigned long long>(i));
+    std::fflush(stderr);
 
     hr = readJob->Submit();
     if (FAILED(hr)) {
@@ -593,10 +592,17 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     }
   }
 
+  std::fprintf(stderr, "[ffmpeg-braw trace] 12 frame loop completed\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[ffmpeg-braw trace] 13 cleanup start\n");
+  std::fflush(stderr);
   safe_release(clip_attrs);
   safe_release(clip);
   safe_release(codec);
   callback->Release();
   safe_release(factory);
+  std::fprintf(stderr, "[ffmpeg-braw trace] 14 cleanup complete\n");
+  std::fflush(stderr);
   return 0;
 }

@@ -226,8 +226,9 @@ int main(int argc, char** argv) {
         return false;
       }
       if (frame_index == 0) {
-        braw_runtime_debug_log(
-          "first frame handed to ffmpeg (%ux%u row_bytes=%u bytes=%zu)", w, h, row_bytes, nbytes);
+        std::fprintf(stderr, "[ffmpeg-braw trace] 11 first frame written to ffmpeg stdin (%ux%u row_bytes=%u bytes=%zu)\n",
+          static_cast<unsigned>(w), static_cast<unsigned>(h), row_bytes, nbytes);
+        std::fflush(stderr);
       }
       return true;
     });

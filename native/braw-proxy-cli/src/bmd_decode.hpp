@@ -53,7 +53,3 @@ int braw_probe_clip(const std::string& input_path, ClipMeta& meta);
 int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
   const std::function<bool(const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index)>&
     on_frame);
-
-/** If BRAW_PROXY_DEBUG is set and not "0", decode path logs stage markers to stderr. */
-bool braw_runtime_debug_enabled();
-void braw_runtime_debug_log(const char* fmt, ...);
