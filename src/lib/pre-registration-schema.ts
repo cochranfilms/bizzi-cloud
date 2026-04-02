@@ -6,7 +6,7 @@ export const TB_NEED_OPTIONS = [
   "2 TB",
   "5 TB",
   "10 TB",
-  "10 TB+",
+  "15 TB+",
 ] as const;
 
 export const CURRENT_CLOUD_PROVIDERS = [
