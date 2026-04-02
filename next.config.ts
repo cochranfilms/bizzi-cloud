@@ -55,9 +55,6 @@ const nextConfig: NextConfig = {
       "./node_modules/@napi-rs/canvas/**/*",
     ],
   },
-  async rewrites() {
-    return [{ source: "/favicon.ico", destination: "/icon" }];
-  },
 };
 
 export default nextConfig;

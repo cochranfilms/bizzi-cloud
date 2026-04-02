@@ -18,7 +18,7 @@ export const ORGANIZATION = {
   name: "Bizzi Cloud",
   legalName: "Bizzi Cloud",
   url: SITE_URL,
-  logo: `${SITE_URL}/icon`,
+  logo: `${SITE_URL}/icon.png`,
   description: SITE_DESCRIPTION,
   sameAs: [
     "https://www.bizzicloud.io",
