@@ -164,13 +164,15 @@ export default function WaitlistForm() {
 
       {success ? (
         <div
-          className="rounded-2xl border border-teal-600/35 bg-teal-900/45 px-5 py-9 text-center shadow-inner backdrop-blur-xl sm:px-7 sm:py-10"
+          className="rounded-2xl border border-sky-200/70 bg-white/55 px-5 py-10 text-center shadow-inner shadow-sky-100/50 backdrop-blur-xl sm:px-8 sm:py-12"
           role="status"
           aria-live="polite"
         >
-          <p className="text-lg font-semibold text-white drop-shadow-sm">You&apos;re on the list.</p>
-          <p className="mt-3 text-sm leading-relaxed text-teal-50/95 drop-shadow-sm">
-            Thank you for pre-registering. We&apos;ll be in touch when your spot opens.
+          <p className="text-balance text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            You&apos;ve Successfully Pre Registered!
+          </p>
+          <p className="mt-5 text-lg font-semibold text-sky-500 sm:text-xl">
+            You&apos;re on the list!
           </p>
         </div>
       ) : (

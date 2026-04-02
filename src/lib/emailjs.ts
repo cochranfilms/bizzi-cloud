@@ -1240,6 +1240,7 @@ export type WaitlistAdminEmailParams = {
 };
 
 export type WaitlistClientEmailParams = {
+  /** Submitter address — same as `to_email` so either can be used in the EmailJS “To” field. */
   submitter_email: string;
   first_name: string;
   submission_details_html: string;
@@ -1271,7 +1272,7 @@ export async function sendWaitlistAdminNotificationEmail(
 
 /**
  * Submitter copy with recap + feature highlights. Requires EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT.
- * Set **To** to {{submitter_email}}.
+ * In EmailJS set **To** to `{{submitter_email}}` or `{{to_email}}` (both are sent).
  */
 export async function sendWaitlistClientEmail(params: WaitlistClientEmailParams): Promise<void> {
   const config = getWaitlistClientEmailConfig();
@@ -1281,10 +1282,20 @@ export async function sendWaitlistClientEmail(params: WaitlistClientEmailParams)
     );
     return;
   }
+  const to = params.submitter_email?.trim() ?? "";
+  if (!to) {
+    console.warn("[EmailJS] Waitlist client email skipped: submitter_email is empty");
+    return;
+  }
   await emailjs.send(
     config.serviceId,
     config.templateId,
-    { ...params, logo_url: getEmailLogoUrl() },
+    {
+      ...params,
+      submitter_email: to,
+      to_email: to,
+      logo_url: getEmailLogoUrl(),
+    },
     { publicKey: config.publicKey, privateKey: config.privateKey },
   );
 }

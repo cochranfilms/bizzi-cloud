@@ -33,7 +33,7 @@ Source of truth for EmailJS templates. Copy content into EmailJS dashboard when 
 - **team-purged.html** — `EMAILJS_TEMPLATE_ID_TEAM_PURGED`. Subject: `Your team cold storage has expired — data permanently removed`. Variables: `to_email`, `logo_url`.
 
 - **waitlist-admin.html** — Internal notification when someone submits `/waitlist` (`EMAILJS_TEMPLATE_ID_WAITLIST_ADMIN`). Set **To** to `{{admin_email}}`. Env: `WAITLIST_ADMIN_NOTIFY_EMAIL` (injected as `admin_email`). **Subject (example):** `[Bizzi Cloud] New waitlist pre-registration — {{full_name}}`. Variables: `admin_email`, `full_name`, `submitter_email`, `submission_details_html` (use **triple braces** `{{{submission_details_html}}}` in the EmailJS body), `submitted_at_formatted`, `logo_url`.
-- **waitlist-client.html** — Copy to the submitter with their answers + feature promo (`EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT`). Set **To** to `{{submitter_email}}`. **Subject (example):** `Thanks for pre-registering — Bizzi Cloud`. Variables: `submitter_email`, `first_name`, `submission_details_html` (`{{{submission_details_html}}}`), `submitted_at_formatted`, `waitlist_url`, `logo_url`.
+- **waitlist-client.html** — Copy to the submitter with their answers + feature promo (`EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT`). Set **To** to `{{submitter_email}}` or `{{to_email}}` (both are populated from the form email). **Subject (example):** `Thanks for pre-registering — Bizzi Cloud`. Variables: `submitter_email`, `to_email`, `first_name`, `submission_details_html` (`{{{submission_details_html}}}`), `submitted_at_formatted`, `waitlist_url`, `logo_url`.
 
 ## Logo
 
