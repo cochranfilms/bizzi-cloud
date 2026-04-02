@@ -983,21 +983,38 @@ export default function FileGrid() {
     loadPinnedFiles();
   }, [loadPinnedFiles]);
 
-  // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id)
+  // Open drive from URL query when navigating from Home (e.g. /dashboard/files?drive=id&path=segment)
   // Also when drive in URL differs from current (e.g. deep link or toolbar drive change)
   useEffect(() => {
     const driveId = searchParams.get("drive");
     if (!driveId) return;
     const folder = visibleDriveFolders.find((d) => d.id === driveId);
     if (!folder) return;
+    const pathFromUrl = searchParams.get("path")?.trim() ?? "";
+    const normalizedPath = pathFromUrl.replace(/^\/+/, "");
     const shouldOpen = !currentDrive || currentDrive.id !== driveId;
     if (shouldOpen) {
-      openDrive(driveId, folder.name);
+      openDrive(driveId, folder.name, normalizedPath);
+      if (isBizziCloudBaseDrive(folder.name)) {
+        clearFiltersAndKeepDrive(driveId);
+      }
+    } else if (currentDrive.id === driveId && normalizedPath !== currentDrivePath) {
+      setCurrentDrivePath(normalizedPath);
+      void loadDriveFiles(driveId);
       if (isBizziCloudBaseDrive(folder.name)) {
         clearFiltersAndKeepDrive(driveId);
       }
     }
-  }, [searchParams, currentDrive, visibleDriveFolders, openDrive, clearFiltersAndKeepDrive]);
+  }, [
+    searchParams,
+    currentDrive,
+    currentDrivePath,
+    visibleDriveFolders,
+    openDrive,
+    clearFiltersAndKeepDrive,
+    setCurrentDrivePath,
+    loadDriveFiles,
+  ]);
 
   // Deep link from comment activity (and similar): /files?preview=<fileId> opens immersive preview
   const previewFromUrl = searchParams.get("preview");

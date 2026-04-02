@@ -45,6 +45,7 @@ import {
   recentFileFromMacosPackageListEntry,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
+import { backupPathUnderPrefix } from "@/lib/storage-virtual-folder-key";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import {
   BACKUP_LIFECYCLE_ACTIVE,
@@ -192,6 +193,22 @@ export interface DriveFolder {
   lastSyncedAt: string | null;
   /** When true, this is the permanent RAW drive (video-only, cannot delete). */
   isCreatorRaw?: boolean;
+}
+
+function mergeDriveFoldersFromScoped(scoped: LinkedDrive[], prev: DriveFolder[]): DriveFolder[] {
+  const prevById = new Map(prev.map((f) => [f.id, f]));
+  return scoped.map((drive) => {
+    const prevRow = prevById.get(drive.id);
+    return {
+      id: drive.id,
+      name: drive.name,
+      type: "folder" as const,
+      key: `drive-${drive.id}`,
+      items: prevRow?.items ?? 0,
+      lastSyncedAt: drive.last_synced_at ?? null,
+      isCreatorRaw: drive.is_creator_raw === true,
+    };
+  });
 }
 
 /** First-level folder path inside a Storage linked drive (e.g. migration subfolders) for home "Bizzi Cloud Folders". */
@@ -444,6 +461,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     loading: backupDrivesLoading,
   } = useBackup();
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
+  const driveFoldersRef = useRef<DriveFolder[]>([]);
+  useEffect(() => {
+    driveFoldersRef.current = driveFolders;
+  }, [driveFolders]);
   const [storageTopFolders, setStorageTopFolders] = useState<StorageTopFolderEntry[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [recentUploads, setRecentUploads] = useState<RecentFile[]>([]);
@@ -491,6 +512,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         deferFolderReveal = true;
         return;
       }
+
+      setDriveFolders(mergeDriveFoldersFromScoped(scoped, driveFoldersRef.current));
 
       const driveMap = new Map(
         scoped.map((d) => [
@@ -1449,8 +1472,74 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     ]
   );
 
+  const collectActiveFileIdsUnderStoragePathPrefix = useCallback(
+    async (driveId: string, pathPrefix: string): Promise<string[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const folderDrive = linkedDrives.find((d) => d.id === driveId);
+      const snap = await getDocs(
+        shouldQueryDriveWideFiles(folderDrive, user.uid)
+          ? folderDrive?.organization_id
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", driveId),
+                where("organization_id", "==", folderDrive.organization_id),
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", driveId),
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+              )
+          : query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", driveId),
+              where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+            )
+      );
+      const ids: string[] = [];
+      for (const d of snap.docs) {
+        if (!isBackupFileActiveForListing(d.data() as Record<string, unknown>)) continue;
+        const rel = String((d.data() as Record<string, unknown>).relative_path ?? "");
+        if (!backupPathUnderPrefix(rel, pathPrefix)) continue;
+        ids.push(d.id);
+      }
+      return ids;
+    },
+    [user, linkedDrives]
+  );
+
+  const trashAllFilesUnderStoragePath = useCallback(
+    async (driveId: string, pathPrefix: string) => {
+      const ids = await collectActiveFileIdsUnderStoragePathPrefix(driveId, pathPrefix);
+      if (ids.length === 0) return;
+      await trashBackupFileIdsViaApi(ids);
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [
+      collectActiveFileIdsUnderStoragePathPrefix,
+      bumpStorageVersion,
+      scheduleDebouncedPostTrashMetadataRefresh,
+    ]
+  );
+
+  const moveAllFilesUnderStoragePath = useCallback(
+    async (driveId: string, pathPrefix: string, targetDriveId: string) => {
+      const ids = await collectActiveFileIdsUnderStoragePathPrefix(driveId, pathPrefix);
+      if (ids.length === 0) return;
+      await moveFilesToFolder(ids, targetDriveId);
+    },
+    [collectActiveFileIdsUnderStoragePathPrefix, moveFilesToFolder]
+  );
+
   const getFileIdsForBulkShare = useCallback(
-    async (fileIds: string[], folderDriveIds: string[]): Promise<string[]> => {
+    async (
+      fileIds: string[],
+      folderDriveIds: string[],
+      storagePathScopes?: { driveId: string; pathPrefix: string }[]
+    ): Promise<string[]> => {
       if (!isFirebaseConfigured() || !user) return [];
       const db = getFirebaseFirestore();
       const ids = new Set<string>(fileIds);
@@ -1481,9 +1570,16 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           .filter((d) => isBackupFileActiveForListing(d.data() as Record<string, unknown>))
           .forEach((d) => ids.add(d.id));
       }
+      for (const scope of storagePathScopes ?? []) {
+        const under = await collectActiveFileIdsUnderStoragePathPrefix(
+          scope.driveId,
+          scope.pathPrefix
+        );
+        under.forEach((id) => ids.add(id));
+      }
       return Array.from(ids);
     },
-    [user, linkedDrives]
+    [user, linkedDrives, collectActiveFileIdsUnderStoragePathPrefix]
   );
 
   const moveFolderContentsToFolder = useCallback(
@@ -1755,5 +1851,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     moveFilesToFolder,
     moveFolderContentsToFolder,
     getFileIdsForBulkShare,
+    trashAllFilesUnderStoragePath,
+    moveAllFilesUnderStoragePath,
   };
 }

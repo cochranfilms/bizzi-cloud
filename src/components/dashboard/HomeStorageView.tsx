@@ -37,6 +37,10 @@ import type { CreativeLUTConfig, CreativeLUTLibraryEntry } from "@/types/creativ
 import { useAuth } from "@/context/AuthContext";
 import { isMacosPackageFileRow } from "@/lib/macos-package-display";
 import Link from "next/link";
+import {
+  buildStorageVirtualFolderKey,
+  parseStorageVirtualFolderKey,
+} from "@/lib/storage-virtual-folder-key";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -78,6 +82,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getFileIdsForBulkShare,
     moveFilesToFolder,
     moveFolderContentsToFolder,
+    trashAllFilesUnderStoragePath,
+    moveAllFilesUnderStoragePath,
   } = useCloudFiles();
   const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
   const { planId, loading: subscriptionLoading } = useSubscription();
@@ -287,7 +293,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       storageTopFolders.map((t) => ({
         name: t.name,
         type: "folder" as const,
-        key: `storage-path-${t.driveId}-${t.pathPrefix}`,
+        key: buildStorageVirtualFolderKey(t.driveId, t.pathPrefix),
         items: t.itemCount,
         hideShare: false,
         driveId: t.driveId,
@@ -306,6 +312,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
   }, [driveFolderItems, storagePathVirtualFolderItems]);
+
+  const homeFolderItemsByKey = useMemo(() => {
+    const m = new Map<string, FolderItem>();
+    for (const it of folderItems) m.set(it.key, it);
+    for (const it of bizziCloudFolderItems) m.set(it.key, it);
+    return m;
+  }, [folderItems, bizziCloudFolderItems]);
   const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
 
   const loadPinnedFiles = useCallback(async () => {
@@ -519,9 +532,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const openDrive = useCallback(
     (driveId: string, name: string, pathInsideDrive = "") => {
       recordRecentOpen("folder", driveId, getAuthToken);
+      const normalizedPath = pathInsideDrive.replace(/^\/+/, "");
       setCurrentFolderDriveId(driveId);
-      setCurrentDrivePath(pathInsideDrive.replace(/^\/+/, ""));
-      router.push(`${filesHref}?drive=${driveId}`);
+      setCurrentDrivePath(normalizedPath);
+      const pathQs = normalizedPath ? `&path=${encodeURIComponent(normalizedPath)}` : "";
+      router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}${pathQs}`);
     },
     [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, router]
   );
@@ -715,9 +730,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     try {
       if (fileIds.length > 0) await deleteFiles(fileIds);
       for (const key of folderKeys) {
+        const scope = parseStorageVirtualFolderKey(key);
+        if (scope) {
+          await trashAllFilesUnderStoragePath(scope.driveId, scope.pathPrefix);
+          continue;
+        }
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
         const drive = linkedDrives.find((d) => d.id === driveId);
-        const itemCount = folderItems.find((f) => f.key === key)?.items ?? 0;
+        const itemCount = homeFolderItemsByKey.get(key)?.items ?? 0;
         if (drive) {
           await deleteFolder(drive, itemCount);
         }
@@ -732,10 +752,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   }, [
     selectedFileIds,
     selectedFolderKeys,
-    folderItems,
+    homeFolderItemsByKey,
     deleteFiles,
     deleteFolder,
     linkedDrives,
+    trashAllFilesUnderStoragePath,
     clearSelection,
     refetch,
     refetchPinned,
@@ -757,6 +778,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         await moveFilesToFolder(fileIds, targetDriveId);
       }
       for (const key of folderKeys) {
+        const scope = parseStorageVirtualFolderKey(key);
+        if (scope) {
+          await moveAllFilesUnderStoragePath(scope.driveId, scope.pathPrefix, targetDriveId);
+          continue;
+        }
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
         const drive = linkedDrives.find((d) => d.id === driveId);
         if (drive && driveId !== targetDriveId) {
@@ -775,6 +801,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       linkedDrives,
       moveFilesToFolder,
       moveFolderContentsToFolder,
+      moveAllFilesUnderStoragePath,
       clearSelection,
       refetch,
       refetchPinned,
@@ -805,7 +832,23 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   );
 
   const handleBulkNewTransfer = useCallback(async () => {
-    const fileIds = Array.from(selectedFileIds);
+    const directIds = Array.from(selectedFileIds);
+    const folderKeys = Array.from(selectedFolderKeys);
+    const storagePathScopes: { driveId: string; pathPrefix: string }[] = [];
+    const folderDriveIds: string[] = [];
+    for (const k of folderKeys) {
+      const scope = parseStorageVirtualFolderKey(k);
+      if (scope) storagePathScopes.push(scope);
+      else if (k.startsWith("drive-")) folderDriveIds.push(k.slice(6));
+    }
+    const fileIds =
+      folderKeys.length > 0
+        ? await getFileIdsForBulkShare(
+            directIds,
+            folderDriveIds,
+            storagePathScopes.length > 0 ? storagePathScopes : undefined
+          )
+        : directIds;
     if (fileIds.length > 0) {
       const files = await fetchFilesByIds(fileIds);
       setTransferInitialFiles(
@@ -821,17 +864,21 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setTransferInitialFiles([]);
     }
     setTransferModalOpen(true);
-  }, [selectedFileIds, fetchFilesByIds]);
+  }, [selectedFileIds, selectedFolderKeys, fetchFilesByIds, getFileIdsForBulkShare]);
 
   const handleBulkShare = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
-    const folderDriveIds = folderKeys
-      .map((k) => (k.startsWith("drive-") ? k.slice(6) : k))
-      .filter(Boolean);
+    const storagePathScopes: { driveId: string; pathPrefix: string }[] = [];
+    const folderDriveIds: string[] = [];
+    for (const k of folderKeys) {
+      const scope = parseStorageVirtualFolderKey(k);
+      if (scope) storagePathScopes.push(scope);
+      else if (k.startsWith("drive-")) folderDriveIds.push(k.slice(6));
+    }
 
     try {
-      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds);
+      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds, storagePathScopes);
       if (allFileIds.length === 0) return;
 
       const defaultFolderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
@@ -1265,7 +1312,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                               }
                             : undefined
                         }
-                        selectable={!!drive && !item.preventDelete}
+                        selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
                         selected={selectedFolderKeys.has(item.key)}
                         onSelect={() => toggleFolderSelection(item.key)}
                         isDropTarget={isDropTarget}
@@ -1332,7 +1379,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                           }
                         : undefined
                     }
-                    selectable={!!drive && !item.preventDelete}
+                    selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
                     selected={selectedFolderKeys.has(item.key)}
                     onSelect={() => toggleFolderSelection(item.key)}
                     presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
@@ -1493,9 +1540,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         onClose={() => setMoveModalOpen(false)}
         selectedFileCount={selectedFileIds.size}
         selectedFolderCount={selectedFolderKeys.size}
-        excludeDriveIds={Array.from(selectedFolderKeys).map((k) =>
-          k.startsWith("drive-") ? k.slice(6) : k
-        )}
+        excludeDriveIds={Array.from(selectedFolderKeys)
+          .map((k) => {
+            const scope = parseStorageVirtualFolderKey(k);
+            if (scope) return scope.driveId;
+            return k.startsWith("drive-") ? k.slice(6) : "";
+          })
+          .filter(Boolean)}
         folders={filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite })}
         onMove={handleBulkMoveConfirm}
       />
