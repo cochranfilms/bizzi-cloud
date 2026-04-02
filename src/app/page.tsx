@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import PreRegistrationGate from "@/components/marketing/PreRegistrationGate";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import LandingHeroShell from "@/components/landing/LandingHeroShell";
@@ -17,6 +18,7 @@ import { HomePageStructuredData } from "@/components/seo/HomePageStructuredData"
 export default function Home() {
   return (
     <div className="min-h-screen landing-page-shell">
+      <PreRegistrationGate />
       <HomePageStructuredData />
       <main>
         <Header variant="landingIntegrated" />
