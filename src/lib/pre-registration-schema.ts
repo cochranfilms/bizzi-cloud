@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const TB_NEED_OPTIONS = [
-  "Less than 1 TB",
   "1 TB",
   "2 TB",
   "5 TB",

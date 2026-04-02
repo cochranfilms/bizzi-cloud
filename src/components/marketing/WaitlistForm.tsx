@@ -10,13 +10,13 @@ import {
   TB_NEED_OPTIONS,
   TEAM_SIZE_OPTIONS,
 } from "@/lib/pre-registration-schema";
+import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
 const EXCITED_FEATURES_GRID = EXCITED_FEATURE_OPTIONS.slice(0, -1);
 const EXCITED_FEATURE_LAST = EXCITED_FEATURE_OPTIONS[EXCITED_FEATURE_OPTIONS.length - 1]!;
 
 const excitedCheckboxId = (opt: string) =>
   `wl-excited-${opt.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}`;
-import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
 /** Light glassmorphism — frosted panel on sky gradient; readable slate typography. */
 const shellGlass =
@@ -139,28 +139,30 @@ export default function WaitlistForm() {
     <div
       className={`w-full max-w-[min(100%,42rem)] shrink-0 rounded-t-[2.75rem] rounded-b-[3.5rem] px-6 py-10 sm:max-w-2xl sm:rounded-t-[3.25rem] sm:rounded-b-[4rem] sm:px-9 sm:py-12 md:max-w-3xl md:px-11 md:py-14 ${shellGlass}`}
     >
-      <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
-        <Image
-          src="/logo.png"
-          alt="Bizzi Cloud"
-          width={48}
-          height={48}
-          className="mb-5 h-12 w-12 object-contain sm:mb-6"
-          priority
-        />
-        <h1
-          id="waitlist-hero"
-          className="text-balance text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl"
-        >
-          Pre-register for Bizzi Cloud
-        </h1>
-        <p
-          id="waitlist-form-intro"
-          className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-slate-700 sm:mt-5 sm:text-base"
-        >
-          {WAITLIST_DESCRIPTION}
-        </p>
-      </header>
+      {!success ? (
+        <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
+          <Image
+            src="/logo.png"
+            alt="Bizzi Cloud"
+            width={48}
+            height={48}
+            className="mb-5 h-12 w-12 object-contain sm:mb-6"
+            priority
+          />
+          <h1
+            id="waitlist-hero"
+            className="text-balance text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl"
+          >
+            Pre-register for Bizzi Cloud
+          </h1>
+          <p
+            id="waitlist-form-intro"
+            className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-slate-700 sm:mt-5 sm:text-base"
+          >
+            {WAITLIST_DESCRIPTION}
+          </p>
+        </header>
+      ) : null}
 
       {success ? (
         <div
