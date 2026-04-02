@@ -151,7 +151,7 @@ export default function PreRegistrationGate() {
 
   return (
     <div
-      className="dark fixed inset-0 z-[200] overflow-y-auto overflow-x-hidden overscroll-none bg-[#0a1628]/98 backdrop-blur-md [color-scheme:dark]"
+      className="fixed inset-0 z-[200] overflow-y-auto overflow-x-hidden overscroll-none bg-[#0a1628]/98 text-sky-100 backdrop-blur-md [color-scheme:dark]"
       aria-hidden={false}
     >
       <div

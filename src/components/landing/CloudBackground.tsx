@@ -1,6 +1,6 @@
 "use client";
 
-/** Solid marketing gradient only (no cloud shapes). Light/dark via `globals.css`. */
+/** Solid marketing gradient only (no cloud shapes). Always light via `globals.css`. */
 export default function CloudBackground() {
   return (
     <div

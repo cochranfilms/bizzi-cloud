@@ -2,7 +2,7 @@
 export const LANDING_PAGE_GRADIENT =
   "linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 40%, #bae6fd 70%, #7dd3fc 100%)";
 
-/** Dark-mode home gradient — keep in sync with `.landing-page-shell` in `globals.css`. */
+/** Legacy dark home gradient (marketing home is always light; still useful for immersive / editor backdrops). */
 export const LANDING_PAGE_GRADIENT_DARK =
   "linear-gradient(180deg, #0a1628 0%, #0c2238 35%, #103552 65%, #154a6e 100%)";
 

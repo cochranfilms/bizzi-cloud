@@ -10,7 +10,6 @@ export const HS = {
   firstname: "firstname",
   lastname: "lastname",
   email: "email",
-  phone: "phone",
   website: "website",
   /** Single-line text — social handle or profile URL */
   socialProfile: "bizzi_pr_social_profile",
@@ -25,6 +24,11 @@ export const HS = {
   leadSource: "bizzi_pr_lead_source",
 } as const;
 
+/** Multi-column HubSpot forms often use ids like `0-2/phone` instead of `phone`. */
+export function hubspotPhoneFieldName(): string {
+  return process.env.HUBSPOT_FORM_PHONE_FIELD_NAME?.trim() || "0-2/phone";
+}
+
 export type HubSpotFormField = { name: string; value: string };
 
 export function buildHubSpotFields(
@@ -32,22 +36,25 @@ export function buildHubSpotFields(
   leadSource: string,
 ): HubSpotFormField[] {
   const { firstname, lastname } = splitFullName(data.fullName);
+  const otherProviderValue =
+    data.currentCloudProvider === "Other"
+      ? (data.otherProvider ?? "").trim()
+      : "N/A";
+
   const fields: HubSpotFormField[] = [
     { name: HS.firstname, value: firstname },
     { name: HS.lastname, value: lastname },
     { name: HS.email, value: data.email },
-    { name: HS.phone, value: data.phone },
+    { name: hubspotPhoneFieldName(), value: data.phone },
     { name: HS.tbNeeded, value: data.tbNeeded },
     { name: HS.currentCloudProvider, value: data.currentCloudProvider },
+    { name: HS.otherProvider, value: otherProviderValue },
     { name: HS.leadSource, value: leadSource },
   ];
   if (data.website) fields.push({ name: HS.website, value: data.website });
   if (data.socialProfile) fields.push({ name: HS.socialProfile, value: data.socialProfile });
   if (data.excitedFeatures.length > 0) {
     fields.push({ name: HS.excitedFeatures, value: data.excitedFeatures.join("; ") });
-  }
-  if (data.currentCloudProvider === "Other" && data.otherProvider) {
-    fields.push({ name: HS.otherProvider, value: data.otherProvider });
   }
   if (data.currentSpend) fields.push({ name: HS.currentSpend, value: data.currentSpend });
   return fields;

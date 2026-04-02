@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type Theme = "light" | "dark";
 
@@ -12,7 +13,18 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+/** Marketing home must stay visually light; only the pre-reg overlay is dark. Ignore stored dark mode on `/` for `html.dark`. */
+function applyRootDarkClass(theme: Theme, pathname: string) {
+  if (typeof document === "undefined") return;
+  if (pathname === "/") {
+    document.documentElement.classList.remove("dark");
+  } else {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() ?? "";
   const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
@@ -21,17 +33,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const stored = localStorage.getItem("bizzi-theme") as Theme | null;
     if (stored === "light" || stored === "dark") {
       setThemeState(stored);
-      document.documentElement.classList.toggle("dark", stored === "dark");
-    } else {
-      document.documentElement.classList.add("dark");
     }
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    applyRootDarkClass(theme, pathname);
+  }, [mounted, pathname, theme]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
     if (typeof window !== "undefined") {
       localStorage.setItem("bizzi-theme", newTheme);
-      document.documentElement.classList.toggle("dark", newTheme === "dark");
+      applyRootDarkClass(newTheme, window.location.pathname);
     }
   };
 

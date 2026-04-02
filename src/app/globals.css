@@ -22,15 +22,11 @@
   }
 }
 
-/* Marketing: theme-aware gradient (sync light stops with `LANDING_PAGE_GRADIENT` in landing-gradient.ts) */
+/* Marketing: always light gradient — not tied to `html.dark` / dashboard theme (pre-reg overlay is its own dark UI). */
 @layer components {
   .landing-page-shell,
   .landing-hero-shell-surface {
     background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 40%, #bae6fd 70%, #7dd3fc 100%);
-  }
-  .dark .landing-page-shell,
-  .dark .landing-hero-shell-surface {
-    background: linear-gradient(180deg, #0a1628 0%, #0c2238 35%, #103552 65%, #154a6e 100%);
   }
 }
 
