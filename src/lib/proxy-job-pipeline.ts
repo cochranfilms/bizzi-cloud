@@ -742,8 +742,10 @@ export async function completeProxyJobSuccess(
     if (typeof k === "string" && k.trim()) objectKey = k;
   }
   const proxyKey = getProxyObjectKey(objectKey);
+  // Worker already ran FFmpeg end-to-end; server-side first-frame decode is redundant and
+  // often fails on short-lived hosts (timeout/B2 latency). ffprobe checks remain.
   const playability = await validateStandardProxyPlayability(proxyKey, {
-    skipFirstFrameDecode: false,
+    skipFirstFrameDecode: true,
   });
   if (!playability.ok) {
     return { ok: false, code: "validation_failed", error: playability.error };
