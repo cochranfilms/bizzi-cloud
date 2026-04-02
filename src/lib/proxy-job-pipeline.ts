@@ -312,14 +312,29 @@ export interface StandardClaimResult {
 
 export type ClaimMediaRole = "standard" | "braw";
 
+/** Structured claim pipeline logging (no secrets). */
+export type ClaimProxyJobLog = (phase: string, data?: Record<string, unknown>) => void;
+
 export async function claimProxyJob(
   workerId: string,
-  role: ClaimMediaRole
+  role: ClaimMediaRole,
+  log?: ClaimProxyJobLog
 ): Promise<StandardClaimResult | null> {
   if (!workerId.trim()) return null;
+  if (!isB2Configured()) {
+    throw new Error(
+      "B2_NOT_CONFIGURED: set B2_ACCESS_KEY_ID, B2_SECRET_ACCESS_KEY, B2_BUCKET_NAME, B2_ENDPOINT"
+    );
+  }
+  log?.("firestore_get", { role });
   const db = getAdminFirestore();
   const ttl = presignedTtlSecondsForAttempt();
 
+  log?.("claim_query_start", {
+    role,
+    queuedFilter: PROXY_JOB_STATUS.QUEUED,
+    retryFilter: PROXY_JOB_STATUS.FAILED_RETRYABLE,
+  });
   const [queuedSnap, retrySnap] = await Promise.all([
     db
       .collection(PROXY_JOBS_COLLECTION)
@@ -335,6 +350,10 @@ export async function claimProxyJob(
       .limit(40)
       .get(),
   ]);
+  log?.("claim_query_result", {
+    queuedDocs: queuedSnap.size,
+    retryDocs: retrySnap.size,
+  });
 
   const merged = new Map<string, QueryDocumentSnapshot>();
   for (const d of queuedSnap.docs) merged.set(d.id, d);
@@ -360,6 +379,8 @@ export async function claimProxyJob(
       return ca.localeCompare(cb);
     });
 
+  log?.("candidates_ready", { count: candidates.length, role });
+
   const leaseMs = Date.now();
   const leaseUntil = new Date(leaseMs + PROXY_JOB_LEASE_MS).toISOString();
   const deadline = new Date(leaseMs + PROXY_JOB_ATTEMPT_MAX_MS).toISOString();
@@ -369,6 +390,10 @@ export async function claimProxyJob(
     const snapData = docSnap.data();
     let objectKey = snapData.object_key as string;
     const backupFileId = (snapData.backup_file_id as string | null) ?? null;
+    log?.("candidate_start", {
+      jobId: docSnap.id,
+      backupFileId: backupFileId ?? undefined,
+    });
     if (backupFileId) {
       const bf = await db.collection("backup_files").doc(backupFileId).get();
       const k = bf.data()?.object_key as string | undefined;
@@ -377,6 +402,7 @@ export async function claimProxyJob(
     const userId = snapData.user_id as string;
 
     if (!(await verifyBackupFileAccess(userId, objectKey))) {
+      log?.("access_denied_mark_terminal_tx_enter", { jobId: docSnap.id });
       await db.runTransaction(async (tx) => {
         const fresh = await tx.get(ref);
         if (!fresh.exists) return;
@@ -409,14 +435,27 @@ export async function claimProxyJob(
           } as Record<string, unknown>);
         }
       });
+      log?.("access_denied_mark_terminal_tx_exit", { jobId: docSnap.id });
       continue;
     }
 
-    if (!(await objectExists(objectKey))) continue;
+    let sourceExists = false;
+    try {
+      sourceExists = await objectExists(objectKey);
+    } catch (e) {
+      log?.("source_exists_preflight_error", {
+        jobId: docSnap.id,
+        err: e instanceof Error ? e.message : String(e),
+      });
+      throw e;
+    }
+    log?.("source_exists_preflight", { jobId: docSnap.id, exists: sourceExists });
+    if (!sourceExists) continue;
 
     const proxyKey = getProxyObjectKey(objectKey);
     const valid = await validateStandardProxyPlayability(proxyKey, { skipFirstFrameDecode: false });
     if (valid.ok) {
+      log?.("proxy_valid_skip_tx_enter", { jobId: docSnap.id, proxyKey });
       await db.runTransaction(async (tx) => {
         const fresh = await tx.get(ref);
         if (!fresh.exists) return;
@@ -456,9 +495,11 @@ export async function claimProxyJob(
           } as Record<string, unknown>);
         }
       });
+      log?.("proxy_valid_skip_tx_exit", { jobId: docSnap.id });
       continue;
     }
 
+    log?.("tx_claim_enter", { jobId: docSnap.id });
     const tryClaim = await db.runTransaction(async (tx) => {
       const fresh = await tx.get(ref);
       if (!fresh.exists) return null;
@@ -503,6 +544,7 @@ export async function claimProxyJob(
         claimedAt: now,
       };
     });
+    log?.("tx_claim_exit", { jobId: docSnap.id, claimed: Boolean(tryClaim) });
 
     if (!tryClaim) continue;
 
@@ -541,12 +583,15 @@ export async function claimProxyJob(
     };
   }
 
+  log?.("no_job_available", { role });
   return null;
 }
 
-export const claimStandardProxyJob = (workerId: string) => claimProxyJob(workerId, "standard");
+export const claimStandardProxyJob = (workerId: string, log?: ClaimProxyJobLog) =>
+  claimProxyJob(workerId, "standard", log);
 
-export const claimBrawProxyJob = (workerId: string) => claimProxyJob(workerId, "braw");
+export const claimBrawProxyJob = (workerId: string, log?: ClaimProxyJobLog) =>
+  claimProxyJob(workerId, "braw", log);
 
 export interface HeartbeatInput {
   jobId: string;
