@@ -381,10 +381,10 @@ export default function WaitlistForm() {
             aria-labelledby="wl-excited-heading"
             className="rounded-2xl border border-white/50 bg-white/35 px-3 py-4 shadow-inner shadow-white/15 backdrop-blur-md sm:px-5 sm:py-6"
           >
-            <p id="wl-excited-heading" className={labelCls}>
+            <p id="wl-excited-heading" className={`${labelCls} text-center text-balance`}>
               What are you most excited to see in Bizzi Cloud? <span className={requiredMark}>*</span>
             </p>
-            <p className="mb-4 mt-2 text-xs leading-relaxed text-slate-600 sm:text-sm">
+            <p className="mb-4 mt-2 text-center text-balance text-xs leading-relaxed text-slate-600 sm:text-sm">
               Select all that apply — at least one is required.
             </p>
             <ul className="mx-auto grid w-full max-w-lg grid-cols-1 gap-2 sm:max-w-xl sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
