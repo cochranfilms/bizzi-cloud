@@ -11,17 +11,16 @@ import {
 /** Query param: `?bizzi_landing=1` — honored only when `NEXT_PUBLIC_BIZZI_LANDING_BYPASS_ENABLED` is `"true"`. */
 const BYPASS_QUERY = "bizzi_landing";
 
-/** Always dark — pre-reg gate ignores global landing light/dark preference. */
-const shellGlass =
-  "border border-white/12 bg-neutral-950/78 shadow-[0_24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl";
+/** Flat matte shell — sits close to the scrim; minimal elevation. */
+const shellPanel = "border border-neutral-800 bg-neutral-950";
 
 const inputCls =
-  "w-full rounded-xl border border-white/15 bg-neutral-950/45 px-3 py-2.5 text-sm text-sky-50 shadow-sm backdrop-blur-sm placeholder:text-neutral-400 focus:border-bizzi-blue focus:outline-none focus:ring-2 focus:ring-bizzi-blue/25 [&_option]:bg-neutral-900 [&_option]:text-sky-50";
-
-const labelCls =
-  "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-sky-100/90";
+  "w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:border-bizzi-blue focus:outline-none focus:ring-1 focus:ring-bizzi-blue/35 [&_option]:bg-neutral-900 [&_option]:text-white";
 
 const requiredMark = "text-red-400";
+
+const labelCls =
+  "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-neutral-300";
 
 /** Matches `globals.css` dark landing gradient base so macOS overscroll rubber-band never flashes the light page. */
 const GATE_OVERSCROLL_CANVAS = "#0a1628";
@@ -151,11 +150,11 @@ export default function PreRegistrationGate() {
 
   return (
     <div
-      className="fixed inset-0 z-[200] overflow-y-auto overflow-x-hidden overscroll-none bg-[#0a1628]/98 text-sky-100 backdrop-blur-md [color-scheme:dark]"
+      className="fixed inset-0 z-[200] overflow-y-auto overflow-x-hidden overscroll-none bg-[#070d14] text-neutral-100 [color-scheme:dark]"
       aria-hidden={false}
     >
       <div
-        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(56,189,248,0.14),transparent)]"
+        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_100%_70%_at_50%_0%,rgba(14,165,233,0.04),transparent_55%)]"
         aria-hidden
       />
       <div
@@ -165,7 +164,7 @@ export default function PreRegistrationGate() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="pre-registration-title"
-          className={`w-full max-w-[min(100%,42rem)] shrink-0 rounded-t-[2.75rem] rounded-b-[3.5rem] border border-white/12 px-6 py-10 sm:max-w-2xl sm:rounded-t-[3.25rem] sm:rounded-b-[4rem] sm:px-9 sm:py-12 md:max-w-3xl md:px-11 md:py-14 ${shellGlass}`}
+          className={`w-full max-w-[min(100%,42rem)] shrink-0 rounded-t-[2.75rem] rounded-b-[3.5rem] px-6 py-10 sm:max-w-2xl sm:rounded-t-[3.25rem] sm:rounded-b-[4rem] sm:px-9 sm:py-12 md:max-w-3xl md:px-11 md:py-14 ${shellPanel}`}
         >
           <div className="mb-8 flex flex-col items-center text-center sm:mb-10">
             <Image
@@ -177,26 +176,26 @@ export default function PreRegistrationGate() {
             />
             <h1
               id="pre-registration-title"
-              className="text-balance text-2xl font-bold tracking-tight text-sky-50 sm:text-3xl md:text-4xl"
+              className="text-balance text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl"
             >
               Pre Register for Bizzi Cloud
             </h1>
-            <p className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-neutral-200 sm:mt-5 sm:text-base">
+            <p className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-neutral-300 sm:mt-5 sm:text-base">
               Tell us what you need most so we can build the fastest creator cloud experience for you.
             </p>
           </div>
 
           {success ? (
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/40 px-5 py-9 text-center sm:px-7 sm:py-10">
-              <p className="text-lg font-semibold text-emerald-100">You&apos;re on the list.</p>
-              <p className="mt-3 text-sm leading-relaxed text-emerald-100/85">
+            <div className="rounded-2xl border border-emerald-900/80 bg-emerald-950 px-5 py-9 text-center sm:px-7 sm:py-10">
+              <p className="text-lg font-semibold text-emerald-50">You&apos;re on the list.</p>
+              <p className="mt-3 text-sm leading-relaxed text-emerald-100">
                 Thank you for pre-registering. Early access updates are coming soon—we&apos;ll be in
                 touch when your spot opens.
               </p>
               <button
                 type="button"
                 onClick={visitLanding}
-                className="mt-8 text-sm font-medium text-sky-100 underline decoration-bizzi-blue/50 underline-offset-4 hover:decoration-bizzi-blue"
+                className="mt-8 text-sm font-medium text-sky-300 underline decoration-sky-400/80 underline-offset-4 hover:text-sky-200"
               >
                 Visit Landing
               </button>
@@ -206,7 +205,7 @@ export default function PreRegistrationGate() {
               {errorBanner ? (
                 <div
                   role="alert"
-                  className="rounded-xl border border-red-500/35 bg-red-950/45 px-4 py-3.5 text-sm text-red-100"
+                  className="rounded-xl border border-red-900/80 bg-red-950 px-4 py-3.5 text-sm text-red-50"
                 >
                   {errorBanner}
                 </div>
@@ -362,12 +361,12 @@ export default function PreRegistrationGate() {
               <div
                 role="group"
                 aria-labelledby="pr-excited-heading"
-                className="rounded-2xl border border-white/10 bg-neutral-950/30 px-4 py-5 sm:px-5 sm:py-6"
+                className="rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-5 sm:px-5 sm:py-6"
               >
                 <p id="pr-excited-heading" className={labelCls}>
                   What are you most excited to see in Bizzi Cloud?
                 </p>
-                <p className="mb-4 mt-2 text-xs leading-relaxed text-neutral-400">
+                <p className="mb-4 mt-2 text-xs leading-relaxed text-neutral-400 sm:text-sm">
                   Optional — select any that apply.
                 </p>
                 <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
@@ -377,16 +376,16 @@ export default function PreRegistrationGate() {
                       <li key={opt}>
                         <label
                           htmlFor={id}
-                          className="flex min-h-[44px] cursor-pointer items-start gap-2.5 rounded-lg border border-transparent px-2 py-2.5 hover:border-white/10 sm:min-h-0"
+                          className="flex min-h-[44px] cursor-pointer items-start gap-2.5 rounded-lg border border-transparent px-2 py-2.5 hover:border-neutral-700 sm:min-h-0"
                         >
                           <input
                             id={id}
                             type="checkbox"
                             checked={excitedFeatures.includes(opt)}
                             onChange={() => toggleExcited(opt)}
-                            className="mt-1 h-4 w-4 rounded border-neutral-500 bg-neutral-900 text-bizzi-blue focus:ring-bizzi-blue"
+                            className="mt-1 h-4 w-4 rounded border-neutral-600 bg-neutral-950 text-bizzi-blue focus:ring-1 focus:ring-bizzi-blue/40"
                           />
-                          <span className="text-sm text-sky-100">{opt}</span>
+                          <span className="text-sm text-neutral-100">{opt}</span>
                         </label>
                       </li>
                     );
@@ -398,7 +397,7 @@ export default function PreRegistrationGate() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="touch-target inline-flex min-h-[48px] min-w-[min(100%,17rem)] items-center justify-center rounded-full bg-gradient-to-r from-bizzi-blue to-sky-500 px-10 text-sm font-semibold text-white shadow-lg shadow-bizzi-blue/25 transition hover:brightness-110 disabled:opacity-60"
+                  className="touch-target inline-flex min-h-[48px] min-w-[min(100%,17rem)] items-center justify-center rounded-full bg-bizzi-blue px-10 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
                 >
                   {submitting ? "Sending…" : "Request early access"}
                 </button>
@@ -407,11 +406,11 @@ export default function PreRegistrationGate() {
           )}
 
           {!success ? (
-            <div className="mt-10 flex justify-center border-t border-white/10 pt-8 sm:mt-12 sm:pt-9">
+            <div className="mt-10 flex justify-center border-t border-neutral-800 pt-8 sm:mt-12 sm:pt-9">
               <button
                 type="button"
                 onClick={visitLanding}
-                className="text-xs font-medium uppercase tracking-wider text-sky-200/80 underline-offset-4 hover:text-sky-100 hover:underline"
+                className="text-xs font-medium uppercase tracking-wider text-sky-300 underline-offset-4 hover:text-sky-200 hover:underline"
               >
                 Visit Landing
               </button>
