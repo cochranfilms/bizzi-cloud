@@ -110,11 +110,14 @@ export default function TopNavbar() {
     </div>
   );
 
+  /** Mirrors DashboardShell: on xl the right panel is w-56, so this centers the nav over the main column only (aligns with home base folders). */
   const desktopNav = (
-    <nav
-      className="-mx-1 hidden min-h-9 w-full min-w-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
-      aria-label="Workspace"
-    >
+    <div className="hidden w-full min-w-0 items-center md:flex">
+      <div className="min-w-0 flex-1" aria-hidden />
+      <nav
+        className="-mx-1 flex min-h-9 min-w-0 shrink-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
+        aria-label="Workspace"
+      >
       {filteredItems.map((item) => {
         const Icon = item.icon;
         const href =
@@ -139,7 +142,12 @@ export default function TopNavbar() {
           </Link>
         );
       })}
-    </nav>
+      </nav>
+      <div
+        className="min-w-0 flex-1 xl:w-56 xl:max-w-56 xl:flex-none xl:shrink-0"
+        aria-hidden
+      />
+    </div>
   );
 
   if (teamNavBase && teamWs) {
