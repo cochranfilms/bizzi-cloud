@@ -59,9 +59,9 @@ export const preRegistrationBodySchema = z
       .max(40, "Phone number is too long"),
     socialProfile: z
       .string()
-      .max(500)
-      .optional()
-      .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
+      .trim()
+      .min(2, "Enter your social profile or URL")
+      .max(500),
     creatorType: z.enum(CREATOR_TYPE_OPTIONS, {
       errorMap: () => ({ message: "Select what type of creator you are" }),
     }),
@@ -81,9 +81,9 @@ export const preRegistrationBodySchema = z
       .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
     currentSpend: z
       .string()
-      .max(200)
-      .optional()
-      .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
+      .trim()
+      .min(1, "Enter how much you pay for cloud storage")
+      .max(200),
     teamSize: z.enum(TEAM_SIZE_OPTIONS, {
       errorMap: () => ({ message: "Select how many people are on your team" }),
     }),

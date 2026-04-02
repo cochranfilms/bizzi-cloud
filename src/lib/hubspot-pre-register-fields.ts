@@ -56,8 +56,8 @@ export function buildHubSpotFields(
     { name: HS.creatorType, value: data.creatorType },
     { name: HS.excitedFeatures, value: data.excitedFeatures.join("; ") },
     { name: HS.teamSize, value: data.teamSize },
+    { name: HS.socialProfile, value: data.socialProfile },
+    { name: HS.currentSpend, value: data.currentSpend },
   ];
-  if (data.socialProfile) fields.push({ name: HS.socialProfile, value: data.socialProfile });
-  if (data.currentSpend) fields.push({ name: HS.currentSpend, value: data.currentSpend });
   return fields;
 }

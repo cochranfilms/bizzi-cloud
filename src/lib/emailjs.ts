@@ -1169,11 +1169,11 @@ export function buildWaitlistSubmissionDetailsHtml(
     email: string;
     phone: string;
     creatorType: string;
-    socialProfile?: string;
+    socialProfile: string;
     tbNeeded: string;
     currentCloudProvider: string;
     otherProvider?: string;
-    currentSpend?: string;
+    currentSpend: string;
     teamSize: string;
     excitedFeatures: readonly string[];
   },
@@ -1182,8 +1182,8 @@ export function buildWaitlistSubmissionDetailsHtml(
   const e = escapeHtml;
   const other =
     data.currentCloudProvider === "Other" ? e(data.otherProvider ?? "") : "—";
-  const social = data.socialProfile ? e(data.socialProfile) : "—";
-  const spend = data.currentSpend ? e(data.currentSpend) : "—";
+  const social = e(data.socialProfile);
+  const spend = e(data.currentSpend);
   const features = e(data.excitedFeatures.join("; "));
   const subAt = e(
     submittedAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),

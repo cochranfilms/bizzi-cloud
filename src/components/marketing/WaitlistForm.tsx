@@ -87,6 +87,16 @@ export default function WaitlistForm() {
       setSubmitting(false);
       return;
     }
+    if (!socialProfile.trim()) {
+      setErrorBanner("Please enter your social media profile or URL.");
+      setSubmitting(false);
+      return;
+    }
+    if (!currentSpend.trim()) {
+      setErrorBanner("Please enter how much you currently pay for cloud storage.");
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/hubspot/pre-register", {
@@ -96,13 +106,13 @@ export default function WaitlistForm() {
           fullName,
           email,
           phone,
-          socialProfile: socialProfile.trim() || undefined,
+          socialProfile: socialProfile.trim(),
           creatorType,
           tbNeeded,
           excitedFeatures,
           currentCloudProvider,
           otherProvider: currentCloudProvider === "Other" ? otherProvider.trim() : undefined,
-          currentSpend: currentSpend.trim() || undefined,
+          currentSpend: currentSpend.trim(),
           teamSize,
         }),
       });
@@ -215,11 +225,14 @@ export default function WaitlistForm() {
             </div>
             <div>
               <label htmlFor="wl-social" className={labelCls}>
-                Social media profile
+                Social media profile <span className={requiredMark}>*</span>
               </label>
               <input
                 id="wl-social"
                 name="socialProfile"
+                required
+                minLength={2}
+                maxLength={500}
                 value={socialProfile}
                 onChange={(e) => setSocialProfile(e.target.value)}
                 placeholder="@handle or profile URL"
@@ -302,6 +315,7 @@ export default function WaitlistForm() {
                 <input
                   id="wl-other-provider"
                   name="otherProvider"
+                  required
                   value={otherProvider}
                   onChange={(e) => setOtherProvider(e.target.value)}
                   className={inputCls}
@@ -310,11 +324,14 @@ export default function WaitlistForm() {
             ) : null}
             <div className="sm:col-span-2">
               <label htmlFor="wl-spend" className={labelCls}>
-                How much do you currently pay for cloud storage?
+                How much do you currently pay for cloud storage?{" "}
+                <span className={requiredMark}>*</span>
               </label>
               <input
                 id="wl-spend"
                 name="currentSpend"
+                required
+                maxLength={200}
                 value={currentSpend}
                 onChange={(e) => setCurrentSpend(e.target.value)}
                 placeholder="$20/mo, $75 per month, Not sure…"
