@@ -32,10 +32,28 @@ import {
   STANDARD_PROXY_TRANSCODE_PROFILE,
 } from "@/lib/proxy-job-config";
 import { validateStandardProxyPlayability } from "@/lib/proxy-playability";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { Firestore, QueryDocumentSnapshot, Transaction } from "firebase-admin/firestore";
 import { proxyJobRowIsBrawQueue } from "@/lib/proxy-queue-braw";
 
 const nowIso = () => new Date().toISOString();
+
+/**
+ * proxy_jobs.backup_file_id may reference a deleted or never-created backup_files doc.
+ * Firestore tx.update throws NOT_FOUND (gRPC 5) if the document does not exist — which
+ * would abort the whole transaction and surface as HTTP 500 on claim/complete.
+ */
+async function transactionUpdateBackupFileIfExists(
+  tx: Transaction,
+  db: Firestore,
+  backupFileId: string,
+  patch: Record<string, unknown>
+): Promise<boolean> {
+  const bfRef = db.collection("backup_files").doc(backupFileId);
+  const bfSnap = await tx.get(bfRef);
+  if (!bfSnap.exists) return false;
+  tx.update(bfRef, patch);
+  return true;
+}
 
 /** Legacy statuses still in DB until migrated. */
 const LEGACY_ACTIVE_FOR_RECLAIM = ["processing"] as const;
@@ -96,7 +114,10 @@ async function updateBackupFileProjection(
 ): Promise<void> {
   if (!backupFileId) return;
   const db = getAdminFirestore();
-  await db.collection("backup_files").doc(backupFileId).update(patch);
+  const ref = db.collection("backup_files").doc(backupFileId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  await ref.update(patch);
 }
 
 /**
@@ -428,11 +449,18 @@ export async function claimProxyJob(
           heartbeat_at: null,
         } as Record<string, unknown>);
         if (backupFileId) {
-          tx.update(db.collection("backup_files").doc(backupFileId), {
+          const projected = await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
             proxy_status: "failed",
             proxy_error_reason: "access_revoked",
             proxy_generated_at: now,
           } as Record<string, unknown>);
+          if (!projected) {
+            log?.("backup_file_projection_skipped_missing_doc", {
+              jobId: docSnap.id,
+              backupFileId,
+              context: "access_revoked",
+            });
+          }
         }
       });
       log?.("access_denied_mark_terminal_tx_exit", { jobId: docSnap.id });
@@ -485,7 +513,7 @@ export async function claimProxyJob(
           last_error: null,
         });
         if (backupFileId) {
-          tx.update(db.collection("backup_files").doc(backupFileId), {
+          const projected = await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
             proxy_status: "ready",
             proxy_object_key: proxyKey,
             proxy_size_bytes: valid.sizeBytes,
@@ -493,6 +521,13 @@ export async function claimProxyJob(
             proxy_generated_at: now,
             proxy_error_reason: null,
           } as Record<string, unknown>);
+          if (!projected) {
+            log?.("backup_file_projection_skipped_missing_doc", {
+              jobId: docSnap.id,
+              backupFileId,
+              context: "proxy_valid_skip",
+            });
+          }
         }
       });
       log?.("proxy_valid_skip_tx_exit", { jobId: docSnap.id });
@@ -722,7 +757,7 @@ export async function completeProxyJobSuccess(
       });
 
       if (backupFileId) {
-        tx.update(db.collection("backup_files").doc(backupFileId), {
+        await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
           proxy_status: "ready",
           proxy_object_key: proxyKey,
           proxy_size_bytes: input.proxy_size_bytes ?? playability.sizeBytes,
@@ -802,7 +837,7 @@ export async function completeProxyJobFailure(
         });
         const backupFileId = (data.backup_file_id as string | null) ?? null;
         if (backupFileId) {
-          tx.update(db.collection("backup_files").doc(backupFileId), {
+          await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
             proxy_status: "failed",
             proxy_error_reason: clampErr(input.error),
             proxy_generated_at: now,
@@ -827,7 +862,7 @@ export async function completeProxyJobFailure(
         });
         const backupFileId = (data.backup_file_id as string | null) ?? null;
         if (backupFileId) {
-          tx.update(db.collection("backup_files").doc(backupFileId), {
+          await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
             proxy_status: "failed",
             proxy_error_reason: clampErr(input.error),
             proxy_generated_at: now,
@@ -852,7 +887,7 @@ export async function completeProxyJobFailure(
       });
       const backupFileId = (data.backup_file_id as string | null) ?? null;
       if (backupFileId) {
-        tx.update(db.collection("backup_files").doc(backupFileId), {
+        await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
           proxy_status: "processing",
           proxy_error_reason: clampErr(input.error),
           proxy_generated_at: now,
