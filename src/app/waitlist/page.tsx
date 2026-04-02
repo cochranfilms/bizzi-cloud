@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { HubSpotTracker } from "@/components/marketing/HubSpotTracker";
 import WaitlistForm from "@/components/marketing/WaitlistForm";
 import { WaitlistPageStructuredData } from "@/components/seo/WaitlistPageStructuredData";
 import {
@@ -52,8 +53,11 @@ export const metadata: Metadata = {
 };
 
 export default function WaitlistPage() {
+  const hubspotPortalId = process.env.HUBSPOT_PORTAL_ID?.trim() || null;
+
   return (
     <div className="waitlist-page-shell min-h-screen text-slate-900">
+      <HubSpotTracker portalId={hubspotPortalId} />
       <WaitlistPageStructuredData />
       <main
         id="main-content"

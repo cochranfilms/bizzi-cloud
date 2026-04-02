@@ -61,8 +61,22 @@ export async function POST(request: Request) {
   }
 
   const leadSource = process.env.HUBSPOT_LEAD_SOURCE ?? "Bizzi Cloud Pre Registration";
-  const fields = buildHubSpotFields(parsed.data, leadSource);
+  const { hubspotUtk, ...registration } = parsed.data;
+  const fields = buildHubSpotFields(registration, leadSource);
   const url = `https://api.hsforms.com/submissions/v3/integration/secure/submit/${portalId}/${formId}`;
+
+  const pageUri = request.headers.get("referer") ?? `${SITE_URL}${WAITLIST_PATH}`;
+  const context: {
+    pageUri: string;
+    pageName: string;
+    hutk?: string;
+  } = {
+    pageUri,
+    pageName: "Bizzi Cloud Waitlist",
+  };
+  if (hubspotUtk) {
+    context.hutk = hubspotUtk;
+  }
 
   try {
     const hsRes = await fetch(url, {
@@ -73,10 +87,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         fields,
-        context: {
-          pageUri: request.headers.get("referer") ?? "https://bizzicloud.io/",
-          pageName: "Bizzi Cloud Waitlist",
-        },
+        context,
       }),
     });
 

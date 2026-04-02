@@ -10,6 +10,7 @@ import {
   TB_NEED_OPTIONS,
   TEAM_SIZE_OPTIONS,
 } from "@/lib/pre-registration-schema";
+import { getHubSpotUtkFromDocument } from "@/lib/hubspot-utk-cookie";
 import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
 const EXCITED_FEATURES_GRID = EXCITED_FEATURE_OPTIONS.slice(0, -1);
@@ -122,6 +123,7 @@ export default function WaitlistForm() {
           otherProvider: currentCloudProvider === "Other" ? otherProvider.trim() : undefined,
           currentSpend: currentSpend.trim(),
           teamSize,
+          hubspotUtk: getHubSpotUtkFromDocument(),
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -389,10 +391,10 @@ export default function WaitlistForm() {
               {EXCITED_FEATURES_GRID.map((opt) => {
                 const id = excitedCheckboxId(opt);
                 return (
-                  <li key={opt}>
+                  <li key={opt} className="flex justify-start sm:justify-center">
                     <label
                       htmlFor={id}
-                      className="flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
+                      className="flex w-fit max-w-full min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
                     >
                       <input
                         id={id}
@@ -408,10 +410,10 @@ export default function WaitlistForm() {
                   </li>
                 );
               })}
-              <li className="col-span-full sm:pt-0.5">
+              <li className="col-span-full flex justify-start sm:justify-center sm:pt-0.5">
                 <label
                   htmlFor={excitedCheckboxId(EXCITED_FEATURE_LAST)}
-                  className="flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
+                  className="flex w-fit max-w-full min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
                 >
                   <input
                     id={excitedCheckboxId(EXCITED_FEATURE_LAST)}

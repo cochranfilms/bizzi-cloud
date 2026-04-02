@@ -85,6 +85,12 @@ export const preRegistrationBodySchema = z
     teamSize: z.enum(TEAM_SIZE_OPTIONS, {
       errorMap: () => ({ message: "Select how many people are on your team" }),
     }),
+    /** Browser cookie `hubspotutk` — forwarded to HubSpot Forms API as `context.hutk`. */
+    hubspotUtk: z
+      .string()
+      .max(300)
+      .optional()
+      .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
   })
   .superRefine((data, ctx) => {
     if (data.currentCloudProvider === "Other" && !data.otherProvider) {

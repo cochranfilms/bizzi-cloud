@@ -2,22 +2,18 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import {
+  BIZZI_COOKIE_CONSENT_KEY,
+  BIZZI_COOKIE_CONSENT_UPDATED_EVENT,
+  type StoredCookieConsent,
+} from "@/lib/cookie-consent-storage";
 
-const STORAGE_KEY = "bizzi_cookie_consent";
-
-interface StoredConsent {
-  essential: boolean;
-  analytics: boolean;
-  functional: boolean;
-  timestamp: number;
-}
-
-function getStoredConsent(): StoredConsent | null {
+function getStoredConsent(): StoredCookieConsent | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(BIZZI_COOKIE_CONSENT_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredConsent;
+    const parsed = JSON.parse(raw) as StoredCookieConsent;
     if (parsed && typeof parsed.essential === "boolean") return parsed;
   } catch {
     // ignore
@@ -25,10 +21,10 @@ function getStoredConsent(): StoredConsent | null {
   return null;
 }
 
-function setStoredConsent(consent: StoredConsent) {
+function setStoredConsent(consent: StoredCookieConsent) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(consent));
+    localStorage.setItem(BIZZI_COOKIE_CONSENT_KEY, JSON.stringify(consent));
   } catch {
     // ignore
   }
@@ -61,7 +57,7 @@ export default function CookieConsentBanner() {
     });
     setVisible(false);
     setCustomizeOpen(false);
-    // When HubSpot is added, gate loading here based on analyticsVal
+    window.dispatchEvent(new Event(BIZZI_COOKIE_CONSENT_UPDATED_EVENT));
   };
 
   const handleAcceptAll = () => save(true, true, true);
