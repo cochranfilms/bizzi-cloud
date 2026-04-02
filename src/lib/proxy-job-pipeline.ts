@@ -32,24 +32,53 @@ import {
   STANDARD_PROXY_TRANSCODE_PROFILE,
 } from "@/lib/proxy-job-config";
 import { validateStandardProxyPlayability } from "@/lib/proxy-playability";
-import type { Firestore, QueryDocumentSnapshot, Transaction } from "firebase-admin/firestore";
+import type {
+  DocumentReference,
+  DocumentSnapshot,
+  Firestore,
+  QueryDocumentSnapshot,
+  Transaction,
+} from "firebase-admin/firestore";
 import { proxyJobRowIsBrawQueue } from "@/lib/proxy-queue-braw";
 
 const nowIso = () => new Date().toISOString();
 
 /**
- * proxy_jobs.backup_file_id may reference a deleted or never-created backup_files doc.
- * Firestore tx.update throws NOT_FOUND (gRPC 5) if the document does not exist — which
- * would abort the whole transaction and surface as HTTP 500 on claim/complete.
+ * Firestore requires all transaction reads before any write. Call this at the start
+ * of any transaction that may update both proxy_jobs and backup_files.
  */
-async function transactionUpdateBackupFileIfExists(
+export async function readProxyJobAndBackupSnapshotsInTransaction(
   tx: Transaction,
   db: Firestore,
-  backupFileId: string,
+  jobRef: DocumentReference
+): Promise<{
+  jobSnap: DocumentSnapshot;
+  backupFileId: string | null;
+  bfRef: DocumentReference | null;
+  bfSnap: DocumentSnapshot | null;
+}> {
+  const jobSnap = await tx.get(jobRef);
+  if (!jobSnap.exists) {
+    return { jobSnap, backupFileId: null, bfRef: null, bfSnap: null };
+  }
+  const backupFileId =
+    (jobSnap.data()?.backup_file_id as string | null | undefined) ?? null;
+  const bfRef = backupFileId ? db.collection("backup_files").doc(backupFileId) : null;
+  const bfSnap = bfRef ? await tx.get(bfRef) : null;
+  return { jobSnap, backupFileId, bfRef, bfSnap };
+}
+
+/**
+ * proxy_jobs.backup_file_id may reference a deleted backup_files doc.
+ * Caller MUST pass bfSnap from readProxyJobAndBackupSnapshotsInTransaction (or any
+ * tx.get on bfRef done before writes).
+ */
+function txUpdateBackupFileIfPriorReadExists(
+  tx: Transaction,
+  bfRef: DocumentReference,
+  bfSnap: DocumentSnapshot,
   patch: Record<string, unknown>
-): Promise<boolean> {
-  const bfRef = db.collection("backup_files").doc(backupFileId);
-  const bfSnap = await tx.get(bfRef);
+): boolean {
   if (!bfSnap.exists) return false;
   tx.update(bfRef, patch);
   return true;
@@ -425,7 +454,8 @@ export async function claimProxyJob(
     if (!(await verifyBackupFileAccess(userId, objectKey))) {
       log?.("access_denied_mark_terminal_tx_enter", { jobId: docSnap.id });
       await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(ref);
+        const { jobSnap: fresh, bfRef, bfSnap, backupFileId: bid } =
+          await readProxyJobAndBackupSnapshotsInTransaction(tx, db, ref);
         if (!fresh.exists) return;
         const d = fresh.data()!;
         const st = d.status as string;
@@ -448,16 +478,16 @@ export async function claimProxyJob(
           claimed_at: null,
           heartbeat_at: null,
         } as Record<string, unknown>);
-        if (backupFileId) {
-          const projected = await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+        if (bfRef && bfSnap) {
+          const projected = txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
             proxy_status: "failed",
             proxy_error_reason: "access_revoked",
             proxy_generated_at: now,
           } as Record<string, unknown>);
-          if (!projected) {
+          if (!projected && bid) {
             log?.("backup_file_projection_skipped_missing_doc", {
               jobId: docSnap.id,
-              backupFileId,
+              backupFileId: bid,
               context: "access_revoked",
             });
           }
@@ -485,7 +515,8 @@ export async function claimProxyJob(
     if (valid.ok) {
       log?.("proxy_valid_skip_tx_enter", { jobId: docSnap.id, proxyKey });
       await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(ref);
+        const { jobSnap: fresh, bfRef, bfSnap, backupFileId: bid } =
+          await readProxyJobAndBackupSnapshotsInTransaction(tx, db, ref);
         if (!fresh.exists) return;
         const d = fresh.data()!;
         const st = d.status as string;
@@ -512,8 +543,8 @@ export async function claimProxyJob(
           retry_after_failure_wave: 0,
           last_error: null,
         });
-        if (backupFileId) {
-          const projected = await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+        if (bfRef && bfSnap) {
+          const projected = txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
             proxy_status: "ready",
             proxy_object_key: proxyKey,
             proxy_size_bytes: valid.sizeBytes,
@@ -521,10 +552,10 @@ export async function claimProxyJob(
             proxy_generated_at: now,
             proxy_error_reason: null,
           } as Record<string, unknown>);
-          if (!projected) {
+          if (!projected && bid) {
             log?.("backup_file_projection_skipped_missing_doc", {
               jobId: docSnap.id,
-              backupFileId,
+              backupFileId: bid,
               context: "proxy_valid_skip",
             });
           }
@@ -720,7 +751,11 @@ export async function completeProxyJobSuccess(
 
   try {
     await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
+      const { jobSnap: snap, bfRef, bfSnap } = await readProxyJobAndBackupSnapshotsInTransaction(
+        tx,
+        db,
+        ref
+      );
       if (!snap.exists) throw new Error("not_found");
       const data = snap.data()!;
       if (data.claimed_by !== input.workerId) throw new Error("worker_mismatch");
@@ -756,8 +791,8 @@ export async function completeProxyJobSuccess(
         last_error: null,
       });
 
-      if (backupFileId) {
-        await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+      if (bfRef && bfSnap) {
+        txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
           proxy_status: "ready",
           proxy_object_key: proxyKey,
           proxy_size_bytes: input.proxy_size_bytes ?? playability.sizeBytes,
@@ -797,7 +832,11 @@ export async function completeProxyJobFailure(
 
   try {
     await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
+      const { jobSnap: snap, bfRef, bfSnap } = await readProxyJobAndBackupSnapshotsInTransaction(
+        tx,
+        db,
+        ref
+      );
       if (!snap.exists) throw new Error("not_found");
       const data = snap.data()!;
       if (data.claimed_by !== input.workerId) throw new Error("worker_mismatch");
@@ -835,9 +874,8 @@ export async function completeProxyJobFailure(
           claimed_at: null,
           heartbeat_at: null,
         });
-        const backupFileId = (data.backup_file_id as string | null) ?? null;
-        if (backupFileId) {
-          await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+        if (bfRef && bfSnap) {
+          txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
             proxy_status: "failed",
             proxy_error_reason: clampErr(input.error),
             proxy_generated_at: now,
@@ -860,9 +898,8 @@ export async function completeProxyJobFailure(
           claimed_at: null,
           heartbeat_at: null,
         });
-        const backupFileId = (data.backup_file_id as string | null) ?? null;
-        if (backupFileId) {
-          await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+        if (bfRef && bfSnap) {
+          txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
             proxy_status: "failed",
             proxy_error_reason: clampErr(input.error),
             proxy_generated_at: now,
@@ -885,9 +922,8 @@ export async function completeProxyJobFailure(
         claimed_at: null,
         heartbeat_at: null,
       });
-      const backupFileId = (data.backup_file_id as string | null) ?? null;
-      if (backupFileId) {
-        await transactionUpdateBackupFileIfExists(tx, db, backupFileId, {
+      if (bfRef && bfSnap) {
+        txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
           proxy_status: "processing",
           proxy_error_reason: clampErr(input.error),
           proxy_generated_at: now,
