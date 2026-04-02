@@ -887,6 +887,7 @@ export default function UppyUploadModal({
       style={{
         ...(uppyChromeVars as CSSProperties),
         backgroundColor: "var(--bizzi-upload-workspace-bg)",
+        color: "var(--bizzi-upload-text)",
       }}
       data-uppy-theme={uppyDataTheme}
       role="status"

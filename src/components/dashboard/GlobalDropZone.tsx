@@ -31,6 +31,7 @@ export default function GlobalDropZone() {
   const openPanel = useUppyUpload()?.openPanel;
 
   const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
   const dragCounterRef = useRef(0);
   const overlayCancelRef = useRef(0);
   const [dropOverlay, setDropOverlay] = useState<{ title: string; subtitle: string } | null>(
@@ -102,6 +103,7 @@ export default function GlobalDropZone() {
     async (e: DragEvent) => {
       e.preventDefault();
       dragCounterRef.current = 0;
+      isDraggingRef.current = false;
       setIsDragging(false);
       overlayCancelRef.current += 1;
       setDropOverlay(null);
@@ -246,6 +248,7 @@ export default function GlobalDropZone() {
 
       e.preventDefault();
       dragCounterRef.current += 1;
+      isDraggingRef.current = true;
       setIsDragging(true);
       if (dragCounterRef.current === 1) {
         setDropOverlay({
@@ -263,6 +266,7 @@ export default function GlobalDropZone() {
     dragCounterRef.current -= 1;
     if (dragCounterRef.current <= 0) {
       dragCounterRef.current = 0;
+      isDraggingRef.current = false;
       setIsDragging(false);
       overlayCancelRef.current += 1;
       setDropOverlay(null);
@@ -275,6 +279,21 @@ export default function GlobalDropZone() {
       e.dataTransfer.dropEffect = "copy";
     }
   }, []);
+
+  const clearDragOverlay = useCallback(() => {
+    dragCounterRef.current = 0;
+    overlayCancelRef.current += 1;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    setDropOverlay(null);
+  }, []);
+
+  /** Leaving a drag-active route must not leave an invisible full-screen blocker (z-[100]) behind. */
+  useEffect(() => {
+    if (!shouldShowOverlay) {
+      clearDragOverlay();
+    }
+  }, [shouldShowOverlay, clearDragOverlay]);
 
   useEffect(() => {
     if (!shouldShowOverlay) return;
@@ -297,7 +316,35 @@ export default function GlobalDropZone() {
     };
   }, [shouldShowOverlay, handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
-  if (!isDragging) return null;
+  /**
+   * dragenter/dragleave counters desync easily (Esc, drop outside window, child-element traversal).
+   * dragend + Escape + tab hide recover a stuck overlay that would block all clicks while the app keeps updating.
+   */
+  useEffect(() => {
+    if (!shouldShowOverlay) return;
+
+    const onDragEndWindow = () => clearDragOverlay();
+    window.addEventListener("dragend", onDragEndWindow, true);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") clearDragOverlay();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden") return;
+      if (dragCounterRef.current > 0 || isDraggingRef.current) clearDragOverlay();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("dragend", onDragEndWindow, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [shouldShowOverlay, clearDragOverlay]);
+
+  if (!isDragging || !shouldShowOverlay) return null;
 
   const title = dropOverlay?.title ?? "Drop files to upload";
   const subtitle =

@@ -307,6 +307,28 @@
   color: var(--bizzi-upload-text-muted);
 }
 
+/* Toolbar: always pair workspace-tinted text with elevated surface so any accent bg stays readable */
+.bizzi-uppy-theme .bizzi-uppy-add-files-toolbar .bizzi-uppy-file-action-label {
+  color: var(--bizzi-upload-text) !important;
+  background: var(--bizzi-upload-surface-elevated) !important;
+  border-color: var(--bizzi-upload-divider) !important;
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.bizzi-uppy-theme[data-uppy-theme="light"] .bizzi-uppy-add-files-toolbar .bizzi-uppy-file-action-label {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.bizzi-uppy-theme .bizzi-uppy-add-files-toolbar .bizzi-uppy-file-action-label:hover {
+  background: var(--bizzi-upload-inner-well) !important;
+  border-color: var(--bizzi-upload-border-subtle) !important;
+}
+
+.bizzi-uppy-theme .bizzi-uppy-add-files-toolbar .bizzi-uppy-file-action-label:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--bizzi-uppy-primary-focus) !important;
+}
+
 .bizzi-uppy-theme .bizzi-upload-panel-icon-btn {
   color: var(--bizzi-upload-text-muted);
   border-radius: 8px;

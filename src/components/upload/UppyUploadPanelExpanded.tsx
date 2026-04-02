@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, type MutableRefObject } from "react";
+import { useCallback, type MutableRefObject } from "react";
 import Uppy from "@uppy/core";
 import type { Meta, Body } from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
@@ -50,8 +50,6 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
   queueDestinationChip,
   dashboardNote,
 }: UppyUploadPanelExpandedProps<M, B>) {
-  const filesInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const columnCount = useUploadPanelColumnCount();
   const { looseFileIds, progressEpoch } = useUploadGridStructure(uppy, sessionGridTier);
 
@@ -85,44 +83,40 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
           Adding files… {ingestAdded} / {ingestTotal}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 px-1">
-        <input
-          ref={filesInputRef}
-          type="file"
-          multiple
-          className="sr-only"
-          aria-hidden
-          onChange={onFilesChange}
-        />
-        <input
-          ref={folderInputRef}
-          type="file"
-          multiple
-          className="sr-only"
-          aria-hidden
-          onChange={onFilesChange}
-          // Non-standard attribute; enables directory upload in Chromium/WebKit.
-          // eslint-disable-next-line react/no-unknown-property -- webkit directory picker
-          {...{ webkitdirectory: "" }}
-        />
-        <button
-          type="button"
-          onClick={() => filesInputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium"
-          style={{ borderColor: "var(--bizzi-upload-border-subtle)" }}
-        >
-          <ImagePlus className="h-3.5 w-3.5" aria-hidden />
-          Add files
-        </button>
-        <button
-          type="button"
-          onClick={() => folderInputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium"
-          style={{ borderColor: "var(--bizzi-upload-border-subtle)" }}
-        >
-          <FolderOpen className="h-3.5 w-3.5" aria-hidden />
-          Add folder
-        </button>
+      <div className="bizzi-uppy-add-files-toolbar flex flex-wrap items-center gap-2 px-1">
+        {/*
+          Native file/folder picking via invisible input over label (reliable across browsers).
+          Programmatic input.click() from a separate button is often blocked; label + overlay input is not.
+        */}
+        <label className="bizzi-uppy-file-action-label relative inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium">
+          <input
+            type="file"
+            multiple
+            className="absolute inset-0 z-[1] cursor-pointer opacity-0"
+            aria-label="Choose files to upload"
+            onChange={onFilesChange}
+          />
+          <span className="pointer-events-none inline-flex items-center gap-1.5">
+            <ImagePlus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Add files
+          </span>
+        </label>
+        <label className="bizzi-uppy-file-action-label relative inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium">
+          <input
+            type="file"
+            multiple
+            className="absolute inset-0 z-[1] cursor-pointer opacity-0"
+            aria-label="Choose a folder to upload"
+            onChange={onFilesChange}
+            // Non-standard attribute; enables directory upload in Chromium/WebKit.
+            // eslint-disable-next-line react/no-unknown-property -- webkit directory picker
+            {...{ webkitdirectory: "" }}
+          />
+          <span className="pointer-events-none inline-flex items-center gap-1.5">
+            <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Add folder
+          </span>
+        </label>
       </div>
 
       {dashboardNote ? (
