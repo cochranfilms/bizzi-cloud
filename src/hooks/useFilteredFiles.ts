@@ -24,6 +24,14 @@ import {
 /** Debounce before hitting /api/files/filter after filter key changes (pairs with search UI debounce). */
 const FILTER_DEBOUNCE_MS = 400;
 
+/** Query keys that are file-browser navigation, not filter chips — must survive clearFiltersAndKeepDrive. */
+const FILES_NAV_QUERY_KEYS_TO_PRESERVE = new Set([
+  "path",
+  "preview",
+  "file",
+  "checkout",
+]);
+
 /** Stable serialization of filter state for effect deps - avoids refetch loops */
 function filterStateKey(state: FilterState): string {
   const keys = Object.keys(state).sort();
@@ -378,11 +386,22 @@ export function useFilteredFiles(
 
   const clearFiltersAndKeepDrive = useCallback(
     (driveIdToKeep: string) => {
-      const next = `${pathname ?? ""}?drive=${driveIdToKeep}`;
+      const nextParams = new URLSearchParams();
+      const current = new URLSearchParams(searchParams.toString());
+      for (const key of FILES_NAV_QUERY_KEYS_TO_PRESERVE) {
+        for (const value of current.getAll(key)) {
+          if (value) nextParams.append(key, value);
+        }
+      }
+      nextParams.set("drive", driveIdToKeep);
+      const qs = nextParams.toString();
+      const next = qs
+        ? `${pathname ?? ""}?${qs}`
+        : `${pathname ?? ""}?drive=${encodeURIComponent(driveIdToKeep)}`;
       router.replace(next, { scroll: false });
       setFilterState({ drive: driveIdToKeep });
     },
-    [pathname, router]
+    [pathname, router, searchParams]
   );
 
   const activeFilters = getActiveFilters(effectiveFilterState);

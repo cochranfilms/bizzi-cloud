@@ -476,6 +476,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const hasInitiallyLoadedRef = useRef(false);
   /** Discards overlapping fetchRecentUploads results (e.g. rapid storageVersion bumps). */
   const recentUploadsFetchIdRef = useRef(0);
+  /** Supersedes in-flight fetchCloudFiles when linked_drives changes mid-request (avoids stale setDriveFolders wiping optimistic new folders). */
+  const cloudFilesFetchGenRef = useRef(0);
 
   const orgId = org?.id ?? null;
 
@@ -487,6 +489,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       setLoading(false);
       return;
     }
+
+    const gen = ++cloudFilesFetchGenRef.current;
+    const isCurrent = () => gen === cloudFilesFetchGenRef.current;
 
     const isBackgroundRefetch = hasInitiallyLoadedRef.current;
     let deferFolderReveal = false;
@@ -513,7 +518,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         return;
       }
 
-      setDriveFolders(mergeDriveFoldersFromScoped(scoped, driveFoldersRef.current));
+      if (isCurrent()) {
+        setDriveFolders(mergeDriveFoldersFromScoped(scoped, driveFoldersRef.current));
+      }
 
       const driveMap = new Map(
         scoped.map((d) => [
@@ -552,6 +559,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         );
 
         const countData = await countP;
+        if (!isCurrent()) return;
         const countMap = countData.counts ?? {};
         const folders: DriveFolder[] = scoped.map((drive) => ({
           id: drive.id,
@@ -566,6 +574,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         setStorageTopFolders([]);
 
         const recentData = await recentP;
+        if (!isCurrent()) return;
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
@@ -591,6 +600,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         );
 
         const countData = await countP;
+        if (!isCurrent()) return;
         const countMap = countData.counts ?? {};
         const folders: DriveFolder[] = scoped.map((drive) => ({
           id: drive.id,
@@ -624,9 +634,11 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             }));
           }
         }
+        if (!isCurrent()) return;
         setStorageTopFolders(topsTeam);
 
         const recentData = await recentP;
+        if (!isCurrent()) return;
         const recent: RecentFile[] = (recentData.files ?? [])
           .map((raw) => apiFileToRecentFile(raw, driveNameById))
           .filter((r) => driveIds.has(r.driveId))
@@ -654,6 +666,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         })();
 
         const countData = await countP;
+        if (!isCurrent()) return;
         const countMap = countData.counts ?? {};
         const folders: DriveFolder[] = scoped.map((drive) => ({
           id: drive.id,
@@ -687,13 +700,16 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
             }));
           }
         }
+        if (!isCurrent()) return;
         setStorageTopFolders(topsPers);
 
         const recentList = await recentP;
+        if (!isCurrent()) return;
         setRecentFiles(recentList);
       }
     } catch (err) {
       console.error("useCloudFiles:", err);
+      if (!isCurrent()) return;
       if (isFirebaseAuthQuotaExceededError(err)) {
         registerFirebaseAuthQuotaCooldown();
         setAuthQuotaExceeded(true);
@@ -704,7 +720,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       }
     } finally {
       hasInitiallyLoadedRef.current = true;
-      if (!deferFolderReveal) {
+      if (!deferFolderReveal && isCurrent()) {
         setLoading(false);
       }
     }
