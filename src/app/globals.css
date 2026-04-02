@@ -22,10 +22,11 @@
   }
 }
 
-/* Marketing: always light gradient — not tied to `html.dark` / dashboard theme (pre-reg overlay is its own dark UI). */
+/* Marketing: always light gradient — not tied to `html.dark` / dashboard theme. */
 @layer components {
   .landing-page-shell,
-  .landing-hero-shell-surface {
+  .landing-hero-shell-surface,
+  .waitlist-page-shell {
     background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 40%, #bae6fd 70%, #7dd3fc 100%);
   }
 }

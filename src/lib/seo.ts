@@ -29,6 +29,21 @@ export const ORGANIZATION = {
 
 export const DEFAULT_OG_IMAGE = `${SITE_URL}/opengraph-image`;
 
+/** Dedicated `/waitlist` page — search + AI GEO (entity clarity, canonical URL). */
+export const WAITLIST_PATH = "/waitlist" as const;
+export const WAITLIST_TITLE = "Bizzi Cloud waitlist | Pre-register for early access";
+export const WAITLIST_DESCRIPTION =
+  "Pre-register for Bizzi Cloud early access. Tell us what storage and workflow you need—built for videographers, photographers, and creative teams. Join the waitlist to be first in line when spots open.";
+export const WAITLIST_KEYWORDS = [
+  "Bizzi Cloud waitlist",
+  "Bizzi Cloud early access",
+  "creator cloud storage waitlist",
+  "pre-register cloud storage",
+  "video production cloud storage",
+  "photography cloud backup waitlist",
+] as const;
+export const WAITLIST_OG_IMAGE = `${SITE_URL}/waitlist/opengraph-image`;
+
 /** FAQ content for structured data (FAQPage schema) and AI GEO. */
 export const FAQ_ITEMS = [
   {
