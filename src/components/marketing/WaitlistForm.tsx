@@ -10,6 +10,12 @@ import {
   TB_NEED_OPTIONS,
   TEAM_SIZE_OPTIONS,
 } from "@/lib/pre-registration-schema";
+
+const EXCITED_FEATURES_GRID = EXCITED_FEATURE_OPTIONS.slice(0, -1);
+const EXCITED_FEATURE_LAST = EXCITED_FEATURE_OPTIONS[EXCITED_FEATURE_OPTIONS.length - 1]!;
+
+const excitedCheckboxId = (opt: string) =>
+  `wl-excited-${opt.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}`;
 import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
 /** Light glassmorphism — frosted panel on sky gradient; readable slate typography. */
@@ -374,8 +380,8 @@ export default function WaitlistForm() {
               Select all that apply — at least one is required.
             </p>
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
-              {EXCITED_FEATURE_OPTIONS.map((opt) => {
-                const id = `wl-excited-${opt.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}`;
+              {EXCITED_FEATURES_GRID.map((opt) => {
+                const id = excitedCheckboxId(opt);
                 return (
                   <li key={opt}>
                     <label
@@ -394,6 +400,21 @@ export default function WaitlistForm() {
                   </li>
                 );
               })}
+              <li className="col-span-full flex justify-center sm:pt-0.5">
+                <label
+                  htmlFor={excitedCheckboxId(EXCITED_FEATURE_LAST)}
+                  className="flex min-h-[44px] w-full max-w-md cursor-pointer items-start justify-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 hover:border-sky-300/50 sm:min-h-0 sm:w-auto sm:max-w-[calc(50%-0.5rem)]"
+                >
+                  <input
+                    id={excitedCheckboxId(EXCITED_FEATURE_LAST)}
+                    type="checkbox"
+                    checked={excitedFeatures.includes(EXCITED_FEATURE_LAST)}
+                    onChange={() => toggleExcited(EXCITED_FEATURE_LAST)}
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30"
+                  />
+                  <span className="text-sm font-medium text-slate-800">{EXCITED_FEATURE_LAST}</span>
+                </label>
+              </li>
             </ul>
           </div>
 
@@ -426,9 +447,9 @@ export default function WaitlistForm() {
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                   Our <strong className="font-semibold text-slate-800">automated migration</strong>{" "}
-                  path helps you move from the major platforms you already use—Dropbox, Google Drive,
-                  Frame.io, OneDrive, and more—so you land in Bizzi Cloud with fewer manual steps and a
-                  smoother post-production workflow.
+                  path helps you move from the major platforms you already use—Dropbox and Google
+                  Drive—so you land in Bizzi Cloud with fewer manual steps and a smoother
+                  post-production workflow.
                 </p>
               </div>
             </div>

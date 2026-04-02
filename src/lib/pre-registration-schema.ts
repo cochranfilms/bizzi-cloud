@@ -13,7 +13,7 @@ export const CURRENT_CLOUD_PROVIDERS = [
   "Dropbox",
   "Google Drive",
   "Frame.io",
-  "OneDrive",
+  "Pixieset",
   "Other",
 ] as const;
 
@@ -28,7 +28,6 @@ export const EXCITED_FEATURE_OPTIONS = [
   "Photo & Video Galleries",
   "Virtual SSD Mounting",
   "Instant Transfers",
-  "Virtual NLE Mount",
   "Custom LUT Preview",
   "An all in one platform",
 ] as const;
