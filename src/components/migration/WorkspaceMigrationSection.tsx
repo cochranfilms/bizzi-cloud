@@ -84,8 +84,64 @@ function oauthStartErrorMessage(
   return `Could not start OAuth (${status}).`;
 }
 
-function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boolean) {
-  const [agg, setAgg] = useState({ total: 0, done: 0, failed: 0, inFlight: 0 });
+/** Statuses where we show multipart / byte progress in the Storage copy bar. */
+const MIGRATION_COPY_ACTIVE_STATUSES = new Set([
+  "pending",
+  "session_initializing",
+  "in_progress",
+  "needs_repair",
+  "verifying",
+  "finalizing",
+]);
+
+/** 0–1 progress for one migration file row (parts, then bytes, then late-stage heuristic). */
+function migrationFileTransferFraction(data: Record<string, unknown>): number {
+  const t = String(data.transfer_status ?? "");
+  if (t === "completed" || t === "skipped") return 1;
+  if (t === "failed") return 0;
+
+  const partsTotal = typeof data.parts_total === "number" && data.parts_total > 0 ? data.parts_total : 0;
+  const partsDone =
+    typeof data.parts_completed === "number" ? Math.max(0, data.parts_completed) : 0;
+  if (partsTotal > 0) return Math.min(1, partsDone / partsTotal);
+
+  const session = data.transfer_session as Record<string, unknown> | undefined;
+  const sizeFromSession =
+    session && typeof session.size_bytes_expected === "number" && session.size_bytes_expected > 0
+      ? (session.size_bytes_expected as number)
+      : 0;
+  const sizeBytes =
+    typeof data.size_bytes === "number" && data.size_bytes > 0 ? data.size_bytes : sizeFromSession;
+  const bytesXfer =
+    typeof data.bytes_transferred === "number" ? Math.max(0, data.bytes_transferred) : 0;
+  if (sizeBytes > 0) return Math.min(1, bytesXfer / sizeBytes);
+
+  if (t === "verifying" || t === "finalizing") return 0.98;
+  return 0;
+}
+
+type MigrationJobFileAgg = {
+  total: number;
+  done: number;
+  failed: number;
+  inFlight: number;
+  /** Sum of per-file 0–1 progress; divide by `total` for overall % when total > 0. */
+  weightedProgressSum: number;
+  /** Largest multipart job among active rows (for “Part x of y” subtitle). */
+  leadPartsCompleted: number;
+  leadPartsTotal: number;
+};
+
+function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boolean): MigrationJobFileAgg {
+  const [agg, setAgg] = useState<MigrationJobFileAgg>({
+    total: 0,
+    done: 0,
+    failed: 0,
+    inFlight: 0,
+    weightedProgressSum: 0,
+    leadPartsCompleted: 0,
+    leadPartsTotal: 0,
+  });
   useEffect(() => {
     if (!jobId || !subscribe || !isFirebaseConfigured()) return;
     const db = getFirebaseFirestore();
@@ -96,8 +152,12 @@ function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boole
         let done = 0;
         let failed = 0;
         let inFlight = 0;
+        let weightedProgressSum = 0;
+        let leadPartsCompleted = 0;
+        let leadPartsTotal = 0;
         for (const doc of snap.docs) {
-          const t = doc.data().transfer_status as string;
+          const data = doc.data();
+          const t = data.transfer_status as string;
           if (t === "completed" || t === "skipped") done += 1;
           else if (t === "failed") failed += 1;
           else if (
@@ -109,8 +169,28 @@ function useMigrationJobFileProgress(jobId: string | undefined, subscribe: boole
           ) {
             inFlight += 1;
           }
+          weightedProgressSum += migrationFileTransferFraction(data as Record<string, unknown>);
+
+          const pt = typeof data.parts_total === "number" ? data.parts_total : 0;
+          const pc = typeof data.parts_completed === "number" ? data.parts_completed : 0;
+          if (
+            pt > 0 &&
+            MIGRATION_COPY_ACTIVE_STATUSES.has(t) &&
+            (pt > leadPartsTotal || (pt === leadPartsTotal && pc > leadPartsCompleted))
+          ) {
+            leadPartsTotal = pt;
+            leadPartsCompleted = pc;
+          }
         }
-        setAgg({ total: snap.size, done, failed, inFlight });
+        setAgg({
+          total: snap.size,
+          done,
+          failed,
+          inFlight,
+          weightedProgressSum,
+          leadPartsCompleted,
+          leadPartsTotal,
+        });
       },
       (err) => console.warn("[migration] files snapshot", err)
     );
@@ -204,17 +284,25 @@ function MigrationJobCard({ job, onStart, onPause, onResume }: MigrationJobCardP
           : "Preparing your file list…";
     } else if (status === "running" || status === "paused") {
       if (fileAgg.total > 0) {
-        transferPercent = (fileAgg.done / fileAgg.total) * 100;
+        transferPercent = Math.min(
+          100,
+          Math.max(0, (fileAgg.weightedProgressSum / fileAgg.total) * 100)
+        );
         transferSubtitle = `${fileAgg.done.toLocaleString()} of ${fileAgg.total.toLocaleString()} files copied`;
         if (fileAgg.inFlight > 0) transferSubtitle += ` · ${fileAgg.inFlight} in progress`;
         if (fileAgg.failed > 0) transferSubtitle += ` · ${fileAgg.failed} could not finish`;
+        if (fileAgg.leadPartsTotal > 0) {
+          transferSubtitle += ` · Part ${fileAgg.leadPartsCompleted.toLocaleString()} of ${fileAgg.leadPartsTotal.toLocaleString()}`;
+        }
       } else {
         transferPercent = null;
         transferSubtitle = "Starting copy…";
       }
     } else if (status === "completed" || status === "completed_with_issues") {
       transferPercent =
-        fileAgg.total > 0 ? Math.min(100, (fileAgg.done / fileAgg.total) * 100) : 100;
+        fileAgg.total > 0
+          ? Math.min(100, Math.max(0, (fileAgg.weightedProgressSum / fileAgg.total) * 100))
+          : 100;
       transferSubtitle =
         fileAgg.total > 0
           ? `${fileAgg.done.toLocaleString()} of ${fileAgg.total.toLocaleString()} files done${fileAgg.failed > 0 ? ` · ${fileAgg.failed} failed` : ""}`
