@@ -110,43 +110,44 @@ export default function TopNavbar() {
     </div>
   );
 
-  /** Mirrors DashboardShell: on xl the right panel is w-56, so this centers the nav over the main column only (aligns with home base folders). */
+  /**
+   * Match HomeStorageView "Bizzi Cloud Base": `max-w-4xl` centered in the main column.
+   * `xl:pr-56` excludes the docked Quick Access panel (same as DashboardShell) so this band
+   * is not the full viewport—then `justify-center` places the nav pills over the three base folders.
+   */
   const desktopNav = (
-    <div className="hidden w-full min-w-0 items-center md:flex">
-      <div className="min-w-0 flex-1" aria-hidden />
-      <nav
-        className="-mx-1 flex min-h-9 min-w-0 shrink-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
-        aria-label="Workspace"
-      >
-      {filteredItems.map((item) => {
-        const Icon = item.icon;
-        const href =
-          teamNavBase && item.href === "/dashboard/settings"
-            ? `${teamNavBase}/settings`
-            : item.href.replace(/^\/dashboard/, navBase);
-        const isActive = isNavItemActive(pathname, href, item.href);
-        const hasPowerupColor = isActive && item.activeBgColor;
-        return (
-          <Link
-            key={item.href}
-            href={href}
-            className={navLinkClass(isActive, !!hasPowerupColor)}
-            style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
-          >
-            <Icon
-              className={`h-4 w-4 flex-shrink-0 ${
-                hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
-              }`}
-            />
-            <span className="hidden lg:inline">{item.label}</span>
-          </Link>
-        );
-      })}
-      </nav>
-      <div
-        className="min-w-0 flex-1 xl:w-56 xl:max-w-56 xl:flex-none xl:shrink-0"
-        aria-hidden
-      />
+    <div className="hidden w-full min-w-0 md:block xl:pr-56">
+      <div className="mx-auto flex w-full max-w-4xl justify-center">
+        <nav
+          className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
+          aria-label="Workspace"
+        >
+          {filteredItems.map((item) => {
+            const Icon = item.icon;
+            const href =
+              teamNavBase && item.href === "/dashboard/settings"
+                ? `${teamNavBase}/settings`
+                : item.href.replace(/^\/dashboard/, navBase);
+            const isActive = isNavItemActive(pathname, href, item.href);
+            const hasPowerupColor = isActive && item.activeBgColor;
+            return (
+              <Link
+                key={item.href}
+                href={href}
+                className={navLinkClass(isActive, !!hasPowerupColor)}
+                style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
+              >
+                <Icon
+                  className={`h-4 w-4 flex-shrink-0 ${
+                    hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                  }`}
+                />
+                <span className="hidden lg:inline">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
     </div>
   );
 
