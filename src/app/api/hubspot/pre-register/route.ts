@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit-log";
+import {
+  buildWaitlistSubmissionDetailsHtml,
+  sendWaitlistAdminNotificationEmail,
+  sendWaitlistClientEmail,
+} from "@/lib/emailjs";
 import { buildHubSpotFields } from "@/lib/hubspot-pre-register-fields";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { preRegistrationBodySchema } from "@/lib/pre-registration-schema";
+import { SITE_URL, WAITLIST_PATH } from "@/lib/seo";
+import { splitFullName } from "@/lib/split-full-name";
 
 const IP_WINDOW_MS = 60 * 60 * 1000;
 const IP_MAX = 30;
@@ -68,7 +75,7 @@ export async function POST(request: Request) {
         fields,
         context: {
           pageUri: request.headers.get("referer") ?? "https://bizzicloud.io/",
-          pageName: "Bizzi Cloud Pre-Registration",
+          pageName: "Bizzi Cloud Waitlist",
         },
       }),
     });
@@ -87,6 +94,35 @@ export async function POST(request: Request) {
       { ok: false as const, error: "Could not complete registration. Try again shortly." },
       { status: 502 },
     );
+  }
+
+  try {
+    const submittedAt = new Date();
+    const submittedAtFormatted = submittedAt.toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    const submissionDetailsHtml = buildWaitlistSubmissionDetailsHtml(parsed.data, submittedAt);
+    const { firstname } = splitFullName(parsed.data.fullName);
+    const waitlistUrl = `${SITE_URL}${WAITLIST_PATH}`;
+    await Promise.all([
+      sendWaitlistAdminNotificationEmail({
+        admin_email: process.env.WAITLIST_ADMIN_NOTIFY_EMAIL?.trim() ?? "",
+        full_name: parsed.data.fullName,
+        submitter_email: parsed.data.email,
+        submission_details_html: submissionDetailsHtml,
+        submitted_at_formatted: submittedAtFormatted,
+      }),
+      sendWaitlistClientEmail({
+        submitter_email: parsed.data.email,
+        first_name: firstname || "there",
+        submission_details_html: submissionDetailsHtml,
+        submitted_at_formatted: submittedAtFormatted,
+        waitlist_url: waitlistUrl,
+      }),
+    ]);
+  } catch (mailErr) {
+    console.error("[hubspot/pre-register] waitlist EmailJS send failed", mailErr);
   }
 
   return NextResponse.json({ ok: true as const });

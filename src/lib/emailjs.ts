@@ -10,6 +10,7 @@
  * Org seat invite: EMAILJS_TEMPLATE_ID_ORG_SEAT_INVITE (optional; when set, invite email sent when org admin invites member)
  * Personal team invite: EMAILJS_TEMPLATE_ID_PERSONAL_TEAM_INVITE (optional; when set, email sent for personal-account team invites)
  * Subscription change receipt: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_CHANGE_RECEIPT (optional; itemized receipt after in-app plan/seat changes)
+ * Waitlist: EMAILJS_TEMPLATE_ID_WAITLIST_ADMIN, EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT, WAITLIST_ADMIN_NOTIFY_EMAIL
  */
 
 import emailjs from "@emailjs/nodejs";
@@ -1159,4 +1160,131 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** HTML table of waitlist fields for EmailJS (use triple braces {{{submission_details_html}}} in body). */
+export function buildWaitlistSubmissionDetailsHtml(
+  data: {
+    fullName: string;
+    email: string;
+    phone: string;
+    creatorType: string;
+    socialProfile?: string;
+    tbNeeded: string;
+    currentCloudProvider: string;
+    otherProvider?: string;
+    currentSpend?: string;
+    teamSize: string;
+    excitedFeatures: readonly string[];
+  },
+  submittedAt: Date,
+): string {
+  const e = escapeHtml;
+  const other =
+    data.currentCloudProvider === "Other" ? e(data.otherProvider ?? "") : "—";
+  const social = data.socialProfile ? e(data.socialProfile) : "—";
+  const spend = data.currentSpend ? e(data.currentSpend) : "—";
+  const features = e(data.excitedFeatures.join("; "));
+  const subAt = e(
+    submittedAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+  );
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-weight:600;font-size:13px;width:38%;vertical-align:top;">${label}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#334155;font-size:14px;vertical-align:top;">${value}</td></tr>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;border-collapse:collapse;background:#f8fafc;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">${row("Full name", e(data.fullName))}${row("Email", e(data.email))}${row("Phone", e(data.phone))}${row("Creator type", e(data.creatorType))}${row("Social profile", social)}${row("Storage needed", e(data.tbNeeded))}${row("Current cloud", e(data.currentCloudProvider))}${row("Other provider", other)}${row("Current spend", spend)}${row("Team size", e(data.teamSize))}${row("Excited about", features)}${row("Submitted", subAt)}</table>`;
+}
+
+function getWaitlistAdminEmailConfig(): {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateId = process.env.EMAILJS_TEMPLATE_ID_WAITLIST_ADMIN;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+  if (!serviceId || !templateId || !publicKey) return null;
+  return {
+    serviceId,
+    templateId,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getWaitlistClientEmailConfig(): {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateId = process.env.EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT;
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+  if (!serviceId || !templateId || !publicKey) return null;
+  return {
+    serviceId,
+    templateId,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+export type WaitlistAdminEmailParams = {
+  admin_email: string;
+  full_name: string;
+  submitter_email: string;
+  submission_details_html: string;
+  submitted_at_formatted: string;
+};
+
+export type WaitlistClientEmailParams = {
+  submitter_email: string;
+  first_name: string;
+  submission_details_html: string;
+  submitted_at_formatted: string;
+  waitlist_url: string;
+};
+
+/**
+ * Admin inbox: new waitlist submission. Requires EMAILJS_TEMPLATE_ID_WAITLIST_ADMIN and
+ * WAITLIST_ADMIN_NOTIFY_EMAIL. In EmailJS set **To** to {{admin_email}}.
+ */
+export async function sendWaitlistAdminNotificationEmail(
+  params: WaitlistAdminEmailParams,
+): Promise<void> {
+  const config = getWaitlistAdminEmailConfig();
+  if (!config || !params.admin_email) {
+    console.warn(
+      "[EmailJS] Waitlist admin email skipped: EMAILJS_TEMPLATE_ID_WAITLIST_ADMIN or WAITLIST_ADMIN_NOTIFY_EMAIL missing",
+    );
+    return;
+  }
+  await emailjs.send(
+    config.serviceId,
+    config.templateId,
+    { ...params, logo_url: getEmailLogoUrl() },
+    { publicKey: config.publicKey, privateKey: config.privateKey },
+  );
+}
+
+/**
+ * Submitter copy with recap + feature highlights. Requires EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT.
+ * Set **To** to {{submitter_email}}.
+ */
+export async function sendWaitlistClientEmail(params: WaitlistClientEmailParams): Promise<void> {
+  const config = getWaitlistClientEmailConfig();
+  if (!config) {
+    console.warn(
+      "[EmailJS] Waitlist client email skipped: EMAILJS_TEMPLATE_ID_WAITLIST_CLIENT not set",
+    );
+    return;
+  }
+  await emailjs.send(
+    config.serviceId,
+    config.templateId,
+    { ...params, logo_url: getEmailLogoUrl() },
+    { publicKey: config.publicKey, privateKey: config.privateKey },
+  );
 }

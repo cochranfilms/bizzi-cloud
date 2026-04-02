@@ -10,7 +10,8 @@ export const HS = {
   firstname: "firstname",
   lastname: "lastname",
   email: "email",
-  website: "website",
+  /** Creator type (waitlist): Photographer, Filmmaker, etc. — align property in HubSpot */
+  creatorType: "bizzi_pr_creator_type",
   /** Single-line text — social handle or profile URL */
   socialProfile: "bizzi_pr_social_profile",
   /** Single-line — sent as display string e.g. "5 TB" */
@@ -20,6 +21,8 @@ export const HS = {
   currentCloudProvider: "bizzi_pr_current_cloud_provider",
   otherProvider: "bizzi_pr_other_cloud_provider",
   currentSpend: "bizzi_pr_current_cloud_spend",
+  /** Team size: Just Me, 1 … 10 — align dropdown in HubSpot */
+  teamSize: "bizzi_pr_team_size",
   /** Source / campaign label for CRM segmentation */
   leadSource: "bizzi_pr_lead_source",
 } as const;
@@ -50,12 +53,11 @@ export function buildHubSpotFields(
     { name: HS.currentCloudProvider, value: data.currentCloudProvider },
     { name: HS.otherProvider, value: otherProviderValue },
     { name: HS.leadSource, value: leadSource },
+    { name: HS.creatorType, value: data.creatorType },
+    { name: HS.excitedFeatures, value: data.excitedFeatures.join("; ") },
+    { name: HS.teamSize, value: data.teamSize },
   ];
-  if (data.website) fields.push({ name: HS.website, value: data.website });
   if (data.socialProfile) fields.push({ name: HS.socialProfile, value: data.socialProfile });
-  if (data.excitedFeatures.length > 0) {
-    fields.push({ name: HS.excitedFeatures, value: data.excitedFeatures.join("; ") });
-  }
   if (data.currentSpend) fields.push({ name: HS.currentSpend, value: data.currentSpend });
   return fields;
 }

@@ -17,22 +17,36 @@ export const CURRENT_CLOUD_PROVIDERS = [
   "Other",
 ] as const;
 
+export const CREATOR_TYPE_OPTIONS = [
+  "Photographer",
+  "Filmmaker",
+  "Content creator",
+  "Hybrid shooter",
+] as const;
+
 export const EXCITED_FEATURE_OPTIONS = [
-  "Photo & Video Gallery",
-  "Bizzi Editor",
+  "Photo & Video Galleries",
+  "Virtual SSD Mounting",
   "Instant Transfers",
   "Virtual NLE Mount",
   "Custom LUT Preview",
-  "EVERYTHING",
+  "An all in one platform",
 ] as const;
 
-const optionalUrl = z.preprocess(
-  (v) => {
-    if (v === "" || v == null) return undefined;
-    return String(v).trim().slice(0, 2048);
-  },
-  z.union([z.undefined(), z.string().url({ message: "Enter a valid URL (include https://)" })]),
-);
+/** Team size on waitlist: solo through 10 (numeric strings match headcount beyond “Just Me”). */
+export const TEAM_SIZE_OPTIONS = [
+  "Just Me",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+] as const;
 
 export const preRegistrationBodySchema = z
   .object({
@@ -48,14 +62,15 @@ export const preRegistrationBodySchema = z
       .max(500)
       .optional()
       .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
-    website: optionalUrl,
+    creatorType: z.enum(CREATOR_TYPE_OPTIONS, {
+      errorMap: () => ({ message: "Select what type of creator you are" }),
+    }),
     tbNeeded: z.enum(TB_NEED_OPTIONS, {
       errorMap: () => ({ message: "Select how much storage you need" }),
     }),
     excitedFeatures: z
       .array(z.enum(EXCITED_FEATURE_OPTIONS))
-      .optional()
-      .default([]),
+      .min(1, "Select at least one thing you’re excited about in Bizzi Cloud"),
     currentCloudProvider: z.enum(CURRENT_CLOUD_PROVIDERS, {
       errorMap: () => ({ message: "Select your current cloud provider" }),
     }),
@@ -69,6 +84,9 @@ export const preRegistrationBodySchema = z
       .max(200)
       .optional()
       .transform((s) => (s == null || s.trim() === "" ? undefined : s.trim())),
+    teamSize: z.enum(TEAM_SIZE_OPTIONS, {
+      errorMap: () => ({ message: "Select how many people are on your team" }),
+    }),
   })
   .superRefine((data, ctx) => {
     if (data.currentCloudProvider === "Other" && !data.otherProvider) {

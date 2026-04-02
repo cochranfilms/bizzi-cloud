@@ -4,9 +4,11 @@ import Image from "next/image";
 import { FolderSync } from "lucide-react";
 import { useCallback, useState } from "react";
 import {
+  CREATOR_TYPE_OPTIONS,
   CURRENT_CLOUD_PROVIDERS,
   EXCITED_FEATURE_OPTIONS,
   TB_NEED_OPTIONS,
+  TEAM_SIZE_OPTIONS,
 } from "@/lib/pre-registration-schema";
 import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
@@ -32,7 +34,7 @@ export default function WaitlistForm() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [socialProfile, setSocialProfile] = useState("");
-  const [website, setWebsite] = useState("");
+  const [creatorType, setCreatorType] = useState<(typeof CREATOR_TYPE_OPTIONS)[number] | "">("");
   const [tbNeeded, setTbNeeded] = useState<(typeof TB_NEED_OPTIONS)[number] | "">("");
   const [excitedFeatures, setExcitedFeatures] = useState<
     (typeof EXCITED_FEATURE_OPTIONS)[number][]
@@ -42,6 +44,7 @@ export default function WaitlistForm() {
   >("");
   const [otherProvider, setOtherProvider] = useState("");
   const [currentSpend, setCurrentSpend] = useState("");
+  const [teamSize, setTeamSize] = useState<(typeof TEAM_SIZE_OPTIONS)[number] | "">("");
 
   const toggleExcited = useCallback((opt: (typeof EXCITED_FEATURE_OPTIONS)[number]) => {
     setExcitedFeatures((prev) =>
@@ -69,6 +72,21 @@ export default function WaitlistForm() {
       setSubmitting(false);
       return;
     }
+    if (!creatorType) {
+      setErrorBanner("Please select what type of creator you are.");
+      setSubmitting(false);
+      return;
+    }
+    if (excitedFeatures.length === 0) {
+      setErrorBanner("Please select at least one thing you’re excited about in Bizzi Cloud.");
+      setSubmitting(false);
+      return;
+    }
+    if (!teamSize) {
+      setErrorBanner("Please select how many people are on your team.");
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/hubspot/pre-register", {
@@ -79,12 +97,13 @@ export default function WaitlistForm() {
           email,
           phone,
           socialProfile: socialProfile.trim() || undefined,
-          website: website.trim() || "",
+          creatorType,
           tbNeeded,
           excitedFeatures,
           currentCloudProvider,
           otherProvider: currentCloudProvider === "Other" ? otherProvider.trim() : undefined,
           currentSpend: currentSpend.trim() || undefined,
+          teamSize,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -135,8 +154,7 @@ export default function WaitlistForm() {
         >
           <p className="text-lg font-semibold text-white drop-shadow-sm">You&apos;re on the list.</p>
           <p className="mt-3 text-sm leading-relaxed text-teal-50/95 drop-shadow-sm">
-            Thank you for pre-registering. Early access updates are coming soon—we&apos;ll be in touch
-            when your spot opens.
+            Thank you for pre-registering. We&apos;ll be in touch when your spot opens.
           </p>
         </div>
       ) : (
@@ -208,19 +226,27 @@ export default function WaitlistForm() {
                 className={inputCls}
               />
             </div>
-            <div>
-              <label htmlFor="wl-website" className={labelCls}>
-                Website
+            <div className="sm:col-span-2">
+              <label htmlFor="wl-creator-type" className={labelCls}>
+                What type of creator are you? <span className={requiredMark}>*</span>
               </label>
-              <input
-                id="wl-website"
-                name="website"
-                type="url"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://"
+              <select
+                id="wl-creator-type"
+                name="creatorType"
+                required
+                value={creatorType}
+                onChange={(e) =>
+                  setCreatorType(e.target.value as (typeof CREATOR_TYPE_OPTIONS)[number] | "")
+                }
                 className={inputCls}
-              />
+              >
+                <option value="">Select one</option>
+                {CREATOR_TYPE_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label htmlFor="wl-tb" className={labelCls}>
@@ -295,6 +321,28 @@ export default function WaitlistForm() {
                 className={inputCls}
               />
             </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="wl-team-size" className={labelCls}>
+                How many people are on your team? <span className={requiredMark}>*</span>
+              </label>
+              <select
+                id="wl-team-size"
+                name="teamSize"
+                required
+                value={teamSize}
+                onChange={(e) =>
+                  setTeamSize(e.target.value as (typeof TEAM_SIZE_OPTIONS)[number] | "")
+                }
+                className={inputCls}
+              >
+                <option value="">Select team size</option>
+                {TEAM_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div
@@ -303,10 +351,10 @@ export default function WaitlistForm() {
             className="rounded-2xl border border-white/50 bg-white/35 px-4 py-5 shadow-inner shadow-white/15 backdrop-blur-md sm:px-5 sm:py-6"
           >
             <p id="wl-excited-heading" className={labelCls}>
-              What are you most excited to see in Bizzi Cloud?
+              What are you most excited to see in Bizzi Cloud? <span className={requiredMark}>*</span>
             </p>
             <p className="mb-4 mt-2 text-xs leading-relaxed text-slate-600 sm:text-sm">
-              Optional — select any that apply.
+              Select all that apply — at least one is required.
             </p>
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
               {EXCITED_FEATURE_OPTIONS.map((opt) => {
@@ -334,7 +382,7 @@ export default function WaitlistForm() {
 
           <div
             role="region"
-            aria-label="Automated cloud migration — coming soon"
+            aria-label="Cloud migration to Bizzi Cloud"
             className="relative overflow-hidden rounded-2xl border border-sky-200/55 bg-gradient-to-br from-white/55 via-sky-50/45 to-cyan-50/40 px-4 py-4 shadow-[0_8px_30px_-8px_rgba(14,116,144,0.2)] backdrop-blur-md sm:px-5 sm:py-5"
           >
             <div
@@ -353,21 +401,16 @@ export default function WaitlistForm() {
                 <FolderSync className="h-6 w-6 text-sky-600 sm:h-7 sm:w-7" strokeWidth={1.75} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full bg-sky-600/90 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-white shadow-sm shadow-sky-900/10">
-                    Coming soon
-                  </span>
-                  <span className="text-xs font-medium text-sky-800/80 sm:text-sm">
-                    Cloud Migration Tool
-                  </span>
-                </div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 sm:text-sm">
+                  Cloud migration
+                </p>
                 <h3 className="mt-2 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
                   Move your libraries without the lift-and-shift headaches
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
-                  We&apos;re building an <strong className="font-semibold text-slate-800">automated migration</strong>{" "}
-                  path from the major platforms you already use—think Dropbox, Google Drive, Frame.io,
-                  OneDrive, and more—so you can land in Bizzi Cloud with fewer manual steps and a
+                  Our <strong className="font-semibold text-slate-800">automated migration</strong>{" "}
+                  path helps you move from the major platforms you already use—Dropbox, Google Drive,
+                  Frame.io, OneDrive, and more—so you land in Bizzi Cloud with fewer manual steps and a
                   smoother post-production workflow.
                 </p>
               </div>
@@ -380,7 +423,7 @@ export default function WaitlistForm() {
               disabled={submitting}
               className="touch-target inline-flex min-h-[48px] min-w-[min(100%,17rem)] items-center justify-center rounded-full bg-gradient-to-r from-sky-500 to-bizzi-blue px-10 text-sm font-semibold text-white shadow-lg shadow-sky-500/30 transition hover:brightness-105 disabled:opacity-60"
             >
-              {submitting ? "Sending…" : "Request early access"}
+              {submitting ? "Sending…" : "Submit pre-registration"}
             </button>
           </div>
         </form>

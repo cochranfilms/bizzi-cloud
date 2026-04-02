@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import { WAITLIST_LEAD } from "@/lib/seo";
+import { WAITLIST_CTA_LINE, WAITLIST_LEAD } from "@/lib/seo";
 
 export const alt = "Bizzi Cloud waitlist — glass form on a white and sky-blue gradient";
 export const size = { width: 1200, height: 630 };
@@ -81,12 +81,25 @@ export default async function WaitlistOpenGraphImage() {
               fontSize: 18,
               color: "#475569",
               lineHeight: 1.55,
-              marginBottom: 28,
+              marginBottom: 10,
               textAlign: "center",
               justifyContent: "center",
             }}
           >
             {WAITLIST_LEAD}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              fontSize: 17,
+              color: "#64748b",
+              lineHeight: 1.5,
+              marginBottom: 28,
+              textAlign: "center",
+              justifyContent: "center",
+            }}
+          >
+            {WAITLIST_CTA_LINE}
           </div>
           <div
             style={{
