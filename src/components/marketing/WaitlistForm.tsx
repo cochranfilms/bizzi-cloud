@@ -385,7 +385,7 @@ export default function WaitlistForm() {
             <p className="mb-4 mt-2 text-xs leading-relaxed text-slate-600 sm:text-sm">
               Select all that apply — at least one is required.
             </p>
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
+            <ul className="mx-auto grid w-full max-w-lg grid-cols-1 gap-2 sm:max-w-xl sm:grid-cols-2 sm:gap-x-4 sm:gap-y-2">
               {EXCITED_FEATURES_GRID.map((opt) => {
                 const id = excitedCheckboxId(opt);
                 return (
@@ -408,10 +408,10 @@ export default function WaitlistForm() {
                   </li>
                 );
               })}
-              <li className="col-span-full flex justify-center sm:pt-0.5">
+              <li className="col-span-full sm:pt-0.5">
                 <label
                   htmlFor={excitedCheckboxId(EXCITED_FEATURE_LAST)}
-                  className="flex min-h-[48px] w-full max-w-md cursor-pointer items-start justify-center gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:w-auto sm:max-w-[calc(50%-0.5rem)] sm:gap-2.5 sm:py-2.5"
+                  className="flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
                 >
                   <input
                     id={excitedCheckboxId(EXCITED_FEATURE_LAST)}
@@ -420,7 +420,7 @@ export default function WaitlistForm() {
                     onChange={() => toggleExcited(EXCITED_FEATURE_LAST)}
                     className="mt-0.5 h-[1.125rem] w-[1.125rem] shrink-0 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30 sm:mt-1 sm:h-4 sm:w-4"
                   />
-                  <span className="text-center text-[0.9375rem] font-medium leading-snug text-slate-800 sm:text-left sm:text-sm">
+                  <span className="text-left text-[0.9375rem] font-medium leading-snug text-slate-800 sm:text-sm">
                     {EXCITED_FEATURE_LAST}
                   </span>
                 </label>
