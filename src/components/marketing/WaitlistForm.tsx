@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
+import { FolderSync } from "lucide-react";
 import { useCallback, useState } from "react";
 import {
   CURRENT_CLOUD_PROVIDERS,
   EXCITED_FEATURE_OPTIONS,
   TB_NEED_OPTIONS,
 } from "@/lib/pre-registration-schema";
+import { WAITLIST_DESCRIPTION } from "@/lib/seo";
 
 /** Light glassmorphism — frosted panel on sky gradient; readable slate typography. */
 const shellGlass =
@@ -121,8 +123,7 @@ export default function WaitlistForm() {
           id="waitlist-form-intro"
           className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-slate-700 sm:mt-5 sm:text-base"
         >
-          Tell us what you need most so we can build the fastest creator cloud experience for you.
-          Join the waitlist for early access—we&apos;ll reach out when your spot opens.
+          {WAITLIST_DESCRIPTION}
         </p>
       </header>
 
@@ -329,6 +330,48 @@ export default function WaitlistForm() {
                 );
               })}
             </ul>
+          </div>
+
+          <div
+            role="region"
+            aria-label="Automated cloud migration — coming soon"
+            className="relative overflow-hidden rounded-2xl border border-sky-200/55 bg-gradient-to-br from-white/55 via-sky-50/45 to-cyan-50/40 px-4 py-4 shadow-[0_8px_30px_-8px_rgba(14,116,144,0.2)] backdrop-blur-md sm:px-5 sm:py-5"
+          >
+            <div
+              className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-sky-400/25 blur-2xl"
+              aria-hidden
+            />
+            <div
+              className="pointer-events-none absolute -bottom-14 -left-8 h-32 w-32 rounded-full bg-cyan-400/20 blur-2xl"
+              aria-hidden
+            />
+            <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/50 shadow-inner shadow-sky-200/40 backdrop-blur-sm sm:h-14 sm:w-14"
+                aria-hidden
+              >
+                <FolderSync className="h-6 w-6 text-sky-600 sm:h-7 sm:w-7" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-sky-600/90 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-white shadow-sm shadow-sky-900/10">
+                    Coming soon
+                  </span>
+                  <span className="text-xs font-medium text-sky-800/80 sm:text-sm">
+                    Cloud Migration Tool
+                  </span>
+                </div>
+                <h3 className="mt-2 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
+                  Move your libraries without the lift-and-shift headaches
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+                  We&apos;re building an <strong className="font-semibold text-slate-800">automated migration</strong>{" "}
+                  path from the major platforms you already use—think Dropbox, Google Drive, Frame.io,
+                  OneDrive, and more—so you can land in Bizzi Cloud with fewer manual steps and a
+                  smoother post-production workflow.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex w-full justify-center pt-1 sm:pt-2">

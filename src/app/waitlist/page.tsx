@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import WaitlistForm from "@/components/marketing/WaitlistForm";
 import { WaitlistPageStructuredData } from "@/components/seo/WaitlistPageStructuredData";
 import {
@@ -61,17 +60,6 @@ export default function WaitlistPage() {
         className="relative mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-12 sm:px-6 sm:py-16 md:px-8 md:py-20"
       >
         <WaitlistForm />
-        <nav
-          className="mt-12 border-t border-white/40 pt-8 text-center"
-          aria-label="Site"
-        >
-          <Link
-            href="/"
-            className="text-sm font-medium text-sky-800 underline decoration-sky-500/45 underline-offset-[6px] transition hover:text-sky-950 hover:decoration-sky-600"
-          >
-            Return to home — Bizzi Cloud
-          </Link>
-        </nav>
       </main>
     </div>
   );
