@@ -57,7 +57,7 @@ export default function WaitlistPage() {
       <WaitlistPageStructuredData />
       <main
         id="main-content"
-        className="relative mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-12 sm:px-6 sm:py-16 md:px-8 md:py-20"
+        className="relative mx-auto flex w-full max-w-4xl flex-col items-center pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-[max(3rem,env(safe-area-inset-bottom,0px))] pt-10 sm:px-6 sm:pb-16 sm:pt-16 md:px-8 md:py-20"
       >
         <WaitlistForm />
       </main>

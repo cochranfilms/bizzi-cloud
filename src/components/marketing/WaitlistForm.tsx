@@ -22,11 +22,13 @@ const excitedCheckboxId = (opt: string) =>
 const shellGlass =
   "border border-white/55 bg-white/40 shadow-[0_12px_48px_rgba(14,116,144,0.12)] backdrop-blur-2xl ring-1 ring-white/35";
 
+/** `text-base` on small screens avoids iOS zoom-on-focus on inputs. */
 const inputCls =
-  "w-full rounded-xl border border-slate-200/90 bg-white/55 px-3 py-2.5 text-sm text-slate-900 backdrop-blur-sm shadow-inner shadow-white/20 placeholder:text-slate-500 focus:border-bizzi-blue focus:outline-none focus:ring-2 focus:ring-sky-400/35 [&_option]:bg-white [&_option]:text-slate-900";
+  "w-full min-h-[2.75rem] rounded-xl border border-slate-200/90 bg-white/55 px-3 py-2.5 text-base text-slate-900 backdrop-blur-sm shadow-inner shadow-white/20 placeholder:text-slate-500 focus:border-bizzi-blue focus:outline-none focus:ring-2 focus:ring-sky-400/35 sm:min-h-0 sm:text-sm [&_option]:bg-white [&_option]:text-slate-900";
 
+/** Sentence case on small screens reads more naturally; uppercase from `sm` up matches desktop. */
 const labelCls =
-  "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600";
+  "mb-2 block text-[0.8125rem] font-semibold tracking-normal text-slate-700 sm:mb-1.5 sm:text-xs sm:uppercase sm:tracking-wide sm:text-slate-600";
 
 const requiredMark = "text-red-600";
 
@@ -137,10 +139,10 @@ export default function WaitlistForm() {
 
   return (
     <div
-      className={`w-full max-w-[min(100%,42rem)] shrink-0 rounded-t-[2.75rem] rounded-b-[3.5rem] px-6 py-10 sm:max-w-2xl sm:rounded-t-[3.25rem] sm:rounded-b-[4rem] sm:px-9 sm:py-12 md:max-w-3xl md:px-11 md:py-14 ${shellGlass}`}
+      className={`w-full max-w-[min(100%,42rem)] shrink-0 rounded-3xl px-4 py-8 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:max-w-2xl sm:rounded-t-[3.25rem] sm:rounded-b-[4rem] sm:px-9 sm:py-12 sm:pb-12 md:max-w-3xl md:px-11 md:py-14 ${shellGlass}`}
     >
       {!success ? (
-        <header className="mb-8 flex flex-col items-center text-center sm:mb-10">
+        <header className="mb-6 flex flex-col items-center text-center sm:mb-10">
           <Image
             src="/logo.png"
             alt="Bizzi Cloud"
@@ -151,13 +153,13 @@ export default function WaitlistForm() {
           />
           <h1
             id="waitlist-hero"
-            className="text-balance text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl"
+            className="text-balance text-xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl"
           >
             Pre-register for Bizzi Cloud
           </h1>
           <p
             id="waitlist-form-intro"
-            className="mt-4 max-w-xl text-pretty text-sm leading-relaxed text-slate-700 sm:mt-5 sm:text-base"
+            className="mt-3 max-w-xl text-pretty text-[0.9375rem] leading-[1.55] text-slate-700 sm:mt-5 sm:text-base sm:leading-relaxed"
           >
             {WAITLIST_DESCRIPTION}
           </p>
@@ -166,19 +168,19 @@ export default function WaitlistForm() {
 
       {success ? (
         <div
-          className="rounded-2xl border border-sky-200/70 bg-white/55 px-5 py-10 text-center shadow-inner shadow-sky-100/50 backdrop-blur-xl sm:px-8 sm:py-12"
+          className="rounded-2xl border border-sky-200/80 bg-white/75 px-4 py-9 text-center shadow-sm shadow-sky-100/60 backdrop-blur-xl sm:bg-white/55 sm:px-8 sm:py-12 sm:shadow-inner sm:shadow-sky-100/50"
           role="status"
           aria-live="polite"
         >
-          <p className="text-balance text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <p className="text-balance text-xl font-bold leading-snug tracking-tight text-slate-900 sm:text-3xl sm:leading-tight">
             You&apos;ve Successfully Pre Registered!
           </p>
-          <p className="mt-5 text-lg font-semibold text-sky-500 sm:text-xl">
+          <p className="mt-4 text-base font-semibold text-sky-500 sm:mt-5 sm:text-xl">
             You&apos;re on the list!
           </p>
         </div>
       ) : (
-        <form onSubmit={onSubmit} className="space-y-7 md:space-y-8" noValidate aria-busy={submitting}>
+        <form onSubmit={onSubmit} className="space-y-6 sm:space-y-7 md:space-y-8" noValidate aria-busy={submitting}>
           {errorBanner ? (
             <div
               role="alert"
@@ -188,7 +190,7 @@ export default function WaitlistForm() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-5 md:gap-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-5 md:gap-y-6">
             <div className="sm:col-span-2">
               <label htmlFor="wl-full-name" className={labelCls}>
                 Full name <span className={requiredMark}>*</span>
@@ -375,7 +377,7 @@ export default function WaitlistForm() {
           <div
             role="group"
             aria-labelledby="wl-excited-heading"
-            className="rounded-2xl border border-white/50 bg-white/35 px-4 py-5 shadow-inner shadow-white/15 backdrop-blur-md sm:px-5 sm:py-6"
+            className="rounded-2xl border border-white/50 bg-white/35 px-3 py-4 shadow-inner shadow-white/15 backdrop-blur-md sm:px-5 sm:py-6"
           >
             <p id="wl-excited-heading" className={labelCls}>
               What are you most excited to see in Bizzi Cloud? <span className={requiredMark}>*</span>
@@ -390,16 +392,18 @@ export default function WaitlistForm() {
                   <li key={opt}>
                     <label
                       htmlFor={id}
-                      className="flex min-h-[44px] cursor-pointer items-start gap-2.5 rounded-lg border border-transparent px-2 py-2.5 hover:border-sky-300/50 sm:min-h-0"
+                      className="flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:gap-2.5 sm:py-2.5"
                     >
                       <input
                         id={id}
                         type="checkbox"
                         checked={excitedFeatures.includes(opt)}
                         onChange={() => toggleExcited(opt)}
-                        className="mt-1 h-4 w-4 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30"
+                        className="mt-0.5 h-[1.125rem] w-[1.125rem] shrink-0 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30 sm:mt-1 sm:h-4 sm:w-4"
                       />
-                      <span className="text-sm font-medium text-slate-800">{opt}</span>
+                      <span className="text-[0.9375rem] font-medium leading-snug text-slate-800 sm:text-sm">
+                        {opt}
+                      </span>
                     </label>
                   </li>
                 );
@@ -407,16 +411,18 @@ export default function WaitlistForm() {
               <li className="col-span-full flex justify-center sm:pt-0.5">
                 <label
                   htmlFor={excitedCheckboxId(EXCITED_FEATURE_LAST)}
-                  className="flex min-h-[44px] w-full max-w-md cursor-pointer items-start justify-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 hover:border-sky-300/50 sm:min-h-0 sm:w-auto sm:max-w-[calc(50%-0.5rem)]"
+                  className="flex min-h-[48px] w-full max-w-md cursor-pointer items-start justify-center gap-3 rounded-lg border border-transparent px-2 py-3 hover:border-sky-300/50 active:bg-white/25 sm:min-h-0 sm:w-auto sm:max-w-[calc(50%-0.5rem)] sm:gap-2.5 sm:py-2.5"
                 >
                   <input
                     id={excitedCheckboxId(EXCITED_FEATURE_LAST)}
                     type="checkbox"
                     checked={excitedFeatures.includes(EXCITED_FEATURE_LAST)}
                     onChange={() => toggleExcited(EXCITED_FEATURE_LAST)}
-                    className="mt-1 h-4 w-4 shrink-0 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30"
+                    className="mt-0.5 h-[1.125rem] w-[1.125rem] shrink-0 rounded border-slate-400 bg-white/80 text-bizzi-blue focus:ring-2 focus:ring-bizzi-blue/30 sm:mt-1 sm:h-4 sm:w-4"
                   />
-                  <span className="text-sm font-medium text-slate-800">{EXCITED_FEATURE_LAST}</span>
+                  <span className="text-center text-[0.9375rem] font-medium leading-snug text-slate-800 sm:text-left sm:text-sm">
+                    {EXCITED_FEATURE_LAST}
+                  </span>
                 </label>
               </li>
             </ul>
@@ -449,7 +455,7 @@ export default function WaitlistForm() {
                 <h3 className="mt-2 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
                   Move your libraries without the lift-and-shift headaches
                 </h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+                <p className="mt-1.5 text-[0.9375rem] leading-relaxed text-slate-600 sm:text-sm">
                   Our <strong className="font-semibold text-slate-800">automated migration</strong>{" "}
                   path helps you move from the major platforms you already use—Dropbox and Google
                   Drive—so you land in Bizzi Cloud with fewer manual steps and a smoother
@@ -459,11 +465,11 @@ export default function WaitlistForm() {
             </div>
           </div>
 
-          <div className="flex w-full justify-center pt-1 sm:pt-2">
+          <div className="flex w-full justify-center px-0.5 pt-2 sm:px-0 sm:pt-2">
             <button
               type="submit"
               disabled={submitting}
-              className="touch-target inline-flex min-h-[48px] min-w-[min(100%,17rem)] items-center justify-center rounded-full bg-gradient-to-r from-sky-500 to-bizzi-blue px-10 text-sm font-semibold text-white shadow-lg shadow-sky-500/30 transition hover:brightness-105 disabled:opacity-60"
+              className="inline-flex h-12 w-full max-w-md items-center justify-center rounded-full bg-gradient-to-r from-sky-500 to-bizzi-blue px-8 text-base font-semibold text-white shadow-lg shadow-sky-500/30 transition active:brightness-95 hover:brightness-105 disabled:opacity-60 sm:h-auto sm:min-h-[48px] sm:w-auto sm:max-w-none sm:min-w-[min(100%,17rem)] sm:px-10 sm:text-sm"
             >
               {submitting ? "Sending…" : "Submit pre-registration"}
             </button>
