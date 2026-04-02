@@ -29,7 +29,7 @@ export const EXCITED_FEATURE_OPTIONS = [
   "Virtual SSD Mounting",
   "Instant Transfers",
   "Custom LUT Preview",
-  "An all in one platform",
+  "An all in one cloud storage platform",
 ] as const;
 
 /** Team size on waitlist: solo through 10 (numeric strings match headcount beyond “Just Me”). */
