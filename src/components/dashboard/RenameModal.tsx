@@ -78,7 +78,7 @@ export default function RenameModal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[280] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="rename-modal-title"
@@ -92,6 +92,9 @@ export default function RenameModal({
         className="relative z-10 w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 id="rename-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
@@ -120,6 +123,10 @@ export default function RenameModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
               className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
               placeholder={`Enter new ${itemType} name`}
               autoFocus

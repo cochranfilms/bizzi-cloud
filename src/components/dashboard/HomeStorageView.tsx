@@ -782,6 +782,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     };
 
     const endDrag = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('[aria-modal="true"]')) {
+        setDragState(null);
+        return;
+      }
       const moved =
         Math.abs(e.clientX - dragState.startX) > DRAG_THRESHOLD_PX ||
         Math.abs(e.clientY - dragState.startY) > DRAG_THRESHOLD_PX;

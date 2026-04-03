@@ -81,6 +81,8 @@ export default function FileListRow({
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const blockPreviewFromShell =
+    renameOpen || shareOpen || moveOpen || createFolderOpen;
   const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
@@ -136,11 +138,11 @@ export default function FileListRow({
         data-item-id={file.id}
         draggable={draggable && !isMacosPackage}
         onDragStart={onDragStart}
-        role={canPreview ? "button" : undefined}
-        tabIndex={canPreview ? 0 : undefined}
-        onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
+        role={canPreview && !blockPreviewFromShell ? "button" : undefined}
+        tabIndex={canPreview && !blockPreviewFromShell ? 0 : undefined}
+        onClick={canPreview && !blockPreviewFromShell ? (onPackageInfo ?? onClick) : undefined}
         onKeyDown={
-          canPreview
+          canPreview && !blockPreviewFromShell
             ? (e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
@@ -150,7 +152,9 @@ export default function FileListRow({
             : undefined
         }
         className={`border-b border-neutral-100 transition-colors last:border-0 ${
-          canPreview ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
+          canPreview && !blockPreviewFromShell
+            ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+            : ""
         } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
           draggable && !isMacosPackage ? "cursor-grab active:cursor-grabbing" : ""
         }`}

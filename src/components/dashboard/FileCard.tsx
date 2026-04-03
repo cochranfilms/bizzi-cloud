@@ -232,6 +232,8 @@ export default function FileCard({
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const blockPreviewFromShell =
+    renameOpen || shareOpen || moveOpen || createFolderOpen;
   const [cardRef, isInView] = useInView<HTMLDivElement>();
   const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
@@ -289,15 +291,16 @@ export default function FileCard({
   const sizeLine = `${formatBytes(file.size)} · ${resolveLocationLabel(file)}${file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}`;
   const captionSecondary = fileThumbCaptionSecondary(file, isMacosPackage);
 
+  const previewShellActive = canPreview && !blockPreviewFromShell;
   const rootShell = isThumb
     ? `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
         selected
           ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
           : "ring-1 ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
       } ${
-        canPreview && !selected
+        previewShellActive && !selected
           ? "cursor-pointer hover:ring-neutral-300 hover:shadow-sm dark:hover:ring-neutral-600"
-          : canPreview && selected
+          : previewShellActive && selected
             ? "cursor-pointer"
             : ""
       }`
@@ -306,9 +309,9 @@ export default function FileCard({
           ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
       } ${
-        canPreview && !selected
+        previewShellActive && !selected
           ? "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
-          : canPreview && selected
+          : previewShellActive && selected
             ? "cursor-pointer"
             : ""
       }`;
@@ -318,10 +321,10 @@ export default function FileCard({
       ref={cardRef}
       title={!showCardInfo ? file.name : undefined}
       className={rootShell}
-      role={canPreview ? "button" : undefined}
-      tabIndex={canPreview ? 0 : undefined}
+      role={canPreview && !blockPreviewFromShell ? "button" : undefined}
+      tabIndex={canPreview && !blockPreviewFromShell ? 0 : undefined}
       aria-label={canPreview && isThumb && !showCardInfo ? file.name : undefined}
-      onClick={canPreview ? (onPackageInfo ?? onClick) : undefined}
+      onClick={canPreview && !blockPreviewFromShell ? (onPackageInfo ?? onClick) : undefined}
       onDoubleClick={
         isMacosPackage && onMacosPackageNavigate
           ? (e) => {
@@ -332,7 +335,7 @@ export default function FileCard({
           : undefined
       }
       onKeyDown={
-        canPreview
+        canPreview && !blockPreviewFromShell
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();

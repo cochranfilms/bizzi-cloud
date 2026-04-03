@@ -89,7 +89,7 @@ export default function DesktopTopNavbar({
       <div className="min-w-0" aria-hidden />
       <div className="mx-auto flex w-full min-w-0 max-w-4xl justify-center justify-self-center">
         <nav
-          className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
+          className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-nowrap justify-center gap-0.5 overflow-x-auto overflow-y-visible px-1 pb-0.5 [scrollbar-width:thin]"
           aria-label="Workspace"
         >
           {filteredItems.map((item) => {
@@ -177,7 +177,7 @@ export default function DesktopTopNavbar({
           </Link>
         </div>
 
-        <div className="flex min-w-0 justify-end justify-self-end">
+        <div className="flex min-w-0 w-full justify-end">
           <div className="md:hidden">{accountTools}</div>
         </div>
       </div>

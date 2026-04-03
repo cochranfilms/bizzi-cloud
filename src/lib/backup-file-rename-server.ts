@@ -29,6 +29,21 @@ import { trimDisplayName, toNormalizedComparisonKey } from "@/lib/storage-folder
 import { buildRelativePathFromFolderNames } from "@/lib/storage-folders/path-resolver";
 import { COLLECTION_STORAGE_FOLDERS, FOLDER_MODEL_V2 } from "@/lib/storage-folders/types";
 
+/** Keep the previous leaf extension so bytes (JPEG/PNG/etc.) always match what decoders expect. */
+function stripFinalExtension(name: string): { stem: string; ext: string } {
+  const t = name.trim();
+  const i = t.lastIndexOf(".");
+  if (i <= 0 || i >= t.length - 1) return { stem: t, ext: "" };
+  return { stem: t.slice(0, i), ext: t.slice(i) };
+}
+
+function mergeStemWithPriorExtension(newLeafRaw: string, prevLeafForExt: string): string {
+  const next = stripFinalExtension(newLeafRaw.trim());
+  const prev = stripFinalExtension(prevLeafForExt.trim());
+  if (!prev.ext) return newLeafRaw.trim();
+  return `${next.stem}${prev.ext}`;
+}
+
 function parseBackupsLayoutKey(objectKey: string): {
   pathSubjectUid: string;
   driveId: string;
@@ -53,16 +68,12 @@ export async function renameBackupFileServer(
   backupFileId: string,
   newNameRaw: string,
 ): Promise<void> {
-  const leaf = trimDisplayName(newNameRaw);
-  if (!leaf) {
+  const rawLeaf = trimDisplayName(newNameRaw);
+  if (!rawLeaf) {
     throw new StorageFolderAccessError("Name cannot be empty", 400);
   }
-  if (/[/\\]/.test(leaf) || leaf.includes("..")) {
+  if (/[/\\]/.test(rawLeaf) || rawLeaf.includes("..")) {
     throw new StorageFolderAccessError("File name cannot contain path characters", 400);
-  }
-  const fileNameCompareKey = toNormalizedComparisonKey(leaf);
-  if (!fileNameCompareKey) {
-    throw new StorageFolderAccessError("Invalid file name", 400);
   }
 
   const fileRef = db.collection("backup_files").doc(backupFileId);
@@ -93,6 +104,17 @@ export async function renameBackupFileServer(
   await assertLinkedDriveWriteAccess(db, uid, driveSnap);
   const driveData = driveSnap.data()!;
   const isV2 = driveData.folder_model_version === FOLDER_MODEL_V2;
+
+  const prevRelEarly = sanitizeBackupRelativePath(String(file.relative_path ?? ""));
+  const leafFromRelativePath = prevRelEarly.split("/").filter(Boolean).pop() || "";
+  const leafFromFileName = String(file.file_name ?? "").trim();
+  /** Path leaf first — it matches the object key; a stale `file_name` must not pick the wrong decoder extension. */
+  const prevLeafForExt = leafFromRelativePath || leafFromFileName;
+  const leaf = mergeStemWithPriorExtension(rawLeaf, prevLeafForExt);
+  const fileNameCompareKey = toNormalizedComparisonKey(leaf);
+  if (!fileNameCompareKey) {
+    throw new StorageFolderAccessError("Invalid file name", 400);
+  }
 
   const folderIdRaw = file.folder_id as string | null | undefined;
   const folderId =
@@ -138,11 +160,8 @@ export async function renameBackupFileServer(
     newRelativePath = sanitizeBackupRelativePath(newRelativePath);
   }
 
-  const prevRel = sanitizeBackupRelativePath(String(file.relative_path ?? ""));
-  const prevLeaf =
-    String(file.file_name ?? "").trim() ||
-    prevRel.split("/").filter(Boolean).pop() ||
-    "";
+  const prevRel = prevRelEarly;
+  const prevLeaf = prevLeafForExt;
   if (
     toNormalizedComparisonKey(prevLeaf) === fileNameCompareKey &&
     prevRel === newRelativePath
