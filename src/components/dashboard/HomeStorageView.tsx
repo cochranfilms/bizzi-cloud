@@ -1418,13 +1418,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
-        <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
-        <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-          Folders you create in Bizzi Cloud (including in Storage, migration, and linked custom drives) show up here so
-          you can open them in one tap. Folders that only exist inside imported file paths stay in Storage and are not
-          listed in this row. Linked drives you still need to merge into Storage can use{" "}
-          <span className="font-medium">Consolidate into Storage</span> in the folder menu.
-        </p>
+        <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Folders</SectionTitle>
         {bizziCloudFolderItems.length > 0 ? (
           viewMode === "list" ? (
             <div className="mb-6 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
