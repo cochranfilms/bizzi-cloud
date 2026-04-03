@@ -7,6 +7,7 @@
  * Safe if Stripe webhook fires twice—second run sees drives and skips creation.
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { FOLDER_MODEL_V2 } from "@/lib/storage-folders/types";
 import type { OrgSharedDriveIds } from "@/lib/ensure-default-workspaces";
 import {
   ensureDefaultWorkspacesForOrgUser,
@@ -158,6 +159,8 @@ export async function ensureDefaultDrivesForOrgUser(
       permission_handle_id: `storage-${Date.now()}`,
       createdAt: now,
       organization_id: orgId,
+      folder_model_version: FOLDER_MODEL_V2,
+      supports_nested_folders: true,
     });
     writeCount++;
   }

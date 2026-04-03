@@ -996,6 +996,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
+        <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400 sm:mb-4">
+          Open <span className="font-medium text-neutral-800 dark:text-neutral-200">Storage</span> in All files to work
+          with nested folders—create them from <span className="font-medium">New → New folder in Storage</span>, upload
+          into them, and move files between folders on the updated Storage layout.
+        </p>
         {displayBaseFolderItems.length > 0 ? (
           <div
             className="mx-auto flex w-full max-w-4xl justify-center"

@@ -2,6 +2,20 @@
 
 const features = [
   {
+    title: "Nested Storage folders",
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M3 7h5l2-2h11v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7zm0 0v10"
+        />
+      </svg>
+    ),
+    active: true,
+  },
+  {
     title: "Edit Directly From The Cloud",
     icon: (
       <svg
@@ -88,7 +102,7 @@ export default function KeyFeaturesPills() {
           ))}
         </div>
         <p className="text-center text-neutral-600 dark:text-neutral-400 text-sm mt-8 max-w-md mx-auto">
-          All Storage Is Encrypted And Secured.
+          Encrypted Storage with a modern nested-folder workflow for organizing uploads.
         </p>
       </div>
     </section>

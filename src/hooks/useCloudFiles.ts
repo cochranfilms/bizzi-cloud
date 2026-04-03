@@ -235,18 +235,28 @@ export async function fetchStorageFolderList(
 ): Promise<{
   folders: StorageFolderListFolder[];
   files: RecentFile[];
+  listError: string | null;
 }> {
   const auth = getFirebaseAuth().currentUser;
-  if (!auth) return { folders: [], files: [] };
+  if (!auth) return { folders: [], files: [], listError: null };
   const token = await getUserIdToken(auth, false);
-  if (!token) return { folders: [], files: [] };
+  if (!token) return { folders: [], files: [], listError: null };
   const base = typeof window !== "undefined" ? window.location.origin : "";
   const qs = new URLSearchParams({ drive_id: driveId });
   if (parentFolderId) qs.set("parent_folder_id", parentFolderId);
   const res = await fetch(`${base}/api/storage-folders/list?${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return { folders: [], files: [] };
+  if (!res.ok) {
+    let msg = `Could not load Storage folders (${res.status})`;
+    try {
+      const errBody = (await res.json()) as { error?: unknown };
+      if (typeof errBody.error === "string" && errBody.error.trim()) msg = errBody.error;
+    } catch {
+      /* ignore */
+    }
+    return { folders: [], files: [], listError: msg };
+  }
   const data = (await res.json()) as {
     folders?: Array<Record<string, unknown>>;
     files?: Array<Record<string, unknown>>;
@@ -273,7 +283,7 @@ export async function fetchStorageFolderList(
   const files = (data.files ?? []).map((raw) =>
     storageListRowToRecentFile(raw, driveId, driveName)
   );
-  return { folders, files };
+  return { folders, files, listError: null };
 }
 
 /** Drive detail views need the full tree; filter API is paginated (max 120/page). */

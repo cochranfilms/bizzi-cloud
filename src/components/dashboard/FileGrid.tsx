@@ -256,7 +256,7 @@ export default function FileGrid() {
     loadMore: loadMoreHearted,
     refresh: refreshHearted,
   } = useHeartedFiles();
-  const { linkedDrives, storageVersion } = useBackup();
+  const { linkedDrives, storageVersion, fetchDrives, bumpStorageVersion } = useBackup();
   const { org } = useEnterprise();
   const { loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
@@ -318,6 +318,9 @@ export default function FileGrid() {
     invitedEmails: string[];
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
+  const [storageFolderListError, setStorageFolderListError] = useState<string | null>(null);
+  const [storageUpgradeError, setStorageUpgradeError] = useState<string | null>(null);
+  const [storageV2MigrateLoading, setStorageV2MigrateLoading] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const searchParams = useSearchParams();
@@ -685,30 +688,38 @@ export default function FileGrid() {
           meta.is_creator_raw !== true &&
           isLinkedDriveFolderModelV2(meta);
         if (storageV2) {
-          const { folders, files } = await fetchStorageFolderList(
+          const { folders, files, listError } = await fetchStorageFolderList(
             driveId,
             parent,
             meta.name
           );
-          setDriveFiles(files);
-          setDriveListTruncated(false);
-          setV2StorageSubfolders(
-            folders.map((f) => ({
-              name: f.name,
-              type: "folder" as const,
-              key: `storage-v2-${driveId}-${f.id}`,
-              items: 0,
-              virtualFolder: true,
-              storageFolderId: f.id,
-              storageLinkedDriveId: driveId,
-              storageFolderVersion: f.version,
-              storageFolderOperationState: f.operation_state,
-              storageFolderLifecycleState: f.lifecycle_state,
-              hideShare: true,
-              preventDelete: true,
-            }))
-          );
+          setStorageFolderListError(listError);
+          if (listError) {
+            setDriveFiles([]);
+            setDriveListTruncated(false);
+            setV2StorageSubfolders([]);
+          } else {
+            setDriveFiles(files);
+            setDriveListTruncated(false);
+            setV2StorageSubfolders(
+              folders.map((f) => ({
+                name: f.name,
+                type: "folder" as const,
+                key: `storage-v2-${driveId}-${f.id}`,
+                items: 0,
+                virtualFolder: true,
+                storageFolderId: f.id,
+                storageLinkedDriveId: driveId,
+                storageFolderVersion: f.version,
+                storageFolderOperationState: f.operation_state,
+                storageFolderLifecycleState: f.lifecycle_state,
+                hideShare: true,
+                preventDelete: true,
+              }))
+            );
+          }
         } else {
+          setStorageFolderListError(null);
           setV2StorageSubfolders([]);
           const { files, listTruncated } = await fetchDriveFiles(driveId);
           setDriveFiles(files);
@@ -717,6 +728,7 @@ export default function FileGrid() {
       } catch {
         setDriveFiles([]);
         setV2StorageSubfolders([]);
+        setStorageFolderListError("Could not load this folder.");
         setDriveListTruncated(false);
       } finally {
         setDriveFilesLoading(false);
@@ -792,6 +804,8 @@ export default function FileGrid() {
     setV2StorageSubfolders([]);
     setV2FolderBreadcrumb("");
     setDriveListTruncated(false);
+    setStorageFolderListError(null);
+    setStorageUpgradeError(null);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]);
@@ -816,11 +830,67 @@ export default function FileGrid() {
     currentDriveMeta.is_creator_raw !== true &&
     isLinkedDriveFolderModelV2(currentDriveMeta);
 
+  const isStorageLegacyVirtualBrowse =
+    !!currentDrive &&
+    !!currentDriveMeta &&
+    driveBaseName === "Storage" &&
+    currentDriveMeta.is_creator_raw !== true &&
+    !isLinkedDriveFolderModelV2(currentDriveMeta);
+
   const browseStorageByVirtualPaths =
     !!currentDrive &&
     (isGalleryMediaDrive ||
       currentDriveMeta?.is_creator_raw === true ||
       (driveBaseName === "Storage" && !isLinkedDriveFolderModelV2(currentDriveMeta)));
+
+  const enableStorageNestedFolders = useCallback(async () => {
+    if (!currentDrive) return;
+    setStorageUpgradeError(null);
+    setStorageV2MigrateLoading(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        setStorageUpgradeError("Sign in again to update Storage.");
+        return;
+      }
+      const res = await fetch(`/api/linked-drives/${currentDrive.id}/folder-model`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "enable_v2", migrate: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setStorageUpgradeError(data.error ?? "Could not enable nested folders.");
+        return;
+      }
+      bumpStorageVersion();
+      await fetchDrives();
+      setCurrentDrivePath("");
+      setStorageParentFolderId(null);
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("drive", currentDrive.id);
+      sp.delete("folder");
+      sp.delete("path");
+      const q = sp.toString();
+      router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+      await loadDriveFiles(currentDrive.id, { storageParentOverride: null });
+    } finally {
+      setStorageV2MigrateLoading(false);
+    }
+  }, [
+    bumpStorageVersion,
+    currentDrive,
+    fetchDrives,
+    loadDriveFiles,
+    pathname,
+    router,
+    searchParams,
+    setCurrentDrivePath,
+    setStorageParentFolderId,
+  ]);
 
   useEffect(() => {
     if (!isStorageV2FolderBrowse || !storageParentFolderId || !currentDrive) {
@@ -1736,8 +1806,17 @@ export default function FileGrid() {
             Back
           </button>
           <span className="text-neutral-400 dark:text-neutral-500">/</span>
-          <span className="font-medium text-neutral-900 dark:text-white">
-            {currentDrive.name}
+          <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
+            <span>{currentDrive.name}</span>
+            {isStorageV2FolderBrowse ? (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-200">
+                Nested folders
+              </span>
+            ) : isStorageLegacyVirtualBrowse ? (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
+                Classic layout
+              </span>
+            ) : null}
           </span>
           {isStorageV2FolderBrowse && v2FolderBreadcrumb ? (
             <>
@@ -1759,6 +1838,41 @@ export default function FileGrid() {
           ) : null}
         </div>
       )}
+
+      {currentDrive && isStorageLegacyVirtualBrowse ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/35 dark:text-amber-50">
+          <p className="font-medium">Switch Storage to nested folders</p>
+          <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+            This workspace is still on the classic Storage view. Folders you create inside Storage only appear after you
+            enable the updated layout. We will map your existing file paths into folders automatically (up to 8,000 active
+            files per run).
+          </p>
+          {storageUpgradeError ? (
+            <p className="mt-2 font-medium text-red-700 dark:text-red-300">{storageUpgradeError}</p>
+          ) : null}
+          <button
+            type="button"
+            disabled={storageV2MigrateLoading}
+            onClick={() => void enableStorageNestedFolders()}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-800 px-3 py-2 text-sm font-medium text-white hover:bg-amber-900 disabled:opacity-60 dark:bg-amber-600 dark:hover:bg-amber-500"
+          >
+            {storageV2MigrateLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Updating Storage…
+              </>
+            ) : (
+              "Enable nested Storage"
+            )}
+          </button>
+        </div>
+      ) : null}
+
+      {currentDrive && isStorageV2FolderBrowse && storageFolderListError ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-100">
+          {storageFolderListError}
+        </div>
+      ) : null}
 
       {/* Pinned shortcuts (only at root) - compact section */}
       {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0) && (

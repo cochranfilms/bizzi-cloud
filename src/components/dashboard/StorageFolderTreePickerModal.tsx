@@ -97,11 +97,15 @@ export default function StorageFolderTreePickerModal({
       const loadKey = parentFolderId === null ? "__root__" : parentFolderId;
       setLoadingKeys((s) => new Set(s).add(loadKey));
       try {
-        const { folders } = await fetchStorageFolderList(
+        const { folders, listError } = await fetchStorageFolderList(
           linkedDriveId,
           parentFolderId,
           driveLabel
         );
+        if (listError) {
+          setError(listError);
+          return;
+        }
         const depth = nodePathFromRoot.split("/").filter(Boolean).length + 1;
         const childNodes: TreeNode[] = folders.map((f: StorageFolderListFolder) => ({
           id: f.id,

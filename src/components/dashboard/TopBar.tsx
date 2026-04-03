@@ -88,6 +88,13 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     isLinkedDriveFolderModelV2(currentLinkedForNested) &&
     teamAwareTopBar(currentLinkedForNested.name) === "Storage";
 
+  const storageNeedsV2Upgrade =
+    onFilesRoute &&
+    !!currentLinkedForNested &&
+    teamAwareTopBar(currentLinkedForNested.name) === "Storage" &&
+    currentLinkedForNested.is_creator_raw !== true &&
+    !isLinkedDriveFolderModelV2(currentLinkedForNested);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (newDropdownRef.current && !newDropdownRef.current.contains(e.target as Node)) {
@@ -304,7 +311,11 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   <Folder className="h-4 w-4 flex-shrink-0" />
-                  {canCreateStorageNestedFolder ? "New drive folder" : "Create New Folder"}
+                  {canCreateStorageNestedFolder
+                    ? "New drive folder"
+                    : storageNeedsV2Upgrade
+                      ? "New linked drive folder"
+                      : "Create New Folder"}
                 </button>
                 {canCreateStorageNestedFolder ? (
                   <button
@@ -318,6 +329,11 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                     <Folder className="h-4 w-4 flex-shrink-0" />
                     New folder in Storage
                   </button>
+                ) : null}
+                {storageNeedsV2Upgrade ? (
+                  <div className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                    Nested folders live inside Storage after you enable them from the banner in the file list.
+                  </div>
                 ) : null}
                 <button
                   type="button"
