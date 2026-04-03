@@ -30,6 +30,28 @@ const BOOLEAN_PARAM_KEYS = new Set([
   "creative_projects",
 ]);
 
+/**
+ * URL keys for file-browser navigation / deep-linking — not All-files filter chips or `/api/files/filter` params.
+ * (Otherwise `folder=<Firestore id>` shows as a raw chip and forces the filter grid while browsing Storage v2.)
+ */
+/** Preserved when clearing “all filters”; also omitted from chips and `/api/files/filter` params. `drive` is intentionally not listed — it doubles as a real drive filter on All files landing. */
+export const FILE_BROWSER_NAV_QUERY_KEYS = new Set([
+  "checkout",
+  "file",
+  "folder",
+  "path",
+  "preview",
+]);
+
+export function filterStateForFileFilters(state: FilterState): FilterState {
+  const next: FilterState = {};
+  for (const [k, v] of Object.entries(state)) {
+    if (FILE_BROWSER_NAV_QUERY_KEYS.has(k)) continue;
+    next[k] = v;
+  }
+  return next;
+}
+
 /** Parse filter state from URL search params */
 export function filtersFromSearchParams(searchParams: URLSearchParams): FilterState {
   const state: FilterState = {};
@@ -98,7 +120,7 @@ export function filterStateToApiParams(state: FilterState): Record<string, strin
       params.size_max = String(state.size_max);
   }
 
-  for (const [key, value] of Object.entries(state)) {
+  for (const [key, value] of Object.entries(filterStateForFileFilters(state))) {
     if (skipKeys.has(key)) continue;
     if (key === "date_from" || key === "date_to" || key === "size_min" || key === "size_max") continue;
     if (value === undefined || value === "" || value === false) continue;
@@ -145,7 +167,8 @@ export function filterStateToSearchParams(state: FilterState): URLSearchParams {
 
 /** Check if filter state has any active filters */
 export function hasActiveFilters(state: FilterState): boolean {
-  return Object.entries(state).some(([, value]) => {
+  const scoped = filterStateForFileFilters(state);
+  return Object.entries(scoped).some(([, value]) => {
     if (value === undefined || value === "") return false;
     if (Array.isArray(value)) return value.length > 0;
     if (typeof value === "boolean") return value;
@@ -195,7 +218,7 @@ export function getActiveFilters(state: FilterState): ActiveFilter[] {
     }
     result.push({ id: "file_size", value: label, label });
   }
-  for (const [id, value] of Object.entries(state)) {
+  for (const [id, value] of Object.entries(filterStateForFileFilters(state))) {
     if (id === "date_from" || id === "date_to" || id === "date_preset" || id === "size_min" || id === "size_max" || id === "size_preset") continue;
     if (value === undefined || value === "" || value === false) continue;
     const def = getFilterDef(id);

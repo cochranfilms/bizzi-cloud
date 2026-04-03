@@ -34,6 +34,7 @@ import {
   isLegacyCustomLinkedDriveForConsolidation,
   shouldFreezeNewLegacyLinkedDriveFolders,
 } from "@/lib/storage-folder-model-policy";
+import { useDashboardItemReveal } from "@/components/dashboard/DashboardRouteFade";
 
 export interface FolderItem {
   name: string;
@@ -96,6 +97,8 @@ interface FolderCardProps {
   onStorageFolderMutated?: () => void;
   /** Opens parent “Consolidate into Storage” flow (legacy custom drives only). */
   onConsolidateMenuSelect?: () => void;
+  /** Play the standard dashboard opacity reveal (e.g. new v2 subfolder just created). */
+  revealFadeIn?: boolean;
 }
 
 // Scaled so largest never exceeds former medium; large = former medium
@@ -121,7 +124,14 @@ export default function FolderCard({
   storagePickerDriveLabel,
   onStorageFolderMutated,
   onConsolidateMenuSelect,
+  revealFadeIn = false,
 }: FolderCardProps) {
+  const revealEntered = useDashboardItemReveal(revealFadeIn);
+  const revealOpacityClass = revealFadeIn
+    ? `transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
+        revealEntered ? "opacity-100" : "opacity-0"
+      }`
+    : "";
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -252,7 +262,7 @@ export default function FolderCard({
   const iconBoxClass = `${sizeClasses.icon} max-sm:!h-12 max-sm:!w-12`;
   const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-5 max-sm:!w-5`;
 
-  const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
+  const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
     isSystemFolder
       ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
       : selected
@@ -270,7 +280,7 @@ export default function FolderCard({
         : ""
   }`;
 
-  const thumbBrowseShell = `group touch-manipulation relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${
+  const thumbBrowseShell = `group touch-manipulation relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
     selected
       ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
       : isDragOver

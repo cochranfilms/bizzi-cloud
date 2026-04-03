@@ -205,7 +205,14 @@ function BulkActionBar({
   );
 }
 
-export default function FileGrid() {
+export type FileGridProps = {
+  /**
+   * Renders on Home (not /files): syncs browse state to the home pathname and auto-opens Storage when no `drive` param.
+   */
+  embeddedHomeStorage?: boolean;
+};
+
+export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps) {
   const {
     viewMode,
     setViewMode,
@@ -230,6 +237,8 @@ export default function FileGrid() {
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
   const [v2StorageSubfolders, setV2StorageSubfolders] = useState<FolderItem[]>([]);
+  /** Tracks a v2 subfolder row for the standard dashboard opacity reveal after create. */
+  const [storageV2RevealFolderKey, setStorageV2RevealFolderKey] = useState<string | null>(null);
   const [v2FolderBreadcrumb, setV2FolderBreadcrumb] = useState("");
   const [driveListTruncated, setDriveListTruncated] = useState(false);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
@@ -274,7 +283,8 @@ export default function FileGrid() {
     loadMore: loadMoreHearted,
     refresh: refreshHearted,
   } = useHeartedFiles();
-  const { linkedDrives, storageVersion, fetchDrives, bumpStorageVersion } = useBackup();
+  const { linkedDrives, storageVersion, fetchDrives, bumpStorageVersion, loading: backupDrivesLoading } =
+    useBackup();
   const { org } = useEnterprise();
   const { loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
@@ -360,6 +370,28 @@ export default function FileGrid() {
     const b = teamAwareDriveName(name);
     return b === "Storage" || b === "RAW" || b === "Gallery Media";
   };
+
+  useEffect(() => {
+    if (!embeddedHomeStorage) return;
+    if (backupDrivesLoading) return;
+    const storageMeta = linkedDrives.find(
+      (d) => teamAwareDriveName(d.name) === "Storage" && d.is_creator_raw !== true
+    );
+    if (!storageMeta?.id) return;
+    if (searchParams.get("drive")) return;
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.set("drive", storageMeta.id);
+    const q = sp.toString();
+    router.replace(`${pathname}?${q}`, { scroll: false });
+  }, [
+    embeddedHomeStorage,
+    backupDrivesLoading,
+    linkedDrives,
+    searchParams,
+    pathname,
+    router,
+  ]);
+
   const {
     files: filteredFiles,
     loading: filtersLoading,
@@ -381,6 +413,7 @@ export default function FileGrid() {
       ? currentDrive?.id ?? null
       : null,
     scopeAllFilesAtRoot: allFilesFlatLanding && !currentDrive,
+    preserveDriveQueryOnClear: !!currentDrive,
   });
 
   const teamOwnerUserIdForPackages =
@@ -1908,12 +1941,19 @@ export default function FileGrid() {
   return (
     <div
       ref={gridSectionRef}
-      className={`w-full flex flex-1 min-h-0 flex-col space-y-0 ${dragState?.isActive ? "select-none" : ""}`}
+      className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
+        embeddedHomeStorage ? " h-full min-h-0" : ""
+      }`}
       data-selectable-grid
+      data-embedded-home-storage={embeddedHomeStorage ? "true" : undefined}
       onMouseDown={handleMouseDown}
     >
       {/* Filter section — compact, no section title bar */}
-      <section className="shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
+      <section
+        className={`shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60${
+          embeddedHomeStorage ? " px-0 pt-0" : ""
+        }`}
+      >
         <div className="space-y-3">
           {quickFiltersOpen && allFilesFlatLanding && (
             <FileFiltersExpandedStrip
@@ -2371,6 +2411,9 @@ export default function FileGrid() {
                           displayContext={storageDisplayContext}
                           folderRollup={virtualFolderRollupByKey.get(item.key)}
                           currentDriveName={currentDrive?.name ?? null}
+                          revealFadeIn={
+                            !!item.storageFolderId && storageV2RevealFolderKey === item.key
+                          }
                           onStorageFolderMutated={
                             item.storageFolderId ? handleV2StorageFolderMutated : undefined
                           }
@@ -2464,6 +2507,9 @@ export default function FileGrid() {
                     <FolderCard
                       item={item}
                       storagePickerDriveLabel={currentDrive?.name}
+                      revealFadeIn={
+                        !!item.storageFolderId && storageV2RevealFolderKey === item.key
+                      }
                       onStorageFolderMutated={
                         item.storageFolderId ? handleV2StorageFolderMutated : undefined
                       }
@@ -2987,6 +3033,15 @@ export default function FileGrid() {
             if (!res.ok) {
               const data = await res.json().catch(() => ({}));
               throw new Error((data.error as string) ?? "Could not create folder");
+            }
+            const created = (await res.json()) as { id?: string };
+            const newId = typeof created.id === "string" ? created.id : "";
+            if (newId && currentDrive) {
+              const nk = `storage-v2-${currentDrive.id}-${newId}`;
+              setStorageV2RevealFolderKey(nk);
+              window.setTimeout(() => {
+                setStorageV2RevealFolderKey((k) => (k === nk ? null : k));
+              }, 920);
             }
             bumpStorageVersion();
             setStoragePathCreateOpen(false);

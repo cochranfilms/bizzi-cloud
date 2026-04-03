@@ -188,10 +188,14 @@ export async function GET(request: Request) {
         const map = await walkPersonalDriveForSegments(db, driveId, uid, trashOnly, (d) =>
           fileVisibleOnPersonalDashboard(d, uid)
         );
-        for (const [name, file_count] of map.entries()) {
-          folders.push({ drive_id: driveId, name, path: name, file_count });
+        const isV2 = Number(data.folder_model_version) === 2;
+        /** v2 Storage (active): home “Bizzi Cloud Folders” lists platform `storage_folders` only — not path-segment groups from computer imports. */
+        if (trashOnly || !isV2) {
+          for (const [name, file_count] of map.entries()) {
+            folders.push({ drive_id: driveId, name, path: name, file_count });
+          }
         }
-        if (!trashOnly && Number(data.folder_model_version) === 2) {
+        if (!trashOnly && isV2) {
           await appendV2StorageRootFolderRows(db, driveId, folders);
         }
       })
@@ -227,10 +231,13 @@ export async function GET(request: Request) {
           trashOnly,
           (d) => fileBelongsToPersonalTeamContainer(d, teamOwnerId)
         );
-        for (const [name, file_count] of map.entries()) {
-          folders.push({ drive_id: driveId, name, path: name, file_count });
+        const isV2Team = Number(data.folder_model_version) === 2;
+        if (trashOnly || !isV2Team) {
+          for (const [name, file_count] of map.entries()) {
+            folders.push({ drive_id: driveId, name, path: name, file_count });
+          }
         }
-        if (!trashOnly && Number(data.folder_model_version) === 2) {
+        if (!trashOnly && isV2Team) {
           await appendV2StorageRootFolderRows(db, driveId, folders);
         }
       })

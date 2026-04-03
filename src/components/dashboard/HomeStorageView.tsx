@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -51,6 +52,21 @@ const DRAG_THRESHOLD_PX = 5;
 import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import { BulkActionBar } from "./BulkActionBar";
+
+const HomeEmbeddedStorageGrid = dynamic(
+  () => import("./FileGrid").then((mod) => mod.default),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50/80 dark:border-neutral-700 dark:bg-neutral-900/40"
+        aria-busy="true"
+      >
+        <span className="text-sm text-neutral-500 dark:text-neutral-400">Loading Storage…</span>
+      </div>
+    ),
+  }
+);
 
 interface HomeStorageViewProps {
   /** Base path for links: "/dashboard" or "/enterprise" */
@@ -589,10 +605,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setCurrentFolderDriveId(driveId);
       setCurrentDrivePath(normalizedPath);
       setStorageParentFolderId(null);
-      const pathQs = normalizedPath ? `&path=${encodeURIComponent(normalizedPath)}` : "";
-      router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}${pathQs}`);
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("drive", driveId);
+      if (normalizedPath) sp.set("path", normalizedPath);
+      else sp.delete("path");
+      sp.delete("folder");
+      const q = sp.toString();
+      router.replace(`${pathname}?${q}`, { scroll: false });
     },
-    [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId, router]
+    [pathname, router, searchParams, setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]
   );
 
   const openFolderFromPin = useCallback(
@@ -603,17 +624,21 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         setCurrentFolderDriveId(item.driveId);
         setCurrentDrivePath("");
         setStorageParentFolderId(item.storageFolderId);
-        router.push(
-          `${filesHref}?drive=${encodeURIComponent(item.driveId)}&folder=${encodeURIComponent(item.storageFolderId)}`
-        );
+        const sp = new URLSearchParams(searchParams.toString());
+        sp.set("drive", item.driveId);
+        sp.set("folder", item.storageFolderId);
+        sp.delete("path");
+        const q = sp.toString();
+        router.replace(`${pathname}?${q}`, { scroll: false });
         return;
       }
       openDrive(item.driveId, item.name);
     },
     [
-      filesHref,
-      openDrive,
+      pathname,
       router,
+      openDrive,
+      searchParams,
       setCurrentFolderDriveId,
       setCurrentDrivePath,
       setStorageParentFolderId,
@@ -1104,9 +1129,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
         <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400 sm:mb-4">
           Your <span className="font-medium text-neutral-800 dark:text-neutral-200">Storage</span> folder is where
-          general uploads and folders live—including groups created when you import. Open{" "}
-          <span className="font-medium">Storage</span> from All files, use <span className="font-medium">New</span> on
-          Home or in All files to add folders and uploads, and organize from there.{" "}
+          general uploads and folders live—including groups created when you import. Browse the full Storage tree below,
+          use <span className="font-medium">New</span> on Home or in All files to add folders and uploads, or open the
+          same view in <span className="font-medium">All files</span> when you need more space.{" "}
           <span className="font-medium">RAW</span> (Creator) and <span className="font-medium">Gallery Media</span> stay
           separate for those features.
         </p>
@@ -1174,6 +1199,31 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </p>
         )}
       </section>
+
+      {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
+        linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
+        <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <SectionTitle className="mb-0">Storage</SectionTitle>
+            <Link
+              href={
+                searchParams.toString()
+                  ? `${filesHref}?${searchParams.toString()}`
+                  : filesHref
+              }
+              className="text-sm font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+            >
+              Open in All files
+            </Link>
+          </div>
+          <p className="mb-4 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
+            The same layout and actions as All files—nested folders, uploads, pinning, and labels—without leaving Home.
+          </p>
+          <div className="flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
+            <HomeEmbeddedStorageGrid embeddedHomeStorage />
+          </div>
+        </section>
+      )}
 
       {/* Section 2: Pinned — only after user has at least one pin (no empty promo block) */}
       {hasPinned ? (
@@ -1381,9 +1431,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
         <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-          Older extra folders (separate from Storage) can be moved into your main Storage tree with{" "}
-          <span className="font-medium">Consolidate into Storage</span> in the folder menu. Your Storage layout is the
-          standard place for general files and folders.
+          Folders you create in Bizzi Cloud (including in Storage, migration, and linked custom drives) show up here so
+          you can open them in one tap. Folders that only exist inside imported file paths stay in Storage and are not
+          listed in this row. Linked drives you still need to merge into Storage can use{" "}
+          <span className="font-medium">Consolidate into Storage</span> in the folder menu.
         </p>
         {bizziCloudFolderItems.length > 0 ? (
           viewMode === "list" ? (

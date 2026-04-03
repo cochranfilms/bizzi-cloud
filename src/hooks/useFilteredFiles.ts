@@ -11,6 +11,7 @@ import {
   FILTER_FILES_PAGE_SIZE,
 } from "@/lib/filters/filter-fetch-config";
 import {
+  FILE_BROWSER_NAV_QUERY_KEYS,
   filtersFromSearchParams,
   searchParamsFromFilters,
   filterStateToSearchParams,
@@ -23,14 +24,6 @@ import {
 
 /** Debounce before hitting /api/files/filter after filter key changes (pairs with search UI debounce). */
 const FILTER_DEBOUNCE_MS = 400;
-
-/** Query keys that are file-browser navigation, not filter chips — must survive clearFiltersAndKeepDrive. */
-const FILES_NAV_QUERY_KEYS_TO_PRESERVE = new Set([
-  "path",
-  "preview",
-  "file",
-  "checkout",
-]);
 
 /** Stable serialization of filter state for effect deps - avoids refetch loops */
 function filterStateKey(state: FilterState): string {
@@ -93,6 +86,11 @@ export interface UseFilteredFilesOptions {
    * across all linked drives instead of folder tiles + recents-only list.
    */
   scopeAllFilesAtRoot?: boolean;
+  /**
+   * When true, “Clear all” filters keeps the `drive` query param (user has a drive open in the tree).
+   * When false (flat All files landing), `drive` is cleared with other filters so the drive filter chip can reset.
+   */
+  preserveDriveQueryOnClear?: boolean;
 }
 
 export interface UseFilteredFilesResult {
@@ -125,8 +123,13 @@ export function useFilteredFiles(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { driveId, effectiveDriveId, driveIdAsNavigation, scopeAllFilesAtRoot = false } =
-    options ?? {};
+  const {
+    driveId,
+    effectiveDriveId,
+    driveIdAsNavigation,
+    scopeAllFilesAtRoot = false,
+    preserveDriveQueryOnClear = false,
+  } = options ?? {};
   const isEnterprise = typeof pathname === "string" && pathname.startsWith("/enterprise");
   const teamOwnerFromPath =
     typeof pathname === "string" ? /^\/team\/([^/]+)/.exec(pathname)?.[1]?.trim() ?? null : null;
@@ -200,9 +203,22 @@ export function useFilteredFiles(
   );
 
   const clearFilters = useCallback(() => {
-    setFilterState({});
-    updateUrl({});
-  }, [updateUrl]);
+    const nextParams = new URLSearchParams();
+    const current = new URLSearchParams(searchParams.toString());
+    for (const key of FILE_BROWSER_NAV_QUERY_KEYS) {
+      for (const value of current.getAll(key)) {
+        if (value) nextParams.append(key, value);
+      }
+    }
+    if (preserveDriveQueryOnClear) {
+      const d = current.get("drive")?.trim();
+      if (d) nextParams.set("drive", d);
+    }
+    const qs = nextParams.toString();
+    const nextPath = qs ? `${pathname ?? ""}?${qs}` : pathname ?? "";
+    router.replace(nextPath, { scroll: false });
+    setFilterState(filtersFromSearchParams(nextParams));
+  }, [pathname, preserveDriveQueryOnClear, router, searchParams]);
 
   const fetchFiltered = useCallback(async () => {
     if (!user) {
@@ -388,7 +404,7 @@ export function useFilteredFiles(
     (driveIdToKeep: string) => {
       const nextParams = new URLSearchParams();
       const current = new URLSearchParams(searchParams.toString());
-      for (const key of FILES_NAV_QUERY_KEYS_TO_PRESERVE) {
+      for (const key of FILE_BROWSER_NAV_QUERY_KEYS) {
         for (const value of current.getAll(key)) {
           if (value) nextParams.append(key, value);
         }
@@ -399,7 +415,7 @@ export function useFilteredFiles(
         ? `${pathname ?? ""}?${qs}`
         : `${pathname ?? ""}?drive=${encodeURIComponent(driveIdToKeep)}`;
       router.replace(next, { scroll: false });
-      setFilterState({ drive: driveIdToKeep });
+      setFilterState(filtersFromSearchParams(nextParams));
     },
     [pathname, router, searchParams]
   );

@@ -30,6 +30,7 @@ import {
   isLegacyCustomLinkedDriveForConsolidation,
   shouldFreezeNewLegacyLinkedDriveFolders,
 } from "@/lib/storage-folder-model-policy";
+import { useDashboardItemReveal } from "@/components/dashboard/DashboardRouteFade";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { DisplayContext } from "@/lib/metadata-display";
@@ -59,6 +60,7 @@ interface FolderListRowProps {
   /** After v2 storage_folders rename/move from row actions */
   onStorageFolderMutated?: () => void;
   onConsolidateMenuSelect?: () => void;
+  revealFadeIn?: boolean;
 }
 
 export default function FolderListRow({
@@ -78,7 +80,14 @@ export default function FolderListRow({
   columnMode = "full",
   onStorageFolderMutated,
   onConsolidateMenuSelect,
+  revealFadeIn = false,
 }: FolderListRowProps) {
+  const revealEntered = useDashboardItemReveal(revealFadeIn);
+  const revealOpacityClass = revealFadeIn
+    ? `transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
+        revealEntered ? "opacity-100" : "opacity-0"
+      }`
+    : "";
   const rollup = folderRollup ?? {
     descendants: [] as RecentFile[],
     coverage: "none" as FolderRollupCoverage,
@@ -242,7 +251,7 @@ export default function FolderListRow({
               }
             : undefined
         }
-        className={`border-b border-neutral-100 transition-colors last:border-0 ${
+        className={`border-b border-neutral-100 transition-colors last:border-0 ${revealOpacityClass} ${
           canNavigate ? "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50" : ""
         } ${selected ? "bg-bizzi-blue/5 dark:bg-bizzi-blue/10" : ""} ${
           draggable ? "cursor-grab active:cursor-grabbing" : ""

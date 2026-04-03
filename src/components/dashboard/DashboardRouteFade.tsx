@@ -2,6 +2,33 @@
 
 import { useEffect, useState } from "react";
 
+/**
+ * Opacity reveal aligned with {@link DashboardRouteFade} (~850ms): double `requestAnimationFrame`, then full opacity.
+ * Use with `transition-opacity duration-[850ms] ease-out motion-reduce:transition-none`.
+ */
+export function useDashboardItemReveal(enabled: boolean | undefined): boolean {
+  const [entered, setEntered] = useState(!enabled);
+  useEffect(() => {
+    if (!enabled) {
+      setEntered(true);
+      return;
+    }
+    setEntered(false);
+    let cancelled = false;
+    const id1 = requestAnimationFrame(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (!cancelled) setEntered(true);
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id1);
+    };
+  }, [enabled]);
+  return entered;
+}
+
 export type DashboardRouteFadeProps = {
   ready: boolean;
   children: React.ReactNode;
