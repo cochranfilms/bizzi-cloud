@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Check, Download, Film, Images, Send, Share2 } from "lucide-react";
+import { AlertCircle, Check, Download, Film, Images, Send, Share2 } from "lucide-react";
+import { MOVE_ALREADY_AT_DESTINATION } from "@/lib/move-and-folder-naming";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
   filterDriveFoldersByPowerUp,
@@ -161,11 +162,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const { downloadMacosPackageZip } = useBulkDownload({ fetchFilesByIds });
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [moveErrorNotice, setMoveErrorNotice] = useState<string | null>(null);
   useEffect(() => {
     if (!moveNotice) return;
     const t = window.setTimeout(() => setMoveNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [moveNotice]);
+  useEffect(() => {
+    if (!moveErrorNotice) return;
+    const t = window.setTimeout(() => setMoveErrorNotice(null), 6500);
+    return () => window.clearTimeout(t);
+  }, [moveErrorNotice]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [checkoutHomeEcho, setCheckoutHomeEcho] = useState(false);
@@ -910,28 +917,38 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       folderKeys: string[],
       targetDriveId: string
     ) => {
-      if (fileIds.length > 0) {
-        await moveFilesToFolder(fileIds, targetDriveId);
-      }
-      for (const key of folderKeys) {
-        const scope = parseStorageVirtualFolderKey(key);
-        if (scope) {
-          await moveAllFilesUnderStoragePath(scope.driveId, scope.pathPrefix, targetDriveId);
-          continue;
+      try {
+        setMoveErrorNotice(null);
+        if (fileIds.length > 0) {
+          await moveFilesToFolder(fileIds, targetDriveId);
         }
-        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
-        const drive = linkedDrives.find((d) => d.id === driveId);
-        if (drive && driveId !== targetDriveId) {
-          await moveFolderContentsToFolder(driveId, targetDriveId);
+        for (const key of folderKeys) {
+          const scope = parseStorageVirtualFolderKey(key);
+          if (scope) {
+            await moveAllFilesUnderStoragePath(scope.driveId, scope.pathPrefix, targetDriveId);
+            continue;
+          }
+          const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+          if (driveId === targetDriveId) {
+            throw new Error(MOVE_ALREADY_AT_DESTINATION);
+          }
+          const drive = linkedDrives.find((d) => d.id === driveId);
+          if (drive) {
+            await moveFolderContentsToFolder(driveId, targetDriveId);
+          }
         }
+        clearSelection();
+        await refetch();
+        await refetchPinned();
+        loadPinnedFiles();
+        fetchRecentUploads();
+        const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+        setMoveNotice(`Items moved into the "${destName}" folder`);
+      } catch (e) {
+        setMoveNotice(null);
+        setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
+        throw e;
       }
-      clearSelection();
-      await refetch();
-      await refetchPinned();
-      loadPinnedFiles();
-      fetchRecentUploads();
-      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
-      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [
       linkedDrives,
@@ -948,12 +965,16 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
-      await performMove(
-        Array.from(selectedFileIds),
-        Array.from(selectedFolderKeys),
-        targetDriveId
-      );
-      setMoveModalOpen(false);
+      try {
+        await performMove(
+          Array.from(selectedFileIds),
+          Array.from(selectedFolderKeys),
+          targetDriveId
+        );
+        setMoveModalOpen(false);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [selectedFileIds, selectedFolderKeys, performMove]
   );
@@ -962,7 +983,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     async (targetDriveId: string, e: React.DragEvent) => {
       const parsed = getDragMovePayload(e.dataTransfer);
       if (!parsed) return;
-      await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+      try {
+        await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [performMove]
   );
@@ -1195,19 +1220,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
         linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
         <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <SectionTitle className="mb-0">Storage</SectionTitle>
-            <Link
-              href={
-                searchParams.toString()
-                  ? `${filesHref}?${searchParams.toString()}`
-                  : filesHref
-              }
-              className="text-sm font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
-            >
-              Open in All files
-            </Link>
-          </div>
+          <SectionTitle className="mb-3 sm:mb-4">Storage</SectionTitle>
           <div className="mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
             <HomeEmbeddedStorageGrid embeddedHomeStorage />
           </div>
@@ -1455,6 +1468,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         key={item.key}
                         item={item}
                         displayContext={storageDisplayContext}
+                        revealFadeIn
                         onClick={() => openBizziCloudFolderItem(item)}
                         onDelete={
                           drive && !item.preventDelete
@@ -1531,6 +1545,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     showCardInfo={showCardInfo}
+                    revealFadeIn
                     onDelete={
                       drive && !item.preventDelete
                         ? async () => {
@@ -1686,6 +1701,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       </div>
       </DashboardRouteFade>
 
+      {moveErrorNotice ? (
+        <div
+          role="alert"
+          className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-950 shadow-lg dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-100"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-300" aria-hidden />
+          <span className="text-left">{moveErrorNotice}</span>
+        </div>
+      ) : null}
       {moveNotice ? (
         <div
           role="status"

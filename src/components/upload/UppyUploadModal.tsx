@@ -176,6 +176,8 @@ export default function UppyUploadModal({
   const galleryAssetDebouncedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onGalleryManageUploadLifecycleRef = useRef(onGalleryManageUploadLifecycle);
   onGalleryManageUploadLifecycleRef.current = onGalleryManageUploadLifecycle;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const [ready, setReady] = useState(false);
   const [expanded, setExpanded] = useState(true);
@@ -260,6 +262,8 @@ export default function UppyUploadModal({
       setReady(false);
       return;
     }
+
+    let autoCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
     const getAuthHeaders = async () => {
       // Cached token only — forcing refresh per batch hammered securetoken.googleapis.com during
@@ -724,15 +728,31 @@ export default function UppyUploadModal({
         }
       }
     });
-    uppy.on("complete", () => {
+    uppy.on("complete", (result) => {
       flushProgress();
       onUploadCompleteRef.current?.();
+      if (autoCloseTimer != null) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
+      const successful = result?.successful ?? [];
+      const failed = result?.failed ?? [];
+      if (failed.length === 0 && successful.length > 0) {
+        autoCloseTimer = setTimeout(() => {
+          autoCloseTimer = null;
+          onCloseRef.current();
+        }, 5000);
+      }
     });
 
     uppyRef.current = uppy;
     setReady(true);
 
     return () => {
+      if (autoCloseTimer != null) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
       if (galleryAssetDebouncedTimerRef.current) {
         clearTimeout(galleryAssetDebouncedTimerRef.current);
         galleryAssetDebouncedTimerRef.current = null;

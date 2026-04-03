@@ -18,7 +18,7 @@ import {
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { dedupeLightroomFamilyProjectRows } from "@/lib/lightroom-projects-dedupe";
-import { Check, Download, FolderInput, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { AlertCircle, Check, Download, FolderInput, Loader2, Send, Share2, Trash2 } from "lucide-react";
 import SectionTitle from "./SectionTitle";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
@@ -260,12 +260,18 @@ export default function ProjectsView({
     invitedEmails: string[];
   } | null>(null);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [moveErrorNotice, setMoveErrorNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!moveNotice) return;
     const t = window.setTimeout(() => setMoveNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [moveNotice]);
+  useEffect(() => {
+    if (!moveErrorNotice) return;
+    const t = window.setTimeout(() => setMoveErrorNotice(null), 6500);
+    return () => window.clearTimeout(t);
+  }, [moveErrorNotice]);
 
   const scopedDrives = useMemo((): LinkedDrive[] => {
     return linkedDrives.filter((d) => {
@@ -422,23 +428,34 @@ export default function ProjectsView({
 
   const performMove = useCallback(
     async (fileIds: string[], targetDriveId: string) => {
-      const expandedIds = expandMacosPackageRowIds(fileIds, memberFilesForMove, allPackagesForMove);
-      if (expandedIds.length > 0) {
-        await moveFilesToFolder(expandedIds, targetDriveId);
+      try {
+        setMoveErrorNotice(null);
+        const expandedIds = expandMacosPackageRowIds(fileIds, memberFilesForMove, allPackagesForMove);
+        if (expandedIds.length > 0) {
+          await moveFilesToFolder(expandedIds, targetDriveId);
+        }
+        clearSelection();
+        await refetch();
+        await load();
+        const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+        setMoveNotice(`Items moved into the "${destName}" folder`);
+      } catch (e) {
+        setMoveNotice(null);
+        setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
+        throw e;
       }
-      clearSelection();
-      await refetch();
-      await load();
-      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
-      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [memberFilesForMove, allPackagesForMove, moveFilesToFolder, linkedDrives, clearSelection, refetch, load]
   );
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
-      await performMove(Array.from(selectedFileIds), targetDriveId);
-      setMoveModalOpen(false);
+      try {
+        await performMove(Array.from(selectedFileIds), targetDriveId);
+        setMoveModalOpen(false);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [selectedFileIds, performMove]
   );
@@ -604,6 +621,15 @@ export default function ProjectsView({
         </div>
       )}
 
+      {moveErrorNotice ? (
+        <div
+          role="alert"
+          className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-950 shadow-lg dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-100"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-300" aria-hidden />
+          <span className="text-left">{moveErrorNotice}</span>
+        </div>
+      ) : null}
       {moveNotice ? (
         <div
           role="status"

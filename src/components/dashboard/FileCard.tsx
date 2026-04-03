@@ -34,6 +34,7 @@ import {
   resolveCreativeProjectTile,
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { resolveLocationLabel } from "@/lib/metadata-display";
 
 interface FileCardProps {
   file: RecentFile;
@@ -285,7 +286,7 @@ export default function FileCard({
     if (ok) onDelete?.();
   };
 
-  const sizeLine = `${formatBytes(file.size)} · ${file.driveName}${file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}`;
+  const sizeLine = `${formatBytes(file.size)} · ${resolveLocationLabel(file)}${file.creativeDisplayLabel ? ` · ${file.creativeDisplayLabel}` : ""}`;
   const captionSecondary = fileThumbCaptionSecondary(file, isMacosPackage);
 
   const rootShell = isThumb

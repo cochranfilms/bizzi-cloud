@@ -46,6 +46,7 @@ import {
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { backupPathUnderPrefix } from "@/lib/storage-virtual-folder-key";
+import { MOVE_ALREADY_AT_DESTINATION, DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import {
   BACKUP_LIFECYCLE_ACTIVE,
@@ -57,6 +58,11 @@ import {
   registerCloudFilesPostMutationRefresh,
   scheduleCloudFilesPostMutationRefresh,
 } from "@/lib/cloud-files-post-mutation-refresh";
+
+async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => ({}));
+  return (data?.error as string) ?? fallback;
+}
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
@@ -1604,14 +1610,22 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const renameFolder = useCallback(
     async (driveId: string, newName: string) => {
       if (!isFirebaseConfigured() || !user) return;
+      const trimmed = newName.trim() || "Folder";
+      const key = linkedDriveDisplayKey(trimmed);
+      const dup = linkedDrives.some(
+        (d) => d.id !== driveId && linkedDriveDisplayKey(d.name) === key
+      );
+      if (dup) {
+        throw new Error(DUPLICATE_LINKED_FOLDER_NAME);
+      }
       const db = getFirebaseFirestore();
       const driveRef = doc(db, "linked_drives", driveId);
-      await updateDoc(driveRef, { name: newName.trim() || "Folder" });
+      await updateDoc(driveRef, { name: trimmed });
       await fetchDrives();
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();
     },
-    [user, bumpStorageVersion, fetchDrives, scheduleDebouncedPostTrashMetadataRefresh]
+    [user, linkedDrives, bumpStorageVersion, fetchDrives, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const moveFile = useCallback(
@@ -1630,6 +1644,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       ) {
         return;
       }
+      const sourceDriveId = (data.linked_drive_id as string) ?? "";
+      if (sourceDriveId === targetDriveId) {
+        throw new Error(MOVE_ALREADY_AT_DESTINATION);
+      }
       const token = await getCurrentUserIdToken(true);
       if (!token) return;
       const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -1645,7 +1663,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           target_folder_id: null,
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        throw new Error(await apiErrorMessage(res, "Move failed"));
+      }
       await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();
@@ -1676,6 +1696,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
         if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
+        const sourceDriveId = (data.linked_drive_id as string) ?? "";
+        if (sourceDriveId === targetDriveId) {
+          throw new Error(MOVE_ALREADY_AT_DESTINATION);
+        }
         allowed.push(fileId);
       }
       if (allowed.length === 0) return;
@@ -1694,7 +1718,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           target_folder_id: null,
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        throw new Error(await apiErrorMessage(res, "Move failed"));
+      }
       for (const fileId of allowed) {
         await reconcileMacosPackageForBackupFileClient(fileId);
       }
@@ -1722,11 +1748,16 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         isEnterpriseContext,
       };
       const allowed: string[] = [];
+      const tgt = targetFolderId ?? null;
       for (const fileId of fileIds) {
         const fileSnap = await getDoc(doc(db, "backup_files", fileId));
         if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
         if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
+        const curFolder = ((data.folder_id as string | null) ?? null) as string | null;
+        if (curFolder === tgt) {
+          throw new Error(MOVE_ALREADY_AT_DESTINATION);
+        }
         allowed.push(fileId);
       }
       if (allowed.length === 0) return;
@@ -1742,7 +1773,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           },
           body: JSON.stringify({ file_id, target_folder_id: targetFolderId }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          throw new Error(await apiErrorMessage(res, "Move failed"));
+        }
         await reconcileMacosPackageForBackupFileClient(file_id);
       }
       bumpStorageVersion();
@@ -1923,6 +1956,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const moveFolderContentsToFolder = useCallback(
     async (sourceDriveId: string, targetDriveId: string) => {
       if (!isFirebaseConfigured() || !user) return;
+      if (sourceDriveId === targetDriveId) {
+        throw new Error(MOVE_ALREADY_AT_DESTINATION);
+      }
       const db = getFirebaseFirestore();
       const sourceDrive = linkedDrives.find((d) => d.id === sourceDriveId);
       const filesSnap = await getDocs(

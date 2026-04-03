@@ -9,11 +9,29 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
 import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import { DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
 
 const ACTIVE_SEAT = new Set(["active", "cold_storage"]);
 
 function teamBaseName(name: string): string {
   return name.replace(/^\[Team\]\s+/, "");
+}
+
+async function teamOwnerHasLinkedDriveNamed(
+  db: Firestore,
+  teamOwnerUserId: string,
+  displayName: string,
+): Promise<boolean> {
+  const key = linkedDriveDisplayKey(displayName);
+  const snap = await db.collection("linked_drives").where("userId", "==", teamOwnerUserId).get();
+  for (const docSnap of snap.docs) {
+    const x = docSnap.data();
+    if (x.deleted_at) continue;
+    if (x.organization_id) continue;
+    if (x.personal_team_owner_id !== teamOwnerUserId) continue;
+    if (linkedDriveDisplayKey(String(x.name ?? "")) === key) return true;
+  }
+  return false;
 }
 
 async function teamHasStorageFolderModelV2(
@@ -132,6 +150,10 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
+  }
+
+  if (await teamOwnerHasLinkedDriveNamed(db, teamOwnerUserId, rawName)) {
+    return NextResponse.json({ error: DUPLICATE_LINKED_FOLDER_NAME }, { status: 409 });
   }
 
   const permissionPrefix = body.is_creator_raw ? "creator-raw" : "manual";

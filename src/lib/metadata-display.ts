@@ -210,7 +210,35 @@ function bestFileTimestampMs(file: RecentFile): { ms: number | null; iso: string
   return { ms: null, iso: null, source: null };
 }
 
+function teamStripDriveName(name: string): string {
+  return name.replace(/^\[Team\]\s+/, "").trim();
+}
+
+function isStorageOrUploadsDrive(driveName: string | null | undefined): boolean {
+  const b = teamStripDriveName(driveName ?? "");
+  return b === "Storage" || b === "Uploads";
+}
+
+/** Immediate parent directory name when `path` includes the file (Storage / Uploads tree). */
+function immediateParentFolderLabel(path: string, fileName: string): string | null {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length < 2) return null;
+  const base =
+    fileName.split("/").filter(Boolean).pop()?.trim() ?? fileName.trim();
+  if (!base) return null;
+  const last = segments[segments.length - 1] ?? "";
+  if (last === base || decodeURIComponent(last) === base) {
+    const p = segments[segments.length - 2];
+    return p && p.length > 0 ? p : null;
+  }
+  return null;
+}
+
 export function resolveLocationLabel(file: RecentFile, ctx?: DisplayContext): string {
+  if (isStorageOrUploadsDrive(file.driveName)) {
+    const parent = immediateParentFolderLabel(file.path ?? "", file.name);
+    if (parent) return parent;
+  }
   const d = file.driveName?.trim();
   if (d) return d;
   return resolveContextLocationFallback(ctx);
@@ -254,6 +282,9 @@ export function buildDisplayMetadata(file: RecentFile, ctx?: DisplayContext): Di
   }
 
   const locationLabel = resolveLocationLabel(file, ctx);
+  const nestedStorageParent = isStorageOrUploadsDrive(file.driveName)
+    ? immediateParentFolderLabel(file.path ?? "", file.name)
+    : null;
   const locationCompleteness: MetadataCompleteness = file.driveName?.trim() ? "full" : "fallback";
 
   const visualApplicable = cat === "video" || cat === "photo";
@@ -374,7 +405,14 @@ export function buildDisplayMetadata(file: RecentFile, ctx?: DisplayContext): Di
       resolution: resolutionTooltip,
       duration: durationTooltip,
       codec: codecTooltip,
-      location: file.driveName?.trim() ? file.driveName : undefined,
+      location:
+        nestedStorageParent && file.driveName?.trim()
+          ? `${file.driveName.trim()} · ${nestedStorageParent}`
+          : file.path?.trim()
+            ? file.path
+            : file.driveName?.trim()
+              ? file.driveName
+              : undefined,
     },
   };
 }

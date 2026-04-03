@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
 import { createPortal } from "react-dom";
-import { Check, CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { AlertCircle, Check, CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 
 import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
+import { MOVE_ALREADY_AT_DESTINATION } from "@/lib/move-and-folder-naming";
 import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
 import FileCard from "./FileCard";
@@ -49,7 +50,7 @@ import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
-import DashboardRouteFade from "./DashboardRouteFade";
+import DashboardRouteFade, { useDashboardItemReveal } from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
@@ -329,11 +330,17 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   }, [bulkDownload, selectedFileIds]);
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [moveErrorNotice, setMoveErrorNotice] = useState<string | null>(null);
   useEffect(() => {
     if (!moveNotice) return;
     const t = window.setTimeout(() => setMoveNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [moveNotice]);
+  useEffect(() => {
+    if (!moveErrorNotice) return;
+    const t = window.setTimeout(() => setMoveErrorNotice(null), 6500);
+    return () => window.clearTimeout(t);
+  }, [moveErrorNotice]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
@@ -1788,27 +1795,37 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       folderKeys: string[],
       targetDriveId: string
     ) => {
-      const expandedIds = expandMacosPackageRowIds(fileIds, filesForPackageExpand, packagesForPackageExpand);
-      if (expandedIds.length > 0) {
-        await moveFilesToFolder(expandedIds, targetDriveId);
-      }
-      for (const key of folderKeys) {
-        const driveId = key.startsWith("drive-") ? key.slice(6) : key;
-        const drive = linkedDrives.find((d) => d.id === driveId);
-        if (drive && driveId !== targetDriveId) {
-          await moveFolderContentsToFolder(driveId, targetDriveId);
-          if (currentDriveId === driveId) {
-            closeDrive();
+      try {
+        setMoveErrorNotice(null);
+        const expandedIds = expandMacosPackageRowIds(fileIds, filesForPackageExpand, packagesForPackageExpand);
+        if (expandedIds.length > 0) {
+          await moveFilesToFolder(expandedIds, targetDriveId);
+        }
+        for (const key of folderKeys) {
+          const driveId = key.startsWith("drive-") ? key.slice(6) : key;
+          if (driveId === targetDriveId) {
+            throw new Error(MOVE_ALREADY_AT_DESTINATION);
+          }
+          const drive = linkedDrives.find((d) => d.id === driveId);
+          if (drive) {
+            await moveFolderContentsToFolder(driveId, targetDriveId);
+            if (currentDriveId === driveId) {
+              closeDrive();
+            }
           }
         }
+        clearSelection();
+        await refetch();
+        if (currentDrive && expandedIds.length > 0) {
+          loadDriveFiles(currentDrive.id);
+        }
+        const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+        setMoveNotice(`Items moved into the "${destName}" folder`);
+      } catch (e) {
+        setMoveNotice(null);
+        setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
+        throw e;
       }
-      clearSelection();
-      await refetch();
-      if (currentDrive && expandedIds.length > 0) {
-        loadDriveFiles(currentDrive.id);
-      }
-      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
-      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [
       linkedDrives,
@@ -1827,12 +1844,16 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
-      await performMove(
-        Array.from(selectedFileIds),
-        Array.from(selectedFolderKeys),
-        targetDriveId
-      );
-      setMoveModalOpen(false);
+      try {
+        await performMove(
+          Array.from(selectedFileIds),
+          Array.from(selectedFolderKeys),
+          targetDriveId
+        );
+        setMoveModalOpen(false);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [selectedFileIds, selectedFolderKeys, performMove]
   );
@@ -1841,7 +1862,11 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     async (targetDriveId: string, e: React.DragEvent) => {
       const parsed = getDragMovePayload(e.dataTransfer);
       if (!parsed) return;
-      await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+      try {
+        await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [performMove]
   );
@@ -1931,12 +1956,32 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
+  const embeddedFolderBrowse = Boolean(embeddedHomeStorage && currentDrive);
+  const [embeddedFolderRevealArmed, setEmbeddedFolderRevealArmed] = useState(false);
+  useEffect(() => {
+    if (!embeddedFolderBrowse) {
+      setEmbeddedFolderRevealArmed(false);
+      return;
+    }
+    if (driveFilesLoading) setEmbeddedFolderRevealArmed(true);
+  }, [embeddedFolderBrowse, driveFilesLoading]);
+  const embeddedFolderGridRevealEntered = useDashboardItemReveal(
+    embeddedFolderBrowse ? embeddedFolderRevealArmed && !driveFilesLoading : undefined
+  );
+  const embeddedFolderGridRevealClass = embeddedFolderBrowse
+    ? `min-h-0 transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
+        embeddedFolderGridRevealEntered ? "opacity-100" : "opacity-0"
+      }`
+    : "contents";
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
-  const mainGridFadeReady = currentDrive
-    ? !driveFilesLoading
-    : activeTab === "recents"
-      ? recentsRootReady
-      : !(heartedLoading && heartedFiles.length === 0);
+  /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). */
+  const mainGridFadeReady = embeddedFolderBrowse
+    ? true
+    : currentDrive
+      ? !driveFilesLoading
+      : activeTab === "recents"
+        ? recentsRootReady
+        : !(heartedLoading && heartedFiles.length === 0);
 
   return (
     <div
@@ -2371,7 +2416,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
 
         {/* File grid - stale-while-revalidate: keep showing previous files during filter load to avoid blink */}
         {currentDrive ? (
-          useFilteredScoped && filesToShow.length === 0 && !filtersLoading ? (
+          <div className={embeddedFolderGridRevealClass}>
+          {useFilteredScoped && filesToShow.length === 0 && !filtersLoading ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
             No files match your filters. Try adjusting or clearing filters.
           </div>
@@ -2600,7 +2646,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                 ? "No gallery media yet. Upload photos in a gallery to see them organized by gallery here."
                 : "No files in this drive yet. Use New → File Upload to add files."}
             </div>
-          )
+          )}
+          </div>
         ) : activeTab === "recents" ? (
           <>
             {showFolders && folderItems.length > 0 && (
@@ -2945,6 +2992,15 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       </FilesViewWrapper>
         </div>
 
+        {moveErrorNotice ? (
+          <div
+            role="alert"
+            className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-950 shadow-lg dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-100"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-300" aria-hidden />
+            <span className="text-left">{moveErrorNotice}</span>
+          </div>
+        ) : null}
         {moveNotice ? (
           <div
             role="status"
@@ -2989,13 +3045,20 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                   return m ? teamAwareDriveName(m.name) : currentDrive.name;
                 })(),
                 onMoveToFolder: async (targetFolderId) => {
-                  await moveFilesToStorageFolder(Array.from(selectedFileIds), targetFolderId);
-                  clearSelection();
-                  await refetch();
-                  if (currentDrive) await loadDriveFiles(currentDrive.id);
-                  const dest =
-                    targetFolderId === null ? "Storage root" : "folder in Storage";
-                  setMoveNotice(`Files moved to ${dest}`);
+                  try {
+                    setMoveErrorNotice(null);
+                    await moveFilesToStorageFolder(Array.from(selectedFileIds), targetFolderId);
+                    clearSelection();
+                    await refetch();
+                    if (currentDrive) await loadDriveFiles(currentDrive.id);
+                    const dest =
+                      targetFolderId === null ? "Storage root" : "folder in Storage";
+                    setMoveNotice(`Files moved to ${dest}`);
+                  } catch (e) {
+                    setMoveNotice(null);
+                    setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
+                    throw e;
+                  }
                 },
               }
             : undefined

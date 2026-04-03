@@ -57,6 +57,7 @@ import {
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
 import { shouldFreezeNewLegacyLinkedDriveFolders } from "@/lib/storage-folder-model-policy";
+import { DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
 
 function readConsolidationFromDriveData(data: Record<string, unknown>): Pick<
   LinkedDrive,
@@ -1154,6 +1155,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const creatorSection = options?.creatorSection ?? false;
       const displayName = name.trim() || "New folder";
+
+      if (
+        linkedDrives.some(
+          (d) => linkedDriveDisplayKey(d.name) === linkedDriveDisplayKey(displayName)
+        )
+      ) {
+        throw new Error(DUPLICATE_LINKED_FOLDER_NAME);
+      }
 
       if (
         !creatorSection &&

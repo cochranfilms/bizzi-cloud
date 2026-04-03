@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckSquare, ChevronLeft, Film } from "lucide-react";
+import { AlertCircle, Check, CheckSquare, ChevronLeft, Film } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import FolderCard from "./FolderCard";
 import FileCard from "./FileCard";
@@ -71,6 +71,7 @@ export default function CreatorContent() {
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [moveErrorNotice, setMoveErrorNotice] = useState<string | null>(null);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFolderName, setShareFolderName] = useState("");
@@ -100,6 +101,11 @@ export default function CreatorContent() {
     const t = window.setTimeout(() => setMoveNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [moveNotice]);
+  useEffect(() => {
+    if (!moveErrorNotice) return;
+    const t = window.setTimeout(() => setMoveErrorNotice(null), 6500);
+    return () => window.clearTimeout(t);
+  }, [moveErrorNotice]);
 
   useEffect(() => {
     setSelectedFileIds(new Set());
@@ -186,22 +192,33 @@ export default function CreatorContent() {
 
   const performMove = useCallback(
     async (fileIds: string[], targetDriveId: string) => {
-      if (fileIds.length > 0) {
-        await moveFilesToFolder(fileIds, targetDriveId);
+      try {
+        setMoveErrorNotice(null);
+        if (fileIds.length > 0) {
+          await moveFilesToFolder(fileIds, targetDriveId);
+        }
+        clearSelection();
+        await refetch();
+        if (currentDrive) await loadDriveFiles(currentDrive.id);
+        const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
+        setMoveNotice(`Items moved into the "${destName}" folder`);
+      } catch (e) {
+        setMoveNotice(null);
+        setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
+        throw e;
       }
-      clearSelection();
-      await refetch();
-      if (currentDrive) await loadDriveFiles(currentDrive.id);
-      const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
-      setMoveNotice(`Items moved into the "${destName}" folder`);
     },
     [moveFilesToFolder, clearSelection, refetch, currentDrive, loadDriveFiles, linkedDrives]
   );
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
-      await performMove(Array.from(selectedFileIds), targetDriveId);
-      setMoveModalOpen(false);
+      try {
+        await performMove(Array.from(selectedFileIds), targetDriveId);
+        setMoveModalOpen(false);
+      } catch {
+        /* moveErrorNotice set in performMove */
+      }
     },
     [selectedFileIds, performMove]
   );
@@ -549,6 +566,15 @@ export default function CreatorContent() {
         </DashboardRouteFade>
       </section>
 
+      {moveErrorNotice ? (
+        <div
+          role="alert"
+          className="fixed bottom-[max(12rem,calc(env(safe-area-inset-bottom,0px)+10rem))] left-1/2 z-[45] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-950 shadow-lg dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-100"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-300" aria-hidden />
+          <span className="text-left">{moveErrorNotice}</span>
+        </div>
+      ) : null}
       {moveNotice ? (
         <div
           role="status"

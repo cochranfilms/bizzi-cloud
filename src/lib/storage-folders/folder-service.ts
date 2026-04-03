@@ -303,7 +303,10 @@ export async function moveStorageFolder(
     (currentParent === null && targetParentFolderId === null) ||
     currentParent === targetParentFolderId;
   if (sameParent) {
-    return;
+    throw new StorageFolderAccessError(
+      "Those items are already in this folder. You can't move them here again.",
+      400,
+    );
   }
 
   if (targetParentFolderId === folderId) {
@@ -487,6 +490,14 @@ export async function moveFileToFolder(
     await assertDestinationFolderChainReady(db, srcFid, driveId);
   }
 
+  const tgtFid = params.target_folder_id ?? null;
+  if (srcFid === tgtFid) {
+    throw new StorageFolderAccessError(
+      "Those items are already in this folder. You can't move them here again.",
+      400,
+    );
+  }
+
   let targetPathNames: string[] = [];
   let targetPathIds: string[] = [];
   let targetScope = scopeFromLinkedDrive(driveId, driveSnap.data()!);
@@ -624,7 +635,7 @@ export async function moveBackupFilesToDrive(
     const sourceDriveId = file.linked_drive_id as string;
     if (sourceDriveId === target_drive_id) {
       throw new StorageFolderAccessError(
-        "Use move-to-folder for moves within the same drive",
+        "Those items are already in this folder. You can't move them here again.",
         400,
       );
     }

@@ -164,6 +164,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         disableThumbnailGenerator
         note={null}
         fileManagerSelectionType="both"
+        doneButtonHandler={null}
         className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium bizzi-uppy-dashboard-hide-inline-drop [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
       />
     </div>
