@@ -24,6 +24,7 @@ import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
 import { sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import {
+  findV2SameObjectKeyReplaceTarget,
   linkedDriveIsFolderModelV2,
   resolveV2PlacementForNewUpload,
   StorageFolderAccessError,
@@ -193,6 +194,41 @@ export async function POST(
     return jsonError(preGuard.message, preGuard.status);
   }
 
+  const safePathMultipart = sanitizeBackupRelativePath(relativePath);
+  const folderRawEarly = data.storage_folder_id ?? data.storageFolderId ?? null;
+  const parentFolderIdEarly =
+    folderRawEarly === null || folderRawEarly === undefined || folderRawEarly === ""
+      ? null
+      : String(folderRawEarly);
+  const driveDataPre = driveSnapPreComplete.data();
+  let v2Placement: Awaited<ReturnType<typeof resolveV2PlacementForNewUpload>> | null = null;
+  let v2ReplaceFileId: string | null = null;
+
+  if (driveDataPre && linkedDriveIsFolderModelV2(driveDataPre)) {
+    try {
+      v2ReplaceFileId = await findV2SameObjectKeyReplaceTarget(
+        db,
+        String(driveId),
+        parentFolderIdEarly,
+        safePathMultipart,
+        objectKey
+      );
+      v2Placement = await resolveV2PlacementForNewUpload(
+        db,
+        String(driveId),
+        driveDataPre,
+        parentFolderIdEarly,
+        safePathMultipart,
+        { excludeFileId: v2ReplaceFileId ?? undefined }
+      );
+    } catch (err) {
+      if (err instanceof StorageFolderAccessError) {
+        return jsonError(err.message, err.status);
+      }
+      throw err;
+    }
+  }
+
   try {
     await completeMultipartUpload(objectKey, uploadId, validatedParts);
   } catch (completeErr) {
@@ -277,31 +313,6 @@ export async function POST(
 
   const driveSnap = driveSnapPreComplete;
   const driveData = driveSnap.data();
-
-  const safePathMultipart = sanitizeBackupRelativePath(relativePath);
-  let v2Placement: Awaited<ReturnType<typeof resolveV2PlacementForNewUpload>> | null =
-    null;
-  if (driveData && linkedDriveIsFolderModelV2(driveData)) {
-    const folderRaw = data.storage_folder_id ?? data.storageFolderId ?? null;
-    const parentFolderId =
-      folderRaw === null || folderRaw === undefined || folderRaw === ""
-        ? null
-        : String(folderRaw);
-    try {
-      v2Placement = await resolveV2PlacementForNewUpload(
-        db,
-        String(driveId),
-        driveData,
-        parentFolderId,
-        safePathMultipart
-      );
-    } catch (err) {
-      if (err instanceof StorageFolderAccessError) {
-        return jsonError(err.message, err.status);
-      }
-      throw err;
-    }
-  }
   const relForMeta = v2Placement?.relative_path ?? relativePath;
 
   const profileSnap = await db.collection("profiles").doc(uid).get();
@@ -322,42 +333,64 @@ export async function POST(
     completed_at: new Date(),
   });
 
-  const lastModified = data.lastModified != null ? new Date(data.lastModified).toISOString() : new Date().toISOString();
-  const fileRef = await db.collection("backup_files").add({
-    backup_snapshot_id: snapshotRef.id,
-    linked_drive_id: driveId,
-    userId: uid,
-    relative_path: relForMeta,
-    object_key: objectKey,
-    size_bytes: fileSize,
-    content_type: contentType,
-    modified_at: lastModified,
-    uploaded_at: new Date().toISOString(),
-    deleted_at: null,
-    lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
-    organization_id: organizationId,
-    workspace_id: workspaceIdResolved,
-    visibility_scope: visibilityScope,
-    owner_user_id: uid,
-    uploader_email: uploadMeta.uploaderEmail,
-    container_type: uploadMeta.containerType,
-    container_id: uploadMeta.containerId,
-    personal_team_owner_id: uploadMeta.personalTeamOwnerId,
-    role_at_upload: uploadMeta.roleAtUpload,
-    ...(v2Placement
-      ? {
-          folder_id: v2Placement.folder_id,
-          file_name: v2Placement.file_name,
-          file_name_compare_key: v2Placement.file_name_compare_key,
-          folder_path_ids: v2Placement.folder_path_ids,
-        }
-      : {}),
+  const lastModified =
+    data.lastModified != null ? new Date(data.lastModified).toISOString() : new Date().toISOString();
+  const v2FirestoreFields = v2Placement
+    ? {
+        folder_id: v2Placement.folder_id,
+        file_name: v2Placement.file_name,
+        file_name_compare_key: v2Placement.file_name_compare_key,
+        folder_path_ids: v2Placement.folder_path_ids,
+      }
+    : {};
+  const pathDerivationFields = {
     ...macosPackageFirestoreFieldsFromRelativePath(relForMeta),
     ...creativeFirestoreFieldsFromRelativePath(relForMeta),
-  });
+  };
+
+  let backupFileId: string;
+  if (v2ReplaceFileId) {
+    await db.collection("backup_files").doc(v2ReplaceFileId).update({
+      backup_snapshot_id: snapshotRef.id,
+      relative_path: relForMeta,
+      size_bytes: fileSize,
+      content_type: contentType,
+      modified_at: lastModified,
+      uploaded_at: new Date().toISOString(),
+      ...v2FirestoreFields,
+      ...pathDerivationFields,
+    });
+    backupFileId = v2ReplaceFileId;
+  } else {
+    const fileRef = await db.collection("backup_files").add({
+      backup_snapshot_id: snapshotRef.id,
+      linked_drive_id: driveId,
+      userId: uid,
+      relative_path: relForMeta,
+      object_key: objectKey,
+      size_bytes: fileSize,
+      content_type: contentType,
+      modified_at: lastModified,
+      uploaded_at: new Date().toISOString(),
+      deleted_at: null,
+      lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
+      organization_id: organizationId,
+      workspace_id: workspaceIdResolved,
+      visibility_scope: visibilityScope,
+      owner_user_id: uid,
+      uploader_email: uploadMeta.uploaderEmail,
+      container_type: uploadMeta.containerType,
+      container_id: uploadMeta.containerId,
+      personal_team_owner_id: uploadMeta.personalTeamOwnerId,
+      role_at_upload: uploadMeta.roleAtUpload,
+      ...v2FirestoreFields,
+      ...pathDerivationFields,
+    });
+    backupFileId = fileRef.id;
+  }
 
   try {
-    await linkBackupFileToMacosPackageContainer(db, fileRef.id);
+    await linkBackupFileToMacosPackageContainer(db, backupFileId);
   } catch (err) {
     console.error("[uppy complete] macos package link failed:", err);
   }
@@ -371,7 +404,7 @@ export async function POST(
     await enqueueCreatorRawVideoProxyJob({
       driveIsCreatorRaw: driveData?.is_creator_raw === true,
       objectKey,
-      backupFileId: fileRef.id,
+      backupFileId,
       userId: uid,
       relativePath: relForMeta,
       source: "ingest_multipart_complete",
@@ -384,7 +417,7 @@ export async function POST(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        backup_file_id: fileRef.id,
+        backup_file_id: backupFileId,
         object_key: objectKey,
       }),
     }).catch(() => {});
@@ -403,7 +436,7 @@ export async function POST(
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          backup_file_ids: [fileRef.id],
+          backup_file_ids: [backupFileId],
           asset_origin: "gallery_storage",
         }),
       });
@@ -423,7 +456,7 @@ export async function POST(
     workspace_id: workspaceIdResolved,
     visibility_scope: visibilityScope,
     linked_drive_id: driveId,
-    file_id: fileRef.id,
+    file_id: backupFileId,
     target_type: "file",
     target_name: relForMeta.split("/").pop() ?? relForMeta,
     file_path: relForMeta,

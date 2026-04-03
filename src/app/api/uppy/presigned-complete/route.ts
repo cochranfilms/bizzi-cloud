@@ -24,6 +24,7 @@ import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
 import {
+  findV2SameObjectKeyReplaceTarget,
   linkedDriveIsFolderModelV2,
   resolveV2PlacementForNewUpload,
   StorageFolderAccessError,
@@ -216,6 +217,7 @@ export async function POST(request: Request) {
 
   let v2Placement: Awaited<ReturnType<typeof resolveV2PlacementForNewUpload>> | null =
     null;
+  let v2ReplaceFileId: string | null = null;
   if (linkedDriveIsFolderModelV2(driveData)) {
     const folderIdRaw = body.folderId ?? body.folder_id ?? null;
     const parentFolderId =
@@ -223,12 +225,20 @@ export async function POST(request: Request) {
         ? null
         : String(folderIdRaw);
     try {
+      v2ReplaceFileId = await findV2SameObjectKeyReplaceTarget(
+        db,
+        String(driveId),
+        parentFolderId,
+        safePath,
+        objectKey
+      );
       v2Placement = await resolveV2PlacementForNewUpload(
         db,
         String(driveId),
         driveData!,
         parentFolderId,
-        safePath
+        safePath,
+        { excludeFileId: v2ReplaceFileId ?? undefined }
       );
     } catch (err) {
       await releaseIfPending("finalize_failed");
@@ -292,7 +302,34 @@ export async function POST(request: Request) {
     });
 
     const relForMeta = v2Placement?.relative_path ?? safePath;
-    const fileRef = await db.collection("backup_files").add({
+    const v2FirestoreFields = v2Placement
+      ? {
+          folder_id: v2Placement.folder_id,
+          file_name: v2Placement.file_name,
+          file_name_compare_key: v2Placement.file_name_compare_key,
+          folder_path_ids: v2Placement.folder_path_ids,
+        }
+      : {};
+    const pathDerivationFields = {
+      ...macosPackageFirestoreFieldsFromRelativePath(relForMeta),
+      ...creativeFirestoreFieldsFromRelativePath(relForMeta),
+    };
+
+    let backupFileId: string;
+    if (v2ReplaceFileId) {
+      await db.collection("backup_files").doc(v2ReplaceFileId).update({
+        backup_snapshot_id: snapshotRef.id,
+        relative_path: relForMeta,
+        size_bytes: sizeBytes,
+        content_type: contentType,
+        modified_at: modifiedAt,
+        uploaded_at: new Date().toISOString(),
+        ...v2FirestoreFields,
+        ...pathDerivationFields,
+      });
+      backupFileId = v2ReplaceFileId;
+    } else {
+      const fileRef = await db.collection("backup_files").add({
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
     userId: uid,
@@ -314,20 +351,14 @@ export async function POST(request: Request) {
     container_id: containerId,
     personal_team_owner_id: personalTeamOwnerId,
     role_at_upload: roleAtUpload,
-    ...(v2Placement
-      ? {
-          folder_id: v2Placement.folder_id,
-          file_name: v2Placement.file_name,
-          file_name_compare_key: v2Placement.file_name_compare_key,
-          folder_path_ids: v2Placement.folder_path_ids,
-        }
-      : {}),
-    ...macosPackageFirestoreFieldsFromRelativePath(relForMeta),
-    ...creativeFirestoreFieldsFromRelativePath(relForMeta),
+    ...v2FirestoreFields,
+    ...pathDerivationFields,
     });
+      backupFileId = fileRef.id;
+    }
 
     try {
-      await linkBackupFileToMacosPackageContainer(db, fileRef.id);
+      await linkBackupFileToMacosPackageContainer(db, backupFileId);
     } catch (err) {
       console.error("[presigned-complete] macos package link failed:", err);
     }
@@ -340,7 +371,7 @@ export async function POST(request: Request) {
     await enqueueCreatorRawVideoProxyJob({
       driveIsCreatorRaw: driveData?.is_creator_raw === true,
       objectKey,
-      backupFileId: fileRef.id,
+      backupFileId,
       userId: uid,
       relativePath: relForMeta,
       source: "ingest_presigned_complete",
@@ -353,7 +384,7 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        backup_file_id: fileRef.id,
+        backup_file_id: backupFileId,
         object_key: objectKey,
       }),
     }).catch(() => {});
@@ -367,7 +398,7 @@ export async function POST(request: Request) {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            backup_file_ids: [fileRef.id],
+            backup_file_ids: [backupFileId],
             asset_origin: "gallery_storage",
           }),
         });
@@ -387,7 +418,7 @@ export async function POST(request: Request) {
       workspace_id: workspaceIdResolved,
       visibility_scope: visibilityScope,
       linked_drive_id: driveId,
-      file_id: fileRef.id,
+      file_id: backupFileId,
       target_type: "file",
       target_name: safePath.split("/").pop() ?? safePath,
       file_path: safePath,

@@ -102,3 +102,57 @@ export async function resolveV2PlacementForNewUpload(
     relative_path,
   };
 }
+
+const MAX_SAME_NAME_QUERY = 8;
+
+/**
+ * Re-uploading the same B2 `object_key` updates bytes in place; Firestore must keep a single row.
+ * Returns the existing `backup_files` id for excludeFileId + update-after-upload, or null if this is a new name.
+ * @throws StorageFolderAccessError 409 if the folder already has an active file with this name on a different key.
+ */
+export async function findV2SameObjectKeyReplaceTarget(
+  db: Firestore,
+  driveId: string,
+  parentFolderId: string | null,
+  safeRelativePath: string,
+  objectKey: string
+): Promise<string | null> {
+  let rawParent: string | null = parentFolderId;
+  if (rawParent !== null && rawParent.trim() === "") rawParent = null;
+
+  const parts = safeRelativePath.split("/").filter(Boolean);
+  const file_name = parts.length ? parts[parts.length - 1]! : safeRelativePath.trim();
+  if (!file_name) return null;
+  const file_name_compare_key = toNormalizedComparisonKey(file_name);
+  if (!file_name_compare_key) return null;
+
+  let q = db
+    .collection("backup_files")
+    .where("linked_drive_id", "==", driveId)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+    .where("file_name_compare_key", "==", file_name_compare_key)
+    .limit(MAX_SAME_NAME_QUERY);
+
+  if (rawParent === null) {
+    q = q.where("folder_id", "==", null);
+  } else {
+    q = q.where("folder_id", "==", rawParent);
+  }
+
+  const snap = await q.get();
+  if (snap.empty) return null;
+
+  const sameKey = snap.docs.filter((d) => (d.data().object_key as string) === objectKey);
+  if (sameKey.length === 1) return sameKey[0]!.id;
+  if (sameKey.length > 1) {
+    throw new StorageFolderAccessError(
+      "Multiple files matched this upload; contact support",
+      409
+    );
+  }
+
+  throw new StorageFolderAccessError(
+    "A file with this name already exists in the destination",
+    409
+  );
+}
