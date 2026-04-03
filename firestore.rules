@@ -119,7 +119,10 @@ service cloud.firestore {
     }
     match /pinned_items/{itemId} {
       allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.workspaceKey is string
+        && request.resource.data.workspaceKey.size() > 0;
     }
     match /local_store_entries/{entryId} {
       allow read, write: if request.auth != null && resource.data.user_id == request.auth.uid;

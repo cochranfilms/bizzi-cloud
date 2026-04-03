@@ -15,6 +15,8 @@ import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
 import { useBackupVideoStreamUrl } from "@/hooks/useVideoStreamUrl";
+import { useBackupFileLiveProxyStatus } from "@/hooks/useBackupFileLiveProxyStatus";
+import type { ProxyStatus } from "@/hooks/useCloudFiles";
 import { useInView } from "@/hooks/useInView";
 import VideoScrubThumbnail from "./VideoScrubThumbnail";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -87,6 +89,104 @@ function formatDurationThumb(sec: number | null | undefined): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function isPreviewProxyBadgeStatus(s: ProxyStatus | null | undefined): s is ProxyStatus {
+  return (
+    s === "pending" ||
+    s === "processing" ||
+    s === "ready" ||
+    s === "failed" ||
+    s === "raw_unsupported"
+  );
+}
+
+function previewProxyBadgeContent(status: ProxyStatus): {
+  label: string;
+  title: string;
+} | null {
+  const isBusy = status === "pending" || status === "processing";
+  const isReady = status === "ready";
+  const isFailed = status === "failed";
+  const isRaw = status === "raw_unsupported";
+  if (isBusy) {
+    return {
+      label: "Preview Processing",
+      title: "Generating a lightweight preview for faster playback",
+    };
+  }
+  if (isReady) {
+    return {
+      label: "Preview Ready",
+      title: "Preview is ready for playback and editing workflows",
+    };
+  }
+  if (isFailed) {
+    return {
+      label: "Preview Failed",
+      title: "Preview could not be generated",
+    };
+  }
+  if (isRaw) {
+    return {
+      label: "Original format",
+      title: "This original format uses full-quality playback only",
+    };
+  }
+  return null;
+}
+
+function FilePreviewProxyBadge({ status }: { status: ProxyStatus }) {
+  const content = previewProxyBadgeContent(status);
+  if (!content) return null;
+  const { label, title } = content;
+  const isBusy = status === "pending" || status === "processing";
+  const isReady = status === "ready";
+  const isFailed = status === "failed";
+
+  const className = isBusy
+    ? "bg-amber-500/14 text-amber-900 ring-amber-500/35 dark:bg-amber-400/12 dark:text-amber-100 dark:ring-amber-400/35"
+    : isReady
+      ? "bg-emerald-500/14 text-emerald-900 ring-emerald-500/35 dark:bg-emerald-400/12 dark:text-emerald-100 dark:ring-emerald-400/30"
+      : isFailed
+        ? "bg-red-500/14 text-red-900 ring-red-500/35 dark:bg-red-400/12 dark:text-red-100 dark:ring-red-400/35"
+        : "bg-neutral-500/12 text-neutral-700 ring-neutral-500/25 dark:bg-neutral-400/10 dark:text-neutral-200 dark:ring-neutral-500/30";
+
+  return (
+    <span
+      className={`inline-flex shrink-0 max-w-[8.5rem] items-center justify-center rounded-md px-1.5 py-0.5 text-center text-[10px] font-semibold leading-tight ring-1 ring-inset ${className}`}
+      title={title}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** Compact pill for dark gradient thumbnail caption (readable on video overlay). */
+function FilePreviewProxyBadgeThumb({ status }: { status: ProxyStatus }) {
+  const content = previewProxyBadgeContent(status);
+  if (!content) return null;
+  const { label, title } = content;
+  const isBusy = status === "pending" || status === "processing";
+  const isReady = status === "ready";
+  const isFailed = status === "failed";
+
+  const className = isBusy
+    ? "bg-amber-500/55 text-white ring-white/30 shadow-sm backdrop-blur-[2px]"
+    : isReady
+      ? "bg-emerald-600/55 text-white ring-white/30 shadow-sm backdrop-blur-[2px]"
+      : isFailed
+        ? "bg-red-600/55 text-white ring-white/30 shadow-sm backdrop-blur-[2px]"
+        : "bg-black/45 text-white/95 ring-white/25 shadow-sm backdrop-blur-[2px]";
+
+  return (
+    <span
+      className={`inline-flex shrink-0 max-w-[8.5rem] items-center justify-center rounded-md px-1.5 py-0.5 text-center text-[10px] font-semibold leading-tight ring-1 ring-inset ${className}`}
+      title={title}
+    >
+      {label}
+    </span>
+  );
+}
+
 function fileThumbCaptionSecondary(file: RecentFile, isMacosPackage: boolean): string {
   if (isMacosPackage) {
     if (file.macosPackageFileCount != null) return `${file.macosPackageFileCount} files`;
@@ -153,6 +253,8 @@ export default function FileCard({
     (shouldUseVideoThumbnailPipeline(file.name) ||
       (file.contentType?.startsWith("video/") ?? false) ||
       file.mediaType === "video");
+  const liveProxyStatus = useBackupFileLiveProxyStatus(file.id, isVideo, file.proxyStatus);
+  const effectiveProxyStatus = liveProxyStatus ?? null;
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
     enabled: !isMacosPackage && !!file.objectKey && isVideo && isInView,
     isVideo,
@@ -424,6 +526,11 @@ export default function FileCard({
               aria-hidden
             />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] space-y-0.5 px-3 pb-2.5 pt-2">
+              {!isMacosPackage && isVideo && isPreviewProxyBadgeStatus(effectiveProxyStatus) ? (
+                <div className="mb-0.5 flex justify-end">
+                  <FilePreviewProxyBadgeThumb status={effectiveProxyStatus} />
+                </div>
+              ) : null}
               <p
                 className="truncate text-left text-sm font-medium text-white drop-shadow-md"
                 title={file.name}
@@ -465,53 +572,39 @@ export default function FileCard({
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${sizeClasses.padding} pt-2`}
         >
-          <h3 className={`mb-1 w-full truncate text-left font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`} title={file.name}>
-            {file.name}
-          </h3>
-          <p
-            className="truncate text-left text-xs text-neutral-500 dark:text-neutral-400"
-            title={sizeLine}
-          >
-            {sizeLine}
-          </p>
-          {/* Fixed slot so macOS package rows don’t shift the date / heart row vs other cards */}
-          <div className="mt-0.5 min-h-[1.375rem] shrink-0">
-            {isMacosPackage ? (
-              <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
-                {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
-                {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <h3
+                className={`mb-1 w-full truncate text-left font-medium text-neutral-900 dark:text-white ${sizeClasses.text}`}
+                title={file.name}
+              >
+                {file.name}
+              </h3>
+              <p
+                className="truncate text-left text-xs text-neutral-500 dark:text-neutral-400"
+                title={sizeLine}
+              >
+                {sizeLine}
               </p>
+              {/* Fixed slot so macOS package rows don’t shift the date / heart row vs other cards */}
+              <div className="mt-0.5 min-h-[1.375rem] shrink-0">
+                {isMacosPackage ? (
+                  <p className="text-left text-xs text-neutral-500 dark:text-neutral-400">
+                    {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}
+                    {file.macosPackageLabel ? ` · ${file.macosPackageLabel}` : ""}
+                  </p>
+                ) : null}
+              </div>
+              <p className="mt-0.5 shrink-0 text-left text-xs text-neutral-400 dark:text-neutral-500">
+                {formatDate(file.modifiedAt)}
+              </p>
+            </div>
+            {!isMacosPackage && isVideo && isPreviewProxyBadgeStatus(effectiveProxyStatus) ? (
+              <div className="shrink-0 pt-0.5">
+                <FilePreviewProxyBadge status={effectiveProxyStatus} />
+              </div>
             ) : null}
           </div>
-          <p className="mt-0.5 shrink-0 text-left text-xs text-neutral-400 dark:text-neutral-500">
-            {formatDate(file.modifiedAt)}
-          </p>
-          {!isMacosPackage && isVideo && file.proxyStatus ? (
-            <p
-              className="mt-1 shrink-0 text-left text-[10px] text-neutral-500 dark:text-neutral-400"
-              title={
-                file.proxyStatus === "ready"
-                  ? "Proxy ready for editing"
-                  : file.proxyStatus === "pending" || file.proxyStatus === "processing"
-                    ? "Proxy generating..."
-                    : file.proxyStatus === "failed"
-                      ? "Proxy failed"
-                      : file.proxyStatus === "raw_unsupported"
-                        ? "RAW original only"
-                        : ""
-              }
-            >
-              {file.proxyStatus === "ready"
-                ? "Proxy ready"
-                : file.proxyStatus === "pending" || file.proxyStatus === "processing"
-                  ? "Proxy processing"
-                  : file.proxyStatus === "failed"
-                    ? "Proxy failed"
-                    : file.proxyStatus === "raw_unsupported"
-                      ? "RAW only"
-                      : null}
-            </p>
-          ) : null}
           {showHeartRow ? (
             <div
               className="mt-auto flex w-full justify-start pt-2"

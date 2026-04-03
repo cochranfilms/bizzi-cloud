@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   collection,
   doc,
@@ -13,13 +14,48 @@ import {
   onSnapshot,
   deleteDoc,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { getFirebaseFirestore, isFirebaseConfigured } from "@/lib/firebase/client";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { getDashboardWorkspaceKey } from "@/lib/dashboard-workspace-appearance-storage";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 
 const PINNED_COLLECTION = "pinned_items";
+const LEGACY_PIN_WORKSPACE_MIGRATION_KEY = "bizzi-pinned-workspace-key-v1";
+
+async function ensureLegacyPinsHaveWorkspaceKey(userId: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    if (localStorage.getItem(LEGACY_PIN_WORKSPACE_MIGRATION_KEY) === "1") return;
+  } catch {
+    /* ignore */
+  }
+  const db = getFirebaseFirestore();
+  const snap = await getDocs(
+    query(collection(db, PINNED_COLLECTION), where("userId", "==", userId))
+  );
+  const needsUpdate = snap.docs.filter((d) => {
+    const w = d.data().workspaceKey;
+    return typeof w !== "string" || w.length === 0;
+  });
+  const BATCH = 450;
+  for (let i = 0; i < needsUpdate.length; i += BATCH) {
+    const chunk = needsUpdate.slice(i, i + BATCH);
+    const batch = writeBatch(db);
+    for (const d of chunk) {
+      batch.update(d.ref, { workspaceKey: "personal" });
+    }
+    await batch.commit();
+  }
+  try {
+    localStorage.setItem(LEGACY_PIN_WORKSPACE_MIGRATION_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
 const DOC_ID_IN_QUERY_LIMIT = 10;
 const FETCH_PINNED_FILES_LIMIT = 30;
 
@@ -75,88 +111,113 @@ export async function fetchPinnedFiles(ids: string[]): Promise<RecentFile[]> {
 
 export function usePinned() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const { org } = useEnterprise();
+  const workspaceKey = useMemo(
+    () => getDashboardWorkspaceKey(pathname, org?.id ?? null),
+    [pathname, org?.id],
+  );
+  const pinsScopeReady =
+    !pathname?.startsWith("/enterprise") || workspaceKey !== "enterprise:pending";
   const [pinnedFolderIds, setPinnedFolderIds] = useState<Set<string>>(new Set());
   const [pinnedFileIds, setPinnedFileIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isFirebaseConfigured() || !user) {
+    if (!isFirebaseConfigured() || !user || !pinsScopeReady) {
       setPinnedFolderIds(new Set());
       setPinnedFileIds(new Set());
       setLoading(false);
       return;
     }
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
     setLoading(true);
-    const db = getFirebaseFirestore();
-    const q = query(
-      collection(db, PINNED_COLLECTION),
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const folders = new Set<string>();
-        const files = new Set<string>();
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.itemType === "folder") folders.add(data.itemId);
-          if (data.itemType === "file") files.add(data.itemId);
-        });
-        setPinnedFolderIds(folders);
-        setPinnedFileIds(files);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("usePinned onSnapshot:", err);
-        setPinnedFolderIds(new Set());
-        setPinnedFileIds(new Set());
-        setLoading(false);
+    void (async () => {
+      try {
+        await ensureLegacyPinsHaveWorkspaceKey(user.uid);
+      } catch (e) {
+        console.error("ensureLegacyPinsHaveWorkspaceKey:", e);
       }
-    );
-    return () => unsub();
-  }, [user]);
+      if (cancelled) return;
+      const db = getFirebaseFirestore();
+      const q = query(
+        collection(db, PINNED_COLLECTION),
+        where("userId", "==", user.uid),
+        where("workspaceKey", "==", workspaceKey),
+        orderBy("createdAt", "desc"),
+      );
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          const folders = new Set<string>();
+          const files = new Set<string>();
+          snap.docs.forEach((d) => {
+            const data = d.data();
+            if (data.itemType === "folder") folders.add(data.itemId);
+            if (data.itemType === "file") files.add(data.itemId);
+          });
+          setPinnedFolderIds(folders);
+          setPinnedFileIds(files);
+          setLoading(false);
+        },
+        (err) => {
+          console.error("usePinned onSnapshot:", err);
+          setPinnedFolderIds(new Set());
+          setPinnedFileIds(new Set());
+          setLoading(false);
+        },
+      );
+    })();
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [user, workspaceKey, pinsScopeReady]);
 
   const pinItem = useCallback(
     async (itemType: "file" | "folder", itemId: string) => {
-      if (!isFirebaseConfigured() || !user) return;
+      if (!isFirebaseConfigured() || !user || !pinsScopeReady) return;
       const db = getFirebaseFirestore();
       const existing = await getDocs(
         query(
           collection(db, PINNED_COLLECTION),
           where("userId", "==", user.uid),
+          where("workspaceKey", "==", workspaceKey),
           where("itemType", "==", itemType),
-          where("itemId", "==", itemId)
-        )
+          where("itemId", "==", itemId),
+        ),
       );
       if (!existing.empty) return;
       await addDoc(collection(db, PINNED_COLLECTION), {
         userId: user.uid,
+        workspaceKey,
         itemType,
         itemId,
         createdAt: serverTimestamp(),
       });
     },
-    [user]
+    [user, workspaceKey, pinsScopeReady],
   );
 
   const unpinItem = useCallback(
     async (itemType: "file" | "folder", itemId: string) => {
-      if (!isFirebaseConfigured() || !user) return;
+      if (!isFirebaseConfigured() || !user || !pinsScopeReady) return;
       const db = getFirebaseFirestore();
       const snap = await getDocs(
         query(
           collection(db, PINNED_COLLECTION),
           where("userId", "==", user.uid),
+          where("workspaceKey", "==", workspaceKey),
           where("itemType", "==", itemType),
-          where("itemId", "==", itemId)
-        )
+          where("itemId", "==", itemId),
+        ),
       );
       for (const d of snap.docs) {
         await deleteDoc(doc(db, PINNED_COLLECTION, d.id));
       }
     },
-    [user]
+    [user, workspaceKey, pinsScopeReady],
   );
 
   const isPinned = useCallback(
@@ -168,14 +229,15 @@ export function usePinned() {
   );
 
   const refetch = useCallback(async () => {
-    if (!user) return;
+    if (!user || !pinsScopeReady) return;
     const db = getFirebaseFirestore();
     const snap = await getDocs(
       query(
         collection(db, PINNED_COLLECTION),
         where("userId", "==", user.uid),
-        orderBy("createdAt", "desc")
-      )
+        where("workspaceKey", "==", workspaceKey),
+        orderBy("createdAt", "desc"),
+      ),
     );
     const folders = new Set<string>();
     const files = new Set<string>();
@@ -186,7 +248,7 @@ export function usePinned() {
     });
     setPinnedFolderIds(folders);
     setPinnedFileIds(files);
-  }, [user]);
+  }, [user, workspaceKey, pinsScopeReady]);
 
   return {
     pinnedFolderIds,

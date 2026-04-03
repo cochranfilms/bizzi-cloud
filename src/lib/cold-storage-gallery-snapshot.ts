@@ -221,11 +221,16 @@ export async function snapshotConsumerGalleries(
       }
     }
     if (!lookupKey) continue;
+    const ws =
+      typeof data.workspaceKey === "string" && (data.workspaceKey as string).length > 0
+        ? (data.workspaceKey as string)
+        : "personal";
     addToBatch("pinned_item", d.id, {
       userId: data.userId,
       itemType,
       [lookupType]: lookupKey,
       createdAt: data.createdAt,
+      workspaceKey: ws,
     });
     await maybeCommit();
   }
@@ -418,8 +423,13 @@ export async function restoreConsumerGalleries(
       newItemId = driveName ? driveNameToDriveId.get(driveName) : undefined;
     }
     if (!newItemId) continue;
+    const restoredWorkspaceKey =
+      typeof data.workspaceKey === "string" && (data.workspaceKey as string).length > 0
+        ? (data.workspaceKey as string)
+        : "personal";
     await db.collection("pinned_items").add({
       userId: data.userId,
+      workspaceKey: restoredWorkspaceKey,
       itemType,
       itemId: newItemId,
       createdAt: data.createdAt ?? Timestamp.now(),
