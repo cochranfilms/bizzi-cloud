@@ -7,7 +7,7 @@ import {
   fetchStorageFolderList,
   type StorageFolderListFolder,
 } from "@/hooks/useCloudFiles";
-import { isFolderSelectableDestination } from "@/lib/storage-folders";
+import { isFolderSelectableDestination } from "@/lib/storage-folders/folder-picker-destination";
 
 type TreeNode = {
   id: string | null;

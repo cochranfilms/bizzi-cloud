@@ -19,7 +19,7 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import {
   storageFolderRowActiveForUi,
   storageFolderRowReadyForUi,
-} from "@/lib/storage-folders";
+} from "@/lib/storage-folders/folder-operation-state-client";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
