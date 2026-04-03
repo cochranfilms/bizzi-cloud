@@ -32,7 +32,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const [fileUploading, setFileUploading] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
-  const [storageNestedCreateOpen, setStorageNestedCreateOpen] = useState(false);
   const [createSharedFolderOpen, setCreateSharedFolderOpen] = useState(false);
   const [shareModalData, setShareModalData] = useState<{
     folderName: string;
@@ -66,7 +65,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     setFileUploadErrorMessage,
     creatorRawDriveId,
     getOrCreateStorageDrive,
-    bumpStorageVersion,
   } = useBackup();
   const { org } = useEnterprise();
   const { user } = useAuth();
@@ -87,13 +85,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     !!currentLinkedForNested &&
     isLinkedDriveFolderModelV2(currentLinkedForNested) &&
     teamAwareTopBar(currentLinkedForNested.name) === "Storage";
-
-  const storageNeedsV2Upgrade =
-    onFilesRoute &&
-    !!currentLinkedForNested &&
-    teamAwareTopBar(currentLinkedForNested.name) === "Storage" &&
-    currentLinkedForNested.is_creator_raw !== true &&
-    !isLinkedDriveFolderModelV2(currentLinkedForNested);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -305,36 +296,25 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
             </button>
             {newDropdownOpen && (
               <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] w-full min-w-[calc(100vw-2rem)] sm:min-w-[180px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
-                <button
-                  type="button"
-                  onClick={handleCreateFolderClick}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                >
-                  <Folder className="h-4 w-4 flex-shrink-0" />
-                  {canCreateStorageNestedFolder
-                    ? "New drive folder"
-                    : storageNeedsV2Upgrade
-                      ? "New linked drive folder"
-                      : "Create New Folder"}
-                </button>
-                {canCreateStorageNestedFolder ? (
+                {!canCreateStorageNestedFolder ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      setNewDropdownOpen(false);
-                      setStorageNestedCreateOpen(true);
-                    }}
+                    onClick={handleCreateFolderClick}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
                   >
                     <Folder className="h-4 w-4 flex-shrink-0" />
-                    New folder in Storage
+                    Create folder
                   </button>
-                ) : null}
-                {storageNeedsV2Upgrade ? (
-                  <div className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-                    Nested folders live inside Storage after you enable them from the banner in the file list.
-                  </div>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCreateFolderClick}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    <Folder className="h-4 w-4 flex-shrink-0" />
+                    New backup folder
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleFileUploadClick}
@@ -386,34 +366,6 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
             (!!pathname?.startsWith("/team/") && pathname.includes("/creator"));
           await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
           setCreateFolderOpen(false);
-        }}
-      />
-
-      <CreateFolderModal
-        open={storageNestedCreateOpen}
-        onClose={() => setStorageNestedCreateOpen(false)}
-        title="New folder in Storage"
-        defaultName="New folder"
-        onCreateEmpty={async (folderName) => {
-          if (!currentDriveId || !user) return;
-          const token = await user.getIdToken();
-          const res = await fetch("/api/storage-folders", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              linked_drive_id: currentDriveId,
-              parent_folder_id: storageParentFolderId,
-              name: folderName.trim(),
-            }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error((data.error as string) ?? "Could not create folder");
-          }
-          bumpStorageVersion();
         }}
       />
 

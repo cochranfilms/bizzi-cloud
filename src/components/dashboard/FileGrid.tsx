@@ -38,6 +38,10 @@ import ItemActionsMenu from "./ItemActionsMenu";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
+import StorageLocationMenu from "./StorageLocationMenu";
+import RenameModal from "./RenameModal";
+import CreateFolderModal from "./CreateFolderModal";
+import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
 import { FileFiltersTopBarChrome, FileFiltersExpandedStrip } from "@/components/filters/FileFiltersToolbar";
 import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
 import ActiveFilterBar from "@/components/filters/ActiveFilterBar";
@@ -56,6 +60,9 @@ import {
   recentFileFromMacosPackageListEntry,
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
+import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
+import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
+import { useAuth } from "@/context/AuthContext";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import { filterFilesForVirtualFolder } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
@@ -241,13 +248,24 @@ export default function FileGrid() {
     moveFilesToFolder,
     moveFolderContentsToFolder,
     moveFilesToStorageFolder,
+    renameStorageFolder,
+    moveStorageFolder,
   } = useCloudFiles();
   const { galleries } = useGalleries();
   const galleryMediaPathSegmentIndex = useMemo(
     () => buildGalleryMediaPathSegmentIndex(galleries),
     [galleries]
   );
-  const { pinnedFolderIds, pinnedFileIds, refetch: refetchPinned } = usePinned();
+  const {
+    pinnedFolderIds,
+    pinnedFolderLabels,
+    pinnedFileIds,
+    pinItem,
+    unpinItem,
+    isPinned,
+    refetch: refetchPinned,
+  } = usePinned();
+  const { user } = useAuth();
   const {
     files: heartedFiles,
     loading: heartedLoading,
@@ -321,6 +339,10 @@ export default function FileGrid() {
   const [storageFolderListError, setStorageFolderListError] = useState<string | null>(null);
   const [storageUpgradeError, setStorageUpgradeError] = useState<string | null>(null);
   const [storageV2MigrateLoading, setStorageV2MigrateLoading] = useState(false);
+  const [storageContextFolderVersion, setStorageContextFolderVersion] = useState<number | null>(null);
+  const [storagePathCreateOpen, setStoragePathCreateOpen] = useState(false);
+  const [storagePathRenameOpen, setStoragePathRenameOpen] = useState(false);
+  const [storagePathMoveOpen, setStoragePathMoveOpen] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const searchParams = useSearchParams();
@@ -653,7 +675,17 @@ export default function FileGrid() {
       };
       return order(a.name) - order(b.name);
     });
-  const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
+  const pinnedFolderItems = useMemo(
+    () =>
+      mergePinnedFolderItems(
+        folderItems,
+        pinnedFolderIds,
+        pinnedFolderLabels,
+        linkedDrives,
+        teamAwareDriveName
+      ),
+    [folderItems, pinnedFolderIds, pinnedFolderLabels, linkedDrives]
+  );
 
   const storageDisplayContext = useMemo(() => {
     if (typeof pathname === "string" && pathname.startsWith("/enterprise")) {
@@ -673,6 +705,8 @@ export default function FileGrid() {
       options?: {
         silent?: boolean;
         storageParentOverride?: string | null;
+        /** When Storage is v2 but we open via legacy `path=` (e.g. Google migration home tiles). */
+        v2VirtualPathPrefix?: string | null;
       }
     ) => {
       if (!options?.silent) setDriveFilesLoading(true);
@@ -680,6 +714,10 @@ export default function FileGrid() {
         options && "storageParentOverride" in options
           ? options.storageParentOverride ?? null
           : storageParentFolderId;
+      const optVirtRaw =
+        options && "v2VirtualPathPrefix" in options && options.v2VirtualPathPrefix != null
+          ? String(options.v2VirtualPathPrefix).replace(/^\/+/, "")
+          : "";
       try {
         const meta = linkedDrives.find((d) => d.id === driveId);
         const storageV2 =
@@ -687,7 +725,19 @@ export default function FileGrid() {
           teamAwareDriveName(meta.name) === "Storage" &&
           meta.is_creator_raw !== true &&
           isLinkedDriveFolderModelV2(meta);
-        if (storageV2) {
+        const inferredVirt =
+          !parent && storageV2
+            ? (currentDrivePath ?? "").replace(/^\/+/, "")
+            : "";
+        const v2VirtualPrefix = optVirtRaw || inferredVirt;
+        if (storageV2 && v2VirtualPrefix && !parent) {
+          setStorageFolderListError(null);
+          setV2StorageSubfolders([]);
+          setStorageContextFolderVersion(null);
+          const { files, listTruncated } = await fetchDriveFiles(driveId);
+          setDriveFiles(files);
+          setDriveListTruncated(listTruncated);
+        } else if (storageV2) {
           const { folders, files, listError } = await fetchStorageFolderList(
             driveId,
             parent,
@@ -698,6 +748,7 @@ export default function FileGrid() {
             setDriveFiles([]);
             setDriveListTruncated(false);
             setV2StorageSubfolders([]);
+            setStorageContextFolderVersion(null);
           } else {
             setDriveFiles(files);
             setDriveListTruncated(false);
@@ -717,6 +768,29 @@ export default function FileGrid() {
                 preventDelete: true,
               }))
             );
+            if (parent) {
+              void (async () => {
+                try {
+                  const token = await getAuthToken();
+                  if (!token) return;
+                  const r = await fetch(`/api/storage-folders/${encodeURIComponent(parent)}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  if (r.ok) {
+                    const j = (await r.json()) as { version?: unknown };
+                    const v = typeof j.version === "number" ? j.version : Number(j.version ?? NaN);
+                    if (Number.isFinite(v)) setStorageContextFolderVersion(v);
+                    else setStorageContextFolderVersion(null);
+                  } else {
+                    setStorageContextFolderVersion(null);
+                  }
+                } catch {
+                  setStorageContextFolderVersion(null);
+                }
+              })();
+            } else {
+              setStorageContextFolderVersion(null);
+            }
           }
         } else {
           setStorageFolderListError(null);
@@ -734,7 +808,7 @@ export default function FileGrid() {
         setDriveFilesLoading(false);
       }
     },
-    [fetchDriveFiles, linkedDrives, storageParentFolderId]
+    [fetchDriveFiles, linkedDrives, storageParentFolderId, currentDrivePath]
   );
 
   const handleV2StorageFolderMutated = useCallback(() => {
@@ -748,10 +822,14 @@ export default function FileGrid() {
       recordRecentOpen("folder", id, getAuthToken);
       setCurrentFolderDriveId(id);
       setCurrentDrive({ id, name });
-      setCurrentDrivePath(pathInsideDrive.replace(/^\/+/, ""));
+      const normPath = pathInsideDrive.replace(/^\/+/, "");
+      setCurrentDrivePath(normPath);
       const sp = storageParent === undefined ? null : storageParent ?? null;
       setStorageParentFolderId(sp);
-      void loadDriveFiles(id, { storageParentOverride: sp });
+      void loadDriveFiles(id, {
+        storageParentOverride: sp,
+        ...(sp == null && normPath ? { v2VirtualPathPrefix: normPath } : {}),
+      });
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
       if (isBizziCloudBaseDrive(name)) {
@@ -767,10 +845,35 @@ export default function FileGrid() {
     ]
   );
 
+  const openFolderFromPin = useCallback(
+    (item: FolderItem) => {
+      if (!item.driveId) return;
+      const driveMeta = linkedDrives.find((d) => d.id === item.driveId);
+      const displayName = driveMeta?.name ?? item.name;
+      if (item.storageFolderId) {
+        const sp = new URLSearchParams(searchParams.toString());
+        sp.set("drive", item.driveId);
+        sp.set("folder", item.storageFolderId);
+        sp.delete("path");
+        const q = sp.toString();
+        router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+        openDrive(item.driveId, displayName, "", item.storageFolderId);
+        return;
+      }
+      openDrive(item.driveId, displayName);
+    },
+    [linkedDrives, openDrive, pathname, router, searchParams]
+  );
+
   const navigateIntoStorageSubfolder = useCallback(
     (item: FolderItem) => {
       if (!item.storageFolderId || !currentDrive) return;
       setCurrentDrivePath("");
+      setStorageContextFolderVersion(
+        item.storageFolderVersion != null && Number.isFinite(item.storageFolderVersion)
+          ? item.storageFolderVersion
+          : null
+      );
       setStorageParentFolderId(item.storageFolderId);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
@@ -806,6 +909,10 @@ export default function FileGrid() {
     setDriveListTruncated(false);
     setStorageFolderListError(null);
     setStorageUpgradeError(null);
+    setStorageContextFolderVersion(null);
+    setStoragePathCreateOpen(false);
+    setStoragePathRenameOpen(false);
+    setStoragePathMoveOpen(false);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]);
@@ -823,12 +930,23 @@ export default function FileGrid() {
       driveBaseName === "Storage" ||
       currentDriveMeta?.is_creator_raw === true);
 
+  const storageV2PathPrefixNorm = (currentDrivePath ?? "").replace(/^\/+/, "");
+  const isStorageV2VirtualPathMode =
+    !!currentDrive &&
+    !!currentDriveMeta &&
+    driveBaseName === "Storage" &&
+    currentDriveMeta.is_creator_raw !== true &&
+    isLinkedDriveFolderModelV2(currentDriveMeta) &&
+    !!storageV2PathPrefixNorm &&
+    storageParentFolderId == null;
+
   const isStorageV2FolderBrowse =
     !!currentDrive &&
     !!currentDriveMeta &&
     driveBaseName === "Storage" &&
     currentDriveMeta.is_creator_raw !== true &&
-    isLinkedDriveFolderModelV2(currentDriveMeta);
+    isLinkedDriveFolderModelV2(currentDriveMeta) &&
+    !isStorageV2VirtualPathMode;
 
   const isStorageLegacyVirtualBrowse =
     !!currentDrive &&
@@ -841,7 +959,8 @@ export default function FileGrid() {
     !!currentDrive &&
     (isGalleryMediaDrive ||
       currentDriveMeta?.is_creator_raw === true ||
-      (driveBaseName === "Storage" && !isLinkedDriveFolderModelV2(currentDriveMeta)));
+      (driveBaseName === "Storage" && !isLinkedDriveFolderModelV2(currentDriveMeta)) ||
+      isStorageV2VirtualPathMode);
 
   const enableStorageNestedFolders = useCallback(async () => {
     if (!currentDrive) return;
@@ -870,6 +989,7 @@ export default function FileGrid() {
       await fetchDrives();
       setCurrentDrivePath("");
       setStorageParentFolderId(null);
+      setStorageContextFolderVersion(null);
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("drive", currentDrive.id);
       sp.delete("folder");
@@ -891,6 +1011,59 @@ export default function FileGrid() {
     setCurrentDrivePath,
     setStorageParentFolderId,
   ]);
+
+  const storagePathMenuLabel = useMemo(() => {
+    if (!currentDrive || !isStorageV2FolderBrowse) return "";
+    const base = teamAwareDriveName(currentDriveMeta?.name ?? currentDrive.name);
+    return v2FolderBreadcrumb ? `${base} / ${v2FolderBreadcrumb}` : base;
+  }, [currentDrive, currentDriveMeta, isStorageV2FolderBrowse, v2FolderBreadcrumb]);
+
+  const storageMenuFolderPinned = useMemo(() => {
+    if (!currentDrive || !isStorageV2FolderBrowse) return false;
+    if (storageParentFolderId) {
+      return isPinned("folder", buildStorageV2FolderPinId(currentDrive.id, storageParentFolderId));
+    }
+    return isPinned("folder", currentDrive.id);
+  }, [currentDrive, isStorageV2FolderBrowse, storageParentFolderId, isPinned]);
+
+  const openStoragePathShare = useCallback(() => {
+    if (!currentDrive) return;
+    setShareFolderName(storagePathMenuLabel || currentDrive.name);
+    setShareDriveId(currentDrive.id);
+    setShareReferencedFileIds([]);
+    setShareInitialData(null);
+    setShareModalOpen(true);
+  }, [currentDrive, storagePathMenuLabel]);
+
+  const toggleStoragePathPin = useCallback(async () => {
+    if (!currentDrive || !isStorageV2FolderBrowse) return;
+    const base = teamAwareDriveName(currentDriveMeta?.name ?? currentDrive.name);
+    const lastName =
+      v2FolderBreadcrumb.trim().split(/\s*\/\s*/).filter(Boolean).pop() ?? base;
+    if (storageParentFolderId) {
+      const pid = buildStorageV2FolderPinId(currentDrive.id, storageParentFolderId);
+      if (storageMenuFolderPinned) await unpinItem("folder", pid);
+      else await pinItem("folder", pid, { displayLabel: lastName });
+    } else {
+      if (storageMenuFolderPinned) await unpinItem("folder", currentDrive.id);
+      else await pinItem("folder", currentDrive.id, { displayLabel: base });
+    }
+    await refetchPinned();
+  }, [
+    currentDrive,
+    currentDriveMeta,
+    isStorageV2FolderBrowse,
+    storageParentFolderId,
+    storageMenuFolderPinned,
+    v2FolderBreadcrumb,
+    pinItem,
+    unpinItem,
+    refetchPinned,
+  ]);
+
+  const storageRenameCurrentName =
+    v2FolderBreadcrumb.trim().split(/\s*\/\s*/).filter(Boolean).pop() ??
+    teamAwareDriveName(currentDriveMeta?.name ?? currentDrive?.name ?? "");
 
   useEffect(() => {
     if (!isStorageV2FolderBrowse || !storageParentFolderId || !currentDrive) {
@@ -1212,11 +1385,20 @@ export default function FileGrid() {
       teamAwareDriveName(meta.name) === "Storage" &&
       meta.is_creator_raw !== true &&
       isLinkedDriveFolderModelV2(meta);
-    if (v2Storage) {
+    const pathNorm = (currentDrivePath ?? "").replace(/^\/+/, "");
+    const v2VirtualPathBrowse =
+      v2Storage && !!pathNorm && storageParentFolderId == null;
+    if (v2Storage && !v2VirtualPathBrowse) {
       return () => {};
     }
     return subscribeToDriveFiles(currentDrive.id, setDriveFiles);
-  }, [currentDrive, linkedDrives, subscribeToDriveFiles]);
+  }, [
+    currentDrive,
+    linkedDrives,
+    subscribeToDriveFiles,
+    currentDrivePath,
+    storageParentFolderId,
+  ]);
 
   // Fetch pinned file details when pinned file IDs change
   const loadPinnedFiles = useCallback(async () => {
@@ -1257,7 +1439,12 @@ export default function FileGrid() {
     const shouldOpen = !currentDrive || currentDrive.id !== driveId;
     if (shouldOpen) {
       if (isStorageV2) {
-        openDrive(driveId, folder.name, "", folderIdFromUrl);
+        openDrive(
+          driveId,
+          folder.name,
+          folderIdFromUrl ? "" : normalizedPath,
+          folderIdFromUrl
+        );
       } else {
         openDrive(driveId, folder.name, normalizedPath);
       }
@@ -1267,9 +1454,24 @@ export default function FileGrid() {
     } else if (currentDrive.id === driveId) {
       if (isStorageV2) {
         const nextParent = folderIdFromUrl;
-        if (nextParent !== storageParentFolderId) {
+        const pathNorm = normalizedPath;
+        const pathChanged = pathNorm !== (currentDrivePath ?? "").replace(/^\/+/, "");
+        const parentChanged = nextParent !== storageParentFolderId;
+        if (parentChanged) {
           setStorageParentFolderId(nextParent);
-          void loadDriveFiles(driveId, { storageParentOverride: nextParent });
+          if (nextParent) setCurrentDrivePath("");
+          void loadDriveFiles(driveId, {
+            storageParentOverride: nextParent,
+            ...(nextParent == null && pathNorm
+              ? { v2VirtualPathPrefix: pathNorm }
+              : {}),
+          });
+        } else if (!nextParent && pathChanged) {
+          setCurrentDrivePath(pathNorm);
+          void loadDriveFiles(driveId, {
+            storageParentOverride: null,
+            v2VirtualPathPrefix: pathNorm || undefined,
+          });
         }
       } else if (normalizedPath !== currentDrivePath) {
         setCurrentDrivePath(normalizedPath);
@@ -1806,36 +2008,39 @@ export default function FileGrid() {
             Back
           </button>
           <span className="text-neutral-400 dark:text-neutral-500">/</span>
-          <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
-            <span>{currentDrive.name}</span>
-            {isStorageV2FolderBrowse ? (
-              <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-200">
-                Nested folders
-              </span>
-            ) : isStorageLegacyVirtualBrowse ? (
-              <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
-                Classic layout
-              </span>
-            ) : null}
-          </span>
-          {isStorageV2FolderBrowse && v2FolderBreadcrumb ? (
+          {isStorageV2FolderBrowse ? (
+            <StorageLocationMenu
+              pathLabel={storagePathMenuLabel}
+              isInsideSubfolder={!!storageParentFolderId}
+              folderPinned={storageMenuFolderPinned}
+              onNewFolder={() => setStoragePathCreateOpen(true)}
+              onRename={storageParentFolderId ? () => setStoragePathRenameOpen(true) : undefined}
+              onShare={openStoragePathShare}
+              onMove={storageParentFolderId ? () => setStoragePathMoveOpen(true) : undefined}
+              onTogglePin={() => void toggleStoragePathPin()}
+            />
+          ) : (
             <>
-              <span className="text-neutral-400 dark:text-neutral-500">/</span>
-              <span className="break-all font-medium text-neutral-900 dark:text-white">
-                {v2FolderBreadcrumb}
+              <span className="flex flex-wrap items-center gap-2 font-medium text-neutral-900 dark:text-white">
+                <span>{currentDrive.name}</span>
+                {isStorageLegacyVirtualBrowse ? (
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
+                    Classic layout
+                  </span>
+                ) : null}
               </span>
+              {currentDrivePath ? (
+                <>
+                  <span className="text-neutral-400 dark:text-neutral-500">/</span>
+                  <span className="font-medium text-neutral-900 dark:text-white">
+                    {isGalleryMediaDrive
+                      ? formatGalleryMediaFolderBreadcrumb(currentDrivePath, galleries)
+                      : currentDrivePath}
+                  </span>
+                </>
+              ) : null}
             </>
-          ) : null}
-          {!isStorageV2FolderBrowse && currentDrivePath ? (
-            <>
-              <span className="text-neutral-400 dark:text-neutral-500">/</span>
-              <span className="font-medium text-neutral-900 dark:text-white">
-                {isGalleryMediaDrive
-                  ? formatGalleryMediaFolderBreadcrumb(currentDrivePath, galleries)
-                  : currentDrivePath}
-              </span>
-            </>
-          ) : null}
+          )}
         </div>
       )}
 
@@ -1910,7 +2115,7 @@ export default function FileGrid() {
                         key={item.key}
                         item={item}
                         displayContext={storageDisplayContext}
-                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onClick={() => openFolderFromPin(item)}
                         onDelete={
                           drive && !item.preventDelete
                             ? async () => {
@@ -1983,7 +2188,7 @@ export default function FileGrid() {
                   >
                     <FolderCard
                       item={item}
-                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      onClick={() => openFolderFromPin(item)}
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
                       layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
@@ -2758,6 +2963,85 @@ export default function FileGrid() {
         onCreated={() => setTransferModalOpen(false)}
         initialFiles={transferInitialFiles}
       />
+
+      {currentDrive && isStorageV2FolderBrowse && user ? (
+        <CreateFolderModal
+          open={storagePathCreateOpen}
+          onClose={() => setStoragePathCreateOpen(false)}
+          title="New folder"
+          defaultName="Untitled folder"
+          onCreateEmpty={async (folderName) => {
+            const token = await user.getIdToken();
+            const res = await fetch("/api/storage-folders", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                linked_drive_id: currentDrive.id,
+                parent_folder_id: storageParentFolderId,
+                name: folderName.trim(),
+              }),
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error((data.error as string) ?? "Could not create folder");
+            }
+            bumpStorageVersion();
+            setStoragePathCreateOpen(false);
+            handleV2StorageFolderMutated();
+          }}
+        />
+      ) : null}
+
+      {currentDrive &&
+      isStorageV2FolderBrowse &&
+      storageParentFolderId &&
+      storageContextFolderVersion != null ? (
+        <>
+          <RenameModal
+            open={storagePathRenameOpen}
+            onClose={() => setStoragePathRenameOpen(false)}
+            currentName={storageRenameCurrentName}
+            onRename={async (newName) => {
+              await renameStorageFolder(
+                storageParentFolderId,
+                newName,
+                storageContextFolderVersion
+              );
+              setStoragePathRenameOpen(false);
+              handleV2StorageFolderMutated();
+            }}
+            itemType="folder"
+          />
+          <StorageFolderTreePickerModal
+            open={storagePathMoveOpen}
+            onClose={() => setStoragePathMoveOpen(false)}
+            linkedDriveId={currentDrive.id}
+            driveLabel={currentDrive.name}
+            title={`Move “${storageRenameCurrentName}” into…`}
+            excludedFolderIds={[storageParentFolderId]}
+            onConfirm={async (targetParentFolderId) => {
+              await moveStorageFolder(
+                storageParentFolderId,
+                targetParentFolderId,
+                storageContextFolderVersion
+              );
+              setStoragePathMoveOpen(false);
+              setStorageParentFolderId(targetParentFolderId);
+              const sp = new URLSearchParams(searchParams.toString());
+              sp.set("drive", currentDrive.id);
+              if (targetParentFolderId) sp.set("folder", targetParentFolderId);
+              else sp.delete("folder");
+              sp.delete("path");
+              const q = sp.toString();
+              router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+              handleV2StorageFolderMutated();
+            }}
+          />
+        </>
+      ) : null}
 
       {shareModalOpen && (
         <ShareModal

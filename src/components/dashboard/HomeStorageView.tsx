@@ -41,6 +41,7 @@ import {
   buildStorageVirtualFolderKey,
   parseStorageVirtualFolderKey,
 } from "@/lib/storage-virtual-folder-key";
+import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -85,7 +86,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     trashAllFilesUnderStoragePath,
     moveAllFilesUnderStoragePath,
   } = useCloudFiles();
-  const { pinnedFolderIds, pinnedFileIds, loading: pinnedLoading, refetch: refetchPinned } = usePinned();
+  const {
+    pinnedFolderIds,
+    pinnedFolderLabels,
+    pinnedFileIds,
+    loading: pinnedLoading,
+    refetch: refetchPinned,
+  } = usePinned();
   const { planId, loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
   const {
@@ -323,7 +330,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     for (const it of bizziCloudFolderItems) m.set(it.key, it);
     return m;
   }, [folderItems, bizziCloudFolderItems]);
-  const pinnedFolderItems = folderItems.filter((f) => f.driveId && pinnedFolderIds.has(f.driveId));
+  const pinnedFolderItems = useMemo(
+    () =>
+      mergePinnedFolderItems(
+        folderItems,
+        pinnedFolderIds,
+        pinnedFolderLabels,
+        linkedDrives,
+        teamAwareBaseName
+      ),
+    [folderItems, pinnedFolderIds, pinnedFolderLabels, linkedDrives]
+  );
 
   const loadPinnedFiles = useCallback(async () => {
     const ids = Array.from(pinnedFileIds);
@@ -544,6 +561,31 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}${pathQs}`);
     },
     [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId, router]
+  );
+
+  const openFolderFromPin = useCallback(
+    (item: FolderItem) => {
+      if (!item.driveId) return;
+      recordRecentOpen("folder", item.driveId, getAuthToken);
+      if (item.storageFolderId) {
+        setCurrentFolderDriveId(item.driveId);
+        setCurrentDrivePath("");
+        setStorageParentFolderId(item.storageFolderId);
+        router.push(
+          `${filesHref}?drive=${encodeURIComponent(item.driveId)}&folder=${encodeURIComponent(item.storageFolderId)}`
+        );
+        return;
+      }
+      openDrive(item.driveId, item.name);
+    },
+    [
+      filesHref,
+      openDrive,
+      router,
+      setCurrentFolderDriveId,
+      setCurrentDrivePath,
+      setStorageParentFolderId,
+    ]
   );
 
   const openMacosPackageInfo = useCallback((file: RecentFile) => {
@@ -1032,7 +1074,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     item={item}
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
-                    onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                    onClick={() => openFolderFromPin(item)}
                     layoutSize="medium"
                     layoutAspectRatio="video"
                     showCardInfo={true}
@@ -1102,7 +1144,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         key={item.key}
                         item={item}
                         displayContext={storageDisplayContext}
-                        onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                        onClick={() => openFolderFromPin(item)}
                         onDelete={
                           drive && !item.preventDelete
                             ? async () => {
@@ -1195,7 +1237,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       item={item}
                       isDropTarget={isDropTarget}
                       onItemsDropped={handleDropOnFolder}
-                      onClick={() => item.driveId && openDrive(item.driveId, item.name)}
+                      onClick={() => openFolderFromPin(item)}
                       layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}

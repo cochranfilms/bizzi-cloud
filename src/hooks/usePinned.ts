@@ -120,12 +120,14 @@ export function usePinned() {
   const pinsScopeReady =
     !pathname?.startsWith("/enterprise") || workspaceKey !== "enterprise:pending";
   const [pinnedFolderIds, setPinnedFolderIds] = useState<Set<string>>(new Set());
+  const [pinnedFolderLabels, setPinnedFolderLabels] = useState<Map<string, string>>(() => new Map());
   const [pinnedFileIds, setPinnedFileIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!isFirebaseConfigured() || !user || !pinsScopeReady) {
       setPinnedFolderIds(new Set());
+      setPinnedFolderLabels(new Map());
       setPinnedFileIds(new Set());
       setLoading(false);
       return;
@@ -151,19 +153,27 @@ export function usePinned() {
         q,
         (snap) => {
           const folders = new Set<string>();
+          const folderLabels = new Map<string, string>();
           const files = new Set<string>();
           snap.docs.forEach((d) => {
             const data = d.data();
-            if (data.itemType === "folder") folders.add(data.itemId);
+            if (data.itemType === "folder") {
+              const id = data.itemId as string;
+              folders.add(id);
+              const dl = data.displayLabel;
+              if (typeof dl === "string" && dl.trim()) folderLabels.set(id, dl.trim());
+            }
             if (data.itemType === "file") files.add(data.itemId);
           });
           setPinnedFolderIds(folders);
+          setPinnedFolderLabels(folderLabels);
           setPinnedFileIds(files);
           setLoading(false);
         },
         (err) => {
           console.error("usePinned onSnapshot:", err);
           setPinnedFolderIds(new Set());
+          setPinnedFolderLabels(new Map());
           setPinnedFileIds(new Set());
           setLoading(false);
         },
@@ -176,7 +186,11 @@ export function usePinned() {
   }, [user, workspaceKey, pinsScopeReady]);
 
   const pinItem = useCallback(
-    async (itemType: "file" | "folder", itemId: string) => {
+    async (
+      itemType: "file" | "folder",
+      itemId: string,
+      opts?: { displayLabel?: string | null }
+    ) => {
       if (!isFirebaseConfigured() || !user || !pinsScopeReady) return;
       const db = getFirebaseFirestore();
       const existing = await getDocs(
@@ -189,11 +203,16 @@ export function usePinned() {
         ),
       );
       if (!existing.empty) return;
+      const label =
+        typeof opts?.displayLabel === "string" && opts.displayLabel.trim()
+          ? opts.displayLabel.trim()
+          : null;
       await addDoc(collection(db, PINNED_COLLECTION), {
         userId: user.uid,
         workspaceKey,
         itemType,
         itemId,
+        ...(label ? { displayLabel: label } : {}),
         createdAt: serverTimestamp(),
       });
     },
@@ -240,18 +259,26 @@ export function usePinned() {
       ),
     );
     const folders = new Set<string>();
+    const folderLabels = new Map<string, string>();
     const files = new Set<string>();
     snap.docs.forEach((d) => {
       const data = d.data();
-      if (data.itemType === "folder") folders.add(data.itemId);
+      if (data.itemType === "folder") {
+        const id = data.itemId as string;
+        folders.add(id);
+        const dl = data.displayLabel;
+        if (typeof dl === "string" && dl.trim()) folderLabels.set(id, dl.trim());
+      }
       if (data.itemType === "file") files.add(data.itemId);
     });
     setPinnedFolderIds(folders);
+    setPinnedFolderLabels(folderLabels);
     setPinnedFileIds(files);
   }, [user, workspaceKey, pinsScopeReady]);
 
   return {
     pinnedFolderIds,
+    pinnedFolderLabels,
     pinnedFileIds,
     loading,
     pinItem,
