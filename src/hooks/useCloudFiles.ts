@@ -47,6 +47,7 @@ import {
 } from "@/lib/macos-package-display";
 import { backupPathUnderPrefix } from "@/lib/storage-virtual-folder-key";
 import { MOVE_ALREADY_AT_DESTINATION, DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
+import { toNormalizedComparisonKey } from "@/lib/storage-folders/normalize";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import {
   BACKUP_LIFECYCLE_ACTIVE,
@@ -1595,11 +1596,26 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       if (!fileSnap.exists()) return;
       const data = fileSnap.data();
       if (data?.userId !== user.uid) return;
+      const trimmed = newName.trim();
+      if (!trimmed) {
+        throw new Error("Name cannot be empty");
+      }
+      const fileNameCompareKey = toNormalizedComparisonKey(trimmed);
+      if (!fileNameCompareKey) {
+        throw new Error("Invalid file name");
+      }
       const path = (data.relative_path as string) ?? "";
       const parts = path.split("/").filter(Boolean);
-      parts[parts.length - 1] = newName.trim();
-      const newPath = parts.join("/");
-      await updateDoc(fileRef, { relative_path: newPath });
+      const newPath =
+        parts.length > 0
+          ? [...parts.slice(0, -1), trimmed].join("/")
+          : trimmed;
+      /** Storage v2 lists use `file_name` first; keep `relative_path` in sync. `object_key` / technical metadata unchanged. */
+      await updateDoc(fileRef, {
+        relative_path: newPath,
+        file_name: trimmed,
+        file_name_compare_key: fileNameCompareKey,
+      });
       await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();

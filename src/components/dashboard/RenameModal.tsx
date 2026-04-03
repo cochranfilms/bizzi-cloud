@@ -95,7 +95,7 @@ export default function RenameModal({
       >
         <div className="flex items-center justify-between border-b border-neutral-200 p-4 dark:border-neutral-700">
           <h3 id="rename-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
-            Rename {itemType}
+            {itemType === "file" ? "Change name" : "Rename folder"}
           </h3>
           <button
             type="button"

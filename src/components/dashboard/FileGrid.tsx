@@ -6,7 +6,12 @@ import { AlertCircle, Check, CheckSquare, ChevronLeft, Download, Film, Filter, F
 
 const DRAG_THRESHOLD_PX = 5;
 
-import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
+import {
+  getDragMovePayload,
+  getMovePayloadFromDragSource,
+  setDragMovePayload,
+  type FolderDropMoveTarget,
+} from "@/lib/dnd-move-items";
 import { MOVE_ALREADY_AT_DESTINATION } from "@/lib/move-and-folder-naming";
 import { rectsIntersect } from "@/lib/utils";
 import FolderCard, { type FolderItem } from "./FolderCard";
@@ -50,7 +55,7 @@ import AdvancedFiltersDrawer from "@/components/filters/AdvancedFiltersDrawer";
 import { useFilteredFiles } from "@/hooks/useFilteredFiles";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
-import DashboardRouteFade, { useDashboardItemReveal } from "./DashboardRouteFade";
+import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import FolderView from "./FolderView";
 import AllFilesView from "./AllFilesView";
@@ -62,6 +67,7 @@ import {
   type MacosPackageListEntry,
 } from "@/lib/macos-package-display";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
+import { parseStorageVirtualFolderKey } from "@/lib/storage-virtual-folder-key";
 import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 import { useAuth } from "@/context/AuthContext";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
@@ -243,6 +249,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   const [v2FolderBreadcrumb, setV2FolderBreadcrumb] = useState("");
   const [driveListTruncated, setDriveListTruncated] = useState(false);
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
+  /** Supersedes overlapping loadDriveFiles calls (URL effect + click handler) so UI and loading flag stay consistent. */
+  const loadDriveFilesGenRef = useRef(0);
   const {
     driveFolders,
     recentFiles,
@@ -749,6 +757,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
         v2VirtualPathPrefix?: string | null;
       }
     ) => {
+      const gen = ++loadDriveFilesGenRef.current;
       if (!options?.silent) setDriveFilesLoading(true);
       const parent =
         options && "storageParentOverride" in options
@@ -771,10 +780,12 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             : "";
         const v2VirtualPrefix = optVirtRaw || inferredVirt;
         if (storageV2 && v2VirtualPrefix && !parent) {
+          if (gen !== loadDriveFilesGenRef.current) return;
           setStorageFolderListError(null);
           setV2StorageSubfolders([]);
           setStorageContextFolderVersion(null);
           const { files, listTruncated } = await fetchDriveFiles(driveId);
+          if (gen !== loadDriveFilesGenRef.current) return;
           setDriveFiles(files);
           setDriveListTruncated(listTruncated);
         } else if (storageV2) {
@@ -783,6 +794,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             parent,
             meta.name
           );
+          if (gen !== loadDriveFilesGenRef.current) return;
           setStorageFolderListError(listError);
           if (listError) {
             setDriveFiles([]);
@@ -799,6 +811,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                 key: `storage-v2-${driveId}-${f.id}`,
                 items: f.item_count,
                 virtualFolder: true,
+                driveId,
                 storageFolderId: f.id,
                 storageLinkedDriveId: driveId,
                 storageFolderVersion: f.version,
@@ -816,8 +829,10 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                   const r = await fetch(`/api/storage-folders/${encodeURIComponent(parent)}`, {
                     headers: { Authorization: `Bearer ${token}` },
                   });
+                  if (gen !== loadDriveFilesGenRef.current) return;
                   if (r.ok) {
                     const j = (await r.json()) as { version?: unknown };
+                    if (gen !== loadDriveFilesGenRef.current) return;
                     const v = typeof j.version === "number" ? j.version : Number(j.version ?? NaN);
                     if (Number.isFinite(v)) setStorageContextFolderVersion(v);
                     else setStorageContextFolderVersion(null);
@@ -825,7 +840,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                     setStorageContextFolderVersion(null);
                   }
                 } catch {
-                  setStorageContextFolderVersion(null);
+                  if (gen === loadDriveFilesGenRef.current) setStorageContextFolderVersion(null);
                 }
               })();
             } else {
@@ -833,19 +848,24 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             }
           }
         } else {
+          if (gen !== loadDriveFilesGenRef.current) return;
           setStorageFolderListError(null);
           setV2StorageSubfolders([]);
           const { files, listTruncated } = await fetchDriveFiles(driveId);
+          if (gen !== loadDriveFilesGenRef.current) return;
           setDriveFiles(files);
           setDriveListTruncated(listTruncated);
         }
       } catch {
+        if (gen !== loadDriveFilesGenRef.current) return;
         setDriveFiles([]);
         setV2StorageSubfolders([]);
         setStorageFolderListError("Could not load this folder.");
         setDriveListTruncated(false);
       } finally {
-        setDriveFilesLoading(false);
+        if (gen === loadDriveFilesGenRef.current) {
+          setDriveFilesLoading(false);
+        }
       }
     },
     [fetchDriveFiles, linkedDrives, storageParentFolderId, currentDrivePath]
@@ -914,7 +934,6 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
           ? item.storageFolderVersion
           : null
       );
-      setStorageParentFolderId(item.storageFolderId);
       setSelectedFileIds(new Set());
       setSelectedFolderKeys(new Set());
       const sp = new URLSearchParams(searchParams.toString());
@@ -923,19 +942,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       sp.delete("path");
       const q = sp.toString();
       router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
-      void loadDriveFiles(currentDrive.id, {
-        storageParentOverride: item.storageFolderId,
-      });
+      /** Single load: URL sync effect applies `folder=` and calls loadDriveFiles (avoid duplicate with explicit load). */
     },
-    [
-      currentDrive,
-      searchParams,
-      pathname,
-      router,
-      loadDriveFiles,
-      setStorageParentFolderId,
-      setCurrentDrivePath,
-    ]
+    [currentDrive, searchParams, pathname, router, setCurrentDrivePath]
   );
 
   const closeDrive = useCallback(() => {
@@ -1789,15 +1798,67 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     setMoveModalOpen(true);
   }, []);
 
+  const DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED =
+    "Moving that folder here isn’t supported via drag-and-drop. Use Move in the toolbar instead.";
+
+  const resolveFolderItemByKey = useCallback(
+    (key: string): FolderItem | undefined =>
+      subfolderItems.find((x) => x.key === key) ??
+      folderItems.find((x) => x.key === key) ??
+      pinnedFolderItems.find((x) => x.key === key),
+    [subfolderItems, folderItems, pinnedFolderItems]
+  );
+
   const performMove = useCallback(
-    async (
-      fileIds: string[],
-      folderKeys: string[],
-      targetDriveId: string
-    ) => {
+    async (fileIds: string[], folderKeys: string[], target: FolderDropMoveTarget) => {
       try {
         setMoveErrorNotice(null);
         const expandedIds = expandMacosPackageRowIds(fileIds, filesForPackageExpand, packagesForPackageExpand);
+        const targetStorageFolderId = target.storageFolderId;
+
+        if (typeof targetStorageFolderId === "string" && targetStorageFolderId.length > 0) {
+          if (expandedIds.length > 0) {
+            await moveFilesToStorageFolder(expandedIds, targetStorageFolderId);
+          }
+          for (const key of folderKeys) {
+            const item = resolveFolderItemByKey(key);
+            if (item?.storageFolderId != null && item.storageFolderVersion != null) {
+              if (item.storageFolderId === targetStorageFolderId) {
+                throw new Error(MOVE_ALREADY_AT_DESTINATION);
+              }
+              await moveStorageFolder(
+                item.storageFolderId,
+                targetStorageFolderId,
+                item.storageFolderVersion
+              );
+              continue;
+            }
+            const scope = parseStorageVirtualFolderKey(key);
+            if (scope) {
+              const ids = await getFileIdsForBulkShare([], [], [scope]);
+              if (ids.length > 0) {
+                await moveFilesToStorageFolder(ids, targetStorageFolderId);
+              }
+              continue;
+            }
+            const driveKeyId = key.startsWith("drive-") ? key.slice(6) : key;
+            if (linkedDrives.some((d) => d.id === driveKeyId)) {
+              const ids = await getFileIdsForBulkShare([], [driveKeyId], undefined);
+              if (ids.length > 0) {
+                await moveFilesToStorageFolder(ids, targetStorageFolderId);
+              }
+              continue;
+            }
+            throw new Error(DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED);
+          }
+          clearSelection();
+          await refetch();
+          if (currentDrive) void loadDriveFiles(currentDrive.id);
+          setMoveNotice("Items moved into the folder");
+          return;
+        }
+
+        const targetDriveId = target.driveId;
         if (expandedIds.length > 0) {
           await moveFilesToFolder(expandedIds, targetDriveId);
         }
@@ -1833,23 +1894,25 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       currentDrive,
       closeDrive,
       moveFilesToFolder,
+      moveFilesToStorageFolder,
+      moveStorageFolder,
       moveFolderContentsToFolder,
       clearSelection,
       refetch,
       loadDriveFiles,
       filesForPackageExpand,
       packagesForPackageExpand,
+      resolveFolderItemByKey,
+      getFileIdsForBulkShare,
     ]
   );
 
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
       try {
-        await performMove(
-          Array.from(selectedFileIds),
-          Array.from(selectedFolderKeys),
-          targetDriveId
-        );
+        await performMove(Array.from(selectedFileIds), Array.from(selectedFolderKeys), {
+          driveId: targetDriveId,
+        });
         setMoveModalOpen(false);
       } catch {
         /* moveErrorNotice set in performMove */
@@ -1859,11 +1922,11 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   );
 
   const handleDropOnFolder = useCallback(
-    async (targetDriveId: string, e: React.DragEvent) => {
+    async (target: FolderDropMoveTarget, e: React.DragEvent) => {
       const parsed = getDragMovePayload(e.dataTransfer);
       if (!parsed) return;
       try {
-        await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+        await performMove(parsed.fileIds, parsed.folderKeys, target);
       } catch {
         /* moveErrorNotice set in performMove */
       }
@@ -1957,22 +2020,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
   const embeddedFolderBrowse = Boolean(embeddedHomeStorage && currentDrive);
-  const [embeddedFolderRevealArmed, setEmbeddedFolderRevealArmed] = useState(false);
-  useEffect(() => {
-    if (!embeddedFolderBrowse) {
-      setEmbeddedFolderRevealArmed(false);
-      return;
-    }
-    if (driveFilesLoading) setEmbeddedFolderRevealArmed(true);
-  }, [embeddedFolderBrowse, driveFilesLoading]);
-  const embeddedFolderGridRevealEntered = useDashboardItemReveal(
-    embeddedFolderBrowse ? embeddedFolderRevealArmed && !driveFilesLoading : undefined
-  );
-  const embeddedFolderGridRevealClass = embeddedFolderBrowse
-    ? `min-h-0 transition-opacity duration-[850ms] ease-out motion-reduce:transition-none ${
-        embeddedFolderGridRevealEntered ? "opacity-100" : "opacity-0"
-      }`
-    : "contents";
+  const embeddedFolderGridRevealClass = embeddedFolderBrowse ? "min-h-0" : "contents";
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
   /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). */
   const mainGridFadeReady = embeddedFolderBrowse
@@ -2064,7 +2112,6 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                       const list = data.ancestors ?? [];
                       const parentId =
                         list.length >= 2 ? list[list.length - 2]!.id : null;
-                      setStorageParentFolderId(parentId);
                       const sp = new URLSearchParams(searchParams.toString());
                       sp.set("drive", currentDrive.id);
                       if (parentId) sp.set("folder", parentId);
@@ -2074,9 +2121,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                       router.replace(q ? `${pathname}?${q}` : pathname, {
                         scroll: false,
                       });
-                      void loadDriveFiles(currentDrive.id, {
-                        storageParentOverride: parentId,
-                      });
+                      /** loadDriveFiles runs from URL `folder` sync effect only */
                       setSelectedFileIds(new Set());
                     })();
                   }
@@ -2452,6 +2497,12 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                     )}
                     {showFolders && subfolderItems.map((item) => {
                       const canDragFolder = !!item.driveId && !item.preventMove;
+                      const rowDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
+                      const isFolderInSelection = selectedFolderKeys.has(item.key);
+                      const isDropTargetRow =
+                        !!rowDriveId &&
+                        !isFolderInSelection &&
+                        linkedDrives.some((d) => d.id === rowDriveId);
                       return (
                         <FolderListRow
                           key={item.key}
@@ -2477,6 +2528,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                           selectable={!!item.driveId || !!item.virtualFolder}
                           selected={selectedFolderKeys.has(item.key)}
                           onSelect={() => toggleFolderSelection(item.key)}
+                          isDropTarget={isDropTargetRow}
+                          onItemsDropped={handleDropOnFolder}
                           draggable={canDragFolder}
                           onDragStart={handleDragStart}
                         />
@@ -2542,6 +2595,11 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
               {showFolders && subfolderItems.map((item) => {
                 const isFolderInSelection = selectedFolderKeys.has(item.key);
                 const canDragFolder = !!item.driveId && !item.preventMove;
+                const cardDriveId = item.driveId ?? item.storageLinkedDriveId ?? "";
+                const isDropTargetCard =
+                  !!cardDriveId &&
+                  !isFolderInSelection &&
+                  linkedDrives.some((d) => d.id === cardDriveId);
                 return (
                   <div
                     key={item.key}
@@ -2573,6 +2631,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                       selectable
                       selected={isFolderInSelection}
                       onSelect={() => toggleFolderSelection(item.key)}
+                      isDropTarget={isDropTargetCard}
+                      onItemsDropped={handleDropOnFolder}
                       layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                       layoutAspectRatio={aspectRatio}
                       showCardInfo={showCardInfo}

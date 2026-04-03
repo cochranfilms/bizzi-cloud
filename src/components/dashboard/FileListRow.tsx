@@ -339,7 +339,7 @@ export default function FileListRow({
                         },
                         {
                           id: "rename",
-                          label: "Rename",
+                          label: "Change name",
                           icon: null,
                           onClick: () => setRenameOpen(true),
                         },

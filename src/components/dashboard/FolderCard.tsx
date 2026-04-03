@@ -7,7 +7,7 @@ import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
+import { DND_MOVE_MIME, type FolderDropMoveTarget } from "@/lib/dnd-move-items";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
 import RenameModal from "./RenameModal";
@@ -83,7 +83,7 @@ interface FolderCardProps {
   /** When true, folder can accept drag-and-drop of items to move into it */
   isDropTarget?: boolean;
   /** Called when items are dropped on this folder; parent extracts fileIds/folderKeys from event */
-  onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
+  onItemsDropped?: (target: FolderDropMoveTarget, e: React.DragEvent) => void;
   /** Layout: card size (small/medium/large) */
   layoutSize?: CardSize;
   /** Layout: aspect ratio of the card (video = 16:9) */
@@ -242,12 +242,17 @@ export default function FolderCard({
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       setIsDragOver(false);
-      if (!isDropTarget || !onItemsDropped || !item.driveId) return;
+      const driveId = item.driveId ?? item.storageLinkedDriveId;
+      if (!isDropTarget || !onItemsDropped || !driveId) return;
       e.preventDefault();
       e.stopPropagation();
-      onItemsDropped(item.driveId, e);
+      const target: FolderDropMoveTarget = {
+        driveId,
+        ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
+      };
+      onItemsDropped(target, e);
     },
-    [isDropTarget, onItemsDropped, item.driveId]
+    [isDropTarget, onItemsDropped, item.driveId, item.storageLinkedDriveId, item.storageFolderId]
   );
 
   const isSystemFolder = item.isSystemFolder === true;

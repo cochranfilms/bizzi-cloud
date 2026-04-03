@@ -31,7 +31,7 @@ import {
   shouldFreezeNewLegacyLinkedDriveFolders,
 } from "@/lib/storage-folder-model-policy";
 import { useDashboardItemReveal } from "@/components/dashboard/DashboardRouteFade";
-import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
+import { DND_MOVE_MIME, type FolderDropMoveTarget } from "@/lib/dnd-move-items";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { DisplayContext } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
@@ -45,7 +45,7 @@ interface FolderListRowProps {
   onSelect?: () => void;
   selectable?: boolean;
   isDropTarget?: boolean;
-  onItemsDropped?: (targetDriveId: string, e: React.DragEvent) => void;
+  onItemsDropped?: (target: FolderDropMoveTarget, e: React.DragEvent) => void;
   draggable?: boolean;
   onDragStart?: React.DragEventHandler<HTMLTableRowElement>;
   /** Virtual-folder rollup; omit for drive rows (count-only display). */
@@ -219,12 +219,17 @@ export default function FolderListRow({
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLTableRowElement>) => {
       setIsDragOver(false);
-      if (!isDropTarget || !onItemsDropped || !item.driveId) return;
+      const driveId = item.driveId ?? item.storageLinkedDriveId;
+      if (!isDropTarget || !onItemsDropped || !driveId) return;
       e.preventDefault();
       e.stopPropagation();
-      onItemsDropped(item.driveId, e);
+      const target: FolderDropMoveTarget = {
+        driveId,
+        ...(item.storageFolderId ? { storageFolderId: item.storageFolderId } : {}),
+      };
+      onItemsDropped(target, e);
     },
-    [isDropTarget, onItemsDropped, item.driveId]
+    [isDropTarget, onItemsDropped, item.driveId, item.storageLinkedDriveId, item.storageFolderId]
   );
 
   return (

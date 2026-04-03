@@ -427,7 +427,7 @@ export default function FileCard({
                     },
                     {
                       id: "rename",
-                      label: "Rename",
+                      label: "Change name",
                       icon: <Pencil className="h-4 w-4" />,
                       onClick: () => setRenameOpen(true),
                     },

@@ -118,13 +118,13 @@ export default function TopNavbar() {
     "grid min-h-12 w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 md:min-h-0 md:gap-3 xl:pr-56";
 
   /**
-   * Match HomeStorageView "Bizzi Cloud Base": `max-w-4xl` centered in the main column.
-   * `xl:pr-56` excludes the docked Quick Access panel (same as DashboardShell) so this band
-   * is not the full viewport—then `justify-center` places the nav pills over the three base folders.
+   * Same band as title row: `xl:pr-56` aligns with Quick Access. `1fr_auto_1fr` keeps nav centered
+   * while bell / workspace / profile sit on the far right above the docked panel.
    */
   const desktopNav = (
-    <div className="hidden w-full min-w-0 md:block xl:pr-56">
-      <div className="mx-auto flex w-full max-w-4xl justify-center">
+    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-x-2 md:gap-y-1 xl:pr-56">
+      <div className="min-w-0" aria-hidden />
+      <div className="mx-auto flex w-full min-w-0 max-w-4xl justify-center justify-self-center">
         <nav
           className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
           aria-label="Workspace"
@@ -155,6 +155,7 @@ export default function TopNavbar() {
           })}
         </nav>
       </div>
+      <div className="flex min-w-0 items-center justify-end justify-self-end">{accountTools}</div>
     </div>
   );
 
@@ -214,7 +215,9 @@ export default function TopNavbar() {
               </span>
             </Link>
           </div>
-          {accountTools}
+          <div className="flex min-w-0 justify-end justify-self-end">
+            <div className="md:hidden">{accountTools}</div>
+          </div>
         </div>
         {desktopNav}
 
@@ -315,7 +318,9 @@ export default function TopNavbar() {
           </Link>
         </div>
 
-        {accountTools}
+        <div className="flex min-w-0 justify-end justify-self-end">
+          <div className="md:hidden">{accountTools}</div>
+        </div>
       </div>
       {desktopNav}
 

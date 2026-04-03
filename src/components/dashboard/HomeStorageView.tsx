@@ -50,7 +50,12 @@ import type { LinkedDrive } from "@/types/backup";
 
 const DRAG_THRESHOLD_PX = 5;
 
-import { getDragMovePayload, getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
+import {
+  getDragMovePayload,
+  getMovePayloadFromDragSource,
+  setDragMovePayload,
+  type FolderDropMoveTarget,
+} from "@/lib/dnd-move-items";
 import { rectsIntersect } from "@/lib/utils";
 import { BulkActionBar } from "./BulkActionBar";
 
@@ -102,7 +107,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     fetchFilesByIds,
     getFileIdsForBulkShare,
     moveFilesToFolder,
+    moveFilesToStorageFolder,
     moveFolderContentsToFolder,
+    moveStorageFolder,
     trashAllFilesUnderStoragePath,
     moveAllFilesUnderStoragePath,
   } = useCloudFiles();
@@ -911,14 +918,66 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     setMoveModalOpen(true);
   }, []);
 
+  const DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED =
+    "Moving that folder here isn’t supported via drag-and-drop. Use Move in the toolbar instead.";
+
+  const resolveHomeFolderItem = useCallback(
+    (key: string): FolderItem | undefined =>
+      homeFolderItemsByKey.get(key) ?? pinnedFolderItems.find((p) => p.key === key),
+    [homeFolderItemsByKey, pinnedFolderItems]
+  );
+
   const performMove = useCallback(
-    async (
-      fileIds: string[],
-      folderKeys: string[],
-      targetDriveId: string
-    ) => {
+    async (fileIds: string[], folderKeys: string[], target: FolderDropMoveTarget) => {
       try {
         setMoveErrorNotice(null);
+        const targetStorageFolderId = target.storageFolderId;
+
+        if (typeof targetStorageFolderId === "string" && targetStorageFolderId.length > 0) {
+          if (fileIds.length > 0) {
+            await moveFilesToStorageFolder(fileIds, targetStorageFolderId);
+          }
+          for (const key of folderKeys) {
+            const item = resolveHomeFolderItem(key);
+            if (item?.storageFolderId != null && item.storageFolderVersion != null) {
+              if (item.storageFolderId === targetStorageFolderId) {
+                throw new Error(MOVE_ALREADY_AT_DESTINATION);
+              }
+              await moveStorageFolder(
+                item.storageFolderId,
+                targetStorageFolderId,
+                item.storageFolderVersion
+              );
+              continue;
+            }
+            const scope = parseStorageVirtualFolderKey(key);
+            if (scope) {
+              const ids = await getFileIdsForBulkShare([], [], [scope]);
+              if (ids.length > 0) {
+                await moveFilesToStorageFolder(ids, targetStorageFolderId);
+              }
+              continue;
+            }
+            const driveKeyId = key.startsWith("drive-") ? key.slice(6) : key;
+            if (linkedDrives.some((d) => d.id === driveKeyId)) {
+              const ids = await getFileIdsForBulkShare([], [driveKeyId], undefined);
+              if (ids.length > 0) {
+                await moveFilesToStorageFolder(ids, targetStorageFolderId);
+              }
+              continue;
+            }
+            throw new Error(DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED);
+          }
+          clearSelection();
+          await refetch();
+          await refetchPinned();
+          loadPinnedFiles();
+          fetchRecentUploads();
+          setMoveNotice("Items moved into the folder");
+          return;
+        }
+
+        const targetDriveId = target.driveId;
         if (fileIds.length > 0) {
           await moveFilesToFolder(fileIds, targetDriveId);
         }
@@ -953,8 +1012,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     [
       linkedDrives,
       moveFilesToFolder,
+      moveFilesToStorageFolder,
+      moveStorageFolder,
       moveFolderContentsToFolder,
       moveAllFilesUnderStoragePath,
+      getFileIdsForBulkShare,
+      resolveHomeFolderItem,
       clearSelection,
       refetch,
       refetchPinned,
@@ -966,11 +1029,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const handleBulkMoveConfirm = useCallback(
     async (targetDriveId: string) => {
       try {
-        await performMove(
-          Array.from(selectedFileIds),
-          Array.from(selectedFolderKeys),
-          targetDriveId
-        );
+        await performMove(Array.from(selectedFileIds), Array.from(selectedFolderKeys), {
+          driveId: targetDriveId,
+        });
         setMoveModalOpen(false);
       } catch {
         /* moveErrorNotice set in performMove */
@@ -980,11 +1041,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   );
 
   const handleDropOnFolder = useCallback(
-    async (targetDriveId: string, e: React.DragEvent) => {
+    async (target: FolderDropMoveTarget, e: React.DragEvent) => {
       const parsed = getDragMovePayload(e.dataTransfer);
       if (!parsed) return;
       try {
-        await performMove(parsed.fileIds, parsed.folderKeys, targetDriveId);
+        await performMove(parsed.fileIds, parsed.folderKeys, target);
       } catch {
         /* moveErrorNotice set in performMove */
       }

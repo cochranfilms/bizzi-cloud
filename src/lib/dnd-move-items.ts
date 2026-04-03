@@ -3,6 +3,12 @@ export const DND_MOVE_MIME = "application/x-bizzi-move-items" as const;
 
 export type DragMovePayload = { fileIds: string[]; folderKeys: string[] };
 
+/** Drop target for folder row/card: linked drive and optional Storage v2 `storage_folders` id (same drive). */
+export type FolderDropMoveTarget = {
+  driveId: string;
+  storageFolderId?: string;
+};
+
 /** Persist payload for drop (custom MIME + text/plain fallback for browsers that omit custom types). */
 export function setDragMovePayload(dt: DataTransfer, payload: DragMovePayload): void {
   const s = JSON.stringify(payload);
