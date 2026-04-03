@@ -232,7 +232,7 @@ export default function FileCard({
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [cardRef, isInView] = useInView<HTMLDivElement>();
-  const { renameFile, moveFile } = useCloudFiles();
+  const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {

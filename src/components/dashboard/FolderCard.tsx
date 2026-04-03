@@ -124,7 +124,7 @@ export default function FolderCard({
   const { org, role: orgRole } = useEnterprise();
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
-    useCloudFiles();
+    useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
 
   const allowV2FolderMutations = useMemo(() => {

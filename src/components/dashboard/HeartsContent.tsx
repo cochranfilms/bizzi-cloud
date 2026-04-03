@@ -27,7 +27,7 @@ export default function HeartsContent({ basePath = "/dashboard" }: { basePath?: 
   const { files, loading, loadingMore, hasMore, loadMore, refresh } = useHeartedFiles();
   const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettings();
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
-  const { deleteFile } = useCloudFiles();
+  const { deleteFile } = useCloudFiles({ subscribeDriveListing: false });
   const { linkedDrives } = useBackup();
   const filePreviewRawLut = useFilePreviewModalRawLut(previewFile, linkedDrives);
 

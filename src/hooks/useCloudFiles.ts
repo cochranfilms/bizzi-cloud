@@ -53,6 +53,10 @@ import {
   isBackupFileActiveForListing,
   resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
+import {
+  registerCloudFilesPostMutationRefresh,
+  scheduleCloudFilesPostMutationRefresh,
+} from "@/lib/cloud-files-post-mutation-refresh";
 
 function filterScopedLinkedDrives(
   drives: LinkedDrive[],
@@ -592,6 +596,11 @@ function useTeamRouteOwnerUid(): string | null {
 export interface UseCloudFilesOptions {
   /** When true, return only Creator section drives (incl. RAW). When false, exclude Creator drives. */
   creatorOnly?: boolean;
+  /**
+   * When false, do not fetch drive listing / recent files on this instance (for per-card hooks).
+   * One subscriber per page should keep the default true so post-mutation refresh is registered.
+   */
+  subscribeDriveListing?: boolean;
 }
 
 export function useCloudFiles(options?: UseCloudFilesOptions) {
@@ -601,6 +610,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const teamRouteOwnerUid = useTeamRouteOwnerUid();
   const { selectedWorkspaceId } = useCurrentFolder();
   const creatorOnly = options?.creatorOnly ?? false;
+  const subscribeDriveListing = options?.subscribeDriveListing !== false;
   const {
     linkedDrives,
     storageVersion,
@@ -885,8 +895,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   ]);
 
   useEffect(() => {
+    if (!subscribeDriveListing) return;
     fetchCloudFiles();
-  }, [fetchCloudFiles, storageVersion]);
+  }, [subscribeDriveListing, fetchCloudFiles, storageVersion]);
 
   /** Fetches all user files for the transfer modal (up to 500). Call when modal opens. */
   const fetchAllFilesForTransfer = useCallback(async () => {
@@ -1421,29 +1432,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     }
   }, [user, bumpStorageVersion]);
 
-  /** After trash/restore/permanent-delete succeeds: coalesce refreshes so the UI is not blocked on full refetches. */
-  const POST_MUTATION_REFRESH_DEBOUNCE_MS = 400;
-  const postMutationRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
-    return () => {
-      if (postMutationRefreshTimerRef.current !== null) {
-        clearTimeout(postMutationRefreshTimerRef.current);
-      }
-    };
-  }, []);
-
-  const scheduleDebouncedPostTrashMetadataRefresh = useCallback(() => {
-    if (postMutationRefreshTimerRef.current !== null) {
-      clearTimeout(postMutationRefreshTimerRef.current);
-    }
-    postMutationRefreshTimerRef.current = setTimeout(() => {
-      postMutationRefreshTimerRef.current = null;
+    if (!subscribeDriveListing) return;
+    const run = () => {
       void fetchCloudFiles();
       void fetchRecentUploads();
       void recalculateStorage();
-    }, POST_MUTATION_REFRESH_DEBOUNCE_MS);
-  }, [fetchCloudFiles, fetchRecentUploads, recalculateStorage]);
+    };
+    return registerCloudFilesPostMutationRefresh(run);
+  }, [subscribeDriveListing, fetchCloudFiles, fetchRecentUploads, recalculateStorage]);
+
+  /** After trash/restore/permanent-delete succeeds: coalesce refreshes (single subscriber registers the work). */
+  const scheduleDebouncedPostTrashMetadataRefresh = useCallback(() => {
+    scheduleCloudFilesPostMutationRefresh();
+  }, []);
 
   /** Immediate client patch after mutation success — never call before the API succeeds. */
   const removeFileIdsFromLocalLists = useCallback((fileIds: string[]) => {

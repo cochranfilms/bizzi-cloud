@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth-token";
+import { withHeartRequestSlot } from "@/lib/heartRequestQueue";
 
 export function useHearts(fileId: string | null) {
   const { user } = useAuth();
@@ -20,11 +21,14 @@ export function useHearts(fileId: string | null) {
     const token = await getAuthToken();
     if (!token) return;
     try {
-      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const data = await withHeartRequestSlot(async () => {
+        const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        return (await res.json()) as { count?: number; hasHearted?: boolean };
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (data) {
         setCount(data.count ?? 0);
         setHasHearted(data.hasHearted ?? false);
       }
@@ -47,12 +51,15 @@ export function useHearts(fileId: string | null) {
     setHasHearted((prev) => !prev);
     setCount((c) => (hasHearted ? c - 1 : c + 1));
     try {
-      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+      const data = await withHeartRequestSlot(async () => {
+        const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/hearts`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        return (await res.json()) as { count?: number; hasHearted?: boolean };
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (data) {
         setCount(data.count ?? 0);
         setHasHearted(data.hasHearted ?? false);
       } else {
