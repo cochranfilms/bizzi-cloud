@@ -10,8 +10,8 @@ import {
 import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 import { PLAN_LABELS } from "@/lib/pricing-data";
 import {
-  coerceTeamSeatCounts,
   emptyTeamSeatCounts,
+  teamSeatCountsFromProfileDocument,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 import { sumQuotaCountedUserPersonalTeamBackupBytes } from "@/lib/backup-file-storage-bytes";
@@ -142,7 +142,7 @@ export async function GET(request: Request) {
     };
   });
 
-  const purchased = coerceTeamSeatCounts(pdata?.team_seat_counts ?? {});
+  const purchased = teamSeatCountsFromProfileDocument(pdata as Record<string, unknown>);
   const used = { ...emptyTeamSeatCounts() };
 
   for (const m of members) {

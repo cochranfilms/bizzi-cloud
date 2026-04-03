@@ -9,6 +9,7 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { isReservedHandle } from "@/lib/public-handle";
+import { teamSeatCountsFromProfileDocument } from "@/lib/team-seat-pricing";
 import { NextResponse } from "next/server";
 import {
   ensurePersonalTeamRecord,
@@ -55,11 +56,7 @@ export async function GET(request: Request) {
 
   const storageAddonId =
     typeof data.storage_addon_id === "string" ? data.storage_addon_id : null;
-  const teamSeatCountsRaw = data.team_seat_counts;
-  const teamSeatCounts =
-    teamSeatCountsRaw && typeof teamSeatCountsRaw === "object" && !Array.isArray(teamSeatCountsRaw)
-      ? teamSeatCountsRaw
-      : { none: 0, gallery: 0, editor: 0, fullframe: 0 };
+  const teamSeatCounts = teamSeatCountsFromProfileDocument(data as Record<string, unknown>);
 
   await ensurePersonalTeamRecord(db, auth.uid, data as Record<string, unknown>);
   const ownedTeam = await getOwnedTeam(db, auth.uid);

@@ -176,20 +176,56 @@ export function teamSeatCountsToMetadataStrings(c: TeamSeatCounts): Record<strin
   };
 }
 
+function nonNegSeatInt(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.min(Math.max(0, Math.floor(raw)), MAX_EXTRA_PERSONAL_TEAM_SEATS);
+  }
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Math.min(Math.max(0, parseInt(raw.trim(), 10)), MAX_EXTRA_PERSONAL_TEAM_SEATS);
+  }
+  return 0;
+}
+
 /** Parse request body team seat counts */
 export function coerceTeamSeatCounts(input: unknown): TeamSeatCounts {
   if (!input || typeof input !== "object") return emptyTeamSeatCounts();
   const o = input as Record<string, unknown>;
-  const n = (k: string) => {
-    const v = o[k];
-    if (typeof v !== "number" || !Number.isFinite(v)) return 0;
-    return Math.min(Math.max(0, Math.floor(v)), MAX_EXTRA_PERSONAL_TEAM_SEATS);
-  };
   return clampTeamSeatCounts({
-    none: n("none"),
-    gallery: n("gallery"),
-    editor: n("editor"),
-    fullframe: n("fullframe"),
+    none: nonNegSeatInt(o.none),
+    gallery: nonNegSeatInt(o.gallery),
+    editor: nonNegSeatInt(o.editor),
+    fullframe: nonNegSeatInt(o.fullframe),
+  });
+}
+
+/**
+ * Canonical team seat counts for entitlement checks and API responses.
+ * - Coerces map values (including numeric strings from bad writes or exports).
+ * - If tier map sums to zero but `seat_count` on the profile still shows more than one seat,
+ *   treat the difference as legacy "base" extra seats (matches Stripe metadata fallback).
+ */
+export function teamSeatCountsFromProfileDocument(
+  data: Record<string, unknown> | undefined | null
+): TeamSeatCounts {
+  const empty = emptyTeamSeatCounts();
+  if (!data) return empty;
+  const fromMap = coerceTeamSeatCounts(data.team_seat_counts);
+  if (sumExtraTeamSeats(fromMap) > 0) return fromMap;
+
+  const scRaw = data.seat_count;
+  let sc = 1;
+  if (typeof scRaw === "number" && Number.isFinite(scRaw)) {
+    sc = Math.max(1, Math.floor(scRaw));
+  } else if (typeof scRaw === "string" && /^\d+$/.test(scRaw.trim())) {
+    sc = Math.max(1, parseInt(scRaw.trim(), 10));
+  }
+  const extra = Math.max(0, Math.min(sc - 1, MAX_EXTRA_PERSONAL_TEAM_SEATS));
+  if (extra <= 0) return fromMap;
+  return clampTeamSeatCounts({
+    none: extra,
+    gallery: 0,
+    editor: 0,
+    fullframe: 0,
   });
 }
 

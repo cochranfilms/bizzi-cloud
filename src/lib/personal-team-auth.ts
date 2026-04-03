@@ -5,7 +5,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
-import { coerceTeamSeatCounts, sumExtraTeamSeats } from "@/lib/team-seat-pricing";
+import { sumExtraTeamSeats, teamSeatCountsFromProfileDocument } from "@/lib/team-seat-pricing";
 import {
   MAX_ACTIVE_NON_OWNED_PERSONAL_TEAM_MEMBERSHIPS,
   PERSONAL_TEAMS_COLLECTION,
@@ -138,8 +138,9 @@ export async function ownerPersonalTeamWorkspaceActivated(
   ownerUid: string
 ): Promise<boolean> {
   const snap = await db.collection("profiles").doc(ownerUid).get();
-  const raw = snap.data()?.team_seat_counts;
-  const counts = coerceTeamSeatCounts(raw);
+  const counts = teamSeatCountsFromProfileDocument(
+    snap.data() as Record<string, unknown> | undefined
+  );
   return sumExtraTeamSeats(counts) > 0;
 }
 

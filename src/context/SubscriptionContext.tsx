@@ -15,6 +15,7 @@ import {
   computeTeamRouteSeatEntitlements,
   type PersonalTeamMembershipRow,
 } from "@/lib/subscription-team-route-entitlements";
+import { coerceTeamSeatCounts } from "@/lib/team-seat-pricing";
 
 export type { PersonalTeamMembershipRow };
 
@@ -121,13 +122,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         );
         const t = data.team_seat_counts;
         setTeamSeatCounts(
-          t && typeof t === "object"
-            ? {
-                none: typeof t.none === "number" ? t.none : 0,
-                gallery: typeof t.gallery === "number" ? t.gallery : 0,
-                editor: typeof t.editor === "number" ? t.editor : 0,
-                fullframe: typeof t.fullframe === "number" ? t.fullframe : 0,
-              }
+          t && typeof t === "object" && !Array.isArray(t)
+            ? coerceTeamSeatCounts(t)
             : { none: 0, gallery: 0, editor: 0, fullframe: 0 }
         );
       }

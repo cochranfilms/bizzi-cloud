@@ -16,9 +16,9 @@ import {
 } from "@/lib/personal-team-constants";
 import { countUsedSeatsForTier } from "@/lib/personal-team";
 import {
-  coerceTeamSeatCounts,
   emptyTeamSeatCounts,
   sumExtraTeamSeats,
+  teamSeatCountsFromProfileDocument,
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 import { PERSONAL_TEAM_SEAT_ACCESS_LEVELS } from "@/lib/team-seat-pricing";
@@ -107,7 +107,7 @@ export async function isPersonalTeamFullyClosed(
 }
 
 function teamSeatCountsFromProfile(profile: Record<string, unknown> | undefined) {
-  return coerceTeamSeatCounts(profile?.team_seat_counts ?? {});
+  return teamSeatCountsFromProfileDocument(profile);
 }
 
 export function closeWorkspaceReconciliationError(

@@ -5,7 +5,7 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import type { PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
-import { coerceTeamSeatCounts } from "@/lib/team-seat-pricing";
+import { teamSeatCountsFromProfileDocument } from "@/lib/team-seat-pricing";
 import {
   PERSONAL_TEAM_INVITES_COLLECTION,
   PERSONAL_TEAM_SEATS_COLLECTION,
@@ -71,7 +71,7 @@ export async function validateTeamSeatCapacity(
   profileData: Record<string, unknown> | undefined,
   level: PersonalTeamSeatAccess
 ): Promise<string | null> {
-  const counts = coerceTeamSeatCounts(profileData?.team_seat_counts ?? {});
+  const counts = teamSeatCountsFromProfileDocument(profileData);
   const limit = counts[level];
   const used = await countUsedSeatsForTier(teamOwnerUid, level);
   if (used >= limit) {
