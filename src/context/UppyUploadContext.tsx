@@ -32,6 +32,8 @@ export interface OpenPanelOptions {
   scopeLabel?: string | null;
   /** Display name for drive (e.g. "Gallery Media", "RAW") */
   driveName?: string | null;
+  /** Folder model v2: parent `storage_folders` id when uploading into a nested folder */
+  storageFolderId?: string | null;
   /** Locked Creator RAW session metadata (single destination system) */
   uploadIntent?: string | null;
   lockedDestination?: boolean;
@@ -46,6 +48,7 @@ type PanelTarget = {
   open: boolean;
   driveId: string | null;
   pathPrefix: string;
+  storageFolderId: string | null;
   workspaceId: string | null;
   galleryId: string | null;
   uploadIntent: string | null;
@@ -80,6 +83,7 @@ function sessionKeysMatch(a: PanelTarget, b: PanelTarget): boolean {
   return (
     a.driveId === b.driveId &&
     a.pathPrefix === b.pathPrefix &&
+    a.storageFolderId === b.storageFolderId &&
     a.workspaceId === b.workspaceId &&
     a.galleryId === b.galleryId &&
     a.uploadIntent === b.uploadIntent &&
@@ -98,6 +102,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [open, setOpen] = useState(false);
   const [driveId, setDriveId] = useState<string | null>(null);
   const [pathPrefix, setPathPrefix] = useState("");
+  const [storageFolderId, setStorageFolderId] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>(null);
@@ -125,6 +130,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     open: false,
     driveId: null,
     pathPrefix: "",
+    storageFolderId: null,
     workspaceId: null,
     galleryId: null,
     uploadIntent: null,
@@ -141,6 +147,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       open,
       driveId,
       pathPrefix,
+      storageFolderId,
       workspaceId,
       galleryId,
       uploadIntent,
@@ -155,6 +162,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     open,
     driveId,
     pathPrefix,
+    storageFolderId,
     workspaceId,
     galleryId,
     uploadIntent,
@@ -184,6 +192,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
         open: true,
         driveId: d,
         pathPrefix: prefix,
+        storageFolderId: options?.storageFolderId ?? null,
         workspaceId: ws,
         galleryId: galleryIdOpt,
         uploadIntent: intent,
@@ -222,6 +231,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
 
       setDriveId(d);
       setPathPrefix(prefix);
+      setStorageFolderId(options?.storageFolderId ?? null);
       setWorkspaceId(ws);
       setWorkspaceName(options?.workspaceName ?? null);
       setScopeLabel(options?.scopeLabel ?? null);
@@ -256,6 +266,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setOpen(false);
     setDriveId(null);
     setPathPrefix("");
+    setStorageFolderId(null);
     setWorkspaceId(null);
     setWorkspaceName(null);
     setScopeLabel(null);
@@ -295,6 +306,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           onClose={closePanel}
           driveId={driveId}
           pathPrefix={pathPrefix}
+          storageFolderId={storageFolderId}
           workspaceId={workspaceId}
           workspaceName={workspaceName}
           scopeLabel={scopeLabel}

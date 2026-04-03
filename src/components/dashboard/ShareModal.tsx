@@ -541,30 +541,7 @@ export default function ShareModal({
   const handleClose = useCallback(async () => {
     if (loading) return;
 
-    let token = shareToken ?? initialShareToken ?? null;
-
-    if (recipientTab === "workspace" && !initialShareToken) {
-      if (!workspaceTarget) {
-        setNameError("Select a team or organization workspace first.");
-        return;
-      }
-      if (!shareName.trim()) {
-        setNameError("Please name your share before closing.");
-        return;
-      }
-      const canCreate =
-        Boolean(linkedDriveId) ||
-        (Array.isArray(referencedFileIds) && referencedFileIds.length > 0);
-      if (!canCreate) {
-        setError("Nothing to share (missing folder or file context).");
-        return;
-      }
-      if (!token) {
-        const created = await ensureShare();
-        if (!created) return;
-        token = created;
-      }
-    }
+    const token = shareToken ?? initialShareToken ?? null;
 
     const nameChanged =
       token &&
@@ -607,11 +584,6 @@ export default function ShareModal({
     folderName,
     shareVersion,
     loading,
-    recipientTab,
-    workspaceTarget,
-    linkedDriveId,
-    referencedFileIds,
-    ensureShare,
   ]);
 
   if (!open) return null;

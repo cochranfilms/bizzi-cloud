@@ -8,8 +8,7 @@ import { ChevronDown, Settings, LogOut, Sun, Moon, Building2, Shield, Palette, H
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
-import { getFirebaseAuth } from "@/lib/firebase/client";
-import { signOut } from "firebase/auth";
+import { completeSignOutWithConfirmation } from "@/lib/auth-sign-out-client";
 import DashboardColorsModal from "./DashboardColorsModal";
 import SupportTicketModal from "./SupportTicketModal";
 
@@ -213,10 +212,9 @@ export default function UserMenu({ compact = false, basePath }: UserMenuProps) {
           </div>
           <button
             type="button"
-            onClick={async () => {
-              await signOut(getFirebaseAuth());
-              router.push("/login");
-              router.refresh();
+            onClick={() => {
+              setOpen(false);
+              void completeSignOutWithConfirmation();
             }}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >

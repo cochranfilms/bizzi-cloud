@@ -23,6 +23,11 @@ import {
 import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { buildBackupObjectKey, sanitizeBackupRelativePath } from "@/lib/backup-object-key";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
+import {
+  linkedDriveIsFolderModelV2,
+  resolveV2PlacementForNewUpload,
+  StorageFolderAccessError,
+} from "@/lib/storage-folders";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -52,6 +57,8 @@ export async function POST(request: Request) {
     sourceSurface?: string | null;
     targetDriveName?: string | null;
     resolvedBy?: string | null;
+    folder_id?: string | null;
+    folderId?: string | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -207,6 +214,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: guard.message }, { status: guard.status });
   }
 
+  let v2Placement: Awaited<ReturnType<typeof resolveV2PlacementForNewUpload>> | null =
+    null;
+  if (linkedDriveIsFolderModelV2(driveData)) {
+    const folderIdRaw = body.folderId ?? body.folder_id ?? null;
+    const parentFolderId =
+      folderIdRaw === null || folderIdRaw === undefined || folderIdRaw === ""
+        ? null
+        : String(folderIdRaw);
+    try {
+      v2Placement = await resolveV2PlacementForNewUpload(
+        db,
+        String(driveId),
+        driveData!,
+        parentFolderId,
+        safePath
+      );
+    } catch (err) {
+      await releaseIfPending("finalize_failed");
+      if (err instanceof StorageFolderAccessError) {
+        return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      throw err;
+    }
+  }
+
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data();
 
@@ -259,11 +291,12 @@ export async function POST(request: Request) {
     completed_at: new Date(),
     });
 
+    const relForMeta = v2Placement?.relative_path ?? safePath;
     const fileRef = await db.collection("backup_files").add({
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
     userId: uid,
-    relative_path: safePath,
+    relative_path: relForMeta,
     object_key: objectKey,
     size_bytes: sizeBytes,
     content_type: contentType,
@@ -281,8 +314,16 @@ export async function POST(request: Request) {
     container_id: containerId,
     personal_team_owner_id: personalTeamOwnerId,
     role_at_upload: roleAtUpload,
-    ...macosPackageFirestoreFieldsFromRelativePath(safePath),
-    ...creativeFirestoreFieldsFromRelativePath(safePath),
+    ...(v2Placement
+      ? {
+          folder_id: v2Placement.folder_id,
+          file_name: v2Placement.file_name,
+          file_name_compare_key: v2Placement.file_name_compare_key,
+          folder_path_ids: v2Placement.folder_path_ids,
+        }
+      : {}),
+    ...macosPackageFirestoreFieldsFromRelativePath(relForMeta),
+    ...creativeFirestoreFieldsFromRelativePath(relForMeta),
     });
 
     try {
@@ -301,7 +342,7 @@ export async function POST(request: Request) {
       objectKey,
       backupFileId: fileRef.id,
       userId: uid,
-      relativePath: safePath,
+      relativePath: relForMeta,
       source: "ingest_presigned_complete",
     });
 

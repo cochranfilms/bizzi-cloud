@@ -57,6 +57,8 @@ export async function POST(request: Request) {
   const sourceSurface = metadata.sourceSurface ?? metadata.source_surface ?? null;
   const targetDriveName = metadata.targetDriveName ?? metadata.target_drive_name ?? null;
   const resolvedByMeta = metadata.resolvedBy ?? metadata.resolved_by ?? null;
+  const storageFolderId =
+    metadata.storageFolderId ?? metadata.storage_folder_id ?? null;
 
   let uid: string;
   const authHeader = request.headers.get("Authorization");
@@ -190,6 +192,12 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     storage_quota_reservation_id: reservation_id,
+    storage_folder_id:
+      storageFolderId !== undefined &&
+      storageFolderId !== null &&
+      String(storageFolderId).trim() !== ""
+        ? String(storageFolderId).trim()
+        : null,
   });
 
   return NextResponse.json({ key: objectKey, uploadId, reservation_id });

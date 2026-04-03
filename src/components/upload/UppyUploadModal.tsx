@@ -119,6 +119,7 @@ interface UppyUploadModalProps {
   onClose: () => void;
   driveId: string;
   pathPrefix?: string;
+  storageFolderId?: string | null;
   workspaceId?: string | null;
   workspaceName?: string | null;
   scopeLabel?: string | null;
@@ -144,6 +145,7 @@ export default function UppyUploadModal({
   onClose,
   driveId,
   pathPrefix = "",
+  storageFolderId = null,
   workspaceId = null,
   workspaceName = null,
   scopeLabel = null,
@@ -474,12 +476,17 @@ export default function UppyUploadModal({
           uniqueName = [...segments, renamedLeaf].filter(Boolean).join("/");
         }
       }
-      const relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
+      let relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
+      if (storageFolderId && !galleryId) {
+        const leaf = uniqueName.split("/").filter(Boolean).pop() ?? file.name ?? uniqueName;
+        relPath = leaf;
+      }
       uppy.setFileState(file.id, {
         meta: {
           ...file.meta,
           driveId,
           relativePath: relPath,
+          storageFolderId: storageFolderId ?? undefined,
           sizeBytes: file.size ?? 0,
           workspaceId: workspaceId ?? undefined,
           galleryId: galleryId ?? undefined,
@@ -635,6 +642,7 @@ export default function UppyUploadModal({
                     sourceSurface: meta.sourceSurface ?? null,
                     targetDriveName: meta.targetDriveName ?? null,
                     resolvedBy: meta.resolvedBy ?? null,
+                    folder_id: meta.storageFolderId ?? meta.folder_id ?? null,
                   }),
                 }
               );
@@ -744,6 +752,7 @@ export default function UppyUploadModal({
     open,
     driveId,
     pathPrefix,
+    storageFolderId,
     workspaceId,
     galleryId,
     uploadIntent,

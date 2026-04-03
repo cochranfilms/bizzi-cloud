@@ -96,7 +96,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     getOrCreateGalleryDrive,
     loading: backupDrivesLoading,
   } = useBackup();
-  const { setCurrentDrive: setCurrentFolderDriveId, setCurrentDrivePath } = useCurrentFolder();
+  const {
+    setCurrentDrive: setCurrentFolderDriveId,
+    setCurrentDrivePath,
+    setStorageParentFolderId,
+  } = useCurrentFolder();
   const {
     viewMode,
     cardSize,
@@ -535,10 +539,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       const normalizedPath = pathInsideDrive.replace(/^\/+/, "");
       setCurrentFolderDriveId(driveId);
       setCurrentDrivePath(normalizedPath);
+      setStorageParentFolderId(null);
       const pathQs = normalizedPath ? `&path=${encodeURIComponent(normalizedPath)}` : "";
       router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}${pathQs}`);
     },
-    [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, router]
+    [filesHref, setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId, router]
   );
 
   const openMacosPackageInfo = useCallback((file: RecentFile) => {

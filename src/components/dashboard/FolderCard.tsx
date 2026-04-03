@@ -5,14 +5,25 @@ import type { CardSize, AspectRatio } from "@/context/LayoutSettingsContext";
 import type { CardPresentation } from "@/lib/card-presentation";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { Check, Cloud, Folder, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 import ShareModal from "./ShareModal";
 import ItemActionsMenu from "./ItemActionsMenu";
 import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
-import { useCloudFiles } from "@/hooks/useCloudFiles";
+import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
+import {
+  actorMayMutateLinkedDriveContents,
+  useCloudFiles,
+} from "@/hooks/useCloudFiles";
+import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import {
+  storageFolderRowActiveForUi,
+  storageFolderRowReadyForUi,
+} from "@/lib/storage-folders";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
@@ -43,6 +54,13 @@ export interface FolderItem {
   virtualFolder?: boolean;
   /** When set, path prefix for navigation (e.g. gallery media_folder_segment); use instead of name for path filtering */
   pathPrefix?: string;
+  /** Folder model v2: `storage_folders` document id */
+  storageFolderId?: string;
+  /** V2: linked Storage drive id for API calls */
+  storageLinkedDriveId?: string;
+  storageFolderVersion?: number;
+  storageFolderOperationState?: string;
+  storageFolderLifecycleState?: string;
   /** Gallery Media drive root tile: canonical galleries document id (rollup / dedupe); paths use pathPrefix */
   galleryMediaCanonicalId?: string;
 }
@@ -66,6 +84,9 @@ interface FolderCardProps {
   showCardInfo?: boolean;
   /** Thumbnail browse mode: container-style folder tile */
   presentation?: CardPresentation;
+  /** v2 Storage: drive display name for tree picker */
+  storagePickerDriveLabel?: string;
+  onStorageFolderMutated?: () => void;
 }
 
 // Scaled so largest never exceeds former medium; large = former medium
@@ -88,14 +109,71 @@ export default function FolderCard({
   layoutAspectRatio = "landscape",
   showCardInfo = true,
   presentation = "default",
+  storagePickerDriveLabel,
+  onStorageFolderMutated,
 }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [v2StoragePickerOpen, setV2StoragePickerOpen] = useState(false);
+  const pathname = usePathname();
+  const isEnterpriseContext =
+    typeof pathname === "string" && pathname.startsWith("/enterprise");
+  const { user } = useAuth();
+  const { org, role: orgRole } = useEnterprise();
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
-  const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
+  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
+    useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+
+  const allowV2FolderMutations = useMemo(() => {
+    if (
+      !item.storageFolderId ||
+      !item.storageLinkedDriveId ||
+      item.storageFolderVersion == null ||
+      !user
+    ) {
+      return false;
+    }
+    const drive = linkedDrives.find((d) => d.id === item.storageLinkedDriveId);
+    if (
+      !actorMayMutateLinkedDriveContents(drive, user.uid, {
+        enterpriseOrgId: org?.id,
+        enterpriseRole: orgRole,
+        isEnterpriseContext,
+      })
+    ) {
+      return false;
+    }
+    if (
+      !storageFolderRowActiveForUi({
+        lifecycle_state: item.storageFolderLifecycleState ?? "active",
+      })
+    ) {
+      return false;
+    }
+    if (
+      !storageFolderRowReadyForUi({
+        operation_state: item.storageFolderOperationState,
+        pending_operation: null,
+      })
+    ) {
+      return false;
+    }
+    return true;
+  }, [
+    item.storageFolderId,
+    item.storageLinkedDriveId,
+    item.storageFolderVersion,
+    item.storageFolderLifecycleState,
+    item.storageFolderOperationState,
+    user,
+    linkedDrives,
+    org?.id,
+    orgRole,
+    isEnterpriseContext,
+  ]);
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
@@ -381,7 +459,9 @@ export default function FolderCard({
               />
             </button>
           )}
-          {(onDelete || (!item.hideShare && item.driveId)) && (
+          {(onDelete ||
+            (!item.hideShare && item.driveId) ||
+            allowV2FolderMutations) && (
             <ItemActionsMenu
               actions={[
                 ...(!item.hideShare && item.driveId
@@ -433,6 +513,22 @@ export default function FolderCard({
                         : []),
                     ]
                   : []),
+                ...(allowV2FolderMutations && item.storageFolderId
+                  ? [
+                      {
+                        id: "v2-rename",
+                        label: "Rename folder",
+                        icon: <Pencil className="h-4 w-4" />,
+                        onClick: () => setRenameOpen(true),
+                      },
+                      {
+                        id: "v2-move",
+                        label: "Move folder",
+                        icon: <FolderInput className="h-4 w-4" />,
+                        onClick: () => setV2StoragePickerOpen(true),
+                      },
+                    ]
+                  : []),
                 ...(onDelete && !item.preventDelete
                   ? [
                       {
@@ -461,7 +557,7 @@ export default function FolderCard({
       {item.driveId && (
         <>
           <RenameModal
-            open={renameOpen}
+            open={renameOpen && !item.storageFolderId}
             onClose={() => setRenameOpen(false)}
             currentName={item.name}
             onRename={(newName) => renameFolder(item.driveId!, newName)}
@@ -487,6 +583,43 @@ export default function FolderCard({
           />
         </>
       )}
+      {allowV2FolderMutations &&
+        item.storageFolderId &&
+        item.storageLinkedDriveId &&
+        item.storageFolderVersion != null && (
+          <>
+            <RenameModal
+              open={renameOpen}
+              onClose={() => setRenameOpen(false)}
+              currentName={item.name}
+              onRename={async (newName) => {
+                await renameStorageFolder(
+                  item.storageFolderId!,
+                  newName,
+                  item.storageFolderVersion!
+                );
+                onStorageFolderMutated?.();
+              }}
+              itemType="folder"
+            />
+            <StorageFolderTreePickerModal
+              open={v2StoragePickerOpen}
+              onClose={() => setV2StoragePickerOpen(false)}
+              linkedDriveId={item.storageLinkedDriveId}
+              driveLabel={storagePickerDriveLabel ?? "Storage"}
+              title={`Move “${item.name}” into…`}
+              excludedFolderIds={[item.storageFolderId]}
+              onConfirm={async (targetParentFolderId) => {
+                await moveStorageFolder(
+                  item.storageFolderId!,
+                  targetParentFolderId,
+                  item.storageFolderVersion!
+                );
+                onStorageFolderMutated?.();
+              }}
+            />
+          </>
+        )}
     </>
   );
 }

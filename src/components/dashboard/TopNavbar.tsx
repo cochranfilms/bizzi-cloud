@@ -103,12 +103,19 @@ export default function TopNavbar() {
     }`;
 
   const accountTools = (
-    <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 md:gap-3">
+    <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2 md:gap-3">
       <NotificationBell />
       <WorkspaceSwitcher />
       <UserMenu compact />
     </div>
   );
+
+  /**
+   * Same horizontal band as `desktopNav`: `xl:pr-56` reserves Quick Access width; `1fr auto 1fr`
+   * keeps the title truly centered in that band (not viewport-centered) despite uneven left/right chrome.
+   */
+  const headerTopRowGridCls =
+    "grid min-h-12 w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 md:min-h-0 md:gap-3 xl:pr-56";
 
   /**
    * Match HomeStorageView "Bizzi Cloud Base": `max-w-4xl` centered in the main column.
@@ -155,45 +162,47 @@ export default function TopNavbar() {
     const homeHref = teamNavBase;
     return (
       <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-        <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
-          <button
-            type="button"
-            onClick={() => setMobileOpen((o) => !o)}
-            className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-            aria-label={mobileOpen ? "Close menu" : "Open menu"}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-          <Link
-            href={homeHref}
-            className="flex shrink-0 items-center"
-            onClick={() => setMobileOpen(false)}
-            title={teamWs.teamName}
-            aria-label={`${teamWs.teamName} home`}
-          >
-            {teamWs.teamLogoUrl ? (
-              <Image
-                src={teamWs.teamLogoUrl}
-                alt={teamWs.teamName}
-                width={24}
-                height={24}
-                className="h-6 w-6 flex-shrink-0 object-contain"
-                unoptimized
-              />
-            ) : (
-              <Image
-                src="/logo.png"
-                alt="Bizzi Byte"
-                width={24}
-                height={24}
-                className="flex-shrink-0 object-contain"
-              />
-            )}
-          </Link>
-          <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[min(22rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2">
+        <div className={headerTopRowGridCls}>
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMobileOpen((o) => !o)}
+              className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
             <Link
               href={homeHref}
-              className="pointer-events-auto flex min-w-0 max-w-full items-center justify-center gap-2"
+              className="flex shrink-0 items-center"
+              onClick={() => setMobileOpen(false)}
+              title={teamWs.teamName}
+              aria-label={`${teamWs.teamName} home`}
+            >
+              {teamWs.teamLogoUrl ? (
+                <Image
+                  src={teamWs.teamLogoUrl}
+                  alt={teamWs.teamName}
+                  width={24}
+                  height={24}
+                  className="h-6 w-6 flex-shrink-0 object-contain"
+                  unoptimized
+                />
+              ) : (
+                <Image
+                  src="/logo.png"
+                  alt="Bizzi Byte"
+                  width={24}
+                  height={24}
+                  className="flex-shrink-0 object-contain"
+                />
+              )}
+            </Link>
+          </div>
+          <div className="flex min-w-0 max-w-[min(22rem,calc(100vw-9rem))] justify-center justify-self-center">
+            <Link
+              href={homeHref}
+              className="flex min-w-0 max-w-full items-center justify-center gap-2"
               onClick={() => setMobileOpen(false)}
               title={teamWs.teamName}
             >
@@ -269,35 +278,37 @@ export default function TopNavbar() {
 
   return (
     <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-      <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0">
-        <button
-          type="button"
-          onClick={() => setMobileOpen((o) => !o)}
-          className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
-        >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+      <div className={headerTopRowGridCls}>
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileOpen((o) => !o)}
+            className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
 
-        <Link
-          href="/"
-          className="flex shrink-0 items-center"
-          onClick={() => setMobileOpen(false)}
-          aria-label="Bizzi Cloud home"
-        >
-          <Image
-            src="/logo.png"
-            alt="Bizzi Byte"
-            width={24}
-            height={24}
-            className="object-contain"
-          />
-        </Link>
-
-        <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[min(14rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2">
           <Link
             href="/"
-            className="pointer-events-auto block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
+            className="flex shrink-0 items-center"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Bizzi Cloud home"
+          >
+            <Image
+              src="/logo.png"
+              alt="Bizzi Byte"
+              width={24}
+              height={24}
+              className="object-contain"
+            />
+          </Link>
+        </div>
+
+        <div className="flex min-w-0 max-w-[min(14rem,calc(100vw-9rem))] justify-center justify-self-center">
+          <Link
+            href="/"
+            className="block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
             onClick={() => setMobileOpen(false)}
           >
             Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>

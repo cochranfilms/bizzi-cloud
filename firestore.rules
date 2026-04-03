@@ -66,6 +66,28 @@ service cloud.firestore {
         && (request.auth.uid == resource.data.userId
           || orgLinkedDriveAdmin());
     }
+    /** Nested folder rows (v2); all writes via Admin SDK / API routes. */
+    match /storage_folders/{folderId} {
+      function storageFolderDrive() {
+        return get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id));
+      }
+      function storageFolderDriveReadable() {
+        let drive = storageFolderDrive();
+        return request.auth.uid == drive.data.userId
+          || (drive.data.organization_id is string
+            && exists(/databases/$(database)/documents/organization_seats/$(drive.data.organization_id + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/organization_seats/$(drive.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
+          || (drive.data.organization_id == null
+            && drive.data.personal_team_owner_id == drive.data.userId
+            && drive.data.userId is string
+            && personalTeamSeatAllowsOwnerStorage(drive.data.userId));
+      }
+      allow read: if request.auth != null
+        && resource.data.linked_drive_id is string
+        && exists(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id))
+        && storageFolderDriveReadable();
+      allow write: if false;
+    }
     match /backup_snapshots/{snapshotId} {
       allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;

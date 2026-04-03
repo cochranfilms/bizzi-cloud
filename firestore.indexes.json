@@ -1337,6 +1337,50 @@
       ]
     },
     {
+      "collectionGroup": "storage_folders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "linked_drive_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "parent_folder_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycle_state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name_compare_key",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "linked_drive_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycle_state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "folder_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "file_name_compare_key",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "upload_sessions",
       "queryScope": "COLLECTION",
       "fields": [

@@ -69,6 +69,9 @@ export async function GET(request: Request) {
       creator_section: data.creator_section ?? false,
       is_creator_raw: data.is_creator_raw ?? false,
       personal_team_owner_id: ownerUid,
+      folder_model_version:
+        typeof data.folder_model_version === "number" ? data.folder_model_version : null,
+      supports_nested_folders: data.supports_nested_folders === true ? true : null,
     });
   }
 

@@ -25,7 +25,12 @@ export default function GlobalDropZone() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { linkedDrives, getOrCreateStorageDrive, setFileUploadErrorMessage } = useBackup();
-  const { currentDriveId, currentDrivePath, selectedWorkspaceId } = useCurrentFolder();
+  const {
+    currentDriveId,
+    currentDrivePath,
+    storageParentFolderId,
+    selectedWorkspaceId,
+  } = useCurrentFolder();
   const { org } = useEnterprise();
   const { user } = useAuth();
   const openPanel = useUppyUpload()?.openPanel;
@@ -206,6 +211,7 @@ export default function GlobalDropZone() {
               driveName: data.drive_name ?? panelOptionsBase.driveName,
               workspaceName: data.workspace_name ?? null,
               scopeLabel: data.scope_label ?? null,
+              storageFolderId: storageParentFolderId,
             });
             return;
           } catch (err) {
@@ -218,6 +224,7 @@ export default function GlobalDropZone() {
         openPanel(finalDriveId, resolved.pathPrefix, workspaceId, {
           ...panelOptionsBase,
           initialFiles: files,
+          storageFolderId: storageParentFolderId,
         });
       } catch (err) {
         console.error("Global drop upload failed:", err);
@@ -238,6 +245,7 @@ export default function GlobalDropZone() {
       isEnterpriseFilesNoDrive,
       isGalleryMediaDrive,
       setFileUploadErrorMessage,
+      storageParentFolderId,
     ]
   );
 

@@ -553,7 +553,7 @@ export default function FileCard({
         ) : null}
         {isThumb && showHeartRow ? (
           <div
-            className={`absolute bottom-2 right-2 z-20 rounded-full bg-black/45 p-1 shadow-sm backdrop-blur-sm dark:bg-black/55 ${!showCardInfo ? "opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}
+            className={`absolute bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/45 p-1 shadow-sm backdrop-blur-sm dark:bg-black/55 ${!showCardInfo ? "opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}
             onClick={(e) => e.stopPropagation()}
             role="presentation"
           >
@@ -607,7 +607,7 @@ export default function FileCard({
           </div>
           {showHeartRow ? (
             <div
-              className="mt-auto flex w-full justify-start pt-2"
+              className="mt-auto flex w-full justify-center pt-2"
               onClick={(e) => e.stopPropagation()}
               role="presentation"
             >

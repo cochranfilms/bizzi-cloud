@@ -625,6 +625,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           is_creator_raw: data.is_creator_raw ?? false,
           is_org_shared: data.is_org_shared === true,
           personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
+          folder_model_version:
+            typeof data.folder_model_version === "number" ? data.folder_model_version : null,
+          supports_nested_folders: data.supports_nested_folders === true ? true : null,
         });
       }
 
@@ -690,6 +693,12 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                 is_org_shared: data.is_org_shared === true,
                 personal_team_owner_id:
                   (data.personal_team_owner_id as string | undefined) ?? null,
+                folder_model_version:
+                  typeof data.folder_model_version === "number"
+                    ? data.folder_model_version
+                    : null,
+                supports_nested_folders:
+                  data.supports_nested_folders === true ? true : null,
               });
             }
             setLinkedDrives(drives2);
@@ -733,6 +742,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         is_creator_raw: data.is_creator_raw ?? false,
         is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
+        folder_model_version:
+          typeof data.folder_model_version === "number" ? data.folder_model_version : null,
+        supports_nested_folders: data.supports_nested_folders === true ? true : null,
       };
     };
 

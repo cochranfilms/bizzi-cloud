@@ -8,6 +8,7 @@ import {
   pickStrictPersonalStorageDrive,
   pickTeamWorkspaceStorageDrive,
 } from "@/lib/pick-storage-drive";
+import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
 
 export type DestinationMode =
   | "creator_raw"
@@ -288,6 +289,7 @@ export async function resolveUploadDestination(
     if (validCurrent && currentDriveId) {
       const d = linkedDrives.find((x) => x.id === currentDriveId)!;
       const destinationMode: DestinationMode = teamOwnerUid ? "team_storage" : "storage";
+      const pathPrefix = isLinkedDriveFolderModelV2(d) ? "" : (currentDrivePath ?? "");
       return {
         success: true,
         resolvedSuccessfully: true,
@@ -299,7 +301,7 @@ export async function resolveUploadDestination(
         isLocked: false,
         sourceSurface,
         routeContext,
-        pathPrefix: currentDrivePath ?? "",
+        pathPrefix,
         resolvedBy: "files_current_drive",
       };
     }

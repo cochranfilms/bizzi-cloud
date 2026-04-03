@@ -77,91 +77,104 @@ export default function DesktopTopNavbar({
           : inactiveNavCls
     }`;
 
+  const desktopNav = (
+    <div className="hidden w-full min-w-0 md:block xl:pr-56">
+      <div className="mx-auto flex w-full max-w-4xl justify-center">
+        <nav
+          className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-wrap justify-center gap-0.5 overflow-x-auto px-1 pb-0.5"
+          aria-label="Workspace"
+        >
+          {filteredItems.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/desktop/app" && pathname.startsWith(`${item.href}/`));
+            const hasPowerupColor = isActive && item.activeBgColor;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={navLinkClass(isActive, !!hasPowerupColor)}
+                style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
+              >
+                <Icon
+                  className={`h-4 w-4 flex-shrink-0 ${
+                    hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+                  }`}
+                />
+                <span className="hidden lg:inline">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    </div>
+  );
+
+  const headerTopRowGridCls =
+    "grid min-h-12 w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 md:min-h-0 md:gap-3 xl:pr-56";
+
   return (
     <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-      <div className="relative flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0 md:gap-3">
-        <button
-          type="button"
-          onClick={() => setMobileOpen((o) => !o)}
-          className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
-        >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-
-        {onMountPanelToggle && (
+      <div className={headerTopRowGridCls}>
+        <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <button
             type="button"
-            onClick={onMountPanelToggle}
-            className={`shrink-0 rounded-lg p-2 transition-colors ${
-              mountPanelOpen
-                ? "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
-                : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-            }`}
-            title={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
-            aria-label={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
+            onClick={() => setMobileOpen((o) => !o)}
+            className="-ml-1 shrink-0 rounded-lg p-2 text-neutral-600 hover:bg-neutral-100 md:hidden dark:text-neutral-400 dark:hover:bg-neutral-800"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
           >
-            <HardDrive className="h-5 w-5" />
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-        )}
-        <Link
-          href="/desktop/app"
-          className="flex shrink-0 items-center"
-          onClick={() => setMobileOpen(false)}
-          aria-label="Bizzi Cloud home"
-        >
-          <Image
-            src="/logo.png"
-            alt="Bizzi Byte"
-            width={24}
-            height={24}
-            className="object-contain"
-          />
-        </Link>
 
-        <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[min(14rem,calc(100vw-9rem))] -translate-x-1/2 -translate-y-1/2">
+          {onMountPanelToggle && (
+            <button
+              type="button"
+              onClick={onMountPanelToggle}
+              className={`shrink-0 rounded-lg p-2 transition-colors ${
+                mountPanelOpen
+                  ? "bg-[var(--enterprise-primary)]/10 text-[var(--enterprise-primary)] dark:bg-[var(--enterprise-primary)]/20 dark:text-[var(--enterprise-accent)]"
+                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+              }`}
+              title={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
+              aria-label={mountPanelOpen ? "Hide NLE Mount panel" : "Show NLE Mount panel"}
+            >
+              <HardDrive className="h-5 w-5" />
+            </button>
+          )}
           <Link
             href="/desktop/app"
-            className="pointer-events-auto block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
+            className="flex shrink-0 items-center"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Bizzi Cloud home"
+          >
+            <Image
+              src="/logo.png"
+              alt="Bizzi Byte"
+              width={24}
+              height={24}
+              className="object-contain"
+            />
+          </Link>
+        </div>
+
+        <div className="flex min-w-0 max-w-[min(14rem,calc(100vw-9rem))] justify-center justify-self-center">
+          <Link
+            href="/desktop/app"
+            className="block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
             onClick={() => setMobileOpen(false)}
           >
             Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
           </Link>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
           <NotificationBell />
           <UserMenu compact basePath="/desktop/app" />
         </div>
       </div>
 
-      <nav
-        className="-mx-1 hidden min-h-9 w-full min-w-0 flex-wrap justify-center gap-0.5 overflow-x-auto px-1 md:flex md:pb-0.5"
-        aria-label="Workspace"
-      >
-        {filteredItems.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/desktop/app" && pathname.startsWith(`${item.href}/`));
-          const hasPowerupColor = isActive && item.activeBgColor;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={navLinkClass(isActive, !!hasPowerupColor)}
-              style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
-            >
-              <Icon
-                className={`h-4 w-4 flex-shrink-0 ${
-                  hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
-                }`}
-              />
-              <span className="hidden lg:inline">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {desktopNav}
 
       {mobileOpen && (
         <div

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Check, Cloud, Folder } from "lucide-react";
 import type { FolderItem } from "./FolderCard";
 import ItemActionsMenu from "./ItemActionsMenu";
@@ -8,7 +9,17 @@ import ShareModal from "./ShareModal";
 import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
-import { useCloudFiles } from "@/hooks/useCloudFiles";
+import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
+import {
+  actorMayMutateLinkedDriveContents,
+  useCloudFiles,
+} from "@/hooks/useCloudFiles";
+import { useAuth } from "@/context/AuthContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import {
+  storageFolderRowActiveForUi,
+  storageFolderRowReadyForUi,
+} from "@/lib/storage-folders";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
@@ -40,6 +51,8 @@ interface FolderListRowProps {
   /** Location when browsing inside a drive (virtual folders). */
   currentDriveName?: string | null;
   columnMode?: "full" | "projects";
+  /** After v2 storage_folders rename/move from row actions */
+  onStorageFolderMutated?: () => void;
 }
 
 export default function FolderListRow({
@@ -57,6 +70,7 @@ export default function FolderListRow({
   displayContext,
   currentDriveName,
   columnMode = "full",
+  onStorageFolderMutated,
 }: FolderListRowProps) {
   const rollup = folderRollup ?? {
     descendants: [] as RecentFile[],
@@ -77,9 +91,64 @@ export default function FolderListRow({
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [v2StoragePickerOpen, setV2StoragePickerOpen] = useState(false);
+  const pathname = usePathname();
+  const isEnterpriseContext =
+    typeof pathname === "string" && pathname.startsWith("/enterprise");
+  const { user } = useAuth();
+  const { org, role: orgRole } = useEnterprise();
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
-  const { renameFolder, moveFolderContentsToFolder } = useCloudFiles();
+  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
+    useCloudFiles();
   const { createFolder, linkedDrives } = useBackup();
+
+  const allowV2FolderMutations = useMemo(() => {
+    if (
+      !item.storageFolderId ||
+      !item.storageLinkedDriveId ||
+      item.storageFolderVersion == null ||
+      !user
+    ) {
+      return false;
+    }
+    const drive = linkedDrives.find((d) => d.id === item.storageLinkedDriveId);
+    if (
+      !actorMayMutateLinkedDriveContents(drive, user.uid, {
+        enterpriseOrgId: org?.id,
+        enterpriseRole: orgRole,
+        isEnterpriseContext,
+      })
+    ) {
+      return false;
+    }
+    if (
+      !storageFolderRowActiveForUi({
+        lifecycle_state: item.storageFolderLifecycleState ?? "active",
+      })
+    ) {
+      return false;
+    }
+    if (
+      !storageFolderRowReadyForUi({
+        operation_state: item.storageFolderOperationState,
+        pending_operation: null,
+      })
+    ) {
+      return false;
+    }
+    return true;
+  }, [
+    item.storageFolderId,
+    item.storageLinkedDriveId,
+    item.storageFolderVersion,
+    item.storageFolderLifecycleState,
+    item.storageFolderOperationState,
+    user,
+    linkedDrives,
+    org?.id,
+    orgRole,
+    isEnterpriseContext,
+  ]);
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
     hasEditor,
@@ -233,7 +302,9 @@ export default function FolderListRow({
         ) : null}
         <td className="px-4 py-2">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            {(onDelete || (!item.hideShare && item.driveId)) && (
+            {(onDelete ||
+              (!item.hideShare && item.driveId) ||
+              allowV2FolderMutations) && (
               <ItemActionsMenu
                 actions={[
                   ...(!item.hideShare && item.driveId
@@ -285,6 +356,22 @@ export default function FolderListRow({
                           : []),
                     ]
                     : []),
+                  ...(allowV2FolderMutations && item.storageFolderId
+                    ? [
+                        {
+                          id: "v2-rename",
+                          label: "Rename folder",
+                          icon: undefined,
+                          onClick: () => setRenameOpen(true),
+                        },
+                        {
+                          id: "v2-move",
+                          label: "Move folder",
+                          icon: undefined,
+                          onClick: () => setV2StoragePickerOpen(true),
+                        },
+                      ]
+                    : []),
                   ...(onDelete && !item.preventDelete
                     ? [
                         {
@@ -313,7 +400,7 @@ export default function FolderListRow({
       {item.driveId && (
         <>
           <RenameModal
-            open={renameOpen}
+            open={renameOpen && !item.storageFolderId}
             onClose={() => setRenameOpen(false)}
             currentName={item.name}
             onRename={(newName) => renameFolder(item.driveId!, newName)}
@@ -339,6 +426,43 @@ export default function FolderListRow({
           />
         </>
       )}
+      {allowV2FolderMutations &&
+        item.storageFolderId &&
+        item.storageLinkedDriveId &&
+        item.storageFolderVersion != null && (
+          <>
+            <RenameModal
+              open={renameOpen}
+              onClose={() => setRenameOpen(false)}
+              currentName={item.name}
+              onRename={async (newName) => {
+                await renameStorageFolder(
+                  item.storageFolderId!,
+                  newName,
+                  item.storageFolderVersion!
+                );
+                onStorageFolderMutated?.();
+              }}
+              itemType="folder"
+            />
+            <StorageFolderTreePickerModal
+              open={v2StoragePickerOpen}
+              onClose={() => setV2StoragePickerOpen(false)}
+              linkedDriveId={item.storageLinkedDriveId}
+              driveLabel={currentDriveName ?? "Storage"}
+              title={`Move “${item.name}” into…`}
+              excludedFolderIds={[item.storageFolderId]}
+              onConfirm={async (targetParentFolderId) => {
+                await moveStorageFolder(
+                  item.storageFolderId!,
+                  targetParentFolderId,
+                  item.storageFolderVersion!
+                );
+                onStorageFolderMutated?.();
+              }}
+            />
+          </>
+        )}
     </>
   );
 }

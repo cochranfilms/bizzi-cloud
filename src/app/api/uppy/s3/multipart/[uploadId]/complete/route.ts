@@ -22,6 +22,12 @@ import {
 } from "@/lib/storage-quota-reservations";
 import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
+import { sanitizeBackupRelativePath } from "@/lib/backup-object-key";
+import {
+  linkedDriveIsFolderModelV2,
+  resolveV2PlacementForNewUpload,
+  StorageFolderAccessError,
+} from "@/lib/storage-folders";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -272,6 +278,32 @@ export async function POST(
   const driveSnap = driveSnapPreComplete;
   const driveData = driveSnap.data();
 
+  const safePathMultipart = sanitizeBackupRelativePath(relativePath);
+  let v2Placement: Awaited<ReturnType<typeof resolveV2PlacementForNewUpload>> | null =
+    null;
+  if (driveData && linkedDriveIsFolderModelV2(driveData)) {
+    const folderRaw = data.storage_folder_id ?? data.storageFolderId ?? null;
+    const parentFolderId =
+      folderRaw === null || folderRaw === undefined || folderRaw === ""
+        ? null
+        : String(folderRaw);
+    try {
+      v2Placement = await resolveV2PlacementForNewUpload(
+        db,
+        String(driveId),
+        driveData,
+        parentFolderId,
+        safePathMultipart
+      );
+    } catch (err) {
+      if (err instanceof StorageFolderAccessError) {
+        return jsonError(err.message, err.status);
+      }
+      throw err;
+    }
+  }
+  const relForMeta = v2Placement?.relative_path ?? relativePath;
+
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const uploadMeta = await resolveBackupUploadMetadata(db, {
     uid,
@@ -295,7 +327,7 @@ export async function POST(
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
     userId: uid,
-    relative_path: relativePath,
+    relative_path: relForMeta,
     object_key: objectKey,
     size_bytes: fileSize,
     content_type: contentType,
@@ -312,8 +344,16 @@ export async function POST(
     container_id: uploadMeta.containerId,
     personal_team_owner_id: uploadMeta.personalTeamOwnerId,
     role_at_upload: uploadMeta.roleAtUpload,
-    ...macosPackageFirestoreFieldsFromRelativePath(relativePath),
-    ...creativeFirestoreFieldsFromRelativePath(relativePath),
+    ...(v2Placement
+      ? {
+          folder_id: v2Placement.folder_id,
+          file_name: v2Placement.file_name,
+          file_name_compare_key: v2Placement.file_name_compare_key,
+          folder_path_ids: v2Placement.folder_path_ids,
+        }
+      : {}),
+    ...macosPackageFirestoreFieldsFromRelativePath(relForMeta),
+    ...creativeFirestoreFieldsFromRelativePath(relForMeta),
   });
 
   try {
@@ -333,7 +373,7 @@ export async function POST(
       objectKey,
       backupFileId: fileRef.id,
       userId: uid,
-      relativePath,
+      relativePath: relForMeta,
       source: "ingest_multipart_complete",
     });
 
@@ -385,8 +425,8 @@ export async function POST(
     linked_drive_id: driveId,
     file_id: fileRef.id,
     target_type: "file",
-    target_name: relativePath.split("/").pop() ?? relativePath,
-    file_path: relativePath,
+    target_name: relForMeta.split("/").pop() ?? relForMeta,
+    file_path: relForMeta,
     metadata: {
       file_size: fileSize,
       mime_type: contentType,

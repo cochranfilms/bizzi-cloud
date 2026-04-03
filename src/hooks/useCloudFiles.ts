@@ -96,6 +96,33 @@ function shouldQueryDriveWideFiles(d: LinkedDrive | undefined, uid: string): boo
   return d.user_id === uid;
 }
 
+/** Drive-level mutations (nested folders, etc.): owner, enterprise org admin, or team owner container. Server still enforces seats. */
+export function actorMayMutateLinkedDriveContents(
+  drive: LinkedDrive | undefined,
+  actorUid: string,
+  options: {
+    enterpriseOrgId: string | null | undefined;
+    enterpriseRole: string | null | undefined;
+    isEnterpriseContext: boolean;
+  }
+): boolean {
+  if (!drive) return false;
+  if (drive.user_id === actorUid) return true;
+  const orgId = drive.organization_id ?? null;
+  if (orgId) {
+    const inCtx =
+      options.isEnterpriseContext &&
+      !!options.enterpriseOrgId &&
+      options.enterpriseOrgId === orgId;
+    if (inCtx && options.enterpriseRole === "admin") return true;
+    return false;
+  }
+  if (drive.personal_team_owner_id) {
+    return drive.user_id === actorUid;
+  }
+  return false;
+}
+
 /** Matches server trash/move policy so drive owners and org admins can move others’ files (e.g. team home). */
 function actorMayMoveBackupFile(
   data: DocumentData,
@@ -139,6 +166,115 @@ function backupModifiedMs(data: DocumentData): number {
 }
 
 const TRASH_API_BATCH = 200;
+
+export function storageListRowToRecentFile(
+  raw: Record<string, unknown>,
+  driveId: string,
+  driveName: string
+): RecentFile {
+  const fileName =
+    String(raw.file_name ?? "").trim() ||
+    (String(raw.relative_path ?? "").split("/").filter(Boolean).pop() ?? "");
+  const path = String(raw.relative_path ?? (fileName || ""));
+  const mod = raw.modified_at;
+  let modifiedAt: string | null = null;
+  if (typeof mod === "string") modifiedAt = mod;
+  else if (mod && typeof (mod as { toDate?: () => Date }).toDate === "function") {
+    modifiedAt = (mod as { toDate: () => Date }).toDate().toISOString();
+  }
+  const up = raw.uploaded_at;
+  let uploadedAt: string | null = null;
+  if (typeof up === "string") uploadedAt = up;
+  else if (up && typeof (up as { toDate?: () => Date }).toDate === "function") {
+    uploadedAt = (up as { toDate: () => Date }).toDate().toISOString();
+  }
+  return {
+    id: String(raw.id ?? ""),
+    name: fileName || path.split("/").pop() || "?",
+    path,
+    objectKey: String(raw.object_key ?? ""),
+    size: Number(raw.size_bytes ?? 0),
+    modifiedAt,
+    uploadedAt,
+    driveId,
+    driveName,
+    contentType: (raw.content_type as string) ?? null,
+    assetType: (raw.asset_type as string) ?? null,
+    galleryId: (raw.gallery_id as string) ?? null,
+    proxyStatus: (raw.proxy_status as RecentFile["proxyStatus"]) ?? null,
+    folder_id: (raw.folder_id as string) ?? null,
+    file_name: (raw.file_name as string) ?? fileName ?? null,
+    macosPackageId: (raw.macos_package_id as string) ?? null,
+    resolution_w: raw.resolution_w != null ? Number(raw.resolution_w) : null,
+    resolution_h: raw.resolution_h != null ? Number(raw.resolution_h) : null,
+    duration_sec: raw.duration_sec != null ? Number(raw.duration_sec) : null,
+    video_codec: (raw.video_codec as string) ?? null,
+    width: raw.width != null ? Number(raw.width) : null,
+    height: raw.height != null ? Number(raw.height) : null,
+  };
+}
+
+/** Narrow folder row from storage-folders list API for UI and picker (not full Firestore). */
+export type StorageFolderListFolder = {
+  id: string;
+  name: string;
+  parent_folder_id: string | null;
+  path_ids: string[];
+  depth: number;
+  version: number;
+  operation_state: string;
+  lifecycle_state: string;
+  updated_at: string | null;
+};
+
+/** Lists one level of a folder model v2 Storage drive via API. */
+export async function fetchStorageFolderList(
+  driveId: string,
+  parentFolderId: string | null,
+  driveName: string
+): Promise<{
+  folders: StorageFolderListFolder[];
+  files: RecentFile[];
+}> {
+  const auth = getFirebaseAuth().currentUser;
+  if (!auth) return { folders: [], files: [] };
+  const token = await getUserIdToken(auth, false);
+  if (!token) return { folders: [], files: [] };
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+  const qs = new URLSearchParams({ drive_id: driveId });
+  if (parentFolderId) qs.set("parent_folder_id", parentFolderId);
+  const res = await fetch(`${base}/api/storage-folders/list?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return { folders: [], files: [] };
+  const data = (await res.json()) as {
+    folders?: Array<Record<string, unknown>>;
+    files?: Array<Record<string, unknown>>;
+  };
+  const folders: StorageFolderListFolder[] = (data.folders ?? []).map((f) => {
+    const ua = f.updated_at as unknown;
+    let updated_at: string | null = null;
+    if (typeof ua === "string") updated_at = ua;
+    else if (ua && typeof (ua as { toDate?: () => Date }).toDate === "function") {
+      updated_at = (ua as { toDate: () => Date }).toDate().toISOString();
+    }
+    return {
+      id: String(f.id ?? ""),
+      name: String(f.name ?? ""),
+      parent_folder_id: (f.parent_folder_id as string | null) ?? null,
+      path_ids: Array.isArray(f.path_ids) ? [...(f.path_ids as string[])] : [],
+      depth: typeof f.depth === "number" ? f.depth : Number(f.depth ?? 0),
+      version: typeof f.version === "number" ? f.version : Number(f.version ?? 1),
+      operation_state: String(f.operation_state ?? "ready"),
+      lifecycle_state: String(f.lifecycle_state ?? "active"),
+      updated_at,
+    };
+  });
+  const files = (data.files ?? []).map((raw) =>
+    storageListRowToRecentFile(raw, driveId, driveName)
+  );
+  return { folders, files };
+}
 
 /** Drive detail views need the full tree; filter API is paginated (max 120/page). */
 const MAX_FILES_DRIVE_LIST = 25_000;
@@ -279,6 +415,9 @@ export interface RecentFile {
   creativeApp?: string | null;
   creativeDisplayLabel?: string | null;
   projectFileType?: string | null;
+  /** Folder model v2 parent `storage_folders` id (null = drive root) */
+  folder_id?: string | null;
+  file_name?: string | null;
 }
 
 /** Map /api/files/filter JSON row to RecentFile (enterprise path avoids client Firestore aggregation 403). */
@@ -1431,12 +1570,22 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       ) {
         return;
       }
-      const path = (data.relative_path as string) ?? "";
-      const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
-      await updateDoc(doc(db, "backup_files", fileId), {
-        linked_drive_id: targetDriveId,
-        relative_path: fileName,
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/files/move-to-drive`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          file_ids: [fileId],
+          target_drive_id: targetDriveId,
+          target_folder_id: null,
+        }),
       });
+      if (!res.ok) return;
       await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();
@@ -1461,17 +1610,32 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         enterpriseRole: orgRole,
         isEnterpriseContext,
       };
+      const allowed: string[] = [];
       for (const fileId of fileIds) {
         const fileSnap = await getDoc(doc(db, "backup_files", fileId));
         if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
         if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
-        const path = (data.relative_path as string) ?? "";
-        const fileName = (path.split("/").filter(Boolean).pop() ?? path) || "file";
-        await updateDoc(doc(db, "backup_files", fileId), {
-          linked_drive_id: targetDriveId,
-          relative_path: fileName,
-        });
+        allowed.push(fileId);
+      }
+      if (allowed.length === 0) return;
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/files/move-to-drive`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          file_ids: allowed,
+          target_drive_id: targetDriveId,
+          target_folder_id: null,
+        }),
+      });
+      if (!res.ok) return;
+      for (const fileId of allowed) {
         await reconcileMacosPackageForBackupFileClient(fileId);
       }
       bumpStorageVersion();
@@ -1486,6 +1650,104 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       bumpStorageVersion,
       scheduleDebouncedPostTrashMetadataRefresh,
     ]
+  );
+
+  const moveFilesToStorageFolder = useCallback(
+    async (fileIds: string[], targetFolderId: string | null) => {
+      if (!isFirebaseConfigured() || !user || fileIds.length === 0) return;
+      const db = getFirebaseFirestore();
+      const moveOpts = {
+        enterpriseOrgId: orgId,
+        enterpriseRole: orgRole,
+        isEnterpriseContext,
+      };
+      const allowed: string[] = [];
+      for (const fileId of fileIds) {
+        const fileSnap = await getDoc(doc(db, "backup_files", fileId));
+        if (!fileSnap.exists()) continue;
+        const data = fileSnap.data()!;
+        if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
+        allowed.push(fileId);
+      }
+      if (allowed.length === 0) return;
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      for (const file_id of allowed) {
+        const res = await fetch(`${base}/api/files/move-to-folder`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ file_id, target_folder_id: targetFolderId }),
+        });
+        if (!res.ok) return;
+        await reconcileMacosPackageForBackupFileClient(file_id);
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [
+      user,
+      linkedDrives,
+      orgId,
+      orgRole,
+      isEnterpriseContext,
+      bumpStorageVersion,
+      scheduleDebouncedPostTrashMetadataRefresh,
+    ]
+  );
+
+  const renameStorageFolder = useCallback(
+    async (folderId: string, name: string, version: number) => {
+      if (!user) throw new Error("Not signed in");
+      const token = await getCurrentUserIdToken(true);
+      if (!token) throw new Error("Not signed in");
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/storage-folders/${encodeURIComponent(folderId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, version }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to rename folder");
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [user, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
+  );
+
+  const moveStorageFolder = useCallback(
+    async (folderId: string, targetParentFolderId: string | null, version: number) => {
+      if (!user) throw new Error("Not signed in");
+      const token = await getCurrentUserIdToken(true);
+      if (!token) throw new Error("Not signed in");
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/storage-folders/${encodeURIComponent(folderId)}/move`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          target_parent_folder_id: targetParentFolderId,
+          version,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to move folder");
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [user, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
   const collectActiveFileIdsUnderStoragePathPrefix = useCallback(
@@ -1865,6 +2127,9 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     renameFolder,
     moveFile,
     moveFilesToFolder,
+    moveFilesToStorageFolder,
+    renameStorageFolder,
+    moveStorageFolder,
     moveFolderContentsToFolder,
     getFileIdsForBulkShare,
     trashAllFilesUnderStoragePath,

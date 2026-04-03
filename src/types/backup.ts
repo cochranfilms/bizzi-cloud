@@ -16,6 +16,9 @@ export interface LinkedDrive {
   is_org_shared?: boolean;
   /** Team shared drive: files uploaded from this drive attribute storage to this owner */
   personal_team_owner_id?: string | null;
+  /** 2 = first-class storage_folders + folder_id on backup_files */
+  folder_model_version?: number | null;
+  supports_nested_folders?: boolean | null;
 }
 
 export interface BackupSnapshot {
@@ -37,6 +40,10 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   backup_snapshot_id: string;
   linked_drive_id: string;
   relative_path: string;
+  /** Folder model v2: parent storage_folder id (null = drive root) */
+  folder_id?: string | null;
+  file_name?: string | null;
+  file_name_compare_key?: string | null;
   object_key: string;
   size_bytes: number;
   modified_at: string | null;
