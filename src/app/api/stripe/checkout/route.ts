@@ -13,7 +13,13 @@ import {
   type PersonalTeamSeatAccess,
 } from "@/lib/team-seat-pricing";
 import type { PlanId, AddonId, BillingCycle } from "@/lib/plan-constants";
-import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
+import {
+  applyBizziSubscriptionConnectConfigToSubscriptionData,
+  buildBizziSubscriptionConnectConfig,
+  cochranConnectJsonLog,
+  resolveCochranConnectDestination,
+} from "@/lib/stripe-connect-cochran";
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -205,6 +211,7 @@ export async function POST(request: Request) {
     "http://localhost:3000";
 
   const stripe = getStripeInstance();
+  const db = getAdminFirestore();
 
   const metadata: Record<string, string> = {
     planId,
@@ -232,10 +239,37 @@ export async function POST(request: Request) {
   // Reuse existing Stripe customer for returning users (e.g. after account delete + restore)
   let stripeCustomerId: string | undefined;
   if (!isGuestCheckout && uid) {
-    const db = getAdminFirestore();
     const profileSnap = await db.collection("profiles").doc(uid).get();
     stripeCustomerId = profileSnap.data()?.stripe_customer_id as string | undefined;
   }
+
+  /**
+   * Cochran Connect 60/40 split applies ONLY here:
+   * - `mode: "subscription"` consumer signup on this route (/api/stripe/checkout).
+   * Do NOT call these helpers from one-time payment checkouts, enterprise/org billing,
+   * standalone add-on or team-seat flows, or invoice-only paths unless product explicitly extends scope.
+   *
+   * v1 does not set on_behalf_of (platform is merchant of record; see stripe-connect-cochran.ts).
+   */
+  const cochranResolution = await resolveCochranConnectDestination(stripe, db, async (operatorEmail) => {
+    try {
+      const r = await getAdminAuth().getUserByEmail(operatorEmail);
+      return { uid: r.uid };
+    } catch {
+      return null;
+    }
+  });
+  if (cochranResolution.mode === "platform_only") {
+    console.warn(
+      cochranConnectJsonLog({
+        action: "subscription_checkout_platform_only",
+        reason: cochranResolution.reason,
+        ...cochranResolution.logFields,
+      })
+    );
+  }
+  const cochranConfig = buildBizziSubscriptionConnectConfig(metadata, cochranResolution);
+  const subscription_data = applyBizziSubscriptionConnectConfigToSubscriptionData(metadata, cochranConfig);
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -246,9 +280,7 @@ export async function POST(request: Request) {
       success_url: successUrl,
       cancel_url: `${baseUrl}/?checkout=cancelled`,
       metadata,
-      subscription_data: {
-        metadata: { ...metadata },
-      },
+      subscription_data,
     });
 
     if (!session.url) {
@@ -259,7 +291,6 @@ export async function POST(request: Request) {
     }
 
     // Store pending checkout for abandonment tracking
-    const db = getAdminFirestore();
     await db.collection("pending_checkouts").doc(session.id).set({
       email: email ?? null,
       name: isGuestCheckout ? (body.name as string).trim() : null,

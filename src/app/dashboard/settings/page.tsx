@@ -25,6 +25,7 @@ import {
   Building2,
   HelpCircle,
   CloudUpload,
+  Link2,
 } from "lucide-react";
 import StorageAnalyticsPage from "@/components/dashboard/storage/StorageAnalyticsPage";
 import { useDesktopMode } from "@/hooks/useDesktopMode";
@@ -53,6 +54,8 @@ import type { SettingsNavItem } from "@/components/settings/SettingsSidebarNav";
 import DashboardWorkspaceAccessSection from "@/components/settings/DashboardWorkspaceAccessSection";
 import SettingsHelpSupportSection from "@/components/settings/SettingsHelpSupportSection";
 import WorkspaceMigrationSection from "@/components/migration/WorkspaceMigrationSection";
+import CochranConnectSettingsSection from "@/components/settings/CochranConnectSettingsSection";
+import { isCochranConnectOperatorEmail } from "@/lib/cochran-connect-operator";
 
 const WEB_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.bizzicloud.io";
 
@@ -952,13 +955,19 @@ function SettingsContent() {
     (!subLoading && allowsTeamSeats && ownsPersonalTeam) ||
     (hostedTeamOwnerUid !== undefined && hostedTeamOwnerUid !== null);
 
+  const showCochranConnectNav =
+    user?.email != null && isCochranConnectOperatorEmail(user.email);
+
   const navItems = useMemo(() => {
     const items = [...DASHBOARD_SETTINGS_NAV_BASE];
+    if (showCochranConnectNav) {
+      items.push({ id: "connect", label: "Connect", icon: Link2 });
+    }
     if (showWorkspaceAccessNav) {
       items.push({ id: "workspace-access", label: "Workspace access", icon: Building2 });
     }
     return items;
-  }, [showWorkspaceAccessNav]);
+  }, [showWorkspaceAccessNav, showCochranConnectNav]);
 
   const navIds = useMemo(() => new Set(navItems.map((i) => i.id)), [navItems]);
 
@@ -1006,6 +1015,9 @@ function SettingsContent() {
     if (raw === "migration" && navIds.has("migration")) {
       setActive("migration");
     }
+    if (raw === "connect" && navIds.has("connect")) {
+      setActive("connect");
+    }
   }, [navIds]);
 
   return (
@@ -1037,6 +1049,7 @@ function SettingsContent() {
             <WorkspaceMigrationSection oauthReturnPath="/dashboard/settings#migration" />
           )}
           {active === "privacy" && <PrivacySection />}
+          {active === "connect" && showCochranConnectNav && <CochranConnectSettingsSection />}
           {/* Keep mounted so Stripe return query params still trigger refetch/banners. */}
           <div className={active === "billing" ? "space-y-6" : "hidden"}>
             <SubscriptionSection />

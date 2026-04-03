@@ -35,6 +35,10 @@ import {
 import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import {
+  cochranConnectJsonLog,
+  mergeCochranConnectProfileFromStripeAccount,
+} from "@/lib/stripe-connect-cochran";
 
 type SubscriptionItemWithPrice = Stripe.SubscriptionItem & { price: Stripe.Price };
 
@@ -219,6 +223,27 @@ export async function POST(request: Request) {
       await db.collection("pending_checkouts").doc(session.id).update({
         status: "abandoned",
       }).catch(() => {});
+      break;
+    }
+
+    /**
+     * Provisioning remains driven by `checkout.session.completed` and `invoice.paid`.
+     * This event is intentional for audits, support, and future hooks when Stripe's delivery order differs.
+     */
+    case "customer.subscription.created": {
+      const sub = event.data.object as Stripe.Subscription;
+      const customerId =
+        typeof sub.customer === "string"
+          ? sub.customer
+          : sub.customer?.id ?? null;
+      console.log(
+        cochranConnectJsonLog({
+          action: "subscription_created_observed",
+          subscription_id: sub.id,
+          customer: customerId,
+          metadata_user_id: sub.metadata?.userId ?? null,
+        })
+      );
       break;
     }
 
@@ -808,6 +833,30 @@ export async function POST(request: Request) {
         console.error("[Stripe webhook] Ensure EMAILJS_TEMPLATE_ID_SIGNUP is set and signup-link template exists in EmailJS dashboard");
       }
 
+      break;
+    }
+
+    case "account.updated": {
+      const acct = event.data.object as Stripe.Account;
+      try {
+        await mergeCochranConnectProfileFromStripeAccount(db, acct);
+      } catch (err) {
+        console.error("[Stripe webhook] account.updated cochran connect reconcile:", err);
+      }
+      break;
+    }
+
+    case "capability.updated": {
+      const cap = event.data.object as Stripe.Capability;
+      const accountId =
+        typeof cap.account === "string" ? cap.account : cap.account?.id;
+      if (!accountId) break;
+      try {
+        const acct = await stripe.accounts.retrieve(accountId);
+        await mergeCochranConnectProfileFromStripeAccount(db, acct);
+      } catch (err) {
+        console.error("[Stripe webhook] capability.updated cochran connect reconcile:", err);
+      }
       break;
     }
 
