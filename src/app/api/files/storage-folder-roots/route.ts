@@ -5,12 +5,14 @@
  */
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
+  BACKUP_LIFECYCLE_ACTIVE,
   BACKUP_LIFECYCLE_TRASHED,
   isBackupFileActiveForListing,
   resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
+import { listStorageFolderChildren } from "@/lib/storage-folders";
 import {
   fileBelongsToPersonalTeamContainer,
   fileVisibleOnPersonalDashboard,
@@ -69,6 +71,54 @@ async function walkPersonalDriveForSegments(
   return map;
 }
 
+type StorageFolderRootRow = {
+  drive_id: string;
+  name: string;
+  path: string;
+  file_count: number;
+  storage_folder_id?: string;
+  storage_folder_version?: number;
+  operation_state?: string;
+  lifecycle_state?: string;
+};
+
+/** Root `storage_folders` rows for folder model v2 (e.g. home “Bizzi Cloud Folders” + migration-created folders). */
+async function appendV2StorageRootFolderRows(
+  db: Firestore,
+  driveId: string,
+  folders: StorageFolderRootRow[]
+): Promise<void> {
+  const { folders: v2Roots } = await listStorageFolderChildren(db, driveId, null);
+  for (const f of v2Roots) {
+    const fid = String(f.id ?? "").trim();
+    const fname = String(f.name ?? "").trim();
+    if (!fid || !fname) continue;
+
+    const { folders: subFolders } = await listStorageFolderChildren(db, driveId, fid);
+    const filesSnap = await db
+      .collection("backup_files")
+      .where("linked_drive_id", "==", driveId)
+      .where("folder_id", "==", fid)
+      .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+      .select()
+      .limit(500)
+      .get();
+
+    const itemCount = subFolders.length + filesSnap.size;
+    const ver = f.version;
+    folders.push({
+      drive_id: driveId,
+      name: fname,
+      path: "",
+      file_count: itemCount,
+      storage_folder_id: fid,
+      storage_folder_version: typeof ver === "number" ? ver : Number(ver ?? 1),
+      operation_state: typeof f.operation_state === "string" ? f.operation_state : undefined,
+      lifecycle_state: typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+    });
+  }
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -113,8 +163,7 @@ export async function GET(request: Request) {
   }
 
   const db = getAdminFirestore();
-  type Row = { drive_id: string; name: string; path: string; file_count: number };
-  const folders: Row[] = [];
+  const folders: StorageFolderRootRow[] = [];
 
   if (personal) {
     if (teamOwnerId) {
@@ -141,6 +190,9 @@ export async function GET(request: Request) {
         );
         for (const [name, file_count] of map.entries()) {
           folders.push({ drive_id: driveId, name, path: name, file_count });
+        }
+        if (!trashOnly && Number(data.folder_model_version) === 2) {
+          await appendV2StorageRootFolderRows(db, driveId, folders);
         }
       })
     );
@@ -177,6 +229,9 @@ export async function GET(request: Request) {
         );
         for (const [name, file_count] of map.entries()) {
           folders.push({ drive_id: driveId, name, path: name, file_count });
+        }
+        if (!trashOnly && Number(data.folder_model_version) === 2) {
+          await appendV2StorageRootFolderRows(db, driveId, folders);
         }
       })
     );

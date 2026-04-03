@@ -29,6 +29,11 @@ import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import { consolidateLegacyDriveIntoStorage } from "@/lib/consolidate-legacy-drive-client";
+import {
+  isLegacyCustomLinkedDriveForConsolidation,
+  shouldFreezeNewLegacyLinkedDriveFolders,
+} from "@/lib/storage-folder-model-policy";
 
 export interface FolderItem {
   name: string;
@@ -63,6 +68,8 @@ export interface FolderItem {
   storageFolderLifecycleState?: string;
   /** Gallery Media drive root tile: canonical galleries document id (rollup / dedupe); paths use pathPrefix */
   galleryMediaCanonicalId?: string;
+  /** Legacy linked drive; files were moved — open goes to Storage folder */
+  isConsolidatedStorageShortcut?: boolean;
 }
 
 interface FolderCardProps {
@@ -87,6 +94,8 @@ interface FolderCardProps {
   /** v2 Storage: drive display name for tree picker */
   storagePickerDriveLabel?: string;
   onStorageFolderMutated?: () => void;
+  /** Opens parent “Consolidate into Storage” flow (legacy custom drives only). */
+  onConsolidateMenuSelect?: () => void;
 }
 
 // Scaled so largest never exceeds former medium; large = former medium
@@ -111,6 +120,7 @@ export default function FolderCard({
   presentation = "default",
   storagePickerDriveLabel,
   onStorageFolderMutated,
+  onConsolidateMenuSelect,
 }: FolderCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -125,7 +135,15 @@ export default function FolderCard({
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
     useCloudFiles({ subscribeDriveListing: false });
-  const { createFolder, linkedDrives } = useBackup();
+  const { createFolder, linkedDrives, bumpStorageVersion } = useBackup();
+
+  const sourceLinkedForConsolidation = item.driveId
+    ? linkedDrives.find((d) => d.id === item.driveId)
+    : undefined;
+  const offerLegacyConsolidation =
+    !!sourceLinkedForConsolidation &&
+    shouldFreezeNewLegacyLinkedDriveFolders(linkedDrives) &&
+    isLegacyCustomLinkedDriveForConsolidation(sourceLinkedForConsolidation);
 
   const allowV2FolderMutations = useMemo(() => {
     if (
@@ -422,6 +440,11 @@ export default function FolderCard({
                 >
                   {item.name}
                 </h3>
+                {item.isConsolidatedStorageShortcut ? (
+                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-bizzi-blue dark:text-bizzi-cyan">
+                    In Storage
+                  </p>
+                ) : null}
                 {showCardInfo && (
                   <p
                     className={`${
@@ -485,6 +508,16 @@ export default function FolderCard({
                             ? unpinItem("folder", item.driveId!)
                             : pinItem("folder", item.driveId!),
                       },
+                      ...(offerLegacyConsolidation && onConsolidateMenuSelect
+                        ? [
+                            {
+                              id: "consolidate-into-storage",
+                              label: "Consolidate into Storage",
+                              icon: <FolderInput className="h-4 w-4" />,
+                              onClick: onConsolidateMenuSelect,
+                            },
+                          ]
+                        : []),
                       ...(!item.preventRename
                         ? [
                             {
@@ -577,6 +610,16 @@ export default function FolderCard({
             onClose={() => setCreateFolderOpen(false)}
             selectedFolderKeys={[item.key]}
             onCreateAndMove={async (folderName) => {
+              if (offerLegacyConsolidation && item.driveId && user) {
+                await consolidateLegacyDriveIntoStorage(
+                  () => user.getIdToken(),
+                  item.driveId,
+                  folderName,
+                );
+                bumpStorageVersion();
+                onStorageFolderMutated?.();
+                return;
+              }
               const drive = await createFolder(folderName);
               await moveFolderContentsToFolder(item.driveId!, drive.id);
             }}

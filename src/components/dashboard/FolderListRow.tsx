@@ -25,6 +25,11 @@ import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
+import { consolidateLegacyDriveIntoStorage } from "@/lib/consolidate-legacy-drive-client";
+import {
+  isLegacyCustomLinkedDriveForConsolidation,
+  shouldFreezeNewLegacyLinkedDriveFolders,
+} from "@/lib/storage-folder-model-policy";
 import { DND_MOVE_MIME } from "@/lib/dnd-move-items";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { DisplayContext } from "@/lib/metadata-display";
@@ -53,6 +58,7 @@ interface FolderListRowProps {
   columnMode?: "full" | "projects";
   /** After v2 storage_folders rename/move from row actions */
   onStorageFolderMutated?: () => void;
+  onConsolidateMenuSelect?: () => void;
 }
 
 export default function FolderListRow({
@@ -71,6 +77,7 @@ export default function FolderListRow({
   currentDriveName,
   columnMode = "full",
   onStorageFolderMutated,
+  onConsolidateMenuSelect,
 }: FolderListRowProps) {
   const rollup = folderRollup ?? {
     descendants: [] as RecentFile[],
@@ -100,7 +107,15 @@ export default function FolderListRow({
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
   const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
     useCloudFiles({ subscribeDriveListing: false });
-  const { createFolder, linkedDrives } = useBackup();
+  const { createFolder, linkedDrives, bumpStorageVersion } = useBackup();
+
+  const sourceLinkedForConsolidation = item.driveId
+    ? linkedDrives.find((d) => d.id === item.driveId)
+    : undefined;
+  const offerLegacyConsolidation =
+    !!sourceLinkedForConsolidation &&
+    shouldFreezeNewLegacyLinkedDriveFolders(linkedDrives) &&
+    isLegacyCustomLinkedDriveForConsolidation(sourceLinkedForConsolidation);
 
   const allowV2FolderMutations = useMemo(() => {
     if (
@@ -328,6 +343,16 @@ export default function FolderListRow({
                               ? unpinItem("folder", item.driveId!)
                               : pinItem("folder", item.driveId!),
                         },
+                        ...(offerLegacyConsolidation && onConsolidateMenuSelect
+                          ? [
+                              {
+                                id: "consolidate-into-storage",
+                                label: "Consolidate into Storage",
+                                icon: undefined,
+                                onClick: onConsolidateMenuSelect,
+                              },
+                            ]
+                          : []),
                         ...(!item.preventRename
                           ? [
                               {
@@ -420,6 +445,16 @@ export default function FolderListRow({
             onClose={() => setCreateFolderOpen(false)}
             selectedFolderKeys={[item.key]}
             onCreateAndMove={async (folderName) => {
+              if (offerLegacyConsolidation && item.driveId && user) {
+                await consolidateLegacyDriveIntoStorage(
+                  () => user.getIdToken(),
+                  item.driveId,
+                  folderName,
+                );
+                bumpStorageVersion();
+                onStorageFolderMutated?.();
+                return;
+              }
               const drive = await createFolder(folderName);
               await moveFolderContentsToFolder(item.driveId!, drive.id);
             }}

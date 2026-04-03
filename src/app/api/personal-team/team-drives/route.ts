@@ -72,6 +72,19 @@ export async function GET(request: Request) {
       folder_model_version:
         typeof data.folder_model_version === "number" ? data.folder_model_version : null,
       supports_nested_folders: data.supports_nested_folders === true ? true : null,
+      consolidated_into_storage_folder_id:
+        typeof data.consolidated_into_storage_folder_id === "string"
+          ? data.consolidated_into_storage_folder_id
+          : null,
+      consolidated_into_linked_drive_id:
+        typeof data.consolidated_into_linked_drive_id === "string"
+          ? data.consolidated_into_linked_drive_id
+          : null,
+      consolidated_at:
+        data.consolidated_at &&
+        typeof (data.consolidated_at as { toDate?: () => Date }).toDate === "function"
+          ? (data.consolidated_at as { toDate: () => Date }).toDate().toISOString()
+          : null,
     });
   }
 

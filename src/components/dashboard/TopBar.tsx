@@ -2,7 +2,7 @@
 
 import { Plus, Upload, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
 import Link from "next/link";
-import { useState, useRef, useEffect, useContext } from "react";
+import { useState, useRef, useEffect, useContext, useCallback } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
@@ -60,6 +60,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     uploadFilesToGallery,
     fileUploadProgress,
     createFolder,
+    bumpStorageVersion,
     fileUploadError,
     clearFileUploadError,
     setFileUploadErrorMessage,
@@ -85,6 +86,93 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     !!currentLinkedForNested &&
     isLinkedDriveFolderModelV2(currentLinkedForNested) &&
     teamAwareTopBar(currentLinkedForNested.name) === "Storage";
+
+  const resolveCanonicalStorageV2Drive = useCallback(() => {
+    const candidates = linkedDrives.filter(
+      (d) =>
+        teamAwareTopBar(d.name) === "Storage" &&
+        d.is_creator_raw !== true &&
+        isLinkedDriveFolderModelV2(d)
+    );
+    if (candidates.length === 0) return undefined;
+    if (candidates.length === 1) return candidates[0];
+    const createdMs = (d: (typeof candidates)[0]) =>
+      d.created_at ? Date.parse(d.created_at) : Number.MAX_SAFE_INTEGER;
+    return candidates.reduce((a, b) => (createdMs(a) <= createdMs(b) ? a : b));
+  }, [linkedDrives]);
+
+  const createEmptyFolderSubmit = useCallback(
+    async (folderName: string) => {
+      const trimmed = folderName.trim();
+      const isCreator =
+        pathname === "/dashboard/creator" ||
+        pathname === "/enterprise/creator" ||
+        pathname === "/desktop/app/creator" ||
+        (!!pathname?.startsWith("/team/") && pathname.includes("/creator"));
+
+      if (isCreator) {
+        await createFolder(trimmed || "New folder", { creatorSection: true });
+        return;
+      }
+
+      if (canCreateStorageNestedFolder && currentDriveId && user) {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/storage-folders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            linked_drive_id: currentDriveId,
+            parent_folder_id: storageParentFolderId,
+            name: trimmed || "Untitled folder",
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data.error as string) ?? "Could not create folder");
+        }
+        bumpStorageVersion();
+        return;
+      }
+
+      const storageV2 = resolveCanonicalStorageV2Drive();
+      if (storageV2 && user) {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/storage-folders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            linked_drive_id: storageV2.id,
+            parent_folder_id: null,
+            name: trimmed || "Untitled folder",
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data.error as string) ?? "Could not create folder");
+        }
+        bumpStorageVersion();
+        return;
+      }
+
+      await createFolder(trimmed || "New folder", undefined);
+    },
+    [
+      pathname,
+      canCreateStorageNestedFolder,
+      currentDriveId,
+      storageParentFolderId,
+      user,
+      createFolder,
+      bumpStorageVersion,
+      resolveCanonicalStorageV2Drive,
+    ]
+  );
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -312,7 +400,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
                   >
                     <Folder className="h-4 w-4 flex-shrink-0" />
-                    New backup folder
+                    New folder in Storage
                   </button>
                 )}
                 <button
@@ -359,12 +447,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         open={createFolderOpen}
         onClose={() => setCreateFolderOpen(false)}
         onCreateEmpty={async (folderName) => {
-          const isCreator =
-            pathname === "/dashboard/creator" ||
-            pathname === "/enterprise/creator" ||
-            pathname === "/desktop/app/creator" ||
-            (!!pathname?.startsWith("/team/") && pathname.includes("/creator"));
-          await createFolder(folderName, isCreator ? { creatorSection: true } : undefined);
+          await createEmptyFolderSubmit(folderName);
           setCreateFolderOpen(false);
         }}
       />
@@ -377,7 +460,9 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
         submitLabel="Create"
         onCreateEmpty={async (folderName) => {
           if (!user) return;
-          const drive = await createFolder(folderName.trim() || "New shared folder");
+          const drive = await createFolder(folderName.trim() || "New shared folder", {
+            forceLegacyLinkedDrive: true,
+          });
           const token = await user.getIdToken();
           const res = await fetch("/api/shares", {
             method: "POST",

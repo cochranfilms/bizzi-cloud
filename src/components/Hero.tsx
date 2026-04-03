@@ -30,7 +30,7 @@ export default function Hero() {
         </h1>
 
         <p className="text-base sm:text-lg md:text-xl text-neutral-700 dark:text-neutral-200 max-w-2xl mx-auto leading-relaxed mb-8 sm:mb-10 text-pretty">
-          High-performance storage with nested folders in Storage—built for post-production workflows.
+          High-performance cloud storage with organized folders in Storage—built for post-production workflows.
         </p>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-4">

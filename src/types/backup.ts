@@ -19,6 +19,10 @@ export interface LinkedDrive {
   /** 2 = first-class storage_folders + folder_id on backup_files */
   folder_model_version?: number | null;
   supports_nested_folders?: boolean | null;
+  /** Legacy custom drive consolidated into Storage v2; files live under this folder id */
+  consolidated_into_storage_folder_id?: string | null;
+  consolidated_into_linked_drive_id?: string | null;
+  consolidated_at?: string | null;
 }
 
 export interface BackupSnapshot {

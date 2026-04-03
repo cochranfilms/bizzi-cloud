@@ -361,12 +361,16 @@ function mergeDriveFoldersFromScoped(scoped: LinkedDrive[], prev: DriveFolder[])
   });
 }
 
-/** First-level folder path inside a Storage linked drive (e.g. migration subfolders) for home "Bizzi Cloud Folders". */
+/** First-level entries under Storage for home "Bizzi Cloud Folders": path prefixes from files and/or v2 `storage_folders` roots. */
 export interface StorageTopFolderEntry {
   driveId: string;
   name: string;
   pathPrefix: string;
   itemCount: number;
+  storageFolderId?: string;
+  storageFolderVersion?: number;
+  storageFolderOperationState?: string;
+  storageFolderLifecycleState?: string;
 }
 
 export interface DeletedDrive {
@@ -783,13 +787,32 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           );
           if (rootsRes.ok) {
             const rootsData = (await rootsRes.json()) as {
-              folders?: Array<{ drive_id: string; name: string; path: string; file_count: number }>;
+              folders?: Array<{
+                drive_id: string;
+                name: string;
+                path?: string;
+                file_count?: number;
+                storage_folder_id?: string;
+                storage_folder_version?: number;
+                operation_state?: string;
+                lifecycle_state?: string;
+              }>;
             };
             topsTeam = (rootsData.folders ?? []).map((f) => ({
               driveId: f.drive_id,
               name: f.name,
-              pathPrefix: f.path,
-              itemCount: f.file_count,
+              pathPrefix: typeof f.path === "string" ? f.path : "",
+              itemCount: typeof f.file_count === "number" ? f.file_count : 0,
+              storageFolderId:
+                typeof f.storage_folder_id === "string" ? f.storage_folder_id : undefined,
+              storageFolderVersion:
+                typeof f.storage_folder_version === "number"
+                  ? f.storage_folder_version
+                  : undefined,
+              storageFolderOperationState:
+                typeof f.operation_state === "string" ? f.operation_state : undefined,
+              storageFolderLifecycleState:
+                typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
             }));
           }
         }
@@ -849,13 +872,32 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           );
           if (rootsRes.ok) {
             const rootsData = (await rootsRes.json()) as {
-              folders?: Array<{ drive_id: string; name: string; path: string; file_count: number }>;
+              folders?: Array<{
+                drive_id: string;
+                name: string;
+                path?: string;
+                file_count?: number;
+                storage_folder_id?: string;
+                storage_folder_version?: number;
+                operation_state?: string;
+                lifecycle_state?: string;
+              }>;
             };
             topsPers = (rootsData.folders ?? []).map((f) => ({
               driveId: f.drive_id,
               name: f.name,
-              pathPrefix: f.path,
-              itemCount: f.file_count,
+              pathPrefix: typeof f.path === "string" ? f.path : "",
+              itemCount: typeof f.file_count === "number" ? f.file_count : 0,
+              storageFolderId:
+                typeof f.storage_folder_id === "string" ? f.storage_folder_id : undefined,
+              storageFolderVersion:
+                typeof f.storage_folder_version === "number"
+                  ? f.storage_folder_version
+                  : undefined,
+              storageFolderOperationState:
+                typeof f.operation_state === "string" ? f.operation_state : undefined,
+              storageFolderLifecycleState:
+                typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
             }));
           }
         }

@@ -3,7 +3,7 @@
  * Creates a linked_drives row in the team owner's container (userId + personal_team_owner_id = owner).
  * Required for team seat members: client SDK cannot set userId to the owner on create.
  */
-import type { DocumentData } from "firebase-admin/firestore";
+import type { DocumentData, Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
@@ -11,6 +11,32 @@ import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
 import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
 
 const ACTIVE_SEAT = new Set(["active", "cold_storage"]);
+
+function teamBaseName(name: string): string {
+  return name.replace(/^\[Team\]\s+/, "");
+}
+
+async function teamHasStorageFolderModelV2(
+  db: Firestore,
+  teamOwnerUserId: string,
+): Promise<boolean> {
+  const snap = await db
+    .collection("linked_drives")
+    .where("userId", "==", teamOwnerUserId)
+    .get();
+  for (const docSnap of snap.docs) {
+    const x = docSnap.data();
+    if (x.deleted_at) continue;
+    if (x.organization_id) continue;
+    if (x.personal_team_owner_id !== teamOwnerUserId) continue;
+    let n = String(x.name ?? "");
+    if (n === "Uploads") n = "Storage";
+    if (teamBaseName(n) !== "Storage") continue;
+    if (x.is_creator_raw === true) continue;
+    if (Number(x.folder_model_version) === 2) return true;
+  }
+  return false;
+}
 const MAX_NAME_LEN = 240;
 
 function mapDriveDoc(
@@ -92,6 +118,20 @@ export async function POST(request: Request) {
     if (!seatSnap.exists || !ACTIVE_SEAT.has(st)) {
       return NextResponse.json({ error: "Not a member of this team" }, { status: 403 });
     }
+  }
+
+  if (
+    !body.creator_section &&
+    !body.is_creator_raw &&
+    (await teamHasStorageFolderModelV2(db, teamOwnerUserId))
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "New general folders belong in Storage. Use Home or All files → New, or consolidate a legacy folder.",
+      },
+      { status: 400 },
+    );
   }
 
   const permissionPrefix = body.is_creator_raw ? "creator-raw" : "manual";

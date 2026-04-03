@@ -56,6 +56,28 @@ import {
   flatMacosPackageUserMessage,
   isLikelyFlatMacosPackageBrowserUpload,
 } from "@/lib/macos-package-bundles";
+import { shouldFreezeNewLegacyLinkedDriveFolders } from "@/lib/storage-folder-model-policy";
+
+function readConsolidationFromDriveData(data: Record<string, unknown>): Pick<
+  LinkedDrive,
+  | "consolidated_into_storage_folder_id"
+  | "consolidated_into_linked_drive_id"
+  | "consolidated_at"
+> {
+  const cat = data.consolidated_at as { toDate?: () => Date } | undefined;
+  return {
+    consolidated_into_storage_folder_id:
+      typeof data.consolidated_into_storage_folder_id === "string"
+        ? data.consolidated_into_storage_folder_id
+        : null,
+    consolidated_into_linked_drive_id:
+      typeof data.consolidated_into_linked_drive_id === "string"
+        ? data.consolidated_into_linked_drive_id
+        : null,
+    consolidated_at:
+      cat && typeof cat.toDate === "function" ? cat.toDate().toISOString() : null,
+  };
+}
 
 interface BackupContextValue {
   linkedDrives: LinkedDrive[];
@@ -89,8 +111,11 @@ interface BackupContextValue {
   /** Surface destination-resolution errors (e.g. Creator RAW not ready) without starting upload. */
   setFileUploadErrorMessage: (message: string | null) => void;
   fsAccessSupported: boolean;
-  /** Create a new empty folder (linked drive). */
-  createFolder: (name: string, options?: { creatorSection?: boolean }) => Promise<LinkedDrive>;
+  /** Create a new empty folder (linked drive). Use `forceLegacyLinkedDrive` for shared-folder flows only. */
+  createFolder: (
+    name: string,
+    options?: { creatorSection?: boolean; forceLegacyLinkedDrive?: boolean }
+  ) => Promise<LinkedDrive>;
   /** Get or create the main Storage drive. */
   getOrCreateStorageDrive: () => Promise<LinkedDrive>;
   /** Get or create the permanent RAW drive for Creator tab (video-only). */
@@ -628,6 +653,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           folder_model_version:
             typeof data.folder_model_version === "number" ? data.folder_model_version : null,
           supports_nested_folders: data.supports_nested_folders === true ? true : null,
+          ...readConsolidationFromDriveData(data as Record<string, unknown>),
         });
       }
 
@@ -699,6 +725,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                     : null,
                 supports_nested_folders:
                   data.supports_nested_folders === true ? true : null,
+                ...readConsolidationFromDriveData(data as Record<string, unknown>),
               });
             }
             setLinkedDrives(drives2);
@@ -745,6 +772,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         folder_model_version:
           typeof data.folder_model_version === "number" ? data.folder_model_version : null,
         supports_nested_folders: data.supports_nested_folders === true ? true : null,
+        ...readConsolidationFromDriveData(data as Record<string, unknown>),
       };
     };
 
@@ -1118,11 +1146,24 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
   }, [user, isEnterpriseContext, org, teamRouteOwnerUid, linkedDrives]);
 
   const createFolder = useCallback(
-    async (name: string, options?: { creatorSection?: boolean }): Promise<LinkedDrive> => {
+    async (
+      name: string,
+      options?: { creatorSection?: boolean; forceLegacyLinkedDrive?: boolean }
+    ): Promise<LinkedDrive> => {
       if (!isFirebaseConfigured() || !user) throw new Error("Not authenticated");
       const orgId = isEnterpriseContext && org?.id ? org.id : null;
       const creatorSection = options?.creatorSection ?? false;
       const displayName = name.trim() || "New folder";
+
+      if (
+        !creatorSection &&
+        !options?.forceLegacyLinkedDrive &&
+        shouldFreezeNewLegacyLinkedDriveFolders(linkedDrives)
+      ) {
+        throw new Error(
+          "New general folders live in Storage. Use New to create a folder there, or open “Consolidate into Storage” on a legacy folder."
+        );
+      }
 
       if (
         !isEnterpriseContext &&
@@ -1167,7 +1208,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       setStorageVersion((v) => v + 1);
       return drive;
     },
-    [user, isEnterpriseContext, org, teamRouteOwnerUid]
+    [user, isEnterpriseContext, org, teamRouteOwnerUid, linkedDrives]
   );
 
   const creatorRawDriveId = useMemo(() => {

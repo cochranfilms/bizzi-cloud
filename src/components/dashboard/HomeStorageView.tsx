@@ -42,6 +42,9 @@ import {
   parseStorageVirtualFolderKey,
 } from "@/lib/storage-virtual-folder-key";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
+import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
+import { isLegacyCustomLinkedDriveForConsolidation } from "@/lib/storage-folder-model-policy";
+import type { LinkedDrive } from "@/types/backup";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -98,6 +101,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const {
     linkedDrives,
     storageVersion,
+    bumpStorageVersion,
+    fetchDrives,
     getOrCreateStorageDrive,
     getOrCreateCreatorRawDrive,
     getOrCreateGalleryDrive,
@@ -148,6 +153,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [checkoutHomeEcho, setCheckoutHomeEcho] = useState(false);
+  const [consolidateSourceDrive, setConsolidateSourceDrive] = useState<LinkedDrive | null>(null);
   const [shareFolderName, setShareFolderName] = useState("");
   const [shareDriveId, setShareDriveId] = useState<string | null>(null);
   const [shareReferencedFileIds, setShareReferencedFileIds] = useState<string[]>([]);
@@ -299,30 +305,56 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     return drive ? !isSystemDrive(drive) : false;
   });
 
+  const driveFolderItemsWithPolicy = useMemo(() => {
+    return driveFolderItems.map((item) => {
+      const ld = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+      if (ld?.consolidated_into_storage_folder_id) {
+        return {
+          ...item,
+          preventDelete: true,
+          preventRename: true,
+          preventMove: true,
+          isConsolidatedStorageShortcut: true,
+        };
+      }
+      return item;
+    });
+  }, [driveFolderItems, linkedDrives]);
+
   const storagePathVirtualFolderItems: FolderItem[] = useMemo(
     () =>
-      storageTopFolders.map((t) => ({
-        name: t.name,
-        type: "folder" as const,
-        key: buildStorageVirtualFolderKey(t.driveId, t.pathPrefix),
-        items: t.itemCount,
-        hideShare: false,
-        driveId: t.driveId,
-        virtualFolder: true,
-        pathPrefix: t.pathPrefix,
-        preventDelete: true,
-        preventRename: true,
-        preventMove: true,
-        isSystemFolder: false,
-      })),
+      storageTopFolders.map((t) => {
+        const isV2Row = !!t.storageFolderId;
+        return {
+          name: t.name,
+          type: "folder" as const,
+          key: isV2Row
+            ? `storage-v2-home-${t.driveId}-${t.storageFolderId}`
+            : buildStorageVirtualFolderKey(t.driveId, t.pathPrefix),
+          items: t.itemCount,
+          hideShare: false,
+          driveId: t.driveId,
+          virtualFolder: !isV2Row,
+          pathPrefix: isV2Row ? undefined : t.pathPrefix,
+          storageFolderId: t.storageFolderId,
+          storageLinkedDriveId: isV2Row ? t.driveId : undefined,
+          storageFolderVersion: t.storageFolderVersion,
+          storageFolderOperationState: t.storageFolderOperationState,
+          storageFolderLifecycleState: t.storageFolderLifecycleState,
+          preventDelete: isV2Row,
+          preventRename: !isV2Row,
+          preventMove: true,
+          isSystemFolder: false,
+        };
+      }),
     [storageTopFolders]
   );
 
   const bizziCloudFolderItems = useMemo(() => {
-    return [...driveFolderItems, ...storagePathVirtualFolderItems].sort((a, b) =>
+    return [...driveFolderItemsWithPolicy, ...storagePathVirtualFolderItems].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-  }, [driveFolderItems, storagePathVirtualFolderItems]);
+  }, [driveFolderItemsWithPolicy, storagePathVirtualFolderItems]);
 
   const homeFolderItemsByKey = useMemo(() => {
     const m = new Map<string, FolderItem>();
@@ -587,6 +619,38 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setStorageParentFolderId,
     ]
   );
+
+  const openBizziCloudFolderItem = useCallback(
+    (item: FolderItem) => {
+      if (!item.driveId) return;
+      const ld = linkedDrives.find((d) => d.id === item.driveId);
+      if (
+        ld?.consolidated_into_storage_folder_id &&
+        ld.consolidated_into_linked_drive_id
+      ) {
+        openFolderFromPin({
+          ...item,
+          driveId: ld.consolidated_into_linked_drive_id,
+          storageFolderId: ld.consolidated_into_storage_folder_id,
+          pathPrefix: undefined,
+          virtualFolder: false,
+        });
+        return;
+      }
+      if (item.storageFolderId) {
+        openFolderFromPin(item);
+        return;
+      }
+      openDrive(item.driveId, item.name, item.pathPrefix ?? "");
+    },
+    [linkedDrives, openDrive, openFolderFromPin]
+  );
+
+  const afterStorageMigrationMutate = useCallback(() => {
+    bumpStorageVersion();
+    void refetch();
+    void fetchDrives();
+  }, [bumpStorageVersion, refetch, fetchDrives]);
 
   const openMacosPackageInfo = useCallback((file: RecentFile) => {
     if (!file.macosPackageId) return;
@@ -1039,9 +1103,12 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
         <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400 sm:mb-4">
-          Open <span className="font-medium text-neutral-800 dark:text-neutral-200">Storage</span> in All files to work
-          with nested folders—create them from <span className="font-medium">New → New folder in Storage</span>, upload
-          into them, and move files between folders on the updated Storage layout.
+          Your <span className="font-medium text-neutral-800 dark:text-neutral-200">Storage</span> folder is where
+          general uploads and folders live—including groups created when you import. Open{" "}
+          <span className="font-medium">Storage</span> from All files, use <span className="font-medium">New</span> on
+          Home or in All files to add folders and uploads, and organize from there.{" "}
+          <span className="font-medium">RAW</span> (Creator) and <span className="font-medium">Gallery Media</span> stay
+          separate for those features.
         </p>
         {displayBaseFolderItems.length > 0 ? (
           <div
@@ -1313,6 +1380,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-4">Bizzi Cloud Folders</SectionTitle>
+        <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
+          Older extra folders (separate from Storage) can be moved into your main Storage tree with{" "}
+          <span className="font-medium">Consolidate into Storage</span> in the folder menu. Your Storage layout is the
+          standard place for general files and folders.
+        </p>
         {bizziCloudFolderItems.length > 0 ? (
           viewMode === "list" ? (
             <div className="mb-6 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
@@ -1334,6 +1406,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                 <tbody data-selectable-grid>
                   {bizziCloudFolderItems.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                    const offerConsolidate =
+                      !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
                     const driveId = item.driveId ?? "";
                     const isFolderInSelection = selectedFolderKeys.has(item.key);
                     const isDropTarget =
@@ -1347,7 +1421,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         key={item.key}
                         item={item}
                         displayContext={storageDisplayContext}
-                        onClick={() => item.driveId && openDrive(item.driveId, item.name, item.pathPrefix ?? "")}
+                        onClick={() => openBizziCloudFolderItem(item)}
                         onDelete={
                           drive && !item.preventDelete
                             ? async () => {
@@ -1371,6 +1445,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         onItemsDropped={handleDropOnFolder}
                         draggable={canDragFolder}
                         onDragStart={handleDragStart}
+                        onConsolidateMenuSelect={
+                          offerConsolidate ? () => setConsolidateSourceDrive(drive) : undefined
+                        }
+                        onStorageFolderMutated={afterStorageMigrationMutate}
                       />
                     );
                   })}
@@ -1391,6 +1469,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           >
             {bizziCloudFolderItems.map((item) => {
               const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+              const offerConsolidate =
+                !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
               const driveId = item.driveId ?? "";
               const isFolderInSelection = selectedFolderKeys.has(item.key);
               const isDropTarget =
@@ -1413,7 +1493,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     item={item}
                     isDropTarget={isDropTarget}
                     onItemsDropped={handleDropOnFolder}
-                    onClick={() => item.driveId && openDrive(item.driveId, item.name, item.pathPrefix ?? "")}
+                    onClick={() => openBizziCloudFolderItem(item)}
                     layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
                     layoutAspectRatio={aspectRatio}
                     showCardInfo={showCardInfo}
@@ -1435,6 +1515,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     selected={selectedFolderKeys.has(item.key)}
                     onSelect={() => toggleFolderSelection(item.key)}
                     presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
+                    storagePickerDriveLabel={
+                      drive ? teamAwareBaseName(drive.name) : "Storage"
+                    }
+                    onStorageFolderMutated={afterStorageMigrationMutate}
+                    onConsolidateMenuSelect={
+                      offerConsolidate ? () => setConsolidateSourceDrive(drive) : undefined
+                    }
                   />
                 </div>
               );
@@ -1443,7 +1530,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           )
         ) : (
           <p className="mb-6 py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Newly created folders will appear here.
+            Folders you create in Storage and path groups from imports appear here.
           </p>
         )}
         {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
@@ -1672,6 +1759,13 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             document.body,
           )
         : null}
+
+      <ConsolidateIntoStorageModal
+        open={consolidateSourceDrive !== null}
+        onClose={() => setConsolidateSourceDrive(null)}
+        sourceDrive={consolidateSourceDrive}
+        onSuccess={afterStorageMigrationMutate}
+      />
 
       <FilePreviewModal
         file={previewFile}

@@ -982,7 +982,7 @@ export default function FileGrid() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setStorageUpgradeError(data.error ?? "Could not enable nested folders.");
+        setStorageUpgradeError(data.error ?? "Could not update Storage.");
         return;
       }
       bumpStorageVersion();
@@ -2046,11 +2046,11 @@ export default function FileGrid() {
 
       {currentDrive && isStorageLegacyVirtualBrowse ? (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/35 dark:text-amber-50">
-          <p className="font-medium">Switch Storage to nested folders</p>
+          <p className="font-medium">Update Storage layout</p>
           <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-            This workspace is still on the classic Storage view. Folders you create inside Storage only appear after you
-            enable the updated layout. We will map your existing file paths into folders automatically (up to 8,000 active
-            files per run).
+            This workspace is still on the classic Storage view. Turn on the updated layout to use the same folder
+            experience as the rest of the platform. We map your existing file paths into folders automatically (up to 8,000
+            active files per run).
           </p>
           {storageUpgradeError ? (
             <p className="mt-2 font-medium text-red-700 dark:text-red-300">{storageUpgradeError}</p>
@@ -2067,7 +2067,7 @@ export default function FileGrid() {
                 Updating Storage…
               </>
             ) : (
-              "Enable nested Storage"
+              "Update Storage"
             )}
           </button>
         </div>
