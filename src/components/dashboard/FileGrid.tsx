@@ -790,7 +790,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                 name: f.name,
                 type: "folder" as const,
                 key: `storage-v2-${driveId}-${f.id}`,
-                items: 0,
+                items: f.item_count,
                 virtualFolder: true,
                 storageFolderId: f.id,
                 storageLinkedDriveId: driveId,
@@ -1942,7 +1942,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     <div
       ref={gridSectionRef}
       className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
-        embeddedHomeStorage ? " h-full min-h-0" : ""
+        embeddedHomeStorage ? " h-full min-h-0 pl-4 pr-3 sm:pl-6 sm:pr-4" : ""
       }`}
       data-selectable-grid
       data-embedded-home-storage={embeddedHomeStorage ? "true" : undefined}
@@ -1951,7 +1951,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       {/* Filter section — compact, no section title bar */}
       <section
         className={`shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60${
-          embeddedHomeStorage ? " px-0 pt-0" : ""
+          embeddedHomeStorage ? " pt-2 pb-3" : ""
         }`}
       >
         <div className="space-y-3">
@@ -2311,9 +2311,11 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             />,
             document.body
           )}
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
-          {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Hearts"}
-        </h2>
+        {!(embeddedHomeStorage && currentDrive) ? (
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
+            {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Hearts"}
+          </h2>
+        ) : null}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-4">
           {!currentDrive && (
             <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">

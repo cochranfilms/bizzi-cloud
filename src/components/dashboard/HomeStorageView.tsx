@@ -1127,14 +1127,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
       <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
         <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
-        <p className="mb-3 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400 sm:mb-4">
-          Your <span className="font-medium text-neutral-800 dark:text-neutral-200">Storage</span> folder is where
-          general uploads and folders live—including groups created when you import. Browse the full Storage tree below,
-          use <span className="font-medium">New</span> on Home or in All files to add folders and uploads, or open the
-          same view in <span className="font-medium">All files</span> when you need more space.{" "}
-          <span className="font-medium">RAW</span> (Creator) and <span className="font-medium">Gallery Media</span> stay
-          separate for those features.
-        </p>
         {displayBaseFolderItems.length > 0 ? (
           <div
             className="mx-auto flex w-full max-w-4xl justify-center"
@@ -1216,10 +1208,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
               Open in All files
             </Link>
           </div>
-          <p className="mb-4 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-            The same layout and actions as All files—nested folders, uploads, pinning, and labels—without leaving Home.
-          </p>
-          <div className="flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
+          <div className="mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
             <HomeEmbeddedStorageGrid embeddedHomeStorage />
           </div>
         </section>

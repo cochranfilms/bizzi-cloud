@@ -229,6 +229,8 @@ export type StorageFolderListFolder = {
   operation_state: string;
   lifecycle_state: string;
   updated_at: string | null;
+  /** Direct child folders + files (matches home tile counts; file branch capped at 500). */
+  item_count: number;
 };
 
 /** Lists one level of a folder model v2 Storage drive via API. */
@@ -272,6 +274,9 @@ export async function fetchStorageFolderList(
     else if (ua && typeof (ua as { toDate?: () => Date }).toDate === "function") {
       updated_at = (ua as { toDate: () => Date }).toDate().toISOString();
     }
+    const ic = f.item_count;
+    const item_count =
+      typeof ic === "number" && Number.isFinite(ic) ? Math.max(0, Math.floor(ic)) : 0;
     return {
       id: String(f.id ?? ""),
       name: String(f.name ?? ""),
@@ -282,6 +287,7 @@ export async function fetchStorageFolderList(
       operation_state: String(f.operation_state ?? "ready"),
       lifecycle_state: String(f.lifecycle_state ?? "active"),
       updated_at,
+      item_count,
     };
   });
   const files = (data.files ?? []).map((raw) =>

@@ -7,7 +7,26 @@ import {
 } from "@/lib/storage-folders";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import { buildRelativePathFromFolderNames } from "@/lib/storage-folders/path-resolver";
+import type { Firestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+
+/** Direct child folders + active files in a v2 folder (same notion as home Bizzi Cloud Folders / storage-folder-roots). */
+async function storageFolderDirectItemCount(
+  db: Firestore,
+  linkedDriveId: string,
+  folderId: string
+): Promise<number> {
+  const { folders: subFolders } = await listStorageFolderChildren(db, linkedDriveId, folderId);
+  const filesSnap = await db
+    .collection("backup_files")
+    .where("linked_drive_id", "==", linkedDriveId)
+    .where("folder_id", "==", folderId)
+    .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+    .select()
+    .limit(500)
+    .get();
+  return subFolders.length + filesSnap.size;
+}
 
 /**
  * GET /api/storage-folders/list?drive_id=&parent_folder_id=
@@ -87,7 +106,20 @@ export async function GET(request: Request) {
       return { id: d.id, ...data, file_name: fileName, relative_path };
     });
 
-    return NextResponse.json({ folders: folderList, files });
+    const foldersWithCounts = await Promise.all(
+      folderList.map(async (row) => {
+        const fid = String((row as { id?: string }).id ?? "").trim();
+        if (!fid) return { ...row, item_count: 0 };
+        try {
+          const item_count = await storageFolderDirectItemCount(db, driveId, fid);
+          return { ...row, item_count };
+        } catch {
+          return { ...row, item_count: 0 };
+        }
+      })
+    );
+
+    return NextResponse.json({ folders: foldersWithCounts, files });
   } catch (e) {
     if (e instanceof StorageFolderAccessError) {
       return NextResponse.json({ error: e.message }, { status: e.status });
