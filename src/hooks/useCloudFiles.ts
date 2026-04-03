@@ -47,7 +47,6 @@ import {
 } from "@/lib/macos-package-display";
 import { backupPathUnderPrefix } from "@/lib/storage-virtual-folder-key";
 import { MOVE_ALREADY_AT_DESTINATION, DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
-import { toNormalizedComparisonKey } from "@/lib/storage-folders/normalize";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import {
   BACKUP_LIFECYCLE_ACTIVE,
@@ -1590,32 +1589,20 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
   const renameFile = useCallback(
     async (fileId: string, newName: string) => {
       if (!isFirebaseConfigured() || !user) return;
-      const db = getFirebaseFirestore();
-      const fileRef = doc(db, "backup_files", fileId);
-      const fileSnap = await getDoc(fileRef);
-      if (!fileSnap.exists()) return;
-      const data = fileSnap.data();
-      if (data?.userId !== user.uid) return;
-      const trimmed = newName.trim();
-      if (!trimmed) {
-        throw new Error("Name cannot be empty");
-      }
-      const fileNameCompareKey = toNormalizedComparisonKey(trimmed);
-      if (!fileNameCompareKey) {
-        throw new Error("Invalid file name");
-      }
-      const path = (data.relative_path as string) ?? "";
-      const parts = path.split("/").filter(Boolean);
-      const newPath =
-        parts.length > 0
-          ? [...parts.slice(0, -1), trimmed].join("/")
-          : trimmed;
-      /** Storage v2 lists use `file_name` first; keep `relative_path` in sync. `object_key` / technical metadata unchanged. */
-      await updateDoc(fileRef, {
-        relative_path: newPath,
-        file_name: trimmed,
-        file_name_compare_key: fileNameCompareKey,
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${base}/api/files/rename-backup-file`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ backup_file_id: fileId, new_name: newName }),
       });
+      if (!res.ok) {
+        throw new Error(await apiErrorMessage(res, "Failed to rename"));
+      }
       await reconcileMacosPackageForBackupFileClient(fileId);
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();

@@ -85,7 +85,7 @@ export default function DesktopTopNavbar({
   );
 
   const desktopNav = (
-    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-x-2 md:gap-y-1 xl:pr-56">
+    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-x-4 md:gap-y-1 lg:gap-x-10 xl:pr-56">
       <div className="min-w-0" aria-hidden />
       <div className="mx-auto flex w-full min-w-0 max-w-4xl justify-center justify-self-center">
         <nav
@@ -116,7 +116,7 @@ export default function DesktopTopNavbar({
           })}
         </nav>
       </div>
-      <div className="flex min-w-0 items-center justify-end justify-self-end">{accountTools}</div>
+      <div className="flex min-w-0 w-full items-center justify-end">{accountTools}</div>
     </div>
   );
 
