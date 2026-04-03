@@ -78,16 +78,16 @@ export default function DesktopTopNavbar({
     }`;
 
   const accountTools = (
-    <div className="flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
+    <div className="flex min-w-0 shrink-0 items-center justify-center gap-1 sm:gap-2">
       <NotificationBell />
       <UserMenu compact basePath="/desktop/app" />
     </div>
   );
 
   const desktopNav = (
-    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-x-4 md:gap-y-1 lg:gap-x-10 xl:pr-56">
+    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,auto)_14rem] md:items-center md:gap-x-2 md:gap-y-1 lg:gap-x-3 xl:pr-56">
       <div className="min-w-0" aria-hidden />
-      <div className="mx-auto flex w-full min-w-0 max-w-4xl justify-center justify-self-center">
+      <div className="mx-auto flex w-full min-w-0 max-w-full justify-center justify-self-center overflow-hidden">
         <nav
           className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-nowrap justify-center gap-0.5 overflow-x-auto overflow-y-visible px-1 pb-0.5 [scrollbar-width:thin]"
           aria-label="Workspace"
@@ -116,7 +116,7 @@ export default function DesktopTopNavbar({
           })}
         </nav>
       </div>
-      <div className="flex min-w-0 w-full items-center justify-end">{accountTools}</div>
+      <div className="flex w-56 min-w-56 shrink-0 items-center justify-center">{accountTools}</div>
     </div>
   );
 
