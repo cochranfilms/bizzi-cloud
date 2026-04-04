@@ -85,9 +85,8 @@ export default function DesktopTopNavbar({
   );
 
   const desktopNav = (
-    <div className="hidden w-full min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,auto)_14rem] md:items-center md:gap-x-2 md:gap-y-1 lg:gap-x-3 xl:pr-56">
-      <div className="min-w-0" aria-hidden />
-      <div className="mx-auto flex w-full min-w-0 max-w-full justify-center justify-self-center overflow-hidden">
+    <div className="hidden w-full min-w-0 md:flex md:items-center">
+      <div className="flex min-h-9 min-w-0 flex-1 justify-center overflow-hidden px-1 sm:px-2">
         <nav
           className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-nowrap justify-center gap-0.5 overflow-x-auto overflow-y-visible px-1 pb-0.5 [scrollbar-width:thin]"
           aria-label="Workspace"
@@ -116,17 +115,19 @@ export default function DesktopTopNavbar({
           })}
         </nav>
       </div>
-      <div className="flex w-56 min-w-56 shrink-0 items-center justify-center">{accountTools}</div>
+      <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
+        {accountTools}
+      </div>
     </div>
   );
 
-  const headerTopRowGridCls =
-    "grid min-h-12 w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 md:min-h-0 md:gap-3 xl:pr-56";
+  const headerTopRowFlexCls =
+    "flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0 md:gap-3";
 
   return (
     <header className="sticky top-0 z-[60] flex flex-col gap-1.5 border-b border-neutral-200 bg-white px-4 py-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/50 md:gap-1 md:px-6 md:pb-1.5 md:pt-2">
-      <div className={headerTopRowGridCls}>
-        <div className="flex min-w-0 items-center gap-2 md:gap-3">
+      <div className={headerTopRowFlexCls}>
+        <div className="flex min-w-0 shrink-0 items-center gap-2 md:gap-3">
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
@@ -167,17 +168,17 @@ export default function DesktopTopNavbar({
           </Link>
         </div>
 
-        <div className="flex min-w-0 max-w-[min(14rem,calc(100vw-9rem))] justify-center justify-self-center">
+        <div className="flex min-w-0 flex-1 justify-center px-1">
           <Link
             href="/desktop/app"
-            className="block whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
+            className="block max-w-[min(14rem,calc(100vw-9rem))] whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
             onClick={() => setMobileOpen(false)}
           >
             Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
           </Link>
         </div>
 
-        <div className="flex min-w-0 w-full justify-end">
+        <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
           <div className="md:hidden">{accountTools}</div>
         </div>
       </div>
