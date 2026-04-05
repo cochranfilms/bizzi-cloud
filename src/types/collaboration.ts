@@ -30,6 +30,7 @@ export type NotificationType =
   | "share_invitee_removed"
   | "share_link_deleted"
   | "share_permission_downgraded"
+  | "workspace_share_delivery_request"
   | "transfer_deleted_by_sender"
   | "transfer_expiring_soon"
   | "billing_payment_failed"

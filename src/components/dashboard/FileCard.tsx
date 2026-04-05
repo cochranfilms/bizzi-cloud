@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Archive, Check, Download, FileIcon, Film, Info, Play, Share2, Pencil, FolderInput, FolderPlus, Pin } from "lucide-react";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { CardSize, AspectRatio, ThumbnailScale } from "@/context/LayoutSettingsContext";
@@ -8,7 +8,7 @@ import type { CardPresentation } from "@/lib/card-presentation";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
-import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -238,10 +238,10 @@ export default function FileCard({
   const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
-  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
-    hasEditor,
-    hasGallerySuite,
-  });
+  const moveDestinationDrives = useMemo(
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
   const { isPinned, pinItem, unpinItem } = usePinned();
   const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const showHeartRow = !isMacosPackage || isProjectFile(file.name);
@@ -651,7 +651,7 @@ export default function FileCard({
         itemName={file.name}
         itemType="file"
         excludeDriveId={file.driveId}
-        folders={visibleLinkedDrives}
+        folders={moveDestinationDrives}
         onMove={(targetDriveId) => moveFile(file.id, targetDriveId)}
       />
       <CreateFolderModal

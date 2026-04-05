@@ -16,8 +16,7 @@ import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
 import {
   ensurePersonalTeamRecord,
-  getOwnedTeam,
-  ownerPersonalTeamWorkspaceActivated,
+  ownerHasPersonalTeamShell,
   resolvePersonalTeamIdentityConflicts,
   seatStatusShowsInSwitcher,
 } from "@/lib/personal-team-auth";
@@ -164,10 +163,8 @@ export async function GET(request: Request) {
   const workspaceLoadIssues: Array<{ scope: string; code: string }> = [];
 
   try {
-    const owned = await getOwnedTeam(db, uid);
-    const ownedWorkspaceActive =
-      owned && (await ownerPersonalTeamWorkspaceActivated(db, uid));
-    if (ownedWorkspaceActive) {
+    const ownerShell = await ownerHasPersonalTeamShell(db, uid);
+    if (ownerShell) {
       try {
         const ownerName = await profileDisplayName(db, uid);
         const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
@@ -188,7 +185,7 @@ export async function GET(request: Request) {
       }
     }
   } catch (err) {
-    console.error("[GET /api/account/workspaces] getOwnedTeam failed", uid, err);
+    console.error("[GET /api/account/workspaces] ownerHasPersonalTeamShell failed", uid, err);
     workspaceLoadIssues.push({ scope: "owned_personal_team", code: "row_load_failed" });
   }
 

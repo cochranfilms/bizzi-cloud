@@ -92,6 +92,8 @@ export interface ShareWorkspaceAdminEmailParams {
   cta_url: string;
   /** Inbox route + source drive (optional; empty string if unused in template) */
   share_context_detail?: string;
+  /** When set (e.g. "1"), template can show moderation / approval-required copy */
+  delivery_request?: string;
 }
 
 /**
@@ -106,6 +108,7 @@ export async function sendShareWorkspaceEmailToAdmin(
 
   const templateParams = {
     ...params,
+    delivery_request: params.delivery_request ?? "",
     logo_url: getEmailLogoUrl(),
   };
 
@@ -722,11 +725,7 @@ export async function sendShareFileEmailsToInvitees(
   });
 }
 
-/**
- * Admin-only email when a share targets a workspace (team/org). No-op if template unset or no to_email.
- */
-export async function sendWorkspaceShareAdminNotificationEmail(params: {
-  toEmail: string | null | undefined;
+type ShareWorkspaceTemplateFieldsInput = {
   sharedByUserId: string;
   actorDisplayName: string;
   fileIds: string[];
@@ -736,9 +735,13 @@ export async function sendWorkspaceShareAdminNotificationEmail(params: {
   workspaceName: string;
   ctaUrl: string;
   shareContextDetail?: string;
-}): Promise<void> {
-  if (!getShareWorkspaceConfig() || !params.toEmail?.trim()) return;
+};
 
+type WorkspaceDeliveryEmailArgs = Omit<ShareWorkspaceAdminEmailParams, "to_email">;
+
+async function buildShareWorkspaceAdminEmailFields(
+  params: ShareWorkspaceTemplateFieldsInput
+): Promise<WorkspaceDeliveryEmailArgs> {
   let senderPhotoUrl: string;
   try {
     const authUser = await getAdminAuth().getUser(params.sharedByUserId);
@@ -771,22 +774,80 @@ export async function sendWorkspaceShareAdminNotificationEmail(params: {
 
   const shareUrl = `${getShareBaseUrl()}/s/${params.shareToken}`;
 
+  return {
+    sender_name: params.actorDisplayName,
+    sender_photo_url: senderPhotoUrl,
+    file_names_html: fileNamesHtml,
+    share_title: shareTitle,
+    share_url: shareUrl,
+    scope_label: params.scopeLabel,
+    workspace_name: params.workspaceName,
+    cta_url: params.ctaUrl,
+    share_context_detail: params.shareContextDetail ?? "",
+  };
+}
+
+/**
+ * Admin-only email when a share targets a workspace (team/org). No-op if template unset or no to_email.
+ */
+export async function sendWorkspaceShareAdminNotificationEmail(params: {
+  toEmail: string | null | undefined;
+  sharedByUserId: string;
+  actorDisplayName: string;
+  fileIds: string[];
+  folderName: string;
+  shareToken: string;
+  scopeLabel: string;
+  workspaceName: string;
+  ctaUrl: string;
+  shareContextDetail?: string;
+}): Promise<void> {
+  if (!getShareWorkspaceConfig() || !params.toEmail?.trim()) return;
+
   try {
+    const fields = await buildShareWorkspaceAdminEmailFields(params);
     await sendShareWorkspaceEmailToAdmin({
+      ...fields,
       to_email: params.toEmail.trim().toLowerCase(),
-      sender_name: params.actorDisplayName,
-      sender_photo_url: senderPhotoUrl,
-      file_names_html: fileNamesHtml,
-      share_title: shareTitle,
-      share_url: shareUrl,
-      scope_label: params.scopeLabel,
-      workspace_name: params.workspaceName,
-      cta_url: params.ctaUrl,
-      share_context_detail: params.shareContextDetail ?? "",
     });
   } catch (err) {
     console.error("[EmailJS] Workspace share admin email error:", err);
   }
+}
+
+/**
+ * Email every org/team admin (for moderation — non-member share delivery). Reuses
+ * EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE; set `delivery_request` on each send for template copy.
+ */
+export async function sendWorkspaceShareDeliveryRequestEmailsToAdmins(
+  adminEmails: string[],
+  params: ShareWorkspaceTemplateFieldsInput
+): Promise<void> {
+  if (!getShareWorkspaceConfig()) return;
+  let fields: WorkspaceDeliveryEmailArgs;
+  try {
+    fields = await buildShareWorkspaceAdminEmailFields(params);
+  } catch (err) {
+    console.error("[EmailJS] Workspace delivery request build error:", err);
+    return;
+  }
+  const seen = new Set<string>();
+  await Promise.allSettled(
+    adminEmails.map(async (raw) => {
+      const to = raw?.trim().toLowerCase();
+      if (!to?.includes("@") || seen.has(to)) return;
+      seen.add(to);
+      try {
+        await sendShareWorkspaceEmailToAdmin({
+          ...fields,
+          to_email: to,
+          delivery_request: "1",
+        });
+      } catch (err) {
+        console.error("[EmailJS] Workspace delivery request email error:", to, err);
+      }
+    })
+  );
 }
 
 /**

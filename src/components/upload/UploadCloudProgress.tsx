@@ -18,8 +18,8 @@ export type UploadCloudProgressProps = {
 };
 
 /**
- * Cloud icon that fills from bottom → top with the accent color; at 100% the cloud is fully “lit”.
- * Uses a clip so the shape reads clearly at any percentage.
+ * Cloud icon that fills bottom → top. Progress uses the same white-leaning fill as the
+ * Uppy StatusBar cloud (`--bizzi-uppy-statusbar-cloud-fill-progress` under `.bizzi-uppy-theme`).
  */
 export const UploadCloudProgress = memo(function UploadCloudProgress({
   progress,
@@ -38,6 +38,18 @@ export const UploadCloudProgress = memo(function UploadCloudProgress({
   const dimOpacity = error ? 0.38 : 0.26;
   const hClass = size === "sm" ? "h-5 w-7" : "h-7 w-9";
 
+  const basePathStyle = error
+    ? ({ fill: "currentColor", opacity: dimOpacity } as const)
+    : ({
+        fill: "color-mix(in srgb, var(--bizzi-uppy-statusbar-cloud-dim, var(--bizzi-uppy-primary)) 82%, transparent)",
+      } as const);
+
+  const progressPathStyle = error
+    ? ({ fill: "currentColor", opacity: 0.88 } as const)
+    : ({
+        fill: "var(--bizzi-uppy-statusbar-cloud-fill-progress, color-mix(in srgb, #ffffff 84%, var(--bizzi-uppy-primary) 16%))",
+      } as const);
+
   return (
     <div
       className={`relative inline-flex shrink-0 items-center justify-center ${hClass} ${className}`}
@@ -53,8 +65,8 @@ export const UploadCloudProgress = memo(function UploadCloudProgress({
             <rect x="0" y={fillTop} width={vb} height={Math.max(fillH, pct > 0 ? 0.02 : 0)} />
           </clipPath>
         </defs>
-        <path d={CLOUD_D} fill="currentColor" opacity={dimOpacity} />
-        {pct > 0 ? <path d={CLOUD_D} fill="currentColor" clipPath={`url(#${clipId})`} /> : null}
+        <path d={CLOUD_D} style={basePathStyle} />
+        {pct > 0 ? <path d={CLOUD_D} style={progressPathStyle} clipPath={`url(#${clipId})`} /> : null}
         <path
           d={CLOUD_D}
           fill="none"

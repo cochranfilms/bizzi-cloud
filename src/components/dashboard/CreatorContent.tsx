@@ -14,7 +14,7 @@ import { BulkActionBar } from "./BulkActionBar";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
-import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
@@ -156,7 +156,7 @@ export default function CreatorContent() {
   }, [creatorRawDriveId, linkedDrives, openDrive]);
 
   const visibleLinkedDrives = useMemo(
-    () => filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite }),
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
     [linkedDrives, hasEditor, hasGallerySuite]
   );
 

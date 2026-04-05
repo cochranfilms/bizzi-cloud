@@ -19,7 +19,7 @@ import CreateFolderModal from "./CreateFolderModal";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
-import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
@@ -86,10 +86,10 @@ export default function FileListRow({
   const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
-  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
-    hasEditor,
-    hasGallerySuite,
-  });
+  const moveDestinationDrives = useMemo(
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
   const { isPinned, pinItem, unpinItem } = usePinned();
   const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const filePinned = isPinned("file", file.id);
@@ -402,7 +402,7 @@ export default function FileListRow({
         itemName={file.name}
         itemType="file"
         excludeDriveId={file.driveId}
-        folders={visibleLinkedDrives}
+        folders={moveDestinationDrives}
         onMove={(targetDriveId) => moveFile(file.id, targetDriveId)}
       />
       <CreateFolderModal

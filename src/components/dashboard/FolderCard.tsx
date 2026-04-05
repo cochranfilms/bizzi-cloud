@@ -25,7 +25,7 @@ import {
   storageFolderRowReadyForUi,
 } from "@/lib/storage-folders/folder-operation-state-client";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
-import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -204,10 +204,10 @@ export default function FolderCard({
     isEnterpriseContext,
   ]);
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
-  const visibleLinkedDrives = filterLinkedDrivesByPowerUp(linkedDrives, {
-    hasEditor,
-    hasGallerySuite,
-  });
+  const moveDestinationDrives = useMemo(
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
   const { isPinned, pinItem, unpinItem } = usePinned();
   const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
   const { confirm } = useConfirm();
@@ -638,7 +638,7 @@ export default function FolderCard({
             itemName={item.name}
             itemType="folder"
             excludeDriveId={item.driveId}
-            folders={visibleLinkedDrives}
+            folders={moveDestinationDrives}
             onMove={(targetDriveId) => moveFolderContentsToFolder(item.driveId!, targetDriveId)}
           />
           <CreateFolderModal

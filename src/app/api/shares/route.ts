@@ -4,81 +4,30 @@ import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-a
 import { generateShareToken } from "@/lib/share-token";
 import {
   createShareNotifications,
+  createWorkspaceShareDeliveryRequestAdminNotifications,
   createWorkspaceShareNotifications,
 } from "@/lib/notification-service";
 import {
   sendShareFileEmailsToInvitees,
   sendWorkspaceShareAdminNotificationEmail,
+  sendWorkspaceShareDeliveryRequestEmailsToAdmins,
 } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 import { hydrateFolderShareDoc } from "@/lib/folder-share-hydrate";
 import {
+  getEnterpriseOrgAdminEmails,
   getEnterpriseOrgPrimaryAdminEmail,
   getRecipientModeFromDoc,
+  getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
+  userIsWorkspaceShareTargetAdmin,
+  workspaceDisplayContextForShare,
   workspaceShareTargetIsDeliverable,
   workspaceTargetKey,
 } from "@/lib/folder-share-workspace";
 import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
-import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
 import type { WorkspaceShareTargetKind } from "@/types/folder-share";
-import type { WorkspaceType } from "@/types/workspace";
-
-function scopeLabelForWorkspaceType(t: WorkspaceType): string {
-  switch (t) {
-    case "org_shared":
-      return "Organization";
-    case "team":
-      return "Team";
-    case "project":
-      return "Project";
-    case "gallery":
-      return "Gallery";
-    case "private":
-      return "Private";
-    default:
-      return "Workspace";
-  }
-}
-
-async function workspaceDisplayContext(
-  db: Firestore,
-  kind: WorkspaceShareTargetKind,
-  targetId: string
-): Promise<{ name: string; scopeLabel: string; organizationId: string | null }> {
-  if (kind === "personal_team") {
-    const settings = await db.collection(PERSONAL_TEAM_SETTINGS_COLLECTION).doc(targetId).get();
-    const custom = (settings.data()?.team_name as string | undefined)?.trim();
-    if (custom) return { name: custom, scopeLabel: "Team", organizationId: null };
-    try {
-      const authUser = await getAdminAuth().getUser(targetId);
-      const label = (authUser.displayName?.trim() || authUser.email?.split("@")[0] || "Team").trim();
-      return { name: `${label}'s team`, scopeLabel: "Team", organizationId: null };
-    } catch {
-      return { name: "Team workspace", scopeLabel: "Team", organizationId: null };
-    }
-  }
-  const wsSnap = await db.collection("workspaces").doc(targetId).get();
-  if (!wsSnap.exists) {
-    return { name: "Workspace", scopeLabel: "Workspace", organizationId: null };
-  }
-  const ws = wsSnap.data()!;
-  const orgId = ws.organization_id as string;
-  const wsType = (ws.workspace_type as WorkspaceType) ?? "private";
-  if (wsType === "org_shared" && orgId) {
-    const orgSnap = await db.collection("organizations").doc(orgId).get();
-    const orgName = (orgSnap.data()?.name as string | undefined)?.trim();
-    if (orgName) {
-      return { name: orgName, scopeLabel: "Org", organizationId: orgId };
-    }
-  }
-  return {
-    name: ((ws.name as string) ?? "Workspace").trim() || "Workspace",
-    scopeLabel: scopeLabelForWorkspaceType(wsType),
-    organizationId: orgId ?? null,
-  };
-}
 
 async function resolveActorDisplayNameForShare(
   uid: string,
@@ -158,6 +107,8 @@ async function deliverShareNotificationsAndEmail(params: {
   permission: string;
   /** Where the shared files live (personal vs org private), for notification disambiguation */
   shareSourceLabel?: string | null;
+  /** Non-member workspace target: only admins are notified until approval */
+  pendingWorkspaceDelivery?: boolean;
 }): Promise<void> {
   const actorDisplayName = await resolveActorDisplayNameForShare(params.uid, params.email);
   if (params.recipientMode === "email" && params.invitedEmails.length > 0) {
@@ -189,11 +140,64 @@ async function deliverShareNotificationsAndEmail(params: {
     params.workspaceKind &&
     params.workspaceTargetId
   ) {
-    const ctx = await workspaceDisplayContext(
+    const ctx = await workspaceDisplayContextForShare(
       params.db,
       params.workspaceKind,
       params.workspaceTargetId
     );
+    const targetKey = workspaceTargetKey(params.workspaceKind, params.workspaceTargetId);
+    const baseUrl = appBaseUrl();
+    const ctaUrl =
+      params.workspaceKind === "personal_team"
+        ? `${baseUrl}/team/${params.workspaceTargetId}/shared`
+        : `${baseUrl}/enterprise/shared`;
+    const shareContextDetail = [
+      workspaceShareInboxLabel(params.workspaceKind),
+      params.shareSourceLabel?.trim() || null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    if (params.pendingWorkspaceDelivery) {
+      await createWorkspaceShareDeliveryRequestAdminNotifications({
+        sharedByUserId: params.uid,
+        actorDisplayName,
+        fileIds: params.fileIds,
+        folderShareId: params.shareToken,
+        folderName: params.folderName,
+        workspaceShareName: ctx.name,
+        workspaceTargetKey: targetKey,
+        kind: params.workspaceKind,
+        targetId: params.workspaceTargetId,
+        shareInboxScopeLabel: workspaceShareInboxLabel(params.workspaceKind),
+        shareSourceLabel: params.shareSourceLabel ?? null,
+        targetOrganizationId: ctx.organizationId,
+      });
+      let adminEmails: string[] = [];
+      if (params.workspaceKind === "enterprise_workspace" && ctx.organizationId) {
+        adminEmails = await getEnterpriseOrgAdminEmails(ctx.organizationId);
+      } else if (params.workspaceKind === "personal_team") {
+        try {
+          const em = (await getAdminAuth().getUser(params.workspaceTargetId)).email?.trim();
+          if (em?.includes("@")) adminEmails = [em.toLowerCase()];
+        } catch {
+          adminEmails = [];
+        }
+      }
+      await sendWorkspaceShareDeliveryRequestEmailsToAdmins(adminEmails, {
+        sharedByUserId: params.uid,
+        actorDisplayName,
+        fileIds: params.fileIds,
+        folderName: params.folderName,
+        shareToken: params.shareToken,
+        scopeLabel: ctx.scopeLabel,
+        workspaceName: ctx.name,
+        ctaUrl,
+        shareContextDetail,
+      });
+      return;
+    }
+
     await createWorkspaceShareNotifications({
       sharedByUserId: params.uid,
       actorDisplayName,
@@ -201,7 +205,7 @@ async function deliverShareNotificationsAndEmail(params: {
       folderShareId: params.shareToken,
       folderName: params.folderName,
       workspaceShareName: ctx.name,
-      workspaceTargetKey: workspaceTargetKey(params.workspaceKind, params.workspaceTargetId),
+      workspaceTargetKey: targetKey,
       kind: params.workspaceKind,
       targetId: params.workspaceTargetId,
       shareInboxScopeLabel: workspaceShareInboxLabel(params.workspaceKind),
@@ -218,18 +222,6 @@ async function deliverShareNotificationsAndEmail(params: {
         adminEmail = null;
       }
     }
-    const base = appBaseUrl();
-    const ctaUrl =
-      params.workspaceKind === "personal_team"
-        ? `${base}/team/${params.workspaceTargetId}/shared`
-        : `${base}/enterprise/shared`;
-    const shareContextDetail = [
-      workspaceShareInboxLabel(params.workspaceKind),
-      params.shareSourceLabel?.trim() || null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-
     await sendWorkspaceShareAdminNotificationEmail({
       toEmail: adminEmail,
       sharedByUserId: params.uid,
@@ -342,6 +334,10 @@ export async function GET(request: Request) {
       workspace_target:
         wt?.kind && wt?.id ? { kind: wt.kind, id: wt.id } : null,
       workspace_target_key: (data.workspace_target_key as string) ?? null,
+      workspace_delivery_status:
+        getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace"
+          ? getWorkspaceShareDeliveryStatus(data as Record<string, unknown>)
+          : null,
     });
   }
 
@@ -380,6 +376,7 @@ export async function GET(request: Request) {
     workspace_target?: { kind: string; id: string };
     workspace_target_key?: string;
     share_ui_origin?: string;
+    workspace_delivery_status?: string;
   };
 
   const owned: ShareItem[] = [];
@@ -435,6 +432,10 @@ export async function GET(request: Request) {
       workspace_target: hydrated.workspace_target,
       workspace_target_key: hydrated.workspace_target_key,
       share_ui_origin: (raw.share_ui_origin as string | undefined) ?? undefined,
+      workspace_delivery_status:
+        getRecipientModeFromDoc(raw as Record<string, unknown>) === "workspace"
+          ? getWorkspaceShareDeliveryStatus(raw as Record<string, unknown>)
+          : undefined,
     });
   }
 
@@ -497,6 +498,10 @@ export async function GET(request: Request) {
       recipient_mode: hydrated.recipient_mode,
       workspace_target: hydrated.workspace_target,
       workspace_target_key: hydrated.workspace_target_key,
+      workspace_delivery_status:
+        getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace"
+          ? getWorkspaceShareDeliveryStatus(data as Record<string, unknown>)
+          : undefined,
     });
   }
 
@@ -546,7 +551,16 @@ export async function GET(request: Request) {
           }
         }
         const wt = parseWorkspaceTargetKey(key);
-        if (wt && !(await userCanAccessWorkspaceShareTarget(uid, wt.kind, wt.id))) continue;
+        if (wt) {
+          const delivery = getWorkspaceShareDeliveryStatus(data as Record<string, unknown>);
+          if (delivery === "rejected") continue;
+          if (delivery === "pending") {
+            const isAdmin = await userIsWorkspaceShareTargetAdmin(uid, wt.kind, wt.id);
+            if (!isAdmin) continue;
+          } else if (!(await userCanAccessWorkspaceShareTarget(uid, wt.kind, wt.id))) {
+            continue;
+          }
+        }
         await pushInvitedWithSharer(d);
       }
     }
@@ -710,6 +724,16 @@ export async function POST(request: Request) {
     }
   }
 
+  let pendingWorkspaceDelivery = false;
+  if (recipientMode === "workspace" && workspaceKind && workspaceTargetId) {
+    const sharerInTarget = await userCanAccessWorkspaceShareTarget(
+      uid,
+      workspaceKind,
+      workspaceTargetId
+    );
+    pendingWorkspaceDelivery = !sharerInTarget;
+  }
+
   if (isVirtualShare) {
     // Virtual share: reference files by ID only; no linked_drive created.
     // Files remain in their original locations. Deleting this share only removes
@@ -762,6 +786,8 @@ export async function POST(request: Request) {
       shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };
       shareData.workspace_target_key = workspaceTargetKeyValue;
       shareData.target_organization_id = targetOrganizationId;
+      shareData.workspace_delivery_status = pendingWorkspaceDelivery ? "pending" : "approved";
+      shareData.workspace_delivery_requested_at = pendingWorkspaceDelivery ? now : null;
     }
 
     await db.collection("folder_shares").doc(shareToken).set(shareData);
@@ -779,6 +805,7 @@ export async function POST(request: Request) {
       invitedEmails: (shareData.invited_emails as string[]) ?? [],
       permission,
       shareSourceLabel: recipientMode === "workspace" ? "From your files" : null,
+      pendingWorkspaceDelivery,
     });
 
     logActivityEvent({
@@ -807,6 +834,10 @@ export async function POST(request: Request) {
       workspace_target:
         recipientMode === "workspace" && workspaceKind && workspaceTargetId
           ? { kind: workspaceKind, id: workspaceTargetId }
+          : null,
+      workspace_delivery_status:
+        recipientMode === "workspace"
+          ? ((shareData.workspace_delivery_status as string) ?? "approved")
           : null,
     });
   }
@@ -919,6 +950,10 @@ export async function POST(request: Request) {
       share_url: `/s/${shareToken}`,
       existing: true,
       recipient_mode: existingMode,
+      workspace_delivery_status:
+        existingMode === "workspace"
+          ? getWorkspaceShareDeliveryStatus(data as Record<string, unknown>)
+          : null,
     });
   }
 
@@ -944,6 +979,8 @@ export async function POST(request: Request) {
     shareData.workspace_target = { kind: workspaceKind, id: workspaceTargetId };
     shareData.workspace_target_key = workspaceTargetKeyValue;
     shareData.target_organization_id = targetOrganizationId;
+    shareData.workspace_delivery_status = pendingWorkspaceDelivery ? "pending" : "approved";
+    shareData.workspace_delivery_requested_at = pendingWorkspaceDelivery ? now : null;
   }
 
   await db.collection("folder_shares").doc(shareToken).set(shareData);
@@ -977,6 +1014,7 @@ export async function POST(request: Request) {
     invitedEmails: (shareData.invited_emails as string[]) ?? [],
     permission,
     shareSourceLabel: shareSourceLabelForWorkspace,
+    pendingWorkspaceDelivery,
   });
 
   return NextResponse.json({
@@ -987,6 +1025,10 @@ export async function POST(request: Request) {
     workspace_target:
       recipientMode === "workspace" && workspaceKind && workspaceTargetId
         ? { kind: workspaceKind, id: workspaceTargetId }
+        : null,
+    workspace_delivery_status:
+      recipientMode === "workspace"
+        ? ((shareData.workspace_delivery_status as string) ?? "approved")
         : null,
   });
 }

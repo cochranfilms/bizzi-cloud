@@ -1,8 +1,10 @@
 import { verifyIdToken } from "@/lib/firebase-admin";
 import {
   getRecipientModeFromDoc,
+  getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
+  userIsWorkspaceShareTargetAdmin,
 } from "@/lib/folder-share-workspace";
 
 export type ShareAccessResult =
@@ -16,6 +18,7 @@ export type ShareAccessDoc = {
   invited_emails?: string[];
   recipient_mode?: string;
   workspace_target_key?: string;
+  workspace_delivery_status?: string;
 };
 
 export function shareFirestoreDataToAccessDoc(data: Record<string, unknown>): ShareAccessDoc {
@@ -25,6 +28,7 @@ export function shareFirestoreDataToAccessDoc(data: Record<string, unknown>): Sh
     invited_emails: data.invited_emails as string[] | undefined,
     recipient_mode: data.recipient_mode as string | undefined,
     workspace_target_key: data.workspace_target_key as string | undefined,
+    workspace_delivery_status: data.workspace_delivery_status as string | undefined,
   };
 }
 
@@ -75,7 +79,32 @@ export async function verifyShareAccess(
   const mode = getRecipientModeFromDoc(share as Record<string, unknown>);
   if (mode === "workspace" && share.workspace_target_key) {
     const parsed = parseWorkspaceTargetKey(share.workspace_target_key);
-    if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id))) {
+    if (!parsed) {
+      return {
+        allowed: false,
+        code: "access_denied",
+        message: "You don't have access to this folder.",
+      };
+    }
+    const delivery = getWorkspaceShareDeliveryStatus(share as Record<string, unknown>);
+    if (delivery === "rejected") {
+      return {
+        allowed: false,
+        code: "access_denied",
+        message: "This share was not approved for this workspace.",
+      };
+    }
+    if (delivery === "pending") {
+      if (await userIsWorkspaceShareTargetAdmin(uid, parsed.kind, parsed.id)) {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        code: "access_denied",
+        message: "This share is pending approval by a workspace admin.",
+      };
+    }
+    if (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)) {
       return { allowed: true };
     }
   }

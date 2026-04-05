@@ -23,7 +23,7 @@ import SectionTitle from "./SectionTitle";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
-import { filterLinkedDrivesByPowerUp } from "@/lib/drive-powerup-filter";
+import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { useConfirm } from "@/hooks/useConfirm";
 import { getMovePayloadFromDragSource, setDragMovePayload } from "@/lib/dnd-move-items";
@@ -533,7 +533,10 @@ export default function ProjectsView({
     );
   }, [bulkDownload, selectedFileIds, memberFilesForMove, allPackagesForMove]);
 
-  const movementFolders = filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite });
+  const movementFolders = useMemo(
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
 
   return (
     <div className="w-full space-y-0">

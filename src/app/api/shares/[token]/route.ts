@@ -8,7 +8,11 @@ import {
   getUserIdsForWorkspaceShareInbox,
   resolveEmailsToUserIds,
 } from "@/lib/notification-service";
-import { getRecipientModeFromDoc, parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
+import {
+  getRecipientModeFromDoc,
+  getWorkspaceShareDeliveryStatus,
+  parseWorkspaceTargetKey,
+} from "@/lib/folder-share-workspace";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
@@ -164,6 +168,11 @@ export async function GET(
     }
     response.workspace_target_key = (share.workspace_target_key as string) ?? null;
     response.version = version;
+    if (getRecipientModeFromDoc(share as Record<string, unknown>) === "workspace") {
+      response.workspace_delivery_status = getWorkspaceShareDeliveryStatus(
+        share as Record<string, unknown>
+      );
+    }
   }
   return NextResponse.json(response);
 }

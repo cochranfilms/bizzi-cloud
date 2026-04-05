@@ -9,7 +9,7 @@ import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { getOrgWideShareTargetWorkspaceId } from "@/lib/org-pillar-drives";
 import {
   ensurePersonalTeamRecord,
-  getOwnedTeam,
+  ownerHasPersonalTeamShell,
   seatStatusAllowsEnter,
 } from "@/lib/personal-team-auth";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
@@ -116,6 +116,60 @@ async function searchPersonalTeamsByNamePrefix(
   return out;
 }
 
+/**
+ * Find personal-team owners whose profile display name matches the query prefix, so teams
+ * without `team_name` in settings still appear when searching by owner name (e.g. "Big Boy").
+ */
+async function searchPersonalTeamOwnersByProfileDisplayPrefix(
+  db: Firestore,
+  qLower: string
+): Promise<Array<{ ownerUid: string }>> {
+  const out: Array<{ ownerUid: string }> = [];
+  const seen = new Set<string>();
+  const variants = [
+    ...new Set([
+      qLower,
+      qLower.length > 0 ? qLower.charAt(0).toUpperCase() + qLower.slice(1) : qLower,
+    ]),
+  ].filter(Boolean);
+
+  const runField = async (field: string) => {
+    for (const v of variants) {
+      try {
+        const snap = await db
+          .collection("profiles")
+          .orderBy(field)
+          .startAt(v)
+          .endAt(`${v}\uf8ff`)
+          .limit(20)
+          .get();
+        const candidates: string[] = [];
+        for (const d of snap.docs) {
+          const disp = String((d.data()?.[field] as string | undefined) ?? "").trim();
+          if (!disp || !disp.toLowerCase().includes(qLower)) continue;
+          if (seen.has(d.id)) continue;
+          candidates.push(d.id);
+        }
+        const shells = await Promise.all(
+          candidates.map((ownerUid) => ownerHasPersonalTeamShell(db, ownerUid))
+        );
+        for (let i = 0; i < candidates.length; i++) {
+          if (!shells[i]) continue;
+          const ownerUid = candidates[i]!;
+          seen.add(ownerUid);
+          out.push({ ownerUid });
+        }
+      } catch {
+        /* missing index or field */
+      }
+    }
+  };
+
+  await runField("display_name");
+  await runField("displayName");
+  return out;
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -146,8 +200,6 @@ export async function GET(request: Request) {
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data() ?? {};
   await ensurePersonalTeamRecord(db, uid, profileData);
-  const ownedTeam = await getOwnedTeam(db, uid);
-
   type TargetRow = {
     kind: "personal_team" | "enterprise_workspace";
     id: string;
@@ -159,7 +211,7 @@ export async function GET(request: Request) {
   const targets: TargetRow[] = [];
   const teamSeen = new Set<string>();
 
-  if (ownedTeam) {
+  if (await ownerHasPersonalTeamShell(db, uid)) {
     const ownerName = await profileDisplayName(db, uid);
     const fallback = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
     const name = await personalTeamWorkspaceMeta(db, uid, fallback);
@@ -258,6 +310,23 @@ export async function GET(request: Request) {
         kind: "personal_team",
         id: ownerUid,
         label: teamName,
+        subtitle: "Personal team · Search",
+        hrefHint: `/team/${ownerUid}/shared`,
+      });
+    }
+
+    const profileOwnerHits = await searchPersonalTeamOwnersByProfileDisplayPrefix(db, qRaw);
+    for (const { ownerUid } of profileOwnerHits) {
+      const k = `personal_team:${ownerUid}`;
+      if (targetKeys.has(k)) continue;
+      targetKeys.add(k);
+      const ownerName = await profileDisplayName(db, ownerUid);
+      const fallback = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
+      const label = await personalTeamWorkspaceMeta(db, ownerUid, fallback);
+      targets.push({
+        kind: "personal_team",
+        id: ownerUid,
+        label,
         subtitle: "Personal team · Search",
         hrefHint: `/team/${ownerUid}/shared`,
       });

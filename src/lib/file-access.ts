@@ -8,13 +8,30 @@ import { parseMacosPackageIdFromSyntheticFileId } from "@/lib/macos-package-synt
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import {
   getRecipientModeFromDoc,
+  getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
+  userIsWorkspaceShareTargetAdmin,
 } from "@/lib/folder-share-workspace";
 import { BACKUP_LIFECYCLE_ACTIVE, isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 
 function personalTeamSeatAllowsAccess(status: string | undefined): boolean {
   return status === "active" || status === "cold_storage";
+}
+
+async function userHasWorkspaceTargetShareFileAccess(
+  uid: string,
+  data: Record<string, unknown>
+): Promise<boolean> {
+  const key = data.workspace_target_key as string | undefined;
+  const parsed = parseWorkspaceTargetKey(key);
+  if (!parsed) return false;
+  const delivery = getWorkspaceShareDeliveryStatus(data);
+  if (delivery === "rejected") return false;
+  if (delivery === "pending") {
+    return userIsWorkspaceShareTargetAdmin(uid, parsed.kind, parsed.id);
+  }
+  return userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id);
 }
 
 /**
@@ -103,9 +120,7 @@ export async function canAccessBackupFileById(
         return true;
     }
     if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
-      const key = data.workspace_target_key as string | undefined;
-      const parsed = parseWorkspaceTargetKey(key);
-      if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
+      if (await userHasWorkspaceTargetShareFileAccess(uid, data as Record<string, unknown>))
         return true;
     }
   }
@@ -128,9 +143,7 @@ export async function canAccessBackupFileById(
         return true;
     }
     if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
-      const key = data.workspace_target_key as string | undefined;
-      const parsed = parseWorkspaceTargetKey(key);
-      if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
+      if (await userHasWorkspaceTargetShareFileAccess(uid, data as Record<string, unknown>))
         return true;
     }
   }
@@ -155,9 +168,7 @@ export async function canAccessBackupFileById(
           return true;
       }
       if (getRecipientModeFromDoc(data as Record<string, unknown>) === "workspace") {
-        const key = data.workspace_target_key as string | undefined;
-        const parsed = parseWorkspaceTargetKey(key);
-        if (parsed && (await userCanAccessWorkspaceShareTarget(uid, parsed.kind, parsed.id)))
+        if (await userHasWorkspaceTargetShareFileAccess(uid, data as Record<string, unknown>))
           return true;
       }
     }

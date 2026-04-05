@@ -10,6 +10,7 @@ import { useCloudFiles } from "@/hooks/useCloudFiles";
 import {
   filterDriveFoldersByPowerUp,
   filterLinkedDrivesByPowerUp,
+  linkedDrivesEligibleAsMoveDestination,
 } from "@/lib/drive-powerup-filter";
 import { usePinned, fetchPinnedFiles } from "@/hooks/usePinned";
 import { useBulkDownload } from "@/hooks/useBulkDownload";
@@ -331,6 +332,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     if (n === 2) return "max-sm:grid-cols-2";
     return "max-sm:grid-cols-3";
   }, [displayBaseFolderItems.length]);
+
+  const bulkMoveFolderTargets = useMemo(
+    () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
 
   const driveFolderItems = folderItems.filter((f) => {
     const drive = driveFolders.find((d) => d.id === f.driveId);
@@ -1804,7 +1810,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             return k.startsWith("drive-") ? k.slice(6) : "";
           })
           .filter(Boolean)}
-        folders={filterLinkedDrivesByPowerUp(linkedDrives, { hasEditor, hasGallerySuite })}
+        folders={bulkMoveFolderTargets}
         onMove={handleBulkMoveConfirm}
       />
 

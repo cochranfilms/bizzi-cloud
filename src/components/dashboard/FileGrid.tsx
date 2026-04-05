@@ -25,6 +25,7 @@ import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import {
   filterDriveFoldersByPowerUp,
   filterLinkedDrivesByPowerUp,
+  filterLinkedDrivesForMoveTargets,
 } from "@/lib/drive-powerup-filter";
 import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useGalleries } from "@/hooks/useGalleries";
@@ -671,6 +672,10 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     hasEditor,
     hasGallerySuite,
   });
+  const linkedDrivesForBulkMove = useMemo(
+    () => filterLinkedDrivesForMoveTargets(visibleLinkedDrives),
+    [visibleLinkedDrives]
+  );
   const drivesForFilter = visibleLinkedDrives.map((d) => ({ id: d.id, name: d.name }));
   const galleriesForFilter = galleries.map((g) => ({ id: g.id, title: g.title }));
   const galleryTitleById = useMemo(
@@ -3098,7 +3103,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
           ...(currentDriveId ? [currentDriveId] : []),
           ...Array.from(selectedFolderKeys).map((k) => (k.startsWith("drive-") ? k.slice(6) : k)),
         ]}
-        folders={visibleLinkedDrives}
+        folders={linkedDrivesForBulkMove}
         onMove={handleBulkMoveConfirm}
         v2IntraDrive={
           bulkV2IntraEligible && currentDrive

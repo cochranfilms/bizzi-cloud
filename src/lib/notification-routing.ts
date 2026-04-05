@@ -82,6 +82,7 @@ export const NOTIFICATION_TYPE_ROUTING_CLASS = {
   org_removal_scheduled: "enterprise_org",
 
   file_shared: "file_shared",
+  workspace_share_delivery_request: "file_shared",
 
   billing_payment_failed: "billing_org_conditional",
   billing_subscription_canceled: "billing_org_conditional",

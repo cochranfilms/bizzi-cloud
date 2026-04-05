@@ -43,6 +43,12 @@ export function formatNotificationMessage(
       }
       return `${actor} shared ${folderName ?? fileName} with you`;
     }
+    case "workspace_share_delivery_request": {
+      const wsName = metadata?.workspaceShareName?.trim() || "your workspace";
+      const itemLabel =
+        fileCount > 1 ? `${fileCount} files` : folderName ?? fileName;
+      return `${actor} asked to deliver shared ${itemLabel} to ${wsName} — approve in Shared to show your team`;
+    }
     case "transfer_sent":
       if (fileCount > 1) {
         return `${actor} sent you a transfer with ${fileCount} files`;

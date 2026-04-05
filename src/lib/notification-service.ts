@@ -401,6 +401,89 @@ export async function createWorkspaceShareNotifications(params: {
 }
 
 /**
+ * Non-members who target a team/org workspace get moderated delivery: only admins receive
+ * this notification (not the full member inbox). Approve via PATCH …/workspace-delivery.
+ */
+export async function createWorkspaceShareDeliveryRequestAdminNotifications(params: {
+  sharedByUserId: string;
+  actorDisplayName: string;
+  fileIds: string[];
+  folderShareId: string;
+  folderName?: string;
+  workspaceShareName: string;
+  workspaceTargetKey: string;
+  kind: WorkspaceShareTargetKind;
+  targetId: string;
+  shareInboxScopeLabel?: string;
+  shareSourceLabel?: string | null;
+  targetOrganizationId?: string | null;
+}): Promise<void> {
+  const db = getAdminFirestore();
+  let adminUids: string[] = [];
+  if (params.kind === "personal_team") {
+    adminUids = [params.targetId];
+  } else {
+    const orgId = params.targetOrganizationId?.trim();
+    if (orgId) {
+      adminUids = await getOrganizationAdminUserIds(db, orgId, params.sharedByUserId);
+    }
+  }
+  adminUids = adminUids.filter((id) => shouldNotify(id, params.sharedByUserId));
+  if (adminUids.length === 0) return;
+
+  const routingBucket =
+    params.kind === "personal_team"
+      ? `team:${params.targetId}`
+      : params.targetOrganizationId?.trim()
+        ? `enterprise:${params.targetOrganizationId.trim()}`
+        : "consumer";
+
+  const fileCount = params.fileIds.length;
+  const fileName =
+    fileCount === 1 && params.fileIds[0] ? await getFileDisplayName(params.fileIds[0]) : undefined;
+  const metadata = Object.fromEntries(
+    Object.entries({
+      fileName,
+      folderName: params.folderName,
+      actorDisplayName: params.actorDisplayName,
+      fileCount: fileCount > 1 ? fileCount : undefined,
+      workspaceShareName: params.workspaceShareName,
+      workspaceTargetKey: params.workspaceTargetKey,
+      shareToken: params.folderShareId,
+      shareInboxScopeLabel: params.shareInboxScopeLabel,
+      shareSourceLabel: params.shareSourceLabel ?? undefined,
+      targetOrganizationId: params.targetOrganizationId?.trim() || undefined,
+    }).filter(([, v]) => v !== undefined)
+  ) as NonNullable<Notification["metadata"]>;
+
+  const message = formatNotificationMessage(
+    "workspace_share_delivery_request",
+    params.actorDisplayName,
+    metadata
+  );
+
+  const now = new Date();
+  const batch = db.batch();
+  for (const recipientUserId of adminUids) {
+    const ref = db.collection("notifications").doc();
+    batch.set(ref, {
+      recipientUserId,
+      actorUserId: params.sharedByUserId,
+      type: "workspace_share_delivery_request",
+      fileId: params.fileIds[0] ?? null,
+      commentId: null,
+      shareId: params.folderShareId,
+      message,
+      isRead: false,
+      createdAt: now,
+      routingBucket,
+      metadata,
+    });
+  }
+  await batch.commit();
+}
+
+/**
  * Create in-app notifications when a photographer creates an invite-only gallery.
  * For each invited email that matches a Firebase user, creates a notification.
  * Invitees without accounts receive the email only (no in-app notification).
