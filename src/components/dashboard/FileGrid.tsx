@@ -69,6 +69,7 @@ import {
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
 import { parseStorageVirtualFolderKey } from "@/lib/storage-virtual-folder-key";
 import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
+import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { useAuth } from "@/context/AuthContext";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
 import { filterFilesForVirtualFolder } from "@/lib/metadata-display";
@@ -808,7 +809,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
               folders.map((f) => ({
                 name: f.name,
                 type: "folder" as const,
-                key: `storage-v2-${driveId}-${f.id}`,
+                key: buildStorageV2FolderPinId(driveId, f.id),
                 items: f.item_count,
                 virtualFolder: true,
                 driveId,
@@ -1857,9 +1858,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             throw new Error(DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED);
           }
           clearSelection();
-          await refetch();
-          if (currentDrive) void loadDriveFiles(currentDrive.id);
           setMoveNotice("Items moved into the folder");
+          void refetch();
           return;
         }
 
@@ -1881,12 +1881,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
           }
         }
         clearSelection();
-        await refetch();
-        if (currentDrive && expandedIds.length > 0) {
-          loadDriveFiles(currentDrive.id);
-        }
         const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
         setMoveNotice(`Items moved into the "${destName}" folder`);
+        void refetch();
       } catch (e) {
         setMoveNotice(null);
         setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
@@ -1896,7 +1893,6 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     [
       linkedDrives,
       currentDriveId,
-      currentDrive,
       closeDrive,
       moveFilesToFolder,
       moveFilesToStorageFolder,
@@ -1904,7 +1900,6 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       moveFolderContentsToFolder,
       clearSelection,
       refetch,
-      loadDriveFiles,
       filesForPackageExpand,
       packagesForPackageExpand,
       resolveFolderItemByKey,
@@ -1969,12 +1964,16 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       packagesForPackageExpand
     );
     const folderKeys = Array.from(selectedFolderKeys);
-    const folderDriveIds = folderKeys
-      .map((k) => (k.startsWith("drive-") ? k.slice(6) : k))
-      .filter(Boolean);
+    const { folderDriveIds, storagePathScopes, storageV2FolderScopes } =
+      bulkShareArgsFromFolderKeys(folderKeys);
 
     try {
-      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds);
+      const allFileIds = await getFileIdsForBulkShare(
+        fileIds,
+        folderDriveIds,
+        storagePathScopes.length > 0 ? storagePathScopes : undefined,
+        storageV2FolderScopes.length > 0 ? storageV2FolderScopes : undefined
+      );
       if (allFileIds.length === 0) return;
 
       const defaultFolderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;
@@ -3167,7 +3166,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             const created = (await res.json()) as { id?: string };
             const newId = typeof created.id === "string" ? created.id : "";
             if (newId && currentDrive) {
-              const nk = `storage-v2-${currentDrive.id}-${newId}`;
+              const nk = buildStorageV2FolderPinId(currentDrive.id, newId);
               setStorageV2RevealFolderKey(nk);
               window.setTimeout(() => {
                 setStorageV2RevealFolderKey((k) => (k === nk ? null : k));

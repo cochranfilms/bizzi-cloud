@@ -43,6 +43,8 @@ import {
   buildStorageVirtualFolderKey,
   parseStorageVirtualFolderKey,
 } from "@/lib/storage-virtual-folder-key";
+import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
+import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
 import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
 import { isLegacyCustomLinkedDriveForConsolidation } from "@/lib/storage-folder-model-policy";
@@ -359,7 +361,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           name: t.name,
           type: "folder" as const,
           key: isV2Row
-            ? `storage-v2-home-${t.driveId}-${t.storageFolderId}`
+            ? buildStorageV2FolderPinId(t.driveId, t.storageFolderId!)
             : buildStorageVirtualFolderKey(t.driveId, t.pathPrefix),
           items: t.itemCount,
           hideShare: false,
@@ -974,11 +976,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
             throw new Error(DROP_FOLDER_INTO_V2_SUBFOLDER_UNSUPPORTED);
           }
           clearSelection();
-          await refetch();
-          await refetchPinned();
-          loadPinnedFiles();
-          fetchRecentUploads();
           setMoveNotice("Items moved into the folder");
+          void Promise.all([refetch(), refetchPinned()]).then(() => loadPinnedFiles());
+          void fetchRecentUploads();
           return;
         }
 
@@ -1002,12 +1002,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           }
         }
         clearSelection();
-        await refetch();
-        await refetchPinned();
-        loadPinnedFiles();
-        fetchRecentUploads();
         const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
         setMoveNotice(`Items moved into the "${destName}" folder`);
+        void Promise.all([refetch(), refetchPinned()]).then(() => loadPinnedFiles());
+        void fetchRecentUploads();
       } catch (e) {
         setMoveNotice(null);
         setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
@@ -1061,19 +1059,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const handleBulkNewTransfer = useCallback(async () => {
     const directIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
-    const storagePathScopes: { driveId: string; pathPrefix: string }[] = [];
-    const folderDriveIds: string[] = [];
-    for (const k of folderKeys) {
-      const scope = parseStorageVirtualFolderKey(k);
-      if (scope) storagePathScopes.push(scope);
-      else if (k.startsWith("drive-")) folderDriveIds.push(k.slice(6));
-    }
+    const { folderDriveIds, storagePathScopes, storageV2FolderScopes } =
+      bulkShareArgsFromFolderKeys(folderKeys);
     const fileIds =
       folderKeys.length > 0
         ? await getFileIdsForBulkShare(
             directIds,
             folderDriveIds,
-            storagePathScopes.length > 0 ? storagePathScopes : undefined
+            storagePathScopes.length > 0 ? storagePathScopes : undefined,
+            storageV2FolderScopes.length > 0 ? storageV2FolderScopes : undefined
           )
         : directIds;
     if (fileIds.length > 0) {
@@ -1096,16 +1090,16 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   const handleBulkShare = useCallback(async () => {
     const fileIds = Array.from(selectedFileIds);
     const folderKeys = Array.from(selectedFolderKeys);
-    const storagePathScopes: { driveId: string; pathPrefix: string }[] = [];
-    const folderDriveIds: string[] = [];
-    for (const k of folderKeys) {
-      const scope = parseStorageVirtualFolderKey(k);
-      if (scope) storagePathScopes.push(scope);
-      else if (k.startsWith("drive-")) folderDriveIds.push(k.slice(6));
-    }
+    const { folderDriveIds, storagePathScopes, storageV2FolderScopes } =
+      bulkShareArgsFromFolderKeys(folderKeys);
 
     try {
-      const allFileIds = await getFileIdsForBulkShare(fileIds, folderDriveIds, storagePathScopes);
+      const allFileIds = await getFileIdsForBulkShare(
+        fileIds,
+        folderDriveIds,
+        storagePathScopes.length > 0 ? storagePathScopes : undefined,
+        storageV2FolderScopes.length > 0 ? storageV2FolderScopes : undefined
+      );
       if (allFileIds.length === 0) return;
 
       const defaultFolderName = `Share ${new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`;

@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useEnterprise } from "@/context/EnterpriseContext";
 
 function shareUiOriginFromPath(path: string): "dashboard" | "personal_team" | "enterprise" {
   if (path.startsWith("/enterprise")) return "enterprise";
@@ -45,7 +44,6 @@ export default function ShareModal({
 }: ShareModalProps) {
   const { user } = useAuth();
   const pathname = usePathname() ?? "";
-  const { org } = useEnterprise();
   const routeTeamOwnerId = useMemo(() => {
     const m = pathname.match(/^\/team\/([^/]+)/);
     return m?.[1] ?? null;
@@ -266,7 +264,6 @@ export default function ShareModal({
       try {
         const token = await user.getIdToken();
         const params = new URLSearchParams({ q: targetQuery });
-        if (org?.id) params.set("organization_id", org.id);
         const res = await fetch(`/api/share-targets?${params}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -279,7 +276,7 @@ export default function ShareModal({
       }
     }, 280);
     return () => clearTimeout(t);
-  }, [open, recipientTab, user, targetQuery, org?.id, routeTeamOwnerId]);
+  }, [open, recipientTab, user, targetQuery, routeTeamOwnerId]);
 
   useEffect(() => {
     if (routeTeamOwnerId) return;

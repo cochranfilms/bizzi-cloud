@@ -133,6 +133,7 @@ export default function FolderCard({
       }`
     : "";
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareReferencedFileIds, setShareReferencedFileIds] = useState<string[] | undefined>(undefined);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -143,7 +144,7 @@ export default function FolderCard({
   const { user } = useAuth();
   const { org, role: orgRole } = useEnterprise();
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
-  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
+  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder, getFileIdsForBulkShare } =
     useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives, bumpStorageVersion } = useBackup();
 
@@ -211,6 +212,22 @@ export default function FolderCard({
   const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
   const { confirm } = useConfirm();
 
+  const openShare = useCallback(async () => {
+    if (item.storageFolderId && item.storageLinkedDriveId) {
+      const ids = await getFileIdsForBulkShare(
+        [],
+        [],
+        undefined,
+        [{ driveId: item.storageLinkedDriveId, storageFolderId: item.storageFolderId }]
+      );
+      if (ids.length === 0) return;
+      setShareReferencedFileIds(ids);
+    } else {
+      setShareReferencedFileIds(undefined);
+    }
+    setShareOpen(true);
+  }, [item.storageFolderId, item.storageLinkedDriveId, getFileIdsForBulkShare]);
+
   const handleDelete = async () => {
     const ok = await confirm({
       message: `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`,
@@ -271,9 +288,9 @@ export default function FolderCard({
     isSystemFolder
       ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
       : selected
-        ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
+        ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
         : isDragOver
-          ? "border-bizzi-blue ring-2 ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
+          ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
   } ${
     canNavigate && !selected
@@ -287,10 +304,10 @@ export default function FolderCard({
 
   const thumbBrowseShell = `group touch-manipulation relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
     selected
-      ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
+      ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
       : isDragOver
-        ? "ring-2 ring-bizzi-blue/60 bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
-        : "ring-1 ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
+        ? "ring-2 ring-inset ring-bizzi-blue/60 bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
+        : "ring-1 ring-inset ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
   } ${
     canNavigate && !selected && !isDragOver
       ? "cursor-pointer hover:ring-neutral-300 hover:shadow-sm dark:hover:ring-neutral-600"
@@ -483,7 +500,7 @@ export default function FolderCard({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setShareOpen(true);
+                void openShare();
               }}
               className={`rounded-lg p-2 ${
                 isSystemFolder
@@ -508,7 +525,7 @@ export default function FolderCard({
                         id: "share",
                         label: "Share",
                         icon: <Share2 className="h-4 w-4" />,
-                        onClick: () => setShareOpen(true),
+                        onClick: () => void openShare(),
                       },
                     ]
                   : []),
@@ -598,9 +615,13 @@ export default function FolderCard({
 
       <ShareModal
         open={shareOpen}
-        onClose={() => setShareOpen(false)}
+        onClose={() => {
+          setShareOpen(false);
+          setShareReferencedFileIds(undefined);
+        }}
         folderName={item.name}
-        linkedDriveId={item.driveId}
+        linkedDriveId={shareReferencedFileIds ? undefined : item.driveId}
+        referencedFileIds={shareReferencedFileIds}
       />
       {item.driveId && (
         <>

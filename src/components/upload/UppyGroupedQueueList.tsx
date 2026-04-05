@@ -8,6 +8,7 @@ import { packageKindDisplayLabel } from "@/lib/macos-package-bundles";
 import { revokeUppyPreview } from "@/lib/uppy-local-preview";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { UploadCloudProgress } from "@/components/upload/UploadCloudProgress";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -329,19 +330,11 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                     </button>
                   </div>
                 </div>
-                <div className="bizzi-upload-panel-progress-track mt-2 h-1 overflow-hidden rounded-full">
-                  <div
-                    className={`h-full transition-all ${
-                      anyFailed ? "bg-amber-500 dark:bg-amber-600" : ""
-                    }`}
-                    style={
-                      anyFailed
-                        ? { width: `${pct}%` }
-                        : {
-                            width: `${pct}%`,
-                            backgroundColor: "var(--bizzi-uppy-primary)",
-                          }
-                    }
+                <div className="mt-2 flex items-center justify-start">
+                  <UploadCloudProgress
+                    progress={pct}
+                    error={anyFailed}
+                    complete={allDone && !anyFailed}
                   />
                 </div>
               </div>
@@ -402,17 +395,12 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
                       </span>
                     ) : null}
                   </div>
-                  <div className="bizzi-upload-panel-progress-track mt-1 h-0.5 overflow-hidden rounded-full">
-                    <div
-                      className={`h-full ${f.error ? "bg-red-500" : ""}`}
-                      style={
-                        f.error
-                          ? { width: "100%" }
-                          : {
-                              width: `${pct}%`,
-                              backgroundColor: "var(--bizzi-uppy-primary)",
-                            }
-                      }
+                  <div className="mt-1 flex items-center">
+                    <UploadCloudProgress
+                      progress={pct}
+                      error={Boolean(f.error)}
+                      complete={done && !f.error}
+                      size="sm"
                     />
                   </div>
                 </div>

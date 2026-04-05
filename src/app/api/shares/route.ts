@@ -17,6 +17,7 @@ import {
   getRecipientModeFromDoc,
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
+  workspaceShareTargetIsDeliverable,
   workspaceTargetKey,
 } from "@/lib/folder-share-workspace";
 import { getAccessibleWorkspaceIds } from "@/lib/workspace-access";
@@ -627,8 +628,11 @@ export async function POST(request: Request) {
     }
     workspaceKind = workspaceTargetRaw.kind as WorkspaceShareTargetKind;
     workspaceTargetId = workspaceTargetRaw.id.trim();
-    if (!(await userCanAccessWorkspaceShareTarget(uid, workspaceKind, workspaceTargetId))) {
-      return NextResponse.json({ error: "You cannot share to this workspace" }, { status: 403 });
+    if (!(await workspaceShareTargetIsDeliverable(workspaceKind, workspaceTargetId))) {
+      return NextResponse.json(
+        { error: "That team or workspace could not be found." },
+        { status: 404 }
+      );
     }
   } else if (
     workspaceTargetRaw &&
@@ -727,7 +731,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `File ${fileId} not found` }, { status: 404 });
       }
       const fileData = fileSnap.data();
-      if (fileData?.userId !== uid) {
+      const fileOwner =
+        (fileData?.owner_user_id as string | undefined) ?? (fileData?.userId as string | undefined);
+      if (fileOwner !== uid) {
         return NextResponse.json({ error: "Access denied: you do not own all files" }, { status: 403 });
       }
       if (fileData?.deleted_at) {

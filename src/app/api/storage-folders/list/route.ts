@@ -95,7 +95,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const files = fSnap.docs.map((d) => {
+    let files = fSnap.docs.map((d) => {
       const data = d.data();
       const fileName =
         String(data.file_name ?? "").trim() ||
@@ -105,6 +105,15 @@ export async function GET(request: Request) {
         buildRelativePathFromFolderNames(parentPathNames, fileName);
       return { id: d.id, ...data, file_name: fileName, relative_path };
     });
+    /** Root: only immediate children. Path-based imports live under virtual segments (home tile + `path=`). */
+    if (parent_folder_id === null) {
+      files = files.filter((row) => {
+        const rp = String((row as { relative_path?: string }).relative_path ?? "")
+          .replace(/^\/+/, "")
+          .trim();
+        return !rp.includes("/");
+      });
+    }
 
     const foldersWithCounts = await Promise.all(
       folderList.map(async (row) => {

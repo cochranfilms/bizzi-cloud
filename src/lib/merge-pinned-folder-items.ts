@@ -28,7 +28,7 @@ export function mergePinnedFolderItems(
       driveId: linkedDriveId,
       storageFolderId,
       storageLinkedDriveId: linkedDriveId,
-      hideShare: true,
+      hideShare: false,
       preventDelete: true,
       preventMove: true,
       preventRename: true,

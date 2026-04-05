@@ -82,6 +82,23 @@ type StorageFolderRootRow = {
   lifecycle_state?: string;
 };
 
+/** Merge Google/Dropbox-import path prefixes (e.g. `imported/…`) with v2 `storage_folders` tiles on home. */
+function appendV2PathSegmentTiles(
+  driveId: string,
+  segmentCounts: Map<string, number>,
+  folders: StorageFolderRootRow[]
+): void {
+  const v2Names = new Set(
+    folders
+      .filter((f) => typeof f.storage_folder_id === "string" && f.storage_folder_id.length > 0)
+      .map((f) => f.name.toLowerCase())
+  );
+  for (const [name, file_count] of segmentCounts.entries()) {
+    if (v2Names.has(name.toLowerCase())) continue;
+    folders.push({ drive_id: driveId, name, path: name, file_count });
+  }
+}
+
 /** Root `storage_folders` rows for folder model v2 (e.g. home “Bizzi Cloud Folders” + migration-created folders). */
 async function appendV2StorageRootFolderRows(
   db: Firestore,
@@ -189,7 +206,6 @@ export async function GET(request: Request) {
           fileVisibleOnPersonalDashboard(d, uid)
         );
         const isV2 = Number(data.folder_model_version) === 2;
-        /** v2 Storage (active): home “Bizzi Cloud Folders” lists platform `storage_folders` only — not path-segment groups from computer imports. */
         if (trashOnly || !isV2) {
           for (const [name, file_count] of map.entries()) {
             folders.push({ drive_id: driveId, name, path: name, file_count });
@@ -197,6 +213,7 @@ export async function GET(request: Request) {
         }
         if (!trashOnly && isV2) {
           await appendV2StorageRootFolderRows(db, driveId, folders);
+          appendV2PathSegmentTiles(driveId, map, folders);
         }
       })
     );
@@ -239,6 +256,7 @@ export async function GET(request: Request) {
         }
         if (!trashOnly && isV2Team) {
           await appendV2StorageRootFolderRows(db, driveId, folders);
+          appendV2PathSegmentTiles(driveId, map, folders);
         }
       })
     );

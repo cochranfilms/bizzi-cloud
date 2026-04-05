@@ -104,6 +104,7 @@ export default function FolderListRow({
     [item, rollup.coverage, rollup.descendants, displayContext, currentDriveName]
   );
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareReferencedFileIds, setShareReferencedFileIds] = useState<string[] | undefined>(undefined);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -114,7 +115,7 @@ export default function FolderListRow({
   const { user } = useAuth();
   const { org, role: orgRole } = useEnterprise();
   const canNavigate = (!!item.driveId || item.virtualFolder === true) && !!onClick;
-  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder } =
+  const { renameFolder, moveFolderContentsToFolder, renameStorageFolder, moveStorageFolder, getFileIdsForBulkShare } =
     useCloudFiles({ subscribeDriveListing: false });
   const { createFolder, linkedDrives, bumpStorageVersion } = useBackup();
 
@@ -181,6 +182,22 @@ export default function FolderListRow({
   const { isPinned, pinItem, unpinItem } = usePinned();
   const folderPinned = !!item.driveId && isPinned("folder", item.driveId);
   const { confirm } = useConfirm();
+
+  const openShare = useCallback(async () => {
+    if (item.storageFolderId && item.storageLinkedDriveId) {
+      const ids = await getFileIdsForBulkShare(
+        [],
+        [],
+        undefined,
+        [{ driveId: item.storageLinkedDriveId, storageFolderId: item.storageFolderId }]
+      );
+      if (ids.length === 0) return;
+      setShareReferencedFileIds(ids);
+    } else {
+      setShareReferencedFileIds(undefined);
+    }
+    setShareOpen(true);
+  }, [item.storageFolderId, item.storageLinkedDriveId, getFileIdsForBulkShare]);
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -342,7 +359,7 @@ export default function FolderListRow({
                           id: "share",
                           label: "Share",
                           icon: undefined,
-                          onClick: () => setShareOpen(true),
+                          onClick: () => void openShare(),
                         },
                       ]
                     : []),
@@ -432,9 +449,13 @@ export default function FolderListRow({
 
       <ShareModal
         open={shareOpen}
-        onClose={() => setShareOpen(false)}
+        onClose={() => {
+          setShareOpen(false);
+          setShareReferencedFileIds(undefined);
+        }}
         folderName={item.name}
-        linkedDriveId={item.driveId}
+        linkedDriveId={shareReferencedFileIds ? undefined : item.driveId}
+        referencedFileIds={shareReferencedFileIds}
       />
       {item.driveId && (
         <>

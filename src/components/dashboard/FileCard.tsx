@@ -295,8 +295,8 @@ export default function FileCard({
   const rootShell = isThumb
     ? `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl transition-all ${
         selected
-          ? "ring-2 ring-bizzi-blue ring-offset-2 ring-offset-white shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:ring-offset-neutral-950 dark:shadow-bizzi-cyan/25"
-          : "ring-1 ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
+          ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
+          : "ring-1 ring-inset ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
       } ${
         previewShellActive && !selected
           ? "cursor-pointer hover:ring-neutral-300 hover:shadow-sm dark:hover:ring-neutral-600"
@@ -306,7 +306,7 @@ export default function FileCard({
       }`
     : `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-xl border transition-colors ${
         selected
-          ? "border-bizzi-blue ring-2 ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
+          ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
           : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
       } ${
         previewShellActive && !selected

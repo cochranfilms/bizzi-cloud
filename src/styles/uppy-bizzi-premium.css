@@ -342,3 +342,119 @@
 .bizzi-uppy-theme .bizzi-upload-panel-progress-track {
   background: var(--bizzi-upload-divider);
 }
+
+/* StatusBar: cloud fill replaces the small circular spinner; top progress strip unchanged.
+   Contrast: blend accent with semantic text/on-primary and lift off the bar with a plate + ring
+   so custom dashboard colors never wash the glyph into --bizzi-upload-inner-well. */
+.bizzi-uppy-theme {
+  --bizzi-uppy-cloud-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z'/%3E%3C/svg%3E");
+  /* Muted cloud body: always skewed toward UI text so it reads on tinted panels */
+  --bizzi-uppy-statusbar-cloud-dim: color-mix(
+    in srgb,
+    var(--bizzi-uppy-primary) 38%,
+    var(--bizzi-upload-text) 40%
+  );
+  /* Fill: mostly accent + on-accent so bright teal-on-teal workspace still pops */
+  --bizzi-uppy-statusbar-cloud-fill-solid: color-mix(
+    in srgb,
+    var(--bizzi-uppy-primary) 76%,
+    var(--bizzi-uppy-on-primary) 24%
+  );
+  /* Hairline around cloud silhouette */
+  --bizzi-uppy-statusbar-cloud-silhouette-edge: color-mix(
+    in srgb,
+    var(--bizzi-upload-text) 58%,
+    var(--bizzi-upload-divider) 42%
+  );
+  /* Raised chip behind spinner slot */
+  --bizzi-uppy-statusbar-cloud-plate: color-mix(
+    in srgb,
+    var(--bizzi-upload-surface-elevated) 78%,
+    var(--bizzi-upload-text) 11%
+  );
+  --bizzi-uppy-statusbar-cloud-plate-ring: color-mix(
+    in srgb,
+    var(--bizzi-upload-divider) 48%,
+    var(--bizzi-upload-text) 52%
+  );
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner) {
+  position: relative;
+}
+
+/* Uppy’s spinner is an SVG; hide the path only and paint a contrasting plate on the SVG box. */
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner) .uppy-StatusBar-spinner {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  opacity: 1 !important;
+  width: 2.25rem !important;
+  min-width: 2.25rem !important;
+  height: 1.75rem !important;
+  flex-shrink: 0;
+  padding: 5px 6px;
+  background: var(--bizzi-uppy-statusbar-cloud-plate) !important;
+  border-radius: 11px;
+  box-shadow:
+    inset 0 0 0 1px var(--bizzi-uppy-statusbar-cloud-plate-ring),
+    0 1px 2px rgb(0 0 0 / 0.07);
+}
+
+.bizzi-uppy-theme[data-uppy-theme="dark"]
+  .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)
+  .uppy-StatusBar-spinner {
+  box-shadow:
+    inset 0 0 0 1px var(--bizzi-uppy-statusbar-cloud-plate-ring),
+    0 1px 4px rgb(0 0 0 / 0.38);
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner) .uppy-StatusBar-spinner path {
+  opacity: 0 !important;
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)::before,
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(2.25rem - 12px);
+  height: calc(1.75rem - 10px);
+  pointer-events: none;
+  z-index: 2;
+  -webkit-mask: var(--bizzi-uppy-cloud-mask) center / contain no-repeat;
+  mask: var(--bizzi-uppy-cloud-mask) center / contain no-repeat;
+  filter: drop-shadow(0 0 0.55px var(--bizzi-uppy-statusbar-cloud-silhouette-edge));
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)::before {
+  background: color-mix(in srgb, var(--bizzi-uppy-statusbar-cloud-dim) 82%, transparent);
+}
+
+.bizzi-uppy-theme .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)::after {
+  background: linear-gradient(
+    to top,
+    var(--bizzi-uppy-statusbar-cloud-fill-solid) 0%,
+    var(--bizzi-uppy-statusbar-cloud-fill-solid) var(--bizzi-status-pct, 0%),
+    transparent var(--bizzi-status-pct, 0%)
+  );
+}
+
+.bizzi-uppy-dashboard-cloud-vars.bizzi-uppy-statusbar-cloud-indeterminate
+  .uppy-StatusBar-content:has(.uppy-StatusBar-spinner)::after {
+  animation: bizzi-uppy-statusbar-cloud-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes bizzi-uppy-statusbar-cloud-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    filter: drop-shadow(0 0 0.55px var(--bizzi-uppy-statusbar-cloud-silhouette-edge)) brightness(0.96);
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 0.55px var(--bizzi-uppy-statusbar-cloud-silhouette-edge)) brightness(1.05);
+  }
+}

@@ -54,6 +54,7 @@ import {
   isBackupFileActiveForListing,
   resolveBackupFileLifecycleState,
 } from "@/lib/backup-file-lifecycle";
+import { COLLECTION_STORAGE_FOLDERS } from "@/lib/storage-folders/types";
 import {
   registerCloudFilesPostMutationRefresh,
   scheduleCloudFilesPostMutationRefresh,
@@ -1693,9 +1694,12 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         enterpriseRole: orgRole,
         isEnterpriseContext,
       };
+      const snapshots = await Promise.all(
+        fileIds.map((fileId) => getDoc(doc(db, "backup_files", fileId)))
+      );
       const allowed: string[] = [];
-      for (const fileId of fileIds) {
-        const fileSnap = await getDoc(doc(db, "backup_files", fileId));
+      for (let i = 0; i < fileIds.length; i++) {
+        const fileSnap = snapshots[i];
         if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
         if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
@@ -1703,7 +1707,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         if (sourceDriveId === targetDriveId) {
           throw new Error(MOVE_ALREADY_AT_DESTINATION);
         }
-        allowed.push(fileId);
+        allowed.push(fileIds[i]!);
       }
       if (allowed.length === 0) return;
       const token = await getCurrentUserIdToken(true);
@@ -1724,9 +1728,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       if (!res.ok) {
         throw new Error(await apiErrorMessage(res, "Move failed"));
       }
-      for (const fileId of allowed) {
-        await reconcileMacosPackageForBackupFileClient(fileId);
-      }
+      await Promise.all(allowed.map((fileId) => reconcileMacosPackageForBackupFileClient(fileId)));
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();
     },
@@ -1750,10 +1752,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         enterpriseRole: orgRole,
         isEnterpriseContext,
       };
+      const snapshots = await Promise.all(
+        fileIds.map((fileId) => getDoc(doc(db, "backup_files", fileId)))
+      );
       const allowed: string[] = [];
       const tgt = targetFolderId ?? null;
-      for (const fileId of fileIds) {
-        const fileSnap = await getDoc(doc(db, "backup_files", fileId));
+      for (let i = 0; i < fileIds.length; i++) {
+        const fileSnap = snapshots[i];
         if (!fileSnap.exists()) continue;
         const data = fileSnap.data()!;
         if (!actorMayMoveBackupFile(data, user.uid, linkedDrives, moveOpts)) continue;
@@ -1761,26 +1766,28 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         if (curFolder === tgt) {
           throw new Error(MOVE_ALREADY_AT_DESTINATION);
         }
-        allowed.push(fileId);
+        allowed.push(fileIds[i]!);
       }
       if (allowed.length === 0) return;
       const token = await getCurrentUserIdToken(true);
       if (!token) return;
       const base = typeof window !== "undefined" ? window.location.origin : "";
-      for (const file_id of allowed) {
-        const res = await fetch(`${base}/api/files/move-to-folder`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ file_id, target_folder_id: targetFolderId }),
-        });
-        if (!res.ok) {
-          throw new Error(await apiErrorMessage(res, "Move failed"));
-        }
-        await reconcileMacosPackageForBackupFileClient(file_id);
-      }
+      await Promise.all(
+        allowed.map(async (file_id) => {
+          const res = await fetch(`${base}/api/files/move-to-folder`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ file_id, target_folder_id: targetFolderId }),
+          });
+          if (!res.ok) {
+            throw new Error(await apiErrorMessage(res, "Move failed"));
+          }
+          await reconcileMacosPackageForBackupFileClient(file_id);
+        })
+      );
       bumpStorageVersion();
       scheduleDebouncedPostTrashMetadataRefresh();
     },
@@ -1884,6 +1891,61 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     [user, linkedDrives]
   );
 
+  const collectActiveFileIdsInStorageV2Subtree = useCallback(
+    async (driveId: string, rootFolderId: string): Promise<string[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const folderDrive = linkedDrives.find((d) => d.id === driveId);
+      const folderIds = new Set<string>([rootFolderId]);
+      const queue = [rootFolderId];
+      while (queue.length) {
+        const parent = queue.shift()!;
+        const fq = query(
+          collection(db, COLLECTION_STORAGE_FOLDERS),
+          where("linked_drive_id", "==", driveId),
+          where("parent_folder_id", "==", parent),
+          where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+        );
+        const sub = await getDocs(fq);
+        for (const d of sub.docs) {
+          if (!folderIds.has(d.id)) {
+            folderIds.add(d.id);
+            queue.push(d.id);
+          }
+        }
+      }
+      const snap = await getDocs(
+        shouldQueryDriveWideFiles(folderDrive, user.uid)
+          ? folderDrive?.organization_id
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", driveId),
+                where("organization_id", "==", folderDrive.organization_id),
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", driveId),
+                where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+              )
+          : query(
+              collection(db, "backup_files"),
+              where("userId", "==", user.uid),
+              where("linked_drive_id", "==", driveId),
+              where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
+            )
+      );
+      const ids: string[] = [];
+      for (const d of snap.docs) {
+        if (!isBackupFileActiveForListing(d.data() as Record<string, unknown>)) continue;
+        const fid = (d.data() as Record<string, unknown>).folder_id as string | null | undefined;
+        if (fid && folderIds.has(fid)) ids.push(d.id);
+      }
+      return ids;
+    },
+    [user, linkedDrives]
+  );
+
   const trashAllFilesUnderStoragePath = useCallback(
     async (driveId: string, pathPrefix: string) => {
       const ids = await collectActiveFileIdsUnderStoragePathPrefix(driveId, pathPrefix);
@@ -1912,7 +1974,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     async (
       fileIds: string[],
       folderDriveIds: string[],
-      storagePathScopes?: { driveId: string; pathPrefix: string }[]
+      storagePathScopes?: { driveId: string; pathPrefix: string }[],
+      storageV2FolderScopes?: { driveId: string; storageFolderId: string }[]
     ): Promise<string[]> => {
       if (!isFirebaseConfigured() || !user) return [];
       const db = getFirebaseFirestore();
@@ -1951,9 +2014,21 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         );
         under.forEach((id) => ids.add(id));
       }
+      for (const v2 of storageV2FolderScopes ?? []) {
+        const under = await collectActiveFileIdsInStorageV2Subtree(
+          v2.driveId,
+          v2.storageFolderId
+        );
+        under.forEach((id) => ids.add(id));
+      }
       return Array.from(ids);
     },
-    [user, linkedDrives, collectActiveFileIdsUnderStoragePathPrefix]
+    [
+      user,
+      linkedDrives,
+      collectActiveFileIdsUnderStoragePathPrefix,
+      collectActiveFileIdsInStorageV2Subtree,
+    ]
   );
 
   const moveFolderContentsToFolder = useCallback(

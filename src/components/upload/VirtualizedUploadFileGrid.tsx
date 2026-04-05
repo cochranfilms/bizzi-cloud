@@ -24,6 +24,7 @@ import {
 } from "@/lib/uppy-mass-upload-constants";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
+import { UploadCloudProgress } from "@/components/upload/UploadCloudProgress";
 
 export type VirtualizedUploadFileGridProps<M extends Meta, B extends Body> = {
   uppyRef: MutableRefObject<Uppy<M, B> | null>;
@@ -140,17 +141,11 @@ const UploadFileCardInner = memo(function UploadFileCardInner({
           </p>
         </div>
       </div>
-      <div className="bizzi-upload-panel-progress-track mt-1.5 h-0.5 shrink-0 overflow-hidden rounded-full">
-        <div
-          className={`h-full ${file.error ? "bg-red-500" : ""}`}
-          style={
-            file.error
-              ? { width: "100%" }
-              : {
-                  width: `${pct}%`,
-                  backgroundColor: "var(--bizzi-uppy-primary)",
-                }
-          }
+      <div className="mt-1.5 flex shrink-0 items-center justify-center">
+        <UploadCloudProgress
+          progress={pct}
+          error={Boolean(file.error)}
+          complete={done && !file.error}
         />
       </div>
       <div className="mt-1.5 flex h-7 shrink-0 items-center justify-end gap-1 border-t border-transparent pt-1">

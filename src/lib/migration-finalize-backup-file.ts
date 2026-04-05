@@ -131,6 +131,8 @@ export async function finalizeMigrationBackupFile(
     backup_snapshot_id: snapshotRef.id,
     linked_drive_id: driveId,
     userId: uid,
+    /** Explicit null so v2 Storage root listing (`folder_id == null`) includes cloud imports. */
+    folder_id: null,
     relative_path: relativePath,
     object_key: objectKey,
     migration_finalize_key: finalizeKey,

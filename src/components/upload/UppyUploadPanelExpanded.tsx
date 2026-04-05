@@ -11,6 +11,7 @@ import { useUploadGridStructure } from "@/hooks/useUploadGridStructure";
 import { useUploadPanelColumnCount } from "@/hooks/useUploadPanelColumnCount";
 import UppyGroupedQueueList from "@/components/upload/UppyGroupedQueueList";
 import VirtualizedUploadFileGrid from "@/components/upload/VirtualizedUploadFileGrid";
+import { useUppyStatusBarCloudVars } from "@/hooks/useUppyStatusBarCloudVars";
 
 /** Viewport-tuned sizes for the file grid (updated on resize). */
 export type UploadPanelMetrics = {
@@ -52,6 +53,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
 }: UppyUploadPanelExpandedProps<M, B>) {
   const columnCount = useUploadPanelColumnCount();
   const { looseFileIds, progressEpoch } = useUploadGridStructure(uppy, sessionGridTier);
+  const statusBarCloud = useUppyStatusBarCloudVars(uppy);
 
   const onFilesChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,18 +157,23 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         </div>
       ) : null}
 
-      <Dashboard
-        uppy={uppy}
-        theme={uppyDataTheme}
-        proudlyDisplayPoweredByUppy={false}
-        height={hasFiles ? 120 : 56}
-        showSelectedFiles={false}
-        disableThumbnailGenerator
-        note={null}
-        fileManagerSelectionType="both"
-        doneButtonHandler={null}
-        className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium bizzi-uppy-dashboard-hide-inline-drop [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
-      />
+      <div
+        className={`bizzi-uppy-dashboard-cloud-vars min-h-0 shrink-0 ${statusBarCloud.className}`.trim()}
+        style={statusBarCloud.style}
+      >
+        <Dashboard
+          uppy={uppy}
+          theme={uppyDataTheme}
+          proudlyDisplayPoweredByUppy={false}
+          height={hasFiles ? 120 : 56}
+          showSelectedFiles={false}
+          disableThumbnailGenerator
+          note={null}
+          fileManagerSelectionType="both"
+          doneButtonHandler={null}
+          className="bizzi-uppy-dashboard-stack bizzi-uppy-dashboard-premium bizzi-uppy-dashboard-hide-inline-drop [&_.uppy-Dashboard-inner]:border-0 [&_.uppy-Dashboard-inner]:bg-transparent [&_.uppy-Dashboard-inner]:shadow-none [&_.uppy-Dashboard-AddFiles]:my-0"
+        />
+      </div>
     </div>
   );
 }

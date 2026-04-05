@@ -5,6 +5,7 @@
 import { getAdminAuth, getAdminFirestore } from "@/lib/firebase-admin";
 import {
   PERSONAL_TEAM_SEATS_COLLECTION,
+  PERSONAL_TEAM_SETTINGS_COLLECTION,
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
@@ -64,6 +65,33 @@ export async function userCanAccessWorkspaceShareTarget(
     return userCanAccessPersonalTeamTarget(uid, targetId);
   }
   return userCanAccessWorkspace(uid, targetId);
+}
+
+/**
+ * Whether a workspace / personal team exists so a share can be addressed to it.
+ * Sharer does not need to be a member (discovery + delivery to that workspace’s inbox).
+ */
+export async function workspaceShareTargetIsDeliverable(
+  kind: WorkspaceShareTargetKind,
+  targetId: string
+): Promise<boolean> {
+  const tid = (targetId ?? "").trim();
+  if (!tid) return false;
+  const db = getAdminFirestore();
+  if (kind === "personal_team") {
+    const settings = await db.collection(PERSONAL_TEAM_SETTINGS_COLLECTION).doc(tid).get();
+    if (settings.exists) return true;
+    try {
+      await getAdminAuth().getUser(tid);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const ws = await db.collection("workspaces").doc(tid).get();
+  if (!ws.exists) return false;
+  const deleted = ws.data()?.deleted_at;
+  return deleted == null;
 }
 
 /** First active org admin email (seat email or Auth email), for workspace-share EmailJS. */
