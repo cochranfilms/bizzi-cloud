@@ -20,6 +20,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filter";
+import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
@@ -83,13 +84,26 @@ export default function FileListRow({
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const blockPreviewFromShell =
     renameOpen || shareOpen || moveOpen || createFolderOpen;
-  const { renameFile, moveFile } = useCloudFiles({ subscribeDriveListing: false });
+  const { renameFile, moveFile, moveFilesToStorageFolder } = useCloudFiles({
+    subscribeDriveListing: false,
+  });
   const { createFolder, linkedDrives } = useBackup();
   const { hasEditor, hasGallerySuite } = useEffectivePowerUps();
   const moveDestinationDrives = useMemo(
     () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
     [linkedDrives, hasEditor, hasGallerySuite]
   );
+  const storageV2IntraMove = useMemo(() => {
+    const d = linkedDrives.find((x) => x.id === file.driveId);
+    if (!d || !isLinkedDriveFolderModelV2(d)) return null;
+    const base = d.name.replace(/^\[Team\]\s+/, "");
+    if (base !== "Storage" || d.is_creator_raw === true) return null;
+    return {
+      linkedDriveId: file.driveId!,
+      driveLabel: base,
+      currentParentFolderId: (file.folder_id ?? null) as string | null,
+    };
+  }, [linkedDrives, file.driveId, file.folder_id]);
   const { isPinned, pinItem, unpinItem } = usePinned();
   const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const filePinned = isPinned("file", file.id);
@@ -401,9 +415,26 @@ export default function FileListRow({
         onClose={() => setMoveOpen(false)}
         itemName={file.name}
         itemType="file"
-        excludeDriveId={file.driveId}
+        excludeDriveId={storageV2IntraMove ? undefined : file.driveId}
         folders={moveDestinationDrives}
-        onMove={(targetDriveId) => moveFile(file.id, targetDriveId)}
+        onMove={
+          storageV2IntraMove
+            ? undefined
+            : (targetDriveId) => moveFile(file.id, targetDriveId)
+        }
+        v2IntraDrive={
+          storageV2IntraMove
+            ? {
+                linkedDriveId: storageV2IntraMove.linkedDriveId,
+                driveLabel: storageV2IntraMove.driveLabel,
+                currentParentFolderId: storageV2IntraMove.currentParentFolderId,
+                onMoveToFolder: async (targetFolderId) => {
+                  await moveFilesToStorageFolder([file.id], targetFolderId);
+                  onAfterRename?.();
+                },
+              }
+            : undefined
+        }
       />
       <CreateFolderModal
         open={createFolderOpen}

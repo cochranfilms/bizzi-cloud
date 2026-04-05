@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 import { LayoutGrid, List, Folder, File, Trash2, Send, Inbox, Settings } from "lucide-react";
 import SharedItemCard, { type SharedItem } from "./SharedItemCard";
 import SharerCard, { type SharerCardItem } from "./SharerCard";
@@ -16,6 +17,10 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 export default function SharedGrid() {
   const pathname = usePathname() ?? "";
   const { org } = useEnterprise();
+  const { user } = useAuth();
+  const [workspaceModerationLoadingToken, setWorkspaceModerationLoadingToken] = useState<
+    string | null
+  >(null);
 
   const sharesListQuery = useMemo<SharesListQuery | null>(() => {
     const teamMatch = pathname.match(/^\/team\/([^/]+)/);
@@ -57,6 +62,7 @@ export default function SharedGrid() {
       owner_id: s.owner_id,
       sharedByEmail: s.sharedByEmail,
       sharedByPhotoUrl: s.sharedByPhotoUrl,
+      workspaceDeliveryStatus: s.workspace_delivery_status ?? null,
     }));
   }, [invited]);
 
@@ -72,6 +78,7 @@ export default function SharedGrid() {
       isOwned: true as const,
       invitedEmails: s.invited_emails,
       shareDestination: s.share_destination,
+      workspaceDeliveryStatus: s.workspace_delivery_status ?? null,
     }));
   }, [owned]);
 
@@ -121,6 +128,48 @@ export default function SharedGrid() {
       : sentReceivedFilter === "sent"
         ? !hasSentContent
         : !hasReceivedContent && !hasSentContent;
+
+  const handleWorkspaceDeliveryModeration = useCallback(
+    async (shareToken: string, action: "approve" | "reject") => {
+      if (!user) return;
+      const ok =
+        action === "reject"
+          ? await confirm({
+              message:
+                "Reject this share? It will not appear for your team until you receive a new share request.",
+              destructive: true,
+              confirmLabel: "Deny access",
+            })
+          : true;
+      if (!ok) return;
+      setWorkspaceModerationLoadingToken(shareToken);
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch(
+          `/api/shares/${encodeURIComponent(shareToken)}/workspace-delivery`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action }),
+          }
+        );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data.error as string) ?? "Could not update share");
+        }
+        await refetch();
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        setWorkspaceModerationLoadingToken(null);
+      }
+    },
+    [user, confirm, refetch]
+  );
 
   const handleDeleteShare = useCallback(
     async (e: React.MouseEvent, token: string, name: string) => {
@@ -296,6 +345,13 @@ export default function SharedGrid() {
                       photoUrl={sharer.photoUrl}
                       items={sharer.items}
                       viewMode={viewMode}
+                      onApproveWorkspaceShare={(t) =>
+                        void handleWorkspaceDeliveryModeration(t, "approve")
+                      }
+                      onDenyWorkspaceShare={(t) =>
+                        void handleWorkspaceDeliveryModeration(t, "reject")
+                      }
+                      workspaceModerationLoadingToken={workspaceModerationLoadingToken}
                     />
                   ))}
                 </div>
@@ -322,6 +378,7 @@ export default function SharedGrid() {
                           permission: item.permission,
                           href: item.href,
                           shareDestination: item.shareDestination,
+                          workspaceDeliveryStatus: item.workspaceDeliveryStatus,
                         }}
                         isOwned
                         onEdit={(e) => (

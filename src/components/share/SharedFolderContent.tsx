@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { File, Download, FolderOpen, Film, Lock, Play } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -177,14 +177,24 @@ export interface SharedFolderContentProps {
   onFolderNameLoaded?: (name: string) => void;
 }
 
+type SharePayload = {
+  folder_name: string;
+  permission: string;
+  files: ShareFile[];
+  workspace_delivery_status?: string;
+  viewer_can_moderate_delivery?: boolean;
+  is_viewer_share_owner?: boolean;
+};
+
 export default function SharedFolderContent({ token, embedded, onFolderNameLoaded }: SharedFolderContentProps) {
   const { user } = useAuth();
-  const [data, setData] = useState<{ folder_name: string; permission: string; files: ShareFile[] } | null>(null);
+  const [data, setData] = useState<SharePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<ShareFile | null>(null);
+  const [deliveryActionLoading, setDeliveryActionLoading] = useState(false);
 
   const fetchShare = useCallback(async () => {
     setError(null);
@@ -216,6 +226,44 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
   useEffect(() => {
     fetchShare();
   }, [fetchShare]);
+
+  const handleWorkspaceDelivery = useCallback(
+    async (action: "approve" | "reject") => {
+      if (!user) return;
+      setDeliveryActionLoading(true);
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch(
+          `/api/shares/${encodeURIComponent(token)}/workspace-delivery`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action }),
+          }
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error((body.error as string) ?? "Could not update share");
+        }
+        await fetchShare();
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        setDeliveryActionLoading(false);
+      }
+    },
+    [user, token, fetchShare]
+  );
+
+  const singleFileOriginalName = useMemo(() => {
+    if (!data || data.files.length !== 1) return null;
+    const n = data.files[0]!.name;
+    return n && n !== data.folder_name ? n : null;
+  }, [data]);
 
   const handleDownload = useCallback(
     async (file: ShareFile) => {
@@ -308,11 +356,56 @@ export default function SharedFolderContent({ token, embedded, onFolderNameLoade
       )
     ) : (
     <div className={embedded ? "" : "space-y-6"}>
+      {data.workspace_delivery_status === "pending" && data.viewer_can_moderate_delivery && (
+        <div className="mb-4 rounded-xl border border-amber-500/50 bg-amber-50 p-4 dark:border-amber-700/60 dark:bg-amber-950/40">
+          <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
+            Someone outside your workspace shared “{data.folder_name}”. Approve to show it to your
+            team in Shared, or deny to keep it admin-only.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={deliveryActionLoading}
+              onClick={() => void handleWorkspaceDelivery("approve")}
+              className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              {deliveryActionLoading ? "…" : "Approve for workspace"}
+            </button>
+            <button
+              type="button"
+              disabled={deliveryActionLoading}
+              onClick={() => void handleWorkspaceDelivery("reject")}
+              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-white dark:border-neutral-600 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      )}
+      {data.workspace_delivery_status === "pending" && data.is_viewer_share_owner && (
+        <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800/60 dark:text-neutral-200">
+          This share is waiting for a workspace admin to approve it before your team can see it in
+          Shared.
+        </div>
+      )}
+      {embedded && singleFileOriginalName ? (
+        <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+          Original file:{" "}
+          <span className="font-mono text-xs text-neutral-600 dark:text-neutral-300">
+            {singleFileOriginalName}
+          </span>
+        </p>
+      ) : null}
       {!embedded && (
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">
             {data.folder_name}
           </h1>
+          {singleFileOriginalName ? (
+            <p className="mt-0.5 truncate text-sm text-neutral-500 dark:text-neutral-400">
+              Original file: {singleFileOriginalName}
+            </p>
+          ) : null}
           <p className="mt-1 flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
             <span>Shared with you · {data.files.length} {data.files.length === 1 ? "file" : "files"}</span>
             <span

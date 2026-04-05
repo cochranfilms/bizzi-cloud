@@ -20,6 +20,8 @@ export interface ShareListItem {
   workspace_target_key?: string;
   /** Workspace-targeted shares: badge for Sent list */
   share_destination?: "team" | "organization";
+  /** Workspace inbox: pending until admin approves cross-workspace delivery */
+  workspace_delivery_status?: string | null;
 }
 
 export interface SharesListQuery {
@@ -116,6 +118,7 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         workspace_target: s.workspace_target,
         workspace_target_key: s.workspace_target_key,
         share_destination: destinationFromShareRow(s),
+        workspace_delivery_status: (s as { workspace_delivery_status?: string }).workspace_delivery_status,
       });
       const mapInvited = (s: {
         id: string;
@@ -145,6 +148,7 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         recipient_mode: s.recipient_mode,
         workspace_target: s.workspace_target,
         workspace_target_key: s.workspace_target_key,
+        workspace_delivery_status: (s as { workspace_delivery_status?: string }).workspace_delivery_status,
       });
       setOwned((data.owned ?? []).map(mapOwned));
       setInvited((data.invited ?? []).map(mapInvited));

@@ -13,7 +13,6 @@ import ItemActionsMenu from "./ItemActionsMenu";
 import RenameModal from "./RenameModal";
 import MoveModal from "./MoveModal";
 import CreateFolderModal from "./CreateFolderModal";
-import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
 import {
   actorMayMutateLinkedDriveContents,
   useCloudFiles,
@@ -137,7 +136,6 @@ export default function FolderCard({
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
-  const [v2StoragePickerOpen, setV2StoragePickerOpen] = useState(false);
   const pathname = usePathname();
   const isEnterpriseContext =
     typeof pathname === "string" && pathname.startsWith("/enterprise");
@@ -590,7 +588,7 @@ export default function FolderCard({
                         id: "v2-move",
                         label: "Move folder",
                         icon: <FolderInput className="h-4 w-4" />,
-                        onClick: () => setV2StoragePickerOpen(true),
+                        onClick: () => setMoveOpen(true),
                       },
                     ]
                   : []),
@@ -633,7 +631,7 @@ export default function FolderCard({
             itemType="folder"
           />
           <MoveModal
-            open={moveOpen}
+            open={moveOpen && !item.storageFolderId}
             onClose={() => setMoveOpen(false)}
             itemName={item.name}
             itemType="folder"
@@ -681,20 +679,24 @@ export default function FolderCard({
               }}
               itemType="folder"
             />
-            <StorageFolderTreePickerModal
-              open={v2StoragePickerOpen}
-              onClose={() => setV2StoragePickerOpen(false)}
-              linkedDriveId={item.storageLinkedDriveId}
-              driveLabel={storagePickerDriveLabel ?? "Storage"}
-              title={`Move “${item.name}” into…`}
-              excludedFolderIds={[item.storageFolderId]}
-              onConfirm={async (targetParentFolderId) => {
-                await moveStorageFolder(
-                  item.storageFolderId!,
-                  targetParentFolderId,
-                  item.storageFolderVersion!
-                );
-                onStorageFolderMutated?.();
+            <MoveModal
+              open={moveOpen}
+              onClose={() => setMoveOpen(false)}
+              itemName={item.name}
+              itemType="folder"
+              folders={[]}
+              v2IntraDrive={{
+                linkedDriveId: item.storageLinkedDriveId,
+                driveLabel: storagePickerDriveLabel ?? "Storage",
+                excludedFolderIds: [item.storageFolderId!],
+                onMoveToFolder: async (targetParentFolderId) => {
+                  await moveStorageFolder(
+                    item.storageFolderId!,
+                    targetParentFolderId,
+                    item.storageFolderVersion!
+                  );
+                  onStorageFolderMutated?.();
+                },
               }}
             />
           </>

@@ -4,6 +4,8 @@
  *   EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY
  * Share emails: EMAILJS_TEMPLATE_ID_SHARE (optional; when set, share notifications send email)
  * Workspace share (team/org admin): EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE (optional)
+ * Cross-workspace delivery requests (admin-only): EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST (optional; else SHARE_WORKSPACE + delivery_request)
+ * Cross-workspace delivery requests (admin-only moderation): EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST (optional; falls back to SHARE_WORKSPACE + delivery_request flag)
  * Transfer emails: EMAILJS_TEMPLATE_ID_TRANSFER (optional; when set, transfer emails sent to client)
  * Subscription welcome: EMAILJS_TEMPLATE_ID_SUBSCRIPTION_WELCOME (optional; when set, welcome email on purchase)
  * Gallery invite: EMAILJS_TEMPLATE_ID_GALLERY_INVITE (optional; when set, invite emails sent when creating invite-only galleries)
@@ -75,6 +77,26 @@ function getShareWorkspaceConfig(): {
   return {
     serviceId,
     templateShareWorkspace,
+    publicKey,
+    privateKey: privateKey ?? undefined,
+  };
+}
+
+function getShareWorkspaceDeliveryRequestConfig(): {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+  privateKey?: string;
+} | null {
+  const serviceId = process.env.EMAILJS_SERVICE_ID;
+  const templateId = process.env.EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST?.trim();
+  const publicKey = process.env.EMAILJS_PUBLIC_KEY;
+  const privateKey = process.env.EMAILJS_PRIVATE_KEY;
+
+  if (!serviceId || !templateId || !publicKey) return null;
+  return {
+    serviceId,
+    templateId,
     publicKey,
     privateKey: privateKey ?? undefined,
   };
@@ -816,14 +838,17 @@ export async function sendWorkspaceShareAdminNotificationEmail(params: {
 }
 
 /**
- * Email every org/team admin (for moderation — non-member share delivery). Reuses
- * EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE; set `delivery_request` on each send for template copy.
+ * Email every org/team admin (moderation — non-member share delivery).
+ * Uses EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST when set; otherwise
+ * EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE with `delivery_request: "1"` for template branching.
  */
 export async function sendWorkspaceShareDeliveryRequestEmailsToAdmins(
   adminEmails: string[],
   params: ShareWorkspaceTemplateFieldsInput
 ): Promise<void> {
-  if (!getShareWorkspaceConfig()) return;
+  const dedicated = getShareWorkspaceDeliveryRequestConfig();
+  const fallback = getShareWorkspaceConfig();
+  if (!dedicated && !fallback) return;
   let fields: WorkspaceDeliveryEmailArgs;
   try {
     fields = await buildShareWorkspaceAdminEmailFields(params);
@@ -838,11 +863,28 @@ export async function sendWorkspaceShareDeliveryRequestEmailsToAdmins(
       if (!to?.includes("@") || seen.has(to)) return;
       seen.add(to);
       try {
-        await sendShareWorkspaceEmailToAdmin({
-          ...fields,
-          to_email: to,
-          delivery_request: "1",
-        });
+        if (dedicated) {
+          const templateParams = {
+            ...fields,
+            to_email: to,
+            logo_url: getEmailLogoUrl(),
+          };
+          await emailjs.send(
+            dedicated.serviceId,
+            dedicated.templateId,
+            templateParams,
+            {
+              publicKey: dedicated.publicKey,
+              privateKey: dedicated.privateKey,
+            }
+          );
+        } else {
+          await sendShareWorkspaceEmailToAdmin({
+            ...fields,
+            to_email: to,
+            delivery_request: "1",
+          });
+        }
       } catch (err) {
         console.error("[EmailJS] Workspace delivery request email error:", to, err);
       }

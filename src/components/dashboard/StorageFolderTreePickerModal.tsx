@@ -2,48 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Folder, X } from "lucide-react";
-import {
-  fetchStorageFolderList,
-  type StorageFolderListFolder,
-} from "@/hooks/useCloudFiles";
-import { isFolderSelectableDestination } from "@/lib/storage-folders/folder-picker-destination";
-
-type TreeNode = {
-  id: string | null;
-  name: string;
-  depth: number;
-  loaded: boolean;
-  children: TreeNode[];
-};
-
-function emptyRoot(driveLabel: string): TreeNode {
-  return {
-    id: null,
-    name: driveLabel,
-    depth: 0,
-    loaded: false,
-    children: [],
-  };
-}
-
-function findNodeByPath(root: TreeNode, nodePathFromRoot: string): TreeNode | null {
-  if (!nodePathFromRoot) return root;
-  let cur = root;
-  for (const id of nodePathFromRoot.split("/").filter(Boolean)) {
-    const next = cur.children.find((c) => c.id === id);
-    if (!next) return null;
-    cur = next;
-  }
-  return cur;
-}
-
-function cloneTree(node: TreeNode): TreeNode {
-  return {
-    ...node,
-    children: node.children.map(cloneTree),
-  };
-}
+import { X } from "lucide-react";
+import StorageIntraDriveDestinationTree from "./StorageIntraDriveDestinationTree";
 
 export interface StorageFolderTreePickerModalProps {
   open: boolean;
@@ -68,71 +28,17 @@ export default function StorageFolderTreePickerModal({
   knownDescendantIds,
   onConfirm,
 }: StorageFolderTreePickerModalProps) {
-  const [root, setRoot] = useState<TreeNode>(() => emptyRoot(driveLabel));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["__root__"]));
-  const [loadingKeys, setLoadingKeys] = useState<Set<string>>(() => new Set());
   /** `undefined` = none chosen; `null` = drive root */
   const [selectedParentId, setSelectedParentId] = useState<string | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const excludeSet = new Set(excludedFolderIds);
-  const descSet =
-    knownDescendantIds && knownDescendantIds.length > 0
-      ? new Set(knownDescendantIds)
-      : undefined;
-
   useEffect(() => {
     if (open) {
-      setRoot(emptyRoot(driveLabel));
-      setExpanded(new Set(["__root__"]));
       setSelectedParentId(undefined);
       setError(null);
-      setLoadingKeys(new Set());
     }
-  }, [open, driveLabel]);
-
-  const loadChildren = useCallback(
-    async (parentFolderId: string | null, nodePathFromRoot: string) => {
-      const loadKey = parentFolderId === null ? "__root__" : parentFolderId;
-      setLoadingKeys((s) => new Set(s).add(loadKey));
-      try {
-        const { folders, listError } = await fetchStorageFolderList(
-          linkedDriveId,
-          parentFolderId,
-          driveLabel
-        );
-        if (listError) {
-          setError(listError);
-          return;
-        }
-        const depth = nodePathFromRoot.split("/").filter(Boolean).length + 1;
-        const childNodes: TreeNode[] = folders.map((f: StorageFolderListFolder) => ({
-          id: f.id,
-          name: f.name,
-          depth,
-          loaded: false,
-          children: [],
-        }));
-        setRoot((r) => {
-          const next = cloneTree(r);
-          const target = findNodeByPath(next, nodePathFromRoot);
-          if (target) {
-            target.children = childNodes;
-            target.loaded = true;
-          }
-          return next;
-        });
-      } finally {
-        setLoadingKeys((s) => {
-          const n = new Set(s);
-          n.delete(loadKey);
-          return n;
-        });
-      }
-    },
-    [linkedDriveId, driveLabel]
-  );
+  }, [open, linkedDriveId]);
 
   const handleConfirm = useCallback(async () => {
     if (selectedParentId === undefined) return;
@@ -183,33 +89,19 @@ export default function StorageFolderTreePickerModal({
           {error ? (
             <p className="mb-2 text-sm text-red-500 dark:text-red-400">{error}</p>
           ) : null}
-          <ul className="space-y-0.5 text-sm">
-            <TreeRows
-              node={root}
-              nodePathFromRoot=""
-              expanded={expanded}
-              loadingKeys={loadingKeys}
-              excludeSet={excludeSet}
-              knownDescendantIds={descSet}
-              selectedParentId={selectedParentId}
-              onToggleExpand={async (node, nodePathFromRoot) => {
-                const expKey = node.id === null ? "__root__" : node.id;
-                if (!expanded.has(expKey)) {
-                  setExpanded((e) => new Set(e).add(expKey));
-                  if (!node.loaded) {
-                    await loadChildren(node.id, nodePathFromRoot);
-                  }
-                } else {
-                  setExpanded((e) => {
-                    const n = new Set(e);
-                    n.delete(expKey);
-                    return n;
-                  });
-                }
-              }}
-              onSelectParent={setSelectedParentId}
-            />
-          </ul>
+          <StorageIntraDriveDestinationTree
+            key={`${linkedDriveId}-${open}`}
+            linkedDriveId={linkedDriveId}
+            driveLabel={driveLabel}
+            rootLabel="Main storage"
+            selectedParentId={selectedParentId}
+            onSelectParent={setSelectedParentId}
+            excludedFolderIds={excludedFolderIds}
+            knownDescendantIds={knownDescendantIds}
+            disabled={submitting}
+            preloadRootChildren
+            listClassName="max-h-[min(60vh,20rem)] space-y-0.5 overflow-y-auto rounded-lg border border-neutral-200 bg-neutral-50/80 p-2 text-sm dark:border-neutral-600 dark:bg-neutral-800/50"
+          />
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-700">
           <button
@@ -233,95 +125,4 @@ export default function StorageFolderTreePickerModal({
   );
 
   return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
-}
-
-function TreeRows({
-  node,
-  nodePathFromRoot,
-  expanded,
-  loadingKeys,
-  excludeSet,
-  knownDescendantIds,
-  selectedParentId,
-  onToggleExpand,
-  onSelectParent,
-}: {
-  node: TreeNode;
-  nodePathFromRoot: string;
-  expanded: Set<string>;
-  loadingKeys: Set<string>;
-  excludeSet: Set<string>;
-  knownDescendantIds?: Set<string>;
-  selectedParentId: string | null | undefined;
-  onToggleExpand: (node: TreeNode, nodePathFromRoot: string) => void | Promise<void>;
-  onSelectParent: (id: string | null) => void;
-}) {
-  const expKey = node.id === null ? "__root__" : node.id;
-  const isExpanded = expanded.has(expKey);
-  const loadKey = node.id === null ? "__root__" : node.id;
-  const loading = loadingKeys.has(loadKey);
-  const selectable = isFolderSelectableDestination({
-    candidateFolderId: node.id,
-    excludedFolderIds: excludeSet,
-    knownDescendantIds,
-  });
-  const isSelected =
-    selectable &&
-    (node.id === null ? selectedParentId === null : selectedParentId === node.id);
-
-  return (
-    <li className="list-none">
-      <div
-        className={`flex items-center gap-1 rounded-md py-1 ${selectable ? "" : "opacity-50"}`}
-        style={{ paddingLeft: node.depth * 12 }}
-      >
-        <button
-          type="button"
-          aria-label={isExpanded ? "Collapse" : "Expand"}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          onClick={() => void onToggleExpand(node, nodePathFromRoot)}
-        >
-          <ChevronRight
-            className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          />
-        </button>
-        <button
-          type="button"
-          disabled={!selectable}
-          onClick={() => selectable && onSelectParent(node.id)}
-          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left ${
-            isSelected
-              ? "bg-bizzi-blue/15 text-bizzi-blue dark:bg-bizzi-blue/25 dark:text-bizzi-cyan"
-              : "hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          } ${!selectable ? "cursor-not-allowed" : ""}`}
-        >
-          <Folder className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span className="truncate text-neutral-900 dark:text-white">{node.name}</span>
-          {loading ? <span className="text-xs text-neutral-400">Loading…</span> : null}
-        </button>
-      </div>
-      {isExpanded && node.children.length > 0 ? (
-        <ul className="space-y-0.5">
-          {node.children.map((ch) => {
-            const childPath =
-              nodePathFromRoot === "" ? ch.id! : `${nodePathFromRoot}/${ch.id}`;
-            return (
-              <TreeRows
-                key={ch.id ?? "x"}
-                node={ch}
-                nodePathFromRoot={childPath}
-                expanded={expanded}
-                loadingKeys={loadingKeys}
-                excludeSet={excludeSet}
-                knownDescendantIds={knownDescendantIds}
-                selectedParentId={selectedParentId}
-                onToggleExpand={onToggleExpand}
-                onSelectParent={onSelectParent}
-              />
-            );
-          })}
-        </ul>
-      ) : null}
-    </li>
-  );
 }

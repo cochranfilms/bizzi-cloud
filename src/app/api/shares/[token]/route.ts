@@ -12,6 +12,7 @@ import {
   getRecipientModeFromDoc,
   getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
+  userIsWorkspaceShareTargetAdmin,
 } from "@/lib/folder-share-workspace";
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
@@ -102,7 +103,8 @@ export async function GET(
       }
       const path = (fileData.relative_path ?? "") as string;
       const name = path.split("/").filter(Boolean).pop() ?? path ?? "File";
-      folderName = name;
+      const custom = ((share.folder_name as string) ?? "").trim();
+      folderName = custom || name;
       files = [
         {
           id: fileSnap.id,
@@ -114,9 +116,11 @@ export async function GET(
       ];
     } else {
       const driveSnap = await db.collection("linked_drives").doc(linkedDriveId).get();
-      folderName = driveSnap.exists
+      const driveLabel = driveSnap.exists
         ? (driveSnap.data()?.name ?? "Shared folder")
         : "Shared folder";
+      const customFolder = ((share.folder_name as string) ?? "").trim();
+      folderName = customFolder || driveLabel;
 
       const filesSnap = await db
         .collection("backup_files")
@@ -162,18 +166,28 @@ export async function GET(
   if (requesterUid === ownerId) {
     response.invited_emails = share.invited_emails ?? [];
     response.recipient_mode = getRecipientModeFromDoc(share as Record<string, unknown>);
+    response.version = version;
+  }
+
+  if (getRecipientModeFromDoc(share as Record<string, unknown>) === "workspace") {
     const wt = share.workspace_target as { kind?: string; id?: string } | undefined;
     if (wt?.kind && wt?.id) {
       response.workspace_target = { kind: wt.kind, id: wt.id };
     }
     response.workspace_target_key = (share.workspace_target_key as string) ?? null;
-    response.version = version;
-    if (getRecipientModeFromDoc(share as Record<string, unknown>) === "workspace") {
-      response.workspace_delivery_status = getWorkspaceShareDeliveryStatus(
-        share as Record<string, unknown>
-      );
+    const deliveryStatus = getWorkspaceShareDeliveryStatus(share as Record<string, unknown>);
+    response.workspace_delivery_status = deliveryStatus;
+    if (requesterUid) {
+      response.is_viewer_share_owner = requesterUid === ownerId;
+      const parsed = parseWorkspaceTargetKey((share.workspace_target_key as string) ?? "");
+      let canModerate = false;
+      if (deliveryStatus === "pending" && requesterUid !== ownerId && parsed) {
+        canModerate = await userIsWorkspaceShareTargetAdmin(requesterUid, parsed.kind, parsed.id);
+      }
+      response.viewer_can_moderate_delivery = canModerate;
     }
   }
+
   return NextResponse.json(response);
 }
 

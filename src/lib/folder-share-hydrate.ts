@@ -35,8 +35,10 @@ export async function hydrateFolderShareDoc(
   let itemType: "file" | "folder";
   let linkedOut: string;
 
+  const customShareLabel = ((data.folder_name as string) ?? "").trim();
+
   if (isVirtualShare) {
-    itemName = (data.folder_name as string) ?? "Shared folder";
+    itemName = customShareLabel || "Shared folder";
     itemType = "folder";
     linkedOut = "";
   } else {
@@ -64,12 +66,14 @@ export async function hydrateFolderShareDoc(
     linkedOut = driveId;
   }
 
+  const displayFolderName = customShareLabel || itemName;
+
   const wt = data.workspace_target as { kind?: string; id?: string } | undefined;
   const out: HydratedShareItem = {
     id: d.id,
     token: data.token as string,
     linked_drive_id: linkedOut,
-    folder_name: itemName,
+    folder_name: displayFolderName,
     item_type: itemType,
     permission: (data.permission as string) ?? "view",
     created_at: data.created_at?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),

@@ -15,6 +15,8 @@ export interface SharedItem {
   href?: string;
   /** Team vs org workspace share — uses live --bizzi-accent */
   shareDestination?: "team" | "organization";
+  /** From workspace-targeted shares API */
+  workspaceDeliveryStatus?: string | null;
 }
 
 interface SharedItemCardProps {
@@ -22,13 +24,28 @@ interface SharedItemCardProps {
   isOwned?: boolean;
   onDelete?: (e: React.MouseEvent) => void;
   onEdit?: (e: React.MouseEvent) => void;
+  /** Workspace admin: pending cross-workspace delivery */
+  onApproveWorkspaceShare?: () => void;
+  onDenyWorkspaceShare?: () => void;
+  workspaceModerationLoading?: boolean;
 }
 
 const cardClassName =
   "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 pt-7 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
 
-export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: SharedItemCardProps) {
+export default function SharedItemCard({
+  item,
+  isOwned,
+  onDelete,
+  onEdit,
+  onApproveWorkspaceShare,
+  onDenyWorkspaceShare,
+  workspaceModerationLoading,
+}: SharedItemCardProps) {
   const dest = item.shareDestination;
+  const pendingDelivery = item.workspaceDeliveryStatus === "pending";
+  const showModeration =
+    pendingDelivery && !isOwned && onApproveWorkspaceShare && onDenyWorkspaceShare;
 
   const content = (
     <>
@@ -41,6 +58,11 @@ export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: Shar
           }}
         >
           {dest === "team" ? "Team" : "Organization"}
+        </span>
+      )}
+      {isOwned && pendingDelivery && (
+        <span className="pointer-events-none absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)] rounded border border-amber-500/50 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:bg-amber-950/80 dark:text-amber-100">
+          Pending approval
         </span>
       )}
       <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
@@ -107,6 +129,33 @@ export default function SharedItemCard({ item, isOwned, onDelete, onEdit }: Shar
   );
 
   if (item.href) {
+    if (showModeration) {
+      return (
+        <div className="flex flex-col gap-2">
+          <Link href={item.href} className={cardClassName}>
+            {cardContent}
+          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={workspaceModerationLoading}
+              onClick={() => onApproveWorkspaceShare()}
+              className="rounded-lg bg-bizzi-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+            >
+              {workspaceModerationLoading ? "…" : "Approve for workspace"}
+            </button>
+            <button
+              type="button"
+              disabled={workspaceModerationLoading}
+              onClick={() => onDenyWorkspaceShare()}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <Link href={item.href} className={cardClassName}>
         {cardContent}

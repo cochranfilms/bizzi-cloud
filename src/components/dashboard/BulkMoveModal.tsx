@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { LinkedDrive } from "@/types/backup";
-import StorageFolderTreePickerModal from "./StorageFolderTreePickerModal";
+import StorageIntraDriveDestinationTree from "./StorageIntraDriveDestinationTree";
 
 interface BulkMoveModalProps {
   open: boolean;
@@ -14,20 +14,19 @@ interface BulkMoveModalProps {
   /** Drive IDs to exclude (e.g. selected folder drives - can't move into self) */
   excludeDriveIds: string[];
   folders: LinkedDrive[];
-  /** Cross-drive / linked-folder destination (v1-style) */
+  /** Cross-drive / linked-folder destination when intra-drive move is not available */
   onMove: (targetDriveId: string) => Promise<void>;
   /**
-   * When set, user can choose to move files within the current Storage v2 drive.
-   * Only pass when selection is files-only, single linked_drive_id, and context is v2 Storage.
+   * When set, user moves files within the current Storage v2 drive only (Main storage + folders on that drive).
    */
   v2IntraDrive?: {
     linkedDriveId: string;
     driveLabel: string;
     onMoveToFolder: (targetFolderId: string | null) => Promise<void>;
+    /** When every selected file is already under this folder, that row is disabled */
+    currentParentFolderId?: string | null;
   };
 }
-
-type DestMode = "other_drive" | "v2_storage";
 
 export default function BulkMoveModal({
   open,
@@ -42,32 +41,29 @@ export default function BulkMoveModal({
   const [targetId, setTargetId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [destMode, setDestMode] = useState<DestMode>("other_drive");
   const [v2Pick, setV2Pick] = useState<string | null | undefined>(undefined);
-  const [treeOpen, setTreeOpen] = useState(false);
 
-  const excludeSet = new Set(excludeDriveIds);
-  const availableFolders = folders.filter((f) => !excludeSet.has(f.id));
-  const canChooseV2 = Boolean(v2IntraDrive);
+  const excludeSet = useMemo(() => new Set(excludeDriveIds), [excludeDriveIds]);
+  const availableFolders = useMemo(
+    () => folders.filter((f) => !excludeSet.has(f.id)),
+    [folders, excludeSet]
+  );
+  const isV2Only = Boolean(v2IntraDrive);
 
   useEffect(() => {
     if (!open) return;
     setTargetId(availableFolders[0]?.id ?? "");
     setError(null);
-    setDestMode(canChooseV2 ? "v2_storage" : "other_drive");
     setV2Pick(undefined);
-    setTreeOpen(false);
-    // Reset when modal opens / v2 option appears — not on every folders array identity change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- availableFolders is derived fresh each render
-  }, [open, canChooseV2]);
+  }, [open, isV2Only, availableFolders]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
-      if (canChooseV2 && destMode === "v2_storage" && v2IntraDrive) {
+      if (v2IntraDrive && isV2Only) {
         if (v2Pick === undefined) {
-          setError("Choose a folder in Storage, or pick drive root.");
+          setError("Choose Main storage or a folder.");
           return;
         }
         setLoading(true);
@@ -82,7 +78,7 @@ export default function BulkMoveModal({
         return;
       }
       if (!targetId) {
-        setError("Please select a folder");
+        setError("Please select a destination");
         return;
       }
       setLoading(true);
@@ -95,7 +91,7 @@ export default function BulkMoveModal({
         setLoading(false);
       }
     },
-    [canChooseV2, destMode, v2IntraDrive, v2Pick, targetId, onMove, onClose]
+    [v2IntraDrive, isV2Only, v2Pick, targetId, onMove, onClose]
   );
 
   if (!open) return null;
@@ -106,10 +102,8 @@ export default function BulkMoveModal({
   if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} folder${selectedFolderCount === 1 ? "" : "s"}`);
   const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
 
-  const otherDriveDisabled =
-    loading || availableFolders.length === 0 || (canChooseV2 && destMode === "v2_storage");
-  const v2SubmitDisabled =
-    loading || !canChooseV2 || destMode !== "v2_storage" || v2Pick === undefined;
+  const crossDriveDisabled = loading || availableFolders.length === 0;
+  const v2SubmitDisabled = loading || v2Pick === undefined;
 
   const modal = (
     <div
@@ -144,84 +138,60 @@ export default function BulkMoveModal({
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             Move {label} to:
           </p>
-          {canChooseV2 ? (
-            <div className="space-y-2 text-sm">
-              <p className="font-medium text-neutral-800 dark:text-neutral-200">Destination</p>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="bulk-move-dest"
-                  checked={destMode === "v2_storage"}
-                  onChange={() => {
-                    setDestMode("v2_storage");
-                    setError(null);
-                  }}
-                />
-                <span className="text-neutral-700 dark:text-neutral-300">
-                  A folder in this Storage drive
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="bulk-move-dest"
-                  checked={destMode === "other_drive"}
-                  onChange={() => {
-                    setDestMode("other_drive");
-                    setError(null);
-                  }}
-                />
-                <span className="text-neutral-700 dark:text-neutral-300">
-                  Another linked folder (drive)
-                </span>
-              </label>
-            </div>
-          ) : null}
 
-          {canChooseV2 && destMode === "v2_storage" && v2IntraDrive ? (
-            <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-              <p className="mb-2 text-sm text-neutral-600 dark:text-neutral-400">
-                {v2Pick === undefined
-                  ? "No destination selected yet."
-                  : v2Pick === null
-                    ? "Drive root (top level of this Storage)."
-                    : `Folder id: ${v2Pick}`}
+          {isV2Only && v2IntraDrive ? (
+            <>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Pick Main storage (top level) or a folder on this drive. Subfolders load when you expand.
               </p>
-              <button
-                type="button"
+              <StorageIntraDriveDestinationTree
+                key={`${v2IntraDrive.linkedDriveId}-${open}`}
+                linkedDriveId={v2IntraDrive.linkedDriveId}
+                driveLabel={v2IntraDrive.driveLabel}
+                selectedParentId={v2Pick}
+                onSelectParent={(id) => {
+                  setV2Pick(id);
+                  setError(null);
+                }}
+                excludedFolderIds={[]}
+                currentParentFolderId={v2IntraDrive.currentParentFolderId}
                 disabled={loading}
-                onClick={() => setTreeOpen(true)}
-                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700/80"
-              >
-                Choose folder…
-              </button>
-            </div>
+                preloadRootChildren
+              />
+            </>
           ) : null}
 
-          {(!canChooseV2 || destMode === "other_drive") && (
-          <div>
-            <label htmlFor="bulk-move-target" className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-              Linked folder
-            </label>
-            <select
-              id="bulk-move-target"
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-              disabled={otherDriveDisabled}
-            >
-              {availableFolders.length === 0 ? (
-                <option value="">No folders available</option>
-              ) : (
-                availableFolders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+          {!isV2Only && (
+            <div>
+              <label
+                htmlFor="bulk-move-target"
+                className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Destination folder
+              </label>
+              <select
+                id="bulk-move-target"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                disabled={crossDriveDisabled}
+              >
+                {availableFolders.length === 0 ? (
+                  <option value="">No destinations available</option>
+                ) : (
+                  availableFolders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                Other backup folders you&apos;ve connected (for example Gallery or Creator drives).
+              </p>
+            </div>
           )}
+
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -232,11 +202,7 @@ export default function BulkMoveModal({
             </button>
             <button
               type="submit"
-              disabled={
-                canChooseV2 && destMode === "v2_storage"
-                  ? v2SubmitDisabled
-                  : loading || availableFolders.length === 0
-              }
+              disabled={isV2Only ? v2SubmitDisabled : crossDriveDisabled}
               className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
             >
               {loading ? "Moving…" : "Move"}
@@ -244,25 +210,8 @@ export default function BulkMoveModal({
           </div>
         </form>
       </div>
-      {v2IntraDrive ? (
-        <StorageFolderTreePickerModal
-          open={treeOpen}
-          onClose={() => setTreeOpen(false)}
-          linkedDriveId={v2IntraDrive.linkedDriveId}
-          driveLabel={v2IntraDrive.driveLabel}
-          title="Choose destination folder"
-          confirmLabel="Select"
-          excludedFolderIds={[]}
-          onConfirm={async (targetParentFolderId) => {
-            setV2Pick(targetParentFolderId);
-            setTreeOpen(false);
-          }}
-        />
-      ) : null}
     </div>
   );
 
-  return typeof document !== "undefined"
-    ? createPortal(modal, document.body)
-    : null;
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 }

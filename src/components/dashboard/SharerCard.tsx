@@ -16,6 +16,9 @@ interface SharerCardProps {
   photoUrl?: string | null;
   items: SharerCardItem[];
   viewMode?: "grid" | "list";
+  onApproveWorkspaceShare?: (token: string) => void;
+  onDenyWorkspaceShare?: (token: string) => void;
+  workspaceModerationLoadingToken?: string | null;
 }
 
 function getInitials(displayName: string, email?: string): string {
@@ -32,7 +35,20 @@ function getInitials(displayName: string, email?: string): string {
   return "?";
 }
 
-function SharerCardListRow({ item }: { item: SharerCardItem }) {
+function SharerCardListRow({
+  item,
+  onApproveWorkspaceShare,
+  onDenyWorkspaceShare,
+  workspaceModerationLoading,
+}: {
+  item: SharerCardItem;
+  onApproveWorkspaceShare?: (token: string) => void;
+  onDenyWorkspaceShare?: (token: string) => void;
+  workspaceModerationLoading?: boolean;
+}) {
+  const pendingDelivery = item.workspaceDeliveryStatus === "pending";
+  const showMod =
+    pendingDelivery && onApproveWorkspaceShare && onDenyWorkspaceShare;
   const rowContent = (
     <div className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
@@ -47,6 +63,7 @@ function SharerCardListRow({ item }: { item: SharerCardItem }) {
           {item.name}
         </p>
         <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+          {pendingDelivery ? "Awaiting your approval · " : ""}
           {item.permission === "edit" ? "Download" : "View only"}
         </p>
       </div>
@@ -61,10 +78,43 @@ function SharerCardListRow({ item }: { item: SharerCardItem }) {
       </span>
     </div>
   );
+  const modBar =
+    showMod && item.href ? (
+      <div className="flex flex-wrap gap-2 border-t border-neutral-200 px-4 py-2 dark:border-neutral-700">
+        <button
+          type="button"
+          disabled={workspaceModerationLoading}
+          onClick={(e) => {
+            e.preventDefault();
+            onApproveWorkspaceShare(item.token);
+          }}
+          className="rounded-lg bg-bizzi-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-bizzi-cyan disabled:opacity-50"
+        >
+          {workspaceModerationLoading ? "…" : "Approve"}
+        </button>
+        <button
+          type="button"
+          disabled={workspaceModerationLoading}
+          onClick={(e) => {
+            e.preventDefault();
+            onDenyWorkspaceShare(item.token);
+          }}
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:border-neutral-600 dark:text-neutral-200"
+        >
+          Deny
+        </button>
+      </div>
+    ) : null;
   return item.href ? (
-    <Link href={item.href}>{rowContent}</Link>
+    <div>
+      <Link href={item.href}>{rowContent}</Link>
+      {modBar}
+    </div>
   ) : (
-    <div>{rowContent}</div>
+    <div>
+      {rowContent}
+      {modBar}
+    </div>
   );
 }
 
@@ -75,6 +125,9 @@ export default function SharerCard({
   photoUrl,
   items,
   viewMode = "grid",
+  onApproveWorkspaceShare,
+  onDenyWorkspaceShare,
+  workspaceModerationLoadingToken,
 }: SharerCardProps) {
   const initials = getInitials(displayName, email ?? "");
 
@@ -112,6 +165,17 @@ export default function SharerCard({
                 key={item.key}
                 item={item}
                 isOwned={false}
+                onApproveWorkspaceShare={
+                  item.workspaceDeliveryStatus === "pending" && onApproveWorkspaceShare
+                    ? () => onApproveWorkspaceShare(item.token)
+                    : undefined
+                }
+                onDenyWorkspaceShare={
+                  item.workspaceDeliveryStatus === "pending" && onDenyWorkspaceShare
+                    ? () => onDenyWorkspaceShare(item.token)
+                    : undefined
+                }
+                workspaceModerationLoading={workspaceModerationLoadingToken === item.token}
               />
             ))}
           </div>
@@ -124,7 +188,12 @@ export default function SharerCard({
                   i > 0 ? "border-t border-neutral-200 dark:border-neutral-700" : ""
                 }
               >
-                <SharerCardListRow item={item} />
+                <SharerCardListRow
+                  item={item}
+                  onApproveWorkspaceShare={onApproveWorkspaceShare}
+                  onDenyWorkspaceShare={onDenyWorkspaceShare}
+                  workspaceModerationLoading={workspaceModerationLoadingToken === item.token}
+                />
               </div>
             ))}
           </div>

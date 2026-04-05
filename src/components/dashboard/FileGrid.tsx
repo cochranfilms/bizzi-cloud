@@ -3113,6 +3113,15 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                   const m = linkedDrives.find((d) => d.id === currentDrive.id);
                   return m ? teamAwareDriveName(m.name) : currentDrive.name;
                 })(),
+                currentParentFolderId: (() => {
+                  const parents = new Set<string | null>();
+                  for (const id of selectedFileIds) {
+                    const row = displayedFilesWithMacosPackages.find((f) => f.id === id);
+                    parents.add(row?.folder_id ?? null);
+                  }
+                  if (parents.size !== 1) return undefined;
+                  return parents.values().next().value ?? null;
+                })(),
                 onMoveToFolder: async (targetFolderId) => {
                   try {
                     setMoveErrorNotice(null);
