@@ -538,7 +538,21 @@ export default function ShareModal({
   const handleClose = useCallback(async () => {
     if (loading) return;
 
-    const token = shareToken ?? initialShareToken ?? null;
+    let token = shareToken ?? initialShareToken ?? null;
+
+    /** Share must persist a new share (same as “Copy link”), not only close — otherwise workspace targets never POST /api/shares and admins get no delivery request. */
+    const shouldCreateShare =
+      user &&
+      hasValidShareName &&
+      !token &&
+      (!!linkedDriveId || (Array.isArray(referencedFileIds) && referencedFileIds.length > 0)) &&
+      (recipientTab !== "workspace" || !!workspaceTarget);
+
+    if (shouldCreateShare) {
+      const created = await ensureShare();
+      if (!created) return;
+      token = created;
+    }
 
     const nameChanged =
       token &&
@@ -581,6 +595,12 @@ export default function ShareModal({
     folderName,
     shareVersion,
     loading,
+    hasValidShareName,
+    linkedDriveId,
+    referencedFileIds,
+    recipientTab,
+    workspaceTarget,
+    ensureShare,
   ]);
 
   if (!open) return null;
@@ -966,7 +986,7 @@ export default function ShareModal({
             onClick={handleClose}
             className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
           >
-            Done
+            Share
           </button>
         </div>
       </div>
