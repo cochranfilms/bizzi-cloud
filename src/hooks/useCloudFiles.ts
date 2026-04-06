@@ -65,7 +65,7 @@ async function apiErrorMessage(res: Response, fallback: string): Promise<string>
   return (data?.error as string) ?? fallback;
 }
 
-function filterScopedLinkedDrives(
+export function filterScopedLinkedDrives(
   drives: LinkedDrive[],
   opts: {
     isEnterpriseContext: boolean;

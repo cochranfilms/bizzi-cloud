@@ -1,7 +1,9 @@
 /**
  * When gallery assets are added via "Add From Files" (linked origin), create lightweight
- * `backup_files` rows under Gallery Media folder model v2 so the gallery-named folder
- * appears in the drive tree. Rows reuse the same `object_key` as the source file (no B2 copy).
+ * `backup_files` rows under folder model v2 on Gallery Media. Rows reuse the same `object_key`
+ * as the source file (no B2 copy). Relative folder names from the source `relative_path` are
+ * preserved under the gallery segment (e.g. segment/Interviews/Cam A/file.mov) so structure,
+ * duplicate-safe paths, and drive browsing match user expectations.
  */
 import type { Firestore } from "firebase-admin/firestore";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
@@ -16,6 +18,66 @@ import { buildRelativePathFromFolderNames } from "@/lib/storage-folders/path-res
 import { resolveGalleryFavoritesWriteContext } from "@/lib/gallery-favorites-write-context";
 import type { GalleryManagementDoc } from "@/lib/gallery-owner-access";
 import { resolveMediaFolderSegmentForPath } from "@/lib/gallery-media-path";
+
+const MAX_LINKED_PATH_DEPTH = 64;
+
+/**
+ * Directory segments under the source file's `relative_path` (excludes the path leaf filename).
+ * Preserves client folder layout for linked Gallery Media rows without copying bytes.
+ */
+function safeDirPartsFromSourceRelativePath(relativePath: string): string[] {
+  const parts = String(relativePath ?? "")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter(Boolean);
+  if (parts.length <= 1) return [];
+  const dirs = parts.slice(0, -1);
+  const out: string[] = [];
+  for (const d of dirs) {
+    const t = trimDisplayName(d);
+    if (!t || t === "." || t === "..") continue;
+    out.push(t);
+    if (out.length >= MAX_LINKED_PATH_DEPTH) break;
+  }
+  return out;
+}
+
+/**
+ * Ensures each name in `relativeFolderNames` exists as a nested folder under `startParentFolderId`.
+ * Returns the leaf folder id (or start parent when names is empty).
+ */
+async function ensureFolderChainUnderParent(
+  db: Firestore,
+  actingUid: string,
+  linkedDriveId: string,
+  startParentFolderId: string,
+  relativeFolderNames: string[]
+): Promise<string> {
+  let parentId = startParentFolderId;
+  for (const raw of relativeFolderNames) {
+    const display = trimDisplayName(raw);
+    if (!display) continue;
+    const wantKey = toNormalizedComparisonKey(display);
+    if (!wantKey) continue;
+    const { folders } = await listStorageFolderChildren(db, linkedDriveId, parentId);
+    const found = folders.find(
+      (f) =>
+        toNormalizedComparisonKey(trimDisplayName(String((f as { name?: string }).name ?? ""))) === wantKey
+    );
+    const fid = (found as { id?: string } | undefined)?.id;
+    if (fid) {
+      parentId = fid;
+      continue;
+    }
+    const { id } = await createStorageFolder(db, actingUid, {
+      linked_drive_id: linkedDriveId,
+      parent_folder_id: parentId,
+      name: display,
+    });
+    parentId = id;
+  }
+  return parentId;
+}
 
 async function ensureRootChildFolderForSegment(
   db: Firestore,
@@ -134,7 +196,7 @@ export async function placeLinkedGalleryAssetsInGalleryMediaFolder(
     galleryId
   );
 
-  const parentFolderId = await ensureRootChildFolderForSegment(
+  const segmentFolderId = await ensureRootChildFolderForSegment(
     db,
     actingUid,
     writeCtx.linkedDriveId,
@@ -160,7 +222,15 @@ export async function placeLinkedGalleryAssetsInGalleryMediaFolder(
     const objectKey = String(src.object_key ?? "").trim();
     if (!objectKey) continue;
 
-    const relPath = buildRelativePathFromFolderNames([segment], fileName);
+    const dirParts = safeDirPartsFromSourceRelativePath(path);
+    const leafFolderId = await ensureFolderChainUnderParent(
+      db,
+      actingUid,
+      writeCtx.linkedDriveId,
+      segmentFolderId,
+      dirParts
+    );
+    const relPath = buildRelativePathFromFolderNames([segment, ...dirParts], fileName);
 
     const snapshotRef = await db.collection("backup_snapshots").add({
       linked_drive_id: writeCtx.linkedDriveId,
@@ -175,7 +245,7 @@ export async function placeLinkedGalleryAssetsInGalleryMediaFolder(
       ...scopeFields,
       backup_snapshot_id: snapshotRef.id,
       linked_drive_id: writeCtx.linkedDriveId,
-      folder_id: parentFolderId,
+      folder_id: leafFolderId,
       relative_path: relPath,
       gallery_id: galleryId,
       reference_source_backup_file_id: sourceId,

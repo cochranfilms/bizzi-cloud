@@ -5,6 +5,15 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useCurrentFolder } from "@/context/CurrentFolderContext";
+import { useEnterprise } from "@/context/EnterpriseContext";
+import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
+import ShareConfirmationModal from "./ShareConfirmationModal";
+import type {
+  ShareConfirmationSharedItems,
+  ShareConfirmationSourceWorkspace,
+  ShareConfirmationTarget,
+} from "./ShareConfirmationModal";
 
 function shareUiOriginFromPath(path: string): "dashboard" | "personal_team" | "enterprise" {
   if (path.startsWith("/enterprise")) return "enterprise";
@@ -54,6 +63,9 @@ export default function ShareModal({
 }: ShareModalProps) {
   const { user } = useAuth();
   const pathname = usePathname() ?? "";
+  const { currentDriveId, effectiveDriveIdForFiles, selectedWorkspaceId } = useCurrentFolder();
+  const { org } = useEnterprise();
+  const personalTeam = usePersonalTeamWorkspace();
   const routeTeamOwnerId = useMemo(() => {
     const m = pathname.match(/^\/team\/([^/]+)/);
     return m?.[1] ?? null;
@@ -85,6 +97,11 @@ export default function ShareModal({
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [forkedNewShareFlow, setForkedNewShareFlow] = useState(false);
   const [ownerBootstrap, setOwnerBootstrap] = useState<OwnerShareBootstrap | null>(null);
+  const [shareConfirmation, setShareConfirmation] = useState<{
+    source: ShareConfirmationSourceWorkspace;
+    target: ShareConfirmationTarget;
+    items: ShareConfirmationSharedItems;
+  } | null>(null);
 
   const hasValidShareName = shareName.trim().length > 0;
   const lastFetchedForRef = useRef<string | null>(null);
@@ -192,6 +209,7 @@ export default function ShareModal({
 
     if (open) {
       if (justOpened) {
+        setShareConfirmation(null);
         setShareName(folderName.trim() || "");
         setForkedNewShareFlow(false);
         setOwnerBootstrap(null);
@@ -243,6 +261,7 @@ export default function ShareModal({
       setEmailInput("");
       setForkedNewShareFlow(false);
       setOwnerBootstrap(null);
+      setShareConfirmation(null);
     }
   }, [
     open,
@@ -362,6 +381,20 @@ export default function ShareModal({
       : null;
 
   const recipientLocked = !!(shareToken ?? initialShareToken) && !manageExistingShare && !forkedNewShareFlow;
+
+  const getEffectiveRefsAndBackup = useCallback(() => {
+    const bootRefs =
+      forkedNewShareFlow && ownerBootstrap?.referenced_file_ids?.length
+        ? ownerBootstrap.referenced_file_ids
+        : [];
+    const propRefs = Array.isArray(referencedFileIds) ? referencedFileIds : [];
+    const effectiveRefs = bootRefs.length > 0 ? bootRefs : propRefs;
+    const effBackupId =
+      forkedNewShareFlow && ownerBootstrap
+        ? ownerBootstrap.backup_file_id ?? undefined
+        : backupFileId;
+    return { effectiveRefs, effBackupId };
+  }, [forkedNewShareFlow, ownerBootstrap, referencedFileIds, backupFileId]);
 
   useEffect(() => {
     if (!manageExistingShare || !open || !ownerBootstrap || forkedNewShareFlow) return;
@@ -638,9 +671,10 @@ export default function ShareModal({
     [recipientTab, liveShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
-  const handleClose = useCallback(async () => {
-    if (loading) return;
-
+  const persistShareSession = useCallback(async (): Promise<
+    "blocked" | "ensure_failed" | { token: string | null }
+  > => {
+    if (loading) return "blocked";
     let token = liveShareToken ?? null;
 
     /** Share must persist a new share (same as “Copy link”), not only close — otherwise workspace targets never POST /api/shares and admins get no delivery request. */
@@ -653,7 +687,7 @@ export default function ShareModal({
 
     if (shouldCreateShare) {
       const created = await ensureShare();
-      if (!created) return;
+      if (!created) return "ensure_failed";
       token = created;
     }
 
@@ -667,7 +701,7 @@ export default function ShareModal({
       setLoading(true);
       try {
         const authToken = await user.getIdToken();
-        const res = await fetch(`/api/shares/${encodeURIComponent(token)}`, {
+        await fetch(`/api/shares/${encodeURIComponent(token)}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -678,33 +712,209 @@ export default function ShareModal({
             version: shareVersion,
           }),
         });
-        if (res.ok) {
-          // Name saved; onClose will trigger refetch
-        }
-        // On 409/error we still close; user can retry by reopening
       } catch {
-        // Ignore; close anyway
+        // ignore; same as ambient close
       } finally {
         setLoading(false);
       }
     }
-    onClose();
+    return { token };
   }, [
-    onClose,
+    loading,
     liveShareToken,
     user,
-    shareName,
-    folderName,
-    shareVersion,
-    loading,
     hasValidShareName,
     hasEnsureShareSource,
     recipientTab,
     workspaceTarget,
     ensureShare,
+    shareName,
+    folderName,
+    shareVersion,
   ]);
 
+  const resolveSourceWorkspaceForConfirm = useCallback(async (): Promise<ShareConfirmationSourceWorkspace> => {
+    const origin = shareUiOriginFromPath(pathname);
+    const driveId = linkedDriveId ?? effectiveDriveIdForFiles ?? currentDriveId;
+
+    if (
+      (pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) &&
+      org?.id &&
+      driveId &&
+      user
+    ) {
+      try {
+        const auth = await user.getIdToken();
+        const params = new URLSearchParams({
+          drive_id: driveId,
+          organization_id: org.id,
+        });
+        if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+        const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
+          headers: { Authorization: `Bearer ${auth}` },
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            workspace_name?: string;
+            scope_label?: string;
+            drive_name?: string;
+          };
+          const title = data.workspace_name?.trim() || "Workspace";
+          const detail = [data.scope_label, data.drive_name].filter(Boolean).join(" · ");
+          return { title, detail: detail || undefined };
+        }
+      } catch {
+        // fall through
+      }
+    }
+
+    if (origin === "personal_team" && personalTeam?.teamName) {
+      return { title: personalTeam.teamName, detail: "Personal team workspace" };
+    }
+
+    if ((origin === "enterprise" || pathname.startsWith("/desktop")) && org?.name?.trim()) {
+      return { title: org.name.trim(), detail: "Organization" };
+    }
+
+    return { title: "Personal workspace", detail: "Your files" };
+  }, [
+    pathname,
+    linkedDriveId,
+    effectiveDriveIdForFiles,
+    currentDriveId,
+    org?.id,
+    org?.name,
+    selectedWorkspaceId,
+    user,
+    personalTeam?.teamName,
+  ]);
+
+  const buildSharedItemsForConfirm = useCallback(async (): Promise<ShareConfirmationSharedItems> => {
+    const { effectiveRefs, effBackupId } = getEffectiveRefsAndBackup();
+    const shareNameDisplay = shareName.trim() || folderName.trim() || "Share";
+
+    if (effectiveRefs.length > 0 && user) {
+      try {
+        const auth = await user.getIdToken();
+        const res = await fetch("/api/files/batch-names", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${auth}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ file_ids: effectiveRefs }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { files?: { id: string; name: string }[] };
+          const names = (data.files ?? []).map((f) => f.name);
+          const max = 20;
+          const total = effectiveRefs.length;
+          const displayNames = names.slice(0, max);
+          return {
+            shareName: shareNameDisplay,
+            folderOrSingleName: folderName,
+            fileNames: displayNames,
+            extraFileCount: Math.max(0, total - displayNames.length),
+            isFolderShare: false,
+            fileCountFallback: displayNames.length === 0 && total > 0 ? total : undefined,
+          };
+        }
+      } catch {
+        // fall through
+      }
+      return {
+        shareName: shareNameDisplay,
+        folderOrSingleName: folderName,
+        fileNames: [],
+        extraFileCount: 0,
+        isFolderShare: false,
+        fileCountFallback: effectiveRefs.length,
+      };
+    }
+
+    if (effBackupId) {
+      return {
+        shareName: shareNameDisplay,
+        folderOrSingleName: folderName,
+        fileNames: [folderName],
+        extraFileCount: 0,
+        isFolderShare: false,
+      };
+    }
+
+    return {
+      shareName: shareNameDisplay,
+      folderOrSingleName: folderName,
+      fileNames: [],
+      extraFileCount: 0,
+      isFolderShare: true,
+    };
+  }, [getEffectiveRefsAndBackup, shareName, folderName, user]);
+
+  /** Backdrop, ✕, and primary Share all persist then show the same confirmation when a share exists. */
+  const handleCompleteShare = useCallback(async () => {
+    const result = await persistShareSession();
+    if (result === "blocked" || result === "ensure_failed") return;
+    const token = typeof result === "object" ? result.token : null;
+    if (!token) {
+      onClose();
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const source = await resolveSourceWorkspaceForConfirm();
+      const items = await buildSharedItemsForConfirm();
+
+      const target: ShareConfirmationTarget =
+        recipientTab === "workspace" && workspaceTarget
+          ? {
+              mode: "workspace",
+              emails: [],
+              workspaceLabel: workspaceTarget.label,
+              workspaceScopeLabel:
+                workspaceTarget.kind === "personal_team"
+                  ? "Team workspace"
+                  : "Organization workspace",
+            }
+          : {
+              mode: "email",
+              emails: [...invitedEmails],
+            };
+
+      setShareConfirmation({ source, target, items });
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    persistShareSession,
+    onClose,
+    resolveSourceWorkspaceForConfirm,
+    buildSharedItemsForConfirm,
+    recipientTab,
+    workspaceTarget,
+    invitedEmails,
+  ]);
+
+  const dismissShareConfirmation = useCallback(() => {
+    setShareConfirmation(null);
+    onClose();
+  }, [onClose]);
+
   if (!open) return null;
+
+  if (shareConfirmation) {
+    return (
+      <ShareConfirmationModal
+        open
+        onDismiss={dismissShareConfirmation}
+        source={shareConfirmation.source}
+        target={shareConfirmation.target}
+        items={shareConfirmation.items}
+      />
+    );
+  }
+
 
   const modal = (
     <div
@@ -715,7 +925,7 @@ export default function ShareModal({
     >
       <div
         className="flex min-h-full items-center justify-center px-4 pt-[max(3rem,calc(1.25rem+env(safe-area-inset-top,0px)))] pb-[max(3rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] sm:px-6 sm:pt-14 sm:pb-14 md:pt-16 md:pb-16"
-        onClick={handleClose}
+        onClick={handleCompleteShare}
       >
         <div
           className="relative z-10 my-auto flex w-full max-w-3xl max-h-[calc(100dvh-7rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col rounded-xl border border-neutral-200 bg-white shadow-xl sm:max-h-[calc(100dvh-8rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] dark:border-neutral-700 dark:bg-neutral-900"
@@ -737,7 +947,7 @@ export default function ShareModal({
           </h3>
           <button
             type="button"
-            onClick={handleClose}
+            onClick={handleCompleteShare}
             className="rounded-lg p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             aria-label="Close"
           >
@@ -1114,8 +1324,9 @@ export default function ShareModal({
         <div className="flex shrink-0 justify-end border-t border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
           <button
             type="button"
-            onClick={handleClose}
-            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan"
+            onClick={handleCompleteShare}
+            disabled={loading}
+            className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:opacity-50"
           >
             Share
           </button>

@@ -1,16 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
   ExternalLink,
-  Plus,
   Image as ImageIcon,
   Film,
-  Play,
   Copy,
   Check,
   Loader2,
@@ -23,81 +20,11 @@ import {
   AlertCircle,
 } from "lucide-react";
 import GalleryAssetThumbnail from "@/components/gallery/GalleryAssetThumbnail";
-import { useThumbnail } from "@/hooks/useThumbnail";
 import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 import { usePdfThumbnail } from "@/hooks/usePdfThumbnail";
-import { useInView } from "@/hooks/useInView";
 import { useAuth } from "@/context/AuthContext";
-import type { RecentFile } from "@/hooks/useCloudFiles";
 import { getDisplayGalleryShareUrl } from "@/lib/gallery-share-url";
 import { logGalleryProductEvent } from "@/lib/gallery-product-analytics";
-
-function AddFileButton({
-  file,
-  selected,
-  onToggle,
-}: {
-  file: RecentFile;
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  const [btnRef, isInView] = useInView<HTMLButtonElement>();
-  const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
-    enabled: isInView,
-    contentType: file.contentType,
-  });
-  const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(file.name) || (file.contentType?.startsWith("video/") ?? false);
-  const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isVideo && isInView,
-    isVideo,
-  });
-  const isPdf = /\.pdf$/i.test(file.name) || file.contentType === "application/pdf";
-  const pdfThumbnailUrl = usePdfThumbnail(file.objectKey, file.name, {
-    enabled: !!file.objectKey && isPdf && isInView,
-  });
-
-  return (
-    <button
-      ref={btnRef}
-      type="button"
-      onClick={onToggle}
-      className={`relative flex aspect-square flex-col items-center justify-center overflow-hidden rounded-lg border-2 p-1 transition-colors ${
-        selected
-          ? "border-bizzi-blue bg-bizzi-blue/10"
-          : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600"
-      }`}
-    >
-      {(thumbnailUrl || videoThumbnailUrl || pdfThumbnailUrl) ? (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL from thumbnail API, video frame, or PDF first page */}
-          <img
-            src={videoThumbnailUrl ?? pdfThumbnailUrl ?? thumbnailUrl ?? ""}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-          {isVideo && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 shadow-lg">
-                <Play className="ml-0.5 h-5 w-5 fill-white text-white" />
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          {isVideo ? (
-            <Film className="h-6 w-6 text-neutral-500" />
-          ) : (
-            <ImageIcon className="h-6 w-6 text-neutral-500" />
-          )}
-        </div>
-      )}
-      <span className="mt-1 w-full truncate text-center text-xs">
-        {file.name}
-      </span>
-    </button>
-  );
-}
 import { useCloudFiles } from "@/hooks/useCloudFiles";
 import { isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
 import TopBar from "@/components/dashboard/TopBar";
@@ -108,6 +35,7 @@ import GalleryOwnerProfileBanner from "@/components/gallery/GalleryOwnerProfileB
 import GalleryDetailHealthAdvisories from "@/components/gallery/GalleryDetailHealthAdvisories";
 import { GalleryVideoDetailStrip } from "@/components/gallery/GalleryVideoDetailStrip";
 import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
+import GalleryAddFromLibraryModal from "@/components/gallery/GalleryAddFromLibraryModal";
 
 interface GalleryData {
   id: string;
@@ -405,15 +333,6 @@ export default function GalleryDetailPage() {
     } finally {
       setAdding(false);
     }
-  };
-
-  const toggleSelect = (fileId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileId)) next.delete(fileId);
-      else next.add(fileId);
-      return next;
-    });
   };
 
   const [galleryShareUrl, setGalleryShareUrl] = useState("");
@@ -738,88 +657,20 @@ export default function GalleryDetailPage() {
         </DashboardRouteFade>
       </main>
 
-      {showAddModal &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3 sm:p-4">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-700">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-                {isVideoGallery ? "Add videos" : "Add photos"}
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModal(false);
-                  setSelectedIds(new Set());
-                }}
-                className="text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
-              >
-                ×
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-              <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-                {isVideoGallery
-                  ? isTeamRoute
-                    ? "Choose from recent videos in this team workspace (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
-                    : "Choose from your recent video files (Storage, RAW, etc.). Gallery Media is excluded. Videos only."
-                  : isTeamRoute
-                    ? "Choose from recent photos in this team workspace (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."
-                    : "Choose from your recent photos (Storage, RAW, etc.). Gallery Media is excluded. Photos only — no videos."}
-              </p>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                {filesEligibleForFromFiles.slice(0, 120).map((f) => (
-                    <AddFileButton
-                      key={f.id}
-                      file={f}
-                      selected={selectedIds.has(f.id)}
-                      onToggle={() => toggleSelect(f.id)}
-                    />
-                  ))}
-              </div>
-              {filesEligibleForFromFiles.length === 0 && (
-                <p className="py-8 text-center text-sm text-neutral-500">
-                  {isVideoGallery
-                    ? "No video files in recent uploads. Upload some videos first."
-                    : "No image files in recent uploads. Upload some photos first."}
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModal(false);
-                  setSelectedIds(new Set());
-                }}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAddAssets}
-                disabled={adding || selectedIds.size === 0}
-                className="flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {adding ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Adding…
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Add {selectedIds.size} file{selectedIds.size !== 1 ? "s" : ""}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>,
-          document.body,
-        )}
+      <GalleryAddFromLibraryModal
+        open={showAddModal}
+        onClose={() => {
+          setShowAddModal(false);
+          setSelectedIds(new Set());
+        }}
+        isVideoGallery={isVideoGallery}
+        isTeamRoute={isTeamRoute}
+        selectedIds={selectedIds}
+        setSelectedIds={setSelectedIds}
+        recentEligibleFiles={filesEligibleForFromFiles}
+        onAdd={handleAddAssets}
+        adding={adding}
+      />
     </>
   );
 }
