@@ -3,7 +3,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Download, File } from "lucide-react";
 import FolderCard, { type FolderItem } from "@/components/dashboard/FolderCard";
-import FolderListRow from "@/components/dashboard/FolderListRow";
 import { useLayoutSettingsOptional } from "@/context/LayoutSettingsContext";
 import { getCardAspectClass } from "@/lib/card-aspect-utils";
 import type { CardPresentation } from "@/lib/card-presentation";
@@ -14,7 +13,6 @@ import { useInView } from "@/hooks/useInView";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
-import ShareFileRow from "./ShareFileRow";
 import SharePreviewModal, { type ShareFile } from "./SharePreviewModal";
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf)$/i;
@@ -233,7 +231,10 @@ export default function SharedFolderBrowser({
   downloadingId,
   chrome = "dashboard",
 }: SharedFolderBrowserProps) {
-  const { viewMode, cardSize, aspectRatio, thumbnailScale, showCardInfo } = useLayoutSettingsOptional();
+  const layout = useLayoutSettingsOptional();
+  /** List layout reads like a long menu of files; match sender Storage (card grid) for shares. */
+  const viewMode = layout.viewMode === "list" ? "grid" : layout.viewMode;
+  const { cardSize, aspectRatio, thumbnailScale, showCardInfo } = layout;
   const [pathPrefix, setPathPrefix] = useState<string[]>([]);
   const [previewFile, setPreviewFile] = useState<ShareFile | null>(null);
 
@@ -276,56 +277,6 @@ export default function SharedFolderBrowser({
     subfolders.length === 0 && filesHere.length === 0 ? (
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 text-center">
         <p className="text-sm text-neutral-500 dark:text-neutral-400">Nothing to show in this folder.</p>
-      </div>
-    ) : viewMode === "list" ? (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-        {folderItems.length > 0 ? (
-          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                  <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
-                  <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
-                </tr>
-              </thead>
-              <tbody>
-                {folderItems.map((item) => (
-                  <FolderListRow
-                    key={item.key}
-                    item={item}
-                    displayContext={{ locationScope: "shared" }}
-                    onClick={() => setPathPrefix([...pathPrefix, item.name])}
-                    folderRollup={{ descendants: [], coverage: "none" }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-        {filesHere.length > 0 ? (
-          <div className="space-y-2">
-            {filesHere.map((file) => (
-              <ShareFileRow
-                key={file.id}
-                shareToken={shareToken}
-                file={file}
-                getAuthToken={getAuthToken}
-                onDownload={onDownload}
-                onPreview={setPreviewFile}
-                downloadingId={downloadingId}
-                canDownload={canDownload}
-              />
-            ))}
-          </div>
-        ) : null}
       </div>
     ) : (
       <div className={`grid min-h-0 flex-1 auto-rows-fr content-start overflow-auto ${gridGapClass} ${gridCols}`}>

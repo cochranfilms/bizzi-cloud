@@ -17,6 +17,11 @@ import {
 import { sendShareFileEmailsToInvitees } from "@/lib/emailjs";
 import { NextResponse } from "next/server";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
+import {
+  displayPathForSharedBackupFile,
+  loadStorageFolderRowsForSharePaths,
+} from "@/lib/share-api-folder-paths";
+import { linkedDriveIsFolderModelV2 } from "@/lib/storage-folders/v2-ingest-placement";
 
 export async function GET(
   request: Request,
@@ -67,20 +72,40 @@ export async function GET(
     folderName = (share.folder_name as string) ?? "Shared folder";
     itemType = "folder";
     files = [];
+    const rawRows: { id: string; data: Record<string, unknown> }[] = [];
     for (const fileId of referencedFileIds) {
       const fileSnap = await db.collection("backup_files").doc(fileId).get();
       if (!fileSnap.exists) continue;
       const fileData = fileSnap.data();
       if (fileData?.deleted_at) continue;
       if (fileData?.userId !== ownerId) continue;
-      const path = (fileData.relative_path ?? "") as string;
-      const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+      rawRows.push({ id: fileSnap.id, data: fileData as Record<string, unknown> });
+    }
+    const folderIds = rawRows
+      .map((r) => r.data.folder_id)
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+    const folderRowById = await loadStorageFolderRowsForSharePaths(db, folderIds);
+    const driveIds = [
+      ...new Set(
+        rawRows.map((r) => String(r.data.linked_drive_id ?? "")).filter((id) => id.length > 0),
+      ),
+    ];
+    const driveIsV2 = new Map<string, boolean>();
+    for (const did of driveIds) {
+      const ds = await db.collection("linked_drives").doc(did).get();
+      driveIsV2.set(did, linkedDriveIsFolderModelV2(ds.data()));
+    }
+    for (const row of rawRows) {
+      const did = String(row.data.linked_drive_id ?? "");
+      const { path, name } = displayPathForSharedBackupFile(row.data, folderRowById, {
+        driveIsFolderModelV2: driveIsV2.get(did) ?? false,
+      });
       files.push({
-        id: fileSnap.id,
+        id: row.id,
         name,
         path,
-        object_key: (fileData.object_key ?? "") as string,
-        size_bytes: (fileData.size_bytes ?? 0) as number,
+        object_key: String(row.data.object_key ?? ""),
+        size_bytes: (row.data.size_bytes ?? 0) as number,
       });
     }
   } else {
@@ -101,8 +126,18 @@ export async function GET(
       if (fileData?.userId !== ownerId || fileData?.linked_drive_id !== linkedDriveId) {
         return NextResponse.json({ error: "Invalid share" }, { status: 404 });
       }
-      const path = (fileData.relative_path ?? "") as string;
-      const name = path.split("/").filter(Boolean).pop() ?? path ?? "File";
+      const driveSnapSingle = await db.collection("linked_drives").doc(linkedDriveId).get();
+      const v2Single = linkedDriveIsFolderModelV2(driveSnapSingle.data());
+      const fid = fileData.folder_id;
+      const folderRowByIdSingle =
+        v2Single && typeof fid === "string" && fid.length > 0
+          ? await loadStorageFolderRowsForSharePaths(db, [fid])
+          : new Map();
+      const { path, name } = displayPathForSharedBackupFile(
+        fileData as Record<string, unknown>,
+        folderRowByIdSingle,
+        { driveIsFolderModelV2: v2Single },
+      );
       const custom = ((share.folder_name as string) ?? "").trim();
       folderName = custom || name;
       files = [
@@ -129,10 +164,22 @@ export async function GET(
         .where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE)
         .get();
 
+      const v2Drive = linkedDriveIsFolderModelV2(driveSnap.data());
+      const v2FolderIds = filesSnap.docs
+        .map((d) => d.data().folder_id)
+        .filter((x): x is string => typeof x === "string" && x.length > 0);
+      const folderRowByIdFolderShare =
+        v2Drive && v2FolderIds.length > 0
+          ? await loadStorageFolderRowsForSharePaths(db, v2FolderIds)
+          : new Map();
+
       files = filesSnap.docs.map((d) => {
         const data = d.data();
-        const path = (data.relative_path ?? "") as string;
-        const name = path.split("/").filter(Boolean).pop() ?? path ?? "?";
+        const { path, name } = displayPathForSharedBackupFile(
+          data as Record<string, unknown>,
+          folderRowByIdFolderShare,
+          { driveIsFolderModelV2: v2Drive },
+        );
         return {
           id: d.id,
           name,
