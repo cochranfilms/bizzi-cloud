@@ -6,7 +6,9 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
 import {
+  assertLinkedDriveWriteAccess,
   createStorageFolder,
+  FOLDER_MODEL_V2,
   listStorageFolderChildren,
 } from "@/lib/storage-folders";
 import { trimDisplayName, toNormalizedComparisonKey } from "@/lib/storage-folders/normalize";
@@ -38,6 +40,42 @@ async function ensureRootChildFolderForSegment(
     name: display,
   });
   return id;
+}
+
+/**
+ * Legacy Gallery Media drives may omit `folder_model_version`; folder APIs require v2.
+ * Upgrade in place when the acting user can write the drive (same as creating a subfolder).
+ */
+async function ensureGalleryMediaDriveFolderModelV2(
+  db: Firestore,
+  actingUid: string,
+  linkedDriveId: string
+): Promise<boolean> {
+  const ref = db.collection("linked_drives").doc(linkedDriveId);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    console.error("[placeLinkedGalleryAssetsInGalleryMediaFolder] linked drive missing", {
+      linkedDriveId,
+    });
+    return false;
+  }
+  const v = snap.data()?.folder_model_version;
+  if (v === FOLDER_MODEL_V2) return true;
+  try {
+    await assertLinkedDriveWriteAccess(db, actingUid, snap);
+  } catch (e) {
+    console.error("[placeLinkedGalleryAssetsInGalleryMediaFolder] no write access to upgrade drive", {
+      linkedDriveId,
+      actingUid,
+      error: e,
+    });
+    return false;
+  }
+  await ref.update({
+    folder_model_version: FOLDER_MODEL_V2,
+    supports_nested_folders: true,
+  });
+  return true;
 }
 
 function referenceRowAlreadyExists(
@@ -75,10 +113,21 @@ export async function placeLinkedGalleryAssetsInGalleryMediaFolder(
   if (ids.length === 0) return;
 
   const writeCtx = await resolveGalleryFavoritesWriteContext(db, actingUid, galleryId, galleryRow);
-  if ("error" in writeCtx) return;
+  if ("error" in writeCtx) {
+    console.error("[placeLinkedGalleryAssetsInGalleryMediaFolder] resolveGalleryFavoritesWriteContext", {
+      galleryId,
+      error: writeCtx.error,
+      status: writeCtx.status,
+    });
+    return;
+  }
 
-  const driveSnap = await db.collection("linked_drives").doc(writeCtx.linkedDriveId).get();
-  if (!driveSnap.exists || Number(driveSnap.data()?.folder_model_version) !== 2) return;
+  const upgraded = await ensureGalleryMediaDriveFolderModelV2(
+    db,
+    actingUid,
+    writeCtx.linkedDriveId
+  );
+  if (!upgraded) return;
 
   const segment = resolveMediaFolderSegmentForPath(
     galleryRow as { id?: string; title?: unknown; media_folder_segment?: unknown },
