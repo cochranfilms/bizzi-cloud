@@ -40,7 +40,10 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
-import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
+import {
+  isLinkedDriveFolderModelV2,
+  isStorageFoldersV2PillarDrive,
+} from "@/lib/linked-drive-folder-model";
 import ItemActionsMenu from "./ItemActionsMenu";
 import { BulkActionBar } from "./BulkActionBar";
 import BulkMoveModal from "./BulkMoveModal";
@@ -729,11 +732,7 @@ export default function FileGrid({
           : "";
       try {
         const meta = linkedDrives.find((d) => d.id === driveId);
-        const storageV2 =
-          meta &&
-          teamAwareDriveName(meta.name) === "Storage" &&
-          meta.is_creator_raw !== true &&
-          isLinkedDriveFolderModelV2(meta);
+        const storageV2 = isStorageFoldersV2PillarDrive(meta);
         const inferredVirt =
           !parent && storageV2
             ? (currentDrivePath ?? "").replace(/^\/+/, "")
@@ -752,7 +751,7 @@ export default function FileGrid({
           const { folders, files, listError } = await fetchStorageFolderList(
             driveId,
             parent,
-            meta.name
+            meta?.name ?? ""
           );
           if (gen !== loadDriveFilesGenRef.current) return;
           setStorageFolderListError(listError);
@@ -973,18 +972,14 @@ export default function FileGrid({
   const isStorageV2VirtualPathMode =
     !!currentDrive &&
     !!currentDriveMeta &&
-    driveBaseName === "Storage" &&
-    currentDriveMeta.is_creator_raw !== true &&
-    isLinkedDriveFolderModelV2(currentDriveMeta) &&
+    isStorageFoldersV2PillarDrive(currentDriveMeta) &&
     !!storageV2PathPrefixNorm &&
     storageParentFolderId == null;
 
   const isStorageV2FolderBrowse =
     !!currentDrive &&
     !!currentDriveMeta &&
-    driveBaseName === "Storage" &&
-    currentDriveMeta.is_creator_raw !== true &&
-    isLinkedDriveFolderModelV2(currentDriveMeta) &&
+    isStorageFoldersV2PillarDrive(currentDriveMeta) &&
     !isStorageV2VirtualPathMode;
 
   const isStorageLegacyVirtualBrowse =
@@ -994,9 +989,14 @@ export default function FileGrid({
     currentDriveMeta.is_creator_raw !== true &&
     !isLinkedDriveFolderModelV2(currentDriveMeta);
 
+  const galleryUsesLegacyVirtualPaths =
+    isGalleryMediaDrive &&
+    !!currentDriveMeta &&
+    !isLinkedDriveFolderModelV2(currentDriveMeta);
+
   const browseStorageByVirtualPaths =
     !!currentDrive &&
-    (isGalleryMediaDrive ||
+    (galleryUsesLegacyVirtualPaths ||
       currentDriveMeta?.is_creator_raw === true ||
       (driveBaseName === "Storage" && !isLinkedDriveFolderModelV2(currentDriveMeta)) ||
       isStorageV2VirtualPathMode);
@@ -1522,15 +1522,11 @@ export default function FileGrid({
       return;
     }
     const meta = linkedDrives.find((d) => d.id === currentDrive.id);
-    const v2Storage =
-      meta &&
-      teamAwareDriveName(meta.name) === "Storage" &&
-      meta.is_creator_raw !== true &&
-      isLinkedDriveFolderModelV2(meta);
+    const v2Pillar = isStorageFoldersV2PillarDrive(meta);
     const pathNorm = (currentDrivePath ?? "").replace(/^\/+/, "");
     const v2VirtualPathBrowse =
-      v2Storage && !!pathNorm && storageParentFolderId == null;
-    if (v2Storage && !v2VirtualPathBrowse) {
+      v2Pillar && !!pathNorm && storageParentFolderId == null;
+    if (v2Pillar && !v2VirtualPathBrowse) {
       return () => {};
     }
     return subscribeToDriveFiles(currentDrive.id, setDriveFiles);
@@ -1571,16 +1567,12 @@ export default function FileGrid({
     const pathFromUrl = searchParams.get("path")?.trim() ?? "";
     const normalizedPath = pathFromUrl.replace(/^\/+/, "");
     const meta = linkedDrives.find((d) => d.id === driveId);
-    const isStorageV2 =
-      meta &&
-      teamAwareDriveName(meta.name) === "Storage" &&
-      meta.is_creator_raw !== true &&
-      isLinkedDriveFolderModelV2(meta);
+    const isPillarV2 = isStorageFoldersV2PillarDrive(meta);
     const folderIdFromUrl = (searchParams.get("folder") ?? "").trim() || null;
 
     const shouldOpen = !currentDrive || currentDrive.id !== driveId;
     if (shouldOpen) {
-      if (isStorageV2) {
+      if (isPillarV2) {
         openDrive(
           driveId,
           folder.name,
@@ -1594,7 +1586,7 @@ export default function FileGrid({
         clearFiltersAndKeepDrive(driveId);
       }
     } else if (currentDrive.id === driveId) {
-      if (isStorageV2) {
+      if (isPillarV2) {
         const nextParent = folderIdFromUrl;
         const pathNorm = normalizedPath;
         const pathChanged = pathNorm !== (currentDrivePath ?? "").replace(/^\/+/, "");

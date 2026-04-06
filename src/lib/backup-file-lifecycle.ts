@@ -64,14 +64,27 @@ export function backupFileNeedsLifecycleBackfill(data: Record<string, unknown>):
 }
 
 /**
+ * Gallery Media “Add from files” rows set `reference_source_backup_file_id` to the canonical backup_files id
+ * and reuse `object_key` / mirrored `size_bytes` without a second B2 object — they must not double-count quota.
+ */
+export function isBackupFileReferencePointerRow(data: Record<string, unknown>): boolean {
+  const ref = data.reference_source_backup_file_id;
+  return typeof ref === "string" && ref.trim().length > 0;
+}
+
+/**
  * Byte weight toward storage quota for one document. Canonical rule: any existing row with positive numeric
  * `size_bytes` counts unless `lifecycle_state` is an explicitly terminal, non billable state
- * (`permanently_deleted` today). Unknown/malformed lifecycle still counts when `size_bytes` is positive.
+ * (`permanently_deleted` today), or the row is a {@link isBackupFileReferencePointerRow}.
+ * Unknown/malformed lifecycle still counts when `size_bytes` is positive.
  * Not for UI listing or download gates — use `isBackupFileActiveForListing` there.
  */
 export function quotaCountedSizeBytesFromBackupFile(data: Record<string, unknown>): number {
   const n = data.size_bytes;
   if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+    return 0;
+  }
+  if (isBackupFileReferencePointerRow(data)) {
     return 0;
   }
   if (data.lifecycle_state === BACKUP_LIFECYCLE_PERMANENTLY_DELETED) {

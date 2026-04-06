@@ -153,6 +153,8 @@ async function createGalleryMediaDrive(db: Firestore, scope: GalleryMediaScope, 
     permission_handle_id: `gallery-media-${Date.now()}`,
     createdAt: now,
     is_org_shared: false,
+    folder_model_version: 2,
+    supports_nested_folders: true,
     ...(scope.kind === "organization"
       ? { organization_id: scope.organizationId }
       : { organization_id: null }),

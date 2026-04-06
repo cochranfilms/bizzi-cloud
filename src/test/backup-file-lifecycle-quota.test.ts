@@ -65,6 +65,16 @@ describe("quotaCountedSizeBytesFromBackupFile", () => {
       quotaCountedSizeBytesFromBackupFile({ lifecycle_state: "active", size_bytes: Number.NaN })
     ).toBe(0);
   });
+
+  it("excludes gallery reference pointer rows (duplicate object_key, no extra stored object)", () => {
+    expect(
+      quotaCountedSizeBytesFromBackupFile({
+        lifecycle_state: "active",
+        size_bytes: 100,
+        reference_source_backup_file_id: "src_id",
+      })
+    ).toBe(0);
+  });
 });
 
 describe("isBackupFileActiveForListing vs quota", () => {

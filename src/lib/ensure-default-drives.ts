@@ -104,6 +104,8 @@ export async function ensureDefaultDrivesForUser(uid: string): Promise<void> {
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: now,
       organization_id: null,
+      folder_model_version: FOLDER_MODEL_V2,
+      supports_nested_folders: true,
     });
     writeCount++;
   }
@@ -187,6 +189,8 @@ export async function ensureDefaultDrivesForOrgUser(
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: now,
       organization_id: orgId,
+      folder_model_version: FOLDER_MODEL_V2,
+      supports_nested_folders: true,
     });
     writeCount++;
   }

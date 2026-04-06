@@ -77,6 +77,10 @@ function mapDriveDoc(
     creator_section: data.creator_section ?? false,
     is_creator_raw: data.is_creator_raw ?? false,
     personal_team_owner_id: ownerUid,
+    folder_model_version:
+      typeof data.folder_model_version === "number" ? data.folder_model_version : null,
+    supports_nested_folders:
+      typeof data.supports_nested_folders === "boolean" ? data.supports_nested_folders : null,
   };
 }
 
@@ -138,9 +142,13 @@ export async function POST(request: Request) {
     }
   }
 
+  const baseNameForPolicy = teamBaseName(rawName);
+  const isGalleryMediaPillar = baseNameForPolicy === "Gallery Media";
+
   if (
     !body.creator_section &&
     !body.is_creator_raw &&
+    !isGalleryMediaPillar &&
     (await teamHasStorageFolderModelV2(db, teamOwnerUserId))
   ) {
     return NextResponse.json(
@@ -167,6 +175,9 @@ export async function POST(request: Request) {
     ...(body.creator_section ? { creator_section: true } : {}),
     ...(body.is_creator_raw
       ? { is_creator_raw: true, creator_section: true }
+      : {}),
+    ...(isGalleryMediaPillar && !body.is_creator_raw
+      ? { folder_model_version: 2, supports_nested_folders: true }
       : {}),
   });
 

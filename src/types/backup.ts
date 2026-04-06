@@ -57,6 +57,8 @@ export interface BackupFile extends Partial<FileMetadataFields> {
   organization_id?: string | null;
   /** When set, file is in Gallery Media and belongs to this gallery (stable across renames) */
   gallery_id?: string | null;
+  /** Same `object_key` as source; row exists only to show linked assets under Gallery Media v2 folders */
+  reference_source_backup_file_id?: string | null;
   /** Workspace this file belongs to (org files only) */
   workspace_id?: string | null;
   /** Denormalized visibility for queries */

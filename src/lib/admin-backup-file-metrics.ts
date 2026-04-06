@@ -6,7 +6,10 @@
  */
 import { FieldPath, type Firestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { getCategoryFromFile } from "@/lib/analytics/category-map";
-import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import {
+  isBackupFileActiveForListing,
+  isBackupFileReferencePointerRow,
+} from "@/lib/backup-file-lifecycle";
 
 const PAGE_SIZE = 2500;
 
@@ -40,6 +43,7 @@ export async function aggregateActiveBackupFileMetrics(db: Firestore): Promise<A
     for (const doc of snap.docs) {
       const data = doc.data() as Record<string, unknown>;
       if (!isBackupFileActiveForListing(data)) continue;
+      if (isBackupFileReferencePointerRow(data)) continue;
       const size = typeof data.size_bytes === "number" ? data.size_bytes : 0;
       totalBytes += size;
       activeFileCount += 1;

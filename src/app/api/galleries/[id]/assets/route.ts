@@ -11,7 +11,10 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { GALLERY_IMAGE_EXT, GALLERY_VIDEO_EXT } from "@/lib/gallery-file-types";
 import type { GalleryAssetOrigin } from "@/types/gallery";
 import { NextResponse } from "next/server";
-import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
+import {
+  userCanManageGalleryAsPhotographer,
+  type GalleryManagementDoc,
+} from "@/lib/gallery-owner-access";
 import { canLinkBackupFileToGallery } from "@/lib/gallery-asset-link-access";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -22,6 +25,7 @@ import {
   weakEtagForGalleryAssets,
   ifNoneMatchIndicatesUnchanged,
 } from "@/lib/gallery-asset-mutations";
+import { placeLinkedGalleryAssetsInGalleryMediaFolder } from "@/lib/gallery-link-assets-to-media-folder";
 import {
   fetchBackupRelativePathsById,
   shouldOmitAssetFromFinalVideoDeliveryListing,
@@ -291,7 +295,12 @@ export async function POST(
 
   const batch = db.batch();
   let nextOrder = maxOrder + 1;
-  const added: { id: string; backup_file_id: string; name: string }[] = [];
+  const added: {
+    id: string;
+    backup_file_id: string;
+    name: string;
+    asset_origin: GalleryAssetOrigin;
+  }[] = [];
 
   for (const { id: backupFileId, data: fileData } of fileRows) {
     if (!(await canLinkBackupFileToGallery(uid, fileData, galleryRow))) continue;
@@ -348,10 +357,27 @@ export async function POST(
       created_at: now,
       updated_at: now,
     });
-    added.push({ id: assetRef.id, backup_file_id: backupFileId, name });
+    added.push({ id: assetRef.id, backup_file_id: backupFileId, name, asset_origin: origin });
   }
 
   await batch.commit();
+
+  const linkedForMediaFolder = added
+    .filter((a) => a.asset_origin === "linked")
+    .map((a) => a.backup_file_id);
+  if (linkedForMediaFolder.length > 0) {
+    try {
+      await placeLinkedGalleryAssetsInGalleryMediaFolder(
+        db,
+        uid,
+        galleryId,
+        galleryRow as GalleryManagementDoc,
+        linkedForMediaFolder
+      );
+    } catch (err) {
+      console.error("[gallery assets POST] place linked in Gallery Media folder:", err);
+    }
+  }
 
   let newVersion = readAssetsVersion(galleryRow);
   if (added.length > 0) {

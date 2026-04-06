@@ -3802,6 +3802,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "backup_files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reference_source_backup_file_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "gallery_id",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

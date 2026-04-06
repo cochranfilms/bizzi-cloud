@@ -1118,6 +1118,10 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         organization_id: data.organization_id ?? null,
         is_org_shared: data.is_org_shared === true,
         personal_team_owner_id: (data.personal_team_owner_id as string | undefined) ?? null,
+        folder_model_version:
+          typeof data.folder_model_version === "number" ? data.folder_model_version : null,
+        supports_nested_folders:
+          typeof data.supports_nested_folders === "boolean" ? data.supports_nested_folders : null,
       };
     }
     const docRef = await addDoc(collection(db, "linked_drives"), {
@@ -1126,6 +1130,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       permission_handle_id: `gallery-media-${Date.now()}`,
       createdAt: new Date(),
       is_org_shared: false,
+      folder_model_version: 2,
+      supports_nested_folders: true,
       ...(orgId ? { organization_id: orgId } : { organization_id: null }),
       ...teamContainerWriteFields(teamRouteOwnerUid, user.uid),
     });
@@ -1140,6 +1146,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       organization_id: orgId ?? null,
       is_org_shared: false,
       personal_team_owner_id: teamScoped ? user.uid : null,
+      folder_model_version: 2,
+      supports_nested_folders: true,
     };
     setLinkedDrives((prev) => [drive, ...prev.filter((d) => d.id !== drive.id)]);
     setStorageVersion((v) => v + 1);

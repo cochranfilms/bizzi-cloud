@@ -12,7 +12,7 @@ import {
 } from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
-import { listStorageFolderChildren } from "@/lib/storage-folders";
+import { getStorageFolderCoverFile, listStorageFolderChildren } from "@/lib/storage-folders";
 import {
   fileBelongsToPersonalTeamContainer,
   fileVisibleOnPersonalDashboard,
@@ -80,6 +80,11 @@ type StorageFolderRootRow = {
   storage_folder_version?: number;
   operation_state?: string;
   lifecycle_state?: string;
+  cover_file?: {
+    object_key: string;
+    file_name: string;
+    content_type: string | null;
+  } | null;
 };
 
 /** Merge Google/Dropbox-import path prefixes (e.g. `imported/…`) with v2 `storage_folders` tiles on home. */
@@ -123,6 +128,12 @@ async function appendV2StorageRootFolderRows(
 
     const itemCount = subFolders.length + filesSnap.size;
     const ver = f.version;
+    let cover_file: StorageFolderRootRow["cover_file"] = null;
+    try {
+      cover_file = await getStorageFolderCoverFile(db, driveId, fid);
+    } catch {
+      cover_file = null;
+    }
     folders.push({
       drive_id: driveId,
       name: fname,
@@ -132,6 +143,7 @@ async function appendV2StorageRootFolderRows(
       storage_folder_version: typeof ver === "number" ? ver : Number(ver ?? 1),
       operation_state: typeof f.operation_state === "string" ? f.operation_state : undefined,
       lifecycle_state: typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+      cover_file,
     });
   }
 }

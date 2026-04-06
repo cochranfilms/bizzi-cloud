@@ -375,6 +375,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     () =>
       storageTopFolders.map((t) => {
         const isV2Row = !!t.storageFolderId;
+        const cover =
+          t.coverFile?.object_key?.trim() && isV2Row
+            ? {
+                objectKey: t.coverFile.object_key.trim(),
+                fileName: t.coverFile.file_name ?? "",
+                contentType: t.coverFile.content_type ?? null,
+              }
+            : undefined;
         return {
           name: t.name,
           type: "folder" as const,
@@ -394,6 +402,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           preventRename: !isV2Row,
           preventMove: true,
           isSystemFolder: false,
+          ...(cover ? { coverFile: cover } : {}),
         };
       }),
     [storageTopFolders]

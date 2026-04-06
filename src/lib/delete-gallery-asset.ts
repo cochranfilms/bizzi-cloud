@@ -5,6 +5,7 @@
  */
 import type { Firestore, Query } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { BACKUP_LIFECYCLE_TRASHED } from "@/lib/backup-file-lifecycle";
 import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { userCanManageGalleryAsPhotographer } from "@/lib/gallery-owner-access";
 import {
@@ -13,6 +14,30 @@ import {
 } from "@/lib/gallery-asset-mutations";
 
 const CHUNK = 400;
+
+/** Remove Gallery Media “reference” rows created for Add From Files (same object_key as source). */
+async function trashLinkedAssetGalleryMediaReferences(
+  db: Firestore,
+  galleryId: string,
+  sourceBackupFileId: string
+): Promise<void> {
+  const snap = await db
+    .collection("backup_files")
+    .where("reference_source_backup_file_id", "==", sourceBackupFileId)
+    .where("gallery_id", "==", galleryId)
+    .limit(40)
+    .get();
+  if (snap.empty) return;
+  const when = new Date().toISOString();
+  const batch = db.batch();
+  for (const d of snap.docs) {
+    batch.update(d.ref, {
+      lifecycle_state: BACKUP_LIFECYCLE_TRASHED,
+      deleted_at: when,
+    });
+  }
+  await batch.commit();
+}
 
 async function deleteByQuery(db: Firestore, q: Query): Promise<void> {
   for (;;) {
@@ -122,6 +147,11 @@ export async function deleteGalleryAssetAndStorage(input: {
   }
 
   if (effectiveOrigin === "linked") {
+    try {
+      await trashLinkedAssetGalleryMediaReferences(db, galleryId, backupFileId);
+    } catch (e) {
+      console.error("[delete gallery asset] trash gallery media references:", e);
+    }
     return {
       ok: true,
       backup_file_deleted: false,

@@ -446,6 +446,8 @@ export interface StorageTopFolderEntry {
   storageFolderVersion?: number;
   storageFolderOperationState?: string;
   storageFolderLifecycleState?: string;
+  /** Same cover resolution as `/api/storage-folders/list` (v2 roots only). */
+  coverFile?: StorageFolderCoverFile | null;
 }
 
 export interface DeletedDrive {
@@ -892,6 +894,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 storage_folder_version?: number;
                 operation_state?: string;
                 lifecycle_state?: string;
+                cover_file?: StorageFolderCoverFile | null;
               }>;
             };
             topsTeam = (rootsData.folders ?? []).map((f) => ({
@@ -909,6 +912,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 typeof f.operation_state === "string" ? f.operation_state : undefined,
               storageFolderLifecycleState:
                 typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+              coverFile: f.cover_file ?? null,
             }));
           }
         }
@@ -977,6 +981,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 storage_folder_version?: number;
                 operation_state?: string;
                 lifecycle_state?: string;
+                cover_file?: StorageFolderCoverFile | null;
               }>;
             };
             topsPers = (rootsData.folders ?? []).map((f) => ({
@@ -994,6 +999,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 typeof f.operation_state === "string" ? f.operation_state : undefined,
               storageFolderLifecycleState:
                 typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+              coverFile: f.cover_file ?? null,
             }));
           }
         }

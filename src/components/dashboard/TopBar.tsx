@@ -16,7 +16,10 @@ import { useEnterprise } from "@/context/EnterpriseContext";
 import { useAuth } from "@/context/AuthContext";
 import { FilesFilterTopChromeContext } from "@/context/FilesFilterTopChromeContext";
 import { resolveUploadDestination } from "@/lib/upload-destination-resolve";
-import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
+import {
+  isLinkedDriveFolderModelV2,
+  isStorageFoldersV2PillarDrive,
+} from "@/lib/linked-drive-folder-model";
 
 interface TopBarProps {
   title?: string;
@@ -85,8 +88,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     onFilesRoute &&
     !!currentDriveId &&
     !!currentLinkedForNested &&
-    isLinkedDriveFolderModelV2(currentLinkedForNested) &&
-    teamAwareTopBar(currentLinkedForNested.name) === "Storage";
+    isStorageFoldersV2PillarDrive(currentLinkedForNested);
 
   const resolveCanonicalStorageV2Drive = useCallback(() => {
     const candidates = linkedDrives.filter(
