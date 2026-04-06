@@ -10,6 +10,10 @@ import {
   loadExistingProofingObjectKeys,
   resolveGalleryFavoritesWriteContext,
 } from "@/lib/gallery-favorites-write-context";
+import {
+  ensureProofingShortcutParentFolder,
+  repairProofingMaterializedShortcutsMissingFolderId,
+} from "@/lib/gallery-proofing-storage-layout";
 import { PROOFING_MERGED_SEGMENT } from "@/lib/gallery-proofing-types";
 import {
   buildMergeRelativePrefix,
@@ -18,6 +22,7 @@ import {
 } from "@/lib/gallery-media-path";
 import { assignMergeSlug } from "@/lib/gallery-proofing-slug";
 import type { MaterializationState, ShellContext } from "@/lib/gallery-proofing-types";
+import { toNormalizedComparisonKey } from "@/lib/storage-folders/normalize";
 
 const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|tiff?|heic)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|avi)$/i;
@@ -229,7 +234,51 @@ export async function mergeAllProofingLists(params: {
   let wroteThisRun = 0;
 
   try {
+    let layout: { leafFolderId: string } | null = null;
+
+    if (uniqueEligible.length > 0) {
+      try {
+        layout = await ensureProofingShortcutParentFolder(
+          db,
+          actingUid,
+          linkedDriveId,
+          merge_relative_prefix
+        );
+      } catch (layoutErr) {
+        const lm = layoutErr instanceof Error ? layoutErr.message : String(layoutErr);
+        await mergeRef.update({
+          materialization_state: "failed",
+          last_error: `folder_layout:${lm}`.slice(0, 500),
+          updated_at: new Date(),
+        });
+        return {
+          ok: false,
+          error:
+            lm === "GALLERY_MEDIA_DRIVE_V2_REQUIRED"
+              ? "Gallery Media drive could not be prepared for folders"
+              : `Merge folder layout failed: ${lm}`,
+          status: 500,
+        };
+      }
+      await repairProofingMaterializedShortcutsMissingFolderId(db, {
+        linkedDriveId,
+        galleryId,
+        organizationId: explicitOrganizationId,
+        prefix: merge_relative_prefix,
+        leafFolderId: layout.leafFolderId,
+      });
+    }
+
     if (toCreate.length > 0) {
+      if (!layout) {
+        await mergeRef.update({
+          materialization_state: "failed",
+          last_error: "folder_layout:internal_missing_layout",
+          updated_at: new Date(),
+        });
+        return { ok: false, error: "Merge folder layout failed", status: 500 };
+      }
+
       const snapshotRef = await db.collection("backup_snapshots").add({
         linked_drive_id: linkedDriveId,
         userId: actingUid,
@@ -252,6 +301,9 @@ export async function mergeAllProofingLists(params: {
           const row: Record<string, unknown> = {
             backup_snapshot_id: snapshotRef.id,
             linked_drive_id: linkedDriveId,
+            folder_id: layout.leafFolderId,
+            file_name: safeName,
+            file_name_compare_key: toNormalizedComparisonKey(safeName) || null,
             relative_path: relativePath,
             object_key: asset.object_key,
             size_bytes: asset.size_bytes ?? 0,
@@ -279,6 +331,10 @@ export async function mergeAllProofingLists(params: {
         );
       }
 
+      await db.collection("linked_drives").doc(linkedDriveId).update({
+        last_synced_at: nowIso,
+      });
+    } else if (uniqueEligible.length > 0) {
       await db.collection("linked_drives").doc(linkedDriveId).update({
         last_synced_at: nowIso,
       });

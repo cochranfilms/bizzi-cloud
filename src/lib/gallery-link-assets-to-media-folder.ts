@@ -46,7 +46,7 @@ async function ensureRootChildFolderForSegment(
  * Legacy Gallery Media drives may omit `folder_model_version`; folder APIs require v2.
  * Upgrade in place when the acting user can write the drive (same as creating a subfolder).
  */
-async function ensureGalleryMediaDriveFolderModelV2(
+export async function ensureGalleryMediaDriveFolderModelV2(
   db: Firestore,
   actingUid: string,
   linkedDriveId: string

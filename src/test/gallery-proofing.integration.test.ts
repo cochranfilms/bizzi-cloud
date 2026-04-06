@@ -22,6 +22,15 @@ const LINKED_DRIVE = "drive_link_1";
 type Row = Record<string, unknown>;
 
 const resolveMock = vi.fn();
+
+vi.mock("@/lib/gallery-proofing-storage-layout", () => ({
+  ensureProofingShortcutParentFolder: vi.fn().mockResolvedValue({
+    driveData: { folder_model_version: 2 },
+    leafFolderId: "test_proofing_leaf_folder",
+  }),
+  repairProofingMaterializedShortcutsMissingFolderId: vi.fn().mockResolvedValue(0),
+}));
+
 vi.mock("@/lib/macos-package-container-admin", () => ({
   linkBackupFileToMacosPackageContainer: vi.fn().mockResolvedValue(undefined),
 }));
