@@ -11,6 +11,10 @@ import {
 } from "@/lib/personal-team-constants";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import type { WorkspaceShareTargetKind } from "@/types/folder-share";
+import {
+  parseWorkspaceTargetKey as parseWorkspaceTargetKeyImpl,
+  workspaceTargetKey as workspaceTargetKeyImpl,
+} from "@/lib/workspace-share-target-key";
 import type { WorkspaceType } from "@/types/workspace";
 
 function scopeLabelForWorkspaceType(t: WorkspaceType): string {
@@ -71,23 +75,8 @@ export async function workspaceDisplayContextForShare(
 
 export type ShareRecipientMode = "email" | "workspace";
 
-export function workspaceTargetKey(kind: WorkspaceShareTargetKind, id: string): string {
-  const trimmed = (id ?? "").trim();
-  return `${kind}:${trimmed}`;
-}
-
-export function parseWorkspaceTargetKey(
-  key: string | undefined | null
-): { kind: WorkspaceShareTargetKind; id: string } | null {
-  if (!key || typeof key !== "string") return null;
-  const idx = key.indexOf(":");
-  if (idx <= 0) return null;
-  const kind = key.slice(0, idx) as WorkspaceShareTargetKind;
-  const id = key.slice(idx + 1).trim();
-  if (!id) return null;
-  if (kind !== "enterprise_workspace" && kind !== "personal_team") return null;
-  return { kind, id };
-}
+export const workspaceTargetKey = workspaceTargetKeyImpl;
+export const parseWorkspaceTargetKey = parseWorkspaceTargetKeyImpl;
 
 /** Legacy docs have no recipient_mode → treat as email. */
 export function getRecipientModeFromDoc(data: Record<string, unknown> | undefined): ShareRecipientMode {

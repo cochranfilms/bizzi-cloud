@@ -26,7 +26,7 @@ import { getAuthToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import type { Notification } from "@/types/collaboration";
 import { supportSettingsHelpHref } from "@/lib/support-ticket";
-import { parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
+import { parseWorkspaceTargetKey } from "@/lib/workspace-share-target-key";
 
 interface NotificationCenterProps {
   onClose: () => void;

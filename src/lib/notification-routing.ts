@@ -20,7 +20,7 @@
  * Server-only (imports folder-share-workspace).
  */
 import type { NotificationType } from "@/types/collaboration";
-import { parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
+import { parseWorkspaceTargetKey } from "@/lib/workspace-share-target-key";
 
 export type NotificationRoutingFilter = string;
 
