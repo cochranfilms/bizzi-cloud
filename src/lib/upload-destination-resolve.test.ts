@@ -96,6 +96,30 @@ describe("resolveUploadDestination", () => {
 });
 
 describe("getDropOverlayCopy", () => {
+  it("names nested Storage folder for team_storage (personal team workspace)", async () => {
+    const r = await resolveUploadDestination({
+      pathname: "/team/ownerUid123/files",
+      searchParams: new URLSearchParams({ drive: "stor-team", folder: "folder-abc" }),
+      currentDriveId: "stor-team",
+      currentDrivePath: "",
+      linkedDrives: [storageDrive("stor-team")],
+      sourceSurface: "files_global_drop",
+      isEnterpriseFilesNoDrive: false,
+      isGalleryMediaDrive: false,
+      getOrCreateStorageDrive: async () => ({ id: "stor-team", name: "Storage" }),
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.destinationMode).toBe("team_storage");
+    const copy = getDropOverlayCopy(r, {
+      storageParentFolderId: "folder-abc",
+      storageFolderDisplayName: "Bigger",
+    });
+    expect(copy.title).toBe("Upload to Storage folder");
+    expect(copy.subtitle).toContain("Bigger");
+    expect(copy.subtitle).toMatch(/^Storage Drive:/);
+  });
+
   it("uses Creator RAW wording when locked", async () => {
     const r = await resolveUploadDestination({
       pathname: "/dashboard/creator",

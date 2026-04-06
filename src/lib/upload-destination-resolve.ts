@@ -194,7 +194,11 @@ export function getDropOverlayCopy(
       subtitle: "Release to add files to your RAW library.",
     };
   }
-  if (result.destinationMode === "storage" && extras?.storageParentFolderId) {
+  /** Personal uses `storage`; personal team `/team/...` uses `team_storage` — same nested-folder UX. */
+  const storageLikeNested =
+    (result.destinationMode === "storage" || result.destinationMode === "team_storage") &&
+    extras?.storageParentFolderId;
+  if (storageLikeNested) {
     const folder =
       extras.storageFolderDisplayName?.trim() || "This folder";
     return {
