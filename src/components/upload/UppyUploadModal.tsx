@@ -354,7 +354,19 @@ export default function UppyUploadModal({
     });
 
     const massDebug = createMassUploadDebug();
+    /** Same relative path twice in one batch → disambiguate leaf (gallery + v2 folder uploads). */
     const usedNames = new Map<string, number>();
+    const bumpDuplicateRelativePath = (rel: string, fileNameFallback: string): string => {
+      const n = usedNames.get(rel) ?? 0;
+      usedNames.set(rel, n + 1);
+      if (n === 0) return rel;
+      const segments = rel.split("/");
+      const leaf = segments.pop() ?? fileNameFallback;
+      const base = leaf.replace(/\.([^.]+)$/, "");
+      const ext = leaf.includes(".") ? leaf.slice(leaf.lastIndexOf(".")) : "";
+      const renamedLeaf = `${base} (${n})${ext}`;
+      return [...segments, renamedLeaf].filter(Boolean).join("/");
+    };
 
     let lastAggFlush = 0;
     let aggTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -479,23 +491,13 @@ export default function UppyUploadModal({
 
       let uniqueName = webkitRel;
       if (pathPrefix && galleryId) {
-        const key = webkitRel;
-        const n = usedNames.get(key) ?? 0;
-        usedNames.set(key, n + 1);
-        if (n > 0) {
-          const segments = webkitRel.split("/");
-          const leaf = segments.pop() ?? file.name;
-          const base = leaf.replace(/\.([^.]+)$/, "");
-          const ext = leaf.includes(".") ? leaf.slice(leaf.lastIndexOf(".")) : "";
-          const renamedLeaf = `${base} (${n})${ext}`;
-          uniqueName = [...segments, renamedLeaf].filter(Boolean).join("/");
-        }
+        uniqueName = bumpDuplicateRelativePath(webkitRel, file.name);
+      } else if (storageFolderId && !galleryId) {
+        // Full tree relative path keeps B2 object keys unique (e.g. SubA/clip.mov vs SubB/clip.mov).
+        // v2 finalize still uses the path leaf as file_name; parent folder comes from folder_id.
+        uniqueName = bumpDuplicateRelativePath(webkitRel, file.name);
       }
-      let relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
-      if (storageFolderId && !galleryId) {
-        const leaf = uniqueName.split("/").filter(Boolean).pop() ?? file.name ?? uniqueName;
-        relPath = leaf;
-      }
+      const relPath = pathPrefix ? `${pathPrefix}/${uniqueName}` : uniqueName;
       uppy.setFileState(file.id, {
         meta: {
           ...file.meta,

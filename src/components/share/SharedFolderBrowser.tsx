@@ -80,6 +80,7 @@ function ShareFileGridCard({
   const isThumb = presentation === "thumbnail";
   const aspectClass = getCardAspectClass(layoutAspectRatio);
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
+  const videoObjectFit = objectFit as "object-cover" | "object-contain";
   const sizeTok = FILE_GRID_SIZE_CLASSES[layoutSize];
 
   const fetchShareVideoStreamUrl = useCallback(async (): Promise<string | null> => {
@@ -132,17 +133,20 @@ function ShareFileGridCard({
           : undefined
       }
     >
-      <div className={`relative w-full flex-1 min-h-0 overflow-hidden ${isThumb ? "" : aspectClass}`}>
+      <div
+        className={`relative w-full shrink-0 overflow-hidden bg-neutral-100 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400 ${aspectClass}`}
+      >
         {isVideo ? (
           <VideoScrubThumbnail
             fetchStreamUrl={fetchShareVideoStreamUrl}
             thumbnailUrl={videoThumbnailUrl ?? thumbnailUrl}
             showPlayIcon
-            className={`h-full w-full ${videoThumbnailUrl || thumbnailUrl ? objectFit : ""}`}
+            objectFit={videoObjectFit}
+            className="absolute inset-0 h-full min-h-0 w-full"
           />
         ) : (thumbnailUrl || videoThumbnailUrl) ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbnailUrl ?? ""} alt="" className={`h-full w-full ${objectFit}`} />
+          <img src={thumbnailUrl ?? ""} alt="" className={`absolute inset-0 h-full w-full ${objectFit}`} />
         ) : shareCreative.mode === "branded_project" ? (
           <BrandedProjectTile
             brandId={shareCreative.brandId}
@@ -151,10 +155,10 @@ function ShareFileGridCard({
             displayLabel={shareCreative.displayLabel}
             extensionLabel={shareCreative.extensionLabel}
             size="md"
-            className="h-full w-full"
+            className="absolute inset-0"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800">
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800">
             <File className="h-12 w-12 text-neutral-500 dark:text-neutral-400" />
           </div>
         )}
@@ -279,7 +283,7 @@ export default function SharedFolderBrowser({
         <p className="text-sm text-neutral-500 dark:text-neutral-400">Nothing to show in this folder.</p>
       </div>
     ) : (
-      <div className={`grid min-h-0 flex-1 auto-rows-fr content-start overflow-auto ${gridGapClass} ${gridCols}`}>
+      <div className={`grid min-h-0 flex-1 overflow-auto ${gridGapClass} ${gridCols}`}>
         {folderItems.map((item) => (
           <div key={item.key} className="h-full min-h-0">
             <FolderCard
@@ -293,7 +297,7 @@ export default function SharedFolderBrowser({
           </div>
         ))}
         {filesHere.map((file) => (
-          <div key={file.id} className="h-full min-h-[10rem] min-w-0">
+          <div key={file.id} className="min-h-0 min-w-0">
             <ShareFileGridCard
               shareToken={shareToken}
               file={file}
