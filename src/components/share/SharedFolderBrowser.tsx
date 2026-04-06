@@ -80,7 +80,8 @@ function ShareFileGridCard({
   const isThumb = presentation === "thumbnail";
   const aspectClass = getCardAspectClass(layoutAspectRatio);
   const objectFit = thumbnailScale === "fill" ? "object-cover" : "object-contain";
-  const videoObjectFit = objectFit as "object-cover" | "object-contain";
+  /** Grid video tiles: always cover so portrait clips don’t letterbox into a thin strip in 16:9 cells. */
+  const videoObjectFit = "object-cover" as const;
   const sizeTok = FILE_GRID_SIZE_CLASSES[layoutSize];
 
   const fetchShareVideoStreamUrl = useCallback(async (): Promise<string | null> => {
