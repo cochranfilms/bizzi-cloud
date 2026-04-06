@@ -1,7 +1,12 @@
-import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
+import { resolvePreviewInlineEffectiveKey } from "@/lib/asset-delivery-resolve";
+import { deliveryUseFirestoreProxyHints } from "@/lib/delivery-flags";
+import {
+  logDeliveryTelemetry,
+  readPollingRequestHeader,
+} from "@/lib/delivery-telemetry";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -88,11 +93,32 @@ export async function POST(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const t0 = Date.now();
   try {
-    const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    let backupData: Record<string, unknown> | null = null;
+    let fsReads: "none" | "single" = "none";
+    if (deliveryUseFirestoreProxyHints()) {
+      backupData = fileSnap.docs[0]!.data() as Record<string, unknown>;
+      fsReads = "single";
+    }
+    const { effectiveKey, usedHead } = await resolvePreviewInlineEffectiveKey(
+      objectKey,
+      backupData
+    );
     const url = await getDownloadUrl(effectiveKey, 3600, undefined, true);
-    return NextResponse.json({ url });
+    const res = NextResponse.json({ url });
+    logDeliveryTelemetry({
+      route: "/api/shares/[token]/preview-url",
+      durationMs: Date.now() - t0,
+      deliveryClass: effectiveKey === objectKey ? "source_inline" : "proxy_mp4",
+      responseType: "json",
+      approxPayloadBytes: JSON.stringify({ url }).length,
+      headFallback: usedHead,
+      surface: "share",
+      pollingRequest: readPollingRequestHeader(request),
+      firestoreReads: fsReads,
+    });
+    return res;
   } catch (err) {
     console.error("Share preview URL error:", err);
     return NextResponse.json(

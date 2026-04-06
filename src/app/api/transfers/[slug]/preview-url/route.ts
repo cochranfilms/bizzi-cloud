@@ -1,7 +1,15 @@
-import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
+import {
+  fetchBackupFileDataForTransferEntry,
+  resolvePreviewInlineEffectiveKey,
+} from "@/lib/asset-delivery-resolve";
+import { deliveryUseFirestoreProxyHints } from "@/lib/delivery-flags";
+import {
+  logDeliveryTelemetry,
+  readPollingRequestHeader,
+} from "@/lib/delivery-telemetry";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
@@ -111,11 +119,35 @@ export async function POST(
 
   const PREVIEW_URL_EXPIRY = 900; // 15 min
 
+  const t0 = Date.now();
   try {
-    const proxyKey = getProxyObjectKey(objKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objKey;
+    let backupData: Record<string, unknown> | null = null;
+    let fsReads: "none" | "single" = "none";
+    if (deliveryUseFirestoreProxyHints()) {
+      backupData = await fetchBackupFileDataForTransferEntry(
+        objKey,
+        fileInTransfer.backup_file_id
+      );
+      fsReads = "single";
+    }
+    const { effectiveKey, usedHead } = await resolvePreviewInlineEffectiveKey(
+      objKey,
+      backupData
+    );
     const url = await getDownloadUrl(effectiveKey, PREVIEW_URL_EXPIRY, undefined, true);
-    return NextResponse.json({ url });
+    const res = NextResponse.json({ url });
+    logDeliveryTelemetry({
+      route: "/api/transfers/[slug]/preview-url",
+      durationMs: Date.now() - t0,
+      deliveryClass: effectiveKey === objKey ? "source_inline" : "proxy_mp4",
+      responseType: "json",
+      approxPayloadBytes: JSON.stringify({ url }).length,
+      headFallback: usedHead,
+      surface: "transfer",
+      pollingRequest: readPollingRequestHeader(request),
+      firestoreReads: fsReads,
+    });
+    return res;
   } catch (err) {
     console.error("Transfer preview URL error:", err);
     return NextResponse.json(

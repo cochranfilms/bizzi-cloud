@@ -38,6 +38,7 @@ import {
   type CreatorRawReelEvidence,
 } from "@/lib/creator-raw-reel-presentation";
 import { creatorRawUsesProxyOnlyPlayback } from "@/lib/creator-raw-preview-contract";
+import { NEXT_PUBLIC_ASSET_PREVIEW_CONSOLIDATED_ENABLED } from "@/lib/public-delivery-flags";
 
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const PDF_EXT = /\.pdf$/i;
@@ -272,24 +273,93 @@ export default function FilePreviewModal({
             setVideoProcessing(true);
           }
         } else {
-          const [previewRes, streamRes] = await Promise.all([
-            fetch("/api/backup/preview-url", {
+          const useConsolidated = NEXT_PUBLIC_ASSET_PREVIEW_CONSOLIDATED_ENABLED;
+          if (useConsolidated) {
+            const consolidated = await fetch("/api/backup/asset-preview", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify(payload),
-            }),
-            fetch("/api/backup/video-stream-url", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify(payload),
-            }),
-          ]);
-          const previewData = await previewRes.json();
-          if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
-          setFullUrl(previewData.url);
-          const streamData = await streamRes.json().catch(() => ({}));
-          if (streamData?.processing) setVideoProcessing(true);
-          else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+              body: JSON.stringify({
+                ...payload,
+                preview_kind: "video",
+              }),
+            });
+            if (consolidated.ok) {
+              const bundle = (await consolidated.json()) as {
+                previewUrl?: string;
+                video?: {
+                  streamUrl?: string;
+                  processing?: boolean;
+                  error?: string;
+                  proxyUnavailable?: boolean;
+                  message?: string;
+                  resolution_w?: number;
+                  resolution_h?: number;
+                  isHls?: boolean;
+                };
+              };
+              if (typeof bundle.previewUrl === "string") setFullUrl(bundle.previewUrl);
+              const streamData = bundle.video ?? {};
+              if (streamData?.proxyUnavailable) {
+                setVideoProcessing(false);
+                setError(
+                  typeof streamData.message === "string" && streamData.message.trim()
+                    ? streamData.message
+                    : "Cloud preview isn’t available for this file. Use Download for the original."
+                );
+                return;
+              }
+              if (
+                typeof streamData.resolution_w === "number" &&
+                typeof streamData.resolution_h === "number" &&
+                streamData.resolution_w > 0 &&
+                streamData.resolution_h > 0
+              ) {
+                setStreamProbeDims({ w: streamData.resolution_w, h: streamData.resolution_h });
+              }
+              if (streamData.streamUrl) {
+                setVideoStreamUrl(streamData.streamUrl);
+                setVideoProcessing(false);
+              } else if (streamData.processing) setVideoProcessing(true);
+            } else {
+              const [previewRes, streamRes] = await Promise.all([
+                fetch("/api/backup/preview-url", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                  body: JSON.stringify(payload),
+                }),
+                fetch("/api/backup/video-stream-url", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                  body: JSON.stringify(payload),
+                }),
+              ]);
+              const previewData = await previewRes.json();
+              if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
+              setFullUrl(previewData.url);
+              const streamData = await streamRes.json().catch(() => ({}));
+              if (streamData?.processing) setVideoProcessing(true);
+              else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+            }
+          } else {
+            const [previewRes, streamRes] = await Promise.all([
+              fetch("/api/backup/preview-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload),
+              }),
+              fetch("/api/backup/video-stream-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload),
+              }),
+            ]);
+            const previewData = await previewRes.json();
+            if (!previewRes.ok) throw new Error(previewData?.error ?? "Failed to load preview");
+            setFullUrl(previewData.url);
+            const streamData = await streamRes.json().catch(() => ({}));
+            if (streamData?.processing) setVideoProcessing(true);
+            else if (streamData?.streamUrl) setVideoStreamUrl(streamData.streamUrl);
+          }
         }
       } else {
         const res = await fetch("/api/backup/preview-url", {
@@ -349,21 +419,41 @@ export default function FilePreviewModal({
     }
   }, [file, fetchFullUrl]);
 
-  // Poll video-stream-url when processing (proxy/Mux not ready yet)
+  // Poll video-stream-url when processing (proxy/Mux not ready) — exponential backoff, pause when tab hidden
   useEffect(() => {
     if (!file?.objectKey || previewType !== "video" || !videoProcessing) return;
-    const token = getFirebaseAuth().currentUser;
-    if (!token) return;
+    const user = getFirebaseAuth().currentUser;
+    if (!user) return;
     let pollCount = 0;
-    const intervalMs = showLUTForVideo ? 4000 : 6000;
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const baseMs = showLUTForVideo ? 4000 : 6000;
+    const maxMs = 30_000;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const backoffFactor = Math.pow(1.45, Math.min(pollCount, 10));
+      const delay = Math.min(Math.round(baseMs * backoffFactor), maxMs);
+      timeoutId = setTimeout(runPoll, delay);
+    };
+
+    const runPoll = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        schedule();
+        return;
+      }
       pollCount += 1;
       try {
-        const t = await token.getIdToken(true);
+        const t = await user.getIdToken(true);
         const res = await fetch("/api/backup/video-stream-url", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
-          body: JSON.stringify({ object_key: file.objectKey, user_id: token.uid }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${t}`,
+            "X-Bizzi-Client-Poll": "1",
+          },
+          body: JSON.stringify({ object_key: file.objectKey, user_id: user.uid }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           streamUrl?: string;
@@ -393,17 +483,27 @@ export default function FilePreviewModal({
         if (data?.streamUrl) {
           setVideoStreamUrl(data.streamUrl);
           setVideoProcessing(false);
-        } else if (!data?.processing && res.ok) {
+          return;
+        }
+        if (!data?.processing && res.ok) {
           if (!showLUTForVideo) setVideoProcessing(false);
-        } else if (!showLUTForVideo && fullUrl && pollCount >= 10) {
-          // Non–Creator RAW: after ~60s fall back to preview-url (proxy or original)
+          return;
+        }
+        if (!showLUTForVideo && fullUrl && pollCount >= 12) {
           setVideoProcessing(false);
+          return;
         }
       } catch {
         // ignore polling errors
       }
-    }, intervalMs);
-    return () => clearInterval(interval);
+      schedule();
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [file?.objectKey, previewType, videoProcessing, fullUrl, showLUTForVideo]);
 
 

@@ -8,6 +8,9 @@ import { linkBackupFileToMacosPackageContainer } from "@/lib/macos-package-conta
 import { commitReservation } from "@/lib/storage-quota-reservations";
 import { assertCreatorRawFinalizeOrAudit } from "@/lib/upload-finalize-guards";
 import { enqueueCreatorRawVideoProxyJob } from "@/lib/creator-raw-video-proxy-ingest";
+import { migrationProxyEnqueueV2Enabled } from "@/lib/delivery-flags";
+import { queueProxyJob } from "@/lib/proxy-queue";
+import { isVideoFile } from "@/lib/bizzi-file-types";
 
 export interface FinalizeMigrationBackupFileParams {
   db: Firestore;
@@ -162,6 +165,22 @@ export async function finalizeMigrationBackupFile(
   await db.doc(`linked_drives/${driveId}`).update({
     last_synced_at: lastModified,
   });
+
+  if (migrationProxyEnqueueV2Enabled()) {
+    const leaf = relativePath.split("/").filter(Boolean).pop() ?? relativePath;
+    const looksVideo =
+      isVideoFile(leaf) ||
+      (typeof contentType === "string" && contentType.toLowerCase().startsWith("video/"));
+    if (looksVideo) {
+      await queueProxyJob({
+        object_key: objectKey,
+        name: leaf,
+        backup_file_id: fileRef.id,
+        user_id: uid,
+        media_type: "video",
+      }).catch(() => {});
+    }
+  }
 
   if (appOrigin && idToken) {
     const driveIsRaw = driveData?.is_creator_raw === true;

@@ -1,7 +1,13 @@
-import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
+import { isB2Configured, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { shareFirestoreDataToAccessDoc, verifyShareAccess } from "@/lib/share-access";
+import { resolveProxyExistsForBackup } from "@/lib/asset-delivery-resolve";
+import { deliveryUseFirestoreProxyHints } from "@/lib/delivery-flags";
+import {
+  logDeliveryTelemetry,
+  readPollingRequestHeader,
+} from "@/lib/delivery-telemetry";
 import { NextResponse } from "next/server";
 
 const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to share previews
@@ -90,18 +96,52 @@ export async function POST(
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const t0 = Date.now();
   try {
+    let backupData: Record<string, unknown> | null = null;
+    let fsReads: "none" | "single" = "none";
+    if (deliveryUseFirestoreProxyHints()) {
+      backupData = fileSnap.docs[0]!.data() as Record<string, unknown>;
+      fsReads = "single";
+    }
     const proxyKey = getProxyObjectKey(objectKey);
-    const proxyExists = await objectExists(proxyKey);
+    const { exists: proxyExists, usedHead } = await resolveProxyExistsForBackup(
+      objectKey,
+      backupData
+    );
     if (!proxyExists) {
-      return NextResponse.json({
+      const processingPayload = {
         processing: true,
         message: "Generating preview. Check back in a moment.",
         estimatedSeconds: 60,
+      };
+      logDeliveryTelemetry({
+        route: "/api/shares/[token]/video-stream-url",
+        durationMs: Date.now() - t0,
+        deliveryClass: "processing",
+        responseType: "json",
+        approxPayloadBytes: JSON.stringify(processingPayload).length,
+        headFallback: usedHead,
+        surface: "share",
+        pollingRequest: readPollingRequestHeader(request),
+        firestoreReads: fsReads,
       });
+      return NextResponse.json(processingPayload);
     }
     const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
-    return NextResponse.json({ streamUrl });
+    const out = NextResponse.json({ streamUrl });
+    logDeliveryTelemetry({
+      route: "/api/shares/[token]/video-stream-url",
+      durationMs: Date.now() - t0,
+      deliveryClass: "proxy_mp4",
+      responseType: "json",
+      approxPayloadBytes: JSON.stringify({ streamUrl }).length,
+      headFallback: usedHead,
+      surface: "share",
+      pollingRequest: readPollingRequestHeader(request),
+      firestoreReads: fsReads,
+    });
+    return out;
   } catch (err) {
     console.error("[share video-stream-url] Error:", err);
     return NextResponse.json(

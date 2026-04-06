@@ -99,6 +99,10 @@ export interface FileMetadataFields {
   proxy_duration_sec?: number | null;
   proxy_generated_at?: string | null;
   proxy_error_reason?: string | null;
+
+  /** Dashboard/grid image thumbnail materialization (optional backfill). */
+  image_thumb_status?: "none" | "pending" | "ready" | "failed" | null;
+  image_thumb_object_key?: string | null;
 }
 
 export type ProxyStatus =

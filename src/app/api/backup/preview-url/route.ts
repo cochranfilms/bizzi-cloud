@@ -1,15 +1,24 @@
-import { objectExists, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl, isB2Configured } from "@/lib/cdn";
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
+import {
+  fetchBackupFileDataForObjectKey,
+  resolvePreviewInlineEffectiveKey,
+} from "@/lib/asset-delivery-resolve";
+import { deliveryUseFirestoreProxyHints } from "@/lib/delivery-flags";
+import {
+  logDeliveryTelemetry,
+  readPollingRequestHeader,
+} from "@/lib/delivery-telemetry";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
   process.env.NODE_ENV === "development";
 
 export async function POST(request: Request) {
+  const t0 = Date.now();
   if (!isB2Configured()) {
     return NextResponse.json(
       { error: "Backblaze B2 is not configured" },
@@ -69,11 +78,33 @@ export async function POST(request: Request) {
     );
   }
 
+  let headFallback = false;
+  let fsReads: "none" | "single" = "none";
   try {
-    const proxyKey = getProxyObjectKey(objectKey);
-    const effectiveKey = (await objectExists(proxyKey)) ? proxyKey : objectKey;
+    let backupData: Record<string, unknown> | null = null;
+    if (deliveryUseFirestoreProxyHints()) {
+      backupData = await fetchBackupFileDataForObjectKey(objectKey);
+      fsReads = "single";
+    }
+    const { effectiveKey, usedHead } = await resolvePreviewInlineEffectiveKey(
+      objectKey,
+      backupData
+    );
+    headFallback = usedHead;
     const url = await getDownloadUrl(effectiveKey, 3600, undefined, true);
-    return NextResponse.json({ url });
+    const res = NextResponse.json({ url });
+    logDeliveryTelemetry({
+      route: "/api/backup/preview-url",
+      durationMs: Date.now() - t0,
+      deliveryClass: effectiveKey === objectKey ? "source_inline" : "proxy_mp4",
+      responseType: "json",
+      approxPayloadBytes: JSON.stringify({ url }).length,
+      headFallback,
+      surface: "dashboard",
+      pollingRequest: readPollingRequestHeader(request),
+      firestoreReads: fsReads,
+    });
+    return res;
   } catch (err) {
     console.error("[preview-url] B2/CDN error:", err instanceof Error ? err.message : err, {
       objectKeyPrefix: objectKey?.slice?.(0, 60),

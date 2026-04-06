@@ -1,7 +1,16 @@
-import { objectExists, getProxyObjectKey, isB2Configured } from "@/lib/b2";
+import { getProxyObjectKey, isB2Configured } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
+import {
+  fetchBackupFileDataForTransferEntry,
+  resolveProxyExistsForBackup,
+} from "@/lib/asset-delivery-resolve";
+import { deliveryUseFirestoreProxyHints } from "@/lib/delivery-flags";
+import {
+  logDeliveryTelemetry,
+  readPollingRequestHeader,
+} from "@/lib/delivery-telemetry";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
@@ -110,18 +119,55 @@ export async function POST(
     );
   }
 
+  const t0 = Date.now();
   try {
+    let backupData: Record<string, unknown> | null = null;
+    let fsReads: "none" | "single" = "none";
+    if (deliveryUseFirestoreProxyHints()) {
+      backupData = await fetchBackupFileDataForTransferEntry(
+        objKey,
+        fileInTransfer.backup_file_id
+      );
+      fsReads = "single";
+    }
     const proxyKey = getProxyObjectKey(objKey);
-    const proxyExists = await objectExists(proxyKey);
+    const { exists: proxyExists, usedHead } = await resolveProxyExistsForBackup(
+      objKey,
+      backupData
+    );
     if (!proxyExists) {
-      return NextResponse.json({
+      const processingPayload = {
         processing: true,
         message: "Generating preview. Check back in a moment.",
         estimatedSeconds: 60,
+      };
+      logDeliveryTelemetry({
+        route: "/api/transfers/[slug]/video-stream-url",
+        durationMs: Date.now() - t0,
+        deliveryClass: "processing",
+        responseType: "json",
+        approxPayloadBytes: JSON.stringify(processingPayload).length,
+        headFallback: usedHead,
+        surface: "transfer",
+        pollingRequest: readPollingRequestHeader(request),
+        firestoreReads: fsReads,
       });
+      return NextResponse.json(processingPayload);
     }
     const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
-    return NextResponse.json({ streamUrl });
+    const out = NextResponse.json({ streamUrl });
+    logDeliveryTelemetry({
+      route: "/api/transfers/[slug]/video-stream-url",
+      durationMs: Date.now() - t0,
+      deliveryClass: "proxy_mp4",
+      responseType: "json",
+      approxPayloadBytes: JSON.stringify({ streamUrl }).length,
+      headFallback: usedHead,
+      surface: "transfer",
+      pollingRequest: readPollingRequestHeader(request),
+      firestoreReads: fsReads,
+    });
+    return out;
   } catch (err) {
     console.error("[transfer video-stream-url] Error:", err);
     return NextResponse.json(

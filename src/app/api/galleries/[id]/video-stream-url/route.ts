@@ -2,7 +2,7 @@
  * GET /api/galleries/[id]/video-stream-url?object_key=...&name=...&password=...
  * Returns stream URL for video playback in public gallery. Verifies gallery view access.
  */
-import { isB2Configured, objectExists, getProxyObjectKey } from "@/lib/b2";
+import { isB2Configured, getProxyObjectKey } from "@/lib/b2";
 import { getDownloadUrl } from "@/lib/cdn";
 import { getMuxAssetStatus } from "@/lib/mux";
 import { getAdminFirestore } from "@/lib/firebase-admin";
@@ -10,10 +10,19 @@ import { getClientEmailFromCookie } from "@/lib/client-session";
 import { verifyGalleryViewAccess } from "@/lib/gallery-access";
 import { isGalleryAssetOmittedFromFinalVideoDelivery } from "@/lib/gallery-final-video-delivery-asset-filter";
 import { NextResponse } from "next/server";
+import { resolveProxyExistsForBackup } from "@/lib/asset-delivery-resolve";
+import { galleryVideoNoOriginalFallbackEnabled } from "@/lib/delivery-flags";
 
 const STREAM_EXPIRY_SEC = 3600; // 1 hour — prevents Access Denied when users pause or return to gallery videos
 
 const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v|avi|mxf|mts|mkv|3gp)$/i;
+
+function noOriginalGalleryResponse() {
+  return NextResponse.json({
+    processing: true,
+    message: "Video preview is still preparing. Check back soon.",
+  });
+}
 
 export async function GET(
   request: Request,
@@ -97,6 +106,7 @@ export async function GET(
   }
 
   try {
+    let backupFileData: Record<string, unknown> | null = null;
     let muxPlaybackId: string | undefined;
     let muxAssetId: string | undefined;
     let storedStatus: string | undefined;
@@ -104,7 +114,8 @@ export async function GET(
     if (backupFileId) {
       const fileSnap = await db.collection("backup_files").doc(backupFileId).get();
       if (fileSnap.exists) {
-        const fd = fileSnap.data()!;
+        backupFileData = fileSnap.data() as Record<string, unknown>;
+        const fd = backupFileData;
         muxPlaybackId = fd.mux_playback_id as string | undefined;
         muxAssetId = fd.mux_asset_id as string | undefined;
         storedStatus = fd.mux_status as string | undefined;
@@ -126,7 +137,10 @@ export async function GET(
       /** Mux failed or status unknown — B2 only; no HLS upgrade to wait for. */
       if (status === "errored" || status === null) {
         const proxyKey = getProxyObjectKey(objectKey);
-        const proxyExists = await objectExists(proxyKey);
+        const { exists: proxyExists } = await resolveProxyExistsForBackup(objectKey, backupFileData);
+        if (galleryVideoNoOriginalFallbackEnabled() && !proxyExists) {
+          return noOriginalGalleryResponse();
+        }
         const effectiveKey = proxyExists ? proxyKey : objectKey;
         const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
         return NextResponse.json({
@@ -136,7 +150,7 @@ export async function GET(
         });
       }
       const proxyKey = getProxyObjectKey(objectKey);
-      const proxyExists = await objectExists(proxyKey);
+      const { exists: proxyExists } = await resolveProxyExistsForBackup(objectKey, backupFileData);
       if (proxyExists) {
         const streamUrl = await getDownloadUrl(proxyKey, STREAM_EXPIRY_SEC);
         return NextResponse.json({
@@ -152,7 +166,10 @@ export async function GET(
     }
 
     const proxyKey = getProxyObjectKey(objectKey);
-    const proxyExists = await objectExists(proxyKey);
+    const { exists: proxyExists } = await resolveProxyExistsForBackup(objectKey, backupFileData);
+    if (galleryVideoNoOriginalFallbackEnabled() && !proxyExists) {
+      return noOriginalGalleryResponse();
+    }
     const effectiveKey = proxyExists ? proxyKey : objectKey;
     const streamUrl = await getDownloadUrl(effectiveKey, STREAM_EXPIRY_SEC);
     return NextResponse.json({

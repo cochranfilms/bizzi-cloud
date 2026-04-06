@@ -9,6 +9,8 @@ import { getProjectRenditionState } from "@/lib/conform/project-rendition-state"
 import { MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { NextResponse } from "next/server";
 import { BACKUP_LIFECYCLE_ACTIVE } from "@/lib/backup-file-lifecycle";
+import { backupFileProxyReadyInDoc } from "@/lib/asset-delivery-resolve";
+import { mountMetadataUseDbProxyOnlyEnabled } from "@/lib/delivery-flags";
 
 const isDevAuthBypass = () =>
   process.env.B2_SKIP_AUTH_FOR_TESTING === "true" &&
@@ -153,13 +155,27 @@ export async function POST(request: Request) {
       // V3: For video files with proxy, resolve to active rendition. ONE logical path, resolver picks bytes.
       if (isB2Configured() && objectKey && VIDEO_EXT.test(name)) {
         const proxyKey = getProxyObjectKey(objectKey);
-        const proxyMeta = await getObjectMetadata(proxyKey).catch(() => null);
-        const hasProxy = !!proxyMeta && proxyMeta.contentLength >= MIN_PROXY_SIZE_BYTES;
+        let hasProxy = false;
+        let proxyContentLength = 0;
+        if (mountMetadataUseDbProxyOnlyEnabled()) {
+          const ready = backupFileProxyReadyInDoc(data as Record<string, unknown>, objectKey);
+          const ps = data.proxy_size_bytes;
+          const sz =
+            typeof ps === "number" && Number.isFinite(ps) && ps >= MIN_PROXY_SIZE_BYTES ? ps : 0;
+          if (ready && sz > 0) {
+            hasProxy = true;
+            proxyContentLength = sz;
+          }
+        } else {
+          const proxyMeta = await getObjectMetadata(proxyKey).catch(() => null);
+          hasProxy = !!proxyMeta && proxyMeta.contentLength >= MIN_PROXY_SIZE_BYTES;
+          proxyContentLength = proxyMeta?.contentLength ?? 0;
+        }
         if (hasProxy) {
           const preferred = renditionState.get(driveId) ?? "proxy";
           if (preferred === "proxy") {
             objectKey = proxyKey;
-            sizeBytes = proxyMeta!.contentLength;
+            sizeBytes = proxyContentLength;
             contentType = "video/mp4";
           }
           // else: keep original objectKey, sizeBytes, contentType

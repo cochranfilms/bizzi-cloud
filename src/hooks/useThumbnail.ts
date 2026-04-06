@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
 import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
+import { NEXT_PUBLIC_THUMBNAIL_REDIRECT_TO_CDN_ENABLED } from "@/lib/public-delivery-flags";
 
 export type ThumbnailSize = "thumb" | "preview";
 
@@ -42,10 +43,28 @@ export function useThumbnail(
           size,
           name: fileName,
         });
+        const useCdnRedirect =
+          NEXT_PUBLIC_THUMBNAIL_REDIRECT_TO_CDN_ENABLED && size === "thumb";
         const res = await fetch(`/api/backup/thumbnail?${params}`, {
           headers: { Authorization: `Bearer ${token}` },
+          redirect: useCdnRedirect ? "manual" : "follow",
         });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+
+        if (useCdnRedirect && res.status >= 300 && res.status < 400) {
+          const loc = res.headers.get("Location");
+          if (loc) {
+            const href = new URL(loc, res.url).href;
+            if (urlRef.current) {
+              URL.revokeObjectURL(urlRef.current);
+              urlRef.current = null;
+            }
+            setUrl(href);
+            return;
+          }
+        }
+
+        if (!res.ok) return;
         const blob = await res.blob();
         if (cancelled) return;
         const blobUrl = URL.createObjectURL(blob);
