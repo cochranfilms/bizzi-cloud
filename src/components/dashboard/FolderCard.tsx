@@ -34,6 +34,7 @@ import {
   shouldFreezeNewLegacyLinkedDriveFolders,
 } from "@/lib/storage-folder-model-policy";
 import { useDashboardItemReveal } from "@/components/dashboard/DashboardRouteFade";
+import StorageFolderCoverThumbnail from "@/components/dashboard/StorageFolderCoverThumbnail";
 
 export interface FolderItem {
   name: string;
@@ -70,6 +71,8 @@ export interface FolderItem {
   galleryMediaCanonicalId?: string;
   /** Legacy linked drive; files were moved — open goes to Storage folder */
   isConsolidatedStorageShortcut?: boolean;
+  /** Storage v2: earliest previewable file in folder (image / video / PDF) for tile cover */
+  coverFile?: { objectKey: string; fileName: string; contentType?: string | null };
 }
 
 interface FolderCardProps {
@@ -370,7 +373,23 @@ export default function FolderCard({
             <div
               className={`relative w-full shrink-0 overflow-hidden ${aspectClass} rounded-xl bg-gradient-to-br from-neutral-100 via-neutral-50 to-neutral-200/85 dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-950/90`}
             >
-                <div className="relative flex min-h-[5.5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[5rem] max-sm:py-4">
+              {item.coverFile ? (
+                <>
+                  <StorageFolderCoverThumbnail
+                    variant="backdrop"
+                    cover={{
+                      objectKey: item.coverFile.objectKey,
+                      fileName: item.coverFile.fileName,
+                      contentType: item.coverFile.contentType,
+                    }}
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/35 via-black/15 to-black/55 dark:from-black/45 dark:via-black/25 dark:to-black/65"
+                    aria-hidden
+                  />
+                </>
+              ) : null}
+                <div className="relative z-[2] flex min-h-[5.5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[5rem] max-sm:py-4">
                 <div className="relative">
                   <div
                     className={`flex items-center justify-center rounded-2xl ${iconBoxClass} bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan`}
@@ -436,19 +455,38 @@ export default function FolderCard({
                 }`}
               >
                 <div
-                  className={`flex items-center justify-center rounded-xl ${iconBoxClass} ${
+                  className={`relative flex items-center justify-center overflow-hidden rounded-xl ${iconBoxClass} ${
                     isSystemFolder
                       ? "bg-white/20 text-white shadow-none dark:bg-white/92 dark:text-neutral-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.22)]"
                       : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
                   }`}
                 >
-                  {item.customIcon ? (
-                    <item.customIcon className={iconInnerClass} />
-                  ) : item.name === "Storage" || item.name === "Uploads" ? (
-                    <Cloud className={iconInnerClass} />
-                  ) : (
-                    <Folder className={iconInnerClass} />
-                  )}
+                  {item.coverFile && !isSystemFolder ? (
+                    <>
+                      <StorageFolderCoverThumbnail
+                        variant="backdrop"
+                        cover={{
+                          objectKey: item.coverFile.objectKey,
+                          fileName: item.coverFile.fileName,
+                          contentType: item.coverFile.contentType,
+                        }}
+                        className="opacity-45 dark:opacity-40"
+                      />
+                      <div
+                        className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-neutral-900/40 to-transparent dark:from-black/50"
+                        aria-hidden
+                      />
+                    </>
+                  ) : null}
+                  <div className="relative z-[2] flex items-center justify-center">
+                    {item.customIcon ? (
+                      <item.customIcon className={iconInnerClass} />
+                    ) : item.name === "Storage" || item.name === "Uploads" ? (
+                      <Cloud className={iconInnerClass} />
+                    ) : (
+                      <Folder className={iconInnerClass} />
+                    )}
+                  </div>
                 </div>
                 {item.isShared && (
                   <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1">

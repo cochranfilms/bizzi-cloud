@@ -35,6 +35,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import type { DisplayContext } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
 import { buildFolderDisplayMetadata } from "@/lib/metadata-display";
+import StorageFolderCoverThumbnail from "@/components/dashboard/StorageFolderCoverThumbnail";
 
 interface FolderListRowProps {
   item: FolderItem;
@@ -299,8 +300,25 @@ export default function FolderListRow({
         </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded bg-neutral-100 dark:bg-neutral-800">
-              <Icon className="h-7 w-7 text-neutral-600 dark:text-neutral-400" />
+            <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
+              {item.coverFile ? (
+                <>
+                  <StorageFolderCoverThumbnail
+                    variant="backdrop"
+                    cover={{
+                      objectKey: item.coverFile.objectKey,
+                      fileName: item.coverFile.fileName,
+                      contentType: item.coverFile.contentType,
+                    }}
+                    className="opacity-55 dark:opacity-50"
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[1] bg-neutral-900/15 dark:bg-black/30"
+                    aria-hidden
+                  />
+                </>
+              ) : null}
+              <Icon className="relative z-[2] h-7 w-7 text-neutral-600 dark:text-neutral-400 drop-shadow" />
             </div>
             <span className="truncate font-medium text-neutral-900 dark:text-white" title={item.name}>
               {item.name}

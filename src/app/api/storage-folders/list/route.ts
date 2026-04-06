@@ -2,6 +2,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   assertFolderModelV2,
   assertLinkedDriveReadAccess,
+  getStorageFolderCoverFile,
   listStorageFolderChildren,
   StorageFolderAccessError,
 } from "@/lib/storage-folders";
@@ -118,12 +119,15 @@ export async function GET(request: Request) {
     const foldersWithCounts = await Promise.all(
       folderList.map(async (row) => {
         const fid = String((row as { id?: string }).id ?? "").trim();
-        if (!fid) return { ...row, item_count: 0 };
+        if (!fid) return { ...row, item_count: 0, cover_file: null };
         try {
-          const item_count = await storageFolderDirectItemCount(db, driveId, fid);
-          return { ...row, item_count };
+          const [item_count, cover_file] = await Promise.all([
+            storageFolderDirectItemCount(db, driveId, fid),
+            getStorageFolderCoverFile(db, driveId, fid),
+          ]);
+          return { ...row, item_count, cover_file };
         } catch {
-          return { ...row, item_count: 0 };
+          return { ...row, item_count: 0, cover_file: null };
         }
       })
     );

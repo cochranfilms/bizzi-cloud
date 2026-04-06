@@ -778,6 +778,15 @@ export default function FileGrid({
                 storageFolderOperationState: f.operation_state,
                 storageFolderLifecycleState: f.lifecycle_state,
                 hideShare: true,
+                ...(f.cover_file
+                  ? {
+                      coverFile: {
+                        objectKey: f.cover_file.object_key,
+                        fileName: f.cover_file.file_name,
+                        contentType: f.cover_file.content_type,
+                      },
+                    }
+                  : {}),
               }))
             );
             if (parent) {

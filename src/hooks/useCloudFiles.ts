@@ -267,6 +267,13 @@ export function storageListRowToRecentFile(
   };
 }
 
+/** First previewable file in folder (for folder tile cover). From storage-folders list API. */
+export type StorageFolderCoverFile = {
+  object_key: string;
+  file_name: string;
+  content_type: string | null;
+};
+
 /** Narrow folder row from storage-folders list API for UI and picker (not full Firestore). */
 export type StorageFolderListFolder = {
   id: string;
@@ -280,6 +287,8 @@ export type StorageFolderListFolder = {
   updated_at: string | null;
   /** Direct child folders + files (matches home tile counts; file branch capped at 500). */
   item_count: number;
+  /** Earliest suitable thumbnail among first files in folder (image / video / PDF). */
+  cover_file: StorageFolderCoverFile | null;
 };
 
 /** Lists one level of a folder model v2 Storage drive via API. */
@@ -326,6 +335,16 @@ export async function fetchStorageFolderList(
     const ic = f.item_count;
     const item_count =
       typeof ic === "number" && Number.isFinite(ic) ? Math.max(0, Math.floor(ic)) : 0;
+    const rawCover = f.cover_file as Record<string, unknown> | null | undefined;
+    let cover_file: StorageFolderCoverFile | null = null;
+    if (rawCover && typeof rawCover.object_key === "string" && rawCover.object_key.trim()) {
+      cover_file = {
+        object_key: rawCover.object_key.trim(),
+        file_name: String(rawCover.file_name ?? ""),
+        content_type:
+          typeof rawCover.content_type === "string" ? rawCover.content_type : null,
+      };
+    }
     return {
       id: String(f.id ?? ""),
       name: String(f.name ?? ""),
@@ -337,6 +356,7 @@ export async function fetchStorageFolderList(
       lifecycle_state: String(f.lifecycle_state ?? "active"),
       updated_at,
       item_count,
+      cover_file,
     };
   });
   const files = (data.files ?? []).map((raw) =>

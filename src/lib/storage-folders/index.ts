@@ -17,6 +17,8 @@ export {
   moveFileToFolder,
   moveBackupFilesToDrive,
 } from "./folder-service";
+export { getStorageFolderCoverFile } from "./folder-cover-file";
+export type { StorageFolderCoverFile } from "./folder-cover-file";
 export { isFolderSelectableDestination } from "./folder-picker-destination";
 export { storageFolderRowReadyForUi, storageFolderRowActiveForUi } from "./folder-operation-state-client";
 export {
