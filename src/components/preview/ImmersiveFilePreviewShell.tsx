@@ -305,7 +305,7 @@ export default function ImmersiveFilePreviewShell({
                 className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center gap-2 lg:gap-3 ${hasBelowOnly ? "min-h-[min(200px,35dvh)]" : "min-h-0"}`}
               >
                 <div className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center ${mediaSlotMaxH}`}>
-                  <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center overflow-hidden rounded-2xl px-0.5 sm:px-2">
+                   <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center overflow-hidden rounded-2xl px-0.5 py-0.5 sm:px-2 sm:py-1">
                     {media}
                   </div>
                 </div>

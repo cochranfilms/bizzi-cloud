@@ -95,6 +95,48 @@ function filterScopedLinkedDrives(
     });
 }
 
+/** Client query: trashed `storage_folders` rows for a linked drive (v2). */
+function trashedStorageFoldersClientQuery(db: Firestore, drive: LinkedDrive) {
+  return drive.organization_id
+    ? query(
+        collection(db, COLLECTION_STORAGE_FOLDERS),
+        where("linked_drive_id", "==", drive.id),
+        where("organization_id", "==", drive.organization_id),
+        where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+        limit(500)
+      )
+    : query(
+        collection(db, COLLECTION_STORAGE_FOLDERS),
+        where("linked_drive_id", "==", drive.id),
+        where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+        limit(500)
+      );
+}
+
+function collectTrashedSubtreeStorageFolderIds(
+  rootId: string,
+  folderDocs: QueryDocumentSnapshot<DocumentData>[]
+): Set<string> {
+  const subs = new Set<string>([rootId]);
+  const queue = [rootId];
+  while (queue.length) {
+    const p = queue.shift()!;
+    for (const doc of folderDocs) {
+      const pdata = doc.data();
+      if (
+        pdata.parent_folder_id === p &&
+        pdata.lifecycle_state === BACKUP_LIFECYCLE_TRASHED
+      ) {
+        if (!subs.has(doc.id)) {
+          subs.add(doc.id);
+          queue.push(doc.id);
+        }
+      }
+    }
+  }
+  return subs;
+}
+
 function isTeamSharedDrive(d: LinkedDrive | undefined): boolean {
   return !!d?.personal_team_owner_id;
 }
@@ -391,6 +433,18 @@ export interface DeletedDrive {
   name: string;
   items: number;
   deletedAt: string | null;
+}
+
+/** Root of a trashed v2 storage subtree (nested folders + files restore together via API). */
+export interface DeletedStorageFolder {
+  id: string;
+  name: string;
+  driveId: string;
+  driveName: string;
+  /** Nested trashed folders (excl. root) + trashed files under this root (from a capped file sample per drive). */
+  items: number;
+  deletedAt: string | null;
+  version: number;
 }
 
 export type ProxyStatus =
@@ -1410,6 +1464,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         scoped.map((d) => [d.id, { id: d.id, name: d.name }])
       );
       const driveIds = new Set(driveMap.keys());
+      const trashedFolderIdsByDrive = new Map<string, Set<string>>();
+      await Promise.all(
+        scoped.map(async (drive) => {
+          const fsnap = await getDocs(trashedStorageFoldersClientQuery(db, drive));
+          trashedFolderIdsByDrive.set(drive.id, new Set(fsnap.docs.map((fd) => fd.id)));
+        })
+      );
       /** Soft-deleted rows (deleted_at set). Filter client-side so restorable trash matches resolver: excludes pending_permanent_delete etc., and includes legacy rows without lifecycle_state. */
       const deletedAtLowerBound = Timestamp.fromMillis(0);
       const perDriveSnaps = await Promise.all(
@@ -1440,7 +1501,14 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           (d) =>
             resolveBackupFileLifecycleState(d.data() as Record<string, unknown>) ===
             BACKUP_LIFECYCLE_TRASHED
-        );
+        )
+        .filter((d) => {
+          const data = d.data();
+          const fid = data.folder_id as string | undefined;
+          const dr = data.linked_drive_id as string;
+          if (fid && trashedFolderIdsByDrive.get(dr)?.has(fid)) return false;
+          return true;
+        });
       return trashedDocs
         .filter((d) => driveIds.has(d.data().linked_drive_id))
         .map((d) => {
@@ -1468,6 +1536,102 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           galleryId: data.gallery_id ?? null,
         };
         });
+    },
+    [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]
+  );
+
+  const fetchDeletedStorageFolders = useCallback(
+    async (): Promise<DeletedStorageFolder[]> => {
+      if (!isFirebaseConfigured() || !user) return [];
+      const db = getFirebaseFirestore();
+      const scoped = filterScopedLinkedDrives(linkedDrives, {
+        isEnterpriseContext,
+        orgId,
+        creatorOnly,
+        teamRouteOwnerUid,
+      });
+      const out: DeletedStorageFolder[] = [];
+
+      for (const drive of scoped) {
+        const folderSnaps = await getDocs(trashedStorageFoldersClientQuery(db, drive));
+        const folderDocs = folderSnaps.docs;
+        const byId = new Map(folderDocs.map((d) => [d.id, d]));
+        const roots = folderDocs.filter((d) => {
+          const pid = (d.data().parent_folder_id as string | null | undefined) ?? null;
+          if (!pid) return true;
+          const parent = byId.get(pid);
+          if (!parent) return true;
+          return parent.data().lifecycle_state !== BACKUP_LIFECYCLE_TRASHED;
+        });
+
+        const deletedAtLowerInner = Timestamp.fromMillis(0);
+        const fileSnap = await getDocs(
+          drive.organization_id
+            ? query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", drive.id),
+                where("organization_id", "==", drive.organization_id),
+                where("deleted_at", ">", deletedAtLowerInner),
+                limit(2500)
+              )
+            : query(
+                collection(db, "backup_files"),
+                where("linked_drive_id", "==", drive.id),
+                where("deleted_at", ">", deletedAtLowerInner),
+                limit(2500)
+              )
+        );
+
+        const fileCountByFolder = new Map<string, number>();
+        for (const fd of fileSnap.docs) {
+          const data = fd.data();
+          if (
+            resolveBackupFileLifecycleState(data as Record<string, unknown>) !==
+            BACKUP_LIFECYCLE_TRASHED
+          ) {
+            continue;
+          }
+          const fid = data.folder_id as string | undefined;
+          if (!fid || !byId.has(fid)) continue;
+          fileCountByFolder.set(fid, (fileCountByFolder.get(fid) ?? 0) + 1);
+        }
+
+        for (const doc of roots) {
+          const subs = collectTrashedSubtreeStorageFolderIds(doc.id, folderDocs);
+          let files = 0;
+          for (const fid of subs) {
+            files += fileCountByFolder.get(fid) ?? 0;
+          }
+          const nestedFolders = subs.size - 1;
+          const items = nestedFolders + files;
+          const dd = doc.data();
+          const name = (dd.name as string) ?? "Folder";
+          const v = typeof dd.version === "number" ? dd.version : Number(dd.version ?? 1);
+          const ua = dd.updated_at;
+          const deletedAt =
+            ua && typeof ua === "object" && "toDate" in ua && typeof (ua as { toDate?: () => Date }).toDate === "function"
+              ? (ua as { toDate: () => Date }).toDate().toISOString()
+              : typeof ua === "string"
+                ? ua
+                : null;
+          out.push({
+            id: doc.id,
+            name,
+            driveId: drive.id,
+            driveName: drive.name,
+            items: Math.max(0, items),
+            deletedAt,
+            version: Number.isFinite(v) ? v : 1,
+          });
+        }
+      }
+
+      out.sort((a, b) => {
+        const ta = a.deletedAt ? Date.parse(a.deletedAt) : 0;
+        const tb = b.deletedAt ? Date.parse(b.deletedAt) : 0;
+        return tb - ta;
+      });
+      return out;
     },
     [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]
   );
@@ -1989,6 +2153,64 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     [bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
   );
 
+  const restoreStorageFolder = useCallback(
+    async (storageFolderId: string, version?: number) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/storage-folders/${encodeURIComponent(storageFolderId)}/restore`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(
+            typeof version === "number" && Number.isFinite(version) ? { version } : {}
+          ),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to restore folder");
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [user, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
+  );
+
+  const permanentlyDeleteStorageFolder = useCallback(
+    async (storageFolderId: string, version?: number) => {
+      if (!isFirebaseConfigured() || !user) return;
+      const token = await getCurrentUserIdToken(true);
+      if (!token) return;
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/storage-folders/${encodeURIComponent(storageFolderId)}/permanent-delete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(
+            typeof version === "number" && Number.isFinite(version) ? { version } : {}
+          ),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to permanently delete folder");
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [user, bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
+  );
+
   const moveAllFilesUnderStoragePath = useCallback(
     async (driveId: string, pathPrefix: string, targetDriveId: string) => {
       const ids = await collectActiveFileIdsUnderStoragePathPrefix(driveId, pathPrefix);
@@ -2318,6 +2540,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     fetchFilesByIds,
     fetchDeletedFiles,
     fetchDeletedDrives,
+    fetchDeletedStorageFolders,
     deleteFile,
     deleteFiles,
     deleteFolder,
@@ -2336,6 +2559,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     getFileIdsForBulkShare,
     trashAllFilesUnderStoragePath,
     trashStorageFolderSubtree,
+    restoreStorageFolder,
+    permanentlyDeleteStorageFolder,
     moveAllFilesUnderStoragePath,
   };
 }

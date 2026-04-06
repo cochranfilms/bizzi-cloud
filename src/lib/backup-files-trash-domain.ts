@@ -1,9 +1,10 @@
 /**
  * Shared trash / restore domain for backup_files (web first; mount gated on policy doc).
  */
-import type { Firestore } from "firebase-admin/firestore";
+import type { DocumentData, Firestore } from "firebase-admin/firestore";
 import { assertCanTrashBackupFile, assertMayRemoveBackupFile, TrashForbiddenError } from "@/lib/container-delete-policy";
 import { FieldValue } from "firebase-admin/firestore";
+import { enqueueBackupFilesPurgeJob } from "@/lib/deletion-jobs";
 import { backupFileInGalleryTrashScope } from "@/lib/gallery-delete-trash-scope";
 import type { GalleryManagementDoc } from "@/lib/gallery-owner-access";
 import {
@@ -16,6 +17,7 @@ import { expandTrashInputIdsWithMacosPackages } from "@/lib/macos-package-trash-
 import {
   BACKUP_LIFECYCLE_ACTIVE,
   BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+  BACKUP_LIFECYCLE_PERMANENTLY_DELETED,
   BACKUP_LIFECYCLE_TRASHED,
   isBackupFileActiveForListing,
   resolveBackupFileLifecycleState,
@@ -24,6 +26,7 @@ import type { BackupFileMutationSource } from "@/lib/backup-file-mutation-source
 import { logBackupFilesTrashAudit } from "@/lib/backup-files-trash-audit";
 
 const UPDATE_BATCH = 450;
+const PERMANENT_DELETE_PATCH_BATCH = 500;
 
 /** Safety cap for gallery delete with deleteFiles=true (matches web trash expanded cap). */
 export const GALLERY_DELETE_TRASH_MAX_EXPANDED_IDS = 12_000;
@@ -367,4 +370,76 @@ export async function restoreBackupFilesFromTrash(
   });
 
   return { ok: true, restoredCount: toRestore.length };
+}
+
+export type PermanentDeleteJobEnqueueResult =
+  | { ok: true; jobId: string; enqueuedCount: number }
+  | { ok: false; err: TrashDomainError };
+
+/**
+ * Authorize, mark backup_files as pending_permanent_delete, enqueue one purge job.
+ * Used by /api/backup/permanent-delete and storage-folder subtree permanent delete.
+ */
+export async function enqueuePermanentDeleteJobForBackupFileIds(
+  db: Firestore,
+  uid: string,
+  fileIds: string[],
+  opts: { linkedDriveId: string | null }
+): Promise<PermanentDeleteJobEnqueueResult> {
+  const unique = [...new Set(fileIds.filter((id) => typeof id === "string" && id.length > 0))];
+  if (unique.length === 0) {
+    return { ok: false, err: { error: "No files to delete", status: 400 } };
+  }
+
+  const authorizedIds: string[] = [];
+  const authorizedFileData: DocumentData[] = [];
+  for (const id of unique) {
+    try {
+      await assertMayRemoveBackupFile(uid, id);
+    } catch (e) {
+      if (e instanceof TrashForbiddenError) continue;
+      throw e;
+    }
+    const snap = await db.collection("backup_files").doc(id).get();
+    if (!snap.exists) continue;
+    const fileData = snap.data()!;
+    const ls = fileData.lifecycle_state as string | undefined;
+    if (
+      ls === BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE ||
+      ls === BACKUP_LIFECYCLE_PERMANENTLY_DELETED
+    ) {
+      continue;
+    }
+    authorizedIds.push(id);
+    authorizedFileData.push(fileData);
+  }
+
+  if (authorizedIds.length === 0) {
+    return { ok: false, err: { error: "No files to delete", status: 400 } };
+  }
+
+  for (let i = 0; i < authorizedIds.length; i += PERMANENT_DELETE_PATCH_BATCH) {
+    const batch = db.batch();
+    const end = Math.min(i + PERMANENT_DELETE_PATCH_BATCH, authorizedIds.length);
+    for (let j = i; j < end; j++) {
+      const id = authorizedIds[j];
+      const fileData = authorizedFileData[j];
+      const patch: Record<string, unknown> = {
+        lifecycle_state: BACKUP_LIFECYCLE_PENDING_PERMANENT_DELETE,
+      };
+      if (!fileData.deleted_at) {
+        patch.deleted_at = FieldValue.serverTimestamp();
+      }
+      batch.update(db.collection("backup_files").doc(id), patch);
+    }
+    await batch.commit();
+  }
+
+  const jobId = await enqueueBackupFilesPurgeJob(db, {
+    requestedBy: uid,
+    fileIds: authorizedIds,
+    driveId: opts.linkedDriveId,
+  });
+
+  return { ok: true, jobId, enqueuedCount: authorizedIds.length };
 }

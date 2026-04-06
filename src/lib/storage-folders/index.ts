@@ -26,3 +26,5 @@ export {
 } from "./v2-ingest-placement";
 export { migrateLinkedDriveToFolderModelV2 } from "./migrate-drive-v2";
 export { trashStorageFolderSubtree } from "./trash-subtree";
+export { restoreStorageFolderSubtree } from "./restore-subtree";
+export { permanentlyDeleteStorageFolderSubtree } from "./permanent-delete-subtree";

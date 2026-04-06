@@ -6,7 +6,12 @@ import { Archive, Check, FileIcon, Film, Folder, Play, RotateCcw, Trash2 } from 
 import TopBar from "@/components/dashboard/TopBar";
 import ItemActionsMenu from "@/components/dashboard/ItemActionsMenu";
 import VideoScrubThumbnail from "@/components/dashboard/VideoScrubThumbnail";
-import { useCloudFiles, type RecentFile, type DeletedDrive } from "@/hooks/useCloudFiles";
+import {
+  useCloudFiles,
+  type RecentFile,
+  type DeletedDrive,
+  type DeletedStorageFolder,
+} from "@/hooks/useCloudFiles";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
 import { useInView } from "@/hooks/useInView";
@@ -55,6 +60,7 @@ function DeletedFolderCard({
   onRestore,
   onPermanentDelete,
   accent,
+  detailLine,
 }: {
   folder: DeletedDrive;
   selected?: boolean;
@@ -62,6 +68,8 @@ function DeletedFolderCard({
   onRestore: () => void;
   onPermanentDelete: () => void;
   accent: TrashPageVariant;
+  /** Extra context (e.g. drive name + folder model). */
+  detailLine?: string;
 }) {
   const a = ACCENT[accent];
   return (
@@ -119,6 +127,9 @@ function DeletedFolderCard({
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         {folder.items} {folder.items === 1 ? "item" : "items"}
       </p>
+      {detailLine ? (
+        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{detailLine}</p>
+      ) : null}
       <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
         Deleted {formatDate(folder.deletedAt)}
       </p>
@@ -296,18 +307,23 @@ interface TrashPageProps {
 export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
   const [deletedFiles, setDeletedFiles] = useState<RecentFile[]>([]);
   const [deletedDrives, setDeletedDrives] = useState<DeletedDrive[]>([]);
+  const [deletedStorageFolders, setDeletedStorageFolders] = useState<DeletedStorageFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
+  const [selectedStorageFolderIds, setSelectedStorageFolderIds] = useState<Set<string>>(new Set());
   const [deletingBulk, setDeletingBulk] = useState(false);
   const { confirm } = useConfirm();
   const {
     fetchDeletedFiles,
     fetchDeletedDrives,
+    fetchDeletedStorageFolders,
     restoreFile,
     restoreDrive,
+    restoreStorageFolder,
     permanentlyDeleteFile,
     permanentlyDeleteDrive,
+    permanentlyDeleteStorageFolder,
     refetch,
   } = useCloudFiles();
 
@@ -332,12 +348,17 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
   const clearSelection = useCallback(() => {
     setSelectedFileIds(new Set());
     setSelectedFolderIds(new Set());
+    setSelectedStorageFolderIds(new Set());
   }, []);
 
-  const setSelectionFromDrag = useCallback((fileIds: string[], folderIds: string[]) => {
-    setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
-    setSelectedFolderIds((prev) => new Set([...prev, ...folderIds]));
-  }, []);
+  const setSelectionFromDrag = useCallback(
+    (fileIds: string[], folderIds: string[], storageFolderIds: string[]) => {
+      setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
+      setSelectedFolderIds((prev) => new Set([...prev, ...folderIds]));
+      setSelectedStorageFolderIds((prev) => new Set([...prev, ...storageFolderIds]));
+    },
+    []
+  );
 
   const [dragState, setDragState] = useState<{
     isActive: boolean;
@@ -347,7 +368,11 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     currentY: number;
   } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
-  const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
+  const lastSelectionRef = useRef<{
+    files: string;
+    folders: string;
+    storageFolders: string;
+  } | null>(null);
   const selectionUpdateRef = useRef<number | null>(null);
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -414,6 +439,7 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
       const items = gridSectionRef.current?.querySelectorAll("[data-selectable-item]");
       const fileIds: string[] = [];
       const folderIds: string[] = [];
+      const storageFolderIds: string[] = [];
 
       items?.forEach((el) => {
         const rect = el.getBoundingClientRect();
@@ -423,18 +449,21 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
         const key = el.getAttribute("data-item-key");
         if (type === "file" && id) fileIds.push(id);
         if (type === "folder" && key) folderIds.push(key);
+        if (type === "storage-folder" && key) storageFolderIds.push(key);
       });
 
       const filesKey = [...fileIds].sort().join(",");
       const foldersKey = [...folderIds].sort().join(",");
+      const storageFoldersKey = [...storageFolderIds].sort().join(",");
       if (
         lastSelectionRef.current?.files === filesKey &&
-        lastSelectionRef.current?.folders === foldersKey
+        lastSelectionRef.current?.folders === foldersKey &&
+        lastSelectionRef.current?.storageFolders === storageFoldersKey
       ) {
         return;
       }
-      lastSelectionRef.current = { files: filesKey, folders: foldersKey };
-      setSelectionFromDrag(fileIds, folderIds);
+      lastSelectionRef.current = { files: filesKey, folders: foldersKey, storageFolders: storageFoldersKey };
+      setSelectionFromDrag(fileIds, folderIds, storageFolderIds);
     };
 
     if (selectionUpdateRef.current !== null) {
@@ -451,25 +480,39 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
 
   useDragToSelectAutoScroll(gridSectionRef, dragState, mousePosRef);
 
-  const hasSelection = selectedFileIds.size + selectedFolderIds.size > 0;
-  const selectedCount = selectedFileIds.size + selectedFolderIds.size;
+  const toggleStorageFolderSelection = useCallback((id: string) => {
+    setSelectedStorageFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const hasSelection =
+    selectedFileIds.size + selectedFolderIds.size + selectedStorageFolderIds.size > 0;
+  const selectedCount =
+    selectedFileIds.size + selectedFolderIds.size + selectedStorageFolderIds.size;
 
   const loadDeleted = useCallback(async () => {
     setLoading(true);
     try {
-      const [files, drives] = await Promise.all([
+      const [files, drives, storageFolders] = await Promise.all([
         fetchDeletedFiles(),
         fetchDeletedDrives(),
+        fetchDeletedStorageFolders(),
       ]);
       setDeletedFiles(files);
       setDeletedDrives(drives);
+      setDeletedStorageFolders(storageFolders);
     } catch {
       setDeletedFiles([]);
       setDeletedDrives([]);
+      setDeletedStorageFolders([]);
     } finally {
       setLoading(false);
     }
-  }, [fetchDeletedFiles, fetchDeletedDrives]);
+  }, [fetchDeletedFiles, fetchDeletedDrives, fetchDeletedStorageFolders]);
 
   useEffect(() => {
     loadDeleted();
@@ -525,19 +568,50 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     }
   };
 
+  const handleRestoreStorageFolder = async (row: DeletedStorageFolder) => {
+    try {
+      await restoreStorageFolder(row.id, row.version);
+      refetch();
+      setDeletedStorageFolders((prev) => prev.filter((s) => s.id !== row.id));
+    } catch {
+      await loadDeleted();
+    }
+  };
+
+  const handlePermanentDeleteStorageFolder = async (row: DeletedStorageFolder) => {
+    const ok = await confirm({
+      message: `Permanently delete "${row.name}" and everything inside it (files and subfolders)? Storage objects will be purged in the background. This cannot be undone.`,
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await permanentlyDeleteStorageFolder(row.id, row.version);
+      refetch();
+      setDeletedStorageFolders((prev) => prev.filter((s) => s.id !== row.id));
+    } catch {
+      await loadDeleted();
+    }
+  };
+
   const handleBulkRestore = useCallback(async () => {
     if (!hasSelection) return;
     setDeletingBulk(true);
     try {
+      const sfById = new Map(deletedStorageFolders.map((s) => [s.id, s]));
       for (const id of selectedFileIds) {
         await restoreFile(id);
       }
       for (const id of selectedFolderIds) {
         await restoreDrive(id);
       }
+      for (const id of selectedStorageFolderIds) {
+        const row = sfById.get(id);
+        await restoreStorageFolder(id, row?.version);
+      }
       refetch();
       setDeletedFiles((prev) => prev.filter((f) => !selectedFileIds.has(f.id)));
       setDeletedDrives((prev) => prev.filter((d) => !selectedFolderIds.has(d.id)));
+      setDeletedStorageFolders((prev) => prev.filter((s) => !selectedStorageFolderIds.has(s.id)));
       clearSelection();
     } catch {
       await loadDeleted();
@@ -548,41 +622,59 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     hasSelection,
     selectedFileIds,
     selectedFolderIds,
+    selectedStorageFolderIds,
+    deletedStorageFolders,
     restoreFile,
     restoreDrive,
+    restoreStorageFolder,
     refetch,
     clearSelection,
     loadDeleted,
   ]);
 
   const doBulkPermanentDelete = useCallback(
-    async (fileIds: string[], folderIds: string[], options?: { skipConfirm?: boolean }) => {
-      if (fileIds.length === 0 && folderIds.length === 0) return;
+    async (
+      fileIds: string[],
+      folderIds: string[],
+      storageFolderIds: string[],
+      options?: { skipConfirm?: boolean }
+    ) => {
+      if (fileIds.length === 0 && folderIds.length === 0 && storageFolderIds.length === 0) return;
       if (!options?.skipConfirm) {
         const fileCount = fileIds.length;
         const folderCount = folderIds.length;
-        const msg =
-          fileCount > 0 && folderCount > 0
-            ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"} and ${folderCount} folder${folderCount === 1 ? "" : "s"}? This cannot be undone.`
-            : fileCount > 0
-              ? `Permanently delete ${fileCount} file${fileCount === 1 ? "" : "s"}? This cannot be undone.`
-              : `Permanently delete ${folderCount} folder${folderCount === 1 ? "" : "s"} and their contents? This cannot be undone.`;
-        const ok = await confirm({ message: msg, destructive: true });
+        const sfCount = storageFolderIds.length;
+        const parts: string[] = [];
+        if (fileCount > 0) parts.push(`${fileCount} file${fileCount === 1 ? "" : "s"}`);
+        if (folderCount > 0) parts.push(`${folderCount} linked folder${folderCount === 1 ? "" : "s"}`);
+        if (sfCount > 0)
+          parts.push(`${sfCount} storage folder${sfCount === 1 ? "" : "s"}`);
+        const ok = await confirm({
+          message: `Permanently delete ${parts.join(", ")}? This cannot be undone.`,
+          destructive: true,
+        });
         if (!ok) return;
       }
       setDeletingBulk(true);
       try {
         const fileSet = new Set(fileIds);
         const folderSet = new Set(folderIds);
+        const sfSet = new Set(storageFolderIds);
+        const sfById = new Map(deletedStorageFolders.map((s) => [s.id, s]));
         for (const id of fileIds) {
           await permanentlyDeleteFile(id);
         }
         for (const id of folderIds) {
           await permanentlyDeleteDrive(id);
         }
+        for (const id of storageFolderIds) {
+          const row = sfById.get(id);
+          await permanentlyDeleteStorageFolder(id, row?.version);
+        }
         refetch();
         setDeletedFiles((prev) => prev.filter((f) => !fileSet.has(f.id)));
         setDeletedDrives((prev) => prev.filter((d) => !folderSet.has(d.id)));
+        setDeletedStorageFolders((prev) => prev.filter((s) => !sfSet.has(s.id)));
         setSelectedFileIds((prev) => {
           const next = new Set(prev);
           fileIds.forEach((id) => next.delete(id));
@@ -591,6 +683,11 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
         setSelectedFolderIds((prev) => {
           const next = new Set(prev);
           folderIds.forEach((id) => next.delete(id));
+          return next;
+        });
+        setSelectedStorageFolderIds((prev) => {
+          const next = new Set(prev);
+          storageFolderIds.forEach((id) => next.delete(id));
           return next;
         });
       } catch {
@@ -602,6 +699,8 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     [
       permanentlyDeleteFile,
       permanentlyDeleteDrive,
+      permanentlyDeleteStorageFolder,
+      deletedStorageFolders,
       refetch,
       confirm,
       loadDeleted,
@@ -612,14 +711,28 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     if (!hasSelection) return;
     await doBulkPermanentDelete(
       Array.from(selectedFileIds),
-      Array.from(selectedFolderIds)
+      Array.from(selectedFolderIds),
+      Array.from(selectedStorageFolderIds)
     );
     clearSelection();
-  }, [hasSelection, selectedFileIds, selectedFolderIds, doBulkPermanentDelete, clearSelection]);
+  }, [
+    hasSelection,
+    selectedFileIds,
+    selectedFolderIds,
+    selectedStorageFolderIds,
+    doBulkPermanentDelete,
+    clearSelection,
+  ]);
 
   const handleDeleteAll = useCallback(async () => {
-    if (deletedFiles.length === 0 && deletedDrives.length === 0) return;
-    const total = deletedFiles.length + deletedDrives.length;
+    if (
+      deletedFiles.length === 0 &&
+      deletedDrives.length === 0 &&
+      deletedStorageFolders.length === 0
+    ) {
+      return;
+    }
+    const total = deletedFiles.length + deletedDrives.length + deletedStorageFolders.length;
     const ok = await confirm({
       message: `Permanently delete all ${total} item${total === 1 ? "" : "s"}? This cannot be undone.`,
       destructive: true,
@@ -628,12 +741,21 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
     await doBulkPermanentDelete(
       deletedFiles.map((f) => f.id),
       deletedDrives.map((d) => d.id),
+      deletedStorageFolders.map((s) => s.id),
       { skipConfirm: true }
     );
     clearSelection();
-  }, [deletedFiles, deletedDrives, doBulkPermanentDelete, clearSelection, confirm]);
+  }, [
+    deletedFiles,
+    deletedDrives,
+    deletedStorageFolders,
+    doBulkPermanentDelete,
+    clearSelection,
+    confirm,
+  ]);
 
-  const hasItems = deletedFiles.length > 0 || deletedDrives.length > 0;
+  const hasItems =
+    deletedFiles.length > 0 || deletedDrives.length > 0 || deletedStorageFolders.length > 0;
 
   const showDragRect =
     dragState?.isActive &&
@@ -703,7 +825,11 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
         {hasItems && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
             <span className="text-sm text-neutral-600 dark:text-neutral-400">
-              {deletedFiles.length + deletedDrives.length} item{(deletedFiles.length + deletedDrives.length) === 1 ? "" : "s"} in trash
+              {deletedFiles.length + deletedDrives.length + deletedStorageFolders.length} item
+              {deletedFiles.length + deletedDrives.length + deletedStorageFolders.length === 1
+                ? ""
+                : "s"}{" "}
+              in trash
             </span>
             <button
               type="button"
@@ -730,7 +856,7 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
             {deletedDrives.length > 0 && (
               <>
                 <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-                  Deleted folders
+                  Deleted linked folders
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
                   {deletedDrives.map((folder) => (
@@ -749,6 +875,41 @@ export default function TrashPage({ variant = "dashboard" }: TrashPageProps) {
                           handlePermanentDeleteDrive(folder)
                         }
                         accent={variant}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {deletedStorageFolders.length > 0 && (
+              <>
+                <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                  Deleted storage folders
+                </h3>
+                <p className="mb-2 max-w-2xl text-xs text-neutral-500 dark:text-neutral-400">
+                  Bizzi Cloud folder trees: restoring brings back nested folders and their files together.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
+                  {deletedStorageFolders.map((sf) => (
+                    <div
+                      key={sf.id}
+                      data-selectable-item
+                      data-item-type="storage-folder"
+                      data-item-key={sf.id}
+                    >
+                      <DeletedFolderCard
+                        folder={{
+                          id: sf.id,
+                          name: sf.name,
+                          items: sf.items,
+                          deletedAt: sf.deletedAt,
+                        }}
+                        selected={selectedStorageFolderIds.has(sf.id)}
+                        onSelect={() => toggleStorageFolderSelection(sf.id)}
+                        onRestore={() => handleRestoreStorageFolder(sf)}
+                        onPermanentDelete={() => handlePermanentDeleteStorageFolder(sf)}
+                        accent={variant}
+                        detailLine={`${sf.driveName} · Storage`}
                       />
                     </div>
                   ))}

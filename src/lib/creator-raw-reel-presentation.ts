@@ -38,8 +38,9 @@ export const CREATOR_RAW_PORTRAIT_STAGE = {
   lutRailGap: "gap-3 sm:gap-3.5",
   lutRailMaxWidth: "min(28rem, 100%)",
   /** Outer chrome around the 16:9 hero (notch + depth). */
+  /** `ring-inset` keeps the outline inside the border box so parent `overflow-hidden` (immersive shell) does not clip the top edge. */
   frameShellClass:
-    "relative w-full overflow-hidden rounded-[1.85rem] bg-neutral-950 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.09)] ring-1 ring-black/25 dark:bg-black dark:shadow-[0_44px_120px_-32px_rgba(0,0,0,0.82)] dark:ring-white/12",
+    "relative w-full overflow-hidden rounded-[1.85rem] bg-neutral-950 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.09)] ring-1 ring-inset ring-black/35 dark:bg-black dark:shadow-[0_44px_120px_-32px_rgba(0,0,0,0.82)] dark:ring-white/14",
   processingShellClass:
     "flex w-full flex-col items-center justify-center rounded-[1.85rem] border border-white/10 bg-black/50 px-4 py-10 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.55)] ring-1 ring-black/20 backdrop-blur-md dark:border-white/12 dark:bg-black/55 dark:ring-white/10",
 } as const;
