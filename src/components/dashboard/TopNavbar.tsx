@@ -19,6 +19,7 @@ import {
 import UserMenu from "./UserMenu";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 
@@ -185,13 +186,7 @@ export default function TopNavbar() {
                   unoptimized
                 />
               ) : (
-                <Image
-                  src="/logo.png"
-                  alt="Bizzi Byte"
-                  width={24}
-                  height={24}
-                  className="flex-shrink-0 object-contain"
-                />
+                <BizziLogoMark width={24} height={24} className="flex-shrink-0" />
               )}
             </Link>
           </div>
@@ -293,13 +288,7 @@ export default function TopNavbar() {
             onClick={() => setMobileOpen(false)}
             aria-label="Bizzi Cloud home"
           >
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
+            <BizziLogoMark width={24} height={24} />
           </Link>
         </div>
 

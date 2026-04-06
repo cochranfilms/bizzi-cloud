@@ -20,6 +20,7 @@ import {
 import UserMenu from "@/components/dashboard/UserMenu";
 import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
@@ -158,13 +159,7 @@ export default function EnterpriseNavbar() {
                 unoptimized
               />
             ) : (
-              <Image
-                src="/logo.png"
-                alt="Bizzi Byte"
-                width={24}
-                height={24}
-                className="flex-shrink-0 object-contain"
-              />
+              <BizziLogoMark width={24} height={24} className="flex-shrink-0" />
             )}
           </Link>
         </div>

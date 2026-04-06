@@ -111,3 +111,18 @@ export function useLayoutSettings() {
   }
   return context;
 }
+
+const LAYOUT_SETTINGS_FALLBACK: LayoutSettingsContextType = {
+  ...DEFAULT_SETTINGS,
+  setViewMode: () => {},
+  setCardSize: () => {},
+  setAspectRatio: () => {},
+  setThumbnailScale: () => {},
+  setShowCardInfo: () => {},
+};
+
+/** Same as useLayoutSettings when inside a provider; otherwise dashboard-default layout (e.g. public /s share page). */
+export function useLayoutSettingsOptional(): LayoutSettingsContextType {
+  const context = useContext(LayoutSettingsContext);
+  return context ?? LAYOUT_SETTINGS_FALLBACK;
+}

@@ -29,6 +29,7 @@ export default function GlobalDropZone() {
     currentDriveId,
     currentDrivePath,
     storageParentFolderId,
+    storageUploadFolderLabel,
     selectedWorkspaceId,
   } = useCurrentFolder();
   const { org } = useEnterprise();
@@ -92,7 +93,12 @@ export default function GlobalDropZone() {
       },
     });
     if (gen !== overlayCancelRef.current) return;
-    setDropOverlay(getDropOverlayCopy(resolved));
+    setDropOverlay(
+      getDropOverlayCopy(resolved, {
+        storageParentFolderId,
+        storageFolderDisplayName: storageUploadFolderLabel,
+      })
+    );
   }, [
     pathname,
     searchParams,
@@ -102,6 +108,8 @@ export default function GlobalDropZone() {
     isEnterpriseFilesNoDrive,
     isGalleryMediaDrive,
     getOrCreateStorageDrive,
+    storageParentFolderId,
+    storageUploadFolderLabel,
   ]);
 
   const handleDrop = useCallback(
@@ -212,6 +220,7 @@ export default function GlobalDropZone() {
               workspaceName: data.workspace_name ?? null,
               scopeLabel: data.scope_label ?? null,
               storageFolderId: storageParentFolderId,
+              storageFolderDisplayName: storageUploadFolderLabel,
             });
             return;
           } catch (err) {
@@ -225,6 +234,7 @@ export default function GlobalDropZone() {
           ...panelOptionsBase,
           initialFiles: files,
           storageFolderId: storageParentFolderId,
+          storageFolderDisplayName: storageUploadFolderLabel,
         });
       } catch (err) {
         console.error("Global drop upload failed:", err);
@@ -246,6 +256,7 @@ export default function GlobalDropZone() {
       isGalleryMediaDrive,
       setFileUploadErrorMessage,
       storageParentFolderId,
+      storageUploadFolderLabel,
     ]
   );
 
@@ -356,18 +367,41 @@ export default function GlobalDropZone() {
 
   const title = dropOverlay?.title ?? "Drop files to upload";
   const subtitle =
-    dropOverlay?.subtitle ??
-    "Release to add them to the uploader. Final Cut (.fcpbundle), Lightroom Library (.lrlibrary), and other macOS packages keep folder structure when supported.";
+    dropOverlay?.subtitle ?? "Release to open the uploader.";
+
+  const nestedStorageDrop =
+    subtitle.startsWith("Storage Drive:") || title.includes("Storage folder");
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/65 backdrop-blur-[2px]"
       aria-hidden
     >
-      <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-white/50 bg-white/10 px-12 py-10">
-        <Upload className="h-16 w-16 text-white" strokeWidth={1.5} />
-        <p className="text-xl font-semibold text-white">{title}</p>
-        <p className="max-w-lg text-center text-sm text-white/80">{subtitle}</p>
+      <div
+        className={`mx-4 flex max-w-lg flex-col items-center gap-5 rounded-2xl border-2 border-dashed px-8 py-10 sm:px-12 ${
+          nestedStorageDrop
+            ? "border-sky-400/90 bg-sky-950/75 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_24px_64px_-12px_rgba(0,0,0,0.55)]"
+            : "border-white/55 bg-white/10"
+        }`}
+      >
+        <Upload
+          className={`h-14 w-14 sm:h-16 sm:w-16 ${nestedStorageDrop ? "text-sky-200" : "text-white"}`}
+          strokeWidth={1.5}
+        />
+        <p
+          className={`text-center text-xl font-bold tracking-tight sm:text-2xl ${
+            nestedStorageDrop ? "text-sky-50" : "text-white"
+          }`}
+        >
+          {title}
+        </p>
+        <p
+          className={`max-w-md text-center text-base font-semibold leading-snug sm:text-lg ${
+            nestedStorageDrop ? "text-sky-100" : "text-white/85"
+          }`}
+        >
+          {subtitle}
+        </p>
       </div>
     </div>
   );

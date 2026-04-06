@@ -52,6 +52,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     currentDriveId,
     currentDrivePath,
     storageParentFolderId,
+    storageUploadFolderLabel,
     selectedWorkspaceId,
   } = useCurrentFolder();
   const {
@@ -260,6 +261,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           workspaceName: data.workspace_name ?? null,
           scopeLabel: data.scope_label ?? null,
           storageFolderId: storageParentFolderId,
+          storageFolderDisplayName: storageUploadFolderLabel,
         });
         return;
       } catch (err) {
@@ -272,6 +274,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     uppyUpload?.openPanel(driveId, resolved.pathPrefix, null, {
       ...panelOptionsBase,
       storageFolderId: storageParentFolderId,
+      storageFolderDisplayName: storageUploadFolderLabel,
     });
   };
 

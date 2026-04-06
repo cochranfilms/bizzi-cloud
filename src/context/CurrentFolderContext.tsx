@@ -10,6 +10,9 @@ interface CurrentFolderContextValue {
   /** storage_folders parent when browsing a folder model v2 drive (null = drive root) */
   storageParentFolderId: string | null;
   setStorageParentFolderId: (id: string | null) => void;
+  /** Display name of the current Storage v2 folder (for upload UX / global drop). */
+  storageUploadFolderLabel: string | null;
+  setStorageUploadFolderLabel: (label: string | null) => void;
   selectedWorkspaceId: string | null;
   setSelectedWorkspaceId: (id: string | null) => void;
   /** When viewing a workspace on a different drive (e.g. Shared Library), use this drive for file queries */
@@ -23,6 +26,7 @@ export function CurrentFolderProvider({ children }: { children: React.ReactNode 
   const [currentDriveId, setCurrentDriveId] = useState<string | null>(null);
   const [currentDrivePath, setCurrentDrivePath] = useState("");
   const [storageParentFolderId, setStorageParentFolderId] = useState<string | null>(null);
+  const [storageUploadFolderLabel, setStorageUploadFolderLabel] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [effectiveDriveIdForFiles, setEffectiveDriveIdForFiles] = useState<string | null>(null);
   const setCurrentDrive = useCallback((id: string | null) => {
@@ -35,6 +39,8 @@ export function CurrentFolderProvider({ children }: { children: React.ReactNode 
     setCurrentDrivePath,
     storageParentFolderId,
     setStorageParentFolderId,
+    storageUploadFolderLabel,
+    setStorageUploadFolderLabel,
     selectedWorkspaceId,
     setSelectedWorkspaceId,
     effectiveDriveIdForFiles,
@@ -57,6 +63,8 @@ export function useCurrentFolder() {
       setCurrentDrivePath: () => {},
       storageParentFolderId: null,
       setStorageParentFolderId: () => {},
+      storageUploadFolderLabel: null,
+      setStorageUploadFolderLabel: () => {},
       selectedWorkspaceId: null,
       setSelectedWorkspaceId: () => {},
       effectiveDriveIdForFiles: null,

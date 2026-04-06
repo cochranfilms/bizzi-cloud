@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useTransfers } from "@/context/TransferContext";
 import { File, Download, Lock, FolderOpen, Film, Play } from "lucide-react";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import type { Transfer, TransferFile } from "@/types/transfer";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
@@ -433,13 +433,7 @@ export default function TransferView({ slug }: TransferViewProps) {
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={28}
-              height={28}
-              className="object-contain"
-            />
+            <BizziLogoMark width={28} height={28} />
             <span className="font-semibold text-lg tracking-tight text-neutral-900 dark:text-white">
               Bizzi <span className="text-bizzi-blue">Cloud</span>
             </span>

@@ -60,6 +60,8 @@ interface FolderListRowProps {
   onStorageFolderMutated?: () => void;
   onConsolidateMenuSelect?: () => void;
   revealFadeIn?: boolean;
+  /** Appended to the row `tr` (e.g. home folder-open pulse). */
+  rowExtraClassName?: string;
 }
 
 export default function FolderListRow({
@@ -80,6 +82,7 @@ export default function FolderListRow({
   onStorageFolderMutated,
   onConsolidateMenuSelect,
   revealFadeIn = false,
+  rowExtraClassName = "",
 }: FolderListRowProps) {
   const revealEntered = useDashboardItemReveal(revealFadeIn);
   const revealOpacityClass = revealFadeIn
@@ -277,7 +280,7 @@ export default function FolderListRow({
           draggable ? "cursor-grab active:cursor-grabbing" : ""
         } ${
           isDragOver ? "bg-bizzi-blue/10 ring-1 ring-inset ring-bizzi-blue/40 dark:bg-bizzi-blue/15" : ""
-        }`}
+        } ${rowExtraClassName}`.trim()}
       >
         <td className="w-10 px-3 py-2">
           {selectable && onSelect ? (
@@ -296,8 +299,8 @@ export default function FolderListRow({
         </td>
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-neutral-100 dark:bg-neutral-800">
-              <Icon className="h-5 w-5 text-neutral-600 dark:text-neutral-400" />
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded bg-neutral-100 dark:bg-neutral-800">
+              <Icon className="h-7 w-7 text-neutral-600 dark:text-neutral-400" />
             </div>
             <span className="truncate font-medium text-neutral-900 dark:text-white" title={item.name}>
               {item.name}

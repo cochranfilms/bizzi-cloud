@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { FolderSync } from "lucide-react";
 import { useCallback, useState } from "react";
 import {
@@ -145,12 +145,11 @@ export default function WaitlistForm() {
     >
       {!success ? (
         <header className="mb-6 flex flex-col items-center text-center sm:mb-10">
-          <Image
-            src="/logo.png"
-            alt="Bizzi Cloud"
+          <BizziLogoMark
             width={48}
             height={48}
-            className="mb-5 h-12 w-12 object-contain sm:mb-6"
+            className="mb-5 h-12 w-12 sm:mb-6"
+            alt="Bizzi Cloud"
             priority
           />
           <h1

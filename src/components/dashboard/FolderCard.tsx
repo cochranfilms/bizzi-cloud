@@ -102,9 +102,9 @@ interface FolderCardProps {
 
 // Scaled so largest never exceeds former medium; large = former medium
 const SIZE_CLASSES = {
-  small: { padding: "p-3", icon: "h-8 w-8", iconInner: "h-4 w-4", text: "text-xs" },
-  medium: { padding: "p-4", icon: "h-10 w-10", iconInner: "h-5 w-5", text: "text-xs" },
-  large: { padding: "p-6", icon: "h-16 w-16", iconInner: "h-8 w-8", text: "text-sm" },
+  small: { padding: "p-3", icon: "h-11 w-11", iconInner: "h-6 w-6", text: "text-xs" },
+  medium: { padding: "p-4", icon: "h-14 w-14", iconInner: "h-7 w-7", text: "text-xs" },
+  large: { padding: "p-6", icon: "h-20 w-20", iconInner: "h-10 w-10", text: "text-sm" },
 } as const;
 
 export default function FolderCard({
@@ -279,8 +279,8 @@ export default function FolderCard({
   const systemMobileShell = isSystemFolder
     ? "max-sm:min-h-0 max-sm:flex-row max-sm:items-center max-sm:justify-start max-sm:gap-0 max-sm:py-3 max-sm:pl-3 max-sm:pr-[3.5rem] max-sm:!p-3"
     : "";
-  const iconBoxClass = `${sizeClasses.icon} max-sm:!h-12 max-sm:!w-12`;
-  const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-5 max-sm:!w-5`;
+  const iconBoxClass = `${sizeClasses.icon} max-sm:!h-16 max-sm:!w-16`;
+  const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-8 max-sm:!w-8`;
 
   const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
     isSystemFolder
@@ -370,7 +370,7 @@ export default function FolderCard({
             <div
               className={`relative w-full shrink-0 overflow-hidden ${aspectClass} rounded-xl bg-gradient-to-br from-neutral-100 via-neutral-50 to-neutral-200/85 dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-950/90`}
             >
-                <div className="relative flex min-h-[5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[4.5rem] max-sm:py-4">
+                <div className="relative flex min-h-[5.5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[5rem] max-sm:py-4">
                 <div className="relative">
                   <div
                     className={`flex items-center justify-center rounded-2xl ${iconBoxClass} bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan`}

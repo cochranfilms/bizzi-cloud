@@ -6,7 +6,10 @@ import type { Meta, Body } from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import { FolderOpen, ImagePlus } from "lucide-react";
 import type { BatchTier } from "@/lib/uppy-mass-upload-constants";
-import { UPLOAD_GRID_VIRTUAL_ROW_STRIDE } from "@/lib/uppy-mass-upload-constants";
+import {
+  UPLOAD_GRID_VIRTUAL_ROW_STRIDE,
+  UPLOAD_QUEUE_VISIBLE_ROW_CAP,
+} from "@/lib/uppy-mass-upload-constants";
 import { useUploadGridStructure } from "@/hooks/useUploadGridStructure";
 import { useUploadPanelColumnCount } from "@/hooks/useUploadPanelColumnCount";
 import UppyGroupedQueueList from "@/components/upload/UppyGroupedQueueList";
@@ -32,8 +35,6 @@ type UppyUploadPanelExpandedProps<M extends Meta, B extends Body> = {
   batchUiHint: BatchTier | null;
   onAddFiles: (files: File[]) => void;
   queueDestinationChip: string | null;
-  /** Dashboard `note` copy */
-  dashboardNote: string;
 };
 
 export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>({
@@ -49,7 +50,6 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
   batchUiHint,
   onAddFiles,
   queueDestinationChip,
-  dashboardNote,
 }: UppyUploadPanelExpandedProps<M, B>) {
   const columnCount = useUploadPanelColumnCount();
   const { looseFileIds, progressEpoch } = useUploadGridStructure(uppy, sessionGridTier);
@@ -67,6 +67,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-0.5">
       {batchUiHint ? (
         <div
           className="mx-1 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug"
@@ -121,12 +122,6 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
         </label>
       </div>
 
-      {dashboardNote ? (
-        <p className="mx-1 text-[11px] leading-snug text-[var(--bizzi-upload-text-muted)] sm:text-xs">
-          {dashboardNote}
-        </p>
-      ) : null}
-
       <UppyGroupedQueueList
         uppy={uppy}
         bundlesOnly
@@ -141,7 +136,10 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
               panelMetrics.fileGridMax,
               Math.max(
                 panelMetrics.fileGridMin,
-                Math.ceil(looseFileIds.length / columnCount) * UPLOAD_GRID_VIRTUAL_ROW_STRIDE
+                Math.min(
+                  Math.max(1, Math.ceil(looseFileIds.length / columnCount)),
+                  UPLOAD_QUEUE_VISIBLE_ROW_CAP
+                ) * UPLOAD_GRID_VIRTUAL_ROW_STRIDE
               )
             ),
           }}
@@ -156,6 +154,7 @@ export default function UppyUploadPanelExpanded<M extends Meta, B extends Body>(
           />
         </div>
       ) : null}
+      </div>
 
       <div
         className={`bizzi-uppy-dashboard-cloud-vars min-h-0 shrink-0 ${statusBarCloud.className}`.trim()}

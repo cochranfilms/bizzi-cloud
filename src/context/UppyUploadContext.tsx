@@ -32,6 +32,8 @@ export interface OpenPanelOptions {
   scopeLabel?: string | null;
   /** Display name for drive (e.g. "Gallery Media", "RAW") */
   driveName?: string | null;
+  /** Current Storage v2 folder display name when `storageFolderId` is set */
+  storageFolderDisplayName?: string | null;
   /** Folder model v2: parent `storage_folders` id when uploading into a nested folder */
   storageFolderId?: string | null;
   /** Locked Creator RAW session metadata (single destination system) */
@@ -107,6 +109,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>(null);
   const [driveName, setDriveName] = useState<string | null>(null);
+  const [storageFolderDisplayName, setStorageFolderDisplayName] = useState<string | null>(null);
   const [galleryId, setGalleryId] = useState<string | null>(null);
   const [uploadIntent, setUploadIntent] = useState<string | null>(null);
   const [lockedDestination, setLockedDestination] = useState(false);
@@ -209,6 +212,9 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       const incoming = options?.initialFiles;
       if (same && incoming && incoming.length > 0) {
         setPendingFiles((prev) => [...prev, ...incoming]);
+        if (options?.storageFolderDisplayName !== undefined) {
+          setStorageFolderDisplayName(options.storageFolderDisplayName ?? null);
+        }
         if (options && "onUploadComplete" in options) {
           setOnUploadComplete(options.onUploadComplete ?? null);
         }
@@ -236,6 +242,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
       setWorkspaceName(options?.workspaceName ?? null);
       setScopeLabel(options?.scopeLabel ?? null);
       setDriveName(options?.driveName ?? null);
+      setStorageFolderDisplayName(options?.storageFolderDisplayName ?? null);
       setGalleryId(galleryIdOpt);
       setUploadIntent(intent);
       setLockedDestination(locked);
@@ -271,6 +278,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
     setWorkspaceName(null);
     setScopeLabel(null);
     setDriveName(null);
+    setStorageFolderDisplayName(null);
     setGalleryId(null);
     setUploadIntent(null);
     setLockedDestination(false);
@@ -311,6 +319,7 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
           workspaceName={workspaceName}
           scopeLabel={scopeLabel}
           driveName={driveName}
+          storageFolderDisplayName={storageFolderDisplayName}
           galleryId={galleryId}
           uploadIntent={uploadIntent}
           lockedDestination={lockedDestination}

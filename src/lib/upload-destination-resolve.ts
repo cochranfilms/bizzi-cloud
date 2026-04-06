@@ -166,8 +166,18 @@ function teamOwnerFromPath(pathname: string | null): string | null {
   return m?.[1]?.trim() ?? null;
 }
 
-/** Overlay copy must derive only from resolver output (single source of truth). */
-export function getDropOverlayCopy(result: ResolveUploadDestinationResult): {
+export type DropOverlayExtras = {
+  /** Set when uploading into Storage folder model v2 nested folder */
+  storageParentFolderId?: string | null;
+  /** Resolved display name for that folder (from CurrentFolderContext) */
+  storageFolderDisplayName?: string | null;
+};
+
+/** Overlay copy — keep short; nested Storage folders call out the folder name prominently. */
+export function getDropOverlayCopy(
+  result: ResolveUploadDestinationResult,
+  extras?: DropOverlayExtras
+): {
   title: string;
   subtitle: string;
 } {
@@ -180,14 +190,21 @@ export function getDropOverlayCopy(result: ResolveUploadDestinationResult): {
   if (result.destinationMode === "creator_raw" && result.isLocked) {
     return {
       title: "Drop to upload into Creator RAW",
-      subtitle:
-        "Source footage for your creator workflow — stored in RAW. macOS packages keep folder structure when the browser exposes the package as a directory.",
+      subtitle: "Release to add files to your RAW library.",
+    };
+  }
+  if (result.destinationMode === "storage" && extras?.storageParentFolderId) {
+    const folder =
+      extras.storageFolderDisplayName?.trim() || "This folder";
+    return {
+      title: "Upload to Storage folder",
+      subtitle: `Storage Drive: ${folder} — release to open the uploader.`,
     };
   }
   const target = result.driveName || "Storage";
   return {
     title: "Drop files to upload",
-    subtitle: `Destination: ${target}. Release to add them to the uploader. Final Cut (.fcpbundle), Lightroom Library (.lrlibrary), and other macOS packages keep folder structure when supported.`,
+    subtitle: `Destination: ${target}. Release to open the uploader.`,
   };
 }
 

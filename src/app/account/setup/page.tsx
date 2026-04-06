@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 
 type SetupStatus =
   | "loading"
@@ -167,7 +167,7 @@ function AccountSetupContent() {
         href="/"
         className="flex items-center justify-center gap-2 mb-8"
       >
-        <Image src="/logo.png" alt="Bizzi Byte" width={36} height={36} />
+        <BizziLogoMark width={36} height={36} />
         <span className="font-semibold text-xl tracking-tight">
           Bizzi <span className="text-bizzi-blue">Cloud</span>
         </span>
@@ -291,7 +291,7 @@ function SetupFallback() {
         href="/"
         className="flex items-center justify-center gap-2 mb-8"
       >
-        <Image src="/logo.png" alt="Bizzi Byte" width={36} height={36} />
+        <BizziLogoMark width={36} height={36} />
         <span className="font-semibold text-xl tracking-tight">
           Bizzi <span className="text-bizzi-blue">Cloud</span>
         </span>

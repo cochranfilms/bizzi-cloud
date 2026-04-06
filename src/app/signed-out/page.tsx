@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { ArrowRight, CheckCircle2, Shield } from "lucide-react";
 
 export default function SignedOutPage() {
@@ -31,7 +31,7 @@ export default function SignedOutPage() {
             entered ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
           }`}
         >
-          <Image src="/logo.png" alt="Bizzi Cloud" width={40} height={40} className="rounded-lg shadow-sm" />
+          <BizziLogoMark width={40} height={40} className="rounded-lg shadow-sm" alt="Bizzi Cloud" />
           <span className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-xl">
             Bizzi{" "}
             <span className="bg-gradient-to-r from-bizzi-blue to-cyan-500 bg-clip-text text-transparent dark:from-bizzi-cyan dark:to-sky-400">

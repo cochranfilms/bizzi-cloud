@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 const BRAND_LOGOS = [
-  { name: "Bizzi Byte", logo: "/logo.png" },
+  { name: "Bizzi Byte", logo: "/logo.png", logoDark: "/logo-dark.png" },
   { name: "JW FLIX", logo: "/JW-Logo.png" },
   { name: "Mastery United", logo: "/Mastery-United-Logo.png" },
   { name: "Saoirse Leon", logo: "/Saoirse-Leon-Logo.png" },
@@ -34,13 +34,33 @@ export default function TrustedByBrands() {
               className="flex-shrink-0 flex items-center justify-center min-w-[120px]"
             >
               {brand.logo ? (
-                <Image
-                  src={brand.logo}
-                  alt={brand.name}
-                  width={120}
-                  height={40}
-                  className="h-8 md:h-10 w-auto object-contain opacity-70 grayscale hover:opacity-90 hover:grayscale-0 transition-all"
-                />
+                "logoDark" in brand && brand.logoDark ? (
+                  <>
+                    <Image
+                      src={brand.logo}
+                      alt={brand.name}
+                      width={120}
+                      height={40}
+                      className="h-8 md:h-10 w-auto object-contain opacity-70 grayscale hover:opacity-90 hover:grayscale-0 transition-all dark:hidden"
+                    />
+                    <Image
+                      src={brand.logoDark}
+                      alt=""
+                      aria-hidden
+                      width={120}
+                      height={40}
+                      className="hidden h-8 md:h-10 w-auto object-contain opacity-70 grayscale hover:opacity-90 hover:grayscale-0 transition-all dark:block"
+                    />
+                  </>
+                ) : (
+                  <Image
+                    src={brand.logo}
+                    alt={brand.name}
+                    width={120}
+                    height={40}
+                    className="h-8 md:h-10 w-auto object-contain opacity-70 grayscale hover:opacity-90 hover:grayscale-0 transition-all"
+                  />
+                )
               ) : (
                 <span className="text-sm md:text-base font-semibold text-neutral-400 dark:text-neutral-500 whitespace-nowrap tracking-tight">
                   {brand.label ?? brand.name}

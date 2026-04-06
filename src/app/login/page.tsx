@@ -2,8 +2,8 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import {
   getFirebaseAuth,
   isFirebaseConfigured,
@@ -90,7 +90,7 @@ function LoginForm() {
           href="/"
           className="flex items-center justify-center gap-2 mb-8"
         >
-          <Image src="/logo.png" alt="Bizzi Byte" width={36} height={36} />
+          <BizziLogoMark width={36} height={36} />
           <span className="font-semibold text-xl tracking-tight text-neutral-900 dark:text-neutral-100">
             Bizzi <span className="text-bizzi-blue dark:text-bizzi-cyan">Cloud</span>
           </span>

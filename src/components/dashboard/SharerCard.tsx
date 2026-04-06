@@ -53,7 +53,7 @@ function SharerCardListRow({
     <div className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
         {item.type === "folder" ? (
-          <Folder className="h-5 w-5" />
+          <Folder className="h-6 w-6" />
         ) : (
           <File className="h-5 w-5" />
         )}

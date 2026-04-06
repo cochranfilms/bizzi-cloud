@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { Loader2 } from "lucide-react";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import { onAuthStateChanged } from "firebase/auth";
@@ -86,7 +86,7 @@ function InviteTeamInner() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-4 dark:bg-neutral-950">
       <Link href="/" className="mb-8 flex items-center gap-2">
-        <Image src="/logo.png" alt="Bizzi Byte" width={36} height={36} />
+        <BizziLogoMark width={36} height={36} />
         <span className="text-xl font-semibold tracking-tight">
           Bizzi <span className="text-bizzi-blue">Cloud</span>
         </span>

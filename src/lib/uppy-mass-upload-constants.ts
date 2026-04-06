@@ -86,3 +86,12 @@ export const UPLOAD_GRID_GAP = 8;
 
 /** react-window row height: card row + gap below each row. */
 export const UPLOAD_GRID_VIRTUAL_ROW_STRIDE = UPLOAD_GRID_CARD_ROW_HEIGHT + UPLOAD_GRID_GAP;
+
+/**
+ * Max visible rows in the loose-file grid (and similar queue lists) before internal scroll.
+ * Keeps the Uppy status/upload controls from being pushed off-screen.
+ */
+export const UPLOAD_QUEUE_VISIBLE_ROW_CAP = 3;
+
+/** ~3 tall macOS package bundle cards before the bundle list scrolls. */
+export const UPLOAD_BUNDLE_QUEUE_MAX_PX = 380;

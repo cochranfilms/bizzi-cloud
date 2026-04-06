@@ -53,9 +53,22 @@ export function useUppyStatusBarCloudVars<M extends Meta, B extends Body>(
   const [, setTick] = useState(0);
   useEffect(() => {
     const bump = () => setTick((x) => x + 1);
-    uppy.on("state-update", bump);
+    let raf = 0;
+    const scheduleBump = () => {
+      if (typeof window === "undefined") {
+        bump();
+        return;
+      }
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        bump();
+      });
+    };
+    uppy.on("state-update", scheduleBump);
     return () => {
-      uppy.off("state-update", bump);
+      if (raf && typeof window !== "undefined") window.cancelAnimationFrame(raf);
+      uppy.off("state-update", scheduleBump);
     };
   }, [uppy]);
 

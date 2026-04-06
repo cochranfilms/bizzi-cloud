@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useState } from "react";
+import BizziLogoMark from "@/components/BizziLogoMark";
 
 const companyLinks: { href: string; label: string; external?: boolean }[] = [
   { href: "/", label: "Home" },
@@ -45,13 +45,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 sm:gap-12">
           <div className="sm:col-span-2">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <Image
-                src="/logo.png"
-                alt="Bizzi Byte"
-                width={28}
-                height={28}
-                className="object-contain"
-              />
+              <BizziLogoMark width={28} height={28} />
               <span className="font-semibold text-lg text-bizzi-navy dark:text-sky-100">
                 Bizzi <span className="text-bizzi-blue dark:text-bizzi-cyan">Cloud</span>
               </span>

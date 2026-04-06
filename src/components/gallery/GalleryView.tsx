@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties }
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import {
   Lock,
   Mail,
@@ -2562,12 +2563,11 @@ export default function GalleryView({ galleryId }: { galleryId: string }) {
               heroVisualActive ? "text-white" : isDarkBg ? "text-white" : "text-neutral-900"
             }`}
           >
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
+            <BizziLogoMark
               width={24}
               height={24}
-              className="object-contain"
+              alt="Bizzi Cloud"
+              forceDarkAppearance={isDarkBg}
             />
             <span className="text-base font-semibold tracking-tight">
               {gallery.branding.business_name || "Bizzi"}

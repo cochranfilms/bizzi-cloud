@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
@@ -158,13 +158,7 @@ export default function DesktopTopNavbar({
             onClick={() => setMobileOpen(false)}
             aria-label="Bizzi Cloud home"
           >
-            <Image
-              src="/logo.png"
-              alt="Bizzi Byte"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
+            <BizziLogoMark width={24} height={24} />
           </Link>
         </div>
 

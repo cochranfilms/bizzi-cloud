@@ -45,7 +45,21 @@ export function useUploadGridStructure<M extends Meta, B extends Body>(
     }
     bumpStructure();
 
-    const onStructure = () => bumpStructure();
+    /** Coalesce burst `file-added` events to one React commit per frame (multi-select / folder drops). */
+    let structRaf = 0;
+    const scheduleStructure = () => {
+      if (typeof window === "undefined") {
+        bumpStructure();
+        return;
+      }
+      if (structRaf) return;
+      structRaf = window.requestAnimationFrame(() => {
+        structRaf = 0;
+        bumpStructure();
+      });
+    };
+
+    const onStructure = () => scheduleStructure();
     uppy.on("file-added", onStructure);
     uppy.on("file-removed", onStructure);
     uppy.on("files-added", onStructure);
@@ -75,6 +89,10 @@ export function useUploadGridStructure<M extends Meta, B extends Body>(
     uppy.on("complete", flushProgress);
 
     return () => {
+      if (structRaf && typeof window !== "undefined") {
+        window.cancelAnimationFrame(structRaf);
+        structRaf = 0;
+      }
       uppy.off("file-added", onStructure);
       uppy.off("file-removed", onStructure);
       uppy.off("files-added", onStructure);

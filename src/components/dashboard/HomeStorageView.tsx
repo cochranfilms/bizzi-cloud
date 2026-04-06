@@ -140,6 +140,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     setCurrentDrive: setCurrentFolderDriveId,
     setCurrentDrivePath,
     setStorageParentFolderId,
+    setStorageUploadFolderLabel,
   } = useCurrentFolder();
   const {
     viewMode,
@@ -160,6 +161,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   } | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
+  /** Bizzi Cloud Folders: brief pulse on the row/card that opened the inline Storage viewer. */
+  const [homeBizziFolderOpenPulseKey, setHomeBizziFolderOpenPulseKey] = useState<string | null>(null);
+  /** Inline Storage panel: subtle border peek after scroll. */
+  const [homeInlineStoragePeek, setHomeInlineStoragePeek] = useState(false);
   /** Embedded Home Storage FileGrid bulk selection — parent must not show a second BulkActionBar. */
   const [embeddedStorageBulk, setEmbeddedStorageBulk] = useState({ files: 0, folders: 0 });
   const [dragState, setDragState] = useState<{
@@ -170,6 +175,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     currentY: number;
   } | null>(null);
   const gridSectionRef = useRef<HTMLDivElement | null>(null);
+  const homeInlineStorageSectionRef = useRef<HTMLElement | null>(null);
+  const homeBizziFolderPulseTimerRef = useRef<number | null>(null);
+  const homeInlineStoragePeekTimerRef = useRef<number | null>(null);
+  const homeScrollToStorageTimerRef = useRef<number | null>(null);
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const { confirm } = useConfirm();
   const { downloadMacosPackageZip } = useBulkDownload({ fetchFilesByIds });
@@ -629,6 +638,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setCurrentFolderDriveId(driveId);
       setCurrentDrivePath(normalizedPath);
       setStorageParentFolderId(null);
+      setStorageUploadFolderLabel(null);
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("drive", driveId);
       if (normalizedPath) sp.set("path", normalizedPath);
@@ -637,7 +647,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       const q = sp.toString();
       router.replace(`${pathname}?${q}`, { scroll: false });
     },
-    [pathname, router, searchParams, setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]
+    [
+      pathname,
+      router,
+      searchParams,
+      setCurrentFolderDriveId,
+      setCurrentDrivePath,
+      setStorageParentFolderId,
+      setStorageUploadFolderLabel,
+    ]
   );
 
   const openFolderFromPin = useCallback(
@@ -648,6 +666,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         setCurrentFolderDriveId(item.driveId);
         setCurrentDrivePath("");
         setStorageParentFolderId(item.storageFolderId);
+        setStorageUploadFolderLabel(item.name?.trim() || null);
         const sp = new URLSearchParams(searchParams.toString());
         sp.set("drive", item.driveId);
         sp.set("folder", item.storageFolderId);
@@ -666,12 +685,39 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       setCurrentFolderDriveId,
       setCurrentDrivePath,
       setStorageParentFolderId,
+      setStorageUploadFolderLabel,
     ]
   );
+
+  const focusHomeInlineStorageViewer = useCallback(() => {
+    const el = homeInlineStorageSectionRef.current;
+    if (!el || typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setHomeInlineStoragePeek(true);
+      if (homeInlineStoragePeekTimerRef.current) {
+        clearTimeout(homeInlineStoragePeekTimerRef.current);
+      }
+      homeInlineStoragePeekTimerRef.current = window.setTimeout(() => {
+        homeInlineStoragePeekTimerRef.current = null;
+        setHomeInlineStoragePeek(false);
+      }, 900);
+    });
+  }, []);
 
   const openBizziCloudFolderItem = useCallback(
     (item: FolderItem) => {
       if (!item.driveId) return;
+
+      setHomeBizziFolderOpenPulseKey(item.key);
+      if (homeBizziFolderPulseTimerRef.current) {
+        clearTimeout(homeBizziFolderPulseTimerRef.current);
+      }
+      homeBizziFolderPulseTimerRef.current = window.setTimeout(() => {
+        homeBizziFolderPulseTimerRef.current = null;
+        setHomeBizziFolderOpenPulseKey(null);
+      }, 480);
+
       const ld = linkedDrives.find((d) => d.id === item.driveId);
       if (
         ld?.consolidated_into_storage_folder_id &&
@@ -684,16 +730,30 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           pathPrefix: undefined,
           virtualFolder: false,
         });
-        return;
-      }
-      if (item.storageFolderId) {
+      } else if (item.storageFolderId) {
         openFolderFromPin(item);
-        return;
+      } else {
+        openDrive(item.driveId, item.name, item.pathPrefix ?? "");
       }
-      openDrive(item.driveId, item.name, item.pathPrefix ?? "");
+
+      if (homeScrollToStorageTimerRef.current) {
+        clearTimeout(homeScrollToStorageTimerRef.current);
+      }
+      homeScrollToStorageTimerRef.current = window.setTimeout(() => {
+        homeScrollToStorageTimerRef.current = null;
+        focusHomeInlineStorageViewer();
+      }, 200);
     },
-    [linkedDrives, openDrive, openFolderFromPin]
+    [linkedDrives, openDrive, openFolderFromPin, focusHomeInlineStorageViewer]
   );
+
+  useEffect(() => {
+    return () => {
+      if (homeBizziFolderPulseTimerRef.current) clearTimeout(homeBizziFolderPulseTimerRef.current);
+      if (homeInlineStoragePeekTimerRef.current) clearTimeout(homeInlineStoragePeekTimerRef.current);
+      if (homeScrollToStorageTimerRef.current) clearTimeout(homeScrollToStorageTimerRef.current);
+    };
+  }, []);
 
   const afterStorageMigrationMutate = useCallback(() => {
     bumpStorageVersion();
@@ -1376,9 +1436,17 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
       {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
         linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
-        <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
+        <section
+          ref={homeInlineStorageSectionRef}
+          id="home-inline-storage-viewer"
+          className="scroll-mt-24 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:scroll-mt-28 sm:py-6"
+        >
           <SectionTitle className="mb-3 sm:mb-4">Storage</SectionTitle>
-          <div className="mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
+          <div
+            className={`mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30 ${
+              homeInlineStoragePeek ? "home-inline-storage-open-peek" : ""
+            }`.trim()}
+          >
             <HomeEmbeddedStorageGrid
               embeddedHomeStorage
               onEmbeddedBulkSelectionChange={onEmbeddedBulkSelectionChange}
@@ -1629,6 +1697,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         item={item}
                         displayContext={storageDisplayContext}
                         revealFadeIn
+                        rowExtraClassName={
+                          homeBizziFolderOpenPulseKey === item.key
+                            ? "home-bizzi-folder-row-open-pulse"
+                            : ""
+                        }
                         onClick={() => openBizziCloudFolderItem(item)}
                         onDelete={
                           !item.preventDelete &&
@@ -1687,7 +1760,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   data-item-key={item.key}
                   draggable={canDragFolder}
                   onDragStart={handleDragStart}
-                  className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
+                  className={
+                    [
+                      canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
+                      homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
                 >
                   <FolderCard
                     item={item}

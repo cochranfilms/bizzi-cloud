@@ -263,7 +263,7 @@ function TreeRows({
               : "hover:bg-white dark:hover:bg-neutral-800"
           } ${!selectable ? "cursor-not-allowed" : ""}`}
         >
-          <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <Folder className="h-6 w-6 shrink-0 text-amber-600 dark:text-amber-400" />
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium text-neutral-900 dark:text-white">{rowLabel}</div>
             {node.id === null ? (

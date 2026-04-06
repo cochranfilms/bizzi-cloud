@@ -223,6 +223,7 @@ export default function FileGrid({
     setCurrentDrivePath,
     storageParentFolderId,
     setStorageParentFolderId,
+    setStorageUploadFolderLabel,
     effectiveDriveIdForFiles,
   } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
@@ -885,6 +886,7 @@ export default function FileGrid({
   const navigateIntoStorageSubfolder = useCallback(
     (item: FolderItem) => {
       if (!item.storageFolderId || !currentDrive) return;
+      setStorageUploadFolderLabel(item.name?.trim() || null);
       setCurrentDrivePath("");
       setStorageContextFolderVersion(
         item.storageFolderVersion != null && Number.isFinite(item.storageFolderVersion)
@@ -901,7 +903,7 @@ export default function FileGrid({
       router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
       /** Single load: URL sync effect applies `folder=` and calls loadDriveFiles (avoid duplicate with explicit load). */
     },
-    [currentDrive, searchParams, pathname, router, setCurrentDrivePath]
+    [currentDrive, searchParams, pathname, router, setCurrentDrivePath, setStorageUploadFolderLabel]
   );
 
   const closeDrive = useCallback(() => {
@@ -909,6 +911,7 @@ export default function FileGrid({
     setCurrentDrive(null);
     setCurrentDrivePath("");
     setStorageParentFolderId(null);
+    setStorageUploadFolderLabel(null);
     setDriveFiles([]);
     setV2StorageSubfolders([]);
     setV2FolderBreadcrumb("");
@@ -921,7 +924,12 @@ export default function FileGrid({
     setStoragePathMoveOpen(false);
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
-  }, [setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]);
+  }, [
+    setCurrentFolderDriveId,
+    setCurrentDrivePath,
+    setStorageParentFolderId,
+    setStorageUploadFolderLabel,
+  ]);
 
   const clearFlatFilesUrlAndDrive = useCallback(() => {
     closeDrive();
@@ -1010,6 +1018,7 @@ export default function FileGrid({
       await fetchDrives();
       setCurrentDrivePath("");
       setStorageParentFolderId(null);
+      setStorageUploadFolderLabel(null);
       setStorageContextFolderVersion(null);
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("drive", currentDrive.id);
@@ -1031,6 +1040,7 @@ export default function FileGrid({
     searchParams,
     setCurrentDrivePath,
     setStorageParentFolderId,
+    setStorageUploadFolderLabel,
   ]);
 
   const storagePathMenuLabel = useMemo(() => {
@@ -1089,6 +1099,7 @@ export default function FileGrid({
   useEffect(() => {
     if (!isStorageV2FolderBrowse || !storageParentFolderId || !currentDrive) {
       setV2FolderBreadcrumb("");
+      setStorageUploadFolderLabel(null);
       return;
     }
     let cancelled = false;
@@ -1109,15 +1120,30 @@ export default function FileGrid({
           .map((x) => x.name)
           .filter(Boolean)
           .join(" / ");
-        if (!cancelled) setV2FolderBreadcrumb(label);
+        if (!cancelled) {
+          setV2FolderBreadcrumb(label);
+          const names = list.map((x) => x.name).filter(Boolean);
+          setStorageUploadFolderLabel(
+            names.length > 0 ? names[names.length - 1]! : null
+          );
+        }
       } catch {
-        if (!cancelled) setV2FolderBreadcrumb("");
+        if (!cancelled) {
+          setV2FolderBreadcrumb("");
+          setStorageUploadFolderLabel(null);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isStorageV2FolderBrowse, storageParentFolderId, currentDrive, storageVersion]);
+  }, [
+    isStorageV2FolderBrowse,
+    storageParentFolderId,
+    currentDrive,
+    storageVersion,
+    setStorageUploadFolderLabel,
+  ]);
 
   const { subfolderItems, displayedFiles } = useMemo(() => {
     if (!currentDrive) {
@@ -2139,7 +2165,7 @@ export default function FileGrid({
       ref={gridSectionRef}
       className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
         embeddedHomeStorage || filesPageStorageEmbeddedChrome || threeTabFilesLanding
-          ? " h-full min-h-0 pl-4 pr-3 sm:pl-6 sm:pr-4"
+          ? " h-full min-h-0 pl-4 pr-4 sm:pl-6 sm:pr-6 md:pr-7"
           : ""
       }`}
       data-selectable-grid

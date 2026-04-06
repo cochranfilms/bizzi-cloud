@@ -124,6 +124,8 @@ interface UppyUploadModalProps {
   workspaceName?: string | null;
   scopeLabel?: string | null;
   driveName?: string | null;
+  /** Nested Storage v2 folder label for destination UX */
+  storageFolderDisplayName?: string | null;
   galleryId?: string | null;
   uploadIntent?: string | null;
   lockedDestination?: boolean;
@@ -150,6 +152,7 @@ export default function UppyUploadModal({
   workspaceName = null,
   scopeLabel = null,
   driveName = null,
+  storageFolderDisplayName = null,
   galleryId = null,
   uploadIntent = null,
   lockedDestination = false,
@@ -199,6 +202,8 @@ export default function UppyUploadModal({
   const [sessionGridTier, setSessionGridTier] = useState<BatchTier>("normal");
 
   const previewPolicyRef = useRef<BatchTier>("normal");
+  /** True while a multi-file chunked ingest runs — defers thumbnail work so the queue stays responsive. */
+  const ingestDeferPreviewsRef = useRef(false);
   const sessionGridTierRef = useRef<BatchTier>("normal");
   const ingestAbortRef = useRef<AbortController | null>(null);
   const runChunkedAddRef = useRef<(files: File[]) => Promise<void>>(async () => {});
@@ -422,23 +427,29 @@ export default function UppyUploadModal({
         queueMicrotask(() => setIngestPhase("adding"));
         const ac = new AbortController();
         ingestAbortRef.current = ac;
+        const deferPreviews = incoming.length >= 6;
+        ingestDeferPreviewsRef.current = deferPreviews;
         const toDescriptors = (slice: File[]) =>
           slice.map((f) => {
             const rel = f.webkitRelativePath?.trim() || "";
             return { name: rel || f.name, data: f };
           });
-        await runChunkedIngest({
-          uppy,
-          files: incoming,
-          toDescriptors,
-          batchTier: tier,
-          signal: ac.signal,
-          debug: massDebug,
-          onProgress: (a, t) => {
-            setIngestAdded(a);
-            setIngestTotal(t);
-          },
-        });
+        try {
+          await runChunkedIngest({
+            uppy,
+            files: incoming,
+            toDescriptors,
+            batchTier: tier,
+            signal: ac.signal,
+            debug: massDebug,
+            onProgress: (a, t) => {
+              setIngestAdded(a);
+              setIngestTotal(t);
+            },
+          });
+        } finally {
+          ingestDeferPreviewsRef.current = false;
+        }
         setIngestPhase("idle");
         setIngestTotal(0);
         setIngestAdded(0);
@@ -516,7 +527,11 @@ export default function UppyUploadModal({
       if (fileData && !isMacosPackageMember) {
         const tier = previewPolicyRef.current;
         const mode =
-          tier === "extreme" ? "skip" : tier === "large" ? "idle" : "eager";
+          tier === "extreme"
+            ? "skip"
+            : tier === "large" || ingestDeferPreviewsRef.current
+              ? "idle"
+              : "eager";
         void attachUppyLocalPreview(
           (preview) => {
             uppy.setFileState(file.id, { preview });
@@ -996,12 +1011,44 @@ export default function UppyUploadModal({
                 Some files failed. Your other files are still uploading.
               </p>
             ) : null}
-            {(workspaceName || scopeLabel || driveName) && (
-              <div className="bizzi-upload-panel-meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] sm:gap-x-4 sm:text-xs">
-                {driveName && (
-                  <span>
-                    Drive: <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
-                  </span>
+            {(workspaceName ||
+              scopeLabel ||
+              driveName ||
+              (destinationMode === "storage" && !galleryId)) && (
+              <div className="bizzi-upload-panel-meta mt-2 flex w-full min-w-0 flex-col gap-2 text-[11px] sm:text-xs">
+                {destinationMode === "storage" && !galleryId ? (
+                  <div
+                    className="w-full min-w-0 rounded-xl border px-3 py-2.5 sm:px-3.5 sm:py-3"
+                    style={{
+                      borderColor: "var(--bizzi-upload-border-subtle)",
+                      backgroundColor:
+                        "color-mix(in srgb, var(--bizzi-uppy-primary) 12%, transparent)",
+                      boxShadow: "inset 0 1px 0 0 color-mix(in srgb, var(--bizzi-uppy-primary) 18%, transparent)",
+                    }}
+                  >
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--bizzi-upload-text-muted)]">
+                      Storage Drive
+                    </span>
+                    <p
+                      className="mt-1 truncate text-[0.9375rem] font-semibold leading-tight text-[var(--bizzi-upload-text)] sm:text-base"
+                      title={
+                        storageFolderId
+                          ? (storageFolderDisplayName?.trim() || "Folder")
+                          : (driveName ?? "Storage")
+                      }
+                    >
+                      {storageFolderId
+                        ? (storageFolderDisplayName?.trim() || "Selected folder")
+                        : (driveName || "Storage")}
+                    </p>
+                  </div>
+                ) : (
+                  driveName && (
+                    <span>
+                      Drive:{" "}
+                      <strong className="font-semibold text-[var(--bizzi-upload-text)]">{driveName}</strong>
+                    </span>
+                  )
                 )}
                 {workspaceName && (
                   <span>
@@ -1011,7 +1058,8 @@ export default function UppyUploadModal({
                 )}
                 {scopeLabel && (
                   <span>
-                    Visibility: <strong className="font-semibold text-[var(--bizzi-upload-text)]">{scopeLabel}</strong>
+                    Visibility:{" "}
+                    <strong className="font-semibold text-[var(--bizzi-upload-text)]">{scopeLabel}</strong>
                   </span>
                 )}
               </div>
@@ -1055,7 +1103,7 @@ export default function UppyUploadModal({
       {/* Expanded: Uppy Dashboard */}
       {expanded && ready && uppyRef.current && (
         <div
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           style={{ borderTop: "1px solid var(--bizzi-upload-divider)" }}
         >
           {macosPackageWarning && (
@@ -1079,9 +1127,10 @@ export default function UppyUploadModal({
               queueDestinationChip={
                 destinationMode === "creator_raw" && lockedDestination
                   ? (targetDriveName || driveName || "RAW").trim()
-                  : null
+                  : destinationMode === "storage" && storageFolderId
+                    ? (storageFolderDisplayName?.trim() || "Folder")
+                    : null
               }
-              dashboardNote="macOS libraries (.lrlibrary, .fcpbundle, …) keep folder structure when you drop them anywhere on the window, or use Add folder and pick the library folder (not only Add files)."
             />
           </div>
         </div>

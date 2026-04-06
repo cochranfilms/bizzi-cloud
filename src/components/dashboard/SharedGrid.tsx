@@ -460,7 +460,7 @@ export default function SharedGrid() {
                         >
                           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
                             {item.type === "folder" ? (
-                              <Folder className="h-5 w-5" />
+                              <Folder className="h-7 w-7" />
                             ) : (
                               <File className="h-5 w-5" />
                             )}

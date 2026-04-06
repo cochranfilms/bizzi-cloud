@@ -1,18 +1,12 @@
 import Link from "next/link";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 
 export default function BrandContinuity() {
   return (
     <section className="py-20 md:py-28 px-6">
       <div className="max-w-3xl mx-auto text-center">
         <div className="flex justify-center mb-6">
-          <Image
-            src="/logo.png"
-            alt="Bizzi Byte"
-            width={48}
-            height={48}
-            className="object-contain"
-          />
+          <BizziLogoMark width={48} height={48} />
         </div>
         <h2 className="text-2xl md:text-3xl font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
           From Bizzi Byte

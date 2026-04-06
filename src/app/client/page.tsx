@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { Images, Loader2, Mail } from "lucide-react";
 import { useGalleryThumbnail } from "@/hooks/useGalleryThumbnail";
 import { useInView } from "@/hooks/useInView";
@@ -228,13 +228,7 @@ function ClientPortalContent() {
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
-              width={28}
-              height={28}
-              className="object-contain"
-            />
+            <BizziLogoMark width={28} height={28} alt="Bizzi Cloud" />
             <span className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
               My Galleries
             </span>

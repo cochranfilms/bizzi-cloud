@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
@@ -95,13 +95,7 @@ export default function AdminSidebar({
       <div className="flex h-14 min-w-0 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
         {!collapsed && (
           <Link href="/admin" className="flex min-w-0 items-center gap-2" onClick={onMobileClose}>
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
-              width={24}
-              height={24}
-              className="flex-shrink-0 object-contain"
-            />
+            <BizziLogoMark width={24} height={24} className="flex-shrink-0" alt="Bizzi Cloud" />
             <span className="truncate font-semibold text-neutral-900 dark:text-white">
               Admin
             </span>

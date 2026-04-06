@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { usePathname } from "next/navigation";
 import {
   Home,
@@ -53,13 +53,7 @@ export default function Sidebar() {
       {/* Logo + search */}
       <div className="flex flex-col gap-3 border-b border-neutral-200 p-4 dark:border-neutral-800">
         <Link href="/" className="flex items-center gap-2">
-          <Image
-            src="/logo.png"
-            alt="Bizzi Byte"
-            width={28}
-            height={28}
-            className="object-contain"
-          />
+          <BizziLogoMark width={28} height={28} />
           <span className="font-semibold text-lg tracking-tight text-neutral-900 dark:text-white">
             Bizzi <span className="text-bizzi-blue">Cloud</span>
           </span>

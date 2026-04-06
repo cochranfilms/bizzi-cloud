@@ -5,6 +5,7 @@ import type { Uppy } from "@uppy/core";
 import type { UppyFile, Meta, Body } from "@uppy/core";
 import { Archive, FileIcon, X, RotateCcw } from "lucide-react";
 import { packageKindDisplayLabel } from "@/lib/macos-package-bundles";
+import { UPLOAD_BUNDLE_QUEUE_MAX_PX } from "@/lib/uppy-mass-upload-constants";
 import { revokeUppyPreview } from "@/lib/uppy-local-preview";
 import { resolveCreativeProjectTile } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
@@ -57,6 +58,18 @@ export function useUppyFileListThrottled<M extends Meta, B extends Body>(
   useEffect(() => {
     if (!uppy) return;
     const bump = () => setV((x) => x + 1);
+    let listRaf = 0;
+    const scheduleListBump = () => {
+      if (typeof window === "undefined") {
+        bump();
+        return;
+      }
+      if (listRaf) return;
+      listRaf = window.requestAnimationFrame(() => {
+        listRaf = 0;
+        bump();
+      });
+    };
     let progTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleProg = () => {
       if (progTimer != null) return;
@@ -65,20 +78,24 @@ export function useUppyFileListThrottled<M extends Meta, B extends Body>(
         bump();
       }, progressThrottleMs);
     };
-    uppy.on("file-added", bump);
-    uppy.on("file-removed", bump);
-    uppy.on("files-added", bump);
-    uppy.on("upload-success", bump);
-    uppy.on("upload-error", bump);
-    uppy.on("complete", bump);
+    uppy.on("file-added", scheduleListBump);
+    uppy.on("file-removed", scheduleListBump);
+    uppy.on("files-added", scheduleListBump);
+    uppy.on("upload-success", scheduleListBump);
+    uppy.on("upload-error", scheduleListBump);
+    uppy.on("complete", scheduleListBump);
     uppy.on("upload-progress", scheduleProg);
     return () => {
-      uppy.off("file-added", bump);
-      uppy.off("file-removed", bump);
-      uppy.off("files-added", bump);
-      uppy.off("upload-success", bump);
-      uppy.off("upload-error", bump);
-      uppy.off("complete", bump);
+      if (listRaf && typeof window !== "undefined") {
+        window.cancelAnimationFrame(listRaf);
+        listRaf = 0;
+      }
+      uppy.off("file-added", scheduleListBump);
+      uppy.off("file-removed", scheduleListBump);
+      uppy.off("files-added", scheduleListBump);
+      uppy.off("upload-success", scheduleListBump);
+      uppy.off("upload-error", scheduleListBump);
+      uppy.off("complete", scheduleListBump);
       uppy.off("upload-progress", scheduleProg);
       if (progTimer != null) clearTimeout(progTimer);
     };
@@ -94,19 +111,35 @@ export function useUppyFileListStructureOnly<M extends Meta, B extends Body>(
   useEffect(() => {
     if (!uppy) return;
     const bump = () => setV((x) => x + 1);
-    uppy.on("file-added", bump);
-    uppy.on("file-removed", bump);
-    uppy.on("files-added", bump);
-    uppy.on("upload-success", bump);
-    uppy.on("upload-error", bump);
-    uppy.on("complete", bump);
+    let listRaf = 0;
+    const scheduleListBump = () => {
+      if (typeof window === "undefined") {
+        bump();
+        return;
+      }
+      if (listRaf) return;
+      listRaf = window.requestAnimationFrame(() => {
+        listRaf = 0;
+        bump();
+      });
+    };
+    uppy.on("file-added", scheduleListBump);
+    uppy.on("file-removed", scheduleListBump);
+    uppy.on("files-added", scheduleListBump);
+    uppy.on("upload-success", scheduleListBump);
+    uppy.on("upload-error", scheduleListBump);
+    uppy.on("complete", scheduleListBump);
     return () => {
-      uppy.off("file-added", bump);
-      uppy.off("file-removed", bump);
-      uppy.off("files-added", bump);
-      uppy.off("upload-success", bump);
-      uppy.off("upload-error", bump);
-      uppy.off("complete", bump);
+      if (listRaf && typeof window !== "undefined") {
+        window.cancelAnimationFrame(listRaf);
+        listRaf = 0;
+      }
+      uppy.off("file-added", scheduleListBump);
+      uppy.off("file-removed", scheduleListBump);
+      uppy.off("files-added", scheduleListBump);
+      uppy.off("upload-success", scheduleListBump);
+      uppy.off("upload-error", scheduleListBump);
+      uppy.off("complete", scheduleListBump);
     };
   }, [uppy]);
   return uppy?.getFiles() ?? [];
@@ -237,11 +270,19 @@ export default function UppyGroupedQueueList<M extends Meta, B extends Body>({
   };
 
   const outerClass = bundlesOnly
-    ? `space-y-2.5 px-1 pb-0.5 pt-2 ${listClassName}`.trim()
+    ? `space-y-2.5 overflow-y-auto overscroll-contain px-1 pb-0.5 pt-2 ${listClassName}`.trim()
     : `max-h-[280px] space-y-3 overflow-y-auto px-3 pb-3 ${listClassName}`.trim();
 
   return (
-    <div className={outerClass} aria-label={bundlesOnly ? "Package uploads" : "Upload queue"}>
+    <div
+      className={outerClass}
+      style={
+        bundlesOnly
+          ? { maxHeight: `min(${UPLOAD_BUNDLE_QUEUE_MAX_PX}px, 45dvh)` }
+          : undefined
+      }
+      aria-label={bundlesOnly ? "Package uploads" : "Upload queue"}
+    >
       {bundleGroups.map((g) => {
         const label = packageKindDisplayLabel(g.kind);
         const displayName = g.root.split("/").filter(Boolean).pop() ?? g.root;

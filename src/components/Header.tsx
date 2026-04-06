@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -79,12 +79,10 @@ export default function Header({ variant = "default" }: HeaderProps) {
               isLandingIntegrated ? "h-10 w-10 sm:h-11 sm:w-11" : "h-9 w-9"
             }`}
           >
-            <Image
-              src="/logo.png"
-              alt=""
+            <BizziLogoMark
               width={isLandingIntegrated ? 24 : 22}
               height={isLandingIntegrated ? 24 : 22}
-              className="object-contain"
+              alt=""
             />
           </span>
           <span className="hidden min-[400px]:inline font-semibold text-sm sm:text-base tracking-tight text-bizzi-navy dark:text-sky-100">

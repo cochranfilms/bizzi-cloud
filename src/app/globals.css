@@ -246,3 +246,115 @@
     }
   }
 }
+
+/* Home: opening a folder from “Bizzi Cloud Folders” — quick feedback + inline Storage target */
+@keyframes bizzi-home-folder-card-open-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(14 165 233 / 0);
+  }
+  45% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 3px rgb(14 165 233 / 0.32);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(14 165 233 / 0);
+  }
+}
+
+@keyframes bizzi-home-folder-row-open-pulse {
+  0% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgb(14 165 233 / 0.12);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes bizzi-home-inline-storage-peek {
+  0% {
+    box-shadow:
+      0 0 0 0 rgb(14 165 233 / 0),
+      0 10px 15px -3px rgb(0 0 0 / 0.08);
+  }
+  40% {
+    box-shadow:
+      0 0 0 3px rgb(14 165 233 / 0.28),
+      0 12px 28px -6px rgb(14 165 233 / 0.12);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(14 165 233 / 0),
+      0 10px 15px -3px rgb(0 0 0 / 0.08);
+  }
+}
+
+@layer utilities {
+  .home-bizzi-folder-card-open-pulse {
+    animation: bizzi-home-folder-card-open-pulse 0.45s ease-out;
+  }
+  .home-bizzi-folder-row-open-pulse {
+    animation: bizzi-home-folder-row-open-pulse 0.45s ease-out;
+  }
+  .home-inline-storage-open-peek {
+    animation: bizzi-home-inline-storage-peek 0.85s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .home-bizzi-folder-card-open-pulse,
+    .home-bizzi-folder-row-open-pulse,
+    .home-inline-storage-open-peek {
+      animation: none !important;
+    }
+  }
+}
+
+/*
+ * Home embedded Storage (FileGrid): wider, higher-contrast scrollbar vs the page scroll bar,
+ * so users can tell “this pane scrolls” vs scrolling the whole dashboard.
+ */
+[data-embedded-home-storage="true"] [data-scroll-container] {
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: rgb(100 116 139 / 0.65) rgb(241 245 249 / 0.85);
+}
+
+.dark [data-embedded-home-storage="true"] [data-scroll-container] {
+  scrollbar-color: rgb(148 163 184 / 0.55) rgb(38 38 38 / 0.9);
+}
+
+[data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar {
+  width: 11px;
+}
+
+[data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-track {
+  margin: 6px 0;
+  background: rgb(15 23 42 / 0.06);
+  border-radius: 9999px;
+}
+
+.dark [data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-track {
+  background: rgb(255 255 255 / 0.07);
+}
+
+[data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: rgb(100 116 139 / 0.55);
+}
+
+[data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(14 165 233 / 0.65);
+}
+
+.dark [data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-thumb {
+  background-color: rgb(148 163 184 / 0.45);
+}
+
+.dark [data-embedded-home-storage="true"] [data-scroll-container]::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(56 189 248 / 0.55);
+}

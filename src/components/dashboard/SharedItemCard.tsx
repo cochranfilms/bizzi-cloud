@@ -136,7 +136,7 @@ export default function SharedItemCard({
     <>
       <div className="mb-3 flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
         {item.type === "folder" ? (
-          <Folder className="h-8 w-8 shrink-0" aria-hidden />
+          <Folder className="h-10 w-10 shrink-0" aria-hidden />
         ) : (
           <File className="h-8 w-8 shrink-0" aria-hidden />
         )}

@@ -71,12 +71,12 @@ service cloud.firestore {
       function storageFolderDrive() {
         return get(/databases/$(database)/documents/linked_drives/$(resource.data.linked_drive_id));
       }
+      /** Match backup_files visibility: owner, org seat (any role), team seat, or legacy org-admin-only parity for reads on nested rows. */
       function storageFolderDriveReadable() {
         let drive = storageFolderDrive();
         return request.auth.uid == drive.data.userId
           || (drive.data.organization_id is string
-            && exists(/databases/$(database)/documents/organization_seats/$(drive.data.organization_id + '_' + request.auth.uid))
-            && get(/databases/$(database)/documents/organization_seats/$(drive.data.organization_id + '_' + request.auth.uid)).data.role == 'admin')
+            && exists(/databases/$(database)/documents/organization_seats/$(drive.data.organization_id + '_' + request.auth.uid)))
           || (drive.data.organization_id == null
             && drive.data.personal_team_owner_id == drive.data.userId
             && drive.data.userId is string

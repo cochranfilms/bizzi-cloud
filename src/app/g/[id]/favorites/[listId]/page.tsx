@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import BizziLogoMark from "@/components/BizziLogoMark";
 import {
   Lock,
   Download,
@@ -269,13 +269,7 @@ export default function FavoritesListPage() {
             href={`/g/${galleryId}${password ? `?password=${encodeURIComponent(password)}` : ""}`}
             className={`flex items-center gap-2 ${isDarkBg ? "text-white" : "text-neutral-900 dark:text-white"}`}
           >
-            <Image
-              src="/logo.png"
-              alt="Bizzi Cloud"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
+            <BizziLogoMark width={24} height={24} alt="Bizzi Cloud" forceDarkAppearance={isDarkBg} />
             <span className="text-base font-semibold tracking-tight">
               {branding.business_name || "Gallery"}
             </span>

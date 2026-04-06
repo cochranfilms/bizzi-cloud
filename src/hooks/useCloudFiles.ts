@@ -447,6 +447,15 @@ export interface DeletedStorageFolder {
   version: number;
 }
 
+/** Contents of one trashed Storage v2 folder (drill-down inside Deleted). */
+export interface TrashedStorageFolderContents {
+  /** Topmost trashed ancestor → current folder (inclusive). */
+  path: Array<{ id: string; name: string }>;
+  current: DeletedStorageFolder;
+  subfolders: DeletedStorageFolder[];
+  files: RecentFile[];
+}
+
 export type ProxyStatus =
   | "none"
   | "pending"
@@ -1655,6 +1664,190 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]
   );
 
+  const fetchTrashedStorageFolderContents = useCallback(
+    async (folderId: string): Promise<TrashedStorageFolderContents | null> => {
+      if (!isFirebaseConfigured() || !user || !folderId) return null;
+      const db = getFirebaseFirestore();
+      const folderRef = doc(db, COLLECTION_STORAGE_FOLDERS, folderId);
+      const folderSnap = await getDoc(folderRef);
+      if (!folderSnap.exists()) return null;
+      const rootData = folderSnap.data()!;
+      if (rootData.lifecycle_state !== BACKUP_LIFECYCLE_TRASHED) return null;
+      const driveId = String(rootData.linked_drive_id ?? "");
+      if (!driveId) return null;
+      const scoped = filterScopedLinkedDrives(linkedDrives, {
+        isEnterpriseContext,
+        orgId,
+        creatorOnly,
+        teamRouteOwnerUid,
+      });
+      const drive = scoped.find((d) => d.id === driveId);
+      if (!drive) return null;
+
+      const folderSnaps = await getDocs(trashedStorageFoldersClientQuery(db, drive));
+      const folderDocs = folderSnaps.docs;
+      const byId = new Map(folderDocs.map((d) => [d.id, d]));
+      if (!byId.has(folderId)) return null;
+
+      const path: Array<{ id: string; name: string }> = [];
+      let cur: string | null = folderId;
+      while (cur) {
+        const pathDoc = byId.get(cur);
+        if (!pathDoc) break;
+        path.unshift({
+          id: cur,
+          name: (pathDoc.data().name as string) ?? "Folder",
+        });
+        const pid = (pathDoc.data().parent_folder_id as string | null | undefined) ?? null;
+        cur = pid && byId.has(pid) ? pid : null;
+      }
+
+      const deletedAtLowerInner = Timestamp.fromMillis(0);
+      const fileSnap = await getDocs(
+        drive.organization_id
+          ? query(
+              collection(db, "backup_files"),
+              where("linked_drive_id", "==", drive.id),
+              where("organization_id", "==", drive.organization_id),
+              where("deleted_at", ">", deletedAtLowerInner),
+              limit(2500)
+            )
+          : query(
+              collection(db, "backup_files"),
+              where("linked_drive_id", "==", drive.id),
+              where("deleted_at", ">", deletedAtLowerInner),
+              limit(2500)
+            )
+      );
+
+      const fileCountByFolder = new Map<string, number>();
+      for (const fd of fileSnap.docs) {
+        const data = fd.data();
+        if (
+          resolveBackupFileLifecycleState(data as Record<string, unknown>) !==
+          BACKUP_LIFECYCLE_TRASHED
+        ) {
+          continue;
+        }
+        const fid = data.folder_id as string | undefined;
+        if (!fid || !byId.has(fid)) continue;
+        fileCountByFolder.set(fid, (fileCountByFolder.get(fid) ?? 0) + 1);
+      }
+
+      const driveNameById = new Map(scoped.map((d) => [d.id, d.name]));
+
+      const childFolderDocs = folderDocs.filter((d) => {
+        const pid = (d.data().parent_folder_id as string | null | undefined) ?? null;
+        return pid === folderId;
+      });
+
+      const buildFolderRow = (doc: QueryDocumentSnapshot<DocumentData>): DeletedStorageFolder => {
+        const subs = collectTrashedSubtreeStorageFolderIds(doc.id, folderDocs);
+        let files = 0;
+        for (const fid of subs) {
+          files += fileCountByFolder.get(fid) ?? 0;
+        }
+        const nestedFolders = subs.size - 1;
+        const items = nestedFolders + files;
+        const dd = doc.data();
+        const name = (dd.name as string) ?? "Folder";
+        const v = typeof dd.version === "number" ? dd.version : Number(dd.version ?? 1);
+        const ua = dd.updated_at;
+        const deletedAt =
+          ua &&
+          typeof ua === "object" &&
+          "toDate" in ua &&
+          typeof (ua as { toDate?: () => Date }).toDate === "function"
+            ? (ua as { toDate: () => Date }).toDate().toISOString()
+            : typeof ua === "string"
+              ? ua
+              : null;
+        return {
+          id: doc.id,
+          name,
+          driveId: drive.id,
+          driveName: drive.name,
+          items: Math.max(0, items),
+          deletedAt,
+          version: Number.isFinite(v) ? v : 1,
+        };
+      };
+
+      const subfolders = childFolderDocs.map((d) => buildFolderRow(d));
+      subfolders.sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+
+      const currentDoc = byId.get(folderId)!;
+      const current = buildFolderRow(currentDoc);
+
+      let filesQuery;
+      if (drive.organization_id) {
+        filesQuery = query(
+          collection(db, "backup_files"),
+          where("linked_drive_id", "==", drive.id),
+          where("organization_id", "==", drive.organization_id),
+          where("folder_id", "==", folderId),
+          where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+          limit(500)
+        );
+      } else if (shouldQueryDriveWideFiles(drive, user.uid)) {
+        filesQuery = query(
+          collection(db, "backup_files"),
+          where("linked_drive_id", "==", drive.id),
+          where("folder_id", "==", folderId),
+          where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+          limit(500)
+        );
+      } else {
+        filesQuery = query(
+          collection(db, "backup_files"),
+          where("userId", "==", user.uid),
+          where("linked_drive_id", "==", drive.id),
+          where("folder_id", "==", folderId),
+          where("lifecycle_state", "==", BACKUP_LIFECYCLE_TRASHED),
+          limit(500)
+        );
+      }
+
+      const directFilesSnap = await getDocs(filesQuery);
+      const files: RecentFile[] = directFilesSnap.docs
+        .filter(
+          (d) =>
+            resolveBackupFileLifecycleState(d.data() as Record<string, unknown>) ===
+            BACKUP_LIFECYCLE_TRASHED
+        )
+        .map((d) => {
+          const data = d.data();
+          const fpath = data.relative_path ?? "";
+          const fname = (fpath.split("/").filter(Boolean).pop()) ?? fpath ?? "?";
+          const deletedAt = data.deleted_at?.toDate?.()
+            ? data.deleted_at.toDate().toISOString()
+            : typeof data.deleted_at === "string"
+              ? data.deleted_at
+              : null;
+          return {
+            id: d.id,
+            name: fname,
+            path: fpath,
+            objectKey: data.object_key ?? "",
+            size: data.size_bytes ?? 0,
+            modifiedAt: data.modified_at ?? null,
+            driveId: data.linked_drive_id,
+            driveName: driveNameById.get(data.linked_drive_id as string) ?? drive.name,
+            contentType: data.content_type ?? null,
+            assetType: data.asset_type ?? null,
+            deletedAt: deletedAt ?? undefined,
+            galleryId: data.gallery_id ?? null,
+          };
+        });
+      files.sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
+      );
+
+      return { path, current, subfolders, files };
+    },
+    [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]
+  );
+
   const recalculateStorage = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) return;
     try {
@@ -2562,6 +2755,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     fetchDeletedFiles,
     fetchDeletedDrives,
     fetchDeletedStorageFolders,
+    fetchTrashedStorageFolderContents,
     deleteFile,
     deleteFiles,
     deleteFolder,
