@@ -13,12 +13,15 @@ export default function SharedFolderPage() {
   const token = params?.token as string | undefined;
   const [folderName, setFolderName] = useState<string>("Shared folder");
 
-  // Derive base path for back link (dashboard, enterprise, or desktop)
-  const basePath = pathname?.startsWith("/enterprise")
-    ? "/enterprise"
-    : pathname?.startsWith("/desktop")
-      ? "/desktop/app"
-      : "/dashboard";
+  // Derive base path for back link (team, enterprise, desktop, or personal dashboard)
+  const teamMatch = pathname?.match(/^\/team\/([^/]+)/);
+  const basePath = teamMatch?.[1]
+    ? `/team/${teamMatch[1]}`
+    : pathname?.startsWith("/enterprise")
+      ? "/enterprise"
+      : pathname?.startsWith("/desktop")
+        ? "/desktop/app"
+        : "/dashboard";
 
   if (!token) {
     return (

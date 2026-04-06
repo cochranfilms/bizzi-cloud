@@ -79,6 +79,15 @@ export default function SharedGrid() {
   }, [pathname, org?.id]);
 
   const { owned, invited, loading, error, deleteShare, refetch } = useShares(sharesListQuery);
+  /** In-app share folder viewer URL — keep team / enterprise / desktop shell (avoid /s → dashboard jump). */
+  const shareViewerHref = useCallback((token: string) => {
+    const enc = encodeURIComponent(token);
+    const teamMatch = pathname.match(/^\/team\/([^/]+)/);
+    if (teamMatch?.[1]) return `/team/${teamMatch[1]}/shared/${enc}`;
+    if (pathname.startsWith("/enterprise")) return `/enterprise/shared/${enc}`;
+    if (pathname.startsWith("/desktop/app")) return `/desktop/app/shared/${enc}`;
+    return `/dashboard/shared/${enc}`;
+  }, [pathname]);
   const { confirm } = useConfirm();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sentReceivedFilter, setSentReceivedFilter] = useState<"all" | "sent" | "received">("all");
@@ -95,14 +104,14 @@ export default function SharedGrid() {
       token: s.token,
       sharedBy: s.sharedBy ?? "Someone",
       permission: s.permission,
-      href: s.share_url,
+      href: shareViewerHref(s.token),
       isOwned: false as const,
       owner_id: s.owner_id,
       sharedByEmail: s.sharedByEmail,
       sharedByPhotoUrl: s.sharedByPhotoUrl,
       workspaceDeliveryStatus: s.workspace_delivery_status ?? null,
     }));
-  }, [invited]);
+  }, [invited, shareViewerHref]);
 
   const ownedItems: (FlatItem & { invitedEmails?: string[] })[] = useMemo(() => {
     return owned.map((s) => ({
@@ -112,7 +121,7 @@ export default function SharedGrid() {
       token: s.token,
       sharedBy: "You",
       permission: s.permission,
-      href: s.share_url,
+      href: shareViewerHref(s.token),
       isOwned: true as const,
       invitedEmails: s.invited_emails,
       shareDestination: s.share_destination,
@@ -120,7 +129,7 @@ export default function SharedGrid() {
       recipientSummary: formatSentShareRecipientSummary(s),
       backingCaption: sentShareBackingCaption(s),
     }));
-  }, [owned]);
+  }, [owned, shareViewerHref]);
 
   const sharers = useMemo(() => {
     const byOwner = new Map<
