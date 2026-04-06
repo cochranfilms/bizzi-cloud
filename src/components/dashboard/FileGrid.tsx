@@ -69,7 +69,7 @@ import {
 } from "@/lib/macos-package-display";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
 import { parseStorageVirtualFolderKey } from "@/lib/storage-virtual-folder-key";
-import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
+import { buildStorageV2FolderPinId, parseStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { useAuth } from "@/context/AuthContext";
 import { fetchPackagesListCached } from "@/lib/packages-list-cache";
@@ -270,6 +270,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     moveFilesToStorageFolder,
     renameStorageFolder,
     moveStorageFolder,
+    trashAllFilesUnderStoragePath,
+    trashStorageFolderSubtree,
   } = useCloudFiles();
   const { galleries } = useGalleries();
   const galleryMediaPathSegmentIndex = useMemo(
@@ -824,7 +826,6 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                 storageFolderOperationState: f.operation_state,
                 storageFolderLifecycleState: f.lifecycle_state,
                 hideShare: true,
-                preventDelete: true,
               }))
             );
             if (parent) {
@@ -1191,10 +1192,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
           type: "folder" as const,
           key: `path-nested-${currentDrive.id}|${currentDrivePath}|${segment}`,
           items: count,
-          driveId: undefined,
+          driveId: currentDrive.id,
           virtualFolder: true,
           hideShare: true,
-          preventDelete: true,
           preventRename: true,
           pathPrefix: `${currentDrivePath}/${segment}`,
         })
@@ -1249,10 +1249,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       type: "folder" as const,
       key: `path-subfolder-${currentDrive.id}|${folderKey}`,
       items: v.count,
-      driveId: undefined,
+      driveId: currentDrive.id,
       virtualFolder: true,
       hideShare: true,
-      preventDelete: true,
       preventRename: true,
       pathPrefix: isGalleryMediaDrive ? (v.storageRoot ?? folderKey) : folderKey,
       galleryMediaCanonicalId: v.galleryMediaCanonicalId,
@@ -1297,6 +1296,61 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     currentDrivePath,
     galleryMediaPathSegmentIndex,
   ]);
+
+  const handleDeleteSubfolderItem = useCallback(
+    async (item: FolderItem) => {
+      if (item.preventDelete) return;
+      const rowDriveId = item.driveId ?? item.storageLinkedDriveId ?? currentDrive?.id ?? "";
+      try {
+        if (item.storageFolderId) {
+          const ok = await confirm({
+            message: `Delete "${item.name}" and everything inside it? Files will move to trash.`,
+            destructive: true,
+          });
+          if (!ok) return;
+          await trashStorageFolderSubtree(
+            item.storageFolderId,
+            typeof item.storageFolderVersion === "number" ? item.storageFolderVersion : undefined
+          );
+        } else if (item.virtualFolder && item.pathPrefix && rowDriveId) {
+          const ok = await confirm({
+            message: `Delete "${item.name}" and all files inside? They will move to trash.`,
+            destructive: true,
+          });
+          if (!ok) return;
+          await trashAllFilesUnderStoragePath(rowDriveId, item.pathPrefix);
+        } else if (item.driveId) {
+          const drive = linkedDrives.find((d) => d.id === item.driveId);
+          if (!drive) return;
+          const msg =
+            item.items === 0
+              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+          const ok = await confirm({ message: msg, destructive: true });
+          if (!ok) return;
+          await deleteFolder(drive, item.items);
+        } else {
+          return;
+        }
+        if (currentDrive) await loadDriveFiles(currentDrive.id);
+        await refetch();
+        await refetchPinned();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [
+      confirm,
+      currentDrive,
+      deleteFolder,
+      linkedDrives,
+      loadDriveFiles,
+      refetch,
+      refetchPinned,
+      trashAllFilesUnderStoragePath,
+      trashStorageFolderSubtree,
+    ]
+  );
 
   useEffect(() => {
     if (!currentDrive || useFilteredScoped) {
@@ -1767,6 +1821,31 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
           }
           continue;
         }
+        const v2pin = parseStorageV2FolderPinId(key);
+        if (v2pin) {
+          const hit =
+            subfolderItems.find((x) => x.key === key) ??
+            folderItems.find((x) => x.key === key) ??
+            pinnedFolderItems.find((x) => x.key === key);
+          await trashStorageFolderSubtree(
+            v2pin.storageFolderId,
+            typeof hit?.storageFolderVersion === "number" ? hit.storageFolderVersion : undefined
+          );
+          continue;
+        }
+        const virt = parseStorageVirtualFolderKey(key);
+        if (virt) {
+          await trashAllFilesUnderStoragePath(virt.driveId, virt.pathPrefix);
+          continue;
+        }
+        const pathHit = subfolderItems.find((x) => x.key === key);
+        if (pathHit?.virtualFolder && pathHit.pathPrefix) {
+          const did = pathHit.driveId ?? currentDrive?.id;
+          if (did) {
+            await trashAllFilesUnderStoragePath(did, pathHit.pathPrefix);
+            continue;
+          }
+        }
         const driveId = key.startsWith("drive-") ? key.slice(6) : key;
         const drive = linkedDrives.find((d) => d.id === driveId);
         const itemCount = folderItems.find((f) => f.key === key)?.items ?? 0;
@@ -1782,7 +1861,11 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       if (allFileIdsToDelete.length > 0) await deleteFiles(allFileIdsToDelete);
       clearSelection();
       await refetch();
-      if (currentDrive && allFileIdsToDelete.length > 0 && !didUnlinkCurrentDrive) {
+      if (
+        currentDrive &&
+        !didUnlinkCurrentDrive &&
+        (allFileIdsToDelete.length > 0 || folderKeys.length > 0)
+      ) {
         loadDriveFiles(currentDrive.id);
       }
     } catch (err) {
@@ -1791,7 +1874,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   }, [
     selectedFileIds,
     selectedFolderKeys,
+    subfolderItems,
     folderItems,
+    pinnedFolderItems,
     driveFiles,
     deleteFiles,
     deleteFolder,
@@ -1803,6 +1888,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     refetch,
     loadDriveFiles,
     confirm,
+    trashAllFilesUnderStoragePath,
+    trashStorageFolderSubtree,
   ]);
 
   const handleBulkMove = useCallback(() => {
@@ -2218,8 +2305,10 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
         </div>
       ) : null}
 
-      {/* Pinned shortcuts (only at root) - compact section */}
-      {!currentDrive && (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0) && (
+      {/* Pinned shortcuts (root only) — hidden on All Files flat landing to keep that tab to Recents/Hearts + grid only */}
+      {!currentDrive &&
+        !allFilesFlatLanding &&
+        (pinnedFolderItems.length > 0 || pinnedFileIds.size > 0) && (
         <section className="motion-safe:transition-opacity motion-safe:duration-500 motion-safe:ease-out border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Pinned</h3>
           {viewMode === "list" ? (
@@ -2534,6 +2623,14 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                             setSelectedFileIds(new Set());
                             setSelectedFolderKeys(new Set());
                           }}
+                          onDelete={
+                            !item.preventDelete &&
+                            (item.storageFolderId ||
+                              (item.virtualFolder && !!item.pathPrefix) ||
+                              !!item.driveId)
+                              ? () => void handleDeleteSubfolderItem(item)
+                              : undefined
+                          }
                           selectable={!!item.driveId || !!item.virtualFolder}
                           selected={selectedFolderKeys.has(item.key)}
                           onSelect={() => toggleFolderSelection(item.key)}
@@ -2637,6 +2734,14 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                         setSelectedFileIds(new Set());
                         setSelectedFolderKeys(new Set());
                       }}
+                      onDelete={
+                        !item.preventDelete &&
+                        (item.storageFolderId ||
+                          (item.virtualFolder && !!item.pathPrefix) ||
+                          !!item.driveId)
+                          ? () => void handleDeleteSubfolderItem(item)
+                          : undefined
+                      }
                       selectable
                       selected={isFolderInSelection}
                       onSelect={() => toggleFolderSelection(item.key)}

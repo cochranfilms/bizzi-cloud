@@ -1961,6 +1961,34 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     ]
   );
 
+  const trashStorageFolderSubtree = useCallback(
+    async (storageFolderId: string, version?: number) => {
+      const token = await getCurrentUserIdToken(true);
+      if (!token) throw new Error("Not signed in");
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(
+        `${base}/api/storage-folders/${encodeURIComponent(storageFolderId)}/trash`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(
+            typeof version === "number" && Number.isFinite(version) ? { version } : {}
+          ),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data?.error as string) ?? "Failed to delete folder");
+      }
+      bumpStorageVersion();
+      scheduleDebouncedPostTrashMetadataRefresh();
+    },
+    [bumpStorageVersion, scheduleDebouncedPostTrashMetadataRefresh]
+  );
+
   const moveAllFilesUnderStoragePath = useCallback(
     async (driveId: string, pathPrefix: string, targetDriveId: string) => {
       const ids = await collectActiveFileIdsUnderStoragePathPrefix(driveId, pathPrefix);
@@ -2307,6 +2335,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     moveFolderContentsToFolder,
     getFileIdsForBulkShare,
     trashAllFilesUnderStoragePath,
+    trashStorageFolderSubtree,
     moveAllFilesUnderStoragePath,
   };
 }

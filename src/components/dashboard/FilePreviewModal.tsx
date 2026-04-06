@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Download, FileIcon, FolderInput, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, FileIcon, FolderInput, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import HeartButton from "@/components/collaboration/HeartButton";
 import FileCommentsPanel from "@/components/collaboration/FileCommentsPanel";
 import { useHearts } from "@/hooks/useHearts";
@@ -12,6 +12,7 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useThumbnail } from "@/hooks/useThumbnail";
 import VideoWithLUT, { type LUTOption } from "@/components/dashboard/VideoWithLUT";
 import ImmersiveFilePreviewShell from "@/components/preview/ImmersiveFilePreviewShell";
+import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
 import { useThemeResolved } from "@/context/ThemeContext";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
@@ -81,15 +82,25 @@ function clampImageZoom(z: number): number {
   return Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
 }
 
+function themeAccentRgbTriplet(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "0,191,255";
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
 /** Soft blurred frame behind the 9:16 reel so dead space feels intentional (streaming-thumb based). */
 function CreatorReelAmbientBackdrop({
   thumbUrl,
   immersiveLightChrome,
+  accentHex,
 }: {
   thumbUrl: string | null;
   immersiveLightChrome: boolean;
+  accentHex: string;
 }) {
   if (!thumbUrl) return null;
+  const rgb = themeAccentRgbTriplet(accentHex);
   return (
     <div
       aria-hidden
@@ -102,12 +113,128 @@ function CreatorReelAmbientBackdrop({
         className="h-full min-h-[125%] w-full min-w-[125%] -translate-y-[4%] scale-110 object-cover opacity-[0.4] blur-[48px] saturate-[1.3] dark:opacity-[0.34]"
       />
       <div
-        className={
+        className="absolute inset-0"
+        style={
           immersiveLightChrome
-            ? "absolute inset-0 bg-gradient-to-b from-white/[0.2] via-sky-50/[0.08] to-slate-800/[0.16]"
-            : "absolute inset-0 bg-gradient-to-b from-slate-950/50 via-transparent to-black/5"
+            ? {
+                background: `linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(${rgb},0.11), rgba(15,23,42,0.14))`,
+              }
+            : {
+                background: `linear-gradient(to bottom, rgba(${rgb},0.14), transparent, rgba(0,0,0,0.07))`,
+              }
         }
       />
+    </div>
+  );
+}
+
+/** Rich placeholder while video URL loads or proxy is still generating — no raw “preparing playback” copy. */
+function VideoPreviewWaitState({
+  mode,
+  immersiveLightChrome,
+  lowResPreviewUrl,
+  showLUTForVideo,
+  accentHex,
+  compact = false,
+}: {
+  mode: "loading" | "processing";
+  immersiveLightChrome: boolean;
+  lowResPreviewUrl: string | null;
+  showLUTForVideo: boolean;
+  /** Dashboard Theme accent (Customize dashboard). */
+  accentHex: string;
+  compact?: boolean;
+}) {
+  const isProcessing = mode === "processing";
+  const rgb = themeAccentRgbTriplet(accentHex);
+  const ringBorder = immersiveLightChrome ? `rgba(${rgb},0.32)` : `rgba(${rgb},0.5)`;
+  const cardSurface = immersiveLightChrome
+    ? "border border-neutral-200/90 bg-white/95 shadow-xl shadow-neutral-900/10 ring-1 ring-neutral-900/[0.04]"
+    : "border border-white/12 bg-neutral-950/75 shadow-2xl shadow-black/50 ring-1 ring-white/[0.06] backdrop-blur-md";
+  const titleClass = immersiveLightChrome ? "text-neutral-900" : "text-white";
+  const bodyClass = immersiveLightChrome ? "text-neutral-600" : "text-neutral-300";
+  const pad = compact ? "p-5" : "p-8 md:p-10";
+  const maxW = compact ? "max-w-[18rem]" : "max-w-md";
+  const iconTileStyle = immersiveLightChrome
+    ? { background: `linear-gradient(135deg, rgba(${rgb},0.18), rgba(${rgb},0.07))` }
+    : {
+        background: `linear-gradient(135deg, rgb(38 38 38), rgba(${rgb},0.28))`,
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06)`,
+      };
+  return (
+    <div
+      className={`flex w-full flex-1 flex-col items-center justify-center px-3 py-6 md:px-6 ${compact ? "min-h-0 gap-4" : "min-h-[min(22rem,52dvh)] gap-6 py-10 md:px-8"}`}
+    >
+      <div className={`relative w-full ${maxW} overflow-hidden rounded-3xl ${pad} ${cardSurface}`}>
+        <div
+          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full blur-2xl"
+          style={{
+            background: `radial-gradient(circle at 32% 32%, rgba(${rgb},0.29), transparent 64%)`,
+          }}
+        />
+        <div
+          className="pointer-events-none absolute -bottom-24 -left-12 h-48 w-48 rounded-full blur-2xl"
+          style={{
+            background: `radial-gradient(circle at 68% 68%, rgba(${rgb},0.2), transparent 62%)`,
+          }}
+        />
+        <div className="relative flex flex-col items-center text-center">
+          <div className={`relative flex items-center justify-center ${compact ? "mb-4 h-16 w-16" : "mb-6 h-24 w-24"}`}>
+            <span
+              className="absolute inset-0 animate-ping rounded-full border-2 opacity-25"
+              style={{ animationDuration: "2.4s", borderColor: ringBorder }}
+            />
+            <span
+              className="absolute inset-2 animate-pulse rounded-full border-2 opacity-40"
+              style={{ animationDuration: "1.8s", borderColor: ringBorder }}
+            />
+            <div
+              className={`relative flex items-center justify-center rounded-2xl ${
+                compact ? "h-12 w-12" : "h-[4.5rem] w-[4.5rem]"
+              } ${immersiveLightChrome ? "" : "ring-1 ring-white/10"}`}
+              style={iconTileStyle}
+            >
+              <Loader2
+                className={`${compact ? "h-6 w-6" : "h-10 w-10"} animate-spin`}
+                style={{
+                  animationDuration: isProcessing ? "1.4s" : "1s",
+                  color: accentHex,
+                }}
+              />
+            </div>
+          </div>
+          <h3 className={`font-semibold tracking-tight ${compact ? "text-sm" : "text-lg md:text-xl"} ${titleClass}`}>
+            {isProcessing
+              ? showLUTForVideo
+                ? "Proxy preview is still rendering"
+                : "Video preview is still processing"
+              : "Opening preview"}
+          </h3>
+          <p className={`mt-3 max-w-sm leading-relaxed ${compact ? "text-xs" : "text-sm"} ${bodyClass}`}>
+            {isProcessing ? (
+              <>
+                We&apos;re finishing a streaming-friendly version of this file. It usually takes a little
+                while — <span className={immersiveLightChrome ? "font-medium text-neutral-800" : "font-medium text-white"}>check back soon</span> and it should be ready. You can still use{" "}
+                <span className={immersiveLightChrome ? "font-medium text-neutral-800" : "font-medium text-white"}>Download</span>{" "}
+                for the full original anytime.
+              </>
+            ) : (
+              <>Hang tight while we connect the player.{showLUTForVideo ? " Original camera files stay offline-safe." : ""}</>
+            )}
+          </p>
+        </div>
+      </div>
+      {!compact && lowResPreviewUrl ? (
+        <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-black/10 bg-black/25 shadow-lg dark:border-white/10 dark:bg-black/40">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lowResPreviewUrl}
+            alt=""
+            className="mx-auto max-h-[min(28dvh,220px)] w-full object-contain opacity-90"
+          />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/50 to-transparent dark:from-black/60" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -137,6 +264,8 @@ export default function FilePreviewModal({
 }: FilePreviewModalProps) {
   const theme = useThemeResolved();
   const immersiveLightChrome = theme === "light";
+  const dashboardAppearance = useDashboardAppearanceOptional();
+  const dashboardThemeAccent = dashboardAppearance?.accentColor ?? "#00BFFF";
   const [fullUrl, setFullUrl] = useState<string | null>(null);
   const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
   const [videoProcessing, setVideoProcessing] = useState(false);
@@ -675,79 +804,40 @@ export default function FilePreviewModal({
       (showLUTForVideo && loading) ||
       (!showLUTForVideo && loading && !fullUrl))
   ) {
+    const videoWaitMode: "loading" | "processing" = videoProcessing ? "processing" : "loading";
     if (immersivePortraitStage) {
       mediaBody = (
         <div
           className={`flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}`}
         >
           <div
-            className={`relative isolate flex w-full flex-col items-center justify-center ${CREATOR_RAW_PORTRAIT_STAGE.stageMaxWidthClass} ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
+            className={`relative isolate flex min-h-0 w-full flex-1 flex-col items-center justify-center ${CREATOR_RAW_PORTRAIT_STAGE.stageMaxWidthClass} ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
           >
             <CreatorReelAmbientBackdrop
               thumbUrl={lowResPreviewUrl}
               immersiveLightChrome={immersiveLightChrome}
+              accentHex={dashboardThemeAccent}
             />
-            <div
-              className={CREATOR_RAW_PORTRAIT_STAGE.processingShellClass}
-              style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
-            >
-              <p className="max-w-[14rem] text-center text-xs leading-relaxed text-neutral-200 sm:text-sm">
-                {showLUTForVideo ? (
-                  <>
-                    Creating a lightweight streaming proxy.{" "}
-                    <span className="font-semibold text-white">Originals are never played here</span> — use
-                    Download for the camera file.
-                  </>
-                ) : (
-                  <>
-                    Preparing streaming preview.{" "}
-                    <span className="font-semibold text-white">Hang tight</span> — playback will start when the
-                    proxy is ready. Use Download for the original file.
-                  </>
-                )}
-              </p>
-            </div>
+            <VideoPreviewWaitState
+              mode={videoWaitMode}
+              immersiveLightChrome={immersiveLightChrome}
+              lowResPreviewUrl={lowResPreviewUrl}
+              showLUTForVideo={showLUTForVideo}
+              accentHex={dashboardThemeAccent}
+              compact
+            />
           </div>
         </div>
       );
     } else {
-      const waitTextClass = immersiveLightChrome
-        ? "text-neutral-800"
-        : "text-neutral-100";
-      const waitMutedClass = immersiveLightChrome ? "text-neutral-600" : "text-neutral-300";
       mediaBody = (
-        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-8 md:px-8">
-          {lowResPreviewUrl ? (
-            <div className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-black/10 bg-black/30 shadow-xl dark:border-white/15">
-              {/* eslint-disable-next-line @next/next/no-img-element -- thumb API URL */}
-              <img
-                src={lowResPreviewUrl}
-                alt=""
-                className="mx-auto max-h-[min(38dvh,320px)] w-full object-contain"
-              />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/55 to-transparent dark:from-black/70" />
-            </div>
-          ) : null}
-          <p className={`max-w-lg text-center text-sm leading-relaxed ${waitTextClass}`}>
-            {showLUTForVideo ? (
-              <>
-                Creating a lightweight streaming proxy for preview.{" "}
-                <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
-                  Full-resolution originals are not played in this viewer
-                </span>{" "}
-                <span className={waitMutedClass}>— use Download for the camera file.</span>
-              </>
-            ) : (
-              <>
-                Preparing preview playback.{" "}
-                <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
-                  Streaming quality may differ from the downloaded file
-                </span>
-                .
-              </>
-            )}
-          </p>
-        </div>
+        <VideoPreviewWaitState
+          mode={videoWaitMode}
+          immersiveLightChrome={immersiveLightChrome}
+          lowResPreviewUrl={lowResPreviewUrl}
+          showLUTForVideo={showLUTForVideo}
+          accentHex={dashboardThemeAccent}
+        />
       );
     }
   } else if (previewType === "pdf" && fullUrl && pdfEmbed.failed) {
@@ -861,6 +951,7 @@ export default function FilePreviewModal({
               <CreatorReelAmbientBackdrop
                 thumbUrl={lowResPreviewUrl}
                 immersiveLightChrome={immersiveLightChrome}
+                accentHex={dashboardThemeAccent}
               />
             ) : null}
             <div
@@ -881,7 +972,7 @@ export default function FilePreviewModal({
                     streamUrl={effectiveStream}
                     className={
                       immersivePortraitStage
-                        ? "h-full min-h-0 w-full max-h-full !max-h-none"
+                        ? "h-full min-h-0 w-full max-h-full object-contain"
                         : "h-full min-h-0 w-full max-h-[min(85dvh,calc(100dvh-10rem))]"
                     }
                     showLUTOption={showLUT}

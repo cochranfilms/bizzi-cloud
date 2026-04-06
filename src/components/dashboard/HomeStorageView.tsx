@@ -44,7 +44,7 @@ import {
   buildStorageVirtualFolderKey,
   parseStorageVirtualFolderKey,
 } from "@/lib/storage-virtual-folder-key";
-import { buildStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
+import { buildStorageV2FolderPinId, parseStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
 import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
@@ -114,6 +114,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     moveFolderContentsToFolder,
     moveStorageFolder,
     trashAllFilesUnderStoragePath,
+    trashStorageFolderSubtree,
     moveAllFilesUnderStoragePath,
   } = useCloudFiles();
   const {
@@ -379,7 +380,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           storageFolderVersion: t.storageFolderVersion,
           storageFolderOperationState: t.storageFolderOperationState,
           storageFolderLifecycleState: t.storageFolderLifecycleState,
-          preventDelete: isV2Row,
           preventRename: !isV2Row,
           preventMove: true,
           isSystemFolder: false,
@@ -893,6 +893,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     try {
       if (fileIds.length > 0) await deleteFiles(fileIds);
       for (const key of folderKeys) {
+        const v2pin = parseStorageV2FolderPinId(key);
+        if (v2pin) {
+          const item = homeFolderItemsByKey.get(key);
+          await trashStorageFolderSubtree(
+            v2pin.storageFolderId,
+            typeof item?.storageFolderVersion === "number" ? item.storageFolderVersion : undefined
+          );
+          continue;
+        }
         const scope = parseStorageVirtualFolderKey(key);
         if (scope) {
           await trashAllFilesUnderStoragePath(scope.driveId, scope.pathPrefix);
@@ -920,12 +929,65 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     deleteFolder,
     linkedDrives,
     trashAllFilesUnderStoragePath,
+    trashStorageFolderSubtree,
     clearSelection,
     refetch,
     refetchPinned,
     loadPinnedFiles,
     confirm,
   ]);
+
+  const handleDeleteBizziCloudFolderItem = useCallback(
+    async (item: FolderItem) => {
+      if (item.preventDelete) return;
+      const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+      try {
+        if (item.storageFolderId) {
+          const ok = await confirm({
+            message: `Delete "${item.name}" and everything inside it? Files will move to trash.`,
+            destructive: true,
+          });
+          if (!ok) return;
+          await trashStorageFolderSubtree(
+            item.storageFolderId,
+            typeof item.storageFolderVersion === "number" ? item.storageFolderVersion : undefined
+          );
+        } else if (item.virtualFolder && item.pathPrefix && item.driveId) {
+          const ok = await confirm({
+            message: `Delete "${item.name}" and all files inside? They will move to trash.`,
+            destructive: true,
+          });
+          if (!ok) return;
+          await trashAllFilesUnderStoragePath(item.driveId, item.pathPrefix);
+        } else if (drive) {
+          const msg =
+            item.items === 0
+              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+          const ok = await confirm({ message: msg, destructive: true });
+          if (!ok) return;
+          await deleteFolder(drive, item.items);
+        } else {
+          return;
+        }
+        await refetch();
+        await refetchPinned();
+        void loadPinnedFiles();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [
+      linkedDrives,
+      confirm,
+      trashStorageFolderSubtree,
+      trashAllFilesUnderStoragePath,
+      deleteFolder,
+      refetch,
+      refetchPinned,
+      loadPinnedFiles,
+    ]
+  );
 
   const handleBulkMove = useCallback(() => {
     setMoveModalOpen(true);
@@ -1537,19 +1599,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                         revealFadeIn
                         onClick={() => openBizziCloudFolderItem(item)}
                         onDelete={
-                          drive && !item.preventDelete
-                            ? async () => {
-                                const ok = await confirm({
-                                  message: item.items === 0
-                                    ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
-                                    : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`,
-                                  destructive: true,
-                                });
-                                if (ok) {
-                                  await deleteFolder(drive, item.items);
-                                  await refetch();
-                                }
-                              }
+                          !item.preventDelete &&
+                          (item.storageFolderId ||
+                            (item.virtualFolder && !!item.pathPrefix) ||
+                            drive)
+                            ? () => void handleDeleteBizziCloudFolderItem(item)
                             : undefined
                         }
                         selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
@@ -1613,17 +1667,11 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     showCardInfo={showCardInfo}
                     revealFadeIn
                     onDelete={
-                      drive && !item.preventDelete
-                        ? async () => {
-                            const msg = item.items === 0
-                              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
-                              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                            const ok = await confirm({ message: msg, destructive: true });
-                            if (ok) {
-                              await deleteFolder(drive, item.items);
-                              await refetch();
-                            }
-                          }
+                      !item.preventDelete &&
+                      (item.storageFolderId ||
+                        (item.virtualFolder && !!item.pathPrefix) ||
+                        drive)
+                        ? () => void handleDeleteBizziCloudFolderItem(item)
                         : undefined
                     }
                     selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}

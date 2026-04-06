@@ -9,10 +9,6 @@ import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceCon
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
-import {
-  LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP,
-  LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP_DARK,
-} from "@/lib/landing-gradient";
 
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
@@ -24,6 +20,14 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   if (!m) return null;
   const n = parseInt(m[1], 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/** Vertical wash: light mode stays white-leaning; dark mode black-leaning. Hue comes from dashboard Theme (`accentColor`). */
+function immersiveAppBackdropLinear(accentRgb: string, isDark: boolean): string {
+  if (isDark) {
+    return `linear-gradient(180deg, rgba(0,0,0,0.72) 0%, rgba(${accentRgb},0.11) 34%, rgba(${accentRgb},0.19) 66%, rgba(${accentRgb},0.28) 100%)`;
+  }
+  return `linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(${accentRgb},0.1) 38%, rgba(${accentRgb},0.17) 68%, rgba(${accentRgb},0.24) 100%)`;
 }
 
 function workspaceEnvironmentKey(pathname: string | null): "personal" | "team" | "organization" {
@@ -131,7 +135,7 @@ export default function ImmersiveFilePreviewShell({
   const isGallery = variant === "gallery";
 
   const washOpacity = isDark ? ambientStrengthDark : ambientStrength;
-  /** Strong blue veil + accent wash so the dashboard recedes; blur works where the engine supports it */
+  /** Theme-tinted veil so the dashboard recedes; blur works where the engine supports it */
   const backdropStyle: CSSProperties = isGallery
     ? {
         WebkitBackdropFilter: BACKDROP_BLUR,
@@ -143,16 +147,14 @@ export default function ImmersiveFilePreviewShell({
       ? {
           WebkitBackdropFilter: BACKDROP_BLUR,
           backdropFilter: BACKDROP_BLUR,
-          /** Deeper sky gradient (same family as light immersive); white header chrome */
-          backgroundColor: "rgba(6, 28, 48, 0.42)",
-          backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP_DARK}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.12, washOpacity * 0.4)}), transparent 56%)`,
+          backgroundColor: "rgba(0, 0, 0, 0.38)",
+          backgroundImage: `${immersiveAppBackdropLinear(accentRgb, true)}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.12, washOpacity * 0.4)}), transparent 56%)`,
         }
       : {
           WebkitBackdropFilter: BACKDROP_BLUR,
           backdropFilter: BACKDROP_BLUR,
-          /** Landing-page sky gradient (hues) over blur; slightly translucent so the dashboard shows through */
-          backgroundColor: "rgba(255, 255, 255, 0.12)",
-          backgroundImage: `${LANDING_PAGE_GRADIENT_IMMERSIVE_BACKDROP}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
+          backgroundColor: "rgba(255, 255, 255, 0.14)",
+          backgroundImage: `${immersiveAppBackdropLinear(accentRgb, false)}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
         };
 
   const headerChromeBorder: CSSProperties = isGallery
@@ -192,7 +194,7 @@ export default function ImmersiveFilePreviewShell({
       ? "bg-neutral-950/78"
       : "bg-white/[0.92]";
 
-  /** App immersive: dark text on light sky backdrop (light theme), white text on deeper sky (dark theme) */
+  /** App immersive: dark text on light theme wash (light), white text on dark theme wash (dark) */
   const titleClass = isGallery ? "text-white/95" : isDark ? "text-white/95" : "text-neutral-900";
 
   const headerShape = isGallery ? "rounded-none" : "rounded-2xl";
@@ -303,7 +305,7 @@ export default function ImmersiveFilePreviewShell({
                 className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center gap-2 lg:gap-3 ${hasBelowOnly ? "min-h-[min(200px,35dvh)]" : "min-h-0"}`}
               >
                 <div className={`flex w-full min-h-0 flex-1 flex-col items-center justify-center ${mediaSlotMaxH}`}>
-                  <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center px-0.5 sm:px-2">
+                  <div className="flex h-full min-h-0 w-full max-w-full items-center justify-center overflow-hidden rounded-2xl px-0.5 sm:px-2">
                     {media}
                   </div>
                 </div>
