@@ -55,12 +55,18 @@ export default function StorageFolderCoverThumbnail({
 
   if (variant === "backdrop") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={url}
-        alt=""
-        className={`pointer-events-none absolute inset-0 z-0 h-full w-full min-h-full min-w-full object-cover [object-position:center] ${className}`.trim()}
-      />
+      <div
+        className={`pointer-events-none absolute inset-0 z-0 overflow-hidden ${className}`.trim()}
+        aria-hidden
+      >
+        {/* Clip to card: avoid grid min-width:auto blowout from wide intrinsic bitmaps */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt=""
+          className="h-full w-full max-h-full max-w-full object-cover object-center"
+        />
+      </div>
     );
   }
 

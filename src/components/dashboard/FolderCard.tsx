@@ -287,7 +287,7 @@ export default function FolderCard({
   const iconBoxClass = `${sizeClasses.icon} max-sm:!h-16 max-sm:!w-16`;
   const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-8 max-sm:!w-8`;
 
-  const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
+  const defaultGridShell = `group touch-manipulation relative flex min-w-0 w-full max-w-full flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
     defaultGridFullBleedCover ? "h-full min-h-0" : ""
   } ${
     isSystemFolder
@@ -314,7 +314,7 @@ export default function FolderCard({
   }`;
 
   /** `h-full` + `flex-1` hero: grid row stretch keeps the cover full-bleed (not a short strip with empty card below). */
-  const thumbBrowseShell = `group touch-manipulation relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
+  const thumbBrowseShell = `group touch-manipulation relative flex h-full min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
     selected
       ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
       : isDragOver
