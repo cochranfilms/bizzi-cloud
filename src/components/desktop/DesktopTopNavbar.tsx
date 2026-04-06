@@ -18,6 +18,7 @@ import {
   HardDrive,
 } from "lucide-react";
 import UserMenu from "@/components/dashboard/UserMenu";
+import WorkspaceSwitcher from "@/components/dashboard/WorkspaceSwitcher";
 import NotificationBell from "@/components/collaboration/NotificationBell";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 
@@ -78,8 +79,9 @@ export default function DesktopTopNavbar({
     }`;
 
   const accountTools = (
-    <div className="flex min-w-0 shrink-0 items-center justify-center gap-1 sm:gap-2">
+    <div className="flex min-w-0 shrink-0 items-center justify-center gap-1 sm:gap-2 md:gap-3">
       <NotificationBell />
+      <WorkspaceSwitcher personalHomePath="/desktop/app" />
       <UserMenu compact basePath="/desktop/app" />
     </div>
   );

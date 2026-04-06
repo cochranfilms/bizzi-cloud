@@ -33,7 +33,17 @@ interface PersonalTeamWs {
   membershipKind?: "owned" | "member";
 }
 
-export default function WorkspaceSwitcher() {
+export type WorkspaceSwitcherProps = {
+  /**
+   * Home URL for the personal workspace row / "switch to personal" shortcut.
+   * Desktop shell uses `/desktop/app`; web dashboard uses `/dashboard`.
+   */
+  personalHomePath?: string;
+};
+
+export default function WorkspaceSwitcher({
+  personalHomePath = "/dashboard",
+}: WorkspaceSwitcherProps = {}) {
   const [open, setOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<{
     personal: Workspace | null;
@@ -175,7 +185,7 @@ export default function WorkspaceSwitcher() {
     if (isEnterprise && org) {
       return (
         <Link
-          href="/dashboard"
+          href={personalHomePath}
           className="max-w-[11rem] truncate rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-center text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900 sm:max-w-[14rem] sm:px-3 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           title="Switch to personal workspace"
         >
@@ -238,7 +248,7 @@ export default function WorkspaceSwitcher() {
         <div className="absolute right-0 top-full z-[100] mt-1 max-w-[min(20rem,calc(100vw-1.5rem))] min-w-[200px] overflow-visible rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800 max-sm:left-0 max-sm:right-0 max-sm:min-w-0 max-sm:max-w-none">
           {workspaces?.personal && (
             <Link
-              href="/dashboard"
+              href={personalHomePath}
               onClick={() => setOpen(false)}
               className={`flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
                 isPersonalContext
