@@ -17,6 +17,10 @@ export interface SharedItem {
   shareDestination?: "team" | "organization";
   /** From workspace-targeted shares API */
   workspaceDeliveryStatus?: string | null;
+  /** Sent tab: replaces “Shared by …” (e.g. shared-with list / workspace name) */
+  recipientSummary?: string;
+  /** Sent tab: underlying file or folder name when it differs from the share title */
+  backingCaption?: string;
 }
 
 interface SharedItemCardProps {
@@ -75,8 +79,13 @@ export default function SharedItemCard({
       <h3 className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
         {item.name}
       </h3>
+      {isOwned && item.backingCaption ? (
+        <p className="mb-0.5 truncate w-full text-center text-[11px] text-neutral-400 dark:text-neutral-500">
+          {item.backingCaption}
+        </p>
+      ) : null}
       <p className="mb-0.5 truncate w-full text-center text-xs text-neutral-500 dark:text-neutral-400">
-        Shared by {item.sharedBy}
+        {item.recipientSummary ?? `Shared by ${item.sharedBy}`}
       </p>
       <span
         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -94,7 +103,7 @@ export default function SharedItemCard({
     <div className="relative">
       {content}
       {isOwned && (onEdit || onDelete) && (
-        <div className="absolute left-2 top-2 flex max-w-[calc(100%-3rem)] flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute left-2 top-2 z-20 flex max-w-[calc(100%-1rem)] flex-nowrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {onEdit && (
             <button
               type="button"
@@ -103,10 +112,10 @@ export default function SharedItemCard({
                 e.stopPropagation();
                 onEdit(e);
               }}
-              className="flex items-center gap-1 rounded-md border border-neutral-200 bg-white/95 px-2 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-neutral-200 bg-white/95 px-2 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
               aria-label="Manage share"
             >
-              <Settings className="h-3.5 w-3.5" />
+              <Settings className="h-3.5 w-3.5 shrink-0" />
               Manage share
             </button>
           )}

@@ -7,6 +7,11 @@ export interface ShareListItem {
   id: string;
   token: string;
   folder_name: string;
+  /** Custom share title from Firestore when the owner typed one */
+  share_label?: string;
+  backing_item_name?: string;
+  /** Resolved team/org name for workspace-targeted shares */
+  workspace_display_name?: string;
   item_type: "file" | "folder";
   permission: "view" | "edit";
   share_url: string;
@@ -98,6 +103,9 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         id: string;
         token: string;
         folder_name: string;
+        share_label?: string;
+        backing_item_name?: string;
+        workspace_display_name?: string;
         item_type?: string;
         permission: string;
         share_url: string;
@@ -109,6 +117,9 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         id: s.id,
         token: s.token,
         folder_name: s.folder_name,
+        share_label: s.share_label,
+        backing_item_name: s.backing_item_name,
+        workspace_display_name: s.workspace_display_name,
         item_type: s.item_type === "file" ? "file" : "folder",
         permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
         share_url: s.share_url,
@@ -124,6 +135,8 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         id: string;
         token: string;
         folder_name: string;
+        share_label?: string;
+        backing_item_name?: string;
         item_type?: string;
         permission: string;
         share_url: string;
@@ -138,6 +151,8 @@ export function useShares(listQuery?: SharesListQuery | null): UseSharesResult {
         id: s.id,
         token: s.token,
         folder_name: s.folder_name,
+        share_label: s.share_label,
+        backing_item_name: s.backing_item_name,
         item_type: s.item_type === "file" ? "file" : "folder",
         permission: s.permission === "edit" ? ("edit" as const) : ("view" as const),
         share_url: s.share_url,

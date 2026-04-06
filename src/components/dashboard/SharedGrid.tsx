@@ -13,6 +13,44 @@ import DashboardRouteFade from "./DashboardRouteFade";
 import { useConfirm } from "@/hooks/useConfirm";
 import { usePathname } from "next/navigation";
 import { useEnterprise } from "@/context/EnterpriseContext";
+import type { ShareListItem } from "@/hooks/useShares";
+
+function formatSentShareRecipientSummary(s: {
+  recipient_mode?: string;
+  invited_emails?: string[];
+  workspace_display_name?: string;
+  workspace_target?: { kind: string; id: string };
+}): string {
+  if (s.recipient_mode === "workspace") {
+    const name = s.workspace_display_name?.trim();
+    const kind = s.workspace_target?.kind;
+    const scope =
+      kind === "personal_team"
+        ? "Personal team"
+        : kind === "enterprise_workspace"
+          ? "Organization workspace"
+          : null;
+    if (name && scope) return `Shared with ${name} · ${scope}`;
+    if (name) return `Shared with ${name}`;
+    if (scope) return `Shared with ${scope}`;
+    return "Shared with workspace";
+  }
+  const emails = [
+    ...new Set(
+      (s.invited_emails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    ),
+  ];
+  if (emails.length === 1) return `Shared with ${emails[0]}`;
+  if (emails.length > 1) return `Shared with ${emails[0]} +${emails.length - 1} more`;
+  return "Shared by link";
+}
+
+function sentShareBackingCaption(s: ShareListItem): string | undefined {
+  const custom = s.share_label?.trim();
+  const backing = s.backing_item_name?.trim();
+  if (!custom || !backing || custom === backing) return undefined;
+  return backing;
+}
 
 export default function SharedGrid() {
   const pathname = usePathname() ?? "";
@@ -79,6 +117,8 @@ export default function SharedGrid() {
       invitedEmails: s.invited_emails,
       shareDestination: s.share_destination,
       workspaceDeliveryStatus: s.workspace_delivery_status ?? null,
+      recipientSummary: formatSentShareRecipientSummary(s),
+      backingCaption: sentShareBackingCaption(s),
     }));
   }, [owned]);
 
@@ -379,6 +419,8 @@ export default function SharedGrid() {
                           href: item.href,
                           shareDestination: item.shareDestination,
                           workspaceDeliveryStatus: item.workspaceDeliveryStatus,
+                          recipientSummary: item.recipientSummary,
+                          backingCaption: item.backingCaption,
                         }}
                         isOwned
                         onEdit={(e) => (
@@ -433,8 +475,13 @@ export default function SharedGrid() {
                                 </span>
                               )}
                             </div>
+                            {item.backingCaption ? (
+                              <p className="truncate text-xs text-neutral-400 dark:text-neutral-500">
+                                {item.backingCaption}
+                              </p>
+                            ) : null}
                             <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-                              Shared by {item.sharedBy} ·{" "}
+                              {item.recipientSummary ?? `Shared by ${item.sharedBy}`} ·{" "}
                               {item.permission === "edit"
                                 ? "Download"
                                 : "View only"}
@@ -463,10 +510,10 @@ export default function SharedGrid() {
                           invitedEmails: item.invitedEmails,
                         });
                       }}
-                              className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
+                              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
                               aria-label="Manage share"
                             >
-                              <Settings className="h-3.5 w-3.5" />
+                              <Settings className="h-3.5 w-3.5 shrink-0" />
                               Manage share
                             </button>
                             <button

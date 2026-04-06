@@ -17,6 +17,7 @@ import { hydrateFolderShareDoc } from "@/lib/folder-share-hydrate";
 import {
   getEnterpriseOrgAdminEmails,
   getEnterpriseOrgPrimaryAdminEmail,
+  getPersonalTeamOwnerNotifyEmails,
   getRecipientModeFromDoc,
   getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
@@ -177,13 +178,8 @@ async function deliverShareNotificationsAndEmail(params: {
       let adminEmails: string[] = [];
       if (params.workspaceKind === "enterprise_workspace" && ctx.organizationId) {
         adminEmails = await getEnterpriseOrgAdminEmails(ctx.organizationId);
-      } else if (params.workspaceKind === "personal_team") {
-        try {
-          const em = (await getAdminAuth().getUser(params.workspaceTargetId)).email?.trim();
-          if (em?.includes("@")) adminEmails = [em.toLowerCase()];
-        } catch {
-          adminEmails = [];
-        }
+      } else if (params.workspaceKind === "personal_team" && params.workspaceTargetId) {
+        adminEmails = await getPersonalTeamOwnerNotifyEmails(params.workspaceTargetId);
       }
       await sendWorkspaceShareDeliveryRequestEmailsToAdmins(adminEmails, {
         sharedByUserId: params.uid,
@@ -364,6 +360,9 @@ export async function GET(request: Request) {
     token: string;
     linked_drive_id: string;
     folder_name: string;
+    share_label?: string;
+    backing_item_name?: string;
+    workspace_display_name?: string;
     item_type: "file" | "folder";
     permission: string;
     created_at: string;
@@ -381,6 +380,7 @@ export async function GET(request: Request) {
   };
 
   const owned: ShareItem[] = [];
+  const workspaceShareTitleCache = new Map<string, string>();
 
   for (const d of ownedSnap.docs) {
     const raw = d.data();
@@ -419,11 +419,33 @@ export async function GET(request: Request) {
 
     const hydrated = await hydrateFolderShareDoc(db, d);
     if (!hydrated) continue;
+
+    let workspace_display_name: string | undefined;
+    if (
+      hydrated.recipient_mode === "workspace" &&
+      hydrated.workspace_target?.kind &&
+      hydrated.workspace_target?.id
+    ) {
+      const cacheKey = `${hydrated.workspace_target.kind}:${hydrated.workspace_target.id}`;
+      if (!workspaceShareTitleCache.has(cacheKey)) {
+        const ctx = await workspaceDisplayContextForShare(
+          db,
+          hydrated.workspace_target.kind as WorkspaceShareTargetKind,
+          hydrated.workspace_target.id
+        );
+        workspaceShareTitleCache.set(cacheKey, ctx.name);
+      }
+      workspace_display_name = workspaceShareTitleCache.get(cacheKey);
+    }
+
     owned.push({
       id: hydrated.id,
       token: hydrated.token,
       linked_drive_id: hydrated.linked_drive_id,
       folder_name: hydrated.folder_name,
+      share_label: hydrated.share_label,
+      backing_item_name: hydrated.backing_item_name,
+      workspace_display_name,
       item_type: hydrated.item_type,
       permission: hydrated.permission,
       created_at: hydrated.created_at,
@@ -488,6 +510,8 @@ export async function GET(request: Request) {
       token: hydrated.token,
       linked_drive_id: hydrated.linked_drive_id,
       folder_name: hydrated.folder_name,
+      share_label: hydrated.share_label,
+      backing_item_name: hydrated.backing_item_name,
       item_type: hydrated.item_type,
       permission: hydrated.permission,
       created_at: hydrated.created_at,

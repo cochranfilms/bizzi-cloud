@@ -78,9 +78,13 @@ export type ShareRecipientMode = "email" | "workspace";
 export const workspaceTargetKey = workspaceTargetKeyImpl;
 export const parseWorkspaceTargetKey = parseWorkspaceTargetKeyImpl;
 
-/** Legacy docs have no recipient_mode → treat as email. */
+/** Infer workspace-targeted shares even when legacy docs omit `recipient_mode`. */
 export function getRecipientModeFromDoc(data: Record<string, unknown> | undefined): ShareRecipientMode {
   if (data?.recipient_mode === "workspace") return "workspace";
+  const wt = data?.workspace_target as { kind?: string; id?: string } | undefined;
+  if (wt?.kind && wt?.id) return "workspace";
+  const key = data?.workspace_target_key as string | undefined;
+  if (typeof key === "string" && key.trim().length > 0) return "workspace";
   return "email";
 }
 
@@ -234,16 +238,55 @@ export async function getEnterpriseOrgAdminEmails(organizationId: string): Promi
     }
     const userId = d.data().user_id as string | undefined;
     if (!userId) continue;
+    let resolved: string | null = null;
     try {
       const rec = await getAdminAuth().getUser(userId);
       const e = rec.email?.trim().toLowerCase();
-      if (e && !seen.has(e)) {
-        seen.add(e);
-        out.push(e);
-      }
+      if (e) resolved = e;
     } catch {
       /* skip */
     }
+    if (!resolved) {
+      const prof = await db.collection("profiles").doc(userId).get();
+      const pe = (prof.data()?.email as string | undefined)?.trim().toLowerCase();
+      if (pe?.includes("@")) resolved = pe;
+    }
+    if (resolved && !seen.has(resolved)) {
+      seen.add(resolved);
+      out.push(resolved);
+    }
+  }
+  return out;
+}
+
+/**
+ * Personal-team delivery / moderation emails: owner may have email on profile but not Firebase Auth.
+ */
+export async function getPersonalTeamOwnerNotifyEmails(teamOwnerUid: string): Promise<string[]> {
+  const uid = (teamOwnerUid ?? "").trim();
+  if (!uid) return [];
+  const db = getAdminFirestore();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string | null | undefined) => {
+    const e = raw?.trim().toLowerCase();
+    if (e?.includes("@") && !seen.has(e)) {
+      seen.add(e);
+      out.push(e);
+    }
+  };
+  try {
+    const rec = await getAdminAuth().getUser(uid);
+    add(rec.email);
+  } catch {
+    /* no auth record */
+  }
+  try {
+    const snap = await db.collection("profiles").doc(uid).get();
+    const d = snap.data();
+    add(d?.email as string | undefined);
+  } catch {
+    /* skip */
   }
   return out;
 }

@@ -848,7 +848,23 @@ export async function sendWorkspaceShareDeliveryRequestEmailsToAdmins(
 ): Promise<void> {
   const dedicated = getShareWorkspaceDeliveryRequestConfig();
   const fallback = getShareWorkspaceConfig();
-  if (!dedicated && !fallback) return;
+  if (!dedicated && !fallback) {
+    console.warn(
+      "[EmailJS] Workspace delivery request skipped: set EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST (see email-templates/share-workspace-delivery-request.html) and/or EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE on the server"
+    );
+    return;
+  }
+  if (!adminEmails.length) {
+    console.warn(
+      "[EmailJS] Workspace delivery request skipped: no admin recipient emails (team owner Auth/profile or org admin seats)"
+    );
+    return;
+  }
+  if (!dedicated && fallback) {
+    console.warn(
+      "[EmailJS] EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE_DELIVERY_REQUEST is unset; sending with EMAILJS_TEMPLATE_ID_SHARE_WORKSPACE and delivery_request=1 (branch in EmailJS or set the dedicated template ID)"
+    );
+  }
   let fields: WorkspaceDeliveryEmailArgs;
   try {
     fields = await buildShareWorkspaceAdminEmailFields(params);
