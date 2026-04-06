@@ -47,7 +47,32 @@ interface ProofingListRow {
   materialization_state?: string;
   materialized_linked_drive_id?: string | null;
   materialized_relative_prefix?: string | null;
+  target_asset_count?: number | null;
+  materialized_asset_count?: number;
   last_materialization_error?: string | null;
+}
+
+function proofingListHasMaterializedFolder(list: ProofingListRow): boolean {
+  return !!(
+    list.materialized_linked_drive_id && (list.materialized_relative_prefix ?? "").trim()
+  );
+}
+
+/**
+ * Folder exists and last run finished with nothing pending for current list assets.
+ * If clients add new favorites after a complete run, target_asset_count on the doc lags until the next run
+ * (new asset_ids length exceeds target) — we still allow Create Folder in that case.
+ */
+function proofingListFolderAlreadyUpToDate(list: ProofingListRow): boolean {
+  if (!proofingListHasMaterializedFolder(list)) return false;
+  if ((list.materialization_state ?? "idle") !== "complete") return false;
+  const idsLen = list.asset_ids.length;
+  if (idsLen === 0) return false;
+  const target = list.target_asset_count;
+  if (typeof target === "number" && idsLen > target) return false;
+  const mat = list.materialized_asset_count ?? 0;
+  if (typeof target === "number") return mat >= target;
+  return mat >= idsLen;
 }
 
 interface Comment {
@@ -255,13 +280,27 @@ export default function GalleryProofingWorkspace({
       if (!driveId || !rel) return;
       setCurrentFolderDriveId(driveId);
       setCurrentDrivePath(rel);
-      router.push(`${filesHref}?drive=${encodeURIComponent(driveId)}`);
+      const q = new URLSearchParams();
+      q.set("drive", driveId);
+      q.set("path", rel);
+      router.push(`${filesHref}?${q.toString()}`);
     },
     [filesHref, router, setCurrentDrivePath, setCurrentFolderDriveId]
   );
 
   const handleMaterializeList = async (listId: string) => {
     if (!user || !policyFavorites) return;
+    const list = favorites.find((x) => x.id === listId);
+    if (list && proofingListFolderAlreadyUpToDate(list)) {
+      setProofingActionError(null);
+      setProofingActionSuccess(
+        isVideo
+          ? "This selects folder is already created in Gallery Media. Use Open folder to view it."
+          : "This favorites folder is already created in Gallery Media. Use Open folder to view it."
+      );
+      setTimeout(() => setProofingActionSuccess(null), 8000);
+      return;
+    }
     setProofingActionError(null);
     setProofingActionSuccess(null);
     setMaterializingListId(listId);
@@ -282,13 +321,17 @@ export default function GalleryProofingWorkspace({
         }
       );
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data?.error ?? "Materialize failed");
+      if (!res.ok) throw new Error(data?.error ?? "Could not create folder");
       bumpStorageVersion();
       await fetchData();
-      setProofingActionSuccess("List materialized to Gallery Media.");
-      setTimeout(() => setProofingActionSuccess(null), 5000);
+      setProofingActionSuccess(
+        isVideo
+          ? "Selects folder updated in Gallery Media. Use Open folder to open this list’s folder."
+          : "Favorites folder updated in Gallery Media. Use Open folder to open this list’s folder."
+      );
+      setTimeout(() => setProofingActionSuccess(null), 6000);
     } catch (err) {
-      setProofingActionError(err instanceof Error ? err.message : "Materialize failed");
+      setProofingActionError(err instanceof Error ? err.message : "Could not create folder");
     } finally {
       setMaterializingListId(null);
     }
@@ -523,9 +566,7 @@ export default function GalleryProofingWorkspace({
                           })
                         : "";
                       const mat = f.materialization_state ?? "idle";
-                      const canOpen =
-                        !!f.materialized_linked_drive_id &&
-                        !!(f.materialized_relative_prefix ?? "").trim();
+                      const canOpen = proofingListHasMaterializedFolder(f);
                       const busyMat = mat === "processing" || materializingListId === f.id;
                       return (
                         <div
@@ -556,7 +597,7 @@ export default function GalleryProofingWorkspace({
                               {f.asset_ids.length} {f.asset_ids.length !== 1 ? units : unit} selected
                             </p>
                             <p className="mt-1 text-xs uppercase tracking-wide text-neutral-500">
-                              Materialize: {mat}
+                              Folder: {mat}
                               {f.last_materialization_error ? ` — ${f.last_materialization_error.slice(0, 80)}` : ""}
                             </p>
                           </button>
@@ -573,7 +614,7 @@ export default function GalleryProofingWorkspace({
                               {busyMat ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : null}
-                              Materialize
+                              Create Folder
                             </button>
                             <button
                               type="button"

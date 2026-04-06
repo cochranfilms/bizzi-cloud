@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { User } from "firebase/auth";
 import {
@@ -26,6 +26,7 @@ import {
   type StorageFolderListFolder,
 } from "@/hooks/useCloudFiles";
 import { isGalleryVideo, isGalleryImage } from "@/lib/gallery-file-types";
+import { teamAwareBaseDriveName } from "@/lib/storage-folder-model-policy";
 import { usePathname } from "next/navigation";
 import { useInView } from "@/hooks/useInView";
 import { useThumbnail } from "@/hooks/useThumbnail";
@@ -33,6 +34,50 @@ import { useVideoThumbnail } from "@/hooks/useVideoThumbnail";
 
 function teamAwareLabel(name: string): string {
   return name.replace(/^\[Team\]\s+/, "");
+}
+
+/** Storage pillar vs RAW Creator pillar vs everything else (custom drives). */
+function pickerDriveKind(d: LinkedDrive): "storage" | "raw" | "custom" {
+  const base = teamAwareBaseDriveName(d.name);
+  if (base === "Storage" || base === "Uploads") return "storage";
+  if (d.is_creator_raw === true || base === "RAW") return "raw";
+  return "custom";
+}
+
+/**
+ * Multiple `linked_drives` can map to the same pillar label (e.g. two RAW). Keep one canonical
+ * tile each for Storage and RAW (oldest by `created_at`), then list custom drives.
+ */
+function dedupePickerPillarDrives(drives: LinkedDrive[]): LinkedDrive[] {
+  const createdMs = (x: LinkedDrive) =>
+    x.created_at ? Date.parse(x.created_at) : Number.MAX_SAFE_INTEGER;
+  const pillarBest = new Map<"storage" | "raw", LinkedDrive>();
+  const customs: LinkedDrive[] = [];
+  for (const d of drives) {
+    const kind = pickerDriveKind(d);
+    if (kind === "custom") {
+      customs.push(d);
+      continue;
+    }
+    const cur = pillarBest.get(kind);
+    if (!cur) {
+      pillarBest.set(kind, d);
+      continue;
+    }
+    const mc = createdMs(cur);
+    const md = createdMs(d);
+    if (md < mc || (md === mc && d.id < cur.id)) {
+      pillarBest.set(kind, d);
+    }
+  }
+  const pillars = Array.from(pillarBest.values()).sort((a, b) => {
+    const oa = pickerDriveKind(a) === "storage" ? 0 : 1;
+    const ob = pickerDriveKind(b) === "storage" ? 0 : 1;
+    if (oa !== ob) return oa - ob;
+    return a.id.localeCompare(b.id);
+  });
+  customs.sort((a, b) => teamAwareLabel(a.name).localeCompare(teamAwareLabel(b.name)));
+  return [...pillars, ...customs];
 }
 
 function rectsIntersect(a: DOMRectReadOnly, b: DOMRectReadOnly): boolean {
@@ -174,6 +219,8 @@ export interface GalleryAddFromLibraryModalProps {
   open: boolean;
   onClose: () => void;
   isVideoGallery: boolean;
+  /** When true, show the RAW linked drive in the picker (RAW video galleries only). */
+  showRawDrive: boolean;
   isTeamRoute: boolean;
   selectedIds: Set<string>;
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -186,6 +233,7 @@ export default function GalleryAddFromLibraryModal({
   open,
   onClose,
   isVideoGallery,
+  showRawDrive,
   isTeamRoute,
   selectedIds,
   setSelectedIds,
@@ -225,15 +273,32 @@ export default function GalleryAddFromLibraryModal({
     [isVideoGallery]
   );
 
-  const pickerDrives = filterScopedLinkedDrives(linkedDrives, {
+  const pickerDrives = useMemo(() => {
+    let rows = filterScopedLinkedDrives(linkedDrives, {
+      isEnterpriseContext,
+      orgId,
+      creatorOnly: false,
+      teamRouteOwnerUid,
+    }).filter(
+      (d) =>
+        teamAwareLabel(d.name) !== "Gallery Media" && d.name !== "Gallery Media"
+    );
+    if (!showRawDrive) {
+      rows = rows.filter((d) => pickerDriveKind(d) !== "raw");
+    }
+    return dedupePickerPillarDrives(rows);
+  }, [
+    linkedDrives,
     isEnterpriseContext,
     orgId,
-    creatorOnly: false,
     teamRouteOwnerUid,
-  }).filter(
-    (d) =>
-      teamAwareLabel(d.name) !== "Gallery Media" && d.name !== "Gallery Media"
-  );
+    showRawDrive,
+  ]);
+
+  const visibleFileIdsForBulkSelect = useMemo(() => {
+    if (tab === "recent") return recentEligibleFiles.slice(0, 200).map((f) => f.id);
+    return folderFiles.map((f) => f.id);
+  }, [tab, recentEligibleFiles, folderFiles]);
 
   const loadBrowseLevel = useCallback(
     async (loc: BrowseLocation) => {
@@ -444,13 +509,17 @@ export default function GalleryAddFromLibraryModal({
     });
   };
 
-  const selectAllVisible = () => {
-    const files = tab === "recent" ? recentEligibleFiles : folderFiles;
-    addManyToSelection(files.map((f) => f.id));
+  const selectAllInView = () => {
+    addManyToSelection(visibleFileIdsForBulkSelect);
   };
 
-  const addFolderFilesToSelection = () => {
-    addManyToSelection(folderFiles.map((f) => f.id));
+  const deselectAllInView = () => {
+    if (visibleFileIdsForBulkSelect.length === 0) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleFileIdsForBulkSelect) next.delete(id);
+      return next;
+    });
   };
 
   if (!open || typeof document === "undefined") return null;
@@ -503,9 +572,13 @@ export default function GalleryAddFromLibraryModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
           <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
             {isVideoGallery
-              ? isTeamRoute
-                ? "Browse your team Storage and RAW folders, or pick from recent videos. Gallery Media is excluded."
-                : "Browse your Storage and RAW folders, or pick from recent videos. Gallery Media is excluded."
+              ? showRawDrive
+                ? isTeamRoute
+                  ? "Browse your team Storage and RAW folders, or pick from recent videos. Gallery Media is excluded."
+                  : "Browse your Storage and RAW folders, or pick from recent videos. Gallery Media is excluded."
+                : isTeamRoute
+                  ? "Browse your team Storage folder, or pick from recent videos. Gallery Media is excluded. RAW is only shown for RAW video galleries."
+                  : "Browse your Storage folder, or pick from recent videos. Gallery Media is excluded. RAW is only shown for RAW video galleries."
               : isTeamRoute
                 ? "Browse your team folders to match how files are organized, or use Recent uploads. Gallery Media is excluded — photos only."
                 : "Browse your folders to match how files are organized, or use Recent uploads. Gallery Media is excluded — photos only."}
@@ -548,13 +621,6 @@ export default function GalleryAddFromLibraryModal({
                   <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
                     <button
                       type="button"
-                      onClick={() => addFolderFilesToSelection()}
-                      className="rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                    >
-                      Select all in folder
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setBrowseLocation(null)}
                       className="rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
                     >
@@ -583,6 +649,26 @@ export default function GalleryAddFromLibraryModal({
                       </button>
                     )}
                   </div>
+
+                  {!listLoading && (
+                    <div className="mb-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      <button
+                        type="button"
+                        onClick={selectAllInView}
+                        className="text-xs font-medium text-bizzi-blue hover:underline"
+                      >
+                        Select all in view
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllInView}
+                        disabled={visibleFileIdsForBulkSelect.length === 0}
+                        className="text-xs font-medium text-neutral-600 hover:underline disabled:opacity-40 dark:text-neutral-400"
+                      >
+                        Deselect all in view
+                      </button>
+                    </div>
+                  )}
 
                   {listLoading ? (
                     <div className="flex justify-center py-12">
@@ -649,13 +735,21 @@ export default function GalleryAddFromLibraryModal({
 
           {tab === "recent" && (
             <>
-              <div className="mb-2 flex justify-end">
+              <div className="mb-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  onClick={selectAllVisible}
+                  onClick={selectAllInView}
                   className="text-xs font-medium text-bizzi-blue hover:underline"
                 >
                   Select all in view
+                </button>
+                <button
+                  type="button"
+                  onClick={deselectAllInView}
+                  disabled={visibleFileIdsForBulkSelect.length === 0}
+                  className="text-xs font-medium text-neutral-600 hover:underline disabled:opacity-40 dark:text-neutral-400"
+                >
+                  Deselect all in view
                 </button>
               </div>
               <div
@@ -702,7 +796,8 @@ export default function GalleryAddFromLibraryModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200 p-4 dark:border-neutral-700">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Drag on empty space to select multiple · Shift or Ctrl/⌘ + click to add to selection
+            Drag on empty space to select multiple · Shift or Ctrl/⌘ + click · Select or deselect all
+            in view above the grid
           </p>
           <div className="flex justify-end gap-2">
             <button

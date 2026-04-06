@@ -41,15 +41,19 @@ async function profileDisplayName(db: Firestore, uid: string): Promise<string> {
   }
 }
 
-async function personalTeamWorkspaceMeta(
+async function personalTeamShareTargetDisplay(
   db: Firestore,
   ownerUid: string,
   profileFallback: string
-): Promise<string> {
+): Promise<{ label: string; logo_url: string | null }> {
   const snap = await db.collection(PERSONAL_TEAM_SETTINGS_COLLECTION).doc(ownerUid).get();
   const data = snap.data();
   const custom = (data?.team_name as string | undefined)?.trim();
-  return custom || profileFallback;
+  const logoRaw = (data?.logo_url as string | undefined)?.trim();
+  return {
+    label: custom || profileFallback,
+    logo_url: logoRaw && logoRaw.length > 0 ? logoRaw : null,
+  };
 }
 
 export async function GET(request: Request) {
@@ -89,6 +93,8 @@ export async function GET(request: Request) {
     label: string;
     subtitle: string;
     hrefHint: string;
+    /** Team/org profile image for picker (personal team settings or organization logo). */
+    logo_url: string | null;
   };
 
   const targets: TargetRow[] = [];
@@ -97,7 +103,7 @@ export async function GET(request: Request) {
   if (await ownerHasPersonalTeamShell(db, uid)) {
     const ownerName = await profileDisplayName(db, uid);
     const fallback = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const name = await personalTeamWorkspaceMeta(db, uid, fallback);
+    const { label: name, logo_url: ownLogo } = await personalTeamShareTargetDisplay(db, uid, fallback);
     teamSeen.add(uid);
     targets.push({
       kind: "personal_team",
@@ -105,6 +111,7 @@ export async function GET(request: Request) {
       label: name,
       subtitle: "Personal team · You own",
       hrefHint: `/team/${uid}/shared`,
+      logo_url: ownLogo,
     });
   }
 
@@ -123,7 +130,7 @@ export async function GET(request: Request) {
     const ownerName = await profileDisplayName(db, ownerId);
     const fallback =
       ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-    const name = await personalTeamWorkspaceMeta(db, ownerId, fallback);
+    const { label: name, logo_url: seatLogo } = await personalTeamShareTargetDisplay(db, ownerId, fallback);
     const level = (sd.seat_access_level as PersonalTeamSeatAccess) ?? "none";
     const roleLabel = level === "none" ? "Member" : PERSONAL_TEAM_SEAT_ACCESS_LABELS[level] ?? "Member";
     targets.push({
@@ -132,6 +139,7 @@ export async function GET(request: Request) {
       label: name,
       subtitle: `Personal team · ${roleLabel}`,
       hrefHint: `/team/${ownerId}/shared`,
+      logo_url: seatLogo,
     });
   }
 
@@ -149,7 +157,10 @@ export async function GET(request: Request) {
 
   for (const orgId of orgIds) {
     const orgSnap = await db.collection("organizations").doc(orgId).get();
-    const orgName = orgSnap.exists ? ((orgSnap.data()?.name as string) ?? "Organization") : "Organization";
+    const orgData = orgSnap.data();
+    const orgName = orgSnap.exists ? ((orgData?.name as string) ?? "Organization") : "Organization";
+    const orgLogoRaw = (orgData?.logo_url as string | undefined)?.trim();
+    const orgLogo = orgLogoRaw && orgLogoRaw.length > 0 ? orgLogoRaw : null;
 
     const shareWsId = orgShareWsByOrgId.get(orgId) ?? null;
     if (!shareWsId) continue;
@@ -161,6 +172,7 @@ export async function GET(request: Request) {
       label: orgName,
       subtitle: "Org · All members",
       hrefHint: "/enterprise/shared",
+      logo_url: orgLogo,
     });
   }
 
@@ -179,13 +191,16 @@ export async function GET(request: Request) {
       const k = `enterprise_workspace:${shareWsId}`;
       if (targetKeys.has(k)) continue;
       targetKeys.add(k);
-      const name = ((d.data()?.name as string) ?? "").trim() || "Organization";
+      const od = d.data();
+      const name = ((od?.name as string) ?? "").trim() || "Organization";
+      const dirOrgLogo = (od?.logo_url as string | undefined)?.trim() || null;
       targets.push({
         kind: "enterprise_workspace",
         id: shareWsId,
         label: name,
         subtitle: "Org · All members",
         hrefHint: "/enterprise/shared",
+        logo_url: dirOrgLogo && dirOrgLogo.length > 0 ? dirOrgLogo : null,
       });
     }
   } catch {
@@ -208,13 +223,14 @@ export async function GET(request: Request) {
       const ownerName = await profileDisplayName(db, ownerUid);
       const fallback =
         ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
-      const label = await personalTeamWorkspaceMeta(db, ownerUid, fallback);
+      const { label, logo_url: dirTeamLogo } = await personalTeamShareTargetDisplay(db, ownerUid, fallback);
       targets.push({
         kind: "personal_team",
         id: ownerUid,
         label,
         subtitle: "Personal team",
         hrefHint: `/team/${ownerUid}/shared`,
+        logo_url: dirTeamLogo,
       });
     }
   } catch {

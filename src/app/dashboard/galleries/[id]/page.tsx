@@ -664,6 +664,7 @@ export default function GalleryDetailPage() {
           setSelectedIds(new Set());
         }}
         isVideoGallery={isVideoGallery}
+        showRawDrive={isVideoGallery && gallery?.media_mode === "raw"}
         isTeamRoute={isTeamRoute}
         selectedIds={selectedIds}
         setSelectedIds={setSelectedIds}

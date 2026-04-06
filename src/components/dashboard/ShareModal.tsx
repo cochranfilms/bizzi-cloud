@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2 } from "lucide-react";
+import { X, Copy, Check, Link2, Lock, UserPlus, Download, File, Building2, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -20,6 +20,39 @@ function shareUiOriginFromPath(path: string): "dashboard" | "personal_team" | "e
   if (/^\/team\/[^/]+/.test(path)) return "personal_team";
   if (/^\/desktop\/app\/team\/[^/]+/.test(path)) return "personal_team";
   return "dashboard";
+}
+
+function WorkspaceTargetAvatar({
+  logoUrl,
+  kind,
+}: {
+  logoUrl: string | null | undefined;
+  kind: "enterprise_workspace" | "personal_team";
+}) {
+  const [broken, setBroken] = useState(false);
+  const showImg = Boolean(logoUrl && !broken);
+  if (showImg) {
+    return (
+      <img
+        src={logoUrl as string}
+        alt=""
+        className="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-neutral-200 dark:ring-neutral-600"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200 dark:bg-neutral-800 dark:ring-neutral-600"
+      aria-hidden
+    >
+      {kind === "enterprise_workspace" ? (
+        <Building2 className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+      ) : (
+        <Users className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+      )}
+    </div>
+  );
 }
 
 type OwnerShareBootstrap = {
@@ -75,6 +108,7 @@ export default function ShareModal({
     kind: "enterprise_workspace" | "personal_team";
     id: string;
     label: string;
+    logo_url?: string | null;
   };
 
   const [shareName, setShareName] = useState<string>(folderName.trim() || "");
@@ -92,7 +126,13 @@ export default function ShareModal({
   const [workspaceTarget, setWorkspaceTarget] = useState<WorkspacePick | null>(null);
   const [targetQuery, setTargetQuery] = useState("");
   const [workspaceDirectoryAll, setWorkspaceDirectoryAll] = useState<
-    { kind: "enterprise_workspace" | "personal_team"; id: string; label: string; subtitle: string }[]
+    {
+      kind: "enterprise_workspace" | "personal_team";
+      id: string;
+      label: string;
+      subtitle: string;
+      logo_url?: string | null;
+    }[]
   >([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [forkedNewShareFlow, setForkedNewShareFlow] = useState(false);
@@ -191,6 +231,7 @@ export default function ShareModal({
               kind: data.workspace_target.kind as WorkspacePick["kind"],
               id: data.workspace_target.id,
               label: `Workspace ${data.workspace_target.id.slice(0, 8)}…`,
+              logo_url: null,
             });
           } else {
             setRecipientTab("email");
@@ -222,6 +263,7 @@ export default function ShareModal({
             kind: "personal_team",
             id: routeTeamOwnerId,
             label: "This team",
+            logo_url: null,
           });
         } else if (pathname.startsWith("/enterprise")) {
           setRecipientTab("workspace");
@@ -349,10 +391,25 @@ export default function ShareModal({
     setWorkspaceTarget((prev) => {
       if (!prev) return prev;
       const row = workspaceDirectoryAll.find((r) => r.kind === prev.kind && r.id === prev.id);
-      if (row && row.label !== prev.label) return { ...prev, label: row.label };
+      if (!row) return prev;
+      const nextLogo = row.logo_url ?? null;
+      if (row.label !== prev.label || nextLogo !== (prev.logo_url ?? null)) {
+        return { ...prev, label: row.label, logo_url: nextLogo };
+      }
       return prev;
     });
   }, [workspaceDirectoryAll, routeTeamOwnerId]);
+
+  useEffect(() => {
+    if (!open || !routeTeamOwnerId || !personalTeam) return;
+    setWorkspaceTarget((prev) => {
+      if (!prev || prev.kind !== "personal_team" || prev.id !== routeTeamOwnerId) return prev;
+      const name = personalTeam.teamName?.trim() || prev.label;
+      const logo = personalTeam.teamLogoUrl ?? prev.logo_url ?? null;
+      if (name === prev.label && logo === (prev.logo_url ?? null)) return prev;
+      return { ...prev, label: name, logo_url: logo };
+    });
+  }, [open, routeTeamOwnerId, personalTeam?.teamName, personalTeam?.teamLogoUrl]);
 
   const liveShareToken = useMemo(
     () => (forkedNewShareFlow ? shareToken : (shareToken ?? initialShareToken ?? null)),
@@ -876,6 +933,8 @@ export default function ShareModal({
                 workspaceTarget.kind === "personal_team"
                   ? "Team workspace"
                   : "Organization workspace",
+              workspaceKind: workspaceTarget.kind,
+              workspaceLogoUrl: workspaceTarget.logo_url ?? null,
             }
           : {
               mode: "email",
@@ -1029,7 +1088,8 @@ export default function ShareModal({
                     setWorkspaceTarget({
                       kind: "personal_team",
                       id: routeTeamOwnerId,
-                      label: "This team",
+                      label: personalTeam?.teamName?.trim() || "This team",
+                      logo_url: personalTeam?.teamLogoUrl ?? null,
                     });
                   }
                 }}
@@ -1062,15 +1122,21 @@ export default function ShareModal({
               <div className="mt-3 space-y-2">
                 {routeTeamOwnerId ? (
                   <div
-                    className="rounded-lg border border-bizzi-blue bg-bizzi-blue/10 px-3 py-2.5 text-sm text-neutral-800 ring-1 ring-bizzi-blue/25 dark:bg-bizzi-blue/15 dark:text-neutral-200 dark:ring-bizzi-blue/35"
+                    className="flex gap-3 rounded-lg border border-bizzi-blue bg-bizzi-blue/10 px-3 py-2.5 text-sm text-neutral-800 ring-1 ring-bizzi-blue/25 dark:bg-bizzi-blue/15 dark:text-neutral-200 dark:ring-bizzi-blue/35"
                     role="status"
                   >
-                    <span className="font-medium text-neutral-900 dark:text-white">
-                      {workspaceTarget?.label ?? "This team"}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-neutral-600 dark:text-neutral-400">
-                      Personal team · All seat members will be notified.
-                    </span>
+                    <WorkspaceTargetAvatar
+                      kind="personal_team"
+                      logoUrl={workspaceTarget?.logo_url ?? personalTeam?.teamLogoUrl}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-neutral-900 dark:text-white">
+                        {workspaceTarget?.label ?? personalTeam?.teamName ?? "This team"}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-neutral-600 dark:text-neutral-400">
+                        Personal team · All seat members will be notified.
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -1100,7 +1166,7 @@ export default function ShareModal({
                                 <button
                                   type="button"
                                   aria-pressed={selected}
-                                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition-colors ${
+                                  className={`flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm transition-colors ${
                                     selected
                                       ? "bg-bizzi-blue/10 font-medium ring-2 ring-inset ring-bizzi-blue/40 dark:bg-bizzi-blue/15 dark:ring-bizzi-blue/50"
                                       : "hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -1110,21 +1176,25 @@ export default function ShareModal({
                                       kind: row.kind,
                                       id: row.id,
                                       label: row.label,
+                                      logo_url: row.logo_url ?? null,
                                     })
                                   }
                                 >
-                                  <span
-                                    className={
-                                      selected
-                                        ? "font-semibold text-bizzi-blue dark:text-bizzi-cyan"
-                                        : "font-medium text-neutral-900 dark:text-white"
-                                    }
-                                  >
-                                    {row.label}
-                                  </span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                                    {row.subtitle}
-                                  </span>
+                                  <WorkspaceTargetAvatar kind={row.kind} logoUrl={row.logo_url} />
+                                  <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                                    <span
+                                      className={
+                                        selected
+                                          ? "font-semibold text-bizzi-blue dark:text-bizzi-cyan"
+                                          : "font-medium text-neutral-900 dark:text-white"
+                                      }
+                                    >
+                                      {row.label}
+                                    </span>
+                                    <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                      {row.subtitle}
+                                    </span>
+                                  </div>
                                 </button>
                               </li>
                             );

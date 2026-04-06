@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, X, Building2, Mail, FolderOpen, FileIcon, ArrowRight } from "lucide-react";
+import { CheckCircle2, X, Building2, Mail, FolderOpen, FileIcon, ArrowRight, Users } from "lucide-react";
 
 export interface ShareConfirmationSourceWorkspace {
   title: string;
@@ -13,6 +14,8 @@ export interface ShareConfirmationTarget {
   emails: string[];
   workspaceLabel?: string;
   workspaceScopeLabel?: string;
+  workspaceKind?: "personal_team" | "enterprise_workspace";
+  workspaceLogoUrl?: string | null;
 }
 
 export interface ShareConfirmationSharedItems {
@@ -31,6 +34,39 @@ interface ShareConfirmationModalProps {
   source: ShareConfirmationSourceWorkspace;
   target: ShareConfirmationTarget;
   items: ShareConfirmationSharedItems;
+}
+
+function ConfirmWorkspaceAvatar({
+  logoUrl,
+  kind,
+}: {
+  logoUrl: string | null | undefined;
+  kind: "personal_team" | "enterprise_workspace" | undefined;
+}) {
+  const [broken, setBroken] = useState(false);
+  const showImg = Boolean(logoUrl && !broken);
+  if (showImg) {
+    return (
+      <img
+        src={logoUrl as string}
+        alt=""
+        className="mt-0.5 h-9 w-9 shrink-0 rounded-lg object-cover ring-1 ring-neutral-200 dark:ring-neutral-600"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <div
+      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200 dark:bg-neutral-800 dark:ring-neutral-600"
+      aria-hidden
+    >
+      {kind === "enterprise_workspace" ? (
+        <Building2 className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+      ) : (
+        <Users className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+      )}
+    </div>
+  );
 }
 
 export default function ShareConfirmationModal({
@@ -120,16 +156,22 @@ export default function ShareConfirmationModal({
                     Shared to
                   </p>
                   {target.mode === "workspace" ? (
-                    <>
-                      <p className="truncate text-sm font-semibold text-neutral-900 dark:text-white">
-                        {target.workspaceLabel ?? "Workspace"}
-                      </p>
-                      {target.workspaceScopeLabel ? (
-                        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                          {target.workspaceScopeLabel}
+                    <div className="flex items-start gap-2.5">
+                      <ConfirmWorkspaceAvatar
+                        logoUrl={target.workspaceLogoUrl}
+                        kind={target.workspaceKind}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-neutral-900 dark:text-white">
+                          {target.workspaceLabel ?? "Workspace"}
                         </p>
-                      ) : null}
-                    </>
+                        {target.workspaceScopeLabel ? (
+                          <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                            {target.workspaceScopeLabel}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
                   ) : target.emails.length > 0 ? (
                     <p className="text-sm font-semibold text-neutral-900 dark:text-white">
                       {target.emails.length} email{target.emails.length === 1 ? "" : "s"}
@@ -149,8 +191,11 @@ export default function ShareConfirmationModal({
               </p>
               {target.mode === "workspace" ? (
                 <div className="flex items-start gap-2 rounded-lg border border-neutral-200 px-3 py-2.5 dark:border-neutral-700">
-                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" />
-                  <div>
+                  <ConfirmWorkspaceAvatar
+                    logoUrl={target.workspaceLogoUrl}
+                    kind={target.workspaceKind}
+                  />
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm text-neutral-800 dark:text-neutral-200">
                       Members of{" "}
                       <span className="font-medium text-neutral-900 dark:text-white">
