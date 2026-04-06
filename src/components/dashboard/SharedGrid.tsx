@@ -451,7 +451,7 @@ export default function SharedGrid() {
                               ? "Download"
                               : "View only"}
                           </span>
-                          <div className="flex gap-1">
+                          <div className="flex flex-shrink-0 items-center gap-1">
                             <button
                       type="button"
                       onClick={(e) => {
@@ -463,10 +463,11 @@ export default function SharedGrid() {
                           invitedEmails: item.invitedEmails,
                         });
                       }}
-                              className="flex-shrink-0 rounded p-2 text-neutral-400 transition-colors hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-                              aria-label="Edit share"
+                              className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
+                              aria-label="Manage share"
                             >
-                              <Settings className="h-4 w-4" />
+                              <Settings className="h-3.5 w-3.5" />
+                              Manage share
                             </button>
                             <button
                               type="button"
@@ -510,6 +511,7 @@ export default function SharedGrid() {
           folderName={editShare.folderName}
           initialShareToken={editShare.token}
           initialInvitedEmails={editShare.invitedEmails}
+          manageExistingShare
         />
       )}
     </div>

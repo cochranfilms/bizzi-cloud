@@ -397,8 +397,7 @@ export default function FileListRow({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         folderName={file.name}
-        linkedDriveId={file.driveId}
-        backupFileId={file.id}
+        referencedFileIds={[file.id]}
       />
       <RenameModal
         open={renameOpen}

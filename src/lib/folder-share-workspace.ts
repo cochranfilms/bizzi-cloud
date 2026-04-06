@@ -15,7 +15,7 @@ import {
   parseWorkspaceTargetKey as parseWorkspaceTargetKeyImpl,
   workspaceTargetKey as workspaceTargetKeyImpl,
 } from "@/lib/workspace-share-target-key";
-import type { WorkspaceType } from "@/types/workspace";
+import type { Workspace, WorkspaceType } from "@/types/workspace";
 
 function scopeLabelForWorkspaceType(t: WorkspaceType): string {
   switch (t) {
@@ -101,6 +101,61 @@ export async function userCanAccessPersonalTeamTarget(
     .get();
   const st = seatSnap.data()?.status as string | undefined;
   return seatSnap.exists && personalTeamSeatAllowsShareAccess(st);
+}
+
+/**
+ * Whether the user counts as a normal member of the workspace share inbox (the audience that
+ * receives workspace-targeted shares without admin moderation).
+ *
+ * For enterprise targets this intentionally does **not** use the org-admin shortcut in
+ * {@link userCanAccessWorkspace}: an org admin who is not on a team/project workspace is
+ * treated as an outsider for delivery, so shares go pending and admins get the delivery-request
+ * email flow.
+ */
+export async function userIsWorkspaceShareInboxMember(
+  uid: string,
+  kind: WorkspaceShareTargetKind,
+  targetId: string
+): Promise<boolean> {
+  if (!uid || !targetId) return false;
+  if (kind === "personal_team") {
+    return userCanAccessPersonalTeamTarget(uid, targetId);
+  }
+
+  const db = getAdminFirestore();
+  const wsSnap = await db.collection("workspaces").doc(targetId).get();
+  if (!wsSnap.exists) return false;
+
+  const ws = wsSnap.data() as Workspace;
+  const orgId = ws.organization_id;
+  if (!orgId) return false;
+
+  const type: WorkspaceType = ws.workspace_type ?? "private";
+
+  switch (type) {
+    case "org_shared": {
+      const seatSnap = await db.collection("organization_seats").doc(`${orgId}_${uid}`).get();
+      return seatSnap.exists && seatSnap.data()?.status === "active";
+    }
+    case "private":
+      if (ws.created_by === uid) return true;
+      if (Array.isArray(ws.member_user_ids) && ws.member_user_ids.includes(uid)) return true;
+      return false;
+    case "team":
+    case "project":
+      if (ws.created_by === uid) return true;
+      if (Array.isArray(ws.member_user_ids) && ws.member_user_ids.includes(uid)) return true;
+      return false;
+    case "gallery":
+      if (!ws.gallery_id) return false;
+      const gallerySnap = await db.collection("galleries").doc(ws.gallery_id).get();
+      if (!gallerySnap.exists) return false;
+      const gallery = gallerySnap.data();
+      if (gallery?.photographer_id === uid) return true;
+      return false;
+    default:
+      return false;
+  }
 }
 
 export async function userCanAccessWorkspaceShareTarget(

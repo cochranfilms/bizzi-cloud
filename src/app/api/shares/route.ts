@@ -21,6 +21,7 @@ import {
   getWorkspaceShareDeliveryStatus,
   parseWorkspaceTargetKey,
   userCanAccessWorkspaceShareTarget,
+  userIsWorkspaceShareInboxMember,
   userIsWorkspaceShareTargetAdmin,
   workspaceDisplayContextForShare,
   workspaceShareTargetIsDeliverable,
@@ -726,12 +727,12 @@ export async function POST(request: Request) {
 
   let pendingWorkspaceDelivery = false;
   if (recipientMode === "workspace" && workspaceKind && workspaceTargetId) {
-    const sharerInTarget = await userCanAccessWorkspaceShareTarget(
+    const sharerInShareInbox = await userIsWorkspaceShareInboxMember(
       uid,
       workspaceKind,
       workspaceTargetId
     );
-    pendingWorkspaceDelivery = !sharerInTarget;
+    pendingWorkspaceDelivery = !sharerInShareInbox;
   }
 
   if (isVirtualShare) {

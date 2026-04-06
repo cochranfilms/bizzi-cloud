@@ -1,6 +1,8 @@
 /**
- * Creator RAW immersive portrait ("reel") presentation — layout constants and detection.
- * Portrait and landscape use separate max widths, padding, and rail spacing (see CREATOR_RAW_PORTRAIT_STAGE).
+ * Creator RAW immersive reel presentation — layout constants and detection.
+ * Reels use a 16:9 hero frame (same visual footprint as horizontal previews); true 9:16 clips are
+ * letterboxed with black pillars via object-contain. Never use a tall 9:16 shell + cover with 16:9
+ * proxies — that crops the top and bottom of vertical footage.
  */
 
 /** Portrait clip: height / width >= this ratio (9:16 ≈ 1.78). */
@@ -22,30 +24,27 @@ export const CREATOR_RAW_PORTRAIT_STAGE = {
   /** Legacy rem hints (docs / tooling); layout uses `stageMaxWidthClass`. */
   maxWidthMobileRem: 30,
   maxWidthDesktopRem: 40,
-  /**
-   * Tailwind width cap for the reel column: larger “phone” on desktop while reserving
-   * ~20rem for the comments rail + gutters (`calc(100vw - 20rem)`).
-   */
+  /** Match horizontal Creator RAW preview width; reserve space for comments rail on lg+. */
   stageMaxWidthClass:
-    "max-w-[min(30rem,calc(100vw-1.25rem))] lg:max-w-[min(40rem,calc(100vw-20rem))]",
+    "w-full max-w-[min(96rem,calc(100vw-1.25rem))] lg:max-w-[min(96rem,calc(100vw-20rem))]",
   shellPadX: "px-2 sm:px-3 md:px-4",
   shellPadY: "py-2 sm:py-3",
-  /** Fixed 9:16 slot min-height so loading → proxy → mux does not jump */
-  stageAspect: "9 / 16" as const,
-  /** Use more vertical space; header + LUT strip still fit above the fold. */
-  stageMaxHeight: "min(90dvh, calc(100dvh - 10.25rem))",
+  /** 16:9 outer chrome — vertical video sits inside with side pillarboxing (contain). */
+  stageAspect: "16 / 9" as const,
+  /** Same band as landscape `VideoWithLUT` immersive hero. */
+  stageMaxHeight: "min(85dvh, calc(100dvh - 10rem))",
   /** Shared with processing placeholder — identical slot = no layout jump. */
-  stageMinHeight: "min(56dvh, 30rem)",
+  stageMinHeight: "min(38dvh, 21rem)",
   lutRailGap: "gap-3 sm:gap-3.5",
   lutRailMaxWidth: "min(28rem, 100%)",
-  /** Outer chrome around the playable 9:16 region (notch + depth). */
+  /** Outer chrome around the 16:9 hero (notch + depth). */
   frameShellClass:
     "relative w-full overflow-hidden rounded-[1.85rem] bg-neutral-950 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.09)] ring-1 ring-black/25 dark:bg-black dark:shadow-[0_44px_120px_-32px_rgba(0,0,0,0.82)] dark:ring-white/12",
   processingShellClass:
     "flex w-full flex-col items-center justify-center rounded-[1.85rem] border border-white/10 bg-black/50 px-4 py-10 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.55)] ring-1 ring-black/20 backdrop-blur-md dark:border-white/12 dark:bg-black/55 dark:ring-white/10",
 } as const;
 
-/** Inline style for the portrait “device” frame (processing + ready). Keep in sync in one place. */
+/** Inline style for the reel hero frame (processing + ready). Keep in sync in one place. */
 export const CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE = {
   aspectRatio: CREATOR_RAW_PORTRAIT_STAGE.stageAspect,
   maxHeight: CREATOR_RAW_PORTRAIT_STAGE.stageMaxHeight,

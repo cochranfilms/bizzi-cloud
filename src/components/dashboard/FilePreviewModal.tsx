@@ -779,7 +779,7 @@ export default function FilePreviewModal({
                   onLutChange={setLutEnabled}
                   frameless
                   sideBySideLut={showLUT && !portraitProductStage}
-                  videoObjectFit={portraitProductStage ? "cover" : "contain"}
+                  videoObjectFit="contain"
                   onDisplayReady={() => setVideoMediaVisible(true)}
                   preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
                   proxyOnlyPlayback={proxyOnlyPlayback}

@@ -167,6 +167,13 @@ export async function GET(
     response.invited_emails = share.invited_emails ?? [];
     response.recipient_mode = getRecipientModeFromDoc(share as Record<string, unknown>);
     response.version = version;
+    /** Lets “Manage share” open a second link (email vs team/org) without re-fetching elsewhere. */
+    response.linked_drive_id = (share.linked_drive_id as string | undefined) ?? null;
+    response.backup_file_id = (share.backup_file_id as string | undefined) ?? null;
+    const refIdsRaw = share.referenced_file_ids as string[] | undefined;
+    response.referenced_file_ids = Array.isArray(refIdsRaw)
+      ? refIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : [];
   }
 
   if (getRecipientModeFromDoc(share as Record<string, unknown>) === "workspace") {

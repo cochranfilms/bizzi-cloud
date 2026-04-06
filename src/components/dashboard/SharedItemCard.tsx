@@ -94,7 +94,7 @@ export default function SharedItemCard({
     <div className="relative">
       {content}
       {isOwned && (onEdit || onDelete) && (
-        <div className="absolute left-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute left-2 top-2 flex max-w-[calc(100%-3rem)] flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {onEdit && (
             <button
               type="button"
@@ -103,10 +103,11 @@ export default function SharedItemCard({
                 e.stopPropagation();
                 onEdit(e);
               }}
-              className="rounded p-1.5 text-neutral-400 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:hover:bg-bizzi-blue/20 dark:hover:text-bizzi-cyan"
-              aria-label="Edit share"
+              className="flex items-center gap-1 rounded-md border border-neutral-200 bg-white/95 px-2 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
+              aria-label="Manage share"
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-3.5 w-3.5" />
+              Manage share
             </button>
           )}
           {onDelete && (

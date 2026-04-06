@@ -13,6 +13,13 @@ function shareUiOriginFromPath(path: string): "dashboard" | "personal_team" | "e
   return "dashboard";
 }
 
+type OwnerShareBootstrap = {
+  linked_drive_id: string | null;
+  backup_file_id: string | null;
+  referenced_file_ids: string[];
+  recipient_mode: "email" | "workspace";
+};
+
 interface ShareModalProps {
   open: boolean;
   onClose: () => void;
@@ -28,6 +35,8 @@ interface ShareModalProps {
   initialAccessLevel?: "private" | "public";
   initialPermission?: "view" | "edit";
   initialInvitedEmails?: string[];
+  /** Opened from Shared tab to edit an existing share; allows switching recipient type (starts a new link). */
+  manageExistingShare?: boolean;
 }
 
 export default function ShareModal({
@@ -41,6 +50,7 @@ export default function ShareModal({
   initialAccessLevel = "private",
   initialPermission = "view",
   initialInvitedEmails = [],
+  manageExistingShare = false,
 }: ShareModalProps) {
   const { user } = useAuth();
   const pathname = usePathname() ?? "";
@@ -73,16 +83,13 @@ export default function ShareModal({
     { kind: "enterprise_workspace" | "personal_team"; id: string; label: string; subtitle: string }[]
   >([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
+  const [forkedNewShareFlow, setForkedNewShareFlow] = useState(false);
+  const [ownerBootstrap, setOwnerBootstrap] = useState<OwnerShareBootstrap | null>(null);
 
   const hasValidShareName = shareName.trim().length > 0;
   const lastFetchedForRef = useRef<string | null>(null);
   const prevOpenRef = useRef(false);
   const shareNameInputRef = useRef<HTMLInputElement>(null);
-
-  const shareUrl =
-    shareToken && typeof window !== "undefined"
-      ? `${window.location.origin}/s/${shareToken}`
-      : null;
 
   const fetchExistingShare = useCallback(async () => {
     if (!linkedDriveId || !user) return;
@@ -152,6 +159,15 @@ export default function ShareModal({
           setAccessLevel((data.access_level as "private" | "public") ?? "private");
           setPermission((data.permission as "view" | "edit") ?? "view");
           setInvitedEmails(Array.isArray(data.invited_emails) ? data.invited_emails : []);
+          const refIds = Array.isArray(data.referenced_file_ids)
+            ? (data.referenced_file_ids as unknown[]).filter((id): id is string => typeof id === "string")
+            : [];
+          setOwnerBootstrap({
+            linked_drive_id: (data.linked_drive_id as string | null | undefined) ?? null,
+            backup_file_id: (data.backup_file_id as string | null | undefined) ?? null,
+            referenced_file_ids: refIds,
+            recipient_mode: data.recipient_mode === "workspace" ? "workspace" : "email",
+          });
           if (data.recipient_mode === "workspace" && data.workspace_target?.kind && data.workspace_target?.id) {
             setRecipientTab("workspace");
             setWorkspaceTarget({
@@ -177,7 +193,12 @@ export default function ShareModal({
     if (open) {
       if (justOpened) {
         setShareName(folderName.trim() || "");
-        if (routeTeamOwnerId) {
+        setForkedNewShareFlow(false);
+        setOwnerBootstrap(null);
+        if (manageExistingShare && initialShareToken) {
+          setRecipientTab("email");
+          setWorkspaceTarget(null);
+        } else if (routeTeamOwnerId) {
           setRecipientTab("workspace");
           setWorkspaceTarget({
             kind: "personal_team",
@@ -220,6 +241,8 @@ export default function ShareModal({
       setNameError(null);
       setCopied(false);
       setEmailInput("");
+      setForkedNewShareFlow(false);
+      setOwnerBootstrap(null);
     }
   }, [
     open,
@@ -233,6 +256,7 @@ export default function ShareModal({
     fetchShareDetails,
     routeTeamOwnerId,
     pathname,
+    manageExistingShare,
   ]);
 
   // After opening from the item menu, focus can remain on a file/folder card; Space/Enter then
@@ -311,11 +335,53 @@ export default function ShareModal({
     });
   }, [workspaceDirectoryAll, routeTeamOwnerId]);
 
-  const recipientLocked = !!(shareToken || initialShareToken);
+  const liveShareToken = useMemo(
+    () => (forkedNewShareFlow ? shareToken : (shareToken ?? initialShareToken ?? null)),
+    [forkedNewShareFlow, shareToken, initialShareToken]
+  );
+
+  /** Same backing rule as ensureShare: linked folder/file or virtual refs (incl. owner bootstrap when forking). */
+  const hasEnsureShareSource = useMemo(() => {
+    const bootRefs =
+      forkedNewShareFlow && ownerBootstrap?.referenced_file_ids?.length
+        ? ownerBootstrap.referenced_file_ids
+        : [];
+    const propRefs = Array.isArray(referencedFileIds) ? referencedFileIds : [];
+    const effectiveRefs = bootRefs.length > 0 ? bootRefs : propRefs;
+    const isVirtualShare = effectiveRefs.length > 0;
+    const effDriveId =
+      forkedNewShareFlow && ownerBootstrap
+        ? ownerBootstrap.linked_drive_id ?? undefined
+        : linkedDriveId;
+    return !!(effDriveId || isVirtualShare);
+  }, [forkedNewShareFlow, ownerBootstrap, referencedFileIds, linkedDriveId]);
+
+  const shareUrl =
+    liveShareToken && typeof window !== "undefined"
+      ? `${window.location.origin}/s/${liveShareToken}`
+      : null;
+
+  const recipientLocked = !!(shareToken ?? initialShareToken) && !manageExistingShare && !forkedNewShareFlow;
+
+  useEffect(() => {
+    if (!manageExistingShare || !open || !ownerBootstrap || forkedNewShareFlow) return;
+    const mode = ownerBootstrap.recipient_mode;
+    if (recipientTab === "email" && mode === "workspace") {
+      setForkedNewShareFlow(true);
+      setShareToken(null);
+      setInvitedEmails([]);
+      setWorkspaceTarget(null);
+    } else if (recipientTab === "workspace" && mode === "email") {
+      setForkedNewShareFlow(true);
+      setShareToken(null);
+      setWorkspaceTarget(null);
+      setInvitedEmails([]);
+    }
+  }, [manageExistingShare, open, ownerBootstrap, forkedNewShareFlow, recipientTab]);
 
   const ensureShare = useCallback(async (): Promise<string | null> => {
     if (!user) return null;
-    if (initialShareToken || shareToken) return initialShareToken ?? shareToken;
+    if (liveShareToken) return liveShareToken;
     const name = shareName.trim();
     if (!name) {
       setNameError("Please name your share before copying the link or adding people.");
@@ -327,8 +393,23 @@ export default function ShareModal({
     }
     setNameError(null);
 
-    const isVirtualShare = Array.isArray(referencedFileIds) && referencedFileIds.length > 0;
-    if (!linkedDriveId && !isVirtualShare) return null;
+    const bootRefs =
+      forkedNewShareFlow && ownerBootstrap?.referenced_file_ids?.length
+        ? ownerBootstrap.referenced_file_ids
+        : [];
+    const propRefs = Array.isArray(referencedFileIds) ? referencedFileIds : [];
+    const effectiveRefs = bootRefs.length > 0 ? bootRefs : propRefs;
+    const isVirtualShare = effectiveRefs.length > 0;
+    const effDriveId =
+      forkedNewShareFlow && ownerBootstrap
+        ? ownerBootstrap.linked_drive_id ?? undefined
+        : linkedDriveId;
+    const effBackupId =
+      forkedNewShareFlow && ownerBootstrap
+        ? ownerBootstrap.backup_file_id ?? undefined
+        : backupFileId;
+
+    if (!hasEnsureShareSource) return null;
 
     setLoading(true);
     setError(null);
@@ -346,10 +427,10 @@ export default function ShareModal({
         body.workspace_target = { kind: workspaceTarget.kind, id: workspaceTarget.id };
       }
       if (isVirtualShare) {
-        body.referenced_file_ids = referencedFileIds;
+        body.referenced_file_ids = effectiveRefs;
       } else {
-        body.linked_drive_id = linkedDriveId;
-        body.backup_file_id = backupFileId ?? undefined;
+        body.linked_drive_id = effDriveId;
+        body.backup_file_id = effBackupId ?? undefined;
       }
       const res = await fetch("/api/shares", {
         method: "POST",
@@ -378,8 +459,7 @@ export default function ShareModal({
     backupFileId,
     referencedFileIds,
     user,
-    shareToken,
-    initialShareToken,
+    liveShareToken,
     permission,
     accessLevel,
     invitedEmails,
@@ -387,10 +467,13 @@ export default function ShareModal({
     recipientTab,
     workspaceTarget,
     pathname,
+    forkedNewShareFlow,
+    ownerBootstrap,
+    hasEnsureShareSource,
   ]);
 
   const copyLink = useCallback(async () => {
-    if (!hasValidShareName && !shareToken && !initialShareToken) {
+    if (!hasValidShareName && !liveShareToken) {
       setNameError("Please name your share before copying the link.");
       return;
     }
@@ -401,16 +484,15 @@ export default function ShareModal({
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [ensureShare, hasValidShareName, shareToken, initialShareToken]);
+  }, [ensureShare, hasValidShareName, liveShareToken]);
 
   const addEmail = useCallback(async () => {
     if (recipientTab === "workspace") return;
     const trimmed = emailInput.trim().toLowerCase();
     if (!trimmed) return;
     if (invitedEmails.includes(trimmed)) return;
-    // When we have an existing share token, always allow adding (edit mode)
-    const tokenForCheck = shareToken ?? initialShareToken;
-    const canCreate = (linkedDriveId && hasValidShareName) || (referencedFileIds?.length && hasValidShareName);
+    const tokenForCheck = liveShareToken;
+    const canCreate = hasEnsureShareSource && hasValidShareName;
     if (!tokenForCheck && !canCreate) {
       setNameError("Please name your share before adding people.");
       return;
@@ -419,7 +501,7 @@ export default function ShareModal({
     const next = [...invitedEmails, trimmed];
     setInvitedEmails(next);
     setEmailInput("");
-    const token = (await ensureShare()) ?? shareToken ?? initialShareToken ?? null;
+    const token = (await ensureShare()) ?? liveShareToken ?? null;
     if (token) {
       setLoading(true);
       setError(null);
@@ -465,11 +547,9 @@ export default function ShareModal({
     shareVersion,
     fetchShareVersion,
     hasValidShareName,
-    shareToken,
-    initialShareToken,
+    liveShareToken,
     shareName,
-    linkedDriveId,
-    referencedFileIds,
+    hasEnsureShareSource,
   ]);
 
   const removeEmail = useCallback(
@@ -477,7 +557,7 @@ export default function ShareModal({
       if (recipientTab === "workspace") return;
       const next = invitedEmails.filter((e) => e !== email);
       setInvitedEmails(next);
-      const token = shareToken ?? initialShareToken;
+      const token = liveShareToken;
       if (token && user) {
         setLoading(true);
         setError(null);
@@ -507,7 +587,7 @@ export default function ShareModal({
         }
       }
     },
-    [recipientTab, invitedEmails, shareToken, initialShareToken, user, shareVersion, fetchShareVersion]
+    [recipientTab, invitedEmails, liveShareToken, user, shareVersion, fetchShareVersion]
   );
 
   const saveChanges = useCallback(
@@ -516,7 +596,7 @@ export default function ShareModal({
       invited_emails?: string[];
       permission?: "view" | "edit";
     }) => {
-      const shareTokenToUse = shareToken ?? initialShareToken;
+      const shareTokenToUse = liveShareToken;
       if (!shareTokenToUse || !user) return;
       const level = overrides?.access_level ?? accessLevel;
       const emails =
@@ -555,20 +635,20 @@ export default function ShareModal({
         setLoading(false);
       }
     },
-    [recipientTab, shareToken, initialShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
+    [recipientTab, liveShareToken, user, accessLevel, invitedEmails, permission, shareVersion, fetchShareVersion]
   );
 
   const handleClose = useCallback(async () => {
     if (loading) return;
 
-    let token = shareToken ?? initialShareToken ?? null;
+    let token = liveShareToken ?? null;
 
     /** Share must persist a new share (same as “Copy link”), not only close — otherwise workspace targets never POST /api/shares and admins get no delivery request. */
     const shouldCreateShare =
       user &&
       hasValidShareName &&
       !token &&
-      (!!linkedDriveId || (Array.isArray(referencedFileIds) && referencedFileIds.length > 0)) &&
+      hasEnsureShareSource &&
       (recipientTab !== "workspace" || !!workspaceTarget);
 
     if (shouldCreateShare) {
@@ -611,16 +691,14 @@ export default function ShareModal({
     onClose();
   }, [
     onClose,
-    shareToken,
-    initialShareToken,
+    liveShareToken,
     user,
     shareName,
     folderName,
     shareVersion,
     loading,
     hasValidShareName,
-    linkedDriveId,
-    referencedFileIds,
+    hasEnsureShareSource,
     recipientTab,
     workspaceTarget,
     ensureShare,
@@ -649,7 +727,13 @@ export default function ShareModal({
         >
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-4 sm:px-6 dark:border-neutral-700">
           <h3 id="share-modal-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
-            Share &quot;{shareName || folderName}&quot;
+            {manageExistingShare ? (
+              <>
+                Manage share · &quot;{shareName || folderName}&quot;
+              </>
+            ) : (
+              <>Share &quot;{shareName || folderName}&quot;</>
+            )}
           </h3>
           <button
             type="button"
@@ -668,6 +752,11 @@ export default function ShareModal({
           )}
           {nameError && (
             <p className="text-sm text-red-500 dark:text-red-400">{nameError}</p>
+          )}
+          {manageExistingShare && !forkedNewShareFlow && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Add or remove people, adjust access, or switch to Email or Team / org to start another link for the same files.
+            </p>
           )}
 
           {/* Share name - required */}
@@ -709,7 +798,7 @@ export default function ShareModal({
                 disabled={recipientLocked}
                 onClick={() => {
                   setRecipientTab("email");
-                  if (!recipientLocked) setShareToken(null);
+                  if (!recipientLocked && !manageExistingShare) setShareToken(null);
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
                   recipientTab === "email"
@@ -725,7 +814,7 @@ export default function ShareModal({
                 disabled={recipientLocked}
                 onClick={() => {
                   setRecipientTab("workspace");
-                  if (!recipientLocked) setShareToken(null);
+                  if (!recipientLocked && !manageExistingShare) setShareToken(null);
                   if (routeTeamOwnerId) {
                     setWorkspaceTarget({
                       kind: "personal_team",
@@ -744,6 +833,21 @@ export default function ShareModal({
                 Team / org
               </button>
             </div>
+            {forkedNewShareFlow && (
+              <div
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100"
+                role="status"
+              >
+                You&apos;re creating an <strong>additional</strong> share with a different audience.
+                Your existing link stays active unchanged.
+              </div>
+            )}
+            {recipientTab === "workspace" && manageExistingShare && !forkedNewShareFlow && ownerBootstrap?.recipient_mode === "workspace" && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Members of the selected workspace see this in their Shared tab. Use{" "}
+                <strong>Email</strong> above to create a separate link for invited addresses.
+              </p>
+            )}
             {recipientTab === "workspace" && (
               <div className="mt-3 space-y-2">
                 {routeTeamOwnerId ? (
@@ -829,7 +933,7 @@ export default function ShareModal({
             <button
               type="button"
               onClick={copyLink}
-              disabled={(!linkedDriveId && !initialShareToken && !(referencedFileIds?.length)) || !user || loading}
+              disabled={(!hasEnsureShareSource && !liveShareToken) || !user || loading}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:opacity-50"
             >
               <Link2 className="h-4 w-4" />
@@ -862,7 +966,7 @@ export default function ShareModal({
                 type="button"
                 onClick={() => {
                   setAccessLevel("private");
-                  if (shareToken && user) saveChanges({ access_level: "private" });
+                  if (liveShareToken && user) saveChanges({ access_level: "private" });
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                   accessLevel === "private"
@@ -877,7 +981,7 @@ export default function ShareModal({
                 type="button"
                 onClick={() => {
                   setAccessLevel("public");
-                  if (shareToken && user) saveChanges({ access_level: "public" });
+                  if (liveShareToken && user) saveChanges({ access_level: "public" });
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                   accessLevel === "public"
@@ -906,7 +1010,7 @@ export default function ShareModal({
                 type="button"
                 onClick={() => {
                   setPermission("view");
-                  if (shareToken && user) saveChanges({ permission: "view" });
+                  if (liveShareToken && user) saveChanges({ permission: "view" });
                 }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "view"
@@ -921,7 +1025,7 @@ export default function ShareModal({
                 type="button"
                 onClick={() => {
                   setPermission("edit");
-                  if (shareToken && user) saveChanges({ permission: "edit" });
+                  if (liveShareToken && user) saveChanges({ permission: "edit" });
                 }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   permission === "edit"
