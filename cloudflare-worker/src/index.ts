@@ -19,8 +19,9 @@ function corsHeaders(origin: string | null): Headers {
   h.set("Access-Control-Allow-Origin", allowOrigin);
   h.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
   h.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  h.set("Access-Control-Allow-Headers", "Range");
-  return h;
+    h.set("Access-Control-Allow-Headers", "Range");
+    h.set("Cross-Origin-Resource-Policy", "cross-origin");
+    return h;
 }
 
 export default {
@@ -43,7 +44,8 @@ export default {
       return new Response("Missing object_key, exp, or sig", { status: 400 });
     }
 
-    const apiBase = env.API_BASE_URL?.replace(/\/$/, "") || "https://bizzicloud.io";
+    /** Must match the deployed Next app host (presigned exchange). Prefer www if the app lives there. */
+    const apiBase = env.API_BASE_URL?.replace(/\/$/, "") || "https://www.bizzicloud.io";
     const presignedUrl = `${apiBase}/api/cdn-presigned?object_key=${encodeURIComponent(objectKey)}&exp=${exp}&sig=${encodeURIComponent(sig)}${downloadFilename ? `&download=${encodeURIComponent(downloadFilename)}` : ""}${inlinePreview ? "&inline=1" : ""}`;
 
     const rangeHeader = request.headers.get("Range");

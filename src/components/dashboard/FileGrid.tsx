@@ -168,6 +168,9 @@ export default function FileGrid({
   const {
     driveFolders,
     recentFiles,
+    recentUploads,
+    recentUploadsLoading,
+    fetchRecentUploads,
     loading,
     fetchDriveFiles,
     subscribeToDriveFiles,
@@ -207,7 +210,8 @@ export default function FileGrid({
     hasMore: heartedHasMore,
     loadMore: loadMoreHearted,
     refresh: refreshHearted,
-  } = useHeartedFiles();
+    workspaceHeartsActive,
+  } = useHeartedFiles({ inferWorkspaceHeartsFromRoute: inlineStorageOnFilesPage });
   const { linkedDrives, storageVersion, fetchDrives, bumpStorageVersion, loading: backupDrivesLoading } =
     useBackup();
   const { org } = useEnterprise();
@@ -1402,6 +1406,15 @@ export default function FileGrid({
       ? displayedFilesWithMacosPackages
       : recentFiles;
 
+  /** All Files inline: Recents tab lists Storage uploads (7 days), not the flat filter API. */
+  const filesLandingRecentsMode = threeTabFilesLanding && filesLandingTab === "recents";
+  const rootRecentsFilesForGrid = filesLandingRecentsMode ? recentUploads : filesToShow;
+
+  useEffect(() => {
+    if (!threeTabFilesLanding || filesLandingTab !== "recents") return;
+    void fetchRecentUploads();
+  }, [threeTabFilesLanding, filesLandingTab, fetchRecentUploads]);
+
   const showFolders = !useFilteredScoped;
 
   const bulkV2IntraEligible = useMemo(() => {
@@ -2091,6 +2104,10 @@ export default function FileGrid({
   );
   const embeddedFolderGridRevealClass = embeddedFolderBrowse ? "min-h-0" : "contents";
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
+  const filesLandingRecentsReady =
+    !filesLandingRecentsMode ||
+    (!recentUploadsLoading && recentsRootReady) ||
+    recentUploads.length > 0;
   /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). */
   const mainGridFadeReady = embeddedFolderBrowse
     ? true
@@ -2100,7 +2117,7 @@ export default function FileGrid({
         ? true
         : threeTabFilesLanding
           ? filesLandingTab === "recents"
-            ? recentsRootReady
+            ? filesLandingRecentsReady
             : !(heartedLoading && heartedFiles.length === 0)
           : activeTab === "recents"
             ? recentsRootReady
@@ -2121,7 +2138,7 @@ export default function FileGrid({
     <div
       ref={gridSectionRef}
       className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
-        embeddedHomeStorage || filesPageStorageEmbeddedChrome
+        embeddedHomeStorage || filesPageStorageEmbeddedChrome || threeTabFilesLanding
           ? " h-full min-h-0 pl-4 pr-3 sm:pl-6 sm:pr-4"
           : ""
       }`}
@@ -2497,7 +2514,7 @@ export default function FileGrid({
           <div
             className={
               filesLandingStorageFrame
-                ? "flex min-h-0 flex-1 flex-col overflow-auto py-3"
+                ? "flex min-h-0 flex-1 flex-col overflow-auto px-4 py-3 sm:px-6"
                 : "contents"
             }
           >
@@ -2583,7 +2600,13 @@ export default function FileGrid({
             </div>
           )}
           <div className="flex items-center gap-2">
-            {(useFilteredScoped ? filesToShow.length > 0 : currentDrive ? subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0 : folderItems.length > 0 || recentFiles.length > 0) && (
+            {(useFilteredScoped
+              ? filesToShow.length > 0
+              : currentDrive
+                ? subfolderItems.length > 0 || displayedFilesWithMacosPackages.length > 0
+                : filesLandingRecentsMode
+                  ? recentUploads.length > 0
+                  : folderItems.length > 0 || recentFiles.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2593,6 +2616,9 @@ export default function FileGrid({
                   } else if (currentDrive) {
                     setSelectedFileIds(new Set(displayedFilesWithMacosPackages.map((f) => f.id)));
                     setSelectedFolderKeys(new Set(subfolderItems.map((s) => s.key)));
+                  } else if (filesLandingRecentsMode) {
+                    setSelectedFileIds(new Set(recentUploads.map((f) => f.id)));
+                    setSelectedFolderKeys(new Set());
                   } else {
                     setSelectedFileIds(new Set(recentFiles.map((f) => f.id)));
                     setSelectedFolderKeys(new Set(folderItems.map((f) => f.key)));
@@ -2875,7 +2901,9 @@ export default function FileGrid({
           </div>
         ) : showRecentsRootGrid ? (
           <>
-            {showFolders && folderItems.length > 0 && (
+            {showFolders &&
+              folderItems.length > 0 &&
+              !(threeTabFilesLanding && filesLandingTab === "recents") && (
               <>
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Your synced drives</h3>
                 {viewMode === "list" ? (
@@ -3000,10 +3028,10 @@ export default function FileGrid({
                 )}
               </>
             )}
-            {filesToShow.length > 0 && (
+            {rootRecentsFilesForGrid.length > 0 && (
               <>
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                  {useFilteredScoped ? "Files" : "Recently synced files"}
+                  {useFilteredScoped ? "Files" : filesLandingRecentsMode ? "Recent uploads" : "Recently synced files"}
                 </h3>
                 {viewMode === "list" ? (
                   <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
@@ -3023,7 +3051,7 @@ export default function FileGrid({
                         </tr>
                       </thead>
                       <tbody data-selectable-grid>
-                        {filesToShow.map((file) => (
+                        {rootRecentsFilesForGrid.map((file) => (
                           <FileListRow
                             key={file.id}
                             file={file}
@@ -3055,7 +3083,15 @@ export default function FileGrid({
                       </span>
                     </div>
                   )}
-                  {filesToShow.map((file) => {
+                  {filesLandingRecentsMode && recentUploadsLoading && recentUploads.length === 0 && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 text-sm text-neutral-500 dark:bg-neutral-900/80 dark:text-neutral-400" aria-busy="true">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-bizzi-blue border-t-transparent dark:border-bizzi-cyan dark:border-t-transparent" />
+                        Loading recent uploads…
+                      </span>
+                    </div>
+                  )}
+                  {rootRecentsFilesForGrid.map((file) => {
                     const isPkg = isMacosPackageFileRow(file);
                     return (
                       <div
@@ -3115,6 +3151,7 @@ export default function FileGrid({
             {!loading &&
               useFilteredScoped &&
               !filtersLoading &&
+              !filesLandingRecentsMode &&
               filesToShow.length === 0 && (
                 <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
                   {hasFilters
@@ -3122,15 +3159,29 @@ export default function FileGrid({
                     : "No files yet. Use New → File Upload, or refresh after uploading."}
                 </div>
               )}
-            {!loading && !useFilteredScoped && folderItems.length === 0 && filesToShow.length === 0 && (
-              <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                No files yet. Use New → File Upload to add files to this drive.
-              </div>
-            )}
+            {filesLandingRecentsMode &&
+              !recentUploadsLoading &&
+              recentUploads.length === 0 && (
+                <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
+                  Files uploaded to Storage in the past 7 days will appear here. (Upload time counts, not
+                  camera file dates.)
+                </p>
+              )}
+            {!loading &&
+              !useFilteredScoped &&
+              !filesLandingRecentsMode &&
+              folderItems.length === 0 &&
+              filesToShow.length === 0 && (
+                <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                  No files yet. Use New → File Upload to add files to this drive.
+                </div>
+              )}
           </>
         ) : heartedFiles.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            Files you heart will appear here for quick access.
+            {workspaceHeartsActive
+              ? "No hearted files from your workspace yet. Hearts from any seat member appear here when you have access to the file."
+              : "Files you heart will appear here for quick access."}
           </div>
         ) : (
           <>

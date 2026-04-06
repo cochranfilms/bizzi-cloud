@@ -1180,8 +1180,13 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
 
   /** Fetches files uploaded to Storage in the past 7 days. Reference view—files live in Storage, not duplicated. */
   const fetchRecentUploads = useCallback(async (): Promise<RecentFile[]> => {
-    if (!isFirebaseConfigured() || !user) return [];
+    if (!isFirebaseConfigured() || !user) {
+      setRecentUploadsLoading(false);
+      return [];
+    }
     const runId = ++recentUploadsFetchIdRef.current;
+    setRecentUploadsLoading(true);
+    try {
     const recentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const dateFromDay = recentCutoff.slice(0, 10);
     const dateToDay = new Date().toISOString().slice(0, 10);
@@ -1191,7 +1196,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         return n === "Storage" || n === "Uploads";
       })
       .map((d) => d.id);
-    if (storageDriveIds.length === 0) return [];
+    if (storageDriveIds.length === 0) {
+      setRecentUploads([]);
+      return [];
+    }
     const driveMap = new Map(linkedDrives.map((d) => [d.id, d]));
     /** UI only shows 24 rows; a few pages per drive is enough without loading every bundle member. */
     const maxPagesPerDrive = 4;
@@ -1307,7 +1315,18 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     if (runId !== recentUploadsFetchIdRef.current) return result;
     setRecentUploads(result);
     return result;
+    } catch {
+      if (runId === recentUploadsFetchIdRef.current) setRecentUploads([]);
+      return [];
+    } finally {
+      if (runId === recentUploadsFetchIdRef.current) setRecentUploadsLoading(false);
+    }
   }, [user, linkedDrives, teamRouteOwnerUid, storageVersion, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (!subscribeDriveListing) return;
+    void fetchRecentUploads();
+  }, [subscribeDriveListing, fetchRecentUploads, storageVersion]);
 
   /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
   const subscribeToDriveFiles = useCallback(
@@ -2527,6 +2546,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     storageTopFolders,
     recentFiles,
     recentUploads,
+    /** True while the 7-day Storage recent-uploads query is in flight. */
+    recentUploadsLoading,
     fetchRecentUploads,
     /** True when Firebase Auth token quota was exceeded on last refetch (transient; try again later). */
     authQuotaExceeded,

@@ -39,7 +39,7 @@ Set `API_BASE_URL` in wrangler.toml `[vars]` or via:
 
 ```bash
 npx wrangler secret put API_BASE_URL
-# Enter: https://bizzicloud.io
+# Enter the same origin as your Next app, e.g. https://www.bizzicloud.io (not apex if users use www)
 ```
 
 ### 4. Add route in Cloudflare
