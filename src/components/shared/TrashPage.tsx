@@ -157,6 +157,7 @@ function DeletedFileCard({
   const isMacosPackage = file.assetType === "macos_package" || file.id.startsWith("macos-pkg:");
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
     enabled: !isMacosPackage && isInView,
+    contentType: file.contentType,
   });
   const isVideo =
     !isMacosPackage &&

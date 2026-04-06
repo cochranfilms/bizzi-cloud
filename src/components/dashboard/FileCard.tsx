@@ -263,6 +263,7 @@ export default function FileCard({
   const canPreview = isMacosPackage ? !!(onPackageInfo ?? onClick) : !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
     enabled: !isMacosPackage && isInView,
+    contentType: file.contentType,
   });
   const isVideo =
     !isMacosPackage &&

@@ -8,5 +8,5 @@ const FileGrid = dynamic(
 );
 
 export default function DashboardContent() {
-  return <FileGrid />;
+  return <FileGrid inlineStorageOnFilesPage />;
 }

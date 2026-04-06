@@ -7,7 +7,7 @@ import {
 import { verifyBackupFileAccessWithGalleryFallbackAndLifecycle } from "@/lib/backup-access";
 import { verifyIdToken, getAdminFirestore } from "@/lib/firebase-admin";
 import type { DocumentReference } from "firebase-admin/firestore";
-import { GALLERY_IMAGE_EXT, isRawStillFile } from "@/lib/gallery-file-types";
+import { isImageThumbnailTarget, isRawStillFile } from "@/lib/gallery-file-types";
 import { isRawVideoFile, RAW_VIDEO_USE_VIDEO_THUMBNAIL_CODE } from "@/lib/raw-video";
 import { rawToThumbnail } from "@/lib/raw-thumbnail";
 import { NextResponse } from "next/server";
@@ -37,10 +37,6 @@ async function createRawPlaceholder(size: number): Promise<Buffer> {
   })
     .jpeg({ quality: 80 })
     .toBuffer();
-}
-
-function isImageFile(name: string): boolean {
-  return GALLERY_IMAGE_EXT.test(name);
 }
 
 async function findBackupFileRefForObjectKey(
@@ -113,7 +109,8 @@ async function handleThumbnail(request: Request) {
   }
   const objectKey = objectKeyRaw;
 
-  const nameForPolicy = fileName || objectKey || "";
+  const pathTail = objectKey.split("/").filter(Boolean).pop() ?? "";
+  const nameForPolicy = fileName || pathTail || objectKey;
   if (isRawVideoFile(nameForPolicy)) {
     return NextResponse.json(
       {
@@ -124,18 +121,24 @@ async function handleThumbnail(request: Request) {
     );
   }
 
-  if (!isImageFile(nameForPolicy)) {
-    return new NextResponse("Not an image file", { status: 400 });
-  }
-
-  const result = await verifyBackupFileAccessWithGalleryFallbackAndLifecycle(uid, objectKey);
-  if (!result.allowed) {
-    return new NextResponse(result.message ?? "Access denied", {
-      status: result.status ?? 403,
+  const access = await verifyBackupFileAccessWithGalleryFallbackAndLifecycle(uid, objectKey);
+  if (!access.allowed) {
+    return new NextResponse(access.message ?? "Access denied", {
+      status: access.status ?? 403,
     });
   }
 
-  const nameForExt = (fileName || objectKey || "").toLowerCase();
+  const backupRow = await findBackupFileRefForObjectKey(uid, objectKey);
+  const snapMeta = backupRow ? await backupRow.ref.get() : null;
+  const rowData = snapMeta?.data();
+  const dbContentType =
+    rowData && typeof rowData.content_type === "string" ? rowData.content_type : null;
+
+  if (!isImageThumbnailTarget(fileName, objectKey, dbContentType)) {
+    return new NextResponse("Not an image file", { status: 400 });
+  }
+
+  const nameForExt = (fileName || pathTail || objectKey || "").toLowerCase();
   const isRaw = isRawStillFile(nameForExt);
 
   const THUMB_MAX_BYTES = 50 * 1024 * 1024; // 50 MB - enough for image/RAW thumbnail extraction
@@ -171,12 +174,9 @@ async function handleThumbnail(request: Request) {
   try {
     if (thumbnailRedirectToCdnEnabled() && sizeParam === "thumb") {
       const thumbKey = getImageListThumbnailObjectKey(objectKey, "thumb");
-      const backupRow = await findBackupFileRefForObjectKey(uid, objectKey);
-      const snap = backupRow ? await backupRow.ref.get() : null;
-      const data = snap?.data();
       const dbReady =
-        data?.image_thumb_status === "ready" &&
-        data?.image_thumb_object_key === thumbKey;
+        rowData?.image_thumb_status === "ready" &&
+        rowData?.image_thumb_object_key === thumbKey;
       if (dbReady) {
         const signed = await getDownloadUrl(thumbKey, 604_800, undefined, true);
         return NextResponse.redirect(signed, 307);

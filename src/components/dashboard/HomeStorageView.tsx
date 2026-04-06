@@ -160,6 +160,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   } | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
+  /** Embedded Home Storage FileGrid bulk selection — parent must not show a second BulkActionBar. */
+  const [embeddedStorageBulk, setEmbeddedStorageBulk] = useState({ files: 0, folders: 0 });
   const [dragState, setDragState] = useState<{
     isActive: boolean;
     startX: number;
@@ -715,33 +717,58 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     [linkedDrives, openDrive]
   );
 
-  const toggleFileSelection = useCallback((id: string) => {
-    setSelectedFileIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const embeddedBulkActive =
+    embeddedStorageBulk.files + embeddedStorageBulk.folders > 0;
+
+  const onEmbeddedBulkSelectionChange = useCallback((files: number, folders: number) => {
+    setEmbeddedStorageBulk({ files, folders });
   }, []);
 
-  const toggleFolderSelection = useCallback((key: string) => {
-    setSelectedFolderKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    if (!embeddedBulkActive) return;
+    setSelectedFileIds(new Set());
+    setSelectedFolderKeys(new Set());
+  }, [embeddedBulkActive, embeddedStorageBulk.files, embeddedStorageBulk.folders]);
+
+  const toggleFileSelection = useCallback(
+    (id: string) => {
+      if (embeddedBulkActive) return;
+      setSelectedFileIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [embeddedBulkActive]
+  );
+
+  const toggleFolderSelection = useCallback(
+    (key: string) => {
+      if (embeddedBulkActive) return;
+      setSelectedFolderKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [embeddedBulkActive]
+  );
 
   const clearSelection = useCallback(() => {
     setSelectedFileIds(new Set());
     setSelectedFolderKeys(new Set());
   }, []);
 
-  const setSelectionFromDrag = useCallback((fileIds: string[], folderKeys: string[]) => {
-    setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
-    setSelectedFolderKeys((prev) => new Set([...prev, ...folderKeys]));
-  }, []);
+  const setSelectionFromDrag = useCallback(
+    (fileIds: string[], folderKeys: string[]) => {
+      if (embeddedBulkActive) return;
+      setSelectedFileIds((prev) => new Set([...prev, ...fileIds]));
+      setSelectedFolderKeys((prev) => new Set([...prev, ...folderKeys]));
+    },
+    [embeddedBulkActive]
+  );
 
   const lastSelectionRef = useRef<{ files: string; folders: string } | null>(null);
 
@@ -764,6 +791,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (embeddedBulkActive) return;
       if (!(e.target as HTMLElement).closest("[data-selectable-grid]")) return;
       if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
       if ((e.target as HTMLElement).closest("[data-selectable-item]")) return;
@@ -776,7 +804,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         currentY: e.clientY,
       });
     },
-    []
+    [embeddedBulkActive]
   );
 
   useEffect(() => {
@@ -834,6 +862,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       const folderKeys: string[] = [];
 
       items?.forEach((el) => {
+        if (el.closest('[data-embedded-home-storage="true"]')) return;
         const rect = el.getBoundingClientRect();
         if (!rectsIntersect(dragRect, rect)) return;
         const type = el.getAttribute("data-item-type");
@@ -1350,7 +1379,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
           <SectionTitle className="mb-3 sm:mb-4">Storage</SectionTitle>
           <div className="mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30">
-            <HomeEmbeddedStorageGrid embeddedHomeStorage />
+            <HomeEmbeddedStorageGrid
+              embeddedHomeStorage
+              onEmbeddedBulkSelectionChange={onEmbeddedBulkSelectionChange}
+            />
           </div>
         </section>
       )}
@@ -1834,7 +1866,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         </div>
       ) : null}
 
-      {selectedFileIds.size + selectedFolderKeys.size > 0 && (
+      {selectedFileIds.size + selectedFolderKeys.size > 0 && !embeddedBulkActive && (
         <BulkActionBar
           selectedFileCount={selectedFileIds.size}
           selectedFolderCount={selectedFolderKeys.size}

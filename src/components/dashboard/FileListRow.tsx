@@ -23,7 +23,7 @@ import { linkedDrivesEligibleAsMoveDestination } from "@/lib/drive-powerup-filte
 import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
 import { usePinned } from "@/hooks/usePinned";
 import { useBackup } from "@/context/BackupContext";
-import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { isImageThumbnailTarget } from "@/lib/gallery-file-types";
 import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 import { isProjectFile } from "@/lib/bizzi-file-types";
 import { isAppleDoubleLeafName } from "@/lib/apple-double-files";
@@ -33,9 +33,6 @@ import {
 } from "@/lib/creative-project-thumbnail";
 import { BrandedProjectTile } from "@/components/files/BrandedProjectTile";
 
-function isImageFile(name: string) {
-  return GALLERY_IMAGE_EXT.test(name);
-}
 function isPdfFile(name: string) {
   return /\.pdf$/i.test(name);
 }
@@ -110,6 +107,7 @@ export default function FileListRow({
   const canPreview = isMacosPackage ? !!(onPackageInfo ?? onClick) : !!file.objectKey;
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
     enabled: !isMacosPackage,
+    contentType: file.contentType,
   });
   const isVideo =
     !isMacosPackage &&
@@ -122,7 +120,7 @@ export default function FileListRow({
     isVideo,
   });
   const fetchVideoStreamUrl = useBackupVideoStreamUrl();
-  const isImage = isImageFile(file.name);
+  const isImage = isImageThumbnailTarget(file.name, file.objectKey, file.contentType);
   const isPdf = isPdfFile(file.name) || file.contentType === "application/pdf";
   const isProject =
     file.assetType === "project_file" ||

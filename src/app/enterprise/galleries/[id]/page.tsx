@@ -56,6 +56,7 @@ function AddFileButton({
   const [btnRef, isInView] = useInView<HTMLButtonElement>();
   const thumbnailUrl = useThumbnail(file.objectKey, file.name, "thumb", {
     enabled: isInView,
+    contentType: file.contentType,
   });
   const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(file.name) || (file.contentType?.startsWith("video/") ?? false);
   const videoThumbnailUrl = useVideoThumbnail(file.objectKey, file.name, {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Check, CheckSquare, ChevronLeft, Download, Film, Filter, FolderInput, Images, Loader2, Send, Share2, Trash2 } from "lucide-react";
+import { AlertCircle, Check, CheckSquare, ChevronLeft, Film, Filter, Images, Loader2 } from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -42,6 +42,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
 import { isLinkedDriveFolderModelV2 } from "@/lib/linked-drive-folder-model";
 import ItemActionsMenu from "./ItemActionsMenu";
+import { BulkActionBar } from "./BulkActionBar";
 import BulkMoveModal from "./BulkMoveModal";
 import CreateTransferModal, { type TransferModalFile } from "./CreateTransferModal";
 import ShareModal from "./ShareModal";
@@ -110,118 +111,26 @@ function mergeDisplayedFilesWithMacosPackages(
   });
 }
 
-function BulkActionBar({
-  selectedFileCount,
-  selectedFolderCount,
-  onMove,
-  onNewTransfer,
-  onShare,
-  onDownload,
-  isDownloading,
-  onDelete,
-  onClear,
-}: {
-  selectedFileCount: number;
-  selectedFolderCount: number;
-  onMove: () => void;
-  onNewTransfer: () => void;
-  onShare: () => void;
-  onDownload?: () => void;
-  isDownloading?: boolean;
-  onDelete: () => void;
-  onClear: () => void;
-}) {
-  const total = selectedFileCount + selectedFolderCount;
-  const parts: string[] = [];
-  if (selectedFileCount > 0) parts.push(`${selectedFileCount} file${selectedFileCount === 1 ? "" : "s"}`);
-  if (selectedFolderCount > 0) parts.push(`${selectedFolderCount} drive${selectedFolderCount === 1 ? "" : "s"}`);
-  const label = parts.length > 0 ? parts.join(", ") : `${total} item${total === 1 ? "" : "s"}`;
-  const canShare = total >= 1;
-  const showDownload = selectedFileCount >= 1;
-  const downloadDisabled = selectedFileCount > 50 || isDownloading;
-  const downloadTitle = selectedFileCount > 50 ? "Download supports up to 50 files at once" : undefined;
-
-  return (
-    <div
-      className="fixed left-3 right-3 z-50 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg sm:left-1/2 sm:right-auto sm:w-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-4 sm:px-5 sm:py-3 dark:border-neutral-700 dark:bg-neutral-900"
-      style={{
-        bottom: "max(8rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))",
-      }}
-    >
-      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-        {label} selected
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onMove}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          <FolderInput className="h-4 w-4" />
-          Move
-        </button>
-        <button
-          type="button"
-          onClick={onNewTransfer}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-bizzi-blue hover:bg-bizzi-blue/10 dark:text-bizzi-cyan dark:hover:bg-bizzi-cyan/10"
-        >
-          <Send className="h-4 w-4" />
-          New transfer
-        </button>
-        {canShare && (
-          <button
-            type="button"
-            onClick={onShare}
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            <Share2 className="h-4 w-4" />
-            Share
-          </button>
-        )}
-        {showDownload && onDownload && (
-          <button
-            type="button"
-            onClick={onDownload}
-            disabled={downloadDisabled}
-            title={downloadTitle}
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          >
-            {isDownloading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            Download
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
-        >
-          <Trash2 className="h-4 w-4" />
-          Delete
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export type FileGridProps = {
   /**
    * Renders on Home (not /files): syncs browse state to the home pathname and auto-opens Storage when no `drive` param.
    */
   embeddedHomeStorage?: boolean;
+  /**
+   * When true (All Files /files landings only): framed inline Storage browser like Home, plus Recents / Hearts / Storage tabs.
+   */
+  inlineStorageOnFilesPage?: boolean;
+  /**
+   * Home page only: reports embedded Storage grid bulk selection so the parent can avoid a second bulk action bar.
+   */
+  onEmbeddedBulkSelectionChange?: (fileCount: number, folderCount: number) => void;
 };
 
-export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps) {
+export default function FileGrid({
+  embeddedHomeStorage = false,
+  inlineStorageOnFilesPage = false,
+  onEmbeddedBulkSelectionChange,
+}: FileGridProps) {
   const {
     viewMode,
     setViewMode,
@@ -242,6 +151,9 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
   const gridGapClass = viewMode === "thumbnail" ? "gap-3" : "gap-4";
   const listColSpan = 10;
   const [activeTab, setActiveTab] = useState<"recents" | "hearts">("recents");
+  const [filesLandingTab, setFilesLandingTab] = useState<"recents" | "hearts" | "storage">(
+    "storage"
+  );
   const [previewFile, setPreviewFile] = useState<RecentFile | null>(null);
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string } | null>(null);
   const [driveFiles, setDriveFiles] = useState<RecentFile[]>([]);
@@ -385,13 +297,25 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
       /^\/team\/[^/]+\/files$/.test(pathname) ||
       /^\/desktop\/app\/files$/.test(pathname));
   const teamAwareDriveName = (name: string) => name.replace(/^\[Team\]\s+/, "");
+  const hasInlineStorageDrive = useMemo(
+    () =>
+      linkedDrives.some(
+        (d) => teamAwareDriveName(d.name) === "Storage" && d.is_creator_raw !== true
+      ),
+    [linkedDrives]
+  );
+  const threeTabFilesLanding =
+    allFilesFlatLanding && inlineStorageOnFilesPage && hasInlineStorageDrive;
   const isBizziCloudBaseDrive = (name: string) => {
     const b = teamAwareDriveName(name);
     return b === "Storage" || b === "RAW" || b === "Gallery Media";
   };
 
   useEffect(() => {
-    if (!embeddedHomeStorage) return;
+    const wantAutoStorageHome = embeddedHomeStorage && !threeTabFilesLanding;
+    const wantAutoStorageFiles =
+      threeTabFilesLanding && filesLandingTab === "storage";
+    if (!wantAutoStorageHome && !wantAutoStorageFiles) return;
     if (backupDrivesLoading) return;
     const storageMeta = linkedDrives.find(
       (d) => teamAwareDriveName(d.name) === "Storage" && d.is_creator_raw !== true
@@ -404,11 +328,33 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     router.replace(`${pathname}?${q}`, { scroll: false });
   }, [
     embeddedHomeStorage,
+    threeTabFilesLanding,
+    filesLandingTab,
     backupDrivesLoading,
     linkedDrives,
     searchParams,
     pathname,
     router,
+  ]);
+
+  useEffect(() => {
+    if (!threeTabFilesLanding) return;
+    const driveId = searchParams.get("drive");
+    if (!driveId) return;
+    const storageMeta = linkedDrives.find(
+      (d) => teamAwareDriveName(d.name) === "Storage" && d.is_creator_raw !== true
+    );
+    if (storageMeta?.id === driveId) setFilesLandingTab("storage");
+  }, [threeTabFilesLanding, searchParams, linkedDrives]);
+
+  useEffect(() => {
+    if (!embeddedHomeStorage) return;
+    onEmbeddedBulkSelectionChange?.(selectedFileIds.size, selectedFolderKeys.size);
+  }, [
+    embeddedHomeStorage,
+    selectedFileIds,
+    selectedFolderKeys,
+    onEmbeddedBulkSelectionChange,
   ]);
 
   const {
@@ -973,12 +919,27 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     setSelectedFolderKeys(new Set());
   }, [setCurrentFolderDriveId, setCurrentDrivePath, setStorageParentFolderId]);
 
+  const clearFlatFilesUrlAndDrive = useCallback(() => {
+    closeDrive();
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("drive");
+    sp.delete("folder");
+    sp.delete("path");
+    const q = sp.toString();
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+  }, [closeDrive, searchParams, pathname, router]);
+
   const currentDriveMeta = currentDrive
     ? linkedDrives.find((d) => d.id === currentDrive.id)
     : undefined;
   const driveBaseName = currentDriveMeta
     ? teamAwareDriveName(currentDriveMeta.name)
     : "";
+  /** All Files: show Recents/Hearts/Storage while at root or when browsing the Storage drive only (hide for RAW/Gallery deep links). */
+  const showFilesLandingTabBar = threeTabFilesLanding
+    ? !currentDrive ||
+      (driveBaseName === "Storage" && currentDriveMeta?.is_creator_raw !== true)
+    : !currentDrive;
   const isGalleryMediaDrive = !!currentDriveMeta && driveBaseName === "Gallery Media";
   const isPathTreeDrive =
     !!currentDrive &&
@@ -2115,7 +2076,19 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
 
   const FilesViewWrapper = currentDrive ? FolderView : AllFilesView;
 
-  const embeddedFolderBrowse = Boolean(embeddedHomeStorage && currentDrive);
+  const filesPageStorageEmbeddedChrome =
+    threeTabFilesLanding &&
+    filesLandingTab === "storage" &&
+    (!currentDrive ||
+      (driveBaseName === "Storage" && currentDriveMeta?.is_creator_raw !== true));
+  const embeddedFolderBrowse = Boolean(
+    (embeddedHomeStorage && currentDrive) ||
+      (threeTabFilesLanding &&
+        filesLandingTab === "storage" &&
+        !!currentDrive &&
+        driveBaseName === "Storage" &&
+        currentDriveMeta?.is_creator_raw !== true)
+  );
   const embeddedFolderGridRevealClass = embeddedFolderBrowse ? "min-h-0" : "contents";
   const recentsRootReady = !loading && !subscriptionLoading && !powerUpContextLoading;
   /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). */
@@ -2123,24 +2096,44 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
     ? true
     : currentDrive
       ? !driveFilesLoading
-      : activeTab === "recents"
-        ? recentsRootReady
-        : !(heartedLoading && heartedFiles.length === 0);
+      : threeTabFilesLanding && filesLandingTab === "storage"
+        ? true
+        : threeTabFilesLanding
+          ? filesLandingTab === "recents"
+            ? recentsRootReady
+            : !(heartedLoading && heartedFiles.length === 0)
+          : activeTab === "recents"
+            ? recentsRootReady
+            : !(heartedLoading && heartedFiles.length === 0);
+  const showRecentsRootGrid = threeTabFilesLanding
+    ? filesLandingTab === "recents"
+    : activeTab === "recents";
+  const hideFilesLandingSectionHeading =
+    (embeddedHomeStorage && !!currentDrive) || filesPageStorageEmbeddedChrome;
+  const filesLandingStorageFrame =
+    threeTabFilesLanding &&
+    filesLandingTab === "storage" &&
+    hasInlineStorageDrive &&
+    (!currentDrive ||
+      (driveBaseName === "Storage" && currentDriveMeta?.is_creator_raw !== true));
 
   return (
     <div
       ref={gridSectionRef}
       className={`w-full flex flex-1 min-h-0 flex-col space-y-0${dragState?.isActive ? " select-none" : ""}${
-        embeddedHomeStorage ? " h-full min-h-0 pl-4 pr-3 sm:pl-6 sm:pr-4" : ""
+        embeddedHomeStorage || filesPageStorageEmbeddedChrome
+          ? " h-full min-h-0 pl-4 pr-3 sm:pl-6 sm:pr-4"
+          : ""
       }`}
       data-selectable-grid
       data-embedded-home-storage={embeddedHomeStorage ? "true" : undefined}
+      data-files-inline-storage={inlineStorageOnFilesPage ? "true" : undefined}
       onMouseDown={handleMouseDown}
     >
       {/* Filter section — compact, no section title bar */}
       <section
         className={`shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60${
-          embeddedHomeStorage ? " pt-2 pb-3" : ""
+          embeddedHomeStorage || filesPageStorageEmbeddedChrome ? " pt-2 pb-3" : ""
         }`}
       >
         <div className="space-y-3">
@@ -2226,7 +2219,12 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
                       setCurrentDrivePath("");
                       setSelectedFileIds(new Set());
                     }
-                  : closeDrive
+                  : showFilesLandingTabBar && filesLandingTab === "storage"
+                    ? () => {
+                        clearFlatFilesUrlAndDrive();
+                        setFilesLandingTab("recents");
+                      }
+                    : closeDrive
             }
             className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
@@ -2482,7 +2480,27 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
 
       {/* Recents / Starred / Drive content — main section */}
       <DashboardRouteFade ready={mainGridFadeReady} srOnlyMessage="Loading files">
-      <section className="relative border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60">
+      <section
+        className={`relative py-4 last:border-b-0 dark:border-neutral-800/60 ${
+          filesLandingStorageFrame
+            ? "border-b-0"
+            : "border-b border-neutral-200/60"
+        }`}
+      >
+        <div
+          className={
+            filesLandingStorageFrame
+              ? "mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30"
+              : "contents"
+          }
+        >
+          <div
+            className={
+              filesLandingStorageFrame
+                ? "flex min-h-0 flex-1 flex-col overflow-auto py-3"
+                : "contents"
+            }
+          >
         {typeof document !== "undefined" &&
           dragState?.isActive &&
           (Math.abs(dragState.currentX - dragState.startX) > DRAG_THRESHOLD_PX ||
@@ -2499,19 +2517,32 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             />,
             document.body
           )}
-        {!(embeddedHomeStorage && currentDrive) ? (
+        {!hideFilesLandingSectionHeading ? (
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
-            {currentDrive ? currentDrive.name : activeTab === "recents" ? "Recents" : "Hearts"}
+            {currentDrive
+              ? currentDrive.name
+              : threeTabFilesLanding && filesLandingTab === "storage"
+                ? "Storage"
+                : showRecentsRootGrid
+                  ? "Recents"
+                  : "Hearts"}
           </h2>
         ) : null}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-4">
-          {!currentDrive && (
+          {showFilesLandingTabBar && (
             <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1.5 dark:border-neutral-700 dark:bg-neutral-800">
               <button
                 type="button"
-                onClick={() => setActiveTab("recents")}
+                onClick={() => {
+                  if (threeTabFilesLanding) {
+                    setFilesLandingTab("recents");
+                    clearFlatFilesUrlAndDrive();
+                  } else {
+                    setActiveTab("recents");
+                  }
+                }}
                 className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "recents"
+                  showRecentsRootGrid
                     ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
                     : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
                 }`}
@@ -2520,15 +2551,35 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("hearts")}
+                onClick={() => {
+                  if (threeTabFilesLanding) {
+                    setFilesLandingTab("hearts");
+                    clearFlatFilesUrlAndDrive();
+                  } else {
+                    setActiveTab("hearts");
+                  }
+                }}
                 className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === "hearts"
+                  (threeTabFilesLanding ? filesLandingTab === "hearts" : activeTab === "hearts")
                     ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
                     : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
                 }`}
               >
                 Hearts
               </button>
+              {threeTabFilesLanding ? (
+                <button
+                  type="button"
+                  onClick={() => setFilesLandingTab("storage")}
+                  className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                    filesLandingTab === "storage"
+                      ? "bg-white text-neutral-900 shadow dark:bg-neutral-700 dark:text-white"
+                      : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+                  }`}
+                >
+                  Storage
+                </button>
+              ) : null}
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -2822,7 +2873,7 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             </div>
           )}
           </div>
-        ) : activeTab === "recents" ? (
+        ) : showRecentsRootGrid ? (
           <>
             {showFolders && folderItems.length > 0 && (
               <>
@@ -3161,6 +3212,8 @@ export default function FileGrid({ embeddedHomeStorage = false }: FileGridProps)
             )}
           </>
         )}
+          </div>
+        </div>
       </section>
       </DashboardRouteFade>
       </FilesViewWrapper>

@@ -2,18 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getAuthToken } from "@/lib/auth-token";
-import { GALLERY_IMAGE_EXT } from "@/lib/gallery-file-types";
+import { GALLERY_IMAGE_EXT, isImageThumbnailTarget } from "@/lib/gallery-file-types";
 import { shouldUseVideoThumbnailPipeline } from "@/lib/raw-video";
 import { NEXT_PUBLIC_THUMBNAIL_REDIRECT_TO_CDN_ENABLED } from "@/lib/public-delivery-flags";
 
 export type ThumbnailSize = "thumb" | "preview";
 
-function isImageFile(name: string): boolean {
-  return GALLERY_IMAGE_EXT.test(name);
-}
-
 export function isPreviewableMedia(name: string): boolean {
-  return isImageFile(name) || shouldUseVideoThumbnailPipeline(name);
+  return GALLERY_IMAGE_EXT.test(name) || shouldUseVideoThumbnailPipeline(name);
 }
 
 /**
@@ -25,14 +21,14 @@ export function useThumbnail(
   objectKey: string | undefined,
   fileName: string,
   size: ThumbnailSize = "thumb",
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; contentType?: string | null }
 ): string | null {
-  const { enabled = true } = options ?? {};
+  const { enabled = true, contentType = null } = options ?? {};
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!objectKey || !isImageFile(fileName) || !enabled) return;
+    if (!objectKey || !isImageThumbnailTarget(fileName, objectKey, contentType) || !enabled) return;
     let cancelled = false;
     (async () => {
       try {
@@ -87,7 +83,7 @@ export function useThumbnail(
       }
       setUrl(null);
     };
-  }, [objectKey, fileName, size, enabled]);
+  }, [objectKey, fileName, size, enabled, contentType]);
 
   return url;
 }

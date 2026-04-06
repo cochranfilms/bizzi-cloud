@@ -58,6 +58,25 @@ export const GALLERY_UPLOAD_EXT_SET = new Set(
   GALLERY_UPLOAD_EXTENSIONS.map((e) => e.toLowerCase())
 );
 
+/**
+ * Whether to call the image thumbnail API: extension on display name or object key path,
+ * or `image/*` from metadata when the listed name omits an extension.
+ */
+export function isImageThumbnailTarget(
+  fileName: string,
+  objectKey?: string | null,
+  contentType?: string | null
+): boolean {
+  if (contentType?.startsWith("image/")) return true;
+  if (GALLERY_IMAGE_EXT.test(fileName)) return true;
+  if (objectKey) {
+    if (GALLERY_IMAGE_EXT.test(objectKey)) return true;
+    const tail = objectKey.split("/").filter(Boolean).pop() ?? "";
+    if (tail && GALLERY_IMAGE_EXT.test(tail)) return true;
+  }
+  return false;
+}
+
 /** Test if filename is a supported gallery file (image or video) */
 export function isGalleryFile(name: string): boolean {
   return GALLERY_IMAGE_EXT.test(name) || GALLERY_VIDEO_EXT.test(name);

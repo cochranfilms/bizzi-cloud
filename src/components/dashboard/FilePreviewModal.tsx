@@ -295,11 +295,9 @@ export default function FilePreviewModal({
     }
   }, [file?.id]);
 
-  const lowResPreviewUrl = useThumbnail(
-    file?.objectKey,
-    file?.name ?? "",
-    "preview"
-  );
+  const lowResPreviewUrl = useThumbnail(file?.objectKey, file?.name ?? "", "preview", {
+    contentType: file?.contentType ?? null,
+  });
 
   useEffect(() => {
     setStreamProbeDims(null);
