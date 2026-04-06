@@ -114,6 +114,8 @@ export function useLayoutSettings() {
 
 const LAYOUT_SETTINGS_FALLBACK: LayoutSettingsContextType = {
   ...DEFAULT_SETTINGS,
+  /** Shares outside the dashboard shell should crop thumbs instead of heavy letterboxing. */
+  thumbnailScale: "fill",
   setViewMode: () => {},
   setCardSize: () => {},
   setAspectRatio: () => {},

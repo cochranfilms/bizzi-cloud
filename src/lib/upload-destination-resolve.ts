@@ -20,6 +20,7 @@ export type DestinationMode =
 export type ResolvedBy =
   | "active_raw_drive"
   | "files_current_drive"
+  | "home_current_drive"
   | "storage_fallback"
   | "gallery_media"
   | "enterprise_blocked";
@@ -337,6 +338,36 @@ export async function resolveUploadDestination(
       routeContext,
       pathPrefix: "",
       resolvedBy: "storage_fallback",
+    };
+  }
+
+  /** Home (and similar) routes: respect the drive/folder the user is actually browsing (URL + context). */
+  const validBrowsingDrive =
+    !isFilesView &&
+    currentDriveId &&
+    linkedDrives.some(
+      (d) =>
+        d.id === currentDriveId &&
+        d.name !== "Gallery Media" &&
+        d.is_creator_raw !== true
+    );
+  if (validBrowsingDrive && currentDriveId) {
+    const d = linkedDrives.find((x) => x.id === currentDriveId)!;
+    const destinationMode: DestinationMode = teamOwnerUid ? "team_storage" : "storage";
+    const pathPrefix = isLinkedDriveFolderModelV2(d) ? "" : (currentDrivePath ?? "");
+    return {
+      success: true,
+      resolvedSuccessfully: true,
+      driveId: currentDriveId,
+      driveName: d.name,
+      destinationMode,
+      workspaceType: destinationMode,
+      uploadIntent: destinationMode,
+      isLocked: false,
+      sourceSurface,
+      routeContext,
+      pathPrefix,
+      resolvedBy: "home_current_drive",
     };
   }
 

@@ -193,7 +193,7 @@ export default function VideoScrubThumbnail({
   return (
     <div
       ref={containerRef}
-      className={`relative flex h-full w-full items-center justify-center overflow-hidden bg-neutral-100 dark:bg-neutral-700 ${className}`}
+      className={`relative h-full w-full overflow-hidden bg-neutral-100 dark:bg-neutral-700 ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
@@ -205,7 +205,7 @@ export default function VideoScrubThumbnail({
           muted
           playsInline
           preload="metadata"
-          className={`h-full w-full bg-neutral-100 dark:bg-neutral-700 ${objectFit}`}
+          className={`absolute inset-0 h-full w-full bg-neutral-900 ${objectFit}`}
           onError={() => setStreamLoadFailed(true)}
           onEnded={(e) => {
             const v = e.currentTarget;
@@ -228,11 +228,13 @@ export default function VideoScrubThumbnail({
           <img
             src={thumbnailUrl ?? ""}
             alt=""
-            className={`h-full w-full ${objectFit}`}
+            className={`absolute inset-0 h-full w-full ${objectFit}`}
           />
         </>
       ) : (
-        <Film className="h-8 w-8 text-neutral-500 dark:text-neutral-400" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Film className="h-8 w-8 text-neutral-500 dark:text-neutral-400" />
+        </div>
       )}
       {showPlayIcon && (showVideo || showThumbnail || isLoading) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

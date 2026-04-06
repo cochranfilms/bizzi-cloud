@@ -297,7 +297,7 @@ export default function SharedFolderBrowser({
           </div>
         ))}
         {filesHere.map((file) => (
-          <div key={file.id} className="min-h-0 min-w-0">
+          <div key={file.id} className="h-full min-h-0 min-w-0">
             <ShareFileGridCard
               shareToken={shareToken}
               file={file}
