@@ -85,7 +85,7 @@ async function handleThumbnail(request: Request) {
   }
 
   const url = new URL(request.url);
-  const objectKey = url.searchParams.get("object_key");
+  const objectKeyRaw = url.searchParams.get("object_key");
   const sizeParam = (url.searchParams.get("size") ?? "thumb") as ThumbSize;
   const size = SIZES[sizeParam] ?? SIZES.thumb;
   const fileName = url.searchParams.get("name") ?? "";
@@ -108,9 +108,10 @@ async function handleThumbnail(request: Request) {
     }
   }
 
-  if (!objectKey || typeof objectKey !== "string") {
+  if (!objectKeyRaw || typeof objectKeyRaw !== "string") {
     return new NextResponse("object_key required", { status: 400 });
   }
+  const objectKey = objectKeyRaw;
 
   const nameForPolicy = fileName || objectKey || "";
   if (isRawVideoFile(nameForPolicy)) {
@@ -211,7 +212,7 @@ async function handleThumbnail(request: Request) {
     }
 
     const resizedBuffer = await buildThumbnailJpegBytes();
-    return new NextResponse(resizedBuffer, {
+    return new NextResponse(new Uint8Array(resizedBuffer), {
       status: 200,
       headers: {
         "Content-Type": "image/jpeg",
