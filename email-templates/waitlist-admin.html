@@ -17,7 +17,7 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 24px; background: #f1f5f9; }
     .shell { background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e2e8f0; }
     .logo { margin-bottom: 20px; }
-    .logo img { height: 48px; }
+    .logo img { display: block; width: auto; height: auto; max-width: 48px; max-height: 48px; }
     h1 { font-size: 1.25rem; margin: 0 0 8px; color: #0f172a; }
     .lede { font-size: 14px; color: #64748b; margin-bottom: 20px; }
     .meta { font-size: 13px; color: #64748b; margin-bottom: 20px; padding: 12px 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; }
@@ -27,7 +27,7 @@
 <body>
   <div class="shell">
     <div class="logo">
-      <img src="{{logo_url}}" alt="Bizzi Cloud" />
+      <img src="{{logo_url}}" alt="Bizzi Cloud" width="41" height="50" style="display:block;width:auto;height:auto;max-width:48px;max-height:48px;border:0;outline:none;text-decoration:none;" />
     </div>
     <h1>New waitlist pre-registration</h1>
     <p class="lede"><strong>{{full_name}}</strong> just submitted the waitlist form.</p>

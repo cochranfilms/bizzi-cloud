@@ -34,8 +34,53 @@ interface SharedItemCardProps {
   workspaceModerationLoading?: boolean;
 }
 
-const cardClassName =
-  "group relative flex flex-col items-center rounded-xl border border-neutral-200 bg-white p-6 pt-7 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
+const cardShellClassName =
+  "group relative flex min-w-0 w-full max-w-full flex-col items-stretch overflow-hidden rounded-xl border border-neutral-200 bg-white p-6 pt-7 transition-colors hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50";
+
+function CardChrome({
+  item,
+  isOwned,
+  hrefOverlay,
+  children,
+}: {
+  item: SharedItem;
+  isOwned?: boolean;
+  /** Full-card hit target under badges and controls. */
+  hrefOverlay?: string;
+  children: React.ReactNode;
+}) {
+  const dest = item.shareDestination;
+  const pendingDelivery = item.workspaceDeliveryStatus === "pending";
+
+  return (
+    <div className={cardShellClassName}>
+      {hrefOverlay ? (
+        <Link
+          href={hrefOverlay}
+          className="absolute inset-0 z-0 rounded-xl"
+          aria-label={`Open shared ${item.type}: ${item.name}`}
+        />
+      ) : null}
+      {dest && (
+        <span
+          className="pointer-events-none absolute right-2 top-2 z-20 rounded border bg-white/95 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide shadow-sm dark:bg-neutral-900/95"
+          style={{
+            color: "var(--bizzi-accent)",
+            borderColor: "var(--bizzi-accent)",
+          }}
+        >
+          {dest === "team" ? "Team" : "Organization"}
+        </span>
+      )}
+      {isOwned && pendingDelivery && (
+        <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[min(100%,calc(100%-1rem))] truncate rounded border border-amber-500/50 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:bg-amber-950/80 dark:text-amber-100">
+          Pending approval
+        </span>
+      )}
+      <div className="relative z-[1] flex w-full min-w-0 flex-col items-center">{children}</div>
+    </div>
+  );
+}
 
 export default function SharedItemCard({
   item,
@@ -46,105 +91,109 @@ export default function SharedItemCard({
   onDenyWorkspaceShare,
   workspaceModerationLoading,
 }: SharedItemCardProps) {
-  const dest = item.shareDestination;
   const pendingDelivery = item.workspaceDeliveryStatus === "pending";
   const showModeration =
     pendingDelivery && !isOwned && onApproveWorkspaceShare && onDenyWorkspaceShare;
 
-  const content = (
+  const hrefOverlay = item.href ? item.href : undefined;
+
+  const ownedActions =
+    isOwned && (onEdit || onDelete) ? (
+      <div className="relative z-10 mb-3 flex w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-2 px-0.5">
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit(e);
+            }}
+            className="inline-flex min-w-0 max-w-full shrink items-center justify-center gap-1 rounded-md border border-neutral-200 bg-white/95 px-2 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
+            aria-label="Manage share"
+          >
+            <Settings className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">Manage share</span>
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(e);
+            }}
+            className="shrink-0 rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+            aria-label="Delete share"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+
+  const mainColumn = (
     <>
-      {dest && (
-        <span
-          className="pointer-events-none absolute right-2 top-2 z-10 rounded border bg-white/95 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide shadow-sm dark:bg-neutral-900/95"
-          style={{
-            color: "var(--bizzi-accent)",
-            borderColor: "var(--bizzi-accent)",
-          }}
-        >
-          {dest === "team" ? "Team" : "Organization"}
-        </span>
-      )}
-      {isOwned && pendingDelivery && (
-        <span className="pointer-events-none absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)] rounded border border-amber-500/50 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:bg-amber-950/80 dark:text-amber-100">
-          Pending approval
-        </span>
-      )}
-      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
+      <div className="mb-3 flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20">
         {item.type === "folder" ? (
-          <Folder className="h-8 w-8" />
+          <Folder className="h-8 w-8 shrink-0" aria-hidden />
         ) : (
-          <File className="h-8 w-8" />
+          <File className="h-8 w-8 shrink-0" aria-hidden />
         )}
       </div>
-      <h3 className="mb-1 truncate w-full text-center text-sm font-medium text-neutral-900 dark:text-white">
+
+      {ownedActions}
+
+      <h3
+        className="mb-1 w-full min-w-0 truncate text-center text-sm font-medium text-neutral-900 dark:text-white"
+        title={item.name}
+      >
         {item.name}
       </h3>
+
+      {item.items != null && item.type === "folder" ? (
+        <p className="mb-0.5 w-full min-w-0 truncate text-center text-xs text-neutral-500 dark:text-neutral-400">
+          {item.items} {item.items === 1 ? "file" : "files"}
+        </p>
+      ) : null}
+
       {isOwned && item.backingCaption ? (
-        <p className="mb-0.5 truncate w-full text-center text-[11px] text-neutral-400 dark:text-neutral-500">
+        <p
+          className="mb-0.5 w-full min-w-0 truncate text-center text-[11px] text-neutral-400 dark:text-neutral-500"
+          title={item.backingCaption}
+        >
           {item.backingCaption}
         </p>
       ) : null}
-      <p className="mb-0.5 truncate w-full text-center text-xs text-neutral-500 dark:text-neutral-400">
+
+      <p
+        className="mb-2 w-full min-w-0 truncate text-center text-xs text-neutral-500 dark:text-neutral-400"
+        title={item.recipientSummary ?? `Shared by ${item.sharedBy}`}
+      >
         {item.recipientSummary ?? `Shared by ${item.sharedBy}`}
       </p>
-      <span
-        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-          item.permission === "edit"
-            ? "bg-bizzi-blue/20 text-bizzi-blue dark:bg-bizzi-blue/30 dark:text-bizzi-cyan"
-            : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
-        }`}
-      >
-        {item.permission === "edit" ? "Download" : "View only"}
-      </span>
-    </>
-  );
 
-  const cardContent = (
-    <div className="relative">
-      {content}
-      {isOwned && (onEdit || onDelete) && (
-        <div className="absolute left-2 top-2 z-20 flex max-w-[calc(100%-1rem)] flex-nowrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          {onEdit && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onEdit(e);
-              }}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-neutral-200 bg-white/95 px-2 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm hover:border-bizzi-blue/40 hover:bg-bizzi-blue/10 hover:text-bizzi-blue dark:border-neutral-600 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-bizzi-blue/50 dark:hover:bg-bizzi-blue/15 dark:hover:text-bizzi-cyan"
-              aria-label="Manage share"
-            >
-              <Settings className="h-3.5 w-3.5 shrink-0" />
-              Manage share
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onDelete(e);
-              }}
-              className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-              aria-label="Delete share"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="flex w-full justify-center px-0.5">
+        <span
+          className={`inline-flex max-w-full min-w-0 justify-center truncate rounded-full px-2 py-0.5 text-center text-xs font-medium ${
+            item.permission === "edit"
+              ? "bg-bizzi-blue/20 text-bizzi-blue dark:bg-bizzi-blue/30 dark:text-bizzi-cyan"
+              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+          }`}
+        >
+          {item.permission === "edit" ? "Download" : "View only"}
+        </span>
+      </div>
+    </>
   );
 
   if (item.href) {
     if (showModeration) {
       return (
-        <div className="flex flex-col gap-2">
-          <Link href={item.href} className={cardClassName}>
-            {cardContent}
-          </Link>
+        <div className="flex min-w-0 flex-col gap-2">
+          <CardChrome item={item} isOwned={isOwned} hrefOverlay={hrefOverlay}>
+            {mainColumn}
+          </CardChrome>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -167,22 +216,15 @@ export default function SharedItemCard({
       );
     }
     return (
-      <Link href={item.href} className={cardClassName}>
-        {cardContent}
-      </Link>
+      <CardChrome item={item} isOwned={isOwned} hrefOverlay={hrefOverlay}>
+        {mainColumn}
+      </CardChrome>
     );
   }
 
   return (
-    <div
-      className={cardClassName}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") e.preventDefault();
-      }}
-    >
-      {cardContent}
-    </div>
+    <CardChrome item={item} isOwned={isOwned}>
+      {mainColumn}
+    </CardChrome>
   );
 }

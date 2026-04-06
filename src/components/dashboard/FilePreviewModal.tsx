@@ -176,8 +176,9 @@ export default function FilePreviewModal({
     setIntrinsicVideoDims(null);
   }, [file?.id]);
 
-  const creatorRawReelPortrait = useMemo(() => {
-    if (!file || !showLUTForVideo || previewType !== "video") return false;
+  /** Portrait reel chrome (16:9 hero + contain) for every workspace; LUT stays behind `showLUT` only. */
+  const immersiveReelPortrait = useMemo(() => {
+    if (!file || previewType !== "video") return false;
     const evidences: CreatorRawReelEvidence[] = [];
     const rw0 = file.resolution_w ?? file.width ?? null;
     const rh0 = file.resolution_h ?? file.height ?? null;
@@ -204,7 +205,7 @@ export default function FilePreviewModal({
       });
     }
     return resolveCreatorRawReelPortrait(evidences);
-  }, [file, showLUTForVideo, previewType, streamProbeDims, intrinsicVideoDims]);
+  }, [file, previewType, streamProbeDims, intrinsicVideoDims]);
 
   const fetchFullUrl = useCallback(async () => {
     if (!file?.objectKey) return;
@@ -323,10 +324,6 @@ export default function FilePreviewModal({
   useEffect(() => {
     setPdfFrameVisible(false);
   }, [pdfEmbed.blobUrl]);
-
-  useEffect(() => {
-    setVideoMediaVisible(false);
-  }, [fullUrl, videoStreamUrl]);
 
   useEffect(() => {
     const el = imageZoomHostRef.current;
@@ -518,9 +515,10 @@ export default function FilePreviewModal({
   if (!file) return null;
 
   const fpCreative = resolveCreativeProjectTile(recentFileToCreativeThumbnailSource(file));
-  const portraitProductStage =
-    showLUTForVideo && previewType === "video" && creatorRawReelPortrait;
+  const immersivePortraitStage = previewType === "video" && immersiveReelPortrait;
   const proxyOnlyPlayback = creatorRawUsesProxyOnlyPlayback(showLUTForVideo, previewType === "video");
+  /** 16:9 framed hero: all non–Creator-RAW videos + portrait reels. Skip when LUT toolbar sits beside video (landscape RAW). */
+  const immersiveVideoFramedSlot = previewType === "video" && (immersivePortraitStage || !showLUT);
 
   const headerActions = (
     <>
@@ -573,9 +571,11 @@ export default function FilePreviewModal({
   } else if (
     previewType === "video" &&
     !error &&
-    (videoProcessing || (showLUTForVideo && loading))
+    (videoProcessing ||
+      (showLUTForVideo && loading) ||
+      (!showLUTForVideo && loading && !fullUrl))
   ) {
-    if (showLUTForVideo && portraitProductStage) {
+    if (immersivePortraitStage) {
       mediaBody = (
         <div
           className={`flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}`}
@@ -592,15 +592,25 @@ export default function FilePreviewModal({
               style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
             >
               <p className="max-w-[14rem] text-center text-xs leading-relaxed text-neutral-200 sm:text-sm">
-                Creating a lightweight streaming proxy.{" "}
-                <span className="font-semibold text-white">Originals are never played here</span> — use
-                Download for the camera file.
+                {showLUTForVideo ? (
+                  <>
+                    Creating a lightweight streaming proxy.{" "}
+                    <span className="font-semibold text-white">Originals are never played here</span> — use
+                    Download for the camera file.
+                  </>
+                ) : (
+                  <>
+                    Preparing streaming preview.{" "}
+                    <span className="font-semibold text-white">Hang tight</span> — playback will start when the
+                    proxy is ready. Use Download for the original file.
+                  </>
+                )}
               </p>
             </div>
           </div>
         </div>
       );
-    } else if (showLUTForVideo) {
+    } else {
       const waitTextClass = immersiveLightChrome
         ? "text-neutral-800"
         : "text-neutral-100";
@@ -619,19 +629,23 @@ export default function FilePreviewModal({
             </div>
           ) : null}
           <p className={`max-w-lg text-center text-sm leading-relaxed ${waitTextClass}`}>
-            Creating a lightweight streaming proxy for preview.{" "}
-            <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
-              Full-resolution originals are not played in this viewer
-            </span>{" "}
-            <span className={waitMutedClass}>— use Download for the camera file.</span>
-          </p>
-        </div>
-      );
-    } else {
-      mediaBody = (
-        <div className="flex min-h-[12rem] w-full flex-1 flex-col items-center justify-center gap-3 px-4 py-8">
-          <p className="max-w-md text-center text-sm text-neutral-600 dark:text-neutral-400">
-            Preparing playback…
+            {showLUTForVideo ? (
+              <>
+                Creating a lightweight streaming proxy for preview.{" "}
+                <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
+                  Full-resolution originals are not played in this viewer
+                </span>{" "}
+                <span className={waitMutedClass}>— use Download for the camera file.</span>
+              </>
+            ) : (
+              <>
+                Preparing preview playback.{" "}
+                <span className={`font-medium ${immersiveLightChrome ? "text-neutral-900" : "text-white"}`}>
+                  Streaming quality may differ from the downloaded file
+                </span>
+                .
+              </>
+            )}
           </p>
         </div>
       );
@@ -734,18 +748,16 @@ export default function FilePreviewModal({
         showLUTForVideo ? videoStreamUrl : filePreviewForceProxyMp4() ? null : videoStreamUrl;
       mediaBody = (
         <div
-          className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"} ${portraitProductStage ? `${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}` : showLUTForVideo ? "px-3 py-2 md:px-5" : ""}`}
+          className={`flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ease-out ${videoMediaVisible ? "opacity-100" : "opacity-0"} ${immersivePortraitStage ? `${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}` : "px-3 py-2 md:px-5"}`}
         >
           <div
             className={
-              portraitProductStage
+              immersivePortraitStage
                 ? `relative isolate flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center ${CREATOR_RAW_PORTRAIT_STAGE.stageMaxWidthClass} ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`
-                : showLUTForVideo
-                  ? "relative flex h-full min-h-0 w-full max-w-[min(96rem,100%)] flex-1 flex-col items-center justify-center md:px-2"
-                  : "relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center"
+                : "relative flex h-full min-h-0 w-full max-w-[min(96rem,100%)] flex-1 flex-col items-center justify-center md:px-2"
             }
           >
-            {portraitProductStage ? (
+            {immersivePortraitStage ? (
               <CreatorReelAmbientBackdrop
                 thumbUrl={lowResPreviewUrl}
                 immersiveLightChrome={immersiveLightChrome}
@@ -753,39 +765,57 @@ export default function FilePreviewModal({
             ) : null}
             <div
               className={
-                portraitProductStage
+                immersivePortraitStage
                   ? "flex w-full flex-1 flex-col items-stretch justify-center"
                   : "flex w-full flex-1 flex-col items-center justify-center"
               }
             >
-              <div
-                className={portraitProductStage ? CREATOR_RAW_PORTRAIT_STAGE.frameShellClass : ""}
-                style={portraitProductStage ? CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE : undefined}
-              >
+              {immersiveVideoFramedSlot ? (
+                <div
+                  className={CREATOR_RAW_PORTRAIT_STAGE.frameShellClass}
+                  style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
+                >
+                  <VideoWithLUT
+                    key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
+                    src={videoSrc}
+                    streamUrl={effectiveStream}
+                    className={
+                      immersivePortraitStage
+                        ? "h-full min-h-0 w-full max-h-full !max-h-none"
+                        : "h-full min-h-0 w-full max-h-[min(85dvh,calc(100dvh-10rem))]"
+                    }
+                    showLUTOption={showLUT}
+                    lutSource={lutSource}
+                    lutOptions={lutOptions}
+                    onLutChange={setLutEnabled}
+                    frameless
+                    sideBySideLut={false}
+                    videoObjectFit="contain"
+                    onDisplayReady={() => setVideoMediaVisible(true)}
+                    preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
+                    proxyOnlyPlayback={proxyOnlyPlayback}
+                    onIntrinsicVideoSize={onIntrinsicVideoSize}
+                  />
+                </div>
+              ) : (
                 <VideoWithLUT
                   key={file.id ? `file-preview-video:${file.id}` : "file-preview-video"}
                   src={videoSrc}
                   streamUrl={effectiveStream}
-                  className={
-                    portraitProductStage
-                      ? "h-full min-h-0 w-full max-h-full !max-h-none"
-                      : showLUTForVideo
-                        ? "max-h-[min(85dvh,calc(100dvh-10rem))]"
-                        : ""
-                  }
+                  className={"max-h-[min(85dvh,calc(100dvh-10rem))]"}
                   showLUTOption={showLUT}
                   lutSource={lutSource}
                   lutOptions={lutOptions}
                   onLutChange={setLutEnabled}
                   frameless
-                  sideBySideLut={showLUT && !portraitProductStage}
+                  sideBySideLut
                   videoObjectFit="contain"
                   onDisplayReady={() => setVideoMediaVisible(true)}
                   preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
                   proxyOnlyPlayback={proxyOnlyPlayback}
-                  onIntrinsicVideoSize={showLUTForVideo ? onIntrinsicVideoSize : undefined}
+                  onIntrinsicVideoSize={onIntrinsicVideoSize}
                 />
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -876,13 +906,11 @@ export default function FilePreviewModal({
       media={mediaBody}
       mediaFooter={mediaFooter}
       splitLayoutGapClassName={
-        showLUTForVideo && previewType === "video" && portraitProductStage
-          ? "lg:gap-2.5 xl:gap-3"
-          : undefined
+        previewType === "video" && immersivePortraitStage ? "lg:gap-2.5 xl:gap-3" : undefined
       }
       leftStageClassName={
-        showLUTForVideo && previewType === "video"
-          ? `creator-reel-stage lg:justify-center ${portraitProductStage ? "md:py-1" : ""}`
+        previewType === "video"
+          ? `creator-reel-stage lg:justify-center ${immersivePortraitStage ? "md:py-1" : ""}`
           : undefined
       }
       rightRail={
