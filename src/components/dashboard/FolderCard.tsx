@@ -303,7 +303,8 @@ export default function FolderCard({
         : ""
   }`;
 
-  const thumbBrowseShell = `group touch-manipulation relative flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
+  /** `h-full` + `flex-1` hero: grid row stretch keeps the cover full-bleed (not a short strip with empty card below). */
+  const thumbBrowseShell = `group touch-manipulation relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl transition-all ${revealOpacityClass} ${
     selected
       ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
       : isDragOver
@@ -370,77 +371,96 @@ export default function FolderCard({
         )}
         {useThumbChrome ? (
           <>
-            <div
-              className={`relative w-full shrink-0 overflow-hidden ${aspectClass} rounded-xl bg-gradient-to-br from-neutral-100 via-neutral-50 to-neutral-200/85 dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-950/90`}
-            >
-              {item.coverFile ? (
-                <>
-                  <StorageFolderCoverThumbnail
-                    variant="backdrop"
-                    cover={{
-                      objectKey: item.coverFile.objectKey,
-                      fileName: item.coverFile.fileName,
-                      contentType: item.coverFile.contentType,
-                    }}
-                  />
-                  <div
-                    className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/35 via-black/15 to-black/55 dark:from-black/45 dark:via-black/25 dark:to-black/65"
-                    aria-hidden
-                  />
-                </>
-              ) : null}
-                <div className="relative z-[2] flex min-h-[5.5rem] flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:min-h-[5rem] max-sm:py-4">
-                <div className="relative">
-                  <div
-                    className={`flex items-center justify-center rounded-2xl ${iconBoxClass} bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan`}
-                  >
-                    {item.customIcon ? (
-                      <item.customIcon className={iconInnerClass} />
-                    ) : item.name === "Storage" || item.name === "Uploads" ? (
-                      <Cloud className={iconInnerClass} />
-                    ) : (
-                      <Folder className={iconInnerClass} />
-                    )}
-                  </div>
-                  {item.isShared && (
-                    <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1 shadow dark:bg-bizzi-cyan">
-                      <Share2 className="h-3 w-3 text-white dark:text-neutral-950" />
-                    </div>
+            {item.coverFile ? (
+              <>
+                <StorageFolderCoverThumbnail
+                  variant="backdrop"
+                  cover={{
+                    objectKey: item.coverFile.objectKey,
+                    fileName: item.coverFile.fileName,
+                    contentType: item.coverFile.contentType,
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/40 via-black/20 to-black/60 dark:from-black/50 dark:via-black/30 dark:to-black/70"
+                  aria-hidden
+                />
+              </>
+            ) : (
+              <div
+                className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-br from-neutral-100 via-neutral-50 to-neutral-200/85 dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-950/90"
+                aria-hidden
+              />
+            )}
+            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center gap-0.5 px-3 py-6 max-sm:py-4">
+              <div className="relative">
+                <div
+                  className={`flex items-center justify-center rounded-2xl ${iconBoxClass} ${
+                    item.coverFile
+                      ? "bg-white/25 text-white shadow-md ring-1 ring-white/40 backdrop-blur-[2px] dark:bg-black/35 dark:text-white dark:ring-white/25"
+                      : "bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan"
+                  }`}
+                >
+                  {item.customIcon ? (
+                    <item.customIcon className={iconInnerClass} />
+                  ) : item.name === "Storage" || item.name === "Uploads" ? (
+                    <Cloud className={iconInnerClass} />
+                  ) : (
+                    <Folder className={iconInnerClass} />
                   )}
                 </div>
-                <p className="mt-1 text-xl font-semibold tabular-nums text-neutral-800 dark:text-neutral-100">
-                  {item.items}
-                </p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                  {item.items === 1 ? "item" : "items"}
-                </p>
-              </div>
-              {showCardInfo ? (
-                <>
-                  <div
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] bg-gradient-to-t from-black/85 via-black/35 to-transparent pt-12"
-                    aria-hidden
-                  />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] space-y-0.5 px-3 pb-2.5 pt-2">
-                    <p
-                      className="truncate text-left text-sm font-medium text-white drop-shadow-md"
-                      title={item.name}
-                    >
-                      {item.name}
-                    </p>
-                    <p className="truncate text-left text-[11px] text-white/90 drop-shadow" title={itemCountLine}>
-                      {itemCountLine}
-                    </p>
+                {item.isShared && (
+                  <div className="absolute -right-1 -top-1 rounded-full bg-bizzi-blue p-1 shadow dark:bg-bizzi-cyan">
+                    <Share2 className="h-3 w-3 text-white dark:text-neutral-950" />
                   </div>
-                </>
-              ) : (
-                <div className="absolute inset-x-0 bottom-0 z-[2] px-3 pb-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
-                  <p className="truncate text-center text-xs font-medium text-neutral-800 drop-shadow-sm dark:text-white">
+                )}
+              </div>
+              <p
+                className={`mt-1 text-xl font-semibold tabular-nums drop-shadow-sm ${
+                  item.coverFile
+                    ? "text-white"
+                    : "text-neutral-800 dark:text-neutral-100"
+                }`}
+              >
+                {item.items}
+              </p>
+              <p
+                className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  item.coverFile ? "text-white/85" : "text-neutral-500 dark:text-neutral-400"
+                }`}
+              >
+                {item.items === 1 ? "item" : "items"}
+              </p>
+            </div>
+            {showCardInfo ? (
+              <>
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black/90 via-black/45 to-transparent pt-14"
+                  aria-hidden
+                />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[4] space-y-0.5 px-3 pb-2.5 pt-2">
+                  <p
+                    className="truncate text-left text-sm font-medium text-white drop-shadow-md"
+                    title={item.name}
+                  >
                     {item.name}
                   </p>
+                  <p className="truncate text-left text-[11px] text-white/90 drop-shadow" title={itemCountLine}>
+                    {itemCountLine}
+                  </p>
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <div className="absolute inset-x-0 bottom-0 z-[4] px-3 pb-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                <p
+                  className={`truncate text-center text-xs font-medium drop-shadow-sm ${
+                    item.coverFile ? "text-white" : "text-neutral-800 dark:text-white"
+                  }`}
+                >
+                  {item.name}
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <>

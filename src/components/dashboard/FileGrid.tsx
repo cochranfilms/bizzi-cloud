@@ -2488,7 +2488,14 @@ export default function FileGrid({
                     data-item-key={item.key}
                     draggable={canDragFolder}
                     onDragStart={handleDragStart}
-                    className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={
+                      [
+                        viewMode === "thumbnail" && "h-full min-h-0",
+                        canDragFolder && "cursor-grab active:cursor-grabbing",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
                   >
                     <FolderCard
                       item={item}
@@ -2852,7 +2859,14 @@ export default function FileGrid({
                     data-item-key={item.key}
                     draggable={canDragFolder}
                     onDragStart={handleDragStart}
-                    className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
+                    className={
+                      [
+                        viewMode === "thumbnail" && "h-full min-h-0",
+                        canDragFolder && "cursor-grab active:cursor-grabbing",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
                   >
                     <FolderCard
                       item={item}
@@ -3052,7 +3066,14 @@ export default function FileGrid({
                         data-item-key={item.key}
                         draggable={canDragFolder}
                         onDragStart={handleDragStart}
-                        className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
+                        className={
+                          [
+                            viewMode === "thumbnail" && "h-full min-h-0",
+                            canDragFolder && "cursor-grab active:cursor-grabbing",
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
                       >
                         <FolderCard
                           item={item}

@@ -59,7 +59,7 @@ export default function StorageFolderCoverThumbnail({
       <img
         src={url}
         alt=""
-        className={`pointer-events-none absolute inset-0 z-0 h-full w-full scale-105 object-cover opacity-[0.88] dark:opacity-[0.82] ${className}`.trim()}
+        className={`pointer-events-none absolute inset-0 z-0 h-full w-full min-h-full min-w-full object-cover [object-position:center] ${className}`.trim()}
       />
     );
   }
