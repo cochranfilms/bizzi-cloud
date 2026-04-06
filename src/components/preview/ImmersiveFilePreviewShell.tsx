@@ -51,6 +51,11 @@ export interface ImmersiveFilePreviewShellProps {
   variant?: "gallery" | "app";
   /** Optional class on the left media column (e.g. creator reel centering). */
   leftStageClassName?: string;
+  /**
+   * Horizontal split between media and right rail (default `lg:gap-4`).
+   * Use for tighter creator-reel + comments layouts.
+   */
+  splitLayoutGapClassName?: string;
 }
 
 /**
@@ -68,6 +73,7 @@ export default function ImmersiveFilePreviewShell({
   belowFold,
   variant = "app",
   leftStageClassName,
+  splitLayoutGapClassName,
 }: ImmersiveFilePreviewShellProps) {
   const pathname = usePathname();
   const theme = useThemeResolved();
@@ -287,7 +293,9 @@ export default function ImmersiveFilePreviewShell({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:gap-3">
-          <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row lg:items-stretch lg:gap-4">
+          <div
+            className={`flex min-h-0 w-full flex-1 flex-col lg:flex-row lg:items-stretch ${splitLayoutGapClassName ?? "lg:gap-4"}`}
+          >
             <div
               className={`flex min-h-0 min-w-0 flex-1 flex-col ${leftStageClassName ?? ""}`}
             >

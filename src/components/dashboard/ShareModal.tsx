@@ -69,7 +69,7 @@ export default function ShareModal({
   const [recipientTab, setRecipientTab] = useState<"email" | "workspace">("email");
   const [workspaceTarget, setWorkspaceTarget] = useState<WorkspacePick | null>(null);
   const [targetQuery, setTargetQuery] = useState("");
-  const [targetResults, setTargetResults] = useState<
+  const [workspaceDirectoryAll, setWorkspaceDirectoryAll] = useState<
     { kind: "enterprise_workspace" | "personal_team"; id: string; label: string; subtitle: string }[]
   >([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
@@ -192,7 +192,7 @@ export default function ShareModal({
           setWorkspaceTarget(null);
         }
         setTargetQuery("");
-        setTargetResults([]);
+        setWorkspaceDirectoryAll([]);
       }
       setNameError(null);
       if (initialShareToken) {
@@ -258,35 +258,58 @@ export default function ShareModal({
   ]);
 
   useEffect(() => {
-    if (!open || recipientTab !== "workspace" || !user || routeTeamOwnerId) return;
-    const t = setTimeout(async () => {
+    if (!open) {
+      setWorkspaceDirectoryAll([]);
+      return;
+    }
+    if (recipientTab !== "workspace" || !user || routeTeamOwnerId) return;
+    let cancelled = false;
+    (async () => {
       setTargetsLoading(true);
       try {
         const token = await user.getIdToken();
-        const params = new URLSearchParams({ q: targetQuery });
-        const res = await fetch(`/api/share-targets?${params}`, {
+        const res = await fetch("/api/share-targets", {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok) {
+          if (!cancelled) setWorkspaceDirectoryAll([]);
+          return;
+        }
         const data = await res.json().catch(() => ({}));
-        setTargetResults(Array.isArray(data.targets) ? data.targets : []);
+        if (!cancelled) {
+          setWorkspaceDirectoryAll(Array.isArray(data.targets) ? data.targets : []);
+        }
       } catch {
-        setTargetResults([]);
+        if (!cancelled) setWorkspaceDirectoryAll([]);
       } finally {
-        setTargetsLoading(false);
+        if (!cancelled) setTargetsLoading(false);
       }
-    }, 280);
-    return () => clearTimeout(t);
-  }, [open, recipientTab, user, targetQuery, routeTeamOwnerId]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, recipientTab, user, routeTeamOwnerId]);
+
+  const filteredWorkspaceTargets = useMemo(() => {
+    const q = targetQuery.trim().toLowerCase();
+    if (!q) return workspaceDirectoryAll;
+    return workspaceDirectoryAll.filter(
+      (t) =>
+        t.label.toLowerCase().includes(q) ||
+        t.subtitle.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q)
+    );
+  }, [workspaceDirectoryAll, targetQuery]);
 
   useEffect(() => {
     if (routeTeamOwnerId) return;
     setWorkspaceTarget((prev) => {
       if (!prev) return prev;
-      const row = targetResults.find((r) => r.kind === prev.kind && r.id === prev.id);
+      const row = workspaceDirectoryAll.find((r) => r.kind === prev.kind && r.id === prev.id);
       if (row && row.label !== prev.label) return { ...prev, label: row.label };
       return prev;
     });
-  }, [targetResults, routeTeamOwnerId]);
+  }, [workspaceDirectoryAll, routeTeamOwnerId]);
 
   const recipientLocked = !!(shareToken || initialShareToken);
 
@@ -739,19 +762,23 @@ export default function ShareModal({
                   <>
                     <input
                       type="search"
-                      placeholder="Search teams and organizations…"
+                      placeholder="Filter teams and organizations…"
                       value={targetQuery}
                       onChange={(e) => setTargetQuery(e.target.value)}
                       className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-bizzi-blue dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
                     />
                     {targetsLoading ? (
-                      <p className="text-xs text-neutral-500">Searching…</p>
+                      <p className="text-xs text-neutral-500">Loading workspaces…</p>
                     ) : (
                       <ul className="max-h-52 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
-                        {targetResults.length === 0 ? (
-                          <li className="px-3 py-2 text-xs text-neutral-500">No matches</li>
+                        {filteredWorkspaceTargets.length === 0 ? (
+                          <li className="px-3 py-2 text-xs text-neutral-500">
+                            {workspaceDirectoryAll.length === 0
+                              ? "No teams or organizations available."
+                              : "No matches for your filter."}
+                          </li>
                         ) : (
-                          targetResults.map((row) => {
+                          filteredWorkspaceTargets.map((row) => {
                             const selected =
                               workspaceTarget?.kind === row.kind && workspaceTarget?.id === row.id;
                             return (

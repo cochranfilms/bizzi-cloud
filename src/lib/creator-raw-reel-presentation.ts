@@ -19,18 +19,30 @@ export type CreatorRawReelEvidence = {
 };
 
 export const CREATOR_RAW_PORTRAIT_STAGE = {
-  /** Max width of the phone-style stage (tailwind arbitrary helpers — consumed in TS for tests). */
-  maxWidthMobileRem: 26.25,
-  maxWidthDesktopRem: 28.75,
+  /** Legacy rem hints (docs / tooling); layout uses `stageMaxWidthClass`. */
+  maxWidthMobileRem: 30,
+  maxWidthDesktopRem: 40,
+  /**
+   * Tailwind width cap for the reel column: larger “phone” on desktop while reserving
+   * ~20rem for the comments rail + gutters (`calc(100vw - 20rem)`).
+   */
+  stageMaxWidthClass:
+    "max-w-[min(30rem,calc(100vw-1.25rem))] lg:max-w-[min(40rem,calc(100vw-20rem))]",
   shellPadX: "px-2 sm:px-3 md:px-4",
   shellPadY: "py-2 sm:py-3",
   /** Fixed 9:16 slot min-height so loading → proxy → mux does not jump */
   stageAspect: "9 / 16" as const,
-  stageMaxHeight: "min(82dvh, calc(100dvh - 13.5rem))",
+  /** Use more vertical space; header + LUT strip still fit above the fold. */
+  stageMaxHeight: "min(90dvh, calc(100dvh - 10.25rem))",
   /** Shared with processing placeholder — identical slot = no layout jump. */
-  stageMinHeight: "min(52dvh, 28rem)",
+  stageMinHeight: "min(56dvh, 30rem)",
   lutRailGap: "gap-3 sm:gap-3.5",
   lutRailMaxWidth: "min(28rem, 100%)",
+  /** Outer chrome around the playable 9:16 region (notch + depth). */
+  frameShellClass:
+    "relative w-full overflow-hidden rounded-[1.85rem] bg-neutral-950 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.09)] ring-1 ring-black/25 dark:bg-black dark:shadow-[0_44px_120px_-32px_rgba(0,0,0,0.82)] dark:ring-white/12",
+  processingShellClass:
+    "flex w-full flex-col items-center justify-center rounded-[1.85rem] border border-white/10 bg-black/50 px-4 py-10 shadow-[0_32px_100px_-28px_rgba(0,0,0,0.55)] ring-1 ring-black/20 backdrop-blur-md dark:border-white/12 dark:bg-black/55 dark:ring-white/10",
 } as const;
 
 /** Inline style for the portrait “device” frame (processing + ready). Keep in sync in one place. */

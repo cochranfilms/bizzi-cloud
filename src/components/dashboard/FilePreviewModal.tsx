@@ -80,6 +80,37 @@ function clampImageZoom(z: number): number {
   return Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
 }
 
+/** Soft blurred frame behind the 9:16 reel so dead space feels intentional (streaming-thumb based). */
+function CreatorReelAmbientBackdrop({
+  thumbUrl,
+  immersiveLightChrome,
+}: {
+  thumbUrl: string | null;
+  immersiveLightChrome: boolean;
+}) {
+  if (!thumbUrl) return null;
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-[-8%] inset-y-[-12%] -z-10 overflow-hidden rounded-[2.75rem]"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- thumb API URL */}
+      <img
+        src={thumbUrl}
+        alt=""
+        className="h-full min-h-[125%] w-full min-w-[125%] -translate-y-[4%] scale-110 object-cover opacity-[0.4] blur-[48px] saturate-[1.3] dark:opacity-[0.34]"
+      />
+      <div
+        className={
+          immersiveLightChrome
+            ? "absolute inset-0 bg-gradient-to-b from-white/[0.2] via-sky-50/[0.08] to-slate-800/[0.16]"
+            : "absolute inset-0 bg-gradient-to-b from-slate-950/50 via-transparent to-black/5"
+        }
+      />
+    </div>
+  );
+}
+
 function buildLUTOptions(
   library: CreativeLUTLibraryEntry[],
   includeBuiltin: boolean
@@ -550,20 +581,14 @@ export default function FilePreviewModal({
           className={`flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center transition-opacity duration-300 ${CREATOR_RAW_PORTRAIT_STAGE.shellPadX} ${CREATOR_RAW_PORTRAIT_STAGE.shellPadY}`}
         >
           <div
-            className={`flex w-full max-w-[min(26.25rem,calc(100vw-1.25rem))] flex-col items-center justify-center lg:max-w-[min(28.75rem,34vw)] ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
+            className={`relative isolate flex w-full flex-col items-center justify-center ${CREATOR_RAW_PORTRAIT_STAGE.stageMaxWidthClass} ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`}
           >
-            {lowResPreviewUrl ? (
-              <div className="mb-4 w-full max-w-[14rem] overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-lg">
-                {/* eslint-disable-next-line @next/next/no-img-element -- thumb API URL */}
-                <img
-                  src={lowResPreviewUrl}
-                  alt=""
-                  className="aspect-video w-full object-cover opacity-95"
-                />
-              </div>
-            ) : null}
+            <CreatorReelAmbientBackdrop
+              thumbUrl={lowResPreviewUrl}
+              immersiveLightChrome={immersiveLightChrome}
+            />
             <div
-              className="flex w-full flex-col items-center justify-center rounded-[1.75rem] border border-neutral-200/30 bg-black/45 px-4 py-10 shadow-[0_28px_90px_-20px_rgba(0,0,0,0.55)] backdrop-blur-md dark:border-white/12 dark:bg-black/55"
+              className={CREATOR_RAW_PORTRAIT_STAGE.processingShellClass}
               style={CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE}
             >
               <p className="max-w-[14rem] text-center text-xs leading-relaxed text-neutral-200 sm:text-sm">
@@ -714,12 +739,18 @@ export default function FilePreviewModal({
           <div
             className={
               portraitProductStage
-                ? `flex h-full min-h-0 w-full max-w-[min(26.25rem,calc(100vw-1.25rem))] flex-1 flex-col items-center justify-center lg:max-w-[min(28.75rem,34vw)] ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`
+                ? `relative isolate flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center ${CREATOR_RAW_PORTRAIT_STAGE.stageMaxWidthClass} ${CREATOR_RAW_PORTRAIT_STAGE.lutRailGap}`
                 : showLUTForVideo
                   ? "relative flex h-full min-h-0 w-full max-w-[min(96rem,100%)] flex-1 flex-col items-center justify-center md:px-2"
                   : "relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center"
             }
           >
+            {portraitProductStage ? (
+              <CreatorReelAmbientBackdrop
+                thumbUrl={lowResPreviewUrl}
+                immersiveLightChrome={immersiveLightChrome}
+              />
+            ) : null}
             <div
               className={
                 portraitProductStage
@@ -728,11 +759,7 @@ export default function FilePreviewModal({
               }
             >
               <div
-                className={
-                  portraitProductStage
-                    ? "relative w-full overflow-hidden rounded-[1.75rem] bg-black shadow-[0_28px_90px_-20px_rgba(0,0,0,0.55)] ring-1 ring-black/25 dark:shadow-[0_36px_100px_-24px_rgba(0,0,0,0.78)] dark:ring-white/12"
-                    : ""
-                }
+                className={portraitProductStage ? CREATOR_RAW_PORTRAIT_STAGE.frameShellClass : ""}
                 style={portraitProductStage ? CREATOR_RAW_PORTRAIT_STAGE_SLOT_STYLE : undefined}
               >
                 <VideoWithLUT
@@ -752,7 +779,7 @@ export default function FilePreviewModal({
                   onLutChange={setLutEnabled}
                   frameless
                   sideBySideLut={showLUT && !portraitProductStage}
-                  videoObjectFit="contain"
+                  videoObjectFit={portraitProductStage ? "cover" : "contain"}
                   onDisplayReady={() => setVideoMediaVisible(true)}
                   preferMaxHlsQuality={!!effectiveStream?.includes(".m3u8")}
                   proxyOnlyPlayback={proxyOnlyPlayback}
@@ -848,6 +875,11 @@ export default function FilePreviewModal({
       headerActions={headerActions}
       media={mediaBody}
       mediaFooter={mediaFooter}
+      splitLayoutGapClassName={
+        showLUTForVideo && previewType === "video" && portraitProductStage
+          ? "lg:gap-2.5 xl:gap-3"
+          : undefined
+      }
       leftStageClassName={
         showLUTForVideo && previewType === "video"
           ? `creator-reel-stage lg:justify-center ${portraitProductStage ? "md:py-1" : ""}`

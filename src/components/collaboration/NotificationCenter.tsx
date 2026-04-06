@@ -26,6 +26,7 @@ import { getAuthToken } from "@/lib/auth-token";
 import { useAuth } from "@/context/AuthContext";
 import type { Notification } from "@/types/collaboration";
 import { supportSettingsHelpHref } from "@/lib/support-ticket";
+import { parseWorkspaceTargetKey } from "@/lib/folder-share-workspace";
 
 interface NotificationCenterProps {
   onClose: () => void;
@@ -43,6 +44,7 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
     case "file_hearted":
       return <Heart className="h-4 w-4 flex-shrink-0" />;
     case "file_shared":
+    case "workspace_share_delivery_request":
     case "transfer_sent":
     case "share_invitee_removed":
     case "share_link_deleted":
@@ -86,6 +88,18 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
 function resolveNotificationHref(n: Notification, shareBasePath: string): string {
   const m = n.metadata ?? {};
   if (n.shareId) {
+    if (
+      (n.type === "file_shared" || n.type === "workspace_share_delivery_request") &&
+      typeof m.workspaceTargetKey === "string"
+    ) {
+      const target = parseWorkspaceTargetKey(m.workspaceTargetKey);
+      if (target?.kind === "personal_team") {
+        return `/team/${target.id}/shared/${n.shareId}`;
+      }
+      if (target?.kind === "enterprise_workspace") {
+        return `/enterprise/shared/${n.shareId}`;
+      }
+    }
     return `${shareBasePath}/shared/${n.shareId}`;
   }
   if (n.fileId) {
@@ -232,11 +246,13 @@ export default function NotificationCenter({
 }: NotificationCenterProps) {
   const { user } = useAuth();
   const pathname = usePathname();
-  const shareBasePath =
-    pathname?.startsWith("/enterprise")
-      ? "/enterprise"
-      : pathname?.startsWith("/desktop")
-        ? "/desktop/app"
+  const teamBaseFromPath = pathname?.match(/^\/team\/([^/]+)/)?.[1];
+  const shareBasePath = pathname?.startsWith("/enterprise")
+    ? "/enterprise"
+    : pathname?.startsWith("/desktop")
+      ? "/desktop/app"
+      : teamBaseFromPath
+        ? `/team/${teamBaseFromPath}`
         : "/dashboard";
   const {
     notifications,

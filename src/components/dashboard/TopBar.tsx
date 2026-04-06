@@ -36,7 +36,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   const [shareModalData, setShareModalData] = useState<{
     folderName: string;
     linkedDriveId: string;
-    initialShareToken: string;
+    initialShareToken?: string;
   } | null>(null);
   const newDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -463,30 +463,10 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           const drive = await createFolder(folderName.trim() || "New shared folder", {
             forceLegacyLinkedDrive: true,
           });
-          const token = await user.getIdToken();
-          const res = await fetch("/api/shares", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              linked_drive_id: drive.id,
-              folder_name: folderName.trim() || drive.name,
-              permission: "view",
-              access_level: "private",
-            }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.error ?? "Failed to create share");
-          }
-          const data = (await res.json()) as { token: string };
           setCreateSharedFolderOpen(false);
           setShareModalData({
             folderName: folderName.trim() || drive.name,
             linkedDriveId: drive.id,
-            initialShareToken: data.token,
           });
         }}
       />
@@ -497,7 +477,7 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           onClose={() => setShareModalData(null)}
           folderName={shareModalData.folderName}
           linkedDriveId={shareModalData.linkedDriveId}
-          initialShareToken={shareModalData.initialShareToken}
+          initialShareToken={shareModalData.initialShareToken ?? undefined}
         />
       )}
 
