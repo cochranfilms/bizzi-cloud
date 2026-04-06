@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 export interface StorageLocationMenuProps {
-  /** Full path label shown on the button, e.g. "Storage" or "Storage / Client / Project" */
+  /** Current location only, e.g. "Storage" at drive root or the folder you are inside (not a full trail). */
   pathLabel: string;
   /** Whether we're inside a subfolder (not Storage root). */
   isInsideSubfolder: boolean;

@@ -223,6 +223,7 @@ export default function FileGrid({
     setCurrentDrivePath,
     storageParentFolderId,
     setStorageParentFolderId,
+    storageUploadFolderLabel,
     setStorageUploadFolderLabel,
     effectiveDriveIdForFiles,
   } = useCurrentFolder();
@@ -1043,10 +1044,34 @@ export default function FileGrid({
     setStorageUploadFolderLabel,
   ]);
 
+  /**
+   * Single-segment title in the Storage header (drive name at root, or only the folder you are in).
+   * Uses the last name from `getStorageFolderAncestors` output (any depth — no path length limit in UI).
+   * Falls back to `storageUploadFolderLabel` while the ancestors request catches up after navigation.
+   */
   const storagePathMenuLabel = useMemo(() => {
     if (!currentDrive || !isStorageV2FolderBrowse) return "";
     const base = teamAwareDriveName(currentDriveMeta?.name ?? currentDrive.name);
-    return v2FolderBreadcrumb ? `${base} / ${v2FolderBreadcrumb}` : base;
+    const segments = v2FolderBreadcrumb.trim().split(/\s*\/\s*/).filter(Boolean);
+    if (segments.length > 0) return segments[segments.length - 1]!;
+    if (storageParentFolderId && storageUploadFolderLabel?.trim()) {
+      return storageUploadFolderLabel.trim();
+    }
+    return base;
+  }, [
+    currentDrive,
+    currentDriveMeta,
+    isStorageV2FolderBrowse,
+    v2FolderBreadcrumb,
+    storageParentFolderId,
+    storageUploadFolderLabel,
+  ]);
+
+  /** Full path for share default name / tooltips where the whole trail is useful. */
+  const storagePathFullLabel = useMemo(() => {
+    if (!currentDrive || !isStorageV2FolderBrowse) return "";
+    const base = teamAwareDriveName(currentDriveMeta?.name ?? currentDrive.name);
+    return v2FolderBreadcrumb.trim() ? `${base} / ${v2FolderBreadcrumb}` : base;
   }, [currentDrive, currentDriveMeta, isStorageV2FolderBrowse, v2FolderBreadcrumb]);
 
   const storageMenuFolderPinned = useMemo(() => {
@@ -1059,18 +1084,17 @@ export default function FileGrid({
 
   const openStoragePathShare = useCallback(() => {
     if (!currentDrive) return;
-    setShareFolderName(storagePathMenuLabel || currentDrive.name);
+    setShareFolderName(storagePathFullLabel || currentDrive.name);
     setShareDriveId(currentDrive.id);
     setShareReferencedFileIds([]);
     setShareInitialData(null);
     setShareModalOpen(true);
-  }, [currentDrive, storagePathMenuLabel]);
+  }, [currentDrive, storagePathFullLabel]);
 
   const toggleStoragePathPin = useCallback(async () => {
     if (!currentDrive || !isStorageV2FolderBrowse) return;
     const base = teamAwareDriveName(currentDriveMeta?.name ?? currentDrive.name);
-    const lastName =
-      v2FolderBreadcrumb.trim().split(/\s*\/\s*/).filter(Boolean).pop() ?? base;
+    const lastName = storageParentFolderId ? storagePathMenuLabel : base;
     if (storageParentFolderId) {
       const pid = buildStorageV2FolderPinId(currentDrive.id, storageParentFolderId);
       if (storageMenuFolderPinned) await unpinItem("folder", pid);
@@ -1086,15 +1110,15 @@ export default function FileGrid({
     isStorageV2FolderBrowse,
     storageParentFolderId,
     storageMenuFolderPinned,
-    v2FolderBreadcrumb,
+    storagePathMenuLabel,
     pinItem,
     unpinItem,
     refetchPinned,
   ]);
 
-  const storageRenameCurrentName =
-    v2FolderBreadcrumb.trim().split(/\s*\/\s*/).filter(Boolean).pop() ??
-    teamAwareDriveName(currentDriveMeta?.name ?? currentDrive?.name ?? "");
+  const storageRenameCurrentName = isStorageV2FolderBrowse
+    ? storagePathMenuLabel
+    : teamAwareDriveName(currentDriveMeta?.name ?? currentDrive?.name ?? "");
 
   useEffect(() => {
     if (!isStorageV2FolderBrowse || !storageParentFolderId || !currentDrive) {
@@ -2134,20 +2158,21 @@ export default function FileGrid({
     !filesLandingRecentsMode ||
     (!recentUploadsLoading && recentsRootReady) ||
     recentUploads.length > 0;
-  /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). */
-  const mainGridFadeReady = embeddedFolderBrowse
-    ? true
-    : currentDrive
-      ? !driveFilesLoading
-      : threeTabFilesLanding && filesLandingTab === "storage"
-        ? true
-        : threeTabFilesLanding
-          ? filesLandingTab === "recents"
-            ? filesLandingRecentsReady
-            : !(heartedLoading && heartedFiles.length === 0)
-          : activeTab === "recents"
-            ? recentsRootReady
-            : !(heartedLoading && heartedFiles.length === 0);
+  /** Full-page fade unmounts the grid when false; embedded home Storage keeps the grid mounted during folder loads so prior folder content stays visible until new data arrives (no blink). After Back at Storage root, `closeDrive()` clears `currentDrive` while `drive=` is still in the URL until the URL sync effect re-opens Storage — without treating that as “embedded chrome”, `mainGridFadeReady` would follow Recents/Hearts rules (e.g. Hearts still loading) and the fade would unmount the grid until a tab click. */
+  const mainGridFadeReady =
+    embeddedFolderBrowse || (embeddedHomeStorage && !!searchParams.get("drive"))
+      ? true
+      : currentDrive
+        ? !driveFilesLoading
+        : threeTabFilesLanding && filesLandingTab === "storage"
+          ? true
+          : threeTabFilesLanding
+            ? filesLandingTab === "recents"
+              ? filesLandingRecentsReady
+              : !(heartedLoading && heartedFiles.length === 0)
+            : activeTab === "recents"
+              ? recentsRootReady
+              : !(heartedLoading && heartedFiles.length === 0);
   const showRecentsRootGrid = threeTabFilesLanding
     ? filesLandingTab === "recents"
     : activeTab === "recents";
@@ -2241,6 +2266,7 @@ export default function FileGrid({
                       const data = (await res.json()) as {
                         ancestors?: Array<{ id: string }>;
                       };
+                      /** Root→…→parent→current; parent is always second-to-last (works at any nesting depth). */
                       const list = data.ancestors ?? [];
                       const parentId =
                         list.length >= 2 ? list[list.length - 2]!.id : null;
