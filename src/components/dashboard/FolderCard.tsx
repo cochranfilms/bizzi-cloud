@@ -275,6 +275,8 @@ export default function FolderCard({
 
   const isSystemFolder = item.isSystemFolder === true;
   const useThumbChrome = presentation === "thumbnail" && !isSystemFolder;
+  /** Default grid: cover spans whole card (not only the icon tile). */
+  const defaultGridFullBleedCover = !isSystemFolder && !!item.coverFile;
   const sizeClasses = SIZE_CLASSES[layoutSize];
   const aspectClass = getCardAspectClass(layoutAspectRatio ?? "landscape");
   /** Full-width 16:9 tiles are huge on phones; base folders use a compact row on small screens. */
@@ -286,18 +288,26 @@ export default function FolderCard({
   const iconInnerClass = `${sizeClasses.iconInner} max-sm:!h-8 max-sm:!w-8`;
 
   const defaultGridShell = `group touch-manipulation relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors ${revealOpacityClass} ${sizeClasses.padding} ${aspectShell} ${systemMobileShell} ${
+    defaultGridFullBleedCover ? "h-full min-h-0" : ""
+  } ${
     isSystemFolder
       ? "border-bizzi-blue bg-bizzi-blue dark:border-bizzi-cyan/80 dark:bg-bizzi-blue"
       : selected
-        ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
+        ? defaultGridFullBleedCover
+          ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/50 bg-transparent dark:border-bizzi-blue"
+          : "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/50 bg-bizzi-blue/5 dark:border-bizzi-blue dark:bg-bizzi-blue/10"
         : isDragOver
           ? "border-bizzi-blue ring-2 ring-inset ring-bizzi-blue/30 bg-bizzi-blue/10 dark:border-bizzi-blue dark:bg-bizzi-blue/20"
-          : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+          : defaultGridFullBleedCover
+            ? "border-neutral-200 bg-transparent dark:border-neutral-700 dark:bg-transparent"
+            : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
   } ${
     canNavigate && !selected
       ? isSystemFolder
         ? "cursor-pointer hover:ring-2 hover:ring-white/30 active:opacity-95 dark:hover:ring-bizzi-cyan/40"
-        : "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
+        : defaultGridFullBleedCover
+          ? "cursor-pointer hover:border-bizzi-blue/55 dark:hover:border-bizzi-blue/50"
+          : "cursor-pointer hover:border-bizzi-blue/30 hover:bg-neutral-50/50 dark:hover:border-bizzi-blue/30 dark:hover:bg-neutral-800/50"
       : canNavigate && selected
         ? "cursor-pointer"
         : ""
@@ -309,7 +319,9 @@ export default function FolderCard({
       ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
       : isDragOver
         ? "ring-2 ring-inset ring-bizzi-blue/60 bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
-        : "ring-1 ring-inset ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
+        : item.coverFile
+          ? "ring-1 ring-inset ring-neutral-200/80 dark:ring-neutral-700/55"
+          : "ring-1 ring-inset ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
   } ${
     canNavigate && !selected && !isDragOver
       ? "cursor-pointer hover:ring-neutral-300 hover:shadow-sm dark:hover:ring-neutral-600"
@@ -464,8 +476,24 @@ export default function FolderCard({
           </>
         ) : (
           <>
+            {defaultGridFullBleedCover ? (
+              <>
+                <StorageFolderCoverThumbnail
+                  variant="backdrop"
+                  cover={{
+                    objectKey: item.coverFile!.objectKey,
+                    fileName: item.coverFile!.fileName,
+                    contentType: item.coverFile!.contentType,
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/35 via-black/15 to-black/55 dark:from-black/40 dark:via-black/20 dark:to-black/65"
+                  aria-hidden
+                />
+              </>
+            ) : null}
             <div
-              className={`flex w-full flex-col items-center justify-center ${
+              className={`relative z-[2] flex w-full flex-col items-center justify-center ${
                 isSystemFolder ? "max-sm:flex-row max-sm:items-center max-sm:gap-3 max-sm:text-left" : ""
               }`}
             >
@@ -478,26 +506,11 @@ export default function FolderCard({
                   className={`relative flex items-center justify-center overflow-hidden rounded-xl ${iconBoxClass} ${
                     isSystemFolder
                       ? "bg-white/20 text-white shadow-none dark:bg-white/92 dark:text-neutral-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.22)]"
-                      : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
+                      : defaultGridFullBleedCover
+                        ? "bg-white/25 text-white shadow-md ring-1 ring-white/40 backdrop-blur-[2px] dark:bg-black/35 dark:text-white dark:ring-white/25"
+                        : "bg-bizzi-blue/10 text-bizzi-blue dark:bg-bizzi-blue/20"
                   }`}
                 >
-                  {item.coverFile && !isSystemFolder ? (
-                    <>
-                      <StorageFolderCoverThumbnail
-                        variant="backdrop"
-                        cover={{
-                          objectKey: item.coverFile.objectKey,
-                          fileName: item.coverFile.fileName,
-                          contentType: item.coverFile.contentType,
-                        }}
-                        className="opacity-45 dark:opacity-40"
-                      />
-                      <div
-                        className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-neutral-900/40 to-transparent dark:from-black/50"
-                        aria-hidden
-                      />
-                    </>
-                  ) : null}
                   <div className="relative z-[2] flex items-center justify-center">
                     {item.customIcon ? (
                       <item.customIcon className={iconInnerClass} />
@@ -520,16 +533,24 @@ export default function FolderCard({
                 }`}
               >
                 <h3
-                  className={`mb-1 w-full truncate text-center font-medium ${sizeClasses.text} ${
+                  className={`mb-1 w-full truncate text-center font-medium ${sizeClasses.text} drop-shadow-sm ${
                     isSystemFolder
                       ? "text-white max-sm:text-left max-sm:text-base dark:text-white sm:text-center"
-                      : "text-neutral-900 dark:text-white"
+                      : defaultGridFullBleedCover
+                        ? "text-white dark:text-white"
+                        : "text-neutral-900 dark:text-white"
                   }`}
                 >
                   {item.name}
                 </h3>
                 {item.isConsolidatedStorageShortcut ? (
-                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-bizzi-blue dark:text-bizzi-cyan">
+                  <p
+                    className={`mb-1 text-[10px] font-medium uppercase tracking-wide ${
+                      defaultGridFullBleedCover
+                        ? "text-white/90 drop-shadow-sm"
+                        : "text-bizzi-blue dark:text-bizzi-cyan"
+                    }`}
+                  >
                     In Storage
                   </p>
                 ) : null}
@@ -538,7 +559,9 @@ export default function FolderCard({
                     className={`${
                       isSystemFolder
                         ? "text-xs font-semibold text-white max-sm:text-sm dark:text-white"
-                        : "text-xs text-neutral-500 dark:text-neutral-400"
+                        : defaultGridFullBleedCover
+                          ? "text-sm text-white/90 drop-shadow-sm dark:text-white/85"
+                          : "text-xs text-neutral-500 dark:text-neutral-400"
                     }`}
                   >
                     {itemCountLine}
@@ -549,7 +572,13 @@ export default function FolderCard({
           </>
         )}
         <div
-          className={`absolute right-2 top-2 z-30 flex items-center gap-0.5 transition-opacity max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${useThumbChrome ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm sm:group-hover:bg-black/50" : isSystemFolder ? "max-sm:rounded-md max-sm:bg-black/15 max-sm:p-0.5 max-sm:backdrop-blur-sm" : ""}`}
+          className={`absolute right-2 top-2 z-30 flex items-center gap-0.5 transition-opacity max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${
+            useThumbChrome || defaultGridFullBleedCover
+              ? "rounded-md bg-black/35 p-0.5 backdrop-blur-sm sm:group-hover:bg-black/50"
+              : isSystemFolder
+                ? "max-sm:rounded-md max-sm:bg-black/15 max-sm:p-0.5 max-sm:backdrop-blur-sm"
+                : ""
+          }`}
         >
           {!item.hideShare && (
             <button
@@ -559,14 +588,18 @@ export default function FolderCard({
                 void openShare();
               }}
               className={`rounded-lg p-2 ${
-                isSystemFolder
+                isSystemFolder || defaultGridFullBleedCover
                   ? "hover:bg-white/20"
                   : "hover:bg-neutral-100 dark:hover:bg-neutral-700"
               }`}
               aria-label="Share folder"
             >
               <Share2
-                className={`h-4 w-4 ${isSystemFolder ? "text-white/90" : "text-neutral-500 dark:text-neutral-400"}`}
+                className={`h-4 w-4 ${
+                  isSystemFolder || defaultGridFullBleedCover
+                    ? "text-white/90"
+                    : "text-neutral-500 dark:text-neutral-400"
+                }`}
               />
             </button>
           )}
@@ -663,7 +696,7 @@ export default function FolderCard({
               ]}
               ariaLabel="Folder actions"
               alignRight
-              triggerOnDark={isSystemFolder}
+              triggerOnDark={isSystemFolder || defaultGridFullBleedCover}
             />
           )}
         </div>

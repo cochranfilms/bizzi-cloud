@@ -1579,10 +1579,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                     draggable={canDragFolder}
                     onDragStart={handleDragStart}
                     className={
-                      [
-                        viewMode === "thumbnail" && "h-full min-h-0",
-                        canDragFolder && "cursor-grab active:cursor-grabbing",
-                      ]
+                      ["h-full min-h-0", canDragFolder && "cursor-grab active:cursor-grabbing"]
                         .filter(Boolean)
                         .join(" ") || undefined
                     }
@@ -1769,7 +1766,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                   onDragStart={handleDragStart}
                   className={
                     [
-                      viewMode === "thumbnail" && "h-full min-h-0",
+                      "h-full min-h-0",
                       canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
                       homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
                     ]

@@ -2489,10 +2489,7 @@ export default function FileGrid({
                     draggable={canDragFolder}
                     onDragStart={handleDragStart}
                     className={
-                      [
-                        viewMode === "thumbnail" && "h-full min-h-0",
-                        canDragFolder && "cursor-grab active:cursor-grabbing",
-                      ]
+                      ["h-full min-h-0", canDragFolder && "cursor-grab active:cursor-grabbing"]
                         .filter(Boolean)
                         .join(" ") || undefined
                     }
@@ -2860,10 +2857,7 @@ export default function FileGrid({
                     draggable={canDragFolder}
                     onDragStart={handleDragStart}
                     className={
-                      [
-                        viewMode === "thumbnail" && "h-full min-h-0",
-                        canDragFolder && "cursor-grab active:cursor-grabbing",
-                      ]
+                      ["h-full min-h-0", canDragFolder && "cursor-grab active:cursor-grabbing"]
                         .filter(Boolean)
                         .join(" ") || undefined
                     }
@@ -3067,10 +3061,7 @@ export default function FileGrid({
                         draggable={canDragFolder}
                         onDragStart={handleDragStart}
                         className={
-                          [
-                            viewMode === "thumbnail" && "h-full min-h-0",
-                            canDragFolder && "cursor-grab active:cursor-grabbing",
-                          ]
+                          ["h-full min-h-0", canDragFolder && "cursor-grab active:cursor-grabbing"]
                             .filter(Boolean)
                             .join(" ") || undefined
                         }
