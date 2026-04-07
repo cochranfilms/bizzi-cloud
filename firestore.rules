@@ -162,6 +162,10 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
       allow read: if true;
       allow update, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+      /** Item rows — API / Admin SDK only (recipient data comes from server). */
+      match /items/{itemId} {
+        allow read, write: if false;
+      }
     }
     match /organizations/{orgId} {
       allow read: if request.auth != null

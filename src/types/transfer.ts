@@ -34,6 +34,8 @@ export interface Transfer {
   organizationId?: string | null;
   /** Personal-team container when transfer was created in a team workspace. */
   personalTeamOwnerId?: string | null;
+  /** Server transfer_lifecycle when present (e.g. draft before finalize). */
+  transferLifecycle?: string | null;
 }
 
 export interface CreateTransferInput {

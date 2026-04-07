@@ -103,6 +103,8 @@ interface BackupContextValue {
     targetDriveId?: string,
     options?: {
       onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+      /** After each file is written to backup_files, POST it to this unpublished transfer (deduped server-side). */
+      attachToTransfer?: { slug: string };
     }
   ) => Promise<void>;
   /** Cancel a specific file's upload and remove any partial chunks from Backblaze. */
@@ -1257,6 +1259,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       targetDriveId?: string,
       options?: {
         onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+        attachToTransfer?: { slug: string };
       }
     ) => {
       if (!isFirebaseConfigured() || !user) {
@@ -1456,59 +1459,92 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               uploaded_at: new Date().toISOString(),
               deleted_at: null,
               lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
+              ingest_state: "ready",
               organization_id: drive.organization_id ?? null,
               ...workspaceFields,
               ...personalTeamFileFields(drive),
               ...macosPackageFirestoreFieldsFromRelativePath(relPath),
               ...creativeFirestoreFieldsFromRelativePath(relPath),
             });
+            const displayPath = `${drive.name}/${relPath}`.replace(/\/+/g, "/");
+            if (options?.attachToTransfer?.slug && idToken) {
+              const base = typeof window !== "undefined" ? window.location.origin : "";
+              const attachRes = await fetch(
+                `${base}/api/transfers/${encodeURIComponent(options.attachToTransfer.slug)}/items`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${idToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    items: [
+                      {
+                        name: file.name,
+                        path: displayPath,
+                        type: "file" as const,
+                        backupFileId: fileRef.id,
+                        objectKey: ev.objectKey,
+                      },
+                    ],
+                  }),
+                }
+              );
+              if (!attachRes.ok) {
+                const errBody = await attachRes.json().catch(() => ({})) as { error?: string };
+                throw new Error(errBody.error ?? "Failed to attach file to transfer");
+              }
+            }
             options?.onFileComplete?.({
               name: file.name,
-              path: `${drive.name}/${relPath}`.replace(/\/+/g, "/"),
+              path: displayPath,
               backupFileId: fileRef.id,
               objectKey: ev.objectKey,
             });
-            if (idToken) {
-              fetch("/api/files/extract-metadata", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({
-                  backup_file_id: fileRef.id,
-                  object_key: ev.objectKey,
-                }),
-              }).catch(() => {});
-              fetch("/api/packages/link-backup-file", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({ backup_file_id: fileRef.id }),
-              }).catch(() => {});
-            }
-            if (VIDEO_EXT.test(file.name) && idToken) {
-              fetch("/api/backup/generate-proxy", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({
-                  object_key: ev.objectKey,
-                  name: file.name,
-                  backup_file_id: fileRef.id,
-                  queue: true,
-                }),
-              }).catch(() => {});
-              // Mux: extract-metadata (above) triggers /api/mux/create-asset for videos
-            }
             await updateDoc(doc(db, "linked_drives", drive.id), {
               last_synced_at: new Date().toISOString(),
             });
             updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
+
+            const backupFileId = fileRef.id;
+            const objectKey = ev.objectKey;
+            const fileName = file.name;
+            if (idToken) {
+              void fetch("/api/files/extract-metadata", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  backup_file_id: backupFileId,
+                  object_key: objectKey,
+                }),
+              }).catch(() => {});
+              void fetch("/api/packages/link-backup-file", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ backup_file_id: backupFileId }),
+              }).catch(() => {});
+            }
+            if (VIDEO_EXT.test(fileName) && idToken) {
+              void fetch("/api/backup/generate-proxy", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  object_key: objectKey,
+                  name: fileName,
+                  backup_file_id: backupFileId,
+                  queue: true,
+                }),
+              }).catch(() => {});
+            }
           },
           onError: (ev) => {
             setFileUploadError(ev.error);
@@ -1758,6 +1794,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             uploaded_at: new Date().toISOString(),
             deleted_at: null,
             lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
+            ingest_state: "ready",
             organization_id: drive.organization_id ?? null,
             gallery_id: galleryId,
             ...workspaceFields,

@@ -1,5 +1,6 @@
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
+import { transferIsRecipientVisible } from "@/lib/transfer-resolve";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
@@ -30,6 +31,10 @@ export async function POST(
   const transfer = transferSnap.data();
   if (!transfer) {
     return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+  }
+
+  if (!transferIsRecipientVisible(transfer as Record<string, unknown>)) {
+    return NextResponse.json({ error: "Transfer not available" }, { status: 403 });
   }
 
   const expiresAt = transfer.expires_at?.toDate?.();

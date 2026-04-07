@@ -54,7 +54,8 @@ export interface UploadManagerOptions {
   getUserId?: () => string | null;
   getBaseUrl?: () => string;
   onProgress?: (ev: UploadProgressEvent) => void;
-  onComplete?: (ev: { fileId: string; objectKey: string }) => void;
+  /** Awaited before upload() resolves; keep limited to storage commit + backup registration (+ selection callbacks). */
+  onComplete?: (ev: { fileId: string; objectKey: string }) => void | Promise<void>;
   onError?: (ev: { fileId: string; error: string }) => void;
 }
 
@@ -320,6 +321,10 @@ export class UploadManager {
     });
   }
 
+  private async invokeOnComplete(ev: { fileId: string; objectKey: string }): Promise<void> {
+    await Promise.resolve(this.opts.onComplete?.(ev));
+  }
+
   async upload(queued: QueuedFile): Promise<{ objectKey: string }> {
     const { id: fileId, file, driveId, relativePath, workspaceId, organizationId } = queued;
     const controller = new AbortController();
@@ -344,7 +349,7 @@ export class UploadManager {
         const dedupe = (await dedupeRes.json()) as { exists?: boolean; objectKey?: string };
         if (dedupe.exists && dedupe.objectKey) {
           this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-          this.opts.onComplete?.({ fileId, objectKey: dedupe.objectKey });
+          await this.invokeOnComplete({ fileId, objectKey: dedupe.objectKey });
           return { objectKey: dedupe.objectKey };
         }
       }
@@ -372,7 +377,7 @@ export class UploadManager {
         };
         if (urlData.alreadyExists) {
           this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-          this.opts.onComplete?.({ fileId, objectKey: urlData.objectKey });
+          await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
           return { objectKey: urlData.objectKey };
         }
         if (!urlData.uploadUrl) throw new Error("No upload URL");
@@ -383,7 +388,7 @@ export class UploadManager {
             this.reportProgress(fileId, file.name, loaded, file.size, loaded >= file.size ? 1 : 0, 1, "uploading"),
         });
         this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-        this.opts.onComplete?.({ fileId, objectKey: urlData.objectKey });
+        await this.invokeOnComplete({ fileId, objectKey: urlData.objectKey });
         return { objectKey: urlData.objectKey };
       }
 
@@ -411,7 +416,7 @@ export class UploadManager {
       const create = (await createRes.json()) as UploadCreateResponse;
       if (create.alreadyExists && create.existingObjectKey) {
         this.reportProgress(fileId, file.name, file.size, file.size, 1, 1, "completed");
-        this.opts.onComplete?.({ fileId, objectKey: create.existingObjectKey });
+        await this.invokeOnComplete({ fileId, objectKey: create.existingObjectKey });
         return { objectKey: create.existingObjectKey };
       }
       if (!create.uploadId || !create.parts?.length || !create.sessionId) {
@@ -519,7 +524,7 @@ export class UploadManager {
       }
       const complete = (await completeRes.json()) as { objectKey: string };
       this.reportProgress(fileId, file.name, file.size, file.size, parts.length, parts.length, "completed");
-      this.opts.onComplete?.({ fileId, objectKey: complete.objectKey });
+      await this.invokeOnComplete({ fileId, objectKey: complete.objectKey });
       removeSession(fileId);
       return { objectKey: complete.objectKey };
     } catch (err) {

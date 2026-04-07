@@ -1,5 +1,6 @@
 import { getObjectHeadBuffer, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+import { loadTransferFilesForApi, transferIsRecipientVisible } from "@/lib/transfer-resolve";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -33,12 +34,16 @@ export async function GET(
   const data = transferSnap.data();
   if (!data) return new NextResponse("Transfer not found", { status: 404 });
 
+  if (!transferIsRecipientVisible(data as Record<string, unknown>)) {
+    return new NextResponse("Transfer not available", { status: 403 });
+  }
+
   const expiresAt = data.expires_at ?? null;
   if (expiresAt && new Date(expiresAt) < new Date()) {
     return new NextResponse("Transfer expired", { status: 410 });
   }
 
-  const files = (data.files ?? []) as Array<{ name: string; object_key?: string; backup_file_id?: string }>;
+  const files = await loadTransferFilesForApi(db, slug, data as Record<string, unknown>);
   const firstFile = files[0];
   if (!firstFile?.object_key) {
     return new NextResponse("No file thumbnail available", { status: 404 });

@@ -1,6 +1,7 @@
 import { createPresignedDownloadUrl, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
+import { loadTransferFilesForApi, transferIsRecipientVisible } from "@/lib/transfer-resolve";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
@@ -46,6 +47,10 @@ export async function POST(
   const transfer = transferSnap.data();
   if (!transfer) {
     return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+  }
+
+  if (!transferIsRecipientVisible(transfer as Record<string, unknown>)) {
+    return NextResponse.json({ error: "Transfer not available" }, { status: 403 });
   }
 
   const expiresAt = transfer.expires_at?.toDate?.();
@@ -96,10 +101,11 @@ export async function POST(
     }
   }
 
-  const files = (transfer.files ?? []) as Array<{
-    object_key?: string;
-    backup_file_id?: string;
-  }>;
+  const files = await loadTransferFilesForApi(
+    db,
+    slug,
+    transfer as Record<string, unknown>
+  );
   const fileInTransfer = files.find(
     (f) => f.object_key === objectKey || f.backup_file_id === objectKey
   );

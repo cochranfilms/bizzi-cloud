@@ -1043,7 +1043,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     fetchCloudFiles();
   }, [subscribeDriveListing, fetchCloudFiles, storageVersion]);
 
-  /** Fetches all user files for the transfer modal (up to 500). Call when modal opens. */
+  /** Fetches user files for the transfer picker via server-backed cursor pagination (capped). */
   const fetchAllFilesForTransfer = useCallback(async () => {
     if (!isFirebaseConfigured() || !user) {
       setAllFilesForTransfer([]);
@@ -1051,30 +1051,34 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     }
     try {
       setLoadingAllFiles(true);
-      const db = getFirebaseFirestore();
       const scoped = filterScopedLinkedDrives(linkedDrives, {
         isEnterpriseContext,
         orgId,
         creatorOnly,
         teamRouteOwnerUid,
       });
-      const driveMap = new Map(scoped.map((d) => [d.id, d]));
       const driveIds = new Set(scoped.map((d) => d.id));
       const driveNameById = new Map(scoped.map((d) => [d.id, d.name]));
+
+      const workspaceArg =
+        selectedWorkspaceId != null && selectedWorkspaceId !== ""
+          ? selectedWorkspaceId
+          : null;
 
       if (isEnterpriseContext && orgId) {
         const base = typeof window !== "undefined" ? window.location.origin : "";
         const token = await getUserIdToken(user, false);
         const collected: RecentFile[] = [];
         let cursor: string | null = null;
-        while (collected.length < 500) {
+        while (collected.length < MAX_FILES_DRIVE_LIST) {
           const params = new URLSearchParams({
             context: "enterprise",
             organization_id: orgId,
             sort: "newest",
-            page_size: "50",
+            page_size: String(DRIVE_LIST_PAGE_SIZE),
           });
           if (cursor) params.set("cursor", cursor);
+          if (workspaceArg) params.set("workspace_id", workspaceArg);
           const res = await fetch(`${base}/api/files/filter?${params.toString()}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -1088,69 +1092,37 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
           for (const raw of list) {
             const r = apiFileToRecentFile(raw, driveNameById);
             if (driveIds.has(r.driveId)) collected.push(r);
-            if (collected.length >= 500) break;
+            if (collected.length >= MAX_FILES_DRIVE_LIST) break;
           }
           if (!data.hasMore || !data.cursor) break;
           cursor = data.cursor;
         }
-        setAllFilesForTransfer(collected.slice(0, 500));
+        setAllFilesForTransfer(collected);
         return;
       }
 
-      const perDriveLimit = Math.max(
-        40,
-        Math.ceil(500 / Math.max(1, scoped.length))
-      );
       const collected: RecentFile[] = [];
+      const seen = new Set<string>();
       for (const drive of scoped) {
-        if (collected.length >= 500) break;
-        if (drive.organization_id) {
-          const q = query(
-            collection(db, "backup_files"),
-            where("linked_drive_id", "==", drive.id),
-            where("organization_id", "==", drive.organization_id),
-            where("lifecycle_state", "==", BACKUP_LIFECYCLE_ACTIVE),
-            orderBy("modified_at", "desc"),
-            limit(perDriveLimit)
-          );
-          const snap = await getDocs(q);
-          for (const d of snap.docs) {
-            const raw = d.data() as Record<string, unknown>;
-            if (!isBackupFileActiveForListing(raw) || !driveIds.has(d.data().linked_drive_id)) continue;
-            const data = d.data();
-            const path = data.relative_path ?? "";
-            const name = (path.split("/").filter(Boolean).pop()) ?? path ?? "?";
-            collected.push({
-              id: d.id,
-              name,
-              path,
-              objectKey: data.object_key ?? "",
-              size: data.size_bytes ?? 0,
-              modifiedAt: data.modified_at ?? null,
-              driveId: data.linked_drive_id,
-              driveName: drive?.name ?? "Unknown drive",
-              contentType: data.content_type ?? null,
-              assetType: data.asset_type ?? null,
-              galleryId: data.gallery_id ?? null,
-              proxyStatus: (data.proxy_status as ProxyStatus | undefined) ?? null,
-            });
-            if (collected.length >= 500) break;
-          }
-        } else {
-          const { files: part } = await fetchFilesFromFilterApi(user, {
-            driveId: drive.id,
-            teamOwnerUserId: teamRouteOwnerUid,
-            pageSize: perDriveLimit,
+        if (collected.length >= MAX_FILES_DRIVE_LIST) break;
+        const { files: merged, listTruncated } = await fetchAllDriveFilesViaFilterApi(user, {
+          driveId: drive.id,
+          teamOwnerUserId: teamRouteOwnerUid,
+          enterprise: drive.organization_id
+            ? { organizationId: drive.organization_id }
+            : undefined,
+          workspaceId: workspaceArg,
+        });
+        for (const f of merged) {
+          if (!driveIds.has(f.driveId) || seen.has(f.id)) continue;
+          seen.add(f.id);
+          collected.push({
+            ...f,
+            driveName: drive.name ?? f.driveName,
           });
-          for (const f of part) {
-            if (!driveIds.has(f.driveId)) continue;
-            collected.push({
-              ...f,
-              driveName: drive.name ?? f.driveName,
-            });
-            if (collected.length >= 500) break;
-          }
+          if (collected.length >= MAX_FILES_DRIVE_LIST) break;
         }
+        if (listTruncated && collected.length >= MAX_FILES_DRIVE_LIST) break;
       }
       const recentMs = (f: RecentFile) => {
         const m = f.modifiedAt;
@@ -1161,14 +1133,22 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         return 0;
       };
       collected.sort((a, b) => recentMs(b) - recentMs(a));
-      setAllFilesForTransfer(collected.slice(0, 500));
+      setAllFilesForTransfer(collected);
     } catch (err) {
       console.error("fetchAllFilesForTransfer:", err);
       setAllFilesForTransfer([]);
     } finally {
       setLoadingAllFiles(false);
     }
-  }, [user, isEnterpriseContext, orgId, creatorOnly, linkedDrives, teamRouteOwnerUid]);
+  }, [
+    user,
+    isEnterpriseContext,
+    orgId,
+    creatorOnly,
+    linkedDrives,
+    teamRouteOwnerUid,
+    selectedWorkspaceId,
+  ]);
 
   const fetchDriveFiles = useCallback(
     async (

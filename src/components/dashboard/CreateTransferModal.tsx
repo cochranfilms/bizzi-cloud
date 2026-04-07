@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap, ListPlus } from "lucide-react";
-import type { CreateTransferInput, TransferPermission } from "@/types/transfer";
+import type { Transfer, TransferPermission } from "@/types/transfer";
 import { useTransfers } from "@/context/TransferContext";
 import { useBackup } from "@/context/BackupContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
@@ -93,6 +93,8 @@ export default function CreateTransferModal({
   });
   const { uploadFiles, fileUploadProgress, cancelFileUpload } = useBackup();
   const uploadStartedByModalRef = useRef(false);
+  const draftSlugRef = useRef<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -212,6 +214,59 @@ export default function CreateTransferModal({
   const flatFilteredFiles = allFilesForSelection.filter((f) => f.name.toLowerCase().includes(fileSearchLower));
   const displayFiles = hasSearch ? flatFilteredFiles : filteredBrowseFiles;
 
+  const ensureDraftTransfer = useCallback(async (): Promise<string | null> => {
+    if (draftSlugRef.current) return draftSlugRef.current;
+    if (!name.trim() || !clientName.trim()) {
+      setModalError("Add transfer name and client before uploading files.");
+      return null;
+    }
+    const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
+    if (!idToken) {
+      setModalError("Sign in to upload.");
+      return null;
+    }
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await fetch(`${base}/api/transfers`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        clientName: clientName.trim(),
+        clientEmail: clientEmail.trim() || undefined,
+        files: [],
+        draft: true,
+        permission,
+        password: passwordEnabled && password.trim() ? password.trim() : null,
+        expiresAt: expiresAt ? expiresAt : null,
+        organizationId: isEnterprise && org?.id ? org.id : null,
+        ...(teamOwnerFromPath ? { personal_team_owner_id: teamOwnerFromPath } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Could not start transfer" }));
+      setModalError((err as { error?: string }).error ?? "Could not start transfer");
+      return null;
+    }
+    const data = (await res.json()) as { slug: string };
+    draftSlugRef.current = data.slug;
+    setModalError(null);
+    return data.slug;
+  }, [
+    name,
+    clientName,
+    clientEmail,
+    permission,
+    passwordEnabled,
+    password,
+    expiresAt,
+    isEnterprise,
+    org?.id,
+    teamOwnerFromPath,
+  ]);
+
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
@@ -220,9 +275,13 @@ export default function CreateTransferModal({
       setIsDragging(false);
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
+      setModalError(null);
+      const slug = await ensureDraftTransfer();
+      if (!slug) return;
       uploadStartedByModalRef.current = true;
       try {
         await uploadFiles(files, undefined, {
+        attachToTransfer: { slug },
         onFileComplete: (f) => {
           const entry = {
             name: f.name,
@@ -241,7 +300,7 @@ export default function CreateTransferModal({
         uploadStartedByModalRef.current = false;
       }
     },
-    [uploadFiles]
+    [uploadFiles, ensureDraftTransfer]
   );
 
   const handleFileSelect = useCallback(
@@ -249,9 +308,13 @@ export default function CreateTransferModal({
       const files = Array.from(e.target.files ?? []);
       e.target.value = "";
       if (files.length === 0) return;
+      setModalError(null);
+      const slug = await ensureDraftTransfer();
+      if (!slug) return;
       uploadStartedByModalRef.current = true;
       try {
         await uploadFiles(files, undefined, {
+        attachToTransfer: { slug },
         onFileComplete: (f) => {
           const entry = {
             name: f.name,
@@ -270,7 +333,7 @@ export default function CreateTransferModal({
         uploadStartedByModalRef.current = false;
       }
     },
-    [uploadFiles]
+    [uploadFiles, ensureDraftTransfer]
   );
 
   const performClose = useCallback(() => {
@@ -288,6 +351,8 @@ export default function CreateTransferModal({
     setBrowseDriveId(null);
     setBrowsePath("");
     setSelectedFolderKeys(new Set());
+    draftSlugRef.current = null;
+    setModalError(null);
     onClose();
   }, [onClose]);
 
@@ -317,8 +382,156 @@ export default function CreateTransferModal({
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;
+    setModalError(null);
     const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
     if (!idToken) return;
+
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+
+    const backupIds = selectedFiles
+      .map((f) => f.backupFileId)
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+    if (isEnterprise && org?.id && backupIds.length > 0) {
+      const pr = await fetch(`${base}/api/transfers/preflight`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          backup_file_ids: backupIds,
+          organizationId: org.id,
+        }),
+      });
+      if (!pr.ok) {
+        const err = await pr.json().catch(() => ({ error: "Preflight failed" }));
+        setModalError((err as { error?: string }).error ?? "Preflight failed");
+        return;
+      }
+      const pdata = (await pr.json()) as {
+        results: Array<{ backup_file_id: string; state: string }>;
+      };
+      const bad = pdata.results.filter((r) => r.state !== "ready_existing");
+      if (bad.length > 0) {
+        setModalError(
+          "One or more files are not ready for transfer. Try again or remove them from the selection."
+        );
+        return;
+      }
+    }
+
+    const buildItemsPayload = () =>
+      selectedFiles
+        .filter((f) => typeof f.backupFileId === "string" && f.backupFileId.trim())
+        .map((f) => ({
+          name: f.name,
+          path: f.path,
+          type: "file" as const,
+          backupFileId: f.backupFileId!.trim(),
+          objectKey: f.objectKey,
+        }));
+
+    if (draftSlugRef.current) {
+      const slug = draftSlugRef.current;
+      const itemsPayload = buildItemsPayload();
+      if (itemsPayload.length > 0) {
+        const attachRes = await fetch(
+          `${base}/api/transfers/${encodeURIComponent(slug)}/items`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ items: itemsPayload }),
+          }
+        );
+        if (!attachRes.ok) {
+          const err = await attachRes.json().catch(() => ({ error: "Failed to attach files" }));
+          setModalError((err as { error?: string }).error ?? "Failed to attach files");
+          return;
+        }
+      }
+
+      const finRes = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}/finalize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!finRes.ok) {
+        const err = await finRes.json().catch(() => ({ error: "Failed to publish transfer" }));
+        setModalError((err as { error?: string }).error ?? "Failed to publish transfer");
+        return;
+      }
+
+      const getRes = await fetch(`${base}/api/transfers/${encodeURIComponent(slug)}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!getRes.ok) {
+        setModalError(
+          "Transfer was published but could not load details. Refresh the transfers list."
+        );
+        return;
+      }
+      const payload = (await getRes.json()) as {
+        slug: string;
+        name: string;
+        clientName: string;
+        clientEmail?: string;
+        files: Array<{
+          id: string;
+          name: string;
+          path: string;
+          backupFileId?: string;
+          objectKey?: string;
+          views?: number;
+          downloads?: number;
+        }>;
+        permission: string;
+        hasPassword?: boolean;
+        expiresAt: string | null;
+        createdAt: string;
+        status: string;
+        transferLifecycle?: string | null;
+        organizationId?: string | null;
+        personalTeamOwnerId?: string | null;
+      };
+
+      const transfer: Transfer = {
+        id: payload.slug,
+        slug: payload.slug,
+        name: payload.name,
+        clientName: payload.clientName,
+        clientEmail: payload.clientEmail,
+        files: payload.files.map((f) => ({
+          id: f.id,
+          name: f.name,
+          path: f.path,
+          type: "file" as const,
+          views: f.views ?? 0,
+          downloads: f.downloads ?? 0,
+          backupFileId: f.backupFileId,
+          objectKey: f.objectKey,
+        })),
+        permission: (payload.permission as "view" | "downloadable") ?? "downloadable",
+        hasPassword: payload.hasPassword ?? false,
+        expiresAt: payload.expiresAt,
+        createdAt: payload.createdAt,
+        status: payload.status as "active" | "expired" | "cancelled",
+        organizationId: payload.organizationId ?? null,
+        personalTeamOwnerId: payload.personalTeamOwnerId ?? null,
+        transferLifecycle: payload.transferLifecycle ?? null,
+      };
+
+      addTransferFromApi(transfer);
+      setCreatedSlug(payload.slug);
+      draftSlugRef.current = null;
+      onCreated?.(payload.slug);
+      return;
+    }
 
     const body = {
       name: name.trim(),
@@ -338,7 +551,6 @@ export default function CreateTransferModal({
       ...(teamOwnerFromPath ? { personal_team_owner_id: teamOwnerFromPath } : {}),
     };
 
-    const base = typeof window !== "undefined" ? window.location.origin : "";
     const res = await fetch(`${base}/api/transfers`, {
       method: "POST",
       headers: {
@@ -350,6 +562,7 @@ export default function CreateTransferModal({
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Failed to create transfer" }));
+      setModalError((err as { error?: string }).error ?? "Failed to create transfer");
       console.error("[CreateTransfer] API error:", err);
       return;
     }
@@ -359,6 +572,7 @@ export default function CreateTransferModal({
       name: string;
       clientName: string;
       clientEmail?: string;
+      transferLifecycle?: string | null;
       files: Array<{
         id: string;
         name: string;
@@ -371,9 +585,11 @@ export default function CreateTransferModal({
       expiresAt: string | null;
       createdAt: string;
       status: string;
+      organizationId?: string | null;
+      personalTeamOwnerId?: string | null;
     };
 
-    const transfer = {
+    const transfer: Transfer = {
       id: data.slug,
       slug: data.slug,
       name: data.name,
@@ -394,9 +610,9 @@ export default function CreateTransferModal({
       expiresAt: data.expiresAt,
       createdAt: data.createdAt,
       status: data.status as "active" | "expired" | "cancelled",
-      organizationId: (data as { organizationId?: string | null }).organizationId ?? null,
-      personalTeamOwnerId:
-        (data as { personalTeamOwnerId?: string | null }).personalTeamOwnerId ?? null,
+      organizationId: data.organizationId ?? null,
+      personalTeamOwnerId: data.personalTeamOwnerId ?? null,
+      transferLifecycle: data.transferLifecycle ?? null,
     };
 
     addTransferFromApi(transfer);
@@ -454,6 +670,14 @@ export default function CreateTransferModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto space-y-4 p-4">
+          {modalError ? (
+            <div
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+              role="alert"
+            >
+              {modalError}
+            </div>
+          ) : null}
           {createdSlug ? (
             <div className="rounded-lg border border-bizzi-blue/30 bg-bizzi-blue/5 p-4 dark:bg-bizzi-blue/10">
               <p className="mb-2 text-sm font-medium text-neutral-900 dark:text-white">

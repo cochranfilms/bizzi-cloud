@@ -1,4 +1,5 @@
 import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { randomUUID } from "crypto";
 import { getAdminFirestore, getAdminAuth, verifyIdToken } from "@/lib/firebase-admin";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
@@ -7,6 +8,7 @@ import { hashSecret } from "@/lib/gallery-access";
 import { sendTransferEmailToClient } from "@/lib/emailjs";
 import { createTransferNotification } from "@/lib/notification-service";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
+import { dedupeIncomingTransferFiles } from "@/lib/transfer-resolve";
 import { NextResponse } from "next/server";
 
 async function requireAuthTransfer(
@@ -56,6 +58,7 @@ function transferDocToListItem(slug: string, data: Record<string, unknown>) {
     status,
     organizationId: data.organization_id ?? null,
     personalTeamOwnerId: data.personal_team_owner_id ?? null,
+    transferLifecycle: (data.transfer_lifecycle as string | undefined) ?? null,
   };
 }
 
@@ -147,6 +150,8 @@ export async function POST(request: Request) {
     expiresAt?: string | null;
     organizationId?: string | null;
     personal_team_owner_id?: string | null;
+    /** When true, create an unpublished package (no email); add files via POST …/items then finalize. */
+    draft?: boolean;
   };
   try {
     body = await request.json();
@@ -158,13 +163,16 @@ export async function POST(request: Request) {
     name,
     clientName,
     clientEmail,
-    files,
+    files: filesBody,
     permission,
     password,
     expiresAt,
     organizationId,
     personal_team_owner_id: rawPersonalTeamOwnerId,
+    draft: draftRaw,
   } = body;
+
+  const isDraft = draftRaw === true;
 
   if (!name || typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -172,14 +180,31 @@ export async function POST(request: Request) {
   if (!clientName || typeof clientName !== "string" || !clientName.trim()) {
     return NextResponse.json({ error: "clientName is required" }, { status: 400 });
   }
-  if (!files || !Array.isArray(files) || files.length === 0) {
+
+  const files = Array.isArray(filesBody) ? filesBody : [];
+  if (!isDraft && files.length === 0) {
     return NextResponse.json({ error: "files array is required with at least one file" }, { status: 400 });
+  }
+
+  const filesDeduped = files.length > 0 ? dedupeIncomingTransferFiles(files) : [];
+  if (!isDraft && filesDeduped.length === 0) {
+    return NextResponse.json(
+      { error: "files array must contain at least one unique file" },
+      { status: 400 }
+    );
+  }
+  /** Firestore batch limit is 500 ops (parent + items); keep headroom. */
+  if (filesDeduped.length > 450) {
+    return NextResponse.json(
+      { error: "Maximum 450 files per transfer in one request" },
+      { status: 400 }
+    );
   }
 
   const slug = generateSlug();
   const now = new Date().toISOString();
 
-  const transferFiles = files.map((f) => ({
+  const transferFiles = filesDeduped.map((f) => ({
     id: generateId(),
     name: f.name,
     path: f.path,
@@ -238,7 +263,7 @@ export async function POST(request: Request) {
       userEmail = undefined;
     }
 
-    for (const f of files) {
+    for (const f of filesDeduped) {
       const bid =
         typeof f.backupFileId === "string" && f.backupFileId.trim()
           ? f.backupFileId.trim()
@@ -290,6 +315,28 @@ export async function POST(request: Request) {
     }
   }
 
+  const backupIdSet = [
+    ...new Set(
+      transferFiles.map((t) => t.backup_file_id).filter((id): id is string => typeof id === "string" && !!id)
+    ),
+  ];
+  const metaById = new Map<string, Record<string, unknown>>();
+  for (const bid of backupIdSet) {
+    const s = await db.collection("backup_files").doc(bid).get();
+    if (s.exists) metaById.set(bid, s.data() as Record<string, unknown>);
+  }
+
+  const correlationId = randomUUID();
+  const transferRef = db.collection("transfers").doc(slug);
+
+  const transferLifecycle = isDraft
+    ? transferFiles.length > 0
+      ? "uploading"
+      : "draft"
+    : "ready";
+  const publishedAt = isDraft ? null : now;
+  const metricsFinalizeCount = isDraft ? 0 : 1;
+
   const doc = {
     slug,
     name: name.trim(),
@@ -303,16 +350,46 @@ export async function POST(request: Request) {
       : null,
     created_at: now,
     status: "active",
+    transfer_lifecycle: transferLifecycle,
+    published_at: publishedAt,
+    notified_at: null as string | null,
+    correlation_id: correlationId,
+    item_count: transferFiles.length,
+    uses_transfer_items: true,
+    metrics_init_at: now,
+    metrics_attach_count: transferFiles.length,
+    metrics_last_attach_at: transferFiles.length > 0 ? now : null,
+    metrics_finalize_count: metricsFinalizeCount,
     user_id: uid,
     organization_id: organizationIdToStore,
     personal_team_owner_id: personalTeamOwnerId,
   };
 
-  await db.collection("transfers").doc(slug).set(doc);
+  const batch = db.batch();
+  batch.set(transferRef, doc);
+  transferFiles.forEach((f, i) => {
+    const meta = f.backup_file_id ? metaById.get(f.backup_file_id) : undefined;
+    const itemRef = transferRef.collection("items").doc(f.id);
+    batch.set(itemRef, {
+      sort_index: i,
+      transfer_file_id: f.id,
+      display_name: f.name,
+      display_path: f.path,
+      backup_file_id: f.backup_file_id,
+      object_key: f.object_key,
+      content_type: (meta?.content_type as string) ?? null,
+      size_bytes: (meta?.size_bytes as number) ?? null,
+      source_type: f.backup_file_id ? "existing_cloud" : "uploaded_for_transfer",
+      item_status: "ready",
+      views: 0,
+      downloads: 0,
+    });
+  });
+  await batch.commit();
 
-  // Send email and create in-app notification when client email is provided
+  // Send email and create in-app notification when client email is provided (published transfers only)
   const clientEmailTrimmed = doc.clientEmail?.trim?.();
-  if (clientEmailTrimmed) {
+  if (!isDraft && clientEmailTrimmed) {
     let actorDisplayName: string;
     try {
       const profileSnap = await db.collection("profiles").doc(uid).get();
@@ -332,26 +409,31 @@ export async function POST(request: Request) {
 
     const fileNames = transferFiles.map((f) => f.name);
 
-    await Promise.all([
-      sendTransferEmailToClient({
-        clientEmail: clientEmailTrimmed,
-        sharedByUserId: uid,
-        actorDisplayName,
-        transferName: doc.name,
-        transferSlug: slug,
-        fileNames,
-      }),
-      createTransferNotification({
-        clientEmail: clientEmailTrimmed,
-        sharedByUserId: uid,
-        actorDisplayName,
-        transferSlug: slug,
-        transferName: doc.name,
-        fileCount: transferFiles.length,
-      }),
-    ]).catch((err) => {
+    try {
+      await Promise.all([
+        sendTransferEmailToClient({
+          clientEmail: clientEmailTrimmed,
+          sharedByUserId: uid,
+          actorDisplayName,
+          transferName: doc.name,
+          transferSlug: slug,
+          fileNames,
+        }),
+        createTransferNotification({
+          clientEmail: clientEmailTrimmed,
+          sharedByUserId: uid,
+          actorDisplayName,
+          transferSlug: slug,
+          transferName: doc.name,
+          fileCount: transferFiles.length,
+        }),
+      ]);
+      await transferRef.update({
+        notified_at: new Date().toISOString(),
+      });
+    } catch (err) {
       console.error("[transfers] Email/notification error:", err);
-    });
+    }
   }
 
   return NextResponse.json({
@@ -368,5 +450,7 @@ export async function POST(request: Request) {
     status: doc.status,
     organizationId: organizationIdToStore,
     personalTeamOwnerId,
+    transferLifecycle: doc.transfer_lifecycle,
+    draft: isDraft,
   });
 }

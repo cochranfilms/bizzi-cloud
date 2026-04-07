@@ -8,6 +8,7 @@ import archiver from "archiver";
 import { getObject, isB2Configured } from "@/lib/b2";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifySecret } from "@/lib/gallery-access";
+import { loadTransferFilesForApi, transferIsRecipientVisible } from "@/lib/transfer-resolve";
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
@@ -83,6 +84,10 @@ export async function POST(
     return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
   }
 
+  if (!transferIsRecipientVisible(transfer as Record<string, unknown>)) {
+    return NextResponse.json({ error: "Transfer not available" }, { status: 403 });
+  }
+
   const expiresAt = transfer.expires_at?.toDate?.();
   if (expiresAt && expiresAt < new Date()) {
     return NextResponse.json({ error: "Transfer expired" }, { status: 410 });
@@ -131,11 +136,11 @@ export async function POST(
     }
   }
 
-  const files = (transfer.files ?? []) as Array<{
-    object_key?: string;
-    backup_file_id?: string;
-    name?: string;
-  }>;
+  const files = await loadTransferFilesForApi(
+    db,
+    slug,
+    transfer as Record<string, unknown>
+  );
   const fileKeySet = new Set<string>();
   const keyToName = new Map<string, string>();
   for (const f of files) {

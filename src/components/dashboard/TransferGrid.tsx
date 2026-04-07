@@ -173,6 +173,12 @@ export default function TransferGrid() {
                         <span className="font-medium text-neutral-900 dark:text-white">
                           {t.name}
                         </span>
+                        {(t.transferLifecycle === "draft" ||
+                          t.transferLifecycle === "uploading") && (
+                          <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                            Draft
+                          </span>
+                        )}
                         {t.hasPassword && (
                           <Lock className="h-3.5 w-3.5 text-neutral-400" aria-label="Password protected" />
                         )}

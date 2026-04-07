@@ -1,6 +1,7 @@
 import { getAdminAuth, getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 import { hashSecret } from "@/lib/gallery-access";
+import { loadTransferFilesForApi, transferIsRecipientVisible } from "@/lib/transfer-resolve";
 import { NextResponse } from "next/server";
 import { userCanManageTransfer } from "@/lib/transfer-team-access";
 
@@ -181,11 +182,33 @@ export async function GET(
   const isExpired = expiresAt && new Date(expiresAt) < new Date();
   const status = isExpired ? "expired" : data.status ?? "active";
 
-  const files = (data.files ?? []).map((f: Record<string, unknown>) => ({
+  const authHeader = request.headers.get("Authorization");
+  let managerUid: string | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const decoded = await verifyIdToken(authHeader.slice(7).trim());
+      managerUid = decoded.uid;
+    } catch {
+      managerUid = null;
+    }
+  }
+  const canManageUnpublished =
+    !!managerUid && (await userCanManageTransfer(managerUid, data as Record<string, unknown>));
+
+  if (
+    !transferIsRecipientVisible(data as Record<string, unknown>) &&
+    !isExpired &&
+    !canManageUnpublished
+  ) {
+    return NextResponse.json({ error: "Transfer not available" }, { status: 403 });
+  }
+
+  const filesRaw = await loadTransferFilesForApi(db, slug, data as Record<string, unknown>);
+  const files = filesRaw.map((f) => ({
     id: f.id,
     name: f.name,
     path: f.path,
-    type: "file",
+    type: "file" as const,
     views: f.views ?? 0,
     downloads: f.downloads ?? 0,
     backupFileId: f.backup_file_id ?? undefined,
@@ -204,6 +227,8 @@ export async function GET(
     expiresAt: expiresAt ?? null,
     createdAt: data.created_at,
     status,
+    transferLifecycle: (data.transfer_lifecycle as string) ?? null,
+    publishedAt: (data.published_at as string) ?? null,
     organizationId: data.organization_id ?? null,
     personalTeamOwnerId: data.personal_team_owner_id ?? null,
   });
