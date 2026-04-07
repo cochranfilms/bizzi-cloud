@@ -12,8 +12,7 @@ import { isReservedHandle } from "@/lib/public-handle";
 import { teamSeatCountsFromProfileDocument } from "@/lib/team-seat-pricing";
 import { NextResponse } from "next/server";
 import {
-  ensurePersonalTeamRecord,
-  getOwnedTeam,
+  getOwnedPersonalTeamShellState,
   getPersonalTeamSeatMembershipsForProfile,
 } from "@/lib/personal-team-auth";
 
@@ -58,8 +57,7 @@ export async function GET(request: Request) {
     typeof data.storage_addon_id === "string" ? data.storage_addon_id : null;
   const teamSeatCounts = teamSeatCountsFromProfileDocument(data as Record<string, unknown>);
 
-  await ensurePersonalTeamRecord(db, auth.uid, data as Record<string, unknown>);
-  const ownedTeam = await getOwnedTeam(db, auth.uid);
+  const ownedShellState = await getOwnedPersonalTeamShellState(db, auth.uid);
   const personal_team_memberships = await getPersonalTeamSeatMembershipsForProfile(
     db,
     auth.uid
@@ -86,8 +84,11 @@ export async function GET(request: Request) {
         : null,
     /** Canonical: seat-derived memberships on others' teams (non-owned). */
     personal_team_memberships,
-    /** True when `personal_teams/{uid}` exists after bootstrap. */
-    owns_personal_team: !!ownedTeam,
+    /** True when `personal_teams/{uid}` exists (includes legacy-drive backfill). */
+    owns_personal_team: ownedShellState.team_shell_exists,
+    team_shell_exists: ownedShellState.team_shell_exists,
+    team_seats_enabled: ownedShellState.team_seats_enabled,
+    team_setup_mode: ownedShellState.team_setup_mode,
   });
 }
 

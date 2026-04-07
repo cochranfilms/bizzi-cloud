@@ -15,9 +15,11 @@ import {
 } from "@/lib/personal-team";
 import {
   canManagePersonalTeam,
-  ensurePersonalTeamRecord,
+  ensurePersonalTeamShellOnUserIntent,
+  ownerTeamSeatsEnabled,
   wouldExceedNonOwnedTeamCap,
 } from "@/lib/personal-team-auth";
+import { mayPurchaseTeamSeats } from "@/lib/personal-team-plan-gates";
 import { isProductSeatTierByte } from "@/lib/enterprise-constants";
 import { validateProposedFixedSeatCap } from "@/lib/personal-team-pool-accounting";
 import {
@@ -41,8 +43,6 @@ async function requireAuth(request: Request): Promise<{ uid: string; email?: str
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 }
-
-const PLANS_WITH_TEAM = new Set(["indie", "video", "production"]);
 
 function appBaseUrl(): string {
   return (
@@ -131,14 +131,14 @@ export async function POST(request: Request) {
   const adminProfile = await db.collection("profiles").doc(adminUid).get();
   const adminData = adminProfile.data() ?? {};
   const planId = (adminData.plan_id as string) ?? "free";
-  if (!PLANS_WITH_TEAM.has(planId)) {
+  if (!mayPurchaseTeamSeats(planId)) {
     return NextResponse.json(
       { error: "Your plan does not support team seats." },
       { status: 403 }
     );
   }
 
-  await ensurePersonalTeamRecord(db, adminUid, adminData, { allowPlanBootstrap: true });
+  await ensurePersonalTeamShellOnUserIntent(db, adminUid, adminData);
   if (!(await canManagePersonalTeam(db, adminUid, adminUid))) {
     await writeAuditLog({
       action: "personal_team_invite_blocked",
@@ -153,6 +153,22 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(
       { error: "You do not have a personal team workspace to manage yet." },
+      { status: 403 }
+    );
+  }
+
+  if (!(await ownerTeamSeatsEnabled(db, adminUid))) {
+    await writeAuditLog({
+      action: "personal_team_invite_blocked_zero_seats",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: { route: "POST /api/personal-team/invite" },
+    });
+    return NextResponse.json(
+      {
+        error:
+          "Purchase team seats to invite members. Open team settings or billing to add seats first.",
+      },
       { status: 403 }
     );
   }

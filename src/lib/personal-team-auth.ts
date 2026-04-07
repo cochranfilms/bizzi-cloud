@@ -4,7 +4,9 @@
  */
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
+import { writeAuditLog } from "@/lib/audit-log";
 import { planAllowsPersonalTeamSeats } from "@/lib/pricing-data";
+import { mayInitiatePersonalTeamShell } from "@/lib/personal-team-plan-gates";
 import { sumExtraTeamSeats, teamSeatCountsFromProfileDocument } from "@/lib/team-seat-pricing";
 import {
   MAX_ACTIVE_NON_OWNED_PERSONAL_TEAM_MEMBERSHIPS,
@@ -119,6 +121,122 @@ export async function ensurePersonalTeamRecord(
   return true;
 }
 
+/**
+ * If a legacy team linked drive exists but `personal_teams/{ownerUid}` is missing, create the doc.
+ * Call from shell-state reads and owner entry checks. Logs audit event when backfill runs.
+ */
+export async function backfillPersonalTeamDocFromLegacyDrive(
+  db: Firestore,
+  ownerUid: string
+): Promise<boolean> {
+  if (await userOwnsPersonalTeamRecord(db, ownerUid)) return false;
+  const drivesSnap = await db
+    .collection("linked_drives")
+    .where("userId", "==", ownerUid)
+    .where("personal_team_owner_id", "==", ownerUid)
+    .limit(1)
+    .get();
+  if (drivesSnap.empty) return false;
+  const ref = db.collection(PERSONAL_TEAMS_COLLECTION).doc(ownerUid);
+  await ref.set(
+    {
+      team_id: ownerUid,
+      owner_user_id: ownerUid,
+      status: "active",
+      created_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  await writeAuditLog({
+    action: "personal_team_shell_backfill_legacy_drive",
+    uid: ownerUid,
+    metadata: { source: "legacy_team_linked_drive" },
+  });
+  return true;
+}
+
+async function hasPersonalTeamLegacyLinkedDrive(db: Firestore, ownerUid: string): Promise<boolean> {
+  const drivesSnap = await db
+    .collection("linked_drives")
+    .where("userId", "==", ownerUid)
+    .where("personal_team_owner_id", "==", ownerUid)
+    .limit(1)
+    .get();
+  return !drivesSnap.empty;
+}
+
+/**
+ * Explicit user intent: create `personal_teams/{ownerUid}` when plan allows team shell/s seats.
+ * Use from team route bootstrap, settings, create-drive, etc. — not from passive profile/workspaces GET.
+ */
+export async function ensurePersonalTeamShellOnUserIntent(
+  db: Firestore,
+  ownerUid: string,
+  profileData?: Record<string, unknown> | undefined
+): Promise<boolean> {
+  const ref = db.collection(PERSONAL_TEAMS_COLLECTION).doc(ownerUid);
+  if ((await ref.get()).exists) return true;
+  const planId = (profileData?.plan_id as string) ?? "free";
+  if (!mayInitiatePersonalTeamShell(planId)) return false;
+  await ref.set(
+    {
+      team_id: ownerUid,
+      owner_user_id: ownerUid,
+      status: "active",
+      created_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  await writeAuditLog({
+    action: "personal_team_shell_intent_bootstrap",
+    uid: ownerUid,
+    metadata: { plan_id: planId },
+  });
+  return true;
+}
+
+export type OwnedPersonalTeamShellServerState = {
+  /** `personal_teams/{ownerUid}` exists (after legacy backfill). */
+  team_shell_exists: boolean;
+  /** Purchased extra seats (`team_seat_counts` sum > 0). */
+  team_seats_enabled: boolean;
+  /** Owner UX: shell without purchased seats. */
+  team_setup_mode: boolean;
+  /**
+   * Phase 1: may enter `/team/{uid}` as owner when shell doc exists OR legacy team drive exists
+   * (drive-only users until backfill completes).
+   */
+  owner_allowed_into_shell: boolean;
+};
+
+/**
+ * Single server source for owned-team shell flags. Always runs legacy drive backfill first.
+ */
+export async function getOwnedPersonalTeamShellState(
+  db: Firestore,
+  ownerUid: string
+): Promise<OwnedPersonalTeamShellServerState> {
+  await backfillPersonalTeamDocFromLegacyDrive(db, ownerUid);
+  const team_shell_exists = await userOwnsPersonalTeamRecord(db, ownerUid);
+  const team_seats_enabled = await ownerPersonalTeamWorkspaceActivated(db, ownerUid);
+  const team_setup_mode = team_shell_exists && !team_seats_enabled;
+  let owner_allowed_into_shell = team_shell_exists;
+  if (!owner_allowed_into_shell) {
+    owner_allowed_into_shell = await hasPersonalTeamLegacyLinkedDrive(db, ownerUid);
+  }
+  return {
+    team_shell_exists,
+    team_seats_enabled,
+    team_setup_mode,
+    owner_allowed_into_shell,
+  };
+}
+
+/** Collaboration features (invites, seat assignment) require purchased team seats. */
+export async function ownerTeamSeatsEnabled(db: Firestore, ownerUid: string): Promise<boolean> {
+  return ownerPersonalTeamWorkspaceActivated(db, ownerUid);
+}
+
 /** True iff uid is the canonical owner of the team at ownerUid (record must exist). */
 export async function canManagePersonalTeam(
   db: Firestore,
@@ -151,13 +269,7 @@ export async function ownerPersonalTeamWorkspaceActivated(
  */
 export async function ownerHasPersonalTeamShell(db: Firestore, ownerUid: string): Promise<boolean> {
   if (await userOwnsPersonalTeamRecord(db, ownerUid)) return true;
-  const drivesSnap = await db
-    .collection("linked_drives")
-    .where("userId", "==", ownerUid)
-    .where("personal_team_owner_id", "==", ownerUid)
-    .limit(1)
-    .get();
-  return !drivesSnap.empty;
+  return hasPersonalTeamLegacyLinkedDrive(db, ownerUid);
 }
 
 /**
@@ -175,7 +287,9 @@ export async function canEnterPersonalTeam(
   ownerUid: string
 ): Promise<boolean> {
   if (uid === ownerUid) {
-    return ownerHasPersonalTeamShell(db, uid);
+    await backfillPersonalTeamDocFromLegacyDrive(db, uid);
+    if (await userOwnsPersonalTeamRecord(db, uid)) return true;
+    return hasPersonalTeamLegacyLinkedDrive(db, uid);
   }
   const seatId = personalTeamSeatDocId(ownerUid, uid);
   const seat = await db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(seatId).get();

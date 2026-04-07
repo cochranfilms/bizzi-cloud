@@ -199,6 +199,12 @@ export function PersonalTeamWorkspaceProvider({
       try {
         if (user.uid === teamOwnerUid) {
           const token = await user.getIdToken();
+          await fetch("/api/personal-team/ensure-shell", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => {
+            /* non-fatal: legacy drive / plan may still allow entry via workspaces */
+          });
           const res = await fetch("/api/account/workspaces", {
             headers: { Authorization: `Bearer ${token}` },
           });

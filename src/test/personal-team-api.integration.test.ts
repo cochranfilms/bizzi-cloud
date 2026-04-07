@@ -79,6 +79,8 @@ import { POST as acceptPOST } from "@/app/api/personal-team/accept-invite/route"
 import { POST as leavePOST } from "@/app/api/personal-team/leave/route";
 import { POST as removePOST } from "@/app/api/personal-team/remove/route";
 import { GET as workspacesGET } from "@/app/api/account/workspaces/route";
+import { POST as ensureShellPOST } from "@/app/api/personal-team/ensure-shell/route";
+import { GET as shellStateGET } from "@/app/api/personal-team/shell-state/route";
 
 function authHeader(uid: string) {
   return { Authorization: `Bearer fake-${uid}` };
@@ -492,7 +494,7 @@ describe("GET /api/account/workspaces — owned + multiple memberships", () => {
     expect(body.workspace_rollout).toBeNull();
   });
 
-  it("omits owned team from switcher when owner has zero extra seats", async () => {
+  it("includes owned team in switcher when shell exists but owner has zero extra seats (setup mode)", async () => {
     const db = testHarness.db!;
     const ownerOnly = "uid_ws_owner_no_seats";
     db.seedDoc("profiles", ownerOnly, {
@@ -519,9 +521,62 @@ describe("GET /api/account/workspaces — owned + multiple memberships", () => {
     const body = (await res.json()) as {
       personalTeams: Array<{ membershipKind?: string; ownerUserId: string }>;
       personal: unknown;
+      team_setup_mode?: boolean;
     };
     expect(body.personal).not.toBeNull();
-    expect(body.personalTeams.some((t) => t.membershipKind === "owned")).toBe(false);
+    const owned = body.personalTeams.filter((t) => t.membershipKind === "owned");
+    expect(owned).toHaveLength(1);
+    expect(owned[0]?.ownerUserId).toBe(ownerOnly);
+    expect(body.team_setup_mode).toBe(true);
+  });
+
+  it("POST ensure-shell then GET workspaces lists owned row (client ordering guard)", async () => {
+    const ownerUid = "uid_ensure_shell_then_ws";
+    const db = testHarness.db!;
+    db.seedDoc("profiles", ownerUid, {
+      plan_id: "video",
+      display_name: "Intent Owner",
+      team_seat_counts: { none: 0, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+    });
+    db.seedDoc(PERSONAL_TEAM_SETTINGS_COLLECTION, ownerUid, { team_name: "New Team FC" });
+
+    const wsBefore = await workspacesGET(
+      new Request("http://localhost/api/account/workspaces", {
+        headers: authHeader(ownerUid),
+      })
+    );
+    expect(wsBefore.status).toBe(200);
+    const bodyBefore = (await wsBefore.json()) as {
+      personalTeams: Array<{ membershipKind?: string }>;
+    };
+    expect(bodyBefore.personalTeams.some((t) => t.membershipKind === "owned")).toBe(false);
+
+    const ens = await ensureShellPOST(
+      new Request("http://localhost/api/personal-team/ensure-shell", {
+        method: "POST",
+        headers: authHeader(ownerUid),
+      })
+    );
+    expect(ens.status).toBe(200);
+    const ensBody = (await ens.json()) as { team_shell_exists?: boolean; ok?: boolean };
+    expect(ensBody.ok).toBe(true);
+    expect(ensBody.team_shell_exists).toBe(true);
+
+    const wsAfter = await workspacesGET(
+      new Request("http://localhost/api/account/workspaces", {
+        headers: authHeader(ownerUid),
+      })
+    );
+    expect(wsAfter.status).toBe(200);
+    const bodyAfter = (await wsAfter.json()) as {
+      personalTeams: Array<{ membershipKind?: string; ownerUserId: string }>;
+    };
+    const ownedAfter = bodyAfter.personalTeams.filter((t) => t.membershipKind === "owned");
+    expect(ownedAfter).toHaveLength(1);
+    expect(ownedAfter[0]?.ownerUserId).toBe(ownerUid);
   });
 
   it("includes owned team in switcher when owner has at least one extra seat", async () => {
@@ -554,5 +609,139 @@ describe("GET /api/account/workspaces — owned + multiple memberships", () => {
     const owned = body.personalTeams.filter((t) => t.membershipKind === "owned");
     expect(owned).toHaveLength(1);
     expect(owned[0]?.ownerUserId).toBe(ownerOne);
+  });
+});
+
+describe("GET /api/personal-team/shell-state", () => {
+  const shellOwner = "uid_shell_state_owner";
+  const activeMember = "uid_shell_state_member_active";
+  const removedMember = "uid_shell_state_member_removed";
+  const invitedMember = "uid_shell_state_member_invited";
+  const coldMember = "uid_shell_state_member_cold";
+
+  beforeEach(() => {
+    const db = testHarness.db!;
+    db.seedDoc(
+      "profiles",
+      shellOwner,
+      videoTeamProfile({
+        team_seat_counts: { none: 1, gallery: 0, editor: 0, fullframe: 0 },
+      })
+    );
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, shellOwner, {
+      team_id: shellOwner,
+      owner_user_id: shellOwner,
+      status: "active",
+    });
+    db.seedDoc("profiles", activeMember, videoTeamProfile({ display_name: "Active M" }));
+    db.seedDoc(
+      PERSONAL_TEAM_SEATS_COLLECTION,
+      personalTeamSeatDocId(shellOwner, activeMember),
+      {
+        team_owner_user_id: shellOwner,
+        member_user_id: activeMember,
+        seat_access_level: "none",
+        status: "active",
+        invited_email: `${activeMember}@test.local`,
+      }
+    );
+    db.seedDoc("profiles", removedMember, videoTeamProfile({ display_name: "Removed M" }));
+    db.seedDoc(
+      PERSONAL_TEAM_SEATS_COLLECTION,
+      personalTeamSeatDocId(shellOwner, removedMember),
+      {
+        team_owner_user_id: shellOwner,
+        member_user_id: removedMember,
+        seat_access_level: "none",
+        status: "removed",
+        invited_email: `${removedMember}@test.local`,
+      }
+    );
+    db.seedDoc("profiles", invitedMember, videoTeamProfile({ display_name: "Invited M" }));
+    db.seedDoc(
+      PERSONAL_TEAM_SEATS_COLLECTION,
+      personalTeamSeatDocId(shellOwner, invitedMember),
+      {
+        team_owner_user_id: shellOwner,
+        member_user_id: invitedMember,
+        seat_access_level: "none",
+        status: "invited",
+        invited_email: `${invitedMember}@test.local`,
+      }
+    );
+    db.seedDoc("profiles", coldMember, videoTeamProfile({ display_name: "Cold M" }));
+    db.seedDoc(
+      PERSONAL_TEAM_SEATS_COLLECTION,
+      personalTeamSeatDocId(shellOwner, coldMember),
+      {
+        team_owner_user_id: shellOwner,
+        member_user_id: coldMember,
+        seat_access_level: "none",
+        status: "cold_storage",
+        invited_email: `${coldMember}@test.local`,
+      }
+    );
+  });
+
+  it("returns owner shell flags for an active member who may enter", async () => {
+    const res = await shellStateGET(
+      new Request(
+        `http://localhost/api/personal-team/shell-state?owner_uid=${encodeURIComponent(shellOwner)}`,
+        { headers: authHeader(activeMember) }
+      )
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      role: string;
+      team_shell_exists: boolean;
+      team_seats_enabled: boolean;
+      team_setup_mode: boolean;
+      owner_allowed_into_shell: boolean;
+    };
+    expect(body.role).toBe("member");
+    expect(body.owner_allowed_into_shell).toBe(true);
+    expect(body.team_shell_exists).toBe(true);
+    expect(body.team_seats_enabled).toBe(true);
+    expect(body.team_setup_mode).toBe(false);
+  });
+
+  it("returns owner shell flags for cold_storage member (enterable)", async () => {
+    const res = await shellStateGET(
+      new Request(
+        `http://localhost/api/personal-team/shell-state?owner_uid=${encodeURIComponent(shellOwner)}`,
+        { headers: authHeader(coldMember) }
+      )
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      role: string;
+      team_shell_exists: boolean;
+      owner_allowed_into_shell: boolean;
+    };
+    expect(body.role).toBe("member");
+    expect(body.owner_allowed_into_shell).toBe(true);
+    expect(body.team_shell_exists).toBe(true);
+  });
+
+  it("does not expose owner shell flags to removed or invited members", async () => {
+    for (const uid of [removedMember, invitedMember]) {
+      const res = await shellStateGET(
+        new Request(
+          `http://localhost/api/personal-team/shell-state?owner_uid=${encodeURIComponent(shellOwner)}`,
+          { headers: authHeader(uid) }
+        )
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        team_shell_exists: boolean;
+        team_seats_enabled: boolean;
+        team_setup_mode: boolean;
+        owner_allowed_into_shell: boolean;
+      };
+      expect(body.owner_allowed_into_shell).toBe(false);
+      expect(body.team_shell_exists).toBe(false);
+      expect(body.team_seats_enabled).toBe(false);
+      expect(body.team_setup_mode).toBe(false);
+    }
   });
 });

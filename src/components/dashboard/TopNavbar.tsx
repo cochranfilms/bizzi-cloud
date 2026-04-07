@@ -15,6 +15,7 @@ import {
   X,
   Images,
   Film,
+  Lock,
 } from "lucide-react";
 import UserMenu from "./UserMenu";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
@@ -22,10 +23,16 @@ import NotificationBell from "@/components/collaboration/NotificationBell";
 import BizziLogoMark from "@/components/BizziLogoMark";
 import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
+import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/hooks/useSubscription";
 
 /** Powerup colors matching pricing cards */
 const CREATOR_COLOR = "#A47BFF"; // Editor purple
 const GALLERIES_COLOR = "#ECA000"; // Gallery Suite yellow
+
+/** Team owner setup mode: premium areas stay visible as locked teasers → stable upgrade path (not deep links). */
+const TEAM_SETUP_PREMIUM_TEASER_UPGRADE_HREF =
+  "/dashboard/change-plan?source=team-setup-premium";
 
 const navItems: Array<{
   href: string;
@@ -74,6 +81,10 @@ export default function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { hasGallerySuite, hasEditor } = useEffectivePowerUps();
   const teamWs = usePersonalTeamWorkspace();
+  const { user } = useAuth();
+  const { teamSetupMode } = useSubscription();
+  const ownerTeamPremiumTeaser =
+    Boolean(teamWs && user?.uid === teamWs.teamOwnerUid && teamSetupMode);
 
   const teamNavBase =
     typeof pathname === "string"
@@ -83,10 +94,27 @@ export default function TopNavbar() {
   const mobileNavMaxH = "max-h-[calc(100vh-3.5rem)]";
 
   const filteredItems = navItems.filter((item) => {
+    if (
+      ownerTeamPremiumTeaser &&
+      (item.requiresGallerySuite || item.requiresEditor)
+    ) {
+      return true;
+    }
     if (item.requiresGallerySuite && !hasGallerySuite) return false;
     if (item.requiresEditor && !hasEditor) return false;
     return true;
   });
+
+  const premiumLockedForOwnerSetup = (item: (typeof navItems)[number]) =>
+    ownerTeamPremiumTeaser &&
+    Boolean(item.requiresGallerySuite || item.requiresEditor);
+
+  function resolvedNavHref(item: (typeof navItems)[number]): string {
+    if (premiumLockedForOwnerSetup(item)) return TEAM_SETUP_PREMIUM_TEASER_UPGRADE_HREF;
+    return teamNavBase && item.href === "/dashboard/settings"
+      ? `${teamNavBase}/settings`
+      : item.href.replace(/^\/dashboard/, navBase);
+  }
 
   const inactiveNavCls =
     "border border-neutral-200 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/80 dark:hover:text-white";
@@ -94,13 +122,22 @@ export default function TopNavbar() {
   const activeNavCls =
     "border border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 font-medium text-neutral-900 dark:text-white";
 
-  const navLinkClass = (isActive: boolean, hasPowerupColor: boolean) =>
+  const lockedTeaserNavCls =
+    "border border-dashed border-neutral-300 bg-neutral-50/80 text-neutral-600 hover:border-neutral-400 hover:bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-900/40 dark:text-neutral-300 dark:hover:border-neutral-500";
+
+  const navLinkClass = (
+    isActive: boolean,
+    hasPowerupColor: boolean,
+    lockedTeaser: boolean
+  ) =>
     `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs transition-colors sm:gap-2 sm:px-3 sm:py-2 sm:text-sm ${
-      hasPowerupColor
-        ? "border-transparent font-medium text-white"
-        : isActive
-          ? activeNavCls
-          : inactiveNavCls
+      lockedTeaser
+        ? lockedTeaserNavCls
+        : hasPowerupColor
+          ? "border-transparent font-medium text-white"
+          : isActive
+            ? activeNavCls
+            : inactiveNavCls
     }`;
 
   const accountTools = (
@@ -125,25 +162,38 @@ export default function TopNavbar() {
         >
           {filteredItems.map((item) => {
             const Icon = item.icon;
-            const href =
-              teamNavBase && item.href === "/dashboard/settings"
-                ? `${teamNavBase}/settings`
-                : item.href.replace(/^\/dashboard/, navBase);
-            const isActive = isNavItemActive(pathname, href, item.href);
-            const hasPowerupColor = isActive && item.activeBgColor;
+            const href = resolvedNavHref(item);
+            const lockedTeaser = premiumLockedForOwnerSetup(item);
+            const isActive =
+              lockedTeaser ? false : isNavItemActive(pathname, href, item.href);
+            const hasPowerupColor = !lockedTeaser && isActive && item.activeBgColor;
+            const teaserLabel =
+              item.href === "/dashboard/creator"
+                ? "Creator — add seats to use in team workspace"
+                : "Galleries — add seats to use in team workspace";
             return (
               <Link
                 key={item.href}
                 href={href}
-                className={navLinkClass(isActive, !!hasPowerupColor)}
+                className={navLinkClass(isActive, !!hasPowerupColor, lockedTeaser)}
                 style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
+                title={lockedTeaser ? teaserLabel : undefined}
+                aria-label={lockedTeaser ? teaserLabel : undefined}
               >
                 <Icon
                   className={`h-4 w-4 flex-shrink-0 ${
                     hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
                   }`}
                 />
+                {lockedTeaser ? (
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-500 dark:text-neutral-400" aria-hidden />
+                ) : null}
                 <span className="hidden lg:inline">{item.label}</span>
+                {lockedTeaser ? (
+                  <span className="hidden rounded bg-neutral-200/90 px-1 py-px text-[10px] font-medium text-neutral-700 lg:inline dark:bg-neutral-700 dark:text-neutral-200">
+                    Add seats
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -229,36 +279,51 @@ export default function TopNavbar() {
           <ul className={`${mobileNavMaxH} overflow-y-auto p-3`}>
             {filteredItems.map((item) => {
               const Icon = item.icon;
-              const href =
-                teamNavBase && item.href === "/dashboard/settings"
-                  ? `${teamNavBase}/settings`
-                  : item.href.replace(/^\/dashboard/, navBase);
-              const isActive = isNavItemActive(pathname, href, item.href);
-              const hasPowerupColor = isActive && item.activeBgColor;
+              const href = resolvedNavHref(item);
+              const lockedTeaser = premiumLockedForOwnerSetup(item);
+              const isActive =
+                lockedTeaser ? false : isNavItemActive(pathname, href, item.href);
+              const hasPowerupColor = !lockedTeaser && isActive && item.activeBgColor;
+              const teaserLabel =
+                item.href === "/dashboard/creator"
+                  ? "Creator — add seats to use in team workspace"
+                  : "Galleries — add seats to use in team workspace";
               return (
                 <li key={item.href}>
                   <Link
                     href={href}
                     onClick={() => setMobileOpen(false)}
                     className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                      hasPowerupColor
-                        ? "border-transparent font-medium text-white"
-                        : isActive
-                          ? activeNavCls
-                          : inactiveNavCls
+                      lockedTeaser
+                        ? lockedTeaserNavCls
+                        : hasPowerupColor
+                          ? "border-transparent font-medium text-white"
+                          : isActive
+                            ? activeNavCls
+                            : inactiveNavCls
                     }`}
                     style={
                       hasPowerupColor
                         ? { backgroundColor: item.activeBgColor }
                         : undefined
                     }
+                    title={lockedTeaser ? teaserLabel : undefined}
+                    aria-label={lockedTeaser ? teaserLabel : undefined}
                   >
                     <Icon
                       className={`h-4 w-4 flex-shrink-0 ${
                         hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
                       }`}
                     />
+                    {lockedTeaser ? (
+                      <Lock className="h-3.5 w-3.5 text-neutral-500 dark:text-neutral-400" aria-hidden />
+                    ) : null}
                     {item.label}
+                    {lockedTeaser ? (
+                      <span className="ml-auto rounded bg-neutral-200/90 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                        Add seats
+                      </span>
+                    ) : null}
                   </Link>
                 </li>
               );
@@ -326,36 +391,51 @@ export default function TopNavbar() {
         <ul className={`${mobileNavMaxH} overflow-y-auto p-3`}>
           {filteredItems.map((item) => {
             const Icon = item.icon;
-            const href =
-              teamNavBase && item.href === "/dashboard/settings"
-                ? `${teamNavBase}/settings`
-                : item.href.replace(/^\/dashboard/, navBase);
-            const isActive = isNavItemActive(pathname, href, item.href);
-            const hasPowerupColor = isActive && item.activeBgColor;
+            const href = resolvedNavHref(item);
+            const lockedTeaser = premiumLockedForOwnerSetup(item);
+            const isActive =
+              lockedTeaser ? false : isNavItemActive(pathname, href, item.href);
+            const hasPowerupColor = !lockedTeaser && isActive && item.activeBgColor;
+            const teaserLabel =
+              item.href === "/dashboard/creator"
+                ? "Creator — add seats to use in team workspace"
+                : "Galleries — add seats to use in team workspace";
             return (
               <li key={item.href}>
                 <Link
                   href={href}
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                    hasPowerupColor
-                      ? "border-transparent font-medium text-white"
-                      : isActive
-                        ? activeNavCls
-                        : inactiveNavCls
+                    lockedTeaser
+                      ? lockedTeaserNavCls
+                      : hasPowerupColor
+                        ? "border-transparent font-medium text-white"
+                        : isActive
+                          ? activeNavCls
+                          : inactiveNavCls
                   }`}
                   style={
                     hasPowerupColor
                       ? { backgroundColor: item.activeBgColor }
                       : undefined
                   }
+                  title={lockedTeaser ? teaserLabel : undefined}
+                  aria-label={lockedTeaser ? teaserLabel : undefined}
                 >
                   <Icon
                     className={`h-4 w-4 flex-shrink-0 ${
                       hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
                     }`}
                   />
+                  {lockedTeaser ? (
+                    <Lock className="h-3.5 w-3.5 text-neutral-500 dark:text-neutral-400" aria-hidden />
+                  ) : null}
                   {item.label}
+                  {lockedTeaser ? (
+                    <span className="ml-auto rounded bg-neutral-200/90 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                      Add seats
+                    </span>
+                  ) : null}
                 </Link>
               </li>
             );

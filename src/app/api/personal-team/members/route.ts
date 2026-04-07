@@ -7,7 +7,12 @@ import {
   PERSONAL_TEAM_INVITES_COLLECTION,
   PERSONAL_TEAM_SEATS_COLLECTION,
 } from "@/lib/personal-team";
-import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import {
+  backfillPersonalTeamDocFromLegacyDrive,
+  canManagePersonalTeam,
+  ensurePersonalTeamShellOnUserIntent,
+  getOwnedPersonalTeamShellState,
+} from "@/lib/personal-team-auth";
 import { PLAN_LABELS } from "@/lib/pricing-data";
 import {
   emptyTeamSeatCounts,
@@ -64,10 +69,13 @@ export async function GET(request: Request) {
   const db = getAdminFirestore();
   const profile = await db.collection("profiles").doc(uid).get();
   const pdata = profile.data() ?? {};
-  await ensurePersonalTeamRecord(db, uid, pdata);
+  await backfillPersonalTeamDocFromLegacyDrive(db, uid);
+  await ensurePersonalTeamShellOnUserIntent(db, uid, pdata);
   if (!(await canManagePersonalTeam(db, uid, uid))) {
     return NextResponse.json({ error: "Only the team admin can list members." }, { status: 403 });
   }
+
+  const shellState = await getOwnedPersonalTeamShellState(db, uid);
 
   const snap = await db
     .collection(PERSONAL_TEAM_SEATS_COLLECTION)
@@ -166,6 +174,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     members,
     pending_invites,
+    team_shell_exists: shellState.team_shell_exists,
+    team_seats_enabled: shellState.team_seats_enabled,
+    team_setup_mode: shellState.team_setup_mode,
     overview: {
       team_seat_counts: purchased,
       used,

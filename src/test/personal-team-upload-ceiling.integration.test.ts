@@ -10,8 +10,10 @@ import {
   personalTeamSeatDocId,
 } from "@/lib/personal-team-constants";
 import { createPersonalTeamIntegrationDb } from "./personal-team-integration-db";
+import { PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES } from "@/lib/personal-team-pre-collab-cap";
 
 const POOL_9_TB = 9 * 1024 ** 4;
+const PRE_COLLAB_CAP = PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES;
 const TIER_5_TB = PRODUCT_SEAT_STORAGE_BYTES[6];
 
 const U = { owner: "uid_upload_owner", member: "uid_upload_member" };
@@ -167,5 +169,77 @@ describe("checkUserCanUpload personal-team drive", () => {
       thrown = e;
     }
     expect(thrown).toBeInstanceOf(StorageQuotaDeniedError);
+  });
+
+  it("denies upload past pre-collaboration 5GB team container cap when owner has no purchased seats", async () => {
+    const db = testHarness.db!;
+    db.seedDoc("profiles", U.owner, {
+      plan_id: "video",
+      display_name: "Owner",
+      team_seat_counts: { none: 0, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+      storage_quota_bytes: POOL_9_TB,
+    });
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, U.owner, {
+      team_id: U.owner,
+      owner_user_id: U.owner,
+      status: "active",
+    });
+    db.seedDoc("linked_drives", DRIVE_ID, {
+      userId: U.owner,
+      organization_id: null,
+      personal_team_owner_id: U.owner,
+    });
+    db.seedDoc("backup_files", "bf_setup", {
+      userId: U.owner,
+      personal_team_owner_id: U.owner,
+      organization_id: null,
+      size_bytes: PRE_COLLAB_CAP - 500,
+      lifecycle_state: "active",
+    });
+
+    let thrown: unknown;
+    try {
+      await checkUserCanUpload(U.owner, 1000, DRIVE_ID);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(StorageQuotaDeniedError);
+    const err = thrown as StorageQuotaDeniedError;
+    expect(err.storage_denial.denial_reason).toBe("personal_team_pre_collab_cap");
+    expect(err.storage_denial.quota_bytes).toBe(PRE_COLLAB_CAP);
+  });
+
+  it("allows upload under pre-collaboration team container cap when owner has no purchased seats", async () => {
+    const db = testHarness.db!;
+    db.seedDoc("profiles", U.owner, {
+      plan_id: "video",
+      display_name: "Owner",
+      team_seat_counts: { none: 0, gallery: 0, editor: 0, fullframe: 0 },
+      storage_lifecycle_status: "active",
+      billing_status: "active",
+      personal_status: "active",
+      storage_quota_bytes: POOL_9_TB,
+    });
+    db.seedDoc(PERSONAL_TEAMS_COLLECTION, U.owner, {
+      team_id: U.owner,
+      owner_user_id: U.owner,
+      status: "active",
+    });
+    db.seedDoc("linked_drives", DRIVE_ID, {
+      userId: U.owner,
+      organization_id: null,
+      personal_team_owner_id: U.owner,
+    });
+    db.seedDoc("backup_files", "bf_setup_small", {
+      userId: U.owner,
+      personal_team_owner_id: U.owner,
+      organization_id: null,
+      size_bytes: PRE_COLLAB_CAP - 50_000_000,
+      lifecycle_state: "active",
+    });
+    await expect(checkUserCanUpload(U.owner, 1000, DRIVE_ID)).resolves.toBeUndefined();
   });
 });

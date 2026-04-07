@@ -568,8 +568,9 @@ export function TeamManagementSection() {
         <div className="mb-6 rounded-xl border border-bizzi-blue/35 bg-gradient-to-br from-cyan-50/80 to-white p-5 dark:border-bizzi-cyan/25 dark:from-cyan-950/25 dark:to-neutral-900">
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Your team identity</h3>
           <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-            Your team name and logo are saved. The dedicated team workspace stays locked until you activate
-            it with seats.
+            Your team name and logo are saved. You can open the team workspace, but collaboration stays off
+            until you add seats. Shared team storage is capped at about 5&nbsp;GB until then; Gallery and
+            Creator appear as locked entries in the team nav until you add seats.
           </p>
           <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-600 dark:bg-neutral-800">
@@ -595,9 +596,9 @@ export function TeamManagementSection() {
           </div>
           <p className="mt-4 text-sm text-neutral-700 dark:text-neutral-300">
             Purchase at least one{" "}
-            <strong className="text-neutral-900 dark:text-white">extra team seat</strong> to unlock the
-            team workspace and the workspace switcher. Until then, keep working in your personal workspace —
-            your team identity remains here in Settings.
+            <strong className="text-neutral-900 dark:text-white">extra team seat</strong> to unlock invites,
+            full team storage from your plan pool, and Gallery/Creator in the team workspace. Until then, you
+            can still use Files and Shared in the team workspace within the starter limit.
           </p>
           <Link
             href="/dashboard/change-plan"

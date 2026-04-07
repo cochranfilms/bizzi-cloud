@@ -41,6 +41,10 @@ export interface SubscriptionState {
   personalTeamMemberships: PersonalTeamMembershipRow[];
   /** `personal_teams/{uid}` exists (after server bootstrap). */
   ownsPersonalTeam: boolean;
+  /** Mirrors server `getOwnedPersonalTeamShellState` for the signed-in user as owner. */
+  teamShellExists: boolean;
+  teamSeatsEnabled: boolean;
+  teamSetupMode: boolean;
   teamSeatCounts: TeamSeatCountsState;
   loading: boolean;
 }
@@ -64,6 +68,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     PersonalTeamMembershipRow[]
   >([]);
   const [ownsPersonalTeam, setOwnsPersonalTeam] = useState(false);
+  const [teamShellExists, setTeamShellExists] = useState(false);
+  const [teamSeatsEnabled, setTeamSeatsEnabled] = useState(false);
+  const [teamSetupMode, setTeamSetupMode] = useState(false);
   const [teamSeatCounts, setTeamSeatCounts] = useState<TeamSeatCountsState>({
     none: 0,
     gallery: 0,
@@ -82,6 +89,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setPersonalTeamSeatAccess(null);
       setPersonalTeamMemberships([]);
       setOwnsPersonalTeam(false);
+      setTeamShellExists(false);
+      setTeamSeatsEnabled(false);
+      setTeamSetupMode(false);
       setTeamSeatCounts({ none: 0, gallery: 0, editor: 0, fullframe: 0 });
       setLoading(false);
       return;
@@ -104,12 +114,18 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           personal_team_seat_access?: string | null;
           personal_team_memberships?: PersonalTeamMembershipRow[];
           owns_personal_team?: boolean;
+          team_shell_exists?: boolean;
+          team_seats_enabled?: boolean;
+          team_setup_mode?: boolean;
         };
         setPlanId(data.plan_id ?? "free");
         setAddonIds(data.addon_ids ?? []);
         setStorageAddonId(data.storage_addon_id ?? null);
         setHasPortalAccess(data.has_portal_access ?? false);
         setOwnsPersonalTeam(!!data.owns_personal_team);
+        setTeamShellExists(!!data.team_shell_exists);
+        setTeamSeatsEnabled(!!data.team_seats_enabled);
+        setTeamSetupMode(!!data.team_setup_mode);
         const m = Array.isArray(data.personal_team_memberships)
           ? data.personal_team_memberships
           : [];
@@ -136,6 +152,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setPersonalTeamSeatAccess(null);
       setPersonalTeamMemberships([]);
       setOwnsPersonalTeam(false);
+      setTeamShellExists(false);
+      setTeamSeatsEnabled(false);
+      setTeamSetupMode(false);
       setTeamSeatCounts({ none: 0, gallery: 0, editor: 0, fullframe: 0 });
     } finally {
       setLoading(false);
@@ -171,6 +190,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       personalTeamSeatAccess,
       personalTeamMemberships,
       ownsPersonalTeam,
+      teamShellExists,
+      teamSeatsEnabled,
+      teamSetupMode,
       teamSeatCounts,
       loading,
       refetch: fetchProfile,
@@ -186,6 +208,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       personalTeamSeatAccess,
       personalTeamMemberships,
       ownsPersonalTeam,
+      teamShellExists,
+      teamSeatsEnabled,
+      teamSetupMode,
       teamSeatCounts,
       loading,
       fetchProfile,

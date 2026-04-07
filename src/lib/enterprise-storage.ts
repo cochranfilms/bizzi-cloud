@@ -26,6 +26,9 @@ import {
 import { StorageQuotaDeniedError } from "./storage-quota-denied-error";
 import { logEnterpriseSecurityEvent } from "./enterprise-security-log";
 import { adminPurchasedTeamPoolBytes } from "./profile-purchased-storage-bytes";
+import { writeAuditLog } from "./audit-log";
+import { ownerPersonalTeamWorkspaceActivated } from "./personal-team-auth";
+import { PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES } from "./personal-team-pre-collab-cap";
 
 export {
   ENTERPRISE_ORG_STORAGE_BYTES,
@@ -367,6 +370,57 @@ export async function checkUserCanUpload(
             remaining_bytes: remaining,
           }
         );
+      }
+    }
+  }
+
+  if (driveId && !snap.organization_id) {
+    const db = getAdminFirestore();
+    const driveSnap = await db.collection("linked_drives").doc(driveId).get();
+    const dd = driveSnap.data();
+    const pto = dd?.personal_team_owner_id as string | undefined;
+    if (typeof pto === "string" && pto) {
+      const seatsOn = await ownerPersonalTeamWorkspaceActivated(db, pto);
+      if (!seatsOn) {
+        const teamUsed = await sumTeamContainerBackupBytes(pto);
+        if (teamUsed + additionalBytes > PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES) {
+          await writeAuditLog({
+            action: "personal_team_pre_collab_storage_denied",
+            uid,
+            metadata: {
+              team_owner_uid: pto,
+              team_container_used_bytes: teamUsed,
+              additional_bytes: additionalBytes,
+              cap_bytes: PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES,
+            },
+          });
+          const cap = PERSONAL_TEAM_PRE_COLLABORATION_CONTAINER_CAP_BYTES;
+          const remaining = Math.max(0, cap - teamUsed);
+          logEnterpriseSecurityEvent("storage_quota_denied", {
+            denial_reason: "personal_team_pre_collab_cap",
+            requesting_user_id: uid,
+            organization_id: null,
+            additional_bytes: additionalBytes,
+            effective_billable_bytes_for_enforcement: teamUsed,
+            quota_bytes: cap,
+          });
+          throw new StorageQuotaDeniedError(
+            "Team workspace starter storage limit reached (5 GB). Purchase team seats to use your full team storage pool.",
+            {
+              requesting_user_id: uid,
+              billing_subject_user_id: pto,
+              organization_id: null,
+              usage_scope: "personal_team_workspace",
+              file_used_bytes: teamUsed,
+              reserved_bytes: 0,
+              effective_billable_bytes_for_enforcement: teamUsed,
+              quota_bytes: cap,
+              additional_bytes: additionalBytes,
+              denial_reason: "personal_team_pre_collab_cap",
+              remaining_bytes: remaining,
+            }
+          );
+        }
       }
     }
   }

@@ -13,6 +13,9 @@ import SupportHelpButton from "./SupportHelpButton";
 import GlobalDropZone from "./GlobalDropZone";
 import { UppyUploadProvider } from "@/context/UppyUploadContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
+import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/hooks/useSubscription";
+import Link from "next/link";
 import { resolveDashboardChromeThemeVariables } from "@/lib/dashboard-chrome-theme";
 
 const RightPanelContext = createContext<{
@@ -34,6 +37,11 @@ export default function DashboardShell({
   const { cssVariables, uiThemeOverride, buttonColor } = useDashboardAppearance();
   const pathname = usePathname();
   const teamWs = usePersonalTeamWorkspace();
+  const { user } = useAuth();
+  const { teamSetupMode } = useSubscription();
+  const showTeamSetupBanner = Boolean(
+    teamWs && user?.uid === teamWs.teamOwnerUid && teamSetupMode
+  );
   const teamNavBase =
     typeof pathname === "string" ? (/^(\/team\/[^/]+)/.exec(pathname)?.[1] ?? null) : null;
   const rightPanelBasePath = teamNavBase ?? "/dashboard";
@@ -62,6 +70,22 @@ export default function DashboardShell({
         >
         {/* Top navbar - main nav */}
         <TopNavbar />
+        {showTeamSetupBanner ? (
+          <div
+            role="status"
+            className="shrink-0 border-b border-amber-200/80 bg-amber-50 px-4 py-2 text-center text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-100 sm:text-sm"
+          >
+            <span className="font-medium">Team setup mode.</span> Gallery and Creator show as locked shortcuts
+            to your plan page until you add team seats. Team shared storage is limited to 5&nbsp;GB until
+            then.{" "}
+            <Link
+              href="/dashboard/change-plan"
+              className="font-medium underline decoration-amber-700/60 underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+            >
+              Add team seats
+            </Link>
+          </div>
+        ) : null}
         <TeamBrandingOnboardingGate />
         <PendingInvitesBanner />
         <BackgroundUploadIndicator />

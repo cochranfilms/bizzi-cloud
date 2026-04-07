@@ -10,15 +10,15 @@ import PersonalTeamIdentityForm from "@/components/dashboard/PersonalTeamIdentit
 
 /**
  * After subscribing to a plan with a personal team workspace, require a team name (logo optional)
- * before using the personal dashboard. The team workspace shell (`/team/...`) stays gated on extra
- * seat purchase separately; zero extra seats does not block the personal workspace.
+ * before using the personal dashboard. The `/team/...` shell can load in setup mode without extra
+ * seats; collaboration and full pool features still require purchased seats.
  */
 export default function TeamBrandingOnboardingGate() {
   const { user } = useAuth();
   const {
     teamSeatCounts,
     planId,
-    ownsPersonalTeam,
+    teamShellExists,
     loading: subLoading,
   } = useSubscription();
   const pathname = usePathname();
@@ -31,7 +31,7 @@ export default function TeamBrandingOnboardingGate() {
 
   const allowsTeamWorkspace = planAllowsPersonalTeamSeats(planId);
   const paidTeamEligible =
-    allowsTeamWorkspace && planId !== "free" && ownsPersonalTeam;
+    allowsTeamWorkspace && planId !== "free" && teamShellExists;
 
   const [gateResolved, setGateResolved] = useState(false);
   const [needsBranding, setNeedsBranding] = useState(false);

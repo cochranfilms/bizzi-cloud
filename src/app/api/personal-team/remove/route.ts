@@ -10,7 +10,11 @@ import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { writeAuditLog, getClientIp } from "@/lib/audit-log";
 import { PERSONAL_TEAM_SEATS_COLLECTION, personalTeamSeatDocId } from "@/lib/personal-team";
-import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import {
+  backfillPersonalTeamDocFromLegacyDrive,
+  canManagePersonalTeam,
+  ownerTeamSeatsEnabled,
+} from "@/lib/personal-team-auth";
 import { createNotification, getActorDisplayName } from "@/lib/notification-service";
 
 async function requireAuth(request: Request): Promise<{ uid: string } | NextResponse> {
@@ -45,9 +49,7 @@ export async function POST(request: Request) {
   }
 
   const db = getAdminFirestore();
-  const adminProfileSnap = await db.collection("profiles").doc(adminUid).get();
-  const adminData = adminProfileSnap.data() ?? {};
-  await ensurePersonalTeamRecord(db, adminUid, adminData);
+  await backfillPersonalTeamDocFromLegacyDrive(db, adminUid);
   if (!(await canManagePersonalTeam(db, adminUid, adminUid))) {
     return NextResponse.json({ error: "Only the team admin can remove members." }, { status: 403 });
   }
@@ -75,6 +77,22 @@ export async function POST(request: Request) {
       },
     });
     return NextResponse.json({ ok: true, already_removed: true });
+  }
+
+  if (!(await ownerTeamSeatsEnabled(db, adminUid))) {
+    await writeAuditLog({
+      action: "personal_team_membership_mutate_blocked_zero_seats",
+      uid: adminUid,
+      ip: getClientIp(request),
+      metadata: {
+        route: "POST /api/personal-team/remove",
+        target_user_id: memberUid,
+      },
+    });
+    return NextResponse.json(
+      { error: "Purchase team seats before changing membership." },
+      { status: 403 }
+    );
   }
 
   const memberProfileSnap = await db.collection("profiles").doc(memberUid).get();

@@ -12,11 +12,7 @@ import {
 } from "@/lib/personal-team-constants";
 import { userCanAccessWorkspace } from "@/lib/workspace-access";
 import { getOrgWideShareTargetWorkspaceIdMap } from "@/lib/org-pillar-drives";
-import {
-  ensurePersonalTeamRecord,
-  ownerHasPersonalTeamShell,
-  seatStatusAllowsEnter,
-} from "@/lib/personal-team-auth";
+import { getOwnedPersonalTeamShellState, seatStatusAllowsEnter } from "@/lib/personal-team-auth";
 import { PERSONAL_TEAM_SEAT_ACCESS_LABELS, type PersonalTeamSeatAccess } from "@/lib/team-seat-pricing";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { FieldPath, type Firestore } from "firebase-admin/firestore";
@@ -86,7 +82,6 @@ export async function GET(request: Request) {
   const orgShareWsByOrgId = await getOrgWideShareTargetWorkspaceIdMap();
   const profileSnap = await db.collection("profiles").doc(uid).get();
   const profileData = profileSnap.data() ?? {};
-  await ensurePersonalTeamRecord(db, uid, profileData);
   type TargetRow = {
     kind: "personal_team" | "enterprise_workspace";
     id: string;
@@ -100,7 +95,8 @@ export async function GET(request: Request) {
   const targets: TargetRow[] = [];
   const teamSeen = new Set<string>();
 
-  if (await ownerHasPersonalTeamShell(db, uid)) {
+  const ownShell = await getOwnedPersonalTeamShellState(db, uid);
+  if (ownShell.team_shell_exists) {
     const ownerName = await profileDisplayName(db, uid);
     const fallback = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
     const { label: name, logo_url: ownLogo } = await personalTeamShareTargetDisplay(db, uid, fallback);

@@ -3,7 +3,10 @@ export type StorageUsageScopeForDenial =
   | "personal_team_workspace"
   | "enterprise_workspace";
 
-export type StorageQuotaDenialReason = "organization_pool" | "seat_allocation";
+export type StorageQuotaDenialReason =
+  | "organization_pool"
+  | "seat_allocation"
+  | "personal_team_pre_collab_cap";
 
 export type StorageQuotaDenialPayload = {
   requesting_user_id: string;

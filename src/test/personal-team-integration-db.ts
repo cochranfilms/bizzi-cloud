@@ -109,14 +109,26 @@ export function createPersonalTeamIntegrationDb() {
 
   type TestRef = { __testKey: string; id: string; set: (data: DocData, opts?: { merge?: boolean }) => Promise<void> };
 
+  function collectionApi(col: string) {
+    return {
+      doc: (id: string) => docRef(col, id),
+      add: async (data: DocData) => {
+        let id = "";
+        do {
+          id = `__auto_${Math.random().toString(36).slice(2, 12)}`;
+        } while (raw.has(key(col, id)));
+        raw.set(key(col, id), { ...data });
+        return docRef(col, id);
+      },
+      where(field: string, op: string, value: unknown) {
+        return makeQuery(col, [{ field, value }], undefined);
+      },
+    };
+  }
+
   const firestore = {
     collection(col: string) {
-      return {
-        doc: (id: string) => docRef(col, id),
-        where(field: string, op: string, value: unknown) {
-          return makeQuery(col, [{ field, value }], undefined);
-        },
-      };
+      return collectionApi(col);
     },
     async runTransaction<T>(fn: (tx: { get: (r: TestRef) => Promise<unknown>; update: (r: TestRef, data: DocData) => Promise<void> }) => Promise<T>): Promise<T> {
       const tx = {

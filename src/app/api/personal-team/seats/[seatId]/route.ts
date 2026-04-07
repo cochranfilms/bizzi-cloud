@@ -4,7 +4,12 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
-import { canManagePersonalTeam, ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import {
+  backfillPersonalTeamDocFromLegacyDrive,
+  canManagePersonalTeam,
+  ensurePersonalTeamShellOnUserIntent,
+  ownerTeamSeatsEnabled,
+} from "@/lib/personal-team-auth";
 import { isProductSeatTierByte } from "@/lib/enterprise-constants";
 import { validateProposedFixedSeatCap } from "@/lib/personal-team-pool-accounting";
 
@@ -58,9 +63,16 @@ export async function PATCH(
   const db = getAdminFirestore();
   const adminProfileSnap = await db.collection("profiles").doc(adminUid).get();
   const adminData = adminProfileSnap.data() ?? {};
-  await ensurePersonalTeamRecord(db, adminUid, adminData);
+  await backfillPersonalTeamDocFromLegacyDrive(db, adminUid);
+  await ensurePersonalTeamShellOnUserIntent(db, adminUid, adminData);
   if (!(await canManagePersonalTeam(db, adminUid, adminUid))) {
     return NextResponse.json({ error: "Only the team admin can update seat storage." }, { status: 403 });
+  }
+  if (!(await ownerTeamSeatsEnabled(db, adminUid))) {
+    return NextResponse.json(
+      { error: "Purchase team seats before changing member storage allocation." },
+      { status: 403 }
+    );
   }
 
   const seatRef = db.collection(PERSONAL_TEAM_SEATS_COLLECTION).doc(seatId);

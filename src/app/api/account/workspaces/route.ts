@@ -15,8 +15,7 @@ import { NextResponse } from "next/server";
 import { PERSONAL_TEAM_SEATS_COLLECTION } from "@/lib/personal-team";
 import { PERSONAL_TEAM_SETTINGS_COLLECTION } from "@/lib/personal-team-constants";
 import {
-  ensurePersonalTeamRecord,
-  ownerPersonalTeamWorkspaceActivated,
+  getOwnedPersonalTeamShellState,
   resolvePersonalTeamIdentityConflicts,
   seatStatusShowsInSwitcher,
 } from "@/lib/personal-team-auth";
@@ -98,8 +97,6 @@ export async function GET(request: Request) {
   const profileData = profileSnap.data();
   const pdata = profileData ?? {};
 
-  await ensurePersonalTeamRecord(db, uid, pdata);
-
   const personalStatus = (profileData?.personal_status as PersonalStatus | undefined) ?? "active";
   const personalStorageLifecycle =
     (profileData?.storage_lifecycle_status as string | undefined) ?? "active";
@@ -162,9 +159,10 @@ export async function GET(request: Request) {
   /** Deploy / rollout: non-PII codes only; keeps switcher usable if one row fails. */
   const workspaceLoadIssues: Array<{ scope: string; code: string }> = [];
 
+  let ownedShellState: Awaited<ReturnType<typeof getOwnedPersonalTeamShellState>> | null = null;
   try {
-    const ownerTeamInSwitcher = await ownerPersonalTeamWorkspaceActivated(db, uid);
-    if (ownerTeamInSwitcher) {
+    ownedShellState = await getOwnedPersonalTeamShellState(db, uid);
+    if (ownedShellState.team_shell_exists) {
       try {
         const ownerName = await profileDisplayName(db, uid);
         const label = ownerName.endsWith("s") ? `${ownerName}' team` : `${ownerName}'s team`;
@@ -249,6 +247,17 @@ export async function GET(request: Request) {
     personal,
     organizations,
     personalTeams,
+    ...(ownedShellState
+      ? {
+          team_shell_exists: ownedShellState.team_shell_exists,
+          team_seats_enabled: ownedShellState.team_seats_enabled,
+          team_setup_mode: ownedShellState.team_setup_mode,
+        }
+      : {
+          team_shell_exists: false,
+          team_seats_enabled: false,
+          team_setup_mode: false,
+        }),
     identity_warnings: identity.warnings,
     workspace_load_issues: workspaceLoadIssues,
     workspace_rollout: rolloutDegraded
