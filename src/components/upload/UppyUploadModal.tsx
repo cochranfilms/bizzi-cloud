@@ -209,6 +209,9 @@ export default function UppyUploadModal({
   const runChunkedAddRef = useRef<(files: File[]) => Promise<void>>(async () => {});
   const ingestChainRef = useRef(Promise.resolve());
   const galleryProgressLastRef = useRef<Map<string, number>>(new Map());
+  const storageGridRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const galleryIdForStorageRefreshRef = useRef(galleryId);
+  galleryIdForStorageRefreshRef.current = galleryId;
 
   useEffect(() => {
     sessionGridTierRef.current = sessionGridTier;
@@ -231,6 +234,7 @@ export default function UppyUploadModal({
 
   useEffect(() => {
     if (!open) return;
+
     const update = () => {
       const w = window.innerWidth;
       const vh = window.visualViewport?.height ?? window.innerHeight;
@@ -279,6 +283,18 @@ export default function UppyUploadModal({
 
     const creatorRawLocked =
       destinationMode === "creator_raw" && lockedDestination === true;
+
+    const scheduleStorageGridRefresh = () => {
+      if (galleryIdForStorageRefreshRef.current) return;
+      if (typeof window === "undefined") return;
+      if (storageGridRefreshTimerRef.current) {
+        clearTimeout(storageGridRefreshTimerRef.current);
+      }
+      storageGridRefreshTimerRef.current = setTimeout(() => {
+        storageGridRefreshTimerRef.current = null;
+        window.dispatchEvent(new CustomEvent("storage-upload-complete"));
+      }, 380);
+    };
 
     const uppyRefLocal = { current: null as Uppy | null };
 
@@ -704,6 +720,8 @@ export default function UppyUploadModal({
                     message: msg,
                   });
                 }
+              } else {
+                scheduleStorageGridRefresh();
               }
             } catch {
               const msg =
@@ -722,6 +740,8 @@ export default function UppyUploadModal({
             }
           });
         }
+      } else if (!galleryId && (file.size ?? 0) > 0) {
+        scheduleStorageGridRefresh();
       }
       flushProgress();
       // Intentionally do NOT call onUploadComplete here: it bumps storageVersion and
@@ -766,6 +786,10 @@ export default function UppyUploadModal({
     setReady(true);
 
     return () => {
+      if (storageGridRefreshTimerRef.current) {
+        clearTimeout(storageGridRefreshTimerRef.current);
+        storageGridRefreshTimerRef.current = null;
+      }
       if (autoCloseTimer != null) {
         clearTimeout(autoCloseTimer);
         autoCloseTimer = null;

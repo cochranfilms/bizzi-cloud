@@ -4,7 +4,7 @@
  */
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
-import { getOrgSharedUploadTarget, resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
+import { resolveEnterprisePillarDriveIds } from "@/lib/org-pillar-drives";
 import { visibilityScopeFromWorkspaceType } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 
@@ -52,19 +52,43 @@ export async function resolveWorkspaceForOrgMemberDrive(
     };
   }
 
-  const sharedTarget = await getOrgSharedUploadTarget(organizationId, memberDriveId);
-  if (sharedTarget) {
+  const driveSnap = await db.collection("linked_drives").doc(memberDriveId).get();
+  const dd = driveSnap.data();
+  if (!driveSnap.exists || !dd) {
+    return { ok: false, error: "Drive not found", status: 404 };
+  }
+  if ((dd.organization_id as string | undefined) !== organizationId) {
+    return { ok: false, error: "Drive does not belong to this organization", status: 400 };
+  }
+
+  const ownerUid = (dd.userId ?? dd.user_id) as string | undefined;
+  const isShared = dd.is_org_shared === true;
+
+  if (isShared) {
+    const wsSnap = await db
+      .collection("workspaces")
+      .where("organization_id", "==", organizationId)
+      .where("drive_id", "==", memberDriveId)
+      .where("workspace_type", "==", "org_shared")
+      .limit(1)
+      .get();
+    if (wsSnap.empty) {
+      return { ok: false, error: "Shared workspace not found", status: 404 };
+    }
     return {
       ok: true,
-      workspace_id: sharedTarget.workspaceId,
+      workspace_id: wsSnap.docs[0].id,
       visibility_scope: visibilityScopeFromWorkspaceType("org_shared"),
     };
   }
 
-  const workspaceId = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, memberDriveId);
-  if (!workspaceId) {
-    return { ok: false, error: "Drive not found or not in org", status: 404 };
+  if (ownerUid === uid) {
+    const workspaceId = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, memberDriveId);
+    if (!workspaceId) {
+      return { ok: false, error: "Drive not found or not in org", status: 404 };
+    }
+    return { ok: true, workspace_id: workspaceId, visibility_scope: "private_org" };
   }
 
-  return { ok: true, workspace_id: workspaceId, visibility_scope: "private_org" };
+  return { ok: false, error: "No access to this drive", status: 403 };
 }

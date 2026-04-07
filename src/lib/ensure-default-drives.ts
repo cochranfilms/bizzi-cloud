@@ -202,18 +202,18 @@ export async function ensureDefaultDrivesForOrgUser(
   // Create system workspaces (My Private per drive) for workspace-based visibility
   await ensureDefaultWorkspacesForOrgUser(uid, orgId);
 
-  // Create org-level shared drives and shared workspaces (Shared Library, Shared RAW, Shared Gallery)
+  // Legacy: if this org still has org_shared linked drives (pre–unified storage), keep workspaces in sync.
   const sharedDriveIds = await ensureOrgSharedDrives(orgId, uid);
   await ensureSharedWorkspacesForOrg(orgId, sharedDriveIds);
 }
 
 /**
- * Create org-level shared drives (one per org). Idempotent.
- * Returns drive IDs for Shared Storage, Shared RAW, Shared Gallery.
+ * Returns IDs of legacy org shared linked drives when they already exist.
+ * Does not create Shared Storage / Shared RAW / Shared Gallery for new organizations.
  */
 export async function ensureOrgSharedDrives(
   orgId: string,
-  createdByUserId: string
+  _createdByUserId: string
 ): Promise<OrgSharedDriveIds> {
   const db = getAdminFirestore();
   const drivesRef = db.collection("linked_drives");
@@ -229,69 +229,9 @@ export async function ensureOrgSharedDrives(
     if (name && !d.data().deleted_at) byName.set(name, d.id);
   }
 
-  const now = new Date();
-  const result: OrgSharedDriveIds = {
-    storageDriveId: "",
-    rawDriveId: "",
-    galleryDriveId: "",
+  return {
+    storageDriveId: byName.get("Shared Storage") ?? "",
+    rawDriveId: byName.get("Shared RAW") ?? "",
+    galleryDriveId: byName.get("Shared Gallery") ?? "",
   };
-
-  const batch = db.batch();
-
-  if (!byName.has("Shared Storage")) {
-    const ref = drivesRef.doc();
-    batch.set(ref, {
-      userId: createdByUserId,
-      name: "Shared Storage",
-      permission_handle_id: `org-shared-storage-${Date.now()}`,
-      createdAt: now,
-      organization_id: orgId,
-      is_org_shared: true,
-    });
-    result.storageDriveId = ref.id;
-  } else {
-    result.storageDriveId = byName.get("Shared Storage")!;
-  }
-
-  if (!byName.has("Shared RAW")) {
-    const ref = drivesRef.doc();
-    batch.set(ref, {
-      userId: createdByUserId,
-      name: "Shared RAW",
-      permission_handle_id: `org-shared-raw-${Date.now()}`,
-      createdAt: now,
-      organization_id: orgId,
-      is_org_shared: true,
-      creator_section: true,
-      is_creator_raw: true,
-    });
-    result.rawDriveId = ref.id;
-  } else {
-    result.rawDriveId = byName.get("Shared RAW")!;
-  }
-
-  if (!byName.has("Shared Gallery")) {
-    const ref = drivesRef.doc();
-    batch.set(ref, {
-      userId: createdByUserId,
-      name: "Shared Gallery",
-      permission_handle_id: `org-shared-gallery-${Date.now()}`,
-      createdAt: now,
-      organization_id: orgId,
-      is_org_shared: true,
-    });
-    result.galleryDriveId = ref.id;
-  } else {
-    result.galleryDriveId = byName.get("Shared Gallery")!;
-  }
-
-  if (
-    !byName.has("Shared Storage") ||
-    !byName.has("Shared RAW") ||
-    !byName.has("Shared Gallery")
-  ) {
-    await batch.commit();
-  }
-
-  return result;
 }

@@ -154,6 +154,8 @@ export async function ensureSharedWorkspacesForOrg(
   ];
 
   for (const { driveId, name, driveType } of toCreate) {
+    if (!driveId || String(driveId).trim() === "") continue;
+
     const existing = await workspacesRef
       .where("organization_id", "==", orgId)
       .where("drive_id", "==", driveId)

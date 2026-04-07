@@ -12,7 +12,7 @@ export interface LinkedDrive {
   creator_section?: boolean;
   /** When true, permanent RAW drive; video-only; cannot delete/rename */
   is_creator_raw?: boolean;
-  /** Legacy org “pillar” drives (Shared Storage / RAW / Gallery) — hidden from home in enterprise UI */
+  /** Legacy org-only linked drives (no longer created). Omitted from enterprise UI lists. */
   is_org_shared?: boolean;
   /** Team shared drive: files uploaded from this drive attribute storage to this owner */
   personal_team_owner_id?: string | null;

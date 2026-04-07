@@ -5,6 +5,7 @@
   "scripts": {
     "migrate:organization-id": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' -r dotenv/config scripts/migrate-organization-id.ts",
     "migrate:org-files-to-workspaces": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/migrate-org-files-to-workspaces.ts",
+    "migrate:org-shared-drives": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/migrate-org-shared-drives.ts",
     "orphan-cleanup": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/orphan-cleanup.ts",
     "set-user-password": "DOTENV_CONFIG_PATH=.env.local npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' -r dotenv/config scripts/set-user-password.ts",
     "sync-subscription": "DOTENV_CONFIG_PATH=.env.local npx ts-node -r ./scripts/register-paths.js --compiler-options '{\"module\":\"CommonJS\",\"esModuleInterop\":true}' -r dotenv/config scripts/sync-subscription.ts",

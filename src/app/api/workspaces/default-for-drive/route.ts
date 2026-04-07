@@ -2,14 +2,14 @@
  * GET /api/workspaces/default-for-drive?drive_id=...&organization_id=...&workspace_id=... (optional)
  * Resolves workspace for upload. Returns workspace_id, drive_id, workspace_name.
  * If workspace_id provided: validates write access, returns that workspace.
- * Else: returns the org shared workspace for the pillar when it exists; otherwise My Private for the drive.
+ * Else: caller's own org member drive → My Private on that drive. Org shared linked drive → its org_shared
+ * workspace. Uploads therefore land where the user is browsing (inline Storage v2 lists that drive only).
  */
 import { verifyIdToken } from "@/lib/firebase-admin";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { resolveEnterpriseAccess } from "@/lib/enterprise-access";
 import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { getOrCreateMyPrivateWorkspaceId } from "@/lib/ensure-default-workspaces";
-import { getOrgSharedUploadTarget } from "@/lib/org-pillar-drives";
 import { visibilityScopeFromWorkspaceType, scopeLabelFromScope } from "@/lib/workspace-visibility";
 import { userCanWriteWorkspace } from "@/lib/workspace-access";
 import { getDisplayLabel } from "@/lib/workspace-display-labels";
@@ -119,13 +119,23 @@ export async function GET(request: Request) {
     });
   }
 
-  const sharedTarget = await getOrgSharedUploadTarget(organizationId, driveId);
-  if (sharedTarget) {
-    const wsSnap = await db.collection("workspaces").doc(sharedTarget.workspaceId).get();
-    const wsData = wsSnap.data();
-    const sharedDriveSnap = await db.collection("linked_drives").doc(sharedTarget.sharedDriveId).get();
-    const sharedDriveData = sharedDriveSnap.exists ? sharedDriveSnap.data() : {};
-    const driveType = getDriveType(sharedDriveData ?? {});
+  const driveUserId = (driveData.userId ?? driveData.user_id) as string | undefined;
+  const isOrgSharedDrive = driveData.is_org_shared === true;
+
+  if (isOrgSharedDrive) {
+    const sharedWsSnap = await db
+      .collection("workspaces")
+      .where("organization_id", "==", organizationId)
+      .where("drive_id", "==", driveId)
+      .where("workspace_type", "==", "org_shared")
+      .limit(1)
+      .get();
+    if (sharedWsSnap.empty) {
+      return NextResponse.json({ error: "Shared workspace not found" }, { status: 404 });
+    }
+    const sws = sharedWsSnap.docs[0];
+    const wsData = sws.data();
+    const driveType = getDriveType(driveData);
     const scope = visibilityScopeFromWorkspaceType("org_shared");
     const displayName = getDisplayLabel(
       {
@@ -138,8 +148,8 @@ export async function GET(request: Request) {
     const driveName =
       driveType === "raw" ? "RAW" : driveType === "gallery" ? "Gallery Media" : "Storage";
     return NextResponse.json({
-      workspace_id: sharedTarget.workspaceId,
-      drive_id: sharedTarget.sharedDriveId,
+      workspace_id: sws.id,
+      drive_id: driveId,
       drive_name: driveName,
       workspace_name: displayName,
       visibility_scope: scope,
@@ -147,12 +157,11 @@ export async function GET(request: Request) {
     });
   }
 
-  const driveType = getDriveType(driveData);
-  const driveUserId = (driveData.userId ?? driveData.user_id) as string | undefined;
   if (driveUserId !== uid) {
     return deny(uid, organizationId, "private_requires_own_drive", 403);
   }
 
+  const driveType = getDriveType(driveData);
   const workspaceId = await getOrCreateMyPrivateWorkspaceId(uid, organizationId, driveId);
   if (!workspaceId) {
     return NextResponse.json(

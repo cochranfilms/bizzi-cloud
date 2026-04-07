@@ -59,6 +59,7 @@ import {
   registerCloudFilesPostMutationRefresh,
   scheduleCloudFilesPostMutationRefresh,
 } from "@/lib/cloud-files-post-mutation-refresh";
+import { dedupeScopedPillarDrives } from "@/lib/linked-drive-pillar-dedupe";
 
 async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
   const data = await res.json().catch(() => ({}));
@@ -766,6 +767,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
         creatorOnly,
         teamRouteOwnerUid,
       });
+      const scopedFolderTiles = dedupeScopedPillarDrives(scoped);
 
       // Match team workspace: do not paint an empty folder grid while linked_drives are still loading.
       // Enterprise used to flash empty→full when org + drives resolved out of sync.
@@ -780,7 +782,7 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
       }
 
       if (isCurrent()) {
-        setDriveFolders(mergeDriveFoldersFromScoped(scoped, driveFoldersRef.current));
+        setDriveFolders(mergeDriveFoldersFromScoped(scopedFolderTiles, driveFoldersRef.current));
       }
 
       const driveMap = new Map(
