@@ -6,7 +6,8 @@ export type WorkspaceOnboardingAnalyticsEvent =
   | "step_viewed"
   | "step_completed"
   | "wizard_completed"
-  | "wizard_abandoned";
+  | "wizard_abandoned"
+  | "celebration_viewed";
 
 export function logWorkspaceOnboardingEvent(
   event: WorkspaceOnboardingAnalyticsEvent,

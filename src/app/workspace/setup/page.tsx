@@ -15,6 +15,9 @@ import {
   type UseCase,
 } from "@/lib/workspace-onboarding";
 import { logWorkspaceOnboardingEvent } from "@/lib/workspace-onboarding-analytics";
+import WorkspaceOnboardingCelebrationModal, {
+  type WorkspaceOnboardingCelebrationVariant,
+} from "@/components/workspace/WorkspaceOnboardingCelebrationModal";
 import { Loader2 } from "lucide-react";
 
 const TEAM_TYPE_LABELS: Record<TeamType, string> = {
@@ -67,6 +70,10 @@ function WorkspaceSetupInner() {
   const startedRef = useRef(false);
   const completedRef = useRef(false);
   const lastStepRef = useRef(-1);
+  const settingsCelebrationShownRef = useRef(false);
+
+  const [celebration, setCelebration] = useState<WorkspaceOnboardingCelebrationVariant | null>(null);
+  const lastCelebrationLogged = useRef<string | null>(null);
 
   const persistStepLocal = useCallback(
     (s: number) => {
@@ -201,6 +208,18 @@ function WorkspaceSetupInner() {
   }, [user, router, isReview]);
 
   useEffect(() => {
+    if (loading || !isReview || status !== "completed" || settingsCelebrationShownRef.current) return;
+    settingsCelebrationShownRef.current = true;
+    setCelebration("settings_entry");
+  }, [loading, isReview, status]);
+
+  useEffect(() => {
+    if (!celebration || celebration === lastCelebrationLogged.current) return;
+    lastCelebrationLogged.current = celebration;
+    logWorkspaceOnboardingEvent("celebration_viewed", { variant: celebration });
+  }, [celebration]);
+
+  useEffect(() => {
     if (!loading && user && !startedRef.current) {
       startedRef.current = true;
       logWorkspaceOnboardingEvent("wizard_started", {
@@ -312,13 +331,40 @@ function WorkspaceSetupInner() {
       }
       window.dispatchEvent(new Event("subscription-updated"));
       refetchSubscription();
-      router.push("/dashboard");
-      router.refresh();
+
+      const reviewSave = isReview && isCompletedProfile;
+      if (reviewSave) {
+        setCelebration("review_saved");
+        setStatus("completed");
+      } else {
+        setCelebration("mandatory_complete");
+        setStatus("completed");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const finishToDashboard = () => {
+    setCelebration(null);
+    router.push("/dashboard");
+    router.refresh();
+  };
+
+  const handleCelebrationPrimary = () => {
+    if (celebration === "settings_entry") {
+      setCelebration(null);
+      return;
+    }
+    finishToDashboard();
+  };
+
+  const handleCelebrationSecondary = () => {
+    setCelebration(null);
+    router.push("/dashboard/settings#account");
+    router.refresh();
   };
 
   const progressPct = useMemo(() => ((step + 1) / 3) * 100, [step]);
@@ -341,6 +387,15 @@ function WorkspaceSetupInner() {
 
   return (
     <div className="min-h-screen bg-neutral-100 px-4 py-10 dark:bg-neutral-950 sm:py-16">
+      <WorkspaceOnboardingCelebrationModal
+        open={celebration !== null}
+        variant={celebration ?? "mandatory_complete"}
+        workspaceName={workspaceName}
+        onPrimary={handleCelebrationPrimary}
+        onSecondary={
+          celebration === "settings_entry" ? handleCelebrationSecondary : undefined
+        }
+      />
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <BizziLogoMark width={56} height={56} className="opacity-90" alt="Bizzi Cloud" />
