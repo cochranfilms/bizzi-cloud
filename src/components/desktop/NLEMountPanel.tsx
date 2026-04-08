@@ -35,8 +35,17 @@ const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (Firebase tokens ~1 
 const BRIDGE_POLL_MS = 75;
 const BRIDGE_POLL_MAX_MS = 4000;
 
-function isDesktopShellUserAgent(): boolean {
-  return typeof navigator !== "undefined" && navigator.userAgent.includes(BIZZI_CLOUD_DESKTOP_UA_MARKER);
+/**
+ * True when this document is running inside the Bizzi Electron app.
+ * - Chromium in Electron always includes `Electron/<version>` in the default user agent (even before our custom marker runs).
+ * - `BizziCloudDesktop/1` is appended by `desktop/electron/main.ts` for extra certainty once that build is installed.
+ * - `window.bizzi` appears after preload runs (may be a tick after first paint).
+ */
+function detectBizziDesktopShell(): boolean {
+  if (typeof window !== "undefined" && window.bizzi) return true;
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return ua.includes("Electron/") || ua.includes(BIZZI_CLOUD_DESKTOP_UA_MARKER);
 }
 
 export function NLEMountPanel() {
@@ -51,7 +60,7 @@ export function NLEMountPanel() {
   const [nativeSyncError, setNativeSyncError] = useState<string | null>(null);
   const [conformModalOpen, setConformModalOpen] = useState(false);
 
-  const isDesktopShell = clientReady && isDesktopShellUserAgent();
+  const isDesktopShell = clientReady && detectBizziDesktopShell();
 
   useEffect(() => {
     setClientReady(true);
@@ -59,7 +68,7 @@ export function NLEMountPanel() {
 
   /** Wait for Electron preload (`window.bizzi`) — never use `window.bizzi` during SSR / first paint. */
   useEffect(() => {
-    if (!clientReady || !isDesktopShellUserAgent()) return;
+    if (!clientReady || !detectBizziDesktopShell()) return;
 
     const update = () => setHasDesktopBridge(!!window.bizzi);
     update();
