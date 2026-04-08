@@ -198,8 +198,11 @@ export function NLEMountPanel() {
           </span>
         </h2>
         <p className="text-sm text-neutral-400 mb-4">
-          Native macOS integration—no macFUSE or rclone. Your libraries appear under <strong className="text-neutral-300">Locations</strong> in Finder;
-          files load on demand.
+          Native macOS integration—no macFUSE or rclone. Files load on demand from your{" "}
+          <strong className="text-neutral-300">~/Library/CloudStorage/</strong> area. After Developer ID signing and
+          notarization, Finder usually lists <strong className="text-neutral-300">Bizzi Cloud</strong> under{" "}
+          <strong className="text-neutral-300">Locations</strong> automatically—Apps cannot pin that sidebar; you
+          can drag the open folder onto <strong className="text-neutral-300">Locations</strong> to keep it visible.
         </p>
         {!hasDesktopBridge && (
           <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 rounded border border-amber-500/40 bg-amber-500/10 p-2">
@@ -252,8 +255,13 @@ export function NLEMountPanel() {
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 Switch mounted clips from proxy to full resolution. Same path, different bytes.
               </p>
-              <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
-                Available in Finder under Locations → Bizzi Cloud
+              <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Sync folder is active</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Finder should show <strong className="text-neutral-300">Bizzi Cloud</strong> under Locations when the
+                File Provider extension is fully trusted. Enable it under System Settings → General → Login Items and
+                Extensions if needed. If it still does not appear, open the folder below and drag it into{" "}
+                <strong className="text-neutral-300">Locations</strong>, or run <code className="text-neutral-400">killall Finder</code>{" "}
+                to refresh.
               </p>
               {nativeSyncPath && (
                 <button

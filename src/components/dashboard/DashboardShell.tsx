@@ -8,6 +8,7 @@ import TopNavbar from "./TopNavbar";
 import RightPanel from "./RightPanel";
 import PendingInvitesBanner from "./PendingInvitesBanner";
 import TeamBrandingOnboardingGate from "./TeamBrandingOnboardingGate";
+import WorkspaceOnboardingEnforcement from "./WorkspaceOnboardingEnforcement";
 import BackgroundUploadIndicator from "./BackgroundUploadIndicator";
 import SupportHelpButton from "./SupportHelpButton";
 import GlobalDropZone from "./GlobalDropZone";
@@ -58,6 +59,7 @@ export default function DashboardShell({
   const mobilePanelBtnTop = "top-20 md:top-16";
 
   return (
+    <WorkspaceOnboardingEnforcement>
     <UppyUploadProvider>
       <GlobalDropZone />
       <RightPanelContext.Provider
@@ -134,8 +136,9 @@ export default function DashboardShell({
             />
           </div>
         </div>
-      </div>
-    </RightPanelContext.Provider>
+        </div>
+      </RightPanelContext.Provider>
     </UppyUploadProvider>
+    </WorkspaceOnboardingEnforcement>
   );
 }

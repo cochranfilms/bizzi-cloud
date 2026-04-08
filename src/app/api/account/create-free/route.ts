@@ -73,6 +73,8 @@ export async function POST(request: Request) {
       stripe_subscription_id: null,
       stripe_updated_at: null,
       display_name: displayName,
+      workspace_onboarding_status: "pending",
+      workspace_onboarding_version: 1,
     },
     { merge: true }
   );

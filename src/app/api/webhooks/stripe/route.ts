@@ -35,6 +35,7 @@ import {
 import { computeStorageFromSubscription } from "@/lib/stripe-storage-from-subscription";
 import { ORGANIZATION_INVITES_COLLECTION } from "@/lib/organization-invites";
 import { ensurePersonalTeamRecord } from "@/lib/personal-team-auth";
+import { copyWorkspaceDisplayNameToTeamSettingsIfEmpty } from "@/lib/sync-workspace-display-name-to-team-settings";
 import {
   cochranConnectJsonLog,
   mergeCochranConnectProfileFromStripeAccount,
@@ -197,6 +198,14 @@ export async function POST(request: Request) {
         }
       }
 
+      const profileBeforeCheckout = await db.collection("profiles").doc(userId).get();
+      const workspaceOnboardingBootstrap = !profileBeforeCheckout.exists
+        ? ({
+            workspace_onboarding_status: "pending" as const,
+            workspace_onboarding_version: 1,
+          } as const)
+        : {};
+
       await db.collection("profiles").doc(userId).set(
         {
           userId,
@@ -211,6 +220,7 @@ export async function POST(request: Request) {
           billing_status: "active",
           unpaid_invoice_url: null,
           stripe_updated_at: new Date().toISOString(),
+          ...workspaceOnboardingBootstrap,
         },
         { merge: true }
       );
@@ -508,6 +518,7 @@ export async function POST(request: Request) {
           },
           { allowPlanBootstrap: true }
         );
+        await copyWorkspaceDisplayNameToTeamSettingsIfEmpty(db, userId);
         if (planId && planId !== "free") {
           await ensureDefaultDrivesForUser(userId);
         }

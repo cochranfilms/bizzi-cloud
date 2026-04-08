@@ -141,6 +141,14 @@ ipcMain.handle("native-sync-enable", async (_e, { apiBaseUrl, token }: { apiBase
     apiBaseUrl: baseUrl,
     getAuthToken: async () => token,
   });
+  // Opening the CloudStorage path nudges Finder to show the domain; macOS still controls Locations sidebar.
+  if (result.syncPath) {
+    setImmediate(() => {
+      void shell.openPath(result.syncPath).then((errMsg) => {
+        if (errMsg) desktopLog.warn("[native-sync] shell.openPath after enable", errMsg);
+      });
+    });
+  }
   return result;
 });
 ipcMain.handle("native-sync-disable", () => fileProviderService.disable());

@@ -173,6 +173,8 @@ export async function POST(request: Request) {
       stripe_customer_id: session.customer ?? null,
       stripe_subscription_id: subId,
       stripe_updated_at: new Date().toISOString(),
+      workspace_onboarding_status: "pending",
+      workspace_onboarding_version: 1,
     },
     { merge: true }
   );

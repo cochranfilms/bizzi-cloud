@@ -5,6 +5,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { ensurePersonalTeamShellOnUserIntent, getOwnedPersonalTeamShellState } from "@/lib/personal-team-auth";
+import { copyWorkspaceDisplayNameToTeamSettingsIfEmpty } from "@/lib/sync-workspace-display-name-to-team-settings";
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       { status: 403 }
     );
   }
+  await copyWorkspaceDisplayNameToTeamSettingsIfEmpty(db, uid);
   const state = await getOwnedPersonalTeamShellState(db, uid);
   return NextResponse.json({
     ok: true,

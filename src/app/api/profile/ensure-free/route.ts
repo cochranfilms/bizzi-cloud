@@ -36,6 +36,8 @@ export async function POST(request: Request) {
         plan_id: "free",
         storage_quota_bytes: FREE_TIER_STORAGE_BYTES,
         storage_used_bytes: 0,
+        workspace_onboarding_status: "pending",
+        workspace_onboarding_version: 1,
       },
       { merge: true }
     );

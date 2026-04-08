@@ -6,6 +6,7 @@
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { userHasActiveOrgAdminSeat } from "@/lib/enterprise-access";
 import type { PersonalStatus } from "@/types/profile";
+import { parseWorkspaceOnboardingFromProfile } from "@/lib/workspace-onboarding";
 import { NextResponse } from "next/server";
 
 const RECOVERABLE_STATUSES: PersonalStatus[] = ["scheduled_delete", "recoverable"];
@@ -36,6 +37,9 @@ export async function GET(request: Request) {
       personal_restore_available_until: null,
       enterprise_orgs: [],
       redirect_to_interstitial: false,
+      workspace_onboarding_pending: false,
+      workspace_onboarding_status: null,
+      workspace_onboarding_version: null,
     });
   }
 
@@ -69,6 +73,9 @@ export async function GET(request: Request) {
   /** Active org admin on any enterprise org (organization_seats), not `organizations.created_by`. */
   const owns_org = await userHasActiveOrgAdminSeat(uid, db);
 
+  const wo = parseWorkspaceOnboardingFromProfile(profileData as Record<string, unknown>);
+  const workspace_onboarding_pending = wo.status === "pending";
+
   return NextResponse.json({
     personal_status: personalStatus,
     personal_restore_available_until: restoreUntil
@@ -78,5 +85,8 @@ export async function GET(request: Request) {
     redirect_to_interstitial,
     owns_org,
     can_delete_identity: !owns_org,
+    workspace_onboarding_pending,
+    workspace_onboarding_status: wo.status,
+    workspace_onboarding_version: wo.version,
   });
 }

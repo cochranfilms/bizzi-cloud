@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import Image from "next/image";
-import { User, Camera, Loader2, Check } from "lucide-react";
+import Link from "next/link";
+import { User, Camera, Loader2, Check, Sparkles } from "lucide-react";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
 import SettingsSectionScope from "@/components/settings/SettingsSectionScope";
 import { productSettingsCopy } from "@/lib/product-settings-copy";
@@ -118,6 +119,26 @@ export default function PersonalProfileSettingsSection() {
               <Check className="h-4 w-4" /> Saved
             </p>
           )}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-cyan-200/80 bg-cyan-50/50 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20">
+        <div className="flex items-start gap-3">
+          <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-neutral-900 dark:text-white">
+              Workspace setup
+            </p>
+            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+              Update your workspace name, how you work, and your preferred performance region.
+            </p>
+            <Link
+              href="/workspace/setup?review=1"
+              className="mt-3 inline-flex text-sm font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
+            >
+              Open workspace setup
+            </Link>
+          </div>
         </div>
       </div>
     </section>

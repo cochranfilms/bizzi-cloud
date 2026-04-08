@@ -15,6 +15,7 @@ import {
   getOwnedPersonalTeamShellState,
   getPersonalTeamSeatMembershipsForProfile,
 } from "@/lib/personal-team-auth";
+import { parseWorkspaceOnboardingFromProfile } from "@/lib/workspace-onboarding";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
 
@@ -63,6 +64,8 @@ export async function GET(request: Request) {
     auth.uid
   );
 
+  const wo = parseWorkspaceOnboardingFromProfile(data as Record<string, unknown>);
+
   return NextResponse.json({
     public_slug: handle,
     handle,
@@ -89,6 +92,10 @@ export async function GET(request: Request) {
     team_shell_exists: ownedShellState.team_shell_exists,
     team_seats_enabled: ownedShellState.team_seats_enabled,
     team_setup_mode: ownedShellState.team_setup_mode,
+    workspace_onboarding_status: wo.status,
+    workspace_onboarding_version: wo.version,
+    workspace_onboarding_completed_at: wo.completedAt,
+    workspace_onboarding: wo.onboarding,
   });
 }
 

@@ -9,6 +9,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { personalTeamSeatDocId } from "@/lib/personal-team-constants";
 import { ensurePersonalTeamShellOnUserIntent } from "@/lib/personal-team-auth";
+import { copyWorkspaceDisplayNameToTeamSettingsIfEmpty } from "@/lib/sync-workspace-display-name-to-team-settings";
 import { DUPLICATE_LINKED_FOLDER_NAME, linkedDriveDisplayKey } from "@/lib/move-and-folder-naming";
 
 const ACTIVE_SEAT = new Set(["active", "cold_storage"]);
@@ -130,6 +131,7 @@ export async function POST(request: Request) {
       uid,
       ownerProf.data() as Record<string, unknown> | undefined
     );
+    await copyWorkspaceDisplayNameToTeamSettingsIfEmpty(db, uid);
   }
 
   if (uid !== teamOwnerUserId) {
