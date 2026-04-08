@@ -22,6 +22,61 @@ function laterIso(a: string | null | undefined, b: string | null | undefined): s
   return a > b ? a : b;
 }
 
+function workspaceCompletedAtToIso(v: unknown): string | null {
+  if (typeof v === "string" && v.trim()) return v;
+  if (
+    v != null &&
+    typeof v === "object" &&
+    "toDate" in v &&
+    typeof (v as { toDate: () => Date }).toDate === "function"
+  ) {
+    try {
+      return (v as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function workspaceOnboardingFromProfile(data: Record<string, unknown>): {
+  status: "pending" | "completed" | null;
+  version: number | null;
+  completedAt: string | null;
+  workspaceDisplayName: string | null;
+  collaborationMode: string | null;
+  teamType: string | null;
+  useCase: string | null;
+  preferredPerformanceRegion: string | null;
+} {
+  const st = data.workspace_onboarding_status;
+  const status =
+    st === "pending" || st === "completed" ? (st as "pending" | "completed") : null;
+  const ver = data.workspace_onboarding_version;
+  const version = typeof ver === "number" && Number.isFinite(ver) ? ver : null;
+  const completedAt = workspaceCompletedAtToIso(data.workspace_onboarding_completed_at);
+  const wo = data.workspace_onboarding;
+  const blob =
+    wo && typeof wo === "object" && !Array.isArray(wo)
+      ? (wo as Record<string, unknown>)
+      : {};
+  return {
+    status,
+    version,
+    completedAt,
+    workspaceDisplayName:
+      typeof blob.workspace_display_name === "string" ? blob.workspace_display_name : null,
+    collaborationMode:
+      typeof blob.collaboration_mode === "string" ? blob.collaboration_mode : null,
+    teamType: typeof blob.team_type === "string" ? blob.team_type : null,
+    useCase: typeof blob.use_case === "string" ? blob.use_case : null,
+    preferredPerformanceRegion:
+      typeof blob.preferred_performance_region === "string"
+        ? blob.preferred_performance_region
+        : null,
+  };
+}
+
 function activityTsToIso(ts: unknown): string | null {
   if (
     ts != null &&
@@ -179,10 +234,12 @@ export async function GET(request: Request) {
     supportFlags: string[];
     signupDate: string;
     addonIds: string[];
+    workspaceOnboarding: ReturnType<typeof workspaceOnboardingFromProfile>;
   }> = profiles.map((p) => {
     const row = p as ProfileRow;
     const planId = (row.plan_id as string) || "free";
     const authRec = authRecords.get(row.id);
+    const raw = p as Record<string, unknown>;
 
     return {
       id: row.id,
@@ -204,6 +261,7 @@ export async function GET(request: Request) {
       supportFlags: [],
       signupDate: authRec?.createdAt ?? new Date().toISOString(),
       addonIds: Array.isArray(row.addon_ids) ? row.addon_ids : [],
+      workspaceOnboarding: workspaceOnboardingFromProfile(raw),
     };
   });
 

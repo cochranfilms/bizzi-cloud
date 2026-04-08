@@ -35,6 +35,7 @@ import {
 } from "@/lib/storage-folder-model-policy";
 import { useDashboardItemReveal } from "@/components/dashboard/DashboardRouteFade";
 import StorageFolderCoverThumbnail from "@/components/dashboard/StorageFolderCoverThumbnail";
+import TransfersFolderImmersiveBackdrop from "@/components/dashboard/TransfersFolderImmersiveBackdrop";
 
 export interface FolderItem {
   name: string;
@@ -276,9 +277,13 @@ export default function FolderCard({
   );
 
   const isSystemFolder = item.isSystemFolder === true;
+  const isTransfersRoot = item.systemFolderRole === "transfers_root";
   const useThumbChrome = presentation === "thumbnail" && !isSystemFolder;
   /** Default grid: cover spans whole card (not only the icon tile). */
-  const defaultGridFullBleedCover = !isSystemFolder && !!item.coverFile;
+  const defaultGridFullBleedCover =
+    !isSystemFolder && (!!item.coverFile || isTransfersRoot);
+  /** Thumbnail/list hero styling: file cover or Transfers system folder clouds backdrop. */
+  const thumbHeroLikeCover = !!item.coverFile || isTransfersRoot;
   const sizeClasses = SIZE_CLASSES[layoutSize];
   const aspectClass = getCardAspectClass(layoutAspectRatio ?? "landscape");
   /** Full-width 16:9 tiles are huge on phones; base folders use a compact row on small screens. */
@@ -321,7 +326,7 @@ export default function FolderCard({
       ? "ring-2 ring-inset ring-bizzi-blue shadow-md shadow-bizzi-blue/20 dark:ring-bizzi-cyan dark:shadow-bizzi-cyan/25"
       : isDragOver
         ? "ring-2 ring-inset ring-bizzi-blue/60 bg-bizzi-blue/10 dark:ring-bizzi-cyan/50"
-        : item.coverFile
+        : thumbHeroLikeCover
           ? "ring-1 ring-inset ring-neutral-200/80 dark:ring-neutral-700/55"
           : "ring-1 ring-inset ring-neutral-200/80 bg-neutral-100/45 dark:ring-neutral-700/55 dark:bg-neutral-900/40"
   } ${
@@ -385,7 +390,9 @@ export default function FolderCard({
         )}
         {useThumbChrome ? (
           <>
-            {item.coverFile ? (
+            {isTransfersRoot ? (
+              <TransfersFolderImmersiveBackdrop />
+            ) : item.coverFile ? (
               <>
                 <StorageFolderCoverThumbnail
                   variant="backdrop"
@@ -410,7 +417,7 @@ export default function FolderCard({
               <div className="relative">
                 <div
                   className={`flex items-center justify-center rounded-2xl ${iconBoxClass} ${
-                    item.coverFile
+                    thumbHeroLikeCover
                       ? "bg-white/25 text-white shadow-md ring-1 ring-white/40 backdrop-blur-[2px] dark:bg-black/35 dark:text-white dark:ring-white/25"
                       : "bg-bizzi-blue/12 text-bizzi-blue shadow-sm dark:bg-bizzi-blue/25 dark:text-bizzi-cyan"
                   }`}
@@ -431,7 +438,7 @@ export default function FolderCard({
               </div>
               <p
                 className={`mt-1 text-xl font-semibold tabular-nums drop-shadow-sm ${
-                  item.coverFile
+                  thumbHeroLikeCover
                     ? "text-white"
                     : "text-neutral-800 dark:text-neutral-100"
                 }`}
@@ -440,7 +447,7 @@ export default function FolderCard({
               </p>
               <p
                 className={`text-[10px] font-semibold uppercase tracking-wider ${
-                  item.coverFile ? "text-white/85" : "text-neutral-500 dark:text-neutral-400"
+                  thumbHeroLikeCover ? "text-white/85" : "text-neutral-500 dark:text-neutral-400"
                 }`}
               >
                 {item.items === 1 ? "item" : "items"}
@@ -468,7 +475,7 @@ export default function FolderCard({
               <div className="absolute inset-x-0 bottom-0 z-[4] px-3 pb-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                 <p
                   className={`truncate text-center text-xs font-medium drop-shadow-sm ${
-                    item.coverFile ? "text-white" : "text-neutral-800 dark:text-white"
+                    thumbHeroLikeCover ? "text-white" : "text-neutral-800 dark:text-white"
                   }`}
                 >
                   {item.name}
@@ -478,14 +485,16 @@ export default function FolderCard({
           </>
         ) : (
           <>
-            {defaultGridFullBleedCover ? (
+            {isTransfersRoot ? (
+              <TransfersFolderImmersiveBackdrop />
+            ) : defaultGridFullBleedCover && item.coverFile ? (
               <>
                 <StorageFolderCoverThumbnail
                   variant="backdrop"
                   cover={{
-                    objectKey: item.coverFile!.objectKey,
-                    fileName: item.coverFile!.fileName,
-                    contentType: item.coverFile!.contentType,
+                    objectKey: item.coverFile.objectKey,
+                    fileName: item.coverFile.fileName,
+                    contentType: item.coverFile.contentType,
                   }}
                 />
                 <div

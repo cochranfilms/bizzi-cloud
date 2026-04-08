@@ -7,6 +7,7 @@ import { formatDateTime } from "@/admin/utils/formatDateTime";
 import { mapPlanToLabel } from "@/admin/utils/mapPlanToLabel";
 import StatusBadge from "../shared/StatusBadge";
 import type { AdminUser } from "@/admin/types/adminUsers.types";
+import UserWorkspaceOnboardingSection from "./UserWorkspaceOnboardingSection";
 
 interface UserDetailDrawerProps {
   user: AdminUser | null;
@@ -55,6 +56,17 @@ export default function UserDetailDrawer({
               </div>
             )}
           </dl>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-200/50 bg-gradient-to-br from-cyan-50/50 via-white to-white p-5 dark:border-cyan-900/30 dark:from-cyan-950/25 dark:via-neutral-900 dark:to-neutral-900/90">
+          <h4 className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-800 dark:text-cyan-300">
+            <span className="inline-block h-2 w-2 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/40" />
+            Workspace setup
+          </h4>
+          <p className="mb-4 text-xs text-neutral-500 dark:text-neutral-400">
+            Answers from the in-app onboarding wizard (and optional Settings updates).
+          </p>
+          <UserWorkspaceOnboardingSection snapshot={user.workspaceOnboarding ?? null} />
         </div>
 
         <div>

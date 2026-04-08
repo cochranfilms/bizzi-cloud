@@ -9,33 +9,16 @@ import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceCon
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
+import {
+  hexToRgb,
+  immersiveAppVariantBackdropStyle,
+  immersiveWorkspaceEnvironmentKey,
+} from "@/lib/immersive-app-backdrop";
 
 /** Above dashboard TopNavbar (z-60) and mobile drawer (z-50) */
 const OVERLAY_Z = 200;
 
 const BACKDROP_BLUR = "blur(56px) saturate(1.08)";
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return null;
-  const n = parseInt(m[1], 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-
-/** Vertical wash: light mode stays white-leaning; dark mode black-leaning. Hue comes from dashboard Theme (`accentColor`). */
-function immersiveAppBackdropLinear(accentRgb: string, isDark: boolean): string {
-  if (isDark) {
-    return `linear-gradient(180deg, rgba(0,0,0,0.72) 0%, rgba(${accentRgb},0.11) 34%, rgba(${accentRgb},0.19) 66%, rgba(${accentRgb},0.28) 100%)`;
-  }
-  return `linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(${accentRgb},0.1) 38%, rgba(${accentRgb},0.17) 68%, rgba(${accentRgb},0.24) 100%)`;
-}
-
-function workspaceEnvironmentKey(pathname: string | null): "personal" | "team" | "organization" {
-  const p = pathname ?? "";
-  if (p.startsWith("/enterprise")) return "organization";
-  if (p.startsWith("/team/")) return "team";
-  return "personal";
-}
 
 export interface ImmersiveFilePreviewShellProps {
   onClose: () => void;
@@ -85,7 +68,7 @@ export default function ImmersiveFilePreviewShell({
   const appearance = useDashboardAppearanceOptional();
   const enterprise = useEnterpriseOptional();
   const teamWs = usePersonalTeamWorkspace();
-  const envKey = workspaceEnvironmentKey(pathname);
+  const envKey = immersiveWorkspaceEnvironmentKey(pathname);
 
   const workspaceAccent = useMemo(
     () =>
@@ -135,6 +118,11 @@ export default function ImmersiveFilePreviewShell({
   const isGallery = variant === "gallery";
 
   const washOpacity = isDark ? ambientStrengthDark : ambientStrength;
+  const appBackdropLayers = immersiveAppVariantBackdropStyle({
+    accentRgb,
+    isDark,
+    pathname,
+  });
   /** Theme-tinted veil so the dashboard recedes; blur works where the engine supports it */
   const backdropStyle: CSSProperties = isGallery
     ? {
@@ -143,19 +131,11 @@ export default function ImmersiveFilePreviewShell({
         backgroundColor: isDark ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.64)",
         backgroundImage: `radial-gradient(ellipse 85% 60% at 50% -5%, rgba(${accentRgb},${washOpacity}), transparent 55%), linear-gradient(180deg, rgba(${accentRgb},${washOpacity * 0.45}) 0%, transparent 35%)`,
       }
-    : isDark
-      ? {
-          WebkitBackdropFilter: BACKDROP_BLUR,
-          backdropFilter: BACKDROP_BLUR,
-          backgroundColor: "rgba(0, 0, 0, 0.38)",
-          backgroundImage: `${immersiveAppBackdropLinear(accentRgb, true)}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.12, washOpacity * 0.4)}), transparent 56%)`,
-        }
-      : {
-          WebkitBackdropFilter: BACKDROP_BLUR,
-          backdropFilter: BACKDROP_BLUR,
-          backgroundColor: "rgba(255, 255, 255, 0.14)",
-          backgroundImage: `${immersiveAppBackdropLinear(accentRgb, false)}, radial-gradient(ellipse 92% 72% at 50% -8%, rgba(${accentRgb},${Math.max(0.08, washOpacity * 0.35)}), transparent 56%)`,
-        };
+    : {
+        WebkitBackdropFilter: BACKDROP_BLUR,
+        backdropFilter: BACKDROP_BLUR,
+        ...appBackdropLayers,
+      };
 
   const headerChromeBorder: CSSProperties = isGallery
     ? { borderBottom: "1px solid rgba(255,255,255,0.22)" }

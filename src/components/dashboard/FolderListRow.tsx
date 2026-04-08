@@ -36,6 +36,7 @@ import type { DisplayContext } from "@/lib/metadata-display";
 import type { FolderRollupCoverage } from "@/lib/metadata-display";
 import { buildFolderDisplayMetadata } from "@/lib/metadata-display";
 import StorageFolderCoverThumbnail from "@/components/dashboard/StorageFolderCoverThumbnail";
+import TransfersFolderImmersiveBackdrop from "@/components/dashboard/TransfersFolderImmersiveBackdrop";
 
 interface FolderListRowProps {
   item: FolderItem;
@@ -112,6 +113,7 @@ export default function FolderListRow({
   const [moveOpen, setMoveOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const pathname = usePathname();
+  const isTransfersRoot = item.systemFolderRole === "transfers_root";
   const isEnterpriseContext =
     typeof pathname === "string" && pathname.startsWith("/enterprise");
   const { user } = useAuth();
@@ -301,7 +303,9 @@ export default function FolderListRow({
         <td className="px-4 py-2">
           <div className="flex items-center gap-3">
             <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-              {item.coverFile ? (
+              {isTransfersRoot ? (
+                <TransfersFolderImmersiveBackdrop imgClassName="rounded-lg" />
+              ) : item.coverFile ? (
                 <>
                   <StorageFolderCoverThumbnail
                     variant="backdrop"
@@ -318,7 +322,13 @@ export default function FolderListRow({
                   />
                 </>
               ) : null}
-              <Icon className="relative z-[2] h-7 w-7 text-neutral-600 dark:text-neutral-400 drop-shadow" />
+              <Icon
+                className={`relative z-[2] h-7 w-7 drop-shadow ${
+                  isTransfersRoot || item.coverFile
+                    ? "text-white dark:text-white"
+                    : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              />
             </div>
             <span className="truncate font-medium text-neutral-900 dark:text-white" title={item.name}>
               {item.name}

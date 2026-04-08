@@ -66,6 +66,35 @@ export default function UsersPage() {
       cell: (r) => mapPlanToLabel(r.plan),
     },
     {
+      id: "workspaceSetup",
+      header: "Workspace setup",
+      cell: (r) => {
+        const wo = r.workspaceOnboarding;
+        if (!wo?.status) {
+          const has =
+            (wo?.workspaceDisplayName?.trim().length ?? 0) > 0 ||
+            wo?.collaborationMode ||
+            wo?.teamType;
+          if (!has) return <span className="text-neutral-400">—</span>;
+        }
+        if (wo?.status === "completed") {
+          return (
+            <span className="inline-flex rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">
+              Done
+            </span>
+          );
+        }
+        if (wo?.status === "pending") {
+          return (
+            <span className="inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100">
+              Pending
+            </span>
+          );
+        }
+        return <span className="text-neutral-400">—</span>;
+      },
+    },
+    {
       id: "status",
       header: "Status",
       cell: (r) => (
