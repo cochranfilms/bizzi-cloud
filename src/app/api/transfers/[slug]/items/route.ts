@@ -5,6 +5,7 @@ import { logEnterpriseSecurityEvent } from "@/lib/enterprise-security-log";
 import { canAccessBackupFileById } from "@/lib/file-access";
 import { isBackupFileActiveForListing } from "@/lib/backup-file-lifecycle";
 import { dedupeIncomingTransferFiles } from "@/lib/transfer-resolve";
+import { resolveBackupFileIdForTransferAttachment } from "@/lib/transfer-storage-package";
 import { userCanManageTransfer } from "@/lib/transfer-team-access";
 import { NextResponse } from "next/server";
 
@@ -218,25 +219,43 @@ export async function POST(
     });
   }
 
-  const backupIdSet = [...new Set(toAdd.map((t) => t.backupFileId!).filter(Boolean))];
-  const metaById = new Map<string, Record<string, unknown>>();
-  for (const bid of backupIdSet) {
-    const s = await db.collection("backup_files").doc(bid).get();
-    if (s.exists) metaById.set(bid, s.data() as Record<string, unknown>);
-  }
-
   const now = new Date().toISOString();
   const sortStart = existing.length;
-  const newRows = toAdd.map((f) => ({
-    id: generateId(),
-    name: f.name,
-    path: f.path,
-    type: "file" as const,
-    views: 0,
-    downloads: 0,
-    backup_file_id: f.backupFileId!.trim(),
-    object_key: f.objectKey ?? null,
-  }));
+
+  const newRows: Array<{
+    id: string;
+    name: string;
+    path: string;
+    type: "file";
+    views: number;
+    downloads: number;
+    backup_file_id: string;
+    object_key: string | null;
+  }> = [];
+  const metaById = new Map<string, Record<string, unknown>>();
+  for (const f of toAdd) {
+    const rawBid = f.backupFileId!.trim();
+    const resolved = await resolveBackupFileIdForTransferAttachment(
+      db,
+      uid,
+      ref,
+      parent as Record<string, unknown>,
+      slug,
+      rawBid
+    );
+    newRows.push({
+      id: generateId(),
+      name: resolved.name || f.name,
+      path: resolved.displayPath,
+      type: "file",
+      views: 0,
+      downloads: 0,
+      backup_file_id: resolved.backupFileId,
+      object_key: resolved.objectKey ?? f.objectKey ?? null,
+    });
+    const s = await db.collection("backup_files").doc(resolved.backupFileId).get();
+    if (s.exists) metaById.set(resolved.backupFileId, s.data() as Record<string, unknown>);
+  }
 
   const updatedFiles = [
     ...existing.map((e) => ({

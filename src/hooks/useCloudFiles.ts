@@ -35,6 +35,10 @@ import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise } from "@/context/EnterpriseContext";
 import type { LinkedDrive } from "@/types/backup";
 import { usePathname } from "next/navigation";
+import {
+  STORAGE_UPLOAD_COMPLETE_EVENT,
+  type StorageUploadCompleteDetail,
+} from "@/lib/storage-upload-complete-event";
 import type {
   DocumentData,
   Firestore,
@@ -1344,6 +1348,29 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
     if (!subscribeDriveListing) return;
     void fetchRecentUploads();
   }, [subscribeDriveListing, fetchRecentUploads, storageVersion]);
+
+  /** Per-file Uppy refresh for Recent uploads (debounced in modal), workspace-scoped like the files API. */
+  useEffect(() => {
+    if (!subscribeDriveListing) return;
+    if (typeof window === "undefined") return;
+    const handler = (ev: Event) => {
+      const detail = (ev as CustomEvent<StorageUploadCompleteDetail | undefined>).detail;
+      const selected =
+        selectedWorkspaceId != null && selectedWorkspaceId !== ""
+          ? selectedWorkspaceId
+          : null;
+      if (selected != null) {
+        const uploadWs =
+          detail?.workspaceId != null && detail.workspaceId !== ""
+            ? detail.workspaceId
+            : null;
+        if (uploadWs != null && uploadWs !== selected) return;
+      }
+      void fetchRecentUploads();
+    };
+    window.addEventListener(STORAGE_UPLOAD_COMPLETE_EVENT, handler);
+    return () => window.removeEventListener(STORAGE_UPLOAD_COMPLETE_EVENT, handler);
+  }, [subscribeDriveListing, fetchRecentUploads, selectedWorkspaceId]);
 
   /** Subscribes to backup_files for a drive. Returns unsubscribe. Use for real-time updates (e.g. mount uploads). */
   const subscribeToDriveFiles = useCallback(

@@ -44,6 +44,10 @@ import {
   isLinkedDriveFolderModelV2,
   isStorageFoldersV2PillarDrive,
 } from "@/lib/linked-drive-folder-model";
+import {
+  STORAGE_UPLOAD_COMPLETE_EVENT,
+  type StorageUploadCompleteDetail,
+} from "@/lib/storage-upload-complete-event";
 import ItemActionsMenu from "./ItemActionsMenu";
 import { BulkActionBar } from "./BulkActionBar";
 import BulkMoveModal from "./BulkMoveModal";
@@ -1504,15 +1508,16 @@ export default function FileGrid({
     }
   }, [storageVersion, currentDrive, loadDriveFiles]);
 
-  // Refresh when Uppy upload completes (global drop or + New) so files appear without manual refresh
+  // Refresh when Uppy finalizes each storage file (debounced) — same channel as Recent uploads.
   useEffect(() => {
-    const handler = () => {
-      if (currentDrive) {
-        loadDriveFiles(currentDrive.id, { silent: true });
-      }
+    const handler = (ev: Event) => {
+      if (!currentDrive) return;
+      const detail = (ev as CustomEvent<StorageUploadCompleteDetail | undefined>).detail;
+      if (detail?.driveId != null && detail.driveId !== currentDrive.id) return;
+      loadDriveFiles(currentDrive.id, { silent: true });
     };
-    window.addEventListener("storage-upload-complete", handler);
-    return () => window.removeEventListener("storage-upload-complete", handler);
+    window.addEventListener(STORAGE_UPLOAD_COMPLETE_EVENT, handler);
+    return () => window.removeEventListener(STORAGE_UPLOAD_COMPLETE_EVENT, handler);
   }, [currentDrive, loadDriveFiles]);
 
   // Real-time subscription: mount uploads appear in web app without refresh

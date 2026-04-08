@@ -43,6 +43,7 @@ import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 import { useTheme } from "@/context/ThemeContext";
 import { useUppyBizziThemeVariables } from "@/hooks/useUppyBizziTheme";
 import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
+import { dispatchStorageUploadComplete } from "@/lib/storage-upload-complete-event";
 import { Upload, ChevronUp, ChevronDown, X, Loader2, Check } from "lucide-react";
 import "@/styles/uppy-bizzi-theme.css";
 import "@/styles/uppy-bizzi-premium.css";
@@ -292,7 +293,10 @@ export default function UppyUploadModal({
       }
       storageGridRefreshTimerRef.current = setTimeout(() => {
         storageGridRefreshTimerRef.current = null;
-        window.dispatchEvent(new CustomEvent("storage-upload-complete"));
+        dispatchStorageUploadComplete({
+          driveId,
+          workspaceId: workspaceId ?? null,
+        });
       }, 380);
     };
 

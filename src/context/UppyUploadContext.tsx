@@ -11,6 +11,7 @@ import {
 import UppyUploadModal from "@/components/upload/UppyUploadModal";
 import { useBackup } from "@/context/BackupContext";
 import type { GalleryManageUploadLifecycleEvent } from "@/lib/gallery-manage-upload-lifecycle";
+import { dispatchStorageUploadComplete } from "@/lib/storage-upload-complete-event";
 
 export interface OpenPanelOptions {
   galleryId?: string;
@@ -299,9 +300,11 @@ export function UppyUploadProvider({ children }: { children: React.ReactNode }) 
 
   const handleUploadComplete = useCallback(async () => {
     bumpStorageVersion();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("storage-upload-complete"));
-    }
+    const p = panelRef.current;
+    dispatchStorageUploadComplete({
+      driveId: p.driveId,
+      workspaceId: p.workspaceId,
+    });
     await onUploadComplete?.();
   }, [bumpStorageVersion, onUploadComplete]);
 

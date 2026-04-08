@@ -49,6 +49,12 @@ export async function permanentlyDeleteStorageFolderSubtree(
     throw new StorageFolderAccessError("Folder not found", 404);
   }
   const root = rootSnap.data()!;
+  if (
+    root.system_folder_role === "transfers_root" ||
+    root.protected_deletion === true
+  ) {
+    throw new StorageFolderAccessError("This folder cannot be deleted", 403);
+  }
   if (root.lifecycle_state !== BACKUP_LIFECYCLE_TRASHED) {
     throw new StorageFolderAccessError("Folder is not in trash", 400);
   }

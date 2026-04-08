@@ -1389,8 +1389,20 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
 
         // Gallery Media drive: always use a subfolder so files aren't mixed at root.
         // (Per-gallery subfolders come from uploadFilesToGallery on the gallery page.)
-        const isGalleryDrive = drive.name === "Gallery Media";
+        const isGalleryDrive = drive.name === "Gallery Media" && !options?.attachToTransfer?.slug;
         const pathPrefix = isGalleryDrive ? `uploads_${Date.now()}` : "";
+
+        const transferPlacementByQueuedId = new Map<
+          string,
+          {
+            linked_drive_id: string;
+            folder_id: string | null;
+            file_name: string;
+            file_name_compare_key: string;
+            folder_path_ids: string[];
+            relative_path: string;
+          }
+        >();
 
         let bytesSynced = 0;
         const completedBytesRef = { current: 0 };
@@ -1429,16 +1441,19 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             completedBytesRef.current += file.size;
             bytesSynced = completedBytesRef.current;
             const idToken = await getCurrentUserIdToken(false);
+            const transferPlacement = transferPlacementByQueuedId.get(ev.fileId);
+            const innerRel = getUploadRelativePath(file, file.name);
+            const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
+            const placementRel = transferPlacement?.relative_path ?? relPath;
+            const placementDriveId = transferPlacement?.linked_drive_id ?? drive.id;
             const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
-              linked_drive_id: drive.id,
+              linked_drive_id: placementDriveId,
               userId: user.uid,
               status: "completed",
               files_count: 1,
               bytes_synced: file.size,
               completed_at: new Date(),
             });
-            const innerRel = getUploadRelativePath(file, file.name);
-            const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
             const workspaceFields = await getWorkspaceFieldsForOrgDrive(
               drive,
               idToken ?? null,
@@ -1447,9 +1462,9 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             );
             const fileRef = await addDoc(collection(db, "backup_files"), {
               backup_snapshot_id: snapshotRef.id,
-              linked_drive_id: drive.id,
+              linked_drive_id: placementDriveId,
               userId: user.uid,
-              relative_path: relPath,
+              relative_path: placementRel,
               object_key: ev.objectKey,
               size_bytes: file.size,
               content_type: file.type || "application/octet-stream",
@@ -1461,12 +1476,20 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
               ingest_state: "ready",
               organization_id: drive.organization_id ?? null,
+              ...(transferPlacement
+                ? {
+                    folder_id: transferPlacement.folder_id,
+                    file_name: transferPlacement.file_name,
+                    file_name_compare_key: transferPlacement.file_name_compare_key,
+                    folder_path_ids: transferPlacement.folder_path_ids,
+                  }
+                : {}),
               ...workspaceFields,
               ...personalTeamFileFields(drive),
-              ...macosPackageFirestoreFieldsFromRelativePath(relPath),
-              ...creativeFirestoreFieldsFromRelativePath(relPath),
+              ...macosPackageFirestoreFieldsFromRelativePath(placementRel),
+              ...creativeFirestoreFieldsFromRelativePath(placementRel),
             });
-            const displayPath = `${drive.name}/${relPath}`.replace(/\/+/g, "/");
+            const displayPath = `${drive.name}/${placementRel}`.replace(/\/+/g, "/");
             if (options?.attachToTransfer?.slug && idToken) {
               const base = typeof window !== "undefined" ? window.location.origin : "";
               const attachRes = await fetch(
@@ -1501,7 +1524,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               backupFileId: fileRef.id,
               objectKey: ev.objectKey,
             });
-            await updateDoc(doc(db, "linked_drives", drive.id), {
+            await updateDoc(doc(db, "linked_drives", placementDriveId), {
               last_synced_at: new Date().toISOString(),
             });
             updateFile(ev.fileId, { status: "completed", bytesSynced: file.size }, bytesSynced);
@@ -1558,7 +1581,42 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           const item = fileItems[i];
           updateFile(item.id, { status: "uploading" });
           const innerRel = getUploadRelativePath(file, file.name);
-          const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
+          let relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
+          if (options?.attachToTransfer?.slug) {
+            const earlyTok = await getCurrentUserIdToken(false);
+            if (!earlyTok) {
+              setFileUploadError("Not signed in");
+              throw new Error("Not signed in");
+            }
+            const base = typeof window !== "undefined" ? window.location.origin : "";
+            const ctxRes = await fetch(
+              `${base}/api/transfers/${encodeURIComponent(options.attachToTransfer.slug)}/storage-upload-context`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${earlyTok}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ relative_path: innerRel }),
+              }
+            );
+            if (!ctxRes.ok) {
+              const errBody = (await ctxRes.json().catch(() => ({}))) as { error?: string };
+              const msg = errBody.error ?? "Failed to resolve transfer upload path";
+              setFileUploadError(msg);
+              throw new Error(msg);
+            }
+            const p = (await ctxRes.json()) as {
+              linked_drive_id: string;
+              folder_id: string | null;
+              file_name: string;
+              file_name_compare_key: string;
+              folder_path_ids: string[];
+              relative_path: string;
+            };
+            transferPlacementByQueuedId.set(item.id, p);
+            relPath = p.relative_path;
+          }
           const queued: QueuedFile = {
             id: item.id,
             file,

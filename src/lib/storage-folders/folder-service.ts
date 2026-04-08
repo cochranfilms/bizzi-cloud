@@ -202,6 +202,12 @@ export async function renameStorageFolder(
   if (Number(folder.version) !== Number(clientVersion)) {
     throw new StorageFolderAccessError("Folder was modified; refresh and try again", 409);
   }
+  if (
+    folder.system_folder_role === "transfers_root" ||
+    folder.protected_deletion === true
+  ) {
+    throw new StorageFolderAccessError("This folder cannot be renamed", 403);
+  }
 
   const driveSnap = await db.collection("linked_drives").doc(folder.linked_drive_id as string).get();
   await assertLinkedDriveWriteAccess(db, uid, driveSnap);
@@ -296,6 +302,12 @@ export async function moveStorageFolder(
   assertSubtreeRootReadyForFolderMutation(folder);
   if (Number(folder.version) !== Number(clientVersion)) {
     throw new StorageFolderAccessError("Folder was modified; refresh and try again", 409);
+  }
+  if (
+    folder.system_folder_role === "transfers_root" ||
+    folder.protected_deletion === true
+  ) {
+    throw new StorageFolderAccessError("This folder cannot be moved", 403);
   }
 
   const currentParent = (folder.parent_folder_id as string | null) ?? null;
