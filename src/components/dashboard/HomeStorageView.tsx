@@ -113,8 +113,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     storageTopFolders,
     loading,
     authQuotaExceeded,
-    recentUploads,
-    fetchRecentUploads,
     deleteFile,
     deleteFiles,
     deleteFolder,
@@ -501,18 +499,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       cancelled = true;
     };
   }, [packageInfoId]);
-
-  // Load recent uploads (Storage files from past 7 days) on mount and when storage changes
-  useEffect(() => {
-    if (
-      linkedDrives.some((d) => {
-        const n = d.name.replace(/^\[Team\]\s+/, "");
-        return n === "Storage" || n === "Uploads";
-      })
-    ) {
-      fetchRecentUploads();
-    }
-  }, [fetchRecentUploads, storageVersion, linkedDrives]);
 
   // Ensure Storage, RAW, and Gallery Media folders exist for subscribed (paid) users.
   // Personal: create Storage/RAW/Gallery Media based on plan and power-ups.
@@ -1086,7 +1072,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           clearSelection();
           setMoveNotice("Items moved into the folder");
           void Promise.all([refetch(), refetchPinned()]).then(() => loadPinnedFiles());
-          void fetchRecentUploads();
           return;
         }
 
@@ -1113,7 +1098,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         const destName = linkedDrives.find((d) => d.id === targetDriveId)?.name ?? "folder";
         setMoveNotice(`Items moved into the "${destName}" folder`);
         void Promise.all([refetch(), refetchPinned()]).then(() => loadPinnedFiles());
-        void fetchRecentUploads();
       } catch (e) {
         setMoveNotice(null);
         setMoveErrorNotice(e instanceof Error ? e.message : "Move failed");
@@ -1133,7 +1117,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
       refetch,
       refetchPinned,
       loadPinnedFiles,
-      fetchRecentUploads,
     ]
   );
 
@@ -1651,124 +1634,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         </section>
       )}
 
-      {/* Recent uploads (below inline grid) */}
-      <section className="py-6 sm:py-8">
-        {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
-          linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
-          <>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              Recent uploads
-            </h3>
-            {recentUploads.length > 0 ? (
-              viewMode === "list" ? (
-                <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                        <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
-                        <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
-                      </tr>
-                    </thead>
-                    <tbody data-selectable-grid>
-                      {recentUploads.map((file) => {
-                        const isPkg = isMacosPackageFileRow(file);
-                        return (
-                          <FileListRow
-                            key={file.id}
-                            file={file}
-                            displayContext={storageDisplayContext}
-                            onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
-                            onDelete={async () => {
-                              await deleteFile(file.id);
-                              syncPinsAfterFileMutate();
-                            }}
-                            onDownloadPackage={
-                              isPkg && file.macosPackageId
-                                ? () => downloadMacosPackageZip(file.macosPackageId!)
-                                : undefined
-                            }
-                            onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
-                            selectable
-                            selected={selectedFileIds.has(file.id)}
-                            onSelect={() => toggleFileSelection(file.id)}
-                            draggable={!!file.driveId}
-                            onDragStart={handleDragStart}
-                          />
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-              <div
-                className={`grid ${gridGapClass} ${
-                  viewMode === "thumbnail"
-                    ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                    : cardSize === "small"
-                      ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-                      : cardSize === "large"
-                        ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
-                        : "sm:grid-cols-3 md:grid-cols-4"
-                }`}
-              >
-                {recentUploads.map((file) => {
-                  const isPkg = isMacosPackageFileRow(file);
-                  return (
-                    <div
-                      key={file.id}
-                      data-selectable-item
-                      data-item-type="file"
-                      data-item-id={file.id}
-                      draggable={!!file.driveId}
-                      onDragStart={handleDragStart}
-                      className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                    >
-                      <FileCard
-                        file={file}
-                        onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
-                        onDelete={async () => {
-                          await deleteFile(file.id);
-                          syncPinsAfterFileMutate();
-                        }}
-                        onDownloadPackage={
-                          isPkg && file.macosPackageId
-                            ? () => downloadMacosPackageZip(file.macosPackageId!)
-                            : undefined
-                        }
-                        onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
-                        onMacosPackageNavigate={
-                          isPkg ? () => navigateIntoMacosPackage(file) : undefined
-                        }
-                        selectable
-                        selected={selectedFileIds.has(file.id)}
-                        onSelect={() => toggleFileSelection(file.id)}
-                        layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                        layoutAspectRatio={aspectRatio}
-                        thumbnailScale={thumbnailScale}
-                        showCardInfo={showCardInfo}
-                        presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              )
-            ) : (
-              <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-                Files uploaded to Storage in the past 7 days will appear here. (Upload time counts, not camera file dates.)
-              </p>
-            )}
-          </>
-        )}
-      </section>
       </div>
       </DashboardRouteFade>
 

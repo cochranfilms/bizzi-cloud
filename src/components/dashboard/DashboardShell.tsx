@@ -104,7 +104,7 @@ export default function DashboardShell({
 
         {/* Main content + right panel row */}
         <div className="flex min-h-0 min-w-0 flex-1 gap-0 xl:gap-7">
-          {/* Main vs Quick access: xl-only gap widens the “lane” so page scroll isn’t confused with embedded panes */}
+          {/* Main vs workspace rail: xl-only gap widens the “lane” so page scroll isn’t confused with embedded panes */}
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Mobile panel button */}
             <div

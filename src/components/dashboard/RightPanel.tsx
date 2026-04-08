@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
-  Heart,
-  Clock,
+  HardDrive,
   FolderKanban,
   Activity,
   Share2,
@@ -16,30 +15,161 @@ import {
   Users,
   Palette,
   Headphones,
+  Heart,
+  ChevronDown,
 } from "lucide-react";
 import StorageBadge from "./StorageBadge";
 import DashboardColorsModal from "./DashboardColorsModal";
 import SupportTicketModal from "./SupportTicketModal";
 import { useEnterpriseOptional } from "@/context/EnterpriseContext";
+import { useBackup } from "@/context/BackupContext";
+import { useEffectivePowerUps } from "@/hooks/useEffectivePowerUps";
+import { buildHomePillarRows } from "@/lib/home-pillar-drives";
 
-const quickAccessItems = (basePath: string) => [
-  { href: `${basePath}/hearts`, label: "Hearts", icon: Heart },
-  { href: `${basePath}/recent`, label: "Recent", icon: Clock },
-  { href: `${basePath}/projects`, label: "Projects", icon: FolderKanban },
-];
+/** Matches {@link LayoutSettingsBar} “Layout” control — compact rail rows. */
+const railRow =
+  "flex w-full min-h-8 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors";
+
+const railLinkIdle = `${railRow} border-0 bg-neutral-100 text-neutral-600 ring-1 ring-neutral-200/60 hover:bg-neutral-200/60 hover:text-neutral-900 dark:bg-neutral-800/80 dark:text-neutral-400 dark:ring-neutral-700/60 dark:hover:bg-neutral-700/60 dark:hover:text-white`;
+
+const railLinkActive = `${railRow} border-0 bg-[var(--enterprise-primary)]/15 text-neutral-900 ring-1 ring-[var(--enterprise-primary)]/40 dark:text-white`;
+
+const railMutedLinkRow = `${railRow} text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800`;
 
 interface RightPanelProps {
   onMobileClose?: () => void;
-  /** Base path for links (e.g. /dashboard or /enterprise). Default: /dashboard */
   basePath?: string;
-  /** When set, shows a Quick access link (org / team file comment activity). */
   commentsHref?: string;
-  /** Optional custom storage component (e.g. EnterpriseStorageBadge). Default: StorageBadge */
   storageComponent?: React.ReactNode;
 }
 
-const enterpriseCardIdle =
-  "border-neutral-200 text-neutral-800 hover:border-[var(--enterprise-primary)] hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-[var(--enterprise-primary)] dark:hover:bg-neutral-800/80";
+function WorkspaceDriveRail({
+  basePath,
+  pathname,
+  onMobileClose,
+}: {
+  basePath: string;
+  pathname: string | null;
+  onMobileClose?: () => void;
+}) {
+  const searchParams = useSearchParams();
+  const { linkedDrives, loading: drivesLoading } = useBackup();
+  const { hasEditor, hasGallerySuite, loading: powerUpLoading } = useEffectivePowerUps();
+
+  const pillars = useMemo(
+    () => buildHomePillarRows(linkedDrives, { hasEditor, hasGallerySuite }),
+    [linkedDrives, hasEditor, hasGallerySuite]
+  );
+
+  if (drivesLoading || powerUpLoading || pillars.length === 0) return null;
+
+  const path = pathname ?? "";
+  const isWorkspaceHome = path === basePath || path === `${basePath}/`;
+  const driveParam = searchParams?.get("drive") ?? null;
+
+  return (
+    <>
+      {pillars.map(({ key, label, drive }) => {
+        const href = `${basePath}?drive=${encodeURIComponent(drive.id)}`;
+        const active = Boolean(isWorkspaceHome && driveParam === drive.id);
+        return (
+          <li key={key}>
+            <Link
+              href={href}
+              onClick={onMobileClose}
+              className={active ? railLinkActive : railLinkIdle}
+            >
+              <HardDrive
+                className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]"
+                strokeWidth={1.75}
+              />
+              <span className="min-w-0 truncate">{label}</span>
+            </Link>
+          </li>
+        );
+      })}
+    </>
+  );
+}
+
+function ActivityRailGroup({
+  basePath,
+  pathname,
+  commentsHref,
+  onMobileClose,
+}: {
+  basePath: string;
+  pathname: string | null;
+  commentsHref?: string;
+  onMobileClose?: () => void;
+}) {
+  const path = pathname ?? "";
+  const heartsHref = `${basePath}/hearts`;
+  const childActive =
+    path === heartsHref ||
+    path.startsWith(`${heartsHref}/`) ||
+    Boolean(commentsHref && (path === commentsHref || path.startsWith(`${commentsHref}/`)));
+  const [open, setOpen] = useState(childActive);
+
+  useEffect(() => {
+    if (childActive) setOpen(true);
+  }, [childActive]);
+
+  const showCommented = Boolean(commentsHref);
+
+  return (
+    <li className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${railLinkIdle} ${childActive ? "ring-[var(--enterprise-primary)]/35" : ""} justify-between`}
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <Activity className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+          <span>Activity</span>
+        </span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <ul className="ml-1 space-y-1 border-l border-neutral-200 pl-2 dark:border-neutral-700" role="list">
+          <li>
+            <Link
+              href={heartsHref}
+              onClick={onMobileClose}
+              className={
+                path === heartsHref || path.startsWith(`${heartsHref}/`) ? railLinkActive : railLinkIdle
+              }
+            >
+              <Heart className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+              Favorited
+            </Link>
+          </li>
+          {showCommented && commentsHref ? (
+            <li>
+              <Link
+                href={commentsHref}
+                onClick={onMobileClose}
+                className={
+                  path === commentsHref || path.startsWith(`${commentsHref}/`) ? railLinkActive : railLinkIdle
+                }
+              >
+                <MessageCircle
+                  className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]"
+                  strokeWidth={1.75}
+                />
+                Commented
+              </Link>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
 
 function EnterpriseSidebarCard({
   href,
@@ -54,19 +184,15 @@ function EnterpriseSidebarCard({
   pathname: string;
   onMobileClose?: () => void;
 }) {
-  const isActive = pathname === href;
+  const isActive = pathname === href || pathname.startsWith(`${href}/`);
   return (
     <li>
       <Link
         href={href}
         onClick={onMobileClose}
-        className={`flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm font-medium transition-colors dark:bg-neutral-900 ${
-          isActive
-            ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
-            : enterpriseCardIdle
-        }`}
+        className={isActive ? railLinkActive : railLinkIdle}
       >
-        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+        <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
         {label}
       </Link>
     </li>
@@ -84,67 +210,8 @@ function EnterpriseSidebarActionButton({
 }) {
   return (
     <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm font-medium transition-colors dark:bg-neutral-900 ${enterpriseCardIdle}`}
-      >
-        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
-        {label}
-      </button>
-    </li>
-  );
-}
-
-function PersonalQuickAccessLink({
-  href,
-  label,
-  Icon,
-  pathname,
-  onMobileClose,
-}: {
-  href: string;
-  label: string;
-  Icon: LucideIcon;
-  pathname: string;
-  onMobileClose?: () => void;
-}) {
-  const isActive = pathname === href;
-  return (
-    <li>
-      <Link
-        href={href}
-        onClick={onMobileClose}
-        className={`flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm font-medium transition-colors dark:bg-neutral-900 ${
-          isActive
-            ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)]/10 text-neutral-900 dark:text-white"
-            : enterpriseCardIdle
-        }`}
-      >
-        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
-        {label}
-      </Link>
-    </li>
-  );
-}
-
-function PersonalChromeActionButton({
-  label,
-  Icon,
-  onClick,
-}: {
-  label: string;
-  Icon: LucideIcon;
-  onClick: () => void;
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm font-medium transition-colors dark:bg-neutral-900 ${enterpriseCardIdle}`}
-      >
-        <Icon className="h-5 w-5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
+      <button type="button" onClick={onClick} className={railLinkIdle}>
+        <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
         {label}
       </button>
     </li>
@@ -160,10 +227,11 @@ export default function RightPanel({
   const pathname = usePathname();
   const [colorsModalOpen, setColorsModalOpen] = useState(false);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
-  const items = quickAccessItems(basePath);
   const enterpriseCtx = useEnterpriseOptional();
   const isEnterprisePanel = basePath === "/enterprise" && enterpriseCtx !== null;
   const isAdmin = enterpriseCtx?.role === "admin";
+
+  const workspaceMenuTitle = "Workspace";
 
   if (isEnterprisePanel) {
     return (
@@ -171,10 +239,10 @@ export default function RightPanel({
         <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 p-4 dark:border-neutral-800">
-              <h3 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-white">
-                Control Center
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                {workspaceMenuTitle}
               </h3>
-              <ul className="space-y-2">
+              <ul className="space-y-1.5">
                 <EnterpriseSidebarCard
                   href={basePath}
                   label="Files"
@@ -182,10 +250,17 @@ export default function RightPanel({
                   pathname={pathname}
                   onMobileClose={onMobileClose}
                 />
+                <WorkspaceDriveRail basePath={basePath} pathname={pathname} onMobileClose={onMobileClose} />
+                <ActivityRailGroup
+                  basePath={basePath}
+                  pathname={pathname}
+                  commentsHref={commentsHref}
+                  onMobileClose={onMobileClose}
+                />
                 <EnterpriseSidebarCard
-                  href={`${basePath}/activity`}
-                  label="Activity"
-                  Icon={Activity}
+                  href={`${basePath}/projects`}
+                  label="NLE Projects"
+                  Icon={FolderKanban}
                   pathname={pathname}
                   onMobileClose={onMobileClose}
                 />
@@ -201,25 +276,6 @@ export default function RightPanel({
                     href={`${basePath}/seats`}
                     label="Seats & invites"
                     Icon={Users}
-                    pathname={pathname}
-                    onMobileClose={onMobileClose}
-                  />
-                ) : null}
-                {items.map((item) => (
-                  <EnterpriseSidebarCard
-                    key={item.href}
-                    href={item.href}
-                    label={item.label}
-                    Icon={item.icon}
-                    pathname={pathname}
-                    onMobileClose={onMobileClose}
-                  />
-                ))}
-                {commentsHref ? (
-                  <EnterpriseSidebarCard
-                    href={commentsHref}
-                    label="Comments"
-                    Icon={MessageCircle}
                     pathname={pathname}
                     onMobileClose={onMobileClose}
                   />
@@ -260,70 +316,77 @@ export default function RightPanel({
       <aside className="flex h-full w-full max-w-[min(20rem,100vw-2rem)] flex-shrink-0 flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-56 xl:max-w-none xl:shadow-none dark:border-neutral-800 dark:bg-neutral-950">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-y-auto border-b border-neutral-200 dark:border-neutral-800">
-            {/* Quick access */}
             <div className="p-4">
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                Quick access
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                {workspaceMenuTitle}
               </h3>
-              <ul className="space-y-2">
-                {items.map((item) => (
-                  <PersonalQuickAccessLink
-                    key={item.href}
-                    href={item.href}
-                    label={item.label}
-                    Icon={item.icon}
-                    pathname={pathname}
-                    onMobileClose={onMobileClose}
-                  />
-                ))}
-                {commentsHref ? (
-                  <PersonalQuickAccessLink
-                    href={commentsHref}
-                    label="Comments"
-                    Icon={MessageCircle}
-                    pathname={pathname}
-                    onMobileClose={onMobileClose}
-                  />
-                ) : null}
-                <PersonalChromeActionButton
-                  label="Customize dashboard"
-                  Icon={Palette}
-                  onClick={() => {
-                    onMobileClose?.();
-                    setColorsModalOpen(true);
-                  }}
+              <ul className="space-y-1.5">
+                <WorkspaceDriveRail basePath={basePath} pathname={pathname} onMobileClose={onMobileClose} />
+                <ActivityRailGroup
+                  basePath={basePath}
+                  pathname={pathname}
+                  commentsHref={commentsHref}
+                  onMobileClose={onMobileClose}
                 />
-                <PersonalChromeActionButton
-                  label="Support ticket"
-                  Icon={Headphones}
-                  onClick={() => {
-                    onMobileClose?.();
-                    setSupportModalOpen(true);
-                  }}
-                />
+                <li>
+                  <Link
+                    href={`${basePath}/projects`}
+                    onClick={onMobileClose}
+                    className={
+                      pathname === `${basePath}/projects` || pathname.startsWith(`${basePath}/projects/`)
+                        ? railLinkActive
+                        : railLinkIdle
+                    }
+                  >
+                    <FolderKanban
+                      className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]"
+                      strokeWidth={1.75}
+                    />
+                    NLE Projects
+                  </Link>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onMobileClose?.();
+                      setColorsModalOpen(true);
+                    }}
+                    className={railLinkIdle}
+                  >
+                    <Palette
+                      className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]"
+                      strokeWidth={1.75}
+                    />
+                    Customize dashboard
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onMobileClose?.();
+                      setSupportModalOpen(true);
+                    }}
+                    className={railLinkIdle}
+                  >
+                    <Headphones
+                      className="h-3.5 w-3.5 shrink-0 text-[var(--enterprise-primary)]"
+                      strokeWidth={1.75}
+                    />
+                    Support ticket
+                  </button>
+                </li>
               </ul>
             </div>
 
-            {/* Activity */}
-            <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
-              <Link
-                href={`${basePath}/activity`}
-                onClick={onMobileClose}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-              >
-                <Activity className="h-4 w-4" />
-                Activity
-              </Link>
-            </div>
-
-            {/* Shared shortcut */}
             <div className="border-t border-neutral-200 p-4 dark:border-neutral-800">
               <Link
                 href={`${basePath}/shared`}
                 onClick={onMobileClose}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                className={railMutedLinkRow}
               >
-                <Share2 className="h-4 w-4" />
+                <Share2 className="h-3.5 w-3.5 text-[var(--enterprise-primary)]" strokeWidth={1.75} />
                 Shared with you
               </Link>
             </div>
