@@ -1,11 +1,8 @@
 "use client";
 
 import TopBar from "./TopBar";
-import HomePillarTabs from "./HomePillarTabs";
 
-/** Home hub chrome: open layout with centered pillar tabs and no duplicate “Home” title. */
+/** Home hub chrome: layout + New row only; drive switching lives in the Workspace rail. */
 export default function DashboardHomeTopBar() {
-  return (
-    <TopBar title={null} showLayoutSettings centerContent={<HomePillarTabs />} />
-  );
+  return <TopBar title={null} showLayoutSettings />;
 }
