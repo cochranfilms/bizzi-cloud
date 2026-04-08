@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { HardDrive } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LinkedDrive } from "@/types/backup";
 import { useBackup } from "@/context/BackupContext";
@@ -87,17 +88,9 @@ export default function HomePillarTabs() {
   if (drivesLoading || powerUpLoading) return null;
   if (pillars.length < 2) return null;
 
-  const tabCls = (active: boolean) =>
-    [
-      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
-      active
-        ? "bg-[var(--enterprise-primary)]/15 text-neutral-900 dark:text-white ring-1 ring-[var(--enterprise-primary)]/40"
-        : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white",
-    ].join(" ");
-
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-1 sm:gap-2"
+      className="flex flex-wrap items-center justify-center gap-2 sm:gap-3"
       role="tablist"
       aria-label="Storage areas"
     >
@@ -109,10 +102,25 @@ export default function HomePillarTabs() {
             type="button"
             role="tab"
             aria-selected={active}
-            className={tabCls(active)}
             onClick={() => switchToDrive(drive.id)}
+            className={[
+              "group flex min-h-[2.75rem] min-w-[8.5rem] max-w-[14rem] flex-1 items-center gap-2.5 rounded-xl border-2 px-4 py-2.5 text-left text-sm font-semibold transition-all sm:flex-initial sm:min-w-[9.5rem]",
+              active
+                ? "border-[var(--enterprise-primary)] bg-[var(--enterprise-primary)] text-white shadow-md shadow-[color-mix(in_srgb,var(--enterprise-primary)_35%,transparent)] dark:text-white"
+                : "border-neutral-200/90 bg-white text-neutral-800 shadow-sm hover:border-[color-mix(in_srgb,var(--enterprise-primary)_55%,transparent)] hover:shadow-md dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:border-[color-mix(in_srgb,var(--enterprise-primary)_45%,transparent)]",
+            ].join(" ")}
           >
-            {label}
+            <span
+              className={[
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors",
+                active
+                  ? " bg-white/20 text-white"
+                  : "bg-[var(--enterprise-primary)]/12 text-[var(--enterprise-primary)] group-hover:bg-[var(--enterprise-primary)]/18 dark:bg-white/10",
+              ].join(" ")}
+            >
+              <HardDrive className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1 truncate leading-tight">{label}</span>
           </button>
         );
       })}

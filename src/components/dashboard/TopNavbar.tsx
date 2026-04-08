@@ -152,7 +152,7 @@ export default function TopNavbar() {
 
   const workspaceNavInline = (
     <nav
-      className="-mx-0.5 hidden min-h-9 min-w-0 flex-1 flex-nowrap items-center justify-start gap-0.5 overflow-x-auto overflow-y-visible px-0.5 pb-0.5 [scrollbar-width:thin] md:flex"
+      className="-mx-0.5 hidden min-h-9 max-w-full min-w-0 flex-nowrap items-center justify-center gap-0.5 overflow-x-auto overflow-y-visible px-0.5 pb-0.5 [scrollbar-width:thin] md:flex"
       aria-label="Workspace"
     >
       {filteredItems.map((item) => {
@@ -233,7 +233,9 @@ export default function TopNavbar() {
               </span>
             </Link>
           </div>
-          {workspaceNavInline}
+          <div className="hidden min-w-0 flex-1 justify-center md:flex">
+            {workspaceNavInline}
+          </div>
           <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
             {accountTools}
           </div>
@@ -338,7 +340,9 @@ export default function TopNavbar() {
           </Link>
         </div>
 
-        {workspaceNavInline}
+        <div className="hidden min-w-0 flex-1 justify-center md:flex">
+          {workspaceNavInline}
+        </div>
 
         <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
           {accountTools}

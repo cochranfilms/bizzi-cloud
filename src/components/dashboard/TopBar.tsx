@@ -471,19 +471,19 @@ export default function TopBar({
     >
       <div className="px-4 py-3 md:px-6">
         {centerContent ? (
-          <div className="flex min-h-12 flex-col gap-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
-            <div
-              className={`order-2 flex justify-center sm:col-start-2 sm:row-start-1 ${!titleRow ? "sm:col-start-2" : ""}`}
-            >
+          <div className="flex flex-col gap-3">
+            <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              {titleRow ? (
+                <div className="min-w-0 shrink-0">{titleRow}</div>
+              ) : (
+                <div className="hidden sm:block sm:flex-1" aria-hidden />
+              )}
+              <div className="flex min-w-0 w-full flex-nowrap items-center justify-end gap-2 overflow-x-auto pb-0.5 [scrollbar-width:thin] sm:w-auto sm:max-w-none sm:flex-wrap sm:gap-3 md:gap-4">
+                {actionsRow}
+              </div>
+            </div>
+            <div className="flex justify-center border-t border-neutral-200/70 pt-3 dark:border-neutral-800/70">
               {centerContent}
-            </div>
-            <div
-              className={`order-1 min-w-0 sm:col-start-1 sm:row-start-1 ${!titleRow ? "hidden sm:block" : ""}`}
-            >
-              {titleRow}
-            </div>
-            <div className="order-3 flex min-w-0 flex-col items-stretch gap-3 sm:col-start-3 sm:row-start-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
-              {actionsRow}
             </div>
           </div>
         ) : (
