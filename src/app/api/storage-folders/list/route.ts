@@ -2,6 +2,7 @@ import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
 import {
   assertFolderModelV2,
   assertLinkedDriveReadAccess,
+  compareStorageFolderRowsTransfersRootFirst,
   getStorageFolderCoverFile,
   listStorageFolderChildren,
   StorageFolderAccessError,
@@ -131,6 +132,8 @@ export async function GET(request: Request) {
         }
       })
     );
+
+    foldersWithCounts.sort(compareStorageFolderRowsTransfersRootFirst);
 
     return NextResponse.json({ folders: foldersWithCounts, files });
   } catch (e) {

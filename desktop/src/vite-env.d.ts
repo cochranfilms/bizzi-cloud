@@ -6,12 +6,13 @@ declare global {
       getSettings: () => Promise<Record<string, unknown>>;
       setSettings: (key: string, value: unknown) => Promise<Record<string, unknown>>;
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
-      mount?: {
-        isFuseAvailable: () => Promise<boolean>;
-        getDependencies: () => Promise<unknown>;
-        getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
-        mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
-        unmount: () => Promise<void>;
+      openInFinder?: (path: string) => Promise<string>;
+      openExternal?: (url: string) => Promise<string>;
+      nativeSync?: {
+        isAvailable: () => Promise<boolean>;
+        getStatus: () => Promise<{ isEnabled: boolean }>;
+        enable: (apiBaseUrl: string, token: string) => Promise<{ syncPath: string }>;
+        disable: () => Promise<void>;
         refreshToken: (token: string) => Promise<void>;
         refreshFolder: (driveSlug: string) => Promise<void>;
       };

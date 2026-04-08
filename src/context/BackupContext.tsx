@@ -102,7 +102,15 @@ interface BackupContextValue {
     files: File[],
     targetDriveId?: string,
     options?: {
-      onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+      /** Called once batches are queued, before bytes upload (for instant local previews). */
+      onUploadPrepared?: (items: { queueItemId: string; file: File }[]) => void;
+      onFileComplete?: (file: {
+        name: string;
+        path: string;
+        backupFileId?: string;
+        objectKey?: string;
+        queueItemId?: string;
+      }) => void;
       /** After each file is written to backup_files, POST it to this unpublished transfer (deduped server-side). */
       attachToTransfer?: { slug: string };
     }
@@ -1258,7 +1266,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
       files: File[],
       targetDriveId?: string,
       options?: {
-        onFileComplete?: (file: { name: string; path: string; backupFileId?: string; objectKey?: string }) => void;
+        onUploadPrepared?: (items: { queueItemId: string; file: File }[]) => void;
+        onFileComplete?: (file: {
+          name: string;
+          path: string;
+          backupFileId?: string;
+          objectKey?: string;
+          queueItemId?: string;
+        }) => void;
         attachToTransfer?: { slug: string };
       }
     ) => {
@@ -1446,6 +1461,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
             const relPath = pathPrefix ? `${pathPrefix}/${innerRel}` : innerRel;
             const placementRel = transferPlacement?.relative_path ?? relPath;
             const placementDriveId = transferPlacement?.linked_drive_id ?? drive.id;
+            const metaDrive =
+              linkedDrives.find((d) => d.id === placementDriveId) ?? drive;
             const snapshotRef = await addDoc(collection(db, "backup_snapshots"), {
               linked_drive_id: placementDriveId,
               userId: user.uid,
@@ -1455,7 +1472,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               completed_at: new Date(),
             });
             const workspaceFields = await getWorkspaceFieldsForOrgDrive(
-              drive,
+              metaDrive,
               idToken ?? null,
               user.uid,
               resolvedWorkspaceId ?? selectedWorkspaceId
@@ -1475,7 +1492,8 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               deleted_at: null,
               lifecycle_state: BACKUP_LIFECYCLE_ACTIVE,
               ingest_state: "ready",
-              organization_id: drive.organization_id ?? null,
+              organization_id: metaDrive.organization_id ?? null,
+              personal_team_owner_id: metaDrive.personal_team_owner_id ?? null,
               ...(transferPlacement
                 ? {
                     folder_id: transferPlacement.folder_id,
@@ -1485,7 +1503,6 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
                   }
                 : {}),
               ...workspaceFields,
-              ...personalTeamFileFields(drive),
               ...macosPackageFirestoreFieldsFromRelativePath(placementRel),
               ...creativeFirestoreFieldsFromRelativePath(placementRel),
             });
@@ -1523,6 +1540,7 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
               path: displayPath,
               backupFileId: fileRef.id,
               objectKey: ev.objectKey,
+              queueItemId: ev.fileId,
             });
             await updateDoc(doc(db, "linked_drives", placementDriveId), {
               last_synced_at: new Date().toISOString(),
@@ -1575,6 +1593,13 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
           },
         });
         uploadManagerRef.current = manager;
+
+        options?.onUploadPrepared?.(
+          fileItems.map((it, i) => ({
+            queueItemId: it.id,
+            file: filesToUpload[i]!,
+          }))
+        );
 
         for (let i = 0; i < filesToUpload.length; i++) {
           const file = filesToUpload[i];
@@ -1666,7 +1691,14 @@ export function BackupProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [user, getOrCreateStorageDrive, linkedDrives, isEnterpriseContext, org?.id, selectedWorkspaceId]
+    [
+      user,
+      getOrCreateStorageDrive,
+      linkedDrives,
+      isEnterpriseContext,
+      org?.id,
+      selectedWorkspaceId,
+    ]
   );
 
   const uploadFilesToGallery = useCallback(

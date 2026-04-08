@@ -768,29 +768,39 @@ export default function FileGrid({
             setDriveFiles(files);
             setDriveListTruncated(false);
             setV2StorageSubfolders(
-              folders.map((f) => ({
-                name: f.name,
-                type: "folder" as const,
-                key: buildStorageV2FolderPinId(driveId, f.id),
-                items: f.item_count,
-                virtualFolder: true,
-                driveId,
-                storageFolderId: f.id,
-                storageLinkedDriveId: driveId,
-                storageFolderVersion: f.version,
-                storageFolderOperationState: f.operation_state,
-                storageFolderLifecycleState: f.lifecycle_state,
-                hideShare: true,
-                ...(f.cover_file
-                  ? {
-                      coverFile: {
-                        objectKey: f.cover_file.object_key,
-                        fileName: f.cover_file.file_name,
-                        contentType: f.cover_file.content_type,
-                      },
-                    }
-                  : {}),
-              }))
+              folders.map((f) => {
+                const v2FolderLocked =
+                  f.system_folder_role === "transfers_root" || f.protected_deletion === true;
+                return {
+                  name: f.name,
+                  type: "folder" as const,
+                  key: buildStorageV2FolderPinId(driveId, f.id),
+                  items: f.item_count,
+                  virtualFolder: true,
+                  driveId,
+                  storageFolderId: f.id,
+                  storageLinkedDriveId: driveId,
+                  storageFolderVersion: f.version,
+                  storageFolderOperationState: f.operation_state,
+                  storageFolderLifecycleState: f.lifecycle_state,
+                  hideShare: true,
+                  ...(typeof f.system_folder_role === "string" && f.system_folder_role.trim()
+                    ? { systemFolderRole: f.system_folder_role.trim() }
+                    : {}),
+                  ...(v2FolderLocked
+                    ? { preventDelete: true, preventMove: true, preventRename: true }
+                    : {}),
+                  ...(f.cover_file
+                    ? {
+                        coverFile: {
+                          objectKey: f.cover_file.object_key,
+                          fileName: f.cover_file.file_name,
+                          contentType: f.cover_file.content_type,
+                        },
+                      }
+                    : {}),
+                };
+              })
             );
             if (parent) {
               void (async () => {

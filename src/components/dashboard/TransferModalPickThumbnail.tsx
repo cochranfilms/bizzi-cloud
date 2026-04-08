@@ -16,6 +16,8 @@ const PDF_EXT = /\.pdf$/i;
 type TransferModalPickThumbnailProps = {
   objectKey?: string;
   fileName: string;
+  /** Local blob URL while upload is in progress (gallery-style instant preview). */
+  localPreviewUrl?: string | null;
   className?: string;
   /** Square tile; default ~40px Uppy-style */
   sizeClassName?: string;
@@ -27,21 +29,36 @@ type TransferModalPickThumbnailProps = {
 export default function TransferModalPickThumbnail({
   objectKey,
   fileName,
+  localPreviewUrl,
   className = "",
   sizeClassName = "h-10 w-10",
 }: TransferModalPickThumbnailProps) {
   const isPdf = PDF_EXT.test(fileName);
   const isVideo = shouldUseVideoThumbnailPipeline(fileName);
   const isImage = isImageFile(fileName);
+  const skipRemote = Boolean(localPreviewUrl);
 
-  const imgUrl = useThumbnail(objectKey, fileName, "thumb", { enabled: Boolean(objectKey) && isImage });
+  const imgUrl = useThumbnail(objectKey, fileName, "thumb", {
+    enabled: Boolean(objectKey) && isImage && !skipRemote,
+  });
   const vidUrl = useVideoThumbnail(objectKey, fileName, {
-    enabled: Boolean(objectKey) && isVideo,
+    enabled: Boolean(objectKey) && isVideo && !skipRemote,
     isVideo,
   });
   const pdfUrl = usePdfThumbnail(objectKey, fileName, {
-    enabled: Boolean(objectKey) && isPdf,
+    enabled: Boolean(objectKey) && isPdf && !skipRemote,
   });
+
+  if (localPreviewUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={localPreviewUrl}
+        alt=""
+        className={`${sizeClassName} shrink-0 rounded-md object-cover ${className}`}
+      />
+    );
+  }
 
   const url = isPdf ? pdfUrl : isVideo ? vidUrl : imgUrl;
 

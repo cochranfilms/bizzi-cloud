@@ -1,6 +1,6 @@
 /**
  * WebDAV server that proxies to Bizzi Cloud API (metadata + range).
- * Used by rclone mount to expose cloud storage as a local filesystem.
+ * Used by Native Sync (Apple File Provider) over a loopback WebDAV URL.
  */
 import * as fs from "fs";
 import * as http from "http";
@@ -37,7 +37,9 @@ export interface WebDAVServerOptions {
   apiBaseUrl: string;
   getAuthToken: () => Promise<string | null>;
   /** Optional range cache; when provided, handleGet checks cache before API fetch. */
-  prefetchCache?: import("./prefetch-cache").PrefetchCache;
+  prefetchCache?: {
+    get(objectKey: string, rangeStart: number, rangeEnd: number | null): Promise<Buffer | null>;
+  };
   /** Called when a file is successfully uploaded via PUT. Used for notification. */
   onUploadComplete?: (fileName: string) => void;
   /** Predictive prefetch: called after folder is listed (driveId, folderPath, entries). */

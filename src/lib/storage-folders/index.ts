@@ -30,3 +30,7 @@ export { migrateLinkedDriveToFolderModelV2 } from "./migrate-drive-v2";
 export { trashStorageFolderSubtree } from "./trash-subtree";
 export { restoreStorageFolderSubtree } from "./restore-subtree";
 export { permanentlyDeleteStorageFolderSubtree } from "./permanent-delete-subtree";
+export {
+  compareStorageFolderRowsTransfersRootFirst,
+  compareFolderItemsTransfersRootFirst,
+} from "./folder-display-order";

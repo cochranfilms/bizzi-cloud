@@ -60,6 +60,8 @@ export interface FolderItem {
   virtualFolder?: boolean;
   /** When set, path prefix for navigation (e.g. gallery media_folder_segment); use instead of name for path filtering */
   pathPrefix?: string;
+  /** `storage_folders.system_folder_role` when known (e.g. ordering Transfers first). */
+  systemFolderRole?: string | null;
   /** Folder model v2: `storage_folders` document id */
   storageFolderId?: string;
   /** V2: linked Storage drive id for API calls */

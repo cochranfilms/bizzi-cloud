@@ -9,16 +9,6 @@ contextBridge.exposeInMainWorld("bizzi", {
   openInFinder: (pathToOpen: string) =>
     ipcRenderer.invoke("open-in-finder", pathToOpen),
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
-  mount: {
-    isFuseAvailable: () => ipcRenderer.invoke("mount-fuse-available"),
-    getDependencies: () => ipcRenderer.invoke("mount-dependencies"),
-    getStatus: () => ipcRenderer.invoke("mount-status"),
-    mount: (apiBaseUrl: string, token: string) =>
-      ipcRenderer.invoke("mount-mount", { apiBaseUrl, token }),
-    unmount: () => ipcRenderer.invoke("mount-unmount"),
-    refreshToken: (token: string) => ipcRenderer.invoke("mount-refresh-token", token),
-    refreshFolder: (driveSlug: string) => ipcRenderer.invoke("mount-refresh-folder", driveSlug),
-  },
   nativeSync: {
     isAvailable: () => ipcRenderer.invoke("native-sync-available"),
     getStatus: () => ipcRenderer.invoke("native-sync-status"),
@@ -26,5 +16,6 @@ contextBridge.exposeInMainWorld("bizzi", {
       ipcRenderer.invoke("native-sync-enable", { apiBaseUrl, token }),
     disable: () => ipcRenderer.invoke("native-sync-disable"),
     refreshToken: (token: string) => ipcRenderer.invoke("native-sync-refresh-token", token),
+    refreshFolder: (driveSlug: string) => ipcRenderer.invoke("native-sync-refresh-folder", driveSlug),
   },
 });

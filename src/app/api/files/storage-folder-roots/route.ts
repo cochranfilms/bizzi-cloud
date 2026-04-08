@@ -12,7 +12,11 @@ import {
 } from "@/lib/backup-file-lifecycle";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertStorageLifecycleAllowsAccess } from "@/lib/storage-lifecycle";
-import { getStorageFolderCoverFile, listStorageFolderChildren } from "@/lib/storage-folders";
+import {
+  compareStorageFolderRowsTransfersRootFirst,
+  getStorageFolderCoverFile,
+  listStorageFolderChildren,
+} from "@/lib/storage-folders";
 import {
   fileBelongsToPersonalTeamContainer,
   fileVisibleOnPersonalDashboard,
@@ -80,6 +84,9 @@ type StorageFolderRootRow = {
   storage_folder_version?: number;
   operation_state?: string;
   lifecycle_state?: string;
+  /** Matches storage_folders + FileGrid: block user delete/move/rename in UI. */
+  system_folder_role?: string;
+  protected_deletion?: boolean;
   cover_file?: {
     object_key: string;
     file_name: string;
@@ -128,6 +135,10 @@ async function appendV2StorageRootFolderRows(
 
     const itemCount = subFolders.length + filesSnap.size;
     const ver = f.version;
+    const roleRaw = (f as { system_folder_role?: unknown }).system_folder_role;
+    const system_folder_role =
+      typeof roleRaw === "string" && roleRaw.trim() ? roleRaw.trim() : undefined;
+    const protected_deletion = (f as { protected_deletion?: unknown }).protected_deletion === true;
     let cover_file: StorageFolderRootRow["cover_file"] = null;
     try {
       cover_file = await getStorageFolderCoverFile(db, driveId, fid);
@@ -143,6 +154,8 @@ async function appendV2StorageRootFolderRows(
       storage_folder_version: typeof ver === "number" ? ver : Number(ver ?? 1),
       operation_state: typeof f.operation_state === "string" ? f.operation_state : undefined,
       lifecycle_state: typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+      ...(system_folder_role ? { system_folder_role } : {}),
+      ...(protected_deletion ? { protected_deletion: true as const } : {}),
       cover_file,
     });
   }
@@ -279,6 +292,6 @@ export async function GET(request: Request) {
     );
   }
 
-  folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  folders.sort(compareStorageFolderRowsTransfersRootFirst);
   return NextResponse.json({ folders });
 }

@@ -5,7 +5,11 @@
  * Starts a local WebDAV server and registers a File Provider domain that uses it.
  * Requires electron-macos-file-provider and the embedded EleFileProvider.appex.
  */
+import { spawn } from "child_process";
+import { homedir } from "os";
+import * as path from "path";
 import { WebDAVServer } from "../mount/webdav-server";
+import { desktopLog } from "../logger";
 
 const PRODUCTION_URL = "https://www.bizzicloud.io";
 const FILE_PROVIDER_DOMAIN_ID = "cloud.bizzi.desktop";
@@ -93,7 +97,11 @@ export class FileProviderService {
           efpHelper!
             .getUserVisiblePath(FILE_PROVIDER_DOMAIN_ID, FILE_PROVIDER_DISPLAY_NAME)
             .then((syncPath) => resolve({ syncPath }))
-            .catch(() => resolve({ syncPath: "~/Library/CloudStorage/Bizzi Cloud" }));
+            .catch(() =>
+              resolve({
+                syncPath: path.join(homedir(), "Library/CloudStorage", FILE_PROVIDER_DISPLAY_NAME),
+              })
+            );
         }
       );
     });
@@ -117,6 +125,44 @@ export class FileProviderService {
   refreshToken(token: string | null): void {
     if (this._isEnabled && token) {
       this.currentToken = token;
+    }
+  }
+
+  /**
+   * Touch a drive root under the File Provider path so Finder/NLEs pick up metadata changes (e.g. after Conform).
+   * Runs in a detached child to avoid blocking the main process.
+   */
+  async refreshFolder(driveSlug: string): Promise<void> {
+    if (!this._isEnabled || !efpHelper) return;
+    const slug = ["Storage", "RAW", "Gallery Media"].includes(driveSlug) ? driveSlug : "Storage";
+    let syncPath: string;
+    try {
+      syncPath = await efpHelper.getUserVisiblePath(FILE_PROVIDER_DOMAIN_ID, FILE_PROVIDER_DISPLAY_NAME);
+    } catch {
+      return;
+    }
+    const rootPath = path.join(syncPath, slug);
+    const scriptPath = path.join(__dirname, "../mount/refresh-folder-script.js");
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(process.execPath, [scriptPath, rootPath], {
+          stdio: "ignore",
+          detached: true,
+        });
+        proc.unref();
+        proc.on("error", reject);
+        proc.on("close", (code) => {
+          if (code !== 0 && code !== null) {
+            desktopLog.warn("[native-sync] refresh folder script exited", { code, rootPath });
+          }
+          resolve();
+        });
+        setTimeout(resolve, 5000);
+      });
+      desktopLog.info("[native-sync] refreshed folder", { driveSlug: slug, rootPath });
+    } catch (err) {
+      desktopLog.warn("[native-sync] refresh folder failed", { driveSlug: slug, rootPath, err });
     }
   }
 }

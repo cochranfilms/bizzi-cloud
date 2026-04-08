@@ -1,15 +1,39 @@
+import * as fs from "fs";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import { tmpdir } from "os";
 import * as path from "path";
 import Store from "electron-store";
 import { FileProviderService } from "./file-provider/file-provider-service";
 import { desktopLog, setDesktopLogFile } from "./logger";
-import { MountService } from "./mount/mount-service";
 
-const mountService = new MountService();
 const fileProviderService = new FileProviderService();
 
 const PRODUCTION_URL = "https://www.bizzicloud.io";
+
+/**
+ * Appended to the session user agent so the hosted web app can detect the Electron
+ * shell. (Do not rely on `window.bizzi` alone—Next.js SSR/hydration runs before preload is visible.)
+ * Keep in sync with `BIZZI_CLOUD_DESKTOP_UA_MARKER` in `src/components/desktop/NLEMountPanel.tsx`.
+ */
+const BIZZI_CLOUD_DESKTOP_UA_MARKER = "BizziCloudDesktop/1";
+
+function getPreloadPath(): string {
+  const joined = path.join(__dirname, "preload.js");
+  if (!app.isPackaged) return joined;
+  const unpacked = joined.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+  try {
+    if (fs.existsSync(unpacked)) return unpacked;
+  } catch {
+    /* ignore */
+  }
+  return joined;
+}
+
+function applyDesktopUserAgent(sesh: Electron.Session): void {
+  const cur = sesh.getUserAgent();
+  if (!cur.includes(BIZZI_CLOUD_DESKTOP_UA_MARKER)) {
+    sesh.setUserAgent(`${cur} ${BIZZI_CLOUD_DESKTOP_UA_MARKER}`);
+  }
+}
 
 const store = new Store<{
   apiBaseUrl: string;
@@ -38,11 +62,13 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: getPreloadPath(),
       nodeIntegration: false,
       contextIsolation: true,
     },
   });
+
+  applyDesktopUserAgent(mainWindow.webContents.session);
 
   const baseUrl = String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
   const desktopUrl = `${baseUrl.replace(/\/$/, "")}/desktop/app`;
@@ -103,51 +129,7 @@ ipcMain.handle("get-path", (_e, name: "userData" | "cacheBase") => {
 ipcMain.handle("open-in-finder", (_e, pathToOpen: string) => shell.openPath(pathToOpen));
 ipcMain.handle("open-external", (_e, url: string) => shell.openExternal(url));
 
-// Mount IPC
-ipcMain.handle("mount-fuse-available", () => mountService.isFuseAvailable());
-ipcMain.handle("mount-dependencies", async () => {
-  // Prod: Contents/Resources (contains bin/). Dev: desktop folder (contains bin/).
-  const resourcesDir =
-    process.resourcesPath && !process.defaultApp
-      ? process.resourcesPath
-      : app.getAppPath();
-  return mountService.getMountDependencies(resourcesDir);
-});
-ipcMain.handle("mount-status", async () => mountService.getStatus());
-
-ipcMain.handle("mount-mount", async (_e, { apiBaseUrl, token }: { apiBaseUrl?: string; token?: string }) => {
-  const cacheBaseDir = String(store.get("cacheBaseDir") ?? path.join(app.getPath("userData"), "BizziCloud"));
-  const baseUrl = apiBaseUrl || String(store.get("apiBaseUrl") ?? PRODUCTION_URL);
-  if (!token) {
-    throw new Error("Not signed in. Sign in to Bizzi Cloud to mount.");
-  }
-  // Same as mount-dependencies: prod=Contents/Resources, dev=desktop (contains bin/)
-  const resourcesDir =
-    process.resourcesPath && !process.defaultApp
-      ? process.resourcesPath
-      : app.getAppPath();
-  // fallbackMountDir: use tmpdir (always on local boot volume) when /Volumes inaccessible.
-  // ~/Library/Caches can be on iCloud/FUSE, causing "mount point is itself on a macFUSE volume".
-  const fallbackMountDir = path.join(tmpdir(), "bizzi-cloud-desktop", "BizziCloudMount");
-  await mountService.mount({
-    apiBaseUrl: baseUrl,
-    cacheBaseDir,
-    fallbackMountDir,
-    getAuthToken: async () => token,
-    resourcesDir,
-    streamCacheMaxBytes: Number(store.get("streamCacheMaxBytes")) || undefined,
-  });
-  return { mountPoint: mountService.getMountPoint() };
-});
-ipcMain.handle("mount-unmount", () => mountService.unmount());
-ipcMain.handle("mount-refresh-token", (_e, token: string) => {
-  mountService.refreshToken(token);
-});
-ipcMain.handle("mount-refresh-folder", async (_e, driveSlug: string) =>
-  mountService.refreshFolder(driveSlug)
-);
-
-// Native Sync (File Provider) IPC
+// Native Sync (File Provider) — replaces FUSE/rclone mount
 ipcMain.handle("native-sync-available", () => fileProviderService.isAvailable());
 ipcMain.handle("native-sync-status", () => ({
   isEnabled: fileProviderService.isEnabled(),
@@ -165,3 +147,6 @@ ipcMain.handle("native-sync-disable", () => fileProviderService.disable());
 ipcMain.handle("native-sync-refresh-token", (_e, token: string) => {
   fileProviderService.refreshToken(token);
 });
+ipcMain.handle("native-sync-refresh-folder", (_e, driveSlug: string) =>
+  fileProviderService.refreshFolder(driveSlug)
+);

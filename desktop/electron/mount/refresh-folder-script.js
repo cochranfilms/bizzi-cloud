@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Standalone script to touch directories on a FUSE mount.
- * Spawned by MountService.refreshFolder to avoid main-process reentrancy
+ * Spawned by FileProviderService.refreshFolder to avoid main-process reentrancy
  * (reading through the mount from the same process that hosts WebDAV).
  * Usage: node refresh-folder-script.js <rootPath>
  */

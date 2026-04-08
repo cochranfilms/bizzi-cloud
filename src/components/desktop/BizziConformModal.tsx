@@ -109,9 +109,9 @@ export function BizziConformModal({ open, onClose }: BizziConformModalProps) {
   }, [open, selectedDriveId, fetchPreview]);
 
   const refreshMountedDrive = useCallback(async () => {
-    if (typeof window?.bizzi?.mount?.refreshFolder !== "function") return;
+    if (typeof window?.bizzi?.nativeSync?.refreshFolder !== "function") return;
     const driveName = drives.find((d) => d.id === selectedDriveId)?.name ?? "Storage";
-    await window.bizzi.mount.refreshFolder(driveName);
+    await window.bizzi.nativeSync.refreshFolder(driveName);
   }, [drives, selectedDriveId]);
 
   const handleConform = async () => {

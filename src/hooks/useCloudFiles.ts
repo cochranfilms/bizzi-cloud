@@ -294,6 +294,9 @@ export type StorageFolderListFolder = {
   item_count: number;
   /** Earliest suitable thumbnail among first files in folder (image / video / PDF). */
   cover_file: StorageFolderCoverFile | null;
+  /** System roots (e.g. Transfers) — UI should match server trash/move guards. */
+  system_folder_role?: string | null;
+  protected_deletion?: boolean;
 };
 
 /** Lists one level of a folder model v2 Storage drive via API. */
@@ -350,6 +353,11 @@ export async function fetchStorageFolderList(
           typeof rawCover.content_type === "string" ? rawCover.content_type : null,
       };
     }
+    const sfr = f.system_folder_role;
+    const system_folder_role =
+      typeof sfr === "string" && sfr.trim() ? sfr.trim() : sfr === null ? null : undefined;
+    const pd = f.protected_deletion;
+    const protected_deletion = pd === true;
     return {
       id: String(f.id ?? ""),
       name: String(f.name ?? ""),
@@ -362,6 +370,8 @@ export async function fetchStorageFolderList(
       updated_at,
       item_count,
       cover_file,
+      ...(system_folder_role !== undefined ? { system_folder_role } : {}),
+      ...(protected_deletion ? { protected_deletion: true as const } : {}),
     };
   });
   const files = (data.files ?? []).map((raw) =>
@@ -451,6 +461,9 @@ export interface StorageTopFolderEntry {
   storageFolderVersion?: number;
   storageFolderOperationState?: string;
   storageFolderLifecycleState?: string;
+  /** System roots (e.g. Transfers) — align home tiles with FileGrid / API guards. */
+  systemFolderRole?: string | null;
+  protectedDeletion?: boolean;
   /** Same cover resolution as `/api/storage-folders/list` (v2 roots only). */
   coverFile?: StorageFolderCoverFile | null;
 }
@@ -900,6 +913,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 storage_folder_version?: number;
                 operation_state?: string;
                 lifecycle_state?: string;
+                system_folder_role?: string;
+                protected_deletion?: boolean;
                 cover_file?: StorageFolderCoverFile | null;
               }>;
             };
@@ -918,6 +933,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 typeof f.operation_state === "string" ? f.operation_state : undefined,
               storageFolderLifecycleState:
                 typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+              ...(typeof f.system_folder_role === "string" && f.system_folder_role.trim()
+                ? { systemFolderRole: f.system_folder_role.trim() }
+                : {}),
+              ...(f.protected_deletion === true ? { protectedDeletion: true as const } : {}),
               coverFile: f.cover_file ?? null,
             }));
           }
@@ -987,6 +1006,8 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 storage_folder_version?: number;
                 operation_state?: string;
                 lifecycle_state?: string;
+                system_folder_role?: string;
+                protected_deletion?: boolean;
                 cover_file?: StorageFolderCoverFile | null;
               }>;
             };
@@ -1005,6 +1026,10 @@ export function useCloudFiles(options?: UseCloudFilesOptions) {
                 typeof f.operation_state === "string" ? f.operation_state : undefined,
               storageFolderLifecycleState:
                 typeof f.lifecycle_state === "string" ? f.lifecycle_state : undefined,
+              ...(typeof f.system_folder_role === "string" && f.system_folder_role.trim()
+                ? { systemFolderRole: f.system_folder_role.trim() }
+                : {}),
+              ...(f.protected_deletion === true ? { protectedDeletion: true as const } : {}),
               coverFile: f.cover_file ?? null,
             }));
           }

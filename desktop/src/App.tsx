@@ -10,13 +10,13 @@ declare global {
       getSettings: () => Promise<Record<string, unknown>>;
       setSettings: (key: string, value: unknown) => Promise<Record<string, unknown>>;
       getPath: (name: "userData" | "cacheBase") => Promise<string>;
-      mount?: {
-        isFuseAvailable: () => Promise<boolean>;
-        getDependencies: () => Promise<unknown>;
-        getStatus: () => Promise<{ isMounted: boolean; mountPoint: string | null }>;
-        mount: (apiBaseUrl: string, token: string) => Promise<{ mountPoint: string }>;
-        unmount: () => Promise<void>;
+      nativeSync?: {
+        isAvailable: () => Promise<boolean>;
+        getStatus: () => Promise<{ isEnabled: boolean }>;
+        enable: (apiBaseUrl: string, token: string) => Promise<{ syncPath: string }>;
+        disable: () => Promise<void>;
         refreshToken: (token: string) => Promise<void>;
+        refreshFolder: (driveSlug: string) => Promise<void>;
       };
     };
   }
@@ -40,7 +40,7 @@ export default function App() {
           Bizzi <span className="text-bizzi-blue">Cloud</span> Desktop
         </h1>
         <p className="text-neutral-400 text-sm mt-1">
-          Mount your cloud drive locally for NLE editing
+          Apple File Provider sync for NLE editing—no macFUSE
         </p>
       </header>
 

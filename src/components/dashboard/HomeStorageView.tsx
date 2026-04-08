@@ -47,6 +47,7 @@ import {
 import { buildStorageV2FolderPinId, parseStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
+import { compareFolderItemsTransfersRootFirst } from "@/lib/storage-folders";
 import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
 import { isLegacyCustomLinkedDriveForConsolidation } from "@/lib/storage-folder-model-policy";
 import type { LinkedDrive } from "@/types/backup";
@@ -375,6 +376,9 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     () =>
       storageTopFolders.map((t) => {
         const isV2Row = !!t.storageFolderId;
+        const v2FolderLocked =
+          isV2Row &&
+          (t.systemFolderRole === "transfers_root" || t.protectedDeletion === true);
         const cover =
           t.coverFile?.object_key?.trim() && isV2Row
             ? {
@@ -399,9 +403,15 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           storageFolderVersion: t.storageFolderVersion,
           storageFolderOperationState: t.storageFolderOperationState,
           storageFolderLifecycleState: t.storageFolderLifecycleState,
-          preventRename: !isV2Row,
+          ...(isV2Row &&
+          typeof t.systemFolderRole === "string" &&
+          t.systemFolderRole.trim()
+            ? { systemFolderRole: t.systemFolderRole.trim() }
+            : {}),
+          preventRename: v2FolderLocked ? true : !isV2Row,
           preventMove: true,
           isSystemFolder: false,
+          ...(v2FolderLocked ? { preventDelete: true } : {}),
           ...(cover ? { coverFile: cover } : {}),
         };
       }),
@@ -409,8 +419,8 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   );
 
   const bizziCloudFolderItems = useMemo(() => {
-    return [...driveFolderItemsWithPolicy, ...storagePathVirtualFolderItems].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    return [...driveFolderItemsWithPolicy, ...storagePathVirtualFolderItems].sort(
+      compareFolderItemsTransfersRootFirst
     );
   }, [driveFolderItemsWithPolicy, storagePathVirtualFolderItems]);
 

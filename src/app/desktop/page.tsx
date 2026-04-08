@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import {
@@ -11,12 +10,10 @@ import {
   Zap,
   Download,
   CheckCircle2,
-  ExternalLink,
-  AlertCircle,
 } from "lucide-react";
 
 const DMG_URL =
-  "https://github.com/cochranfilms/bizzi-cloud/releases/download/v0.2.0/Bizzi.Cloud-0.2.0-arm64.dmg";
+  "https://github.com/cochranfilms/bizzi-cloud/releases/download/v0.2.1/Bizzi.Cloud-0.2.1-arm64.dmg";
 
 export default function DesktopLandingPage() {
   return (
@@ -55,7 +52,7 @@ export default function DesktopLandingPage() {
                   Download for Mac (Apple Silicon)
                 </a>
                 <p className="mt-4 text-sm text-neutral-500">
-                  Requires macFUSE. macOS 12+ (Apple Silicon)
+                  Uses Apple File Provider (no macFUSE). macOS 12+ (Apple Silicon)
                 </p>
               </div>
               <div className="relative hidden lg:block">
@@ -99,8 +96,8 @@ export default function DesktopLandingPage() {
               </h2>
               <p className="text-lg text-neutral-600 max-w-2xl mx-auto">
                 Unlike generic cloud storage, Bizzi Cloud Desktop is designed for
-                NLE workflows. Mount your drive and edit—no sync folders, no
-                manual downloads.
+                NLE workflows. Open your drive from Finder Locations and edit—no
+                sync folders, no manual downloads.
               </p>
             </div>
             <div className="grid md:grid-cols-3 gap-8">
@@ -109,12 +106,12 @@ export default function DesktopLandingPage() {
                   <HardDrive className="w-6 h-6 text-bizzi-blue" />
                 </div>
                 <h3 className="text-xl font-semibold text-bizzi-navy mb-2">
-                  Virtual SSD mount
+                  Finder Locations integration
                 </h3>
                 <p className="text-neutral-600">
-                  Your cloud drive appears at /Volumes/BizziCloud. NLEs see it
-                  like a local drive—scrub, preview, and edit without copying
-                  files first.
+                  Your libraries show up under Locations in Finder via Apple File
+                  Provider. NLEs see them like local storage—scrub, preview, and edit
+                  while files stream on demand.
                 </p>
               </div>
               <div className="rounded-2xl p-6 border border-neutral-200 bg-neutral-50/50">
@@ -125,7 +122,7 @@ export default function DesktopLandingPage() {
                   Proxy support
                 </h3>
                 <p className="text-neutral-600">
-                  Bizzi proxies are exposed in the mount. Edit with lightweight
+                  Bizzi proxies are visible in Finder. Edit with lightweight
                   proxies, export in full resolution—changes sync back to the
                   cloud automatically.
                 </p>
@@ -135,77 +132,45 @@ export default function DesktopLandingPage() {
                   <Zap className="w-6 h-6 text-bizzi-blue" />
                 </div>
                 <h3 className="text-xl font-semibold text-bizzi-navy mb-2">
-                  Smart prefetching
+                  Stream cache
                 </h3>
                 <p className="text-neutral-600">
-                  Predictive cache prefetches ahead as you scrub. Sequential
-                  reads stay fast so timelines feel responsive.
+                  Tunable on-disk cache for streamed data keeps scrubbing and
+                  playback smooth on large timelines.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* macFUSE - Required for mount */}
+        {/* Apple File Provider */}
         <section className="py-20 md:py-28 px-6 bg-gradient-to-b from-neutral-50 to-neutral-100/80 border-y border-neutral-200">
           <div className="max-w-5xl mx-auto">
             <div className="flex flex-col md:flex-row gap-12 md:gap-16 items-center">
               <div className="flex-shrink-0 order-2 md:order-1">
-                <a
-                  href="https://macfuse.github.io/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block group"
-                >
-                  <div className="relative w-36 h-36 md:w-44 md:h-44 rounded-2xl overflow-hidden shadow-xl ring-2 ring-white ring-offset-4 ring-offset-neutral-100 bg-white transition-transform group-hover:scale-[1.02]">
-                    <Image
-                      src="/838036.png"
-                      alt="macFUSE logo"
-                      fill
-                      className="object-contain p-4"
-                      sizes="(max-width: 768px) 144px, 176px"
-                    />
-                  </div>
-                </a>
+                <div className="relative w-36 h-36 md:w-44 md:h-44 rounded-2xl overflow-hidden shadow-xl ring-2 ring-white ring-offset-4 ring-offset-neutral-100 bg-white flex items-center justify-center">
+                  <HardDrive className="w-20 h-20 md:w-24 md:h-24 text-bizzi-blue" aria-hidden />
+                </div>
               </div>
               <div className="flex-1 order-1 md:order-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold uppercase tracking-wider mb-4">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  Required for Mount
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-100 text-sky-900 text-xs font-semibold uppercase tracking-wider mb-4">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Native macOS
                 </div>
                 <h2 className="text-2xl md:text-3xl font-bold text-bizzi-navy mb-4">
-                  Install macFUSE before you mount
+                  Apple File Provider—not a kernel extension
                 </h2>
                 <p className="text-neutral-600 mb-4 leading-relaxed">
-                  Bizzi Cloud Desktop uses FUSE (Filesystem in Userspace) to
-                  mount your cloud drive as a local volume. macOS does not
-                  include FUSE by default—you must download and install{" "}
-                  <strong className="text-bizzi-navy">macFUSE</strong> from the
-                  official project before the Mount feature will work.
+                  Bizzi Cloud uses the same system APIs as iCloud Drive and other
+                  cloud providers that appear under <strong className="text-bizzi-navy">Locations</strong> in Finder.
+                  You don&apos;t install macFUSE or maintain a separate FUSE stack.
                 </p>
                 <p className="text-neutral-600 mb-6 leading-relaxed">
-                  <a
-                    href="https://macfuse.github.io/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-bizzi-blue font-medium hover:underline"
-                  >
-                    macFUSE
-                  </a>{" "}
-                  adds support for FUSE file systems on macOS. It&apos;s free,
-                  open-source, and used by many professional apps. Installation
-                  takes about a minute; you may need to restart your Mac afterward.
+                  For distribution outside the Mac App Store, Apple still expects a
+                  Developer ID signature and notarization so Gatekeeper allows the
+                  app and its File Provider extension without extra steps.
                 </p>
-                <a
-                  href="https://macfuse.github.io/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-neutral-900 text-white font-medium hover:bg-neutral-800 transition-colors shadow-lg"
-                >
-                  Download macFUSE at macfuse.github.io
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <p className="mt-4 text-sm text-neutral-500">
+                <p className="text-sm text-neutral-500">
                   macOS 12+ · Apple Silicon & Intel
                 </p>
               </div>
@@ -227,8 +192,8 @@ export default function DesktopLandingPage() {
               Ready to edit from the cloud?
             </h2>
             <p className="text-lg text-neutral-700 mb-8">
-              Sign in with your Bizzi Cloud account, click Mount, and start
-              editing. Add the volume to your Finder sidebar for quick access.
+              Sign in with your Bizzi Cloud account, enable Bizzi Cloud in Finder,
+              and start editing. Your libraries appear under Locations.
             </p>
             <div className="flex flex-wrap justify-center gap-4 mb-8">
               <div className="flex items-center gap-2 text-sm text-neutral-700">
@@ -237,11 +202,11 @@ export default function DesktopLandingPage() {
               </div>
               <div className="flex items-center gap-2 text-sm text-neutral-700">
                 <CheckCircle2 className="w-5 h-5 text-bizzi-navy" />
-                macFUSE required
+                Apple File Provider
               </div>
               <div className="flex items-center gap-2 text-sm text-neutral-700">
                 <CheckCircle2 className="w-5 h-5 text-bizzi-navy" />
-                rclone bundled
+                No macFUSE install
               </div>
             </div>
             <a

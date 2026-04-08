@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, Upload, File, Lock, Calendar, Copy, Check, Download, Loader2, Search, Folder, ChevronLeft, Zap, ListPlus } from "lucide-react";
 import type { Transfer, TransferPermission } from "@/types/transfer";
@@ -16,8 +16,19 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import UploadProgressPanel from "./UploadProgressPanel";
 import TransferModalPickThumbnail from "./TransferModalPickThumbnail";
 
-function transferFileKey(f: { path: string; name: string }) {
+function transferFileKey(f: { path: string; name: string; queueItemId?: string }) {
+  if (f.queueItemId) return `q:${f.queueItemId}`;
   return `${f.path}::${f.name}`;
+}
+
+function revokePreviewUrl(url: string | null | undefined) {
+  if (url && url.startsWith("blob:")) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function filesInFolderScope<T extends { driveId: string; fullPath: string }>(
@@ -55,6 +66,8 @@ export type TransferModalFile = {
   type: "file";
   backupFileId?: string;
   objectKey?: string;
+  queueItemId?: string;
+  localPreviewUrl?: string | null;
 };
 
 interface CreateTransferModalProps {
@@ -91,16 +104,20 @@ export default function CreateTransferModal({
     hasEditor,
     hasGallerySuite,
   });
-  const { uploadFiles, fileUploadProgress, cancelFileUpload } = useBackup();
+  const {
+    uploadFiles,
+    fileUploadProgress,
+    cancelFileUpload,
+    fileUploadError,
+    clearFileUploadError,
+  } = useBackup();
   const uploadStartedByModalRef = useRef(false);
   const draftSlugRef = useRef<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
-  const [selectedFiles, setSelectedFiles] = useState<
-    { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }[]
-  >([]);
+  const [selectedFiles, setSelectedFiles] = useState<TransferModalFile[]>([]);
 
   // Pre-populate when modal opens (only on open transition, not on every re-render)
   const wasOpenRef = useRef(false);
@@ -125,17 +142,18 @@ export default function CreateTransferModal({
   const [browsePath, setBrowsePath] = useState<string>("");
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
 
-  const toggleFile = useCallback(
-    (file: { name: string; path: string; type: "file"; backupFileId?: string; objectKey?: string }) => {
-      const key = transferFileKey(file);
-      setSelectedFiles((prev) =>
-        prev.some((f) => transferFileKey(f) === key)
-          ? prev.filter((f) => transferFileKey(f) !== key)
-          : [...prev, file]
-      );
-    },
-    []
-  );
+  const toggleFile = useCallback((file: TransferModalFile) => {
+    const key = transferFileKey(file);
+    setSelectedFiles((prev) =>
+      prev.some((f) => transferFileKey(f) === key)
+        ? prev.filter((f) => {
+            if (transferFileKey(f) !== key) return true;
+            revokePreviewUrl(f.localPreviewUrl);
+            return false;
+          })
+        : [...prev, file]
+    );
+  }, []);
 
   const allFilesForSelection = allFilesForTransfer.map((f) => ({
     name: f.name,
@@ -181,6 +199,17 @@ export default function CreateTransferModal({
 
   const fileSearchLower = fileSearch.trim().toLowerCase();
   const hasSearch = fileSearchLower !== "";
+
+  const canSubmitTransfer = useMemo(
+    () =>
+      name.trim().length > 0 &&
+      clientName.trim().length > 0 &&
+      selectedFiles.length > 0 &&
+      selectedFiles.every(
+        (f) => typeof f.backupFileId === "string" && f.backupFileId.trim().length > 0
+      ),
+    [name, clientName, selectedFiles]
+  );
 
   // Folder navigation: subfolders and files at current browse location
   const { browseSubfolders, browseFiles } = (() => {
@@ -267,6 +296,71 @@ export default function CreateTransferModal({
     teamOwnerFromPath,
   ]);
 
+  const buildTransferUploadOptions = useCallback(
+    (slug: string) => ({
+      attachToTransfer: { slug },
+      onUploadPrepared: (items: { queueItemId: string; file: File }[]) => {
+        setSelectedFiles((prev) => [
+          ...prev,
+          ...items.map(({ queueItemId, file }) => ({
+            name: file.name,
+            path: `Transfer upload/${file.name}`,
+            type: "file" as const,
+            queueItemId,
+            localPreviewUrl: URL.createObjectURL(file),
+          })),
+        ]);
+      },
+      onFileComplete: (f: {
+        name: string;
+        path: string;
+        backupFileId?: string;
+        objectKey?: string;
+        queueItemId?: string;
+      }) => {
+        setSelectedFiles((prev) => {
+          if (f.queueItemId) {
+            const idx = prev.findIndex((x) => x.queueItemId === f.queueItemId);
+            if (idx === -1) {
+              if (prev.some((x) => x.path === f.path && x.name === f.name)) return prev;
+              return [
+                ...prev,
+                {
+                  name: f.name,
+                  path: f.path,
+                  type: "file" as const,
+                  backupFileId: f.backupFileId,
+                  objectKey: f.objectKey,
+                },
+              ];
+            }
+            const row = prev[idx]!;
+            revokePreviewUrl(row.localPreviewUrl);
+            const next = [...prev];
+            next[idx] = {
+              name: f.name,
+              path: f.path,
+              type: "file",
+              backupFileId: f.backupFileId,
+              objectKey: f.objectKey,
+            };
+            return next;
+          }
+          const entry = {
+            name: f.name,
+            path: f.path,
+            type: "file" as const,
+            backupFileId: f.backupFileId,
+            objectKey: f.objectKey,
+          };
+          if (prev.some((x) => x.path === f.path && x.name === f.name)) return prev;
+          return [...prev, entry];
+        });
+      },
+    }),
+    []
+  );
+
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
@@ -276,31 +370,17 @@ export default function CreateTransferModal({
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
       setModalError(null);
+      clearFileUploadError();
       const slug = await ensureDraftTransfer();
       if (!slug) return;
       uploadStartedByModalRef.current = true;
       try {
-        await uploadFiles(files, undefined, {
-        attachToTransfer: { slug },
-        onFileComplete: (f) => {
-          const entry = {
-            name: f.name,
-            path: f.path,
-            type: "file" as const,
-            backupFileId: f.backupFileId,
-            objectKey: f.objectKey,
-          };
-          setSelectedFiles((prev) => {
-            if (prev.some((x) => x.path === f.path && x.name === f.name)) return prev;
-            return [...prev, entry];
-          });
-        },
-      });
+        await uploadFiles(files, undefined, buildTransferUploadOptions(slug));
       } finally {
         uploadStartedByModalRef.current = false;
       }
     },
-    [uploadFiles, ensureDraftTransfer]
+    [uploadFiles, ensureDraftTransfer, buildTransferUploadOptions, clearFileUploadError]
   );
 
   const handleFileSelect = useCallback(
@@ -309,38 +389,27 @@ export default function CreateTransferModal({
       e.target.value = "";
       if (files.length === 0) return;
       setModalError(null);
+      clearFileUploadError();
       const slug = await ensureDraftTransfer();
       if (!slug) return;
       uploadStartedByModalRef.current = true;
       try {
-        await uploadFiles(files, undefined, {
-        attachToTransfer: { slug },
-        onFileComplete: (f) => {
-          const entry = {
-            name: f.name,
-            path: f.path,
-            type: "file" as const,
-            backupFileId: f.backupFileId,
-            objectKey: f.objectKey,
-          };
-          setSelectedFiles((prev) => {
-            if (prev.some((x) => x.path === f.path && x.name === f.name)) return prev;
-            return [...prev, entry];
-          });
-        },
-      });
+        await uploadFiles(files, undefined, buildTransferUploadOptions(slug));
       } finally {
         uploadStartedByModalRef.current = false;
       }
     },
-    [uploadFiles, ensureDraftTransfer]
+    [uploadFiles, ensureDraftTransfer, buildTransferUploadOptions, clearFileUploadError]
   );
 
   const performClose = useCallback(() => {
     setName("");
     setClientName("");
     setClientEmail("");
-    setSelectedFiles([]);
+    setSelectedFiles((prev) => {
+      prev.forEach((f) => revokePreviewUrl(f.localPreviewUrl));
+      return [];
+    });
     setPermission("downloadable");
     setPasswordEnabled(false);
     setPassword("");
@@ -353,8 +422,9 @@ export default function CreateTransferModal({
     setSelectedFolderKeys(new Set());
     draftSlugRef.current = null;
     setModalError(null);
+    clearFileUploadError();
     onClose();
-  }, [onClose]);
+  }, [onClose, clearFileUploadError]);
 
   const handleRequestClose = useCallback(async () => {
     const confirmed = await confirm({
@@ -381,7 +451,7 @@ export default function CreateTransferModal({
   }, [performClose, router, isEnterprise, isDesktop, teamOwnerFromPath]);
 
   const handleSubmit = useCallback(async () => {
-    if (!name.trim() || !clientName.trim() || selectedFiles.length === 0) return;
+    if (!canSubmitTransfer) return;
     setModalError(null);
     const idToken = await getFirebaseAuth().currentUser?.getIdToken(true);
     if (!idToken) return;
@@ -537,13 +607,15 @@ export default function CreateTransferModal({
       name: name.trim(),
       clientName: clientName.trim(),
       clientEmail: clientEmail.trim() || undefined,
-      files: selectedFiles.map((f) => ({
-        name: f.name,
-        path: f.path,
-        type: "file" as const,
-        backupFileId: f.backupFileId,
-        objectKey: f.objectKey,
-      })),
+      files: selectedFiles
+        .filter((f) => typeof f.backupFileId === "string" && f.backupFileId.trim())
+        .map((f) => ({
+          name: f.name,
+          path: f.path,
+          type: "file" as const,
+          backupFileId: f.backupFileId!.trim(),
+          objectKey: f.objectKey,
+        })),
       permission,
       password: passwordEnabled && password.trim() ? password.trim() : null,
       expiresAt: expiresAt ? expiresAt : null,
@@ -619,6 +691,7 @@ export default function CreateTransferModal({
     setCreatedSlug(data.slug);
     onCreated?.(data.slug);
   }, [
+    canSubmitTransfer,
     name,
     clientName,
     clientEmail,
@@ -757,6 +830,11 @@ export default function CreateTransferModal({
             <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Files to transfer
             </label>
+            {fileUploadError ? (
+              <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                {fileUploadError}
+              </p>
+            ) : null}
             {fileUploadProgress &&
               fileUploadProgress.files.length > 0 &&
               (fileUploadProgress.status === "in_progress" || fileUploadProgress.status === "completed") && (
@@ -825,6 +903,7 @@ export default function CreateTransferModal({
                         <TransferModalPickThumbnail
                           objectKey={f.objectKey}
                           fileName={f.name}
+                          localPreviewUrl={f.localPreviewUrl}
                           sizeClassName="h-11 w-11"
                         />
                         <span className="max-w-[4.5rem] truncate text-center text-[10px] text-neutral-600 dark:text-neutral-400">
@@ -1109,13 +1188,18 @@ export default function CreateTransferModal({
                         <TransferModalPickThumbnail
                           objectKey={f.objectKey}
                           fileName={f.name}
+                          localPreviewUrl={f.localPreviewUrl}
                           sizeClassName="h-14 w-14"
                         />
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedFiles((p) => p.filter((x) => transferFileKey(x) !== transferFileKey(f)));
+                            setSelectedFiles((p) => {
+                              const drop = p.find((x) => transferFileKey(x) === transferFileKey(f));
+                              if (drop?.localPreviewUrl) revokePreviewUrl(drop.localPreviewUrl);
+                              return p.filter((x) => transferFileKey(x) !== transferFileKey(f));
+                            });
                           }}
                           className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-neutral-200 bg-white text-xs font-semibold text-neutral-600 shadow-sm hover:bg-red-50 hover:text-red-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-red-950/50"
                           aria-label={`Remove ${f.name}`}
@@ -1231,7 +1315,7 @@ export default function CreateTransferModal({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!name.trim() || !clientName.trim() || selectedFiles.length === 0}
+              disabled={!canSubmitTransfer}
               className="rounded-lg bg-bizzi-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-bizzi-cyan disabled:cursor-not-allowed disabled:opacity-50"
             >
               Create transfer
