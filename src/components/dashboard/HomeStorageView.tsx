@@ -47,7 +47,7 @@ import {
 import { buildStorageV2FolderPinId, parseStorageV2FolderPinId } from "@/lib/storage-v2-folder-pin";
 import { bulkShareArgsFromFolderKeys } from "@/lib/bulk-share-folder-keys";
 import { mergePinnedFolderItems } from "@/lib/merge-pinned-folder-items";
-import { compareFolderItemsTransfersRootFirst } from "@/lib/storage-folders";
+import { compareFolderItemsTransfersRootFirst } from "@/lib/storage-folders/folder-display-order";
 import ConsolidateIntoStorageModal from "./ConsolidateIntoStorageModal";
 import { isLegacyCustomLinkedDriveForConsolidation } from "@/lib/storage-folder-model-policy";
 import type { LinkedDrive } from "@/types/backup";
