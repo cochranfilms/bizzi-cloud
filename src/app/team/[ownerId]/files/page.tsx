@@ -1,16 +1,10 @@
-"use client";
+import RedirectWorkspaceHub from "@/components/dashboard/RedirectWorkspaceHub";
 
-import TopBar from "@/components/dashboard/TopBar";
-import DashboardContent from "@/components/dashboard/DashboardContent";
-import FilesFilterTopChromeBoundary from "@/components/dashboard/FilesFilterTopChromeBoundary";
-
-export default function TeamFilesPage() {
-  return (
-    <FilesFilterTopChromeBoundary>
-      <TopBar title="All files" showLayoutSettings />
-      <main className="flex min-h-0 flex-1 flex-col p-6" data-files-main>
-        <DashboardContent />
-      </main>
-    </FilesFilterTopChromeBoundary>
-  );
+export default async function TeamFilesPage({
+  params,
+}: {
+  params: Promise<{ ownerId: string }>;
+}) {
+  const { ownerId } = await params;
+  return <RedirectWorkspaceHub href={`/team/${ownerId}`} />;
 }

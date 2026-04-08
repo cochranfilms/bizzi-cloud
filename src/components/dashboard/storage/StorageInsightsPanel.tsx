@@ -24,7 +24,7 @@ export default function StorageInsightsPanel({
     insights.push({
       title: "Largest file",
       value: `${top.name} (${formatBytes(top.size)})`,
-      action: { label: "View largest files", href: `${basePath}/files?sort=largest` },
+      action: { label: "View largest files", href: `${basePath}?sort=largest` },
     });
   }
 
@@ -40,7 +40,7 @@ export default function StorageInsightsPanel({
       title: "Files not opened in 90+ days",
       value: `${data.oldFiles90DaysCount.toLocaleString()} files`,
       description: "Consider archiving or deleting to free space",
-      action: { label: "View files", href: `${basePath}/files?date=old` },
+      action: { label: "View files", href: `${basePath}?date=old` },
     });
   }
 

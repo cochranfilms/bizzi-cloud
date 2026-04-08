@@ -5,7 +5,6 @@ import BizziLogoMark from "@/components/BizziLogoMark";
 import { usePathname } from "next/navigation";
 import {
   Home,
-  FolderOpen,
   Share2,
   Trash2,
   Send,
@@ -29,7 +28,6 @@ const navItems: Array<{
   activeBgColor?: string;
 }> = [
   { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/dashboard/files", label: "All files", icon: FolderOpen },
   { href: "/dashboard/creator", label: "Creator", icon: Film, requiresEditor: true, activeBgColor: CREATOR_COLOR },
   { href: "/dashboard/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true, activeBgColor: GALLERIES_COLOR },
   { href: "/dashboard/shared", label: "Shared", icon: Share2 },

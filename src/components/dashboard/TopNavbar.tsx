@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   Home,
-  FolderOpen,
   Share2,
   Trash2,
   Send,
@@ -43,7 +42,6 @@ const navItems: Array<{
   activeBgColor?: string;
 }> = [
   { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/dashboard/files", label: "All files", icon: FolderOpen },
   {
     href: "/dashboard/creator",
     label: "Creator",
@@ -152,57 +150,49 @@ export default function TopNavbar() {
   const headerTopRowFlexCls =
     "flex min-h-12 w-full min-w-0 items-center gap-2 md:min-h-0 md:gap-3";
 
-  /** Title row + this row share the same split; nav stays centered over the primary column. */
-  const desktopNav = (
-    <div className="hidden w-full min-w-0 md:flex md:items-center">
-      <div className="flex min-h-9 min-w-0 flex-1 justify-center overflow-hidden px-1 sm:px-2">
-        <nav
-          className="-mx-1 flex min-h-9 min-w-0 max-w-full flex-nowrap justify-center gap-0.5 overflow-x-auto overflow-y-visible px-1 pb-0.5 [scrollbar-width:thin]"
-          aria-label="Workspace"
-        >
-          {filteredItems.map((item) => {
-            const Icon = item.icon;
-            const href = resolvedNavHref(item);
-            const lockedTeaser = premiumLockedForOwnerSetup(item);
-            const isActive =
-              lockedTeaser ? false : isNavItemActive(pathname, href, item.href);
-            const hasPowerupColor = !lockedTeaser && isActive && item.activeBgColor;
-            const teaserLabel =
-              item.href === "/dashboard/creator"
-                ? "Creator — add seats to use in team workspace"
-                : "Galleries — add seats to use in team workspace";
-            return (
-              <Link
-                key={item.href}
-                href={href}
-                className={navLinkClass(isActive, !!hasPowerupColor, lockedTeaser)}
-                style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
-                title={lockedTeaser ? teaserLabel : undefined}
-                aria-label={lockedTeaser ? teaserLabel : undefined}
-              >
-                <Icon
-                  className={`h-4 w-4 flex-shrink-0 ${
-                    hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
-                  }`}
-                />
-                {lockedTeaser ? (
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-500 dark:text-neutral-400" aria-hidden />
-                ) : null}
-                <span className="hidden lg:inline">{item.label}</span>
-                {lockedTeaser ? (
-                  <span className="hidden rounded bg-neutral-200/90 px-1 py-px text-[10px] font-medium text-neutral-700 lg:inline dark:bg-neutral-700 dark:text-neutral-200">
-                    Add seats
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
-      <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
-        {accountTools}
-      </div>
-    </div>
+  const workspaceNavInline = (
+    <nav
+      className="-mx-0.5 hidden min-h-9 min-w-0 flex-1 flex-nowrap items-center justify-start gap-0.5 overflow-x-auto overflow-y-visible px-0.5 pb-0.5 [scrollbar-width:thin] md:flex"
+      aria-label="Workspace"
+    >
+      {filteredItems.map((item) => {
+        const Icon = item.icon;
+        const href = resolvedNavHref(item);
+        const lockedTeaser = premiumLockedForOwnerSetup(item);
+        const isActive =
+          lockedTeaser ? false : isNavItemActive(pathname, href, item.href);
+        const hasPowerupColor = !lockedTeaser && isActive && item.activeBgColor;
+        const teaserLabel =
+          item.href === "/dashboard/creator"
+            ? "Creator — add seats to use in team workspace"
+            : "Galleries — add seats to use in team workspace";
+        return (
+          <Link
+            key={item.href}
+            href={href}
+            className={navLinkClass(isActive, !!hasPowerupColor, lockedTeaser)}
+            style={hasPowerupColor ? { backgroundColor: item.activeBgColor } : undefined}
+            title={lockedTeaser ? teaserLabel : undefined}
+            aria-label={lockedTeaser ? teaserLabel : undefined}
+          >
+            <Icon
+              className={`h-4 w-4 flex-shrink-0 ${
+                hasPowerupColor ? "text-white" : "text-[var(--enterprise-primary)]"
+              }`}
+            />
+            {lockedTeaser ? (
+              <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-500 dark:text-neutral-400" aria-hidden />
+            ) : null}
+            <span className="hidden lg:inline">{item.label}</span>
+            {lockedTeaser ? (
+              <span className="hidden rounded bg-neutral-200/90 px-1 py-px text-[10px] font-medium text-neutral-700 lg:inline dark:bg-neutral-700 dark:text-neutral-200">
+                Add seats
+              </span>
+            ) : null}
+          </Link>
+        );
+      })}
+    </nav>
   );
 
   if (teamNavBase && teamWs) {
@@ -221,7 +211,7 @@ export default function TopNavbar() {
             </button>
             <Link
               href={homeHref}
-              className="flex shrink-0 items-center"
+              className="flex shrink-0 items-center gap-2"
               onClick={() => setMobileOpen(false)}
               title={teamWs.teamName}
               aria-label={`${teamWs.teamName} home`}
@@ -238,28 +228,16 @@ export default function TopNavbar() {
               ) : (
                 <BizziLogoMark width={24} height={24} className="flex-shrink-0" />
               )}
-            </Link>
-          </div>
-          <div className="flex min-w-0 flex-1 justify-center px-1">
-            <Link
-              href={homeHref}
-              className="flex min-w-0 max-w-[min(22rem,calc(100vw-9rem))] items-center justify-center gap-2"
-              onClick={() => setMobileOpen(false)}
-              title={teamWs.teamName}
-            >
-              <span className="truncate font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base">
+              <span className="hidden max-w-[10rem] truncate text-sm font-semibold text-neutral-900 md:inline dark:text-white">
                 {teamWs.teamName}
               </span>
-              <span className="flex-shrink-0 rounded bg-[var(--enterprise-primary)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--enterprise-primary)] sm:px-2 sm:text-xs">
-                Team
-              </span>
             </Link>
           </div>
+          {workspaceNavInline}
           <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
-            <div className="md:hidden">{accountTools}</div>
+            {accountTools}
           </div>
         </div>
-        {desktopNav}
 
         {mobileOpen && (
           <div
@@ -349,29 +327,23 @@ export default function TopNavbar() {
 
           <Link
             href="/"
-            className="flex shrink-0 items-center"
+            className="flex shrink-0 items-center gap-2"
             onClick={() => setMobileOpen(false)}
             aria-label="Bizzi Cloud home"
           >
             <BizziLogoMark width={24} height={24} />
+            <span className="hidden text-sm font-semibold tracking-tight text-neutral-900 md:inline dark:text-white">
+              Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
+            </span>
           </Link>
         </div>
 
-        <div className="flex min-w-0 flex-1 justify-center px-1">
-          <Link
-            href="/"
-            className="block max-w-[min(14rem,calc(100vw-9rem))] whitespace-nowrap text-center font-semibold text-sm tracking-tight text-neutral-900 dark:text-white sm:text-base"
-            onClick={() => setMobileOpen(false)}
-          >
-            Bizzi <span className="text-[var(--enterprise-primary)]">Cloud</span>
-          </Link>
-        </div>
+        {workspaceNavInline}
 
         <div className="flex shrink-0 items-center justify-end xl:w-56 xl:min-w-56 xl:justify-center">
-          <div className="md:hidden">{accountTools}</div>
+          {accountTools}
         </div>
       </div>
-      {desktopNav}
 
       {mobileOpen && (
         <div

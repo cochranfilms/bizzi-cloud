@@ -176,7 +176,7 @@ export default function RightPanel({
               </h3>
               <ul className="space-y-2">
                 <EnterpriseSidebarCard
-                  href={`${basePath}/files`}
+                  href={basePath}
                   label="Files"
                   Icon={FolderOpen}
                   pathname={pathname}

@@ -57,10 +57,10 @@ export default function StorageAnalyticsPage({
             Upload files to see your storage breakdown and analytics.
           </p>
           <a
-            href={`${basePath}/files`}
+            href={basePath}
             className="inline-flex items-center gap-2 rounded-lg bg-bizzi-blue px-4 py-2 font-medium text-white transition-colors hover:bg-bizzi-blue/90 dark:bg-bizzi-cyan dark:text-neutral-900 dark:hover:bg-bizzi-cyan/90"
           >
-            Go to All files
+            Go to Home
           </a>
         </div>
       </div>

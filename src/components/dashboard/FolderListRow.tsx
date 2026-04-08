@@ -64,6 +64,8 @@ interface FolderListRowProps {
   revealFadeIn?: boolean;
   /** Appended to the row `tr` (e.g. home folder-open pulse). */
   rowExtraClassName?: string;
+  /** Small pill next to the name (e.g. “Pinned”). */
+  rowBadge?: string;
 }
 
 export default function FolderListRow({
@@ -85,6 +87,7 @@ export default function FolderListRow({
   onConsolidateMenuSelect,
   revealFadeIn = false,
   rowExtraClassName = "",
+  rowBadge,
 }: FolderListRowProps) {
   const revealEntered = useDashboardItemReveal(revealFadeIn);
   const revealOpacityClass = revealFadeIn
@@ -330,9 +333,16 @@ export default function FolderListRow({
                 }`}
               />
             </div>
-            <span className="truncate font-medium text-neutral-900 dark:text-white" title={item.name}>
-              {item.name}
-            </span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate font-medium text-neutral-900 dark:text-white" title={item.name}>
+                {item.name}
+              </span>
+              {rowBadge ? (
+                <span className="shrink-0 rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                  {rowBadge}
+                </span>
+              ) : null}
+            </div>
           </div>
         </td>
         <td className="px-4 py-2 text-sm text-neutral-600 dark:text-neutral-400">

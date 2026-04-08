@@ -104,6 +104,8 @@ interface FolderCardProps {
   onConsolidateMenuSelect?: () => void;
   /** Play the standard dashboard opacity reveal (e.g. new v2 subfolder just created). */
   revealFadeIn?: boolean;
+  /** Optional pill (e.g. “Pinned”) on the card for home folder strip. */
+  topBadge?: string;
 }
 
 // Scaled so largest never exceeds former medium; large = former medium
@@ -130,6 +132,7 @@ export default function FolderCard({
   onStorageFolderMutated,
   onConsolidateMenuSelect,
   revealFadeIn = false,
+  topBadge,
 }: FolderCardProps) {
   const revealEntered = useDashboardItemReveal(revealFadeIn);
   const revealOpacityClass = revealFadeIn
@@ -362,6 +365,15 @@ export default function FolderCard({
         onDragLeave={isDropTarget ? handleDragLeave : undefined}
         onDrop={isDropTarget ? handleDrop : undefined}
       >
+        {topBadge ? (
+          <span
+            className={`pointer-events-none absolute left-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20 ${
+              selectable && onSelect ? "top-9" : "top-2"
+            }`}
+          >
+            {topBadge}
+          </span>
+        ) : null}
         {selectable && onSelect && (
           <button
             type="button"

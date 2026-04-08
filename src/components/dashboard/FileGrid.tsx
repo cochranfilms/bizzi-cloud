@@ -2214,10 +2214,12 @@ export default function FileGrid({
       data-files-inline-storage={inlineStorageOnFilesPage ? "true" : undefined}
       onMouseDown={handleMouseDown}
     >
-      {/* Filter section — compact, no section title bar */}
+      {/* Filter section — compact; home hub keeps the canvas open (no divider under chrome). */}
       <section
-        className={`shrink-0 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60${
-          embeddedHomeStorage || filesPageStorageEmbeddedChrome ? " pt-2 pb-3" : ""
+        className={`shrink-0 py-4 last:border-b-0 ${
+          embeddedHomeStorage
+            ? "border-0 pt-1 pb-2"
+            : "border-b border-neutral-200/60 dark:border-neutral-800/60"
         }`}
       >
         <div className="space-y-3">

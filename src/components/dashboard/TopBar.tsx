@@ -2,7 +2,7 @@
 
 import { Plus, Upload, Folder, Share2, Send, ChevronDown, Loader2, AlertCircle, X, Settings } from "lucide-react";
 import Link from "next/link";
-import { useState, useRef, useEffect, useContext, useCallback } from "react";
+import { useState, useRef, useEffect, useContext, useCallback, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import CreateTransferModal from "./CreateTransferModal";
 import CreateFolderModal from "./CreateFolderModal";
@@ -22,14 +22,22 @@ import {
 } from "@/lib/linked-drive-folder-model";
 
 interface TopBarProps {
-  title?: string;
+  /** When null/omitted with a default route, use default copy; pass null with centerContent to omit the title. */
+  title?: string | null;
   /** When true, shows View/Size/Ratio/Scale/Info controls in the top bar (left of New button) */
   showLayoutSettings?: boolean;
   /** Optional link to settings (e.g. /dashboard/creator/settings) - shows gear icon next to title */
   settingsHref?: string;
+  /** Home hub: centered Storage / RAW / Gallery tabs (Shade-style sub-nav). */
+  centerContent?: ReactNode;
 }
 
-export default function TopBar({ title = "All files", showLayoutSettings = false, settingsHref }: TopBarProps) {
+export default function TopBar({
+  title = "All files",
+  showLayoutSettings = false,
+  settingsHref,
+  centerContent,
+}: TopBarProps) {
   const filesFilterTopChrome = useContext(FilesFilterTopChromeContext)?.chrome ?? null;
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
@@ -81,11 +89,16 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
   );
   const teamAwareTopBar = (n: string) => n.replace(/^\[Team\]\s+/, "");
   const onFilesRoute = Boolean(pathname?.includes("/files"));
+  const isWorkspaceHomeHub =
+    pathname === "/dashboard" ||
+    pathname === "/enterprise" ||
+    pathname === "/desktop/app" ||
+    (!!pathname?.startsWith("/team/") && /^\/team\/[^/]+$/.test(pathname));
   const currentLinkedForNested = currentDriveId
     ? linkedDrives.find((d) => d.id === currentDriveId)
     : undefined;
   const canCreateStorageNestedFolder =
-    onFilesRoute &&
+    (onFilesRoute || isWorkspaceHomeHub) &&
     !!currentDriveId &&
     !!currentLinkedForNested &&
     isStorageFoldersV2PillarDrive(currentLinkedForNested);
@@ -322,29 +335,33 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
     setCreateSharedFolderOpen(true);
   };
 
-  return (
-    <div className="flex flex-shrink-0 flex-col border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-neutral-900/30">
-      <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 px-4 py-3 md:px-6">
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate min-w-0">
-            {title}
-          </h1>
-          {settingsHref && (
-            <Link
-              href={settingsHref}
-              className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-              aria-label="Settings"
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
-          )}
-        </div>
+  const showTitle = title != null && title !== "";
 
-      <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
-        {filesFilterTopChrome}
-        {showLayoutSettings && (
-          <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
-        )}
+  const titleRow = showTitle || settingsHref ? (
+    <div className="flex min-w-0 items-center gap-2">
+      {showTitle ? (
+        <h1 className="min-w-0 truncate text-base font-semibold text-neutral-900 dark:text-white sm:text-lg">
+          {title}
+        </h1>
+      ) : null}
+      {settingsHref && (
+        <Link
+          href={settingsHref}
+          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+          aria-label="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
+      )}
+    </div>
+  ) : null;
+
+  const actionsRow = (
+    <>
+      {filesFilterTopChrome}
+      {showLayoutSettings && (
+        <LayoutSettingsBar showViewMode={true} className="w-full py-0 sm:w-auto" />
+      )}
       <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
         {showCreateTransfer ? (
             <button
@@ -441,7 +458,42 @@ export default function TopBar({ title = "All files", showLayoutSettings = false
           </div>
         )}
       </div>
-      </div>
+    </>
+  );
+
+  return (
+    <div
+      className={`flex flex-shrink-0 flex-col bg-white dark:bg-neutral-950 dark:shadow-neutral-900/30 ${
+        centerContent
+          ? "border-b border-neutral-200/70 dark:border-neutral-800/70"
+          : "border-b border-neutral-200 dark:border-neutral-800"
+      }`}
+    >
+      <div className="px-4 py-3 md:px-6">
+        {centerContent ? (
+          <div className="flex min-h-12 flex-col gap-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
+            <div
+              className={`order-2 flex justify-center sm:col-start-2 sm:row-start-1 ${!titleRow ? "sm:col-start-2" : ""}`}
+            >
+              {centerContent}
+            </div>
+            <div
+              className={`order-1 min-w-0 sm:col-start-1 sm:row-start-1 ${!titleRow ? "hidden sm:block" : ""}`}
+            >
+              {titleRow}
+            </div>
+            <div className="order-3 flex min-w-0 flex-col items-stretch gap-3 sm:col-start-3 sm:row-start-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+              {actionsRow}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-12 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            {titleRow}
+            <div className="flex min-w-0 flex-1 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 md:gap-4">
+              {actionsRow}
+            </div>
+          </div>
+        )}
       </div>
 
       <CreateTransferModal

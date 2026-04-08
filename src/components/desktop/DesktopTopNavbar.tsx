@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   Home,
-  FolderOpen,
   Share2,
   Trash2,
   Send,
@@ -40,7 +39,6 @@ const navItems: Array<{
   activeBgColor?: string;
 }> = [
   { href: "/desktop/app", label: "Home", icon: Home },
-  { href: "/desktop/app/files", label: "All files", icon: FolderOpen },
   { href: "/desktop/app/creator", label: "Creator", icon: Film, requiresEditor: true, activeBgColor: CREATOR_COLOR },
   { href: "/desktop/app/galleries", label: "Galleries", icon: Images, requiresGallerySuite: true, activeBgColor: GALLERIES_COLOR },
   { href: "/desktop/app/shared", label: "Shared", icon: Share2 },

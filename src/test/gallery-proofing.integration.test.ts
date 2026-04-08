@@ -325,12 +325,12 @@ beforeEach(() => {
 
 describe("proofing nav helpers (shell-aware filesHref / share path)", () => {
   it("proofingFilesHrefFromGalleryDetailHref maps dashboard, enterprise, team, desktop", () => {
-    expect(proofingFilesHrefFromGalleryDetailHref("/dashboard/galleries/x")).toBe("/dashboard/files");
-    expect(proofingFilesHrefFromGalleryDetailHref("/enterprise/galleries/g1")).toBe("/enterprise/files");
+    expect(proofingFilesHrefFromGalleryDetailHref("/dashboard/galleries/x")).toBe("/dashboard");
+    expect(proofingFilesHrefFromGalleryDetailHref("/enterprise/galleries/g1")).toBe("/enterprise");
     expect(proofingFilesHrefFromGalleryDetailHref("/team/ownerUid42/galleries/g1")).toBe(
-      "/team/ownerUid42/files"
+      "/team/ownerUid42"
     );
-    expect(proofingFilesHrefFromGalleryDetailHref("/desktop/app/galleries/g1")).toBe("/desktop/app/files");
+    expect(proofingFilesHrefFromGalleryDetailHref("/desktop/app/galleries/g1")).toBe("/desktop/app");
   });
 
   it("isSelectsPublicSharePathname is true only for /selects/ public segment", () => {

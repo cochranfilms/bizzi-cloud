@@ -60,6 +60,8 @@ interface FileCardProps {
   onMacosPackageNavigate?: () => void;
   /** Thumbnail browse mode: media-first chrome and caption overlay */
   presentation?: CardPresentation;
+  /** Optional pill (e.g. “Pinned”) for home strip */
+  topBadge?: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -227,6 +229,7 @@ export default function FileCard({
   onPackageInfo,
   onMacosPackageNavigate,
   presentation = "default",
+  topBadge,
 }: FileCardProps) {
   const isThumb = presentation === "thumbnail";
   const [shareOpen, setShareOpen] = useState(false);
@@ -360,6 +363,15 @@ export default function FileCard({
           : undefined
       }
     >
+      {topBadge ? (
+        <span
+          className={`pointer-events-none absolute left-2 z-[21] rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-black/10 dark:ring-white/20 ${
+            selectable && onSelect ? "top-9" : "top-2"
+          }`}
+        >
+          {topBadge}
+        </span>
+      ) : null}
       {selectable && onSelect && (
         <button
           type="button"

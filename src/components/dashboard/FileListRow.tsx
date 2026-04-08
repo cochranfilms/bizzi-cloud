@@ -54,6 +54,7 @@ interface FileListRowProps {
   displayContext?: DisplayContext;
   /** Projects list: hide resolution, duration, codec columns */
   columnMode?: "full" | "projects";
+  rowBadge?: string;
 }
 
 export default function FileListRow({
@@ -70,6 +71,7 @@ export default function FileListRow({
   onPackageInfo,
   displayContext,
   columnMode = "full",
+  rowBadge,
 }: FileListRowProps) {
   const display = useMemo(
     () => buildDisplayMetadata(file, displayContext),
@@ -244,9 +246,16 @@ export default function FileListRow({
               )}
             </div>
             <div className="min-w-0">
-              <span className="block truncate font-medium text-neutral-900 dark:text-white" title={file.name}>
-                {file.name}
-              </span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="block truncate font-medium text-neutral-900 dark:text-white" title={file.name}>
+                  {file.name}
+                </span>
+                {rowBadge ? (
+                  <span className="shrink-0 rounded-md bg-[var(--enterprise-primary)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    {rowBadge}
+                  </span>
+                ) : null}
+              </div>
               {isMacosPackage ? (
                 <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
                   {file.macosPackageFileCount != null ? `${file.macosPackageFileCount} files` : "Package"}

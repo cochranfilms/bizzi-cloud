@@ -29,7 +29,6 @@ import type { RecentFile } from "@/hooks/useCloudFiles";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDragToSelectAutoScroll } from "@/hooks/useDragToSelectAutoScroll";
-import SectionTitle from "./SectionTitle";
 import DashboardRouteFade from "./DashboardRouteFade";
 import { useLayoutSettings } from "@/context/LayoutSettingsContext";
 import { recordRecentOpen } from "@/hooks/useRecentOpens";
@@ -81,6 +80,18 @@ const HomeEmbeddedStorageGrid = dynamic(
 interface HomeStorageViewProps {
   /** Base path for links: "/dashboard" or "/enterprise" */
   basePath?: string;
+}
+
+/** Dedupe home top stripe: pinned row already covers this folder target. */
+function sameHomeFolderStripeTarget(a: FolderItem, b: FolderItem): boolean {
+  if (a.key === b.key) return true;
+  if (a.driveId && b.driveId && a.driveId === b.driveId) {
+    const aSf = a.storageFolderId ?? null;
+    const bSf = b.storageFolderId ?? null;
+    if (aSf != null || bSf != null) return aSf === bSf;
+    return true;
+  }
+  return false;
 }
 
 export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorageViewProps) {
@@ -211,7 +222,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
   } | null>(null);
   const [transferInitialFiles, setTransferInitialFiles] = useState<TransferModalFile[]>([]);
 
-  const filesHref = `${basePath}/files`;
   const isEnterpriseHome = basePath === "/enterprise";
 
   useEffect(() => {
@@ -259,92 +269,6 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     hasEditor,
     hasGallerySuite,
   });
-  const baseFolderItems = folderItems.filter((f) => {
-    const drive = visibleSystemDrives.find((d) => d.id === f.driveId);
-    return drive ? isSystemDrive(drive) : false;
-  });
-
-  /** One tile per pillar (Storage / RAW / Gallery). Duplicate linked_drives for the same role show as extra cards without this. */
-  const displayBaseFolderItems = useMemo(() => {
-    /** Custom folders are separate linked_drives; moving a file updates linked_drive_id, so the canonical Storage
-     *  drive count drops. Add all non–system-folder file counts so the Storage pillar reflects total general storage. */
-    const customNonSystemItemsTotal = driveFolders
-      .filter((d) => !isSystemDrive(d))
-      .reduce((sum, d) => sum + d.items, 0);
-
-    const applyStorageRollup = (rows: FolderItem[]): FolderItem[] =>
-      rows.map((row) => {
-        if (!row.driveId || !isStorageDrive({ name: row.name })) return row;
-        return { ...row, items: row.items + customNonSystemItemsTotal };
-      });
-
-    if (baseFolderItems.length <= 1) {
-      return applyStorageRollup(baseFolderItems);
-    }
-
-    const createdMs = (driveId: string) => {
-      const d = linkedDrives.find((x) => x.id === driveId);
-      if (!d?.created_at) return Number.MAX_SAFE_INTEGER;
-      const t = Date.parse(d.created_at);
-      return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
-    };
-
-    const pickCanonical = (rows: FolderItem[]): FolderItem[] => {
-      const withId = rows.filter((r) => r.driveId);
-      if (withId.length <= 1) return withId;
-      const best = withId.reduce((a, b) => {
-        const ca = createdMs(a.driveId!);
-        const cb = createdMs(b.driveId!);
-        if (ca !== cb) return ca <= cb ? a : b;
-        return a.driveId! <= b.driveId! ? a : b;
-      });
-      return [best];
-    };
-
-    const storageRows = baseFolderItems.filter(
-      (f) => f.driveId && isStorageDrive({ name: f.name })
-    );
-    const mergeStoragePillar = (rows: FolderItem[]): FolderItem[] => {
-      if (rows.length <= 1) return rows;
-      const totalItems = rows.reduce((s, r) => s + r.items, 0);
-      const primary = rows.reduce((a, b) => {
-        if (a.items !== b.items) return a.items > b.items ? a : b;
-        const ca = createdMs(a.driveId!);
-        const cb = createdMs(b.driveId!);
-        if (ca !== cb) return ca <= cb ? a : b;
-        return a.driveId! <= b.driveId! ? a : b;
-      });
-      return [{ ...primary, items: totalItems }];
-    };
-    const rawRows = baseFolderItems.filter((f) => {
-      const ld = linkedDrives.find((x) => x.id === f.driveId);
-      return ld?.is_creator_raw === true;
-    });
-    const galleryRows = baseFolderItems.filter(
-      (f) => f.driveId && isGalleryMediaDrive({ name: f.name })
-    );
-
-    const merged = [
-      ...mergeStoragePillar(storageRows),
-      ...pickCanonical(rawRows),
-      ...pickCanonical(galleryRows),
-    ];
-    return applyStorageRollup(merged).sort((a, b) => {
-      const order = (name: string) => {
-        const base = teamAwareBaseName(name);
-        return base === "Storage" ? 0 : base === "RAW" ? 1 : base === "Gallery Media" ? 2 : 3;
-      };
-      return order(a.name) - order(b.name);
-    });
-  }, [baseFolderItems, linkedDrives, driveFolders]);
-
-  /** Narrow columns on phones so base folder tiles stay short (no full-width 16:9 giants). */
-  const baseFolderMobileGridClass = useMemo(() => {
-    const n = displayBaseFolderItems.length;
-    if (n <= 1) return "max-sm:grid-cols-1";
-    if (n === 2) return "max-sm:grid-cols-2";
-    return "max-sm:grid-cols-3";
-  }, [displayBaseFolderItems.length]);
 
   const bulkMoveFolderTargets = useMemo(
     () => linkedDrivesEligibleAsMoveDestination(linkedDrives, { hasEditor, hasGallerySuite }),
@@ -440,6 +364,14 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
         teamAwareBaseName
       ),
     [folderItems, pinnedFolderIds, pinnedFolderLabels, linkedDrives]
+  );
+
+  const unpinnedHomeStripeFolders = useMemo(
+    () =>
+      bizziCloudFolderItems.filter(
+        (item) => !pinnedFolderItems.some((p) => sameHomeFolderStripeTarget(p, item))
+      ),
+    [bizziCloudFolderItems, pinnedFolderItems]
   );
 
   const loadPinnedFiles = useCallback(async () => {
@@ -1301,7 +1233,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
     loadPinnedFiles,
   ]);
 
-  const hasPinned = pinnedFolderItems.length > 0 || pinnedFileIds.size > 0;
+  const showHomeFolderStripe =
+    pinnedFolderItems.length > 0 ||
+    unpinnedHomeStripeFolders.length > 0 ||
+    pinnedFiles.length > 0;
   // Do not wait on pinned *file* hydration — that refetch toggled the whole dashboard fade and unmounted
   // the route (jumpy). Firestore pin list (`pinnedLoading`) is enough for initial layout; pinned rows refresh in place.
   // Enterprise org add-ons come from `useEffectivePowerUps`, not the signed-in user's personal subscription.
@@ -1385,100 +1320,10 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
           </button>
         </div>
       ) : null}
-      {/* Section 1: Bizzi Cloud Base (Storage + RAW only) */}
-      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
-        <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Base</SectionTitle>
-        {displayBaseFolderItems.length > 0 ? (
-          <div
-            className="mx-auto flex w-full max-w-4xl justify-center"
-            style={{ ["--folder-count" as string]: displayBaseFolderItems.length }}
-          >
-            <div
-              className={`grid w-full max-w-full gap-2 ${baseFolderMobileGridClass} sm:grid-cols-[repeat(var(--folder-count),minmax(260px,320px))] sm:gap-4`}
-            >
-            {displayBaseFolderItems.map((item) => {
-              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-              const driveId = item.driveId ?? "";
-              const isFolderInSelection = selectedFolderKeys.has(item.key);
-              const isDropTarget =
-                !!driveId &&
-                !isFolderInSelection &&
-                linkedDrives.some((d) => d.id === driveId);
-              const canDragFolder = !!item.driveId && !item.preventMove;
-              return (
-                <div
-                  key={item.key}
-                  data-selectable-item
-                  data-item-type="folder"
-                  data-item-key={item.key}
-                  draggable={canDragFolder}
-                  onDragStart={handleDragStart}
-                  className={canDragFolder ? "cursor-grab active:cursor-grabbing" : undefined}
-                >
-                  <FolderCard
-                    item={item}
-                    isDropTarget={isDropTarget}
-                    onItemsDropped={handleDropOnFolder}
-                    onClick={() => openFolderFromPin(item)}
-                    layoutSize="medium"
-                    layoutAspectRatio="video"
-                    showCardInfo={true}
-                    onDelete={
-                      drive && !item.preventDelete
-                        ? async () => {
-                            const msg = item.items === 0
-                              ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
-                              : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                            const ok = await confirm({ message: msg, destructive: true });
-                            if (ok) {
-                              await deleteFolder(drive, item.items);
-                              await refetch();
-                            }
-                          }
-                        : undefined
-                    }
-                    selectable={!!drive && !item.preventDelete}
-                    selected={selectedFolderKeys.has(item.key)}
-                    onSelect={() => toggleFolderSelection(item.key)}
-                  />
-                </div>
-              );
-            })}
-            </div>
-          </div>
-        ) : (
-          <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Your Bizzi Cloud Base folders will appear here based on your plan and power-ups.
-          </p>
-        )}
-      </section>
-
-      {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
-        linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
-        <section
-          ref={homeInlineStorageSectionRef}
-          id="home-inline-storage-viewer"
-          className="scroll-mt-24 border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:scroll-mt-28 sm:py-6"
-        >
-          <SectionTitle className="mb-3 sm:mb-4">Storage</SectionTitle>
-          <div
-            className={`mt-1 flex h-[min(70vh,52rem)] min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-950/30 ${
-              homeInlineStoragePeek ? "home-inline-storage-open-peek" : ""
-            }`.trim()}
-          >
-            <HomeEmbeddedStorageGrid
-              embeddedHomeStorage
-              onEmbeddedBulkSelectionChange={onEmbeddedBulkSelectionChange}
-            />
-          </div>
-        </section>
-      )}
-
-      {/* Section 2: Pinned — only after user has at least one pin (no empty promo block) */}
-      {hasPinned ? (
-      <section className="motion-safe:transition-opacity motion-safe:duration-500 motion-safe:ease-out border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
-        <SectionTitle className="mb-3 sm:mb-4">Pinned</SectionTitle>
-        {viewMode === "list" ? (
+      {showHomeFolderStripe ? (
+        <section className="pb-4 pt-1 sm:pb-5" aria-label="Folders and pins">
+          <h2 className="sr-only">Folders and pinned items</h2>
+          {viewMode === "list" ? (
             <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -1509,6 +1354,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       <FolderListRow
                         key={item.key}
                         item={item}
+                        rowBadge="Pinned"
                         displayContext={storageDisplayContext}
                         onClick={() => openFolderFromPin(item)}
                         onDelete={
@@ -1539,173 +1385,7 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       />
                     );
                   })}
-                  {pinnedFiles.map((file) => {
-                    const isPkg = isMacosPackageFileRow(file);
-                    return (
-                      <FileListRow
-                        key={file.id}
-                        file={file}
-                        displayContext={storageDisplayContext}
-                        onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
-                        onDelete={async () => {
-                          await deleteFile(file.id);
-                          syncPinsAfterFileMutate();
-                        }}
-                        onDownloadPackage={
-                          isPkg && file.macosPackageId
-                            ? () => downloadMacosPackageZip(file.macosPackageId!)
-                            : undefined
-                        }
-                        onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
-                        selectable
-                        selected={selectedFileIds.has(file.id)}
-                        onSelect={() => toggleFileSelection(file.id)}
-                        draggable={!!file.driveId}
-                        onDragStart={handleDragStart}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-          <div
-            className={`grid ${gridGapClass} ${
-              viewMode === "thumbnail"
-                ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                : cardSize === "small"
-                  ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-                  : cardSize === "large"
-                    ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
-                    : "sm:grid-cols-3 md:grid-cols-4"
-            }`}
-          >
-            {pinnedFolderItems.map((item) => {
-                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-                const driveId = item.driveId ?? "";
-                const isFolderInSelection = selectedFolderKeys.has(item.key);
-                const isDropTarget =
-                  !!driveId &&
-                  !isFolderInSelection &&
-                  linkedDrives.some((d) => d.id === driveId);
-                const canDragFolder = !!item.driveId && !item.preventMove;
-                return (
-                  <div
-                    key={item.key}
-                    data-selectable-item
-                    data-item-type="folder"
-                    data-item-key={item.key}
-                    draggable={canDragFolder}
-                    onDragStart={handleDragStart}
-                    className={
-                      [
-                        "h-full min-h-0 min-w-0 w-full max-w-full",
-                        canDragFolder && "cursor-grab active:cursor-grabbing",
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                  >
-                    <FolderCard
-                      item={item}
-                      isDropTarget={isDropTarget}
-                      onItemsDropped={handleDropOnFolder}
-                      onClick={() => openFolderFromPin(item)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                      layoutAspectRatio={aspectRatio}
-                      showCardInfo={showCardInfo}
-                      onDelete={
-                        drive && !item.preventDelete
-                          ? async () => {
-                              const msg = item.items === 0
-                                ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
-                                : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
-                              const ok = await confirm({ message: msg, destructive: true });
-                              if (ok) {
-                                await deleteFolder(drive, item.items);
-                                await refetch();
-                                await refetchPinned();
-                                loadPinnedFiles();
-                              }
-                            }
-                          : undefined
-                      }
-                      selectable={!!drive && !item.preventDelete}
-                      selected={selectedFolderKeys.has(item.key)}
-                      onSelect={() => toggleFolderSelection(item.key)}
-                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                    />
-                  </div>
-                );
-              })}
-              {pinnedFiles.map((file) => {
-                const isPkg = isMacosPackageFileRow(file);
-                return (
-                  <div
-                    key={file.id}
-                    data-selectable-item
-                    data-item-type="file"
-                    data-item-id={file.id}
-                    draggable={!!file.driveId}
-                    onDragStart={handleDragStart}
-                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
-                  >
-                    <FileCard
-                      file={file}
-                      onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
-                      onDelete={async () => {
-                        await deleteFile(file.id);
-                        syncPinsAfterFileMutate();
-                      }}
-                      onDownloadPackage={
-                        isPkg && file.macosPackageId
-                          ? () => downloadMacosPackageZip(file.macosPackageId!)
-                          : undefined
-                      }
-                      onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
-                      onMacosPackageNavigate={
-                        isPkg ? () => navigateIntoMacosPackage(file) : undefined
-                      }
-                      selectable
-                      selected={selectedFileIds.has(file.id)}
-                      onSelect={() => toggleFileSelection(file.id)}
-                      layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                      layoutAspectRatio={aspectRatio}
-                      thumbnailScale={thumbnailScale}
-                      showCardInfo={showCardInfo}
-                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-      </section>
-      ) : null}
-
-      {/* Section 3: Bizzi Cloud Folders (folders first, then Recent Uploads) */}
-      <section className="border-b border-neutral-200/60 py-4 last:border-b-0 dark:border-neutral-800/60 sm:py-6">
-        <SectionTitle className="mb-3 sm:mb-4">Bizzi Cloud Folders</SectionTitle>
-        {bizziCloudFolderItems.length > 0 ? (
-          viewMode === "list" ? (
-            <div className="mb-6 rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                    <th className="w-10 px-3 py-3 font-medium text-neutral-900 dark:text-white" />
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Name</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Type</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Size</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Modified</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Location</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Resolution</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Duration</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white">Codec</th>
-                    <th className="px-4 py-3 font-medium text-neutral-900 dark:text-white" />
-                  </tr>
-                </thead>
-                <tbody data-selectable-grid>
-                  {bizziCloudFolderItems.map((item) => {
+                  {unpinnedHomeStripeFolders.map((item) => {
                     const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
                     const offerConsolidate =
                       !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
@@ -1751,96 +1431,234 @@ export default function HomeStorageView({ basePath = "/dashboard" }: HomeStorage
                       />
                     );
                   })}
+                  {pinnedFiles.map((file) => {
+                    const isPkg = isMacosPackageFileRow(file);
+                    return (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        rowBadge="Pinned"
+                        displayContext={storageDisplayContext}
+                        onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                        onDelete={async () => {
+                          await deleteFile(file.id);
+                          syncPinsAfterFileMutate();
+                        }}
+                        onDownloadPackage={
+                          isPkg && file.macosPackageId
+                            ? () => downloadMacosPackageZip(file.macosPackageId!)
+                            : undefined
+                        }
+                        onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                        selectable
+                        selected={selectedFileIds.has(file.id)}
+                        onSelect={() => toggleFileSelection(file.id)}
+                        draggable={!!file.driveId}
+                        onDragStart={handleDragStart}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
+            <div
+              className={`grid ${gridGapClass} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6`}
+            >
+              {pinnedFolderItems.map((item) => {
+                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                const driveId = item.driveId ?? "";
+                const isFolderInSelection = selectedFolderKeys.has(item.key);
+                const isDropTarget =
+                  !!driveId &&
+                  !isFolderInSelection &&
+                  linkedDrives.some((d) => d.id === driveId);
+                const canDragFolder = !!item.driveId && !item.preventMove;
+                return (
+                  <div
+                    key={item.key}
+                    data-selectable-item
+                    data-item-type="folder"
+                    data-item-key={item.key}
+                    draggable={canDragFolder}
+                    onDragStart={handleDragStart}
+                    className={
+                      [
+                        "h-full min-h-0 min-w-0 w-full max-w-full",
+                        canDragFolder && "cursor-grab active:cursor-grabbing",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
+                  >
+                    <FolderCard
+                      item={item}
+                      topBadge="Pinned"
+                      isDropTarget={isDropTarget}
+                      onItemsDropped={handleDropOnFolder}
+                      onClick={() => openFolderFromPin(item)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
+                      onDelete={
+                        drive && !item.preventDelete
+                          ? async () => {
+                              const msg = item.items === 0
+                                ? `Delete "${item.name}"? This will unlink the drive and remove it from your backups.`
+                                : `Delete "${item.name}"? The folder and its ${item.items} file${item.items === 1 ? "" : "s"} will be moved to trash.`;
+                              const ok = await confirm({ message: msg, destructive: true });
+                              if (ok) {
+                                await deleteFolder(drive, item.items);
+                                await refetch();
+                                await refetchPinned();
+                                loadPinnedFiles();
+                              }
+                            }
+                          : undefined
+                      }
+                      selectable={!!drive && !item.preventDelete}
+                      selected={selectedFolderKeys.has(item.key)}
+                      onSelect={() => toggleFolderSelection(item.key)}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
+                    />
+                  </div>
+                );
+              })}
+              {unpinnedHomeStripeFolders.map((item) => {
+                const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
+                const offerConsolidate =
+                  !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
+                const driveId = item.driveId ?? "";
+                const isFolderInSelection = selectedFolderKeys.has(item.key);
+                const isDropTarget =
+                  !!driveId &&
+                  !item.virtualFolder &&
+                  !isFolderInSelection &&
+                  linkedDrives.some((d) => d.id === driveId);
+                const canDragFolder = !!item.driveId && !item.preventMove;
+                return (
+                  <div
+                    key={item.key}
+                    data-selectable-item
+                    data-item-type="folder"
+                    data-item-key={item.key}
+                    draggable={canDragFolder}
+                    onDragStart={handleDragStart}
+                    className={
+                      [
+                        "h-full min-h-0 min-w-0 w-full max-w-full",
+                        canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
+                        homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
+                  >
+                    <FolderCard
+                      item={item}
+                      isDropTarget={isDropTarget}
+                      onItemsDropped={handleDropOnFolder}
+                      onClick={() => openBizziCloudFolderItem(item)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
+                      layoutAspectRatio={aspectRatio}
+                      showCardInfo={showCardInfo}
+                      revealFadeIn
+                      onDelete={
+                        !item.preventDelete &&
+                        (item.storageFolderId ||
+                          (item.virtualFolder && !!item.pathPrefix) ||
+                          drive)
+                          ? () => void handleDeleteBizziCloudFolderItem(item)
+                          : undefined
+                      }
+                      selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
+                      selected={selectedFolderKeys.has(item.key)}
+                      onSelect={() => toggleFolderSelection(item.key)}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
+                      storagePickerDriveLabel={
+                        drive ? teamAwareBaseName(drive.name) : "Storage"
+                      }
+                      onStorageFolderMutated={afterStorageMigrationMutate}
+                      onConsolidateMenuSelect={
+                        offerConsolidate ? () => setConsolidateSourceDrive(drive) : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
+              {pinnedFiles.map((file) => {
+                const isPkg = isMacosPackageFileRow(file);
+                return (
+                  <div
+                    key={file.id}
+                    data-selectable-item
+                    data-item-type="file"
+                    data-item-id={file.id}
+                    draggable={!!file.driveId}
+                    onDragStart={handleDragStart}
+                    className={`h-full min-h-0${!!file.driveId ? " cursor-grab active:cursor-grabbing" : ""}`}
+                  >
+                    <FileCard
+                      file={file}
+                      topBadge="Pinned"
+                      onClick={() => (isPkg ? openMacosPackageInfo(file) : setPreviewFile(file))}
+                      onDelete={async () => {
+                        await deleteFile(file.id);
+                        syncPinsAfterFileMutate();
+                      }}
+                      onDownloadPackage={
+                        isPkg && file.macosPackageId
+                          ? () => downloadMacosPackageZip(file.macosPackageId!)
+                          : undefined
+                      }
+                      onPackageInfo={isPkg ? () => openMacosPackageInfo(file) : undefined}
+                      onMacosPackageNavigate={
+                        isPkg ? () => navigateIntoMacosPackage(file) : undefined
+                      }
+                      selectable
+                      selected={selectedFileIds.has(file.id)}
+                      onSelect={() => toggleFileSelection(file.id)}
+                      layoutSize={viewMode === "thumbnail" ? "large" : "small"}
+                      layoutAspectRatio={aspectRatio}
+                      thumbnailScale={thumbnailScale}
+                      showCardInfo={showCardInfo}
+                      presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+      {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
+        linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
+        <section
+          ref={homeInlineStorageSectionRef}
+          id="home-inline-storage-viewer"
+          className="scroll-mt-24 pt-1 sm:scroll-mt-28"
+        >
           <div
-            className={`mb-6 grid ${gridGapClass} ${
-              viewMode === "thumbnail"
-                ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                : cardSize === "small"
-                  ? "sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-                  : cardSize === "large"
-                    ? "sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3"
-                    : "sm:grid-cols-3 md:grid-cols-4"
-            }`}
+            className={`flex h-[min(72vh,56rem)] min-h-[24rem] flex-col overflow-hidden ${
+              homeInlineStoragePeek ? "home-inline-storage-open-peek" : ""
+            }`.trim()}
           >
-            {bizziCloudFolderItems.map((item) => {
-              const drive = item.driveId ? linkedDrives.find((d) => d.id === item.driveId) : null;
-              const offerConsolidate =
-                !!drive && isLegacyCustomLinkedDriveForConsolidation(drive);
-              const driveId = item.driveId ?? "";
-              const isFolderInSelection = selectedFolderKeys.has(item.key);
-              const isDropTarget =
-                !!driveId &&
-                !item.virtualFolder &&
-                !isFolderInSelection &&
-                linkedDrives.some((d) => d.id === driveId);
-              const canDragFolder = !!item.driveId && !item.preventMove;
-              return (
-                <div
-                  key={item.key}
-                  data-selectable-item
-                  data-item-type="folder"
-                  data-item-key={item.key}
-                  draggable={canDragFolder}
-                  onDragStart={handleDragStart}
-                  className={
-                    [
-                      "h-full min-h-0 min-w-0 w-full max-w-full",
-                      canDragFolder ? "cursor-grab active:cursor-grabbing" : "",
-                      homeBizziFolderOpenPulseKey === item.key ? "home-bizzi-folder-card-open-pulse" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ") || undefined
-                  }
-                >
-                  <FolderCard
-                    item={item}
-                    isDropTarget={isDropTarget}
-                    onItemsDropped={handleDropOnFolder}
-                    onClick={() => openBizziCloudFolderItem(item)}
-                    layoutSize={viewMode === "thumbnail" ? "large" : cardSize}
-                    layoutAspectRatio={aspectRatio}
-                    showCardInfo={showCardInfo}
-                    revealFadeIn
-                    onDelete={
-                      !item.preventDelete &&
-                      (item.storageFolderId ||
-                        (item.virtualFolder && !!item.pathPrefix) ||
-                        drive)
-                        ? () => void handleDeleteBizziCloudFolderItem(item)
-                        : undefined
-                    }
-                    selectable={!!drive && (!item.preventDelete || !!item.virtualFolder)}
-                    selected={selectedFolderKeys.has(item.key)}
-                    onSelect={() => toggleFolderSelection(item.key)}
-                    presentation={viewMode === "thumbnail" ? "thumbnail" : "default"}
-                    storagePickerDriveLabel={
-                      drive ? teamAwareBaseName(drive.name) : "Storage"
-                    }
-                    onStorageFolderMutated={afterStorageMigrationMutate}
-                    onConsolidateMenuSelect={
-                      offerConsolidate ? () => setConsolidateSourceDrive(drive) : undefined
-                    }
-                  />
-                </div>
-              );
-            })}
+            <HomeEmbeddedStorageGrid
+              embeddedHomeStorage
+              onEmbeddedBulkSelectionChange={onEmbeddedBulkSelectionChange}
+            />
           </div>
-          )
-        ) : (
-          <p className="mb-6 py-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Folders you create in Storage and path groups from imports appear here.
-          </p>
-        )}
+        </section>
+      )}
+
+      {/* Recent uploads (below inline grid) */}
+      <section className="py-6 sm:py-8">
         {(visibleSystemDrives.some((d) => teamAwareBaseName(d.name) === "Storage") ||
           linkedDrives.some((d) => teamAwareBaseName(d.name) === "Storage")) && (
           <>
-            <SectionTitle as="h3" className="mb-3 text-xs font-medium">
-              Recent Uploads
-            </SectionTitle>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Recent uploads
+            </h3>
             {recentUploads.length > 0 ? (
               viewMode === "list" ? (
                 <div className="rounded-xl border border-neutral-200 bg-white overflow-x-auto dark:border-neutral-700 dark:bg-neutral-900">

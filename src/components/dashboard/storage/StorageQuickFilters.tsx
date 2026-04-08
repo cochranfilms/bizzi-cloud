@@ -20,8 +20,6 @@ const QUICK_FILTERS: Array<{
 export default function StorageQuickFilters({
   basePath = "/dashboard",
 }: StorageQuickFiltersProps) {
-  const filesBase = `${basePath}/files`;
-
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
@@ -29,7 +27,7 @@ export default function StorageQuickFilters({
       </span>
       {QUICK_FILTERS.map(({ label, params }) => {
         const query = new URLSearchParams(params).toString();
-        const href = query ? `${filesBase}?${query}` : filesBase;
+        const href = query ? `${basePath}?${query}` : basePath;
         return (
           <Link
             key={label}

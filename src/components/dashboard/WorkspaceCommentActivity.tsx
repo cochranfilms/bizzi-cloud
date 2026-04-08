@@ -132,7 +132,7 @@ export default function WorkspaceCommentActivity({
                   </td>
                   <td className="py-2 pr-3">
                     <Link
-                      href={`${filesBasePath}/files?preview=${encodeURIComponent(row.fileId)}`}
+                      href={`${filesBasePath}?preview=${encodeURIComponent(row.fileId)}`}
                       className="font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
                       title={`Open preview: ${row.fileName}`}
                     >

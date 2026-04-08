@@ -57,9 +57,9 @@ export function shellContextFromClientPathname(pathname: string | null | undefin
   return "personal";
 }
 
-/** Files area href aligned with dashboard / enterprise / team / desktop proofing gallery detail URLs. */
+/** Home hub href (merged files area) aligned with dashboard / enterprise / team / desktop gallery detail URLs. */
 export function proofingFilesHrefFromGalleryDetailHref(galleryDetailHref: string): string {
-  return galleryDetailHref.replace(/\/galleries\/[^/]+$/, "/files");
+  return galleryDetailHref.replace(/\/galleries\/[^/]+$/, "");
 }
 
 /** Public share route uses /g/{id}/selects/... vs /g/{id}/favorites/... — keep detection centralized for copy. */

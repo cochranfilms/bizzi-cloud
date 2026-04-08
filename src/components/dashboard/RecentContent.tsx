@@ -64,10 +64,8 @@ export default function RecentContent({ basePath = "/dashboard" }: { basePath?: 
 
   const files = items.filter((i) => i.type === "file").map(toRecentFile).filter(Boolean) as RecentFile[];
   const folders = items.filter((i) => i.type === "folder").map(toFolderItem).filter(Boolean) as FolderItem[];
-  const filesHref = `${basePath}/files`;
-
   const openFolder = (driveId: string) => {
-    router.push(`${filesHref}?drive=${driveId}`);
+    router.push(`${basePath}?drive=${driveId}`);
   };
 
   const ready = !(loading && items.length === 0);

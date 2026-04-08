@@ -54,7 +54,7 @@ export default function StorageCategoryBreakdown({
               </div>
             )}
             <Link
-              href={`${basePath}/files`}
+              href={basePath}
               className="text-sm font-medium text-bizzi-blue hover:underline dark:text-bizzi-cyan"
             >
               View files
