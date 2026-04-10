@@ -181,9 +181,10 @@ struct FrameHandoffPacket {
 /**
  * Codec callback matching ProcessClipCPU: COM refcounting, ReadComplete → decode+process job,
  * ProcessComplete copies CPU RGBA8 while IBlackmagicRawProcessedImage is still alive.
- * Success path: Release job+processedImage immediately after publishing pixels — otherwise FlushJobs() on the
- * main thread can block forever waiting for those COM refs while the main thread is still inside FlushJobs.
- * Error / edge paths: defer job+image to main (deferred_*) for take_completed_frame / cleanup to Release.
+ * Success path: copy pixels, publish pending, notify, then Release COM on the callback thread so FlushJobs() can
+ * finish (deferring only to main deadlocks: FlushJobs runs before wait/take). If the SDK ties job lifetime to the
+ * processed image, releasing both interfaces may double-Release; see ProcessComplete (image-only release attempt).
+ * Error paths: defer job+image to main for take_completed_frame / cleanup (image before job in release helper).
  */
 class DecodeCallback final : public IBlackmagicRawCallback {
  public:
@@ -434,6 +435,11 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
     }
   }
 
+  std::fprintf(stderr,
+    "braw-proxy-cli: consumer: take_completed_frame Release step (frame=%llu ok=%d deferred img=%p job=%p tid=%zu)\n",
+    static_cast<unsigned long long>(frame_index), ok ? 1 : 0, static_cast<void*>(rel_im), static_cast<void*>(rel_j),
+    braw_trace_tid_hash());
+  std::fflush(stderr);
   release_bmd_deferred_sdk_pair(rel_j, rel_im,
     ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
   if (ok) {
@@ -561,7 +567,7 @@ void DecodeCallback::ProcessComplete(
   std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered (tid=%zu)\n", braw_trace_tid_hash());
   std::fflush(stderr);
 
-  /* Success path releases job+image after copy; error paths defer to main (see class comment). */
+  /* Success path: Release processedImage only after copy; errors defer job+img to main (see class comment). */
   IBlackmagicRawJob* rel_job = job;
   IBlackmagicRawProcessedImage* rel_img = processedImage;
 
@@ -782,7 +788,7 @@ void DecodeCallback::ProcessComplete(
       std::fflush(stderr);
       prev_j = self->deferred_process_job_;
       prev_im = self->deferred_process_image_;
-      /* Success path: do not defer job/img to main — FlushJobs() on main would deadlock waiting for Release. */
+      /* Success: pixels are copied; do not hold job/img for main — FlushJobs needs Release before wait returns. */
       self->deferred_process_job_ = nullptr;
       self->deferred_process_image_ = nullptr;
       self->pending_ = FrameHandoffPacket{};
@@ -803,24 +809,22 @@ void DecodeCallback::ProcessComplete(
   }
 
   /*
-   * SDK lifetime: finish all reads from IBlackmagicRawProcessedImage, then Release(processedImage), then Release(job).
-   * Releasing the job while the image is still alive (or releasing in the wrong order) can corrupt the heap and
-   * crash hundreds of frames later. Do not use release_bmd_deferred_sdk_pair here (image must go first).
+   * Release processed image only: on some SDK builds job+image share refcount such that releasing both from the
+   * app corrupts the heap (late SIGSEGV). Blackmagic docs: finish image first; job may be retired with the image.
    */
   std::fprintf(stderr,
-    "braw-proxy-cli: producer: ProcessComplete success — Release processedImage then job (img=%p job=%p tid=%zu)\n",
+    "braw-proxy-cli: producer: ProcessComplete success — Release processedImage only (img=%p job=%p tid=%zu)\n",
     static_cast<void*>(processedImage), static_cast<void*>(job), braw_trace_tid_hash());
   std::fflush(stderr);
   processedImage->Release();
-  std::fprintf(stderr, "braw-proxy-cli: producer: processedImage->Release complete; releasing job (%p) tid=%zu\n",
-    static_cast<void*>(job), braw_trace_tid_hash());
-  std::fflush(stderr);
-  job->Release();
-  std::fprintf(stderr, "braw-proxy-cli: producer: job->Release complete (tid=%zu)\n", braw_trace_tid_hash());
+  std::fprintf(stderr,
+    "braw-proxy-cli: producer: processedImage->Release done; NOT calling job->Release (avoid double-free) "
+    "tid=%zu\n",
+    braw_trace_tid_hash());
   std::fflush(stderr);
 
   std::fprintf(stderr,
-    "[ffmpeg-braw trace] ProcessComplete: returning to SDK (success; image then job Released) (tid=%zu)\n",
+    "[ffmpeg-braw trace] ProcessComplete: returning to SDK (success; image Released) (tid=%zu)\n",
     braw_trace_tid_hash());
   std::fflush(stderr);
 }
@@ -1070,8 +1074,8 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     }
 
     std::fprintf(stderr,
-      "[ffmpeg-braw trace] main: frame %llu — packet moved to main; deferred COM (if any) drained in "
-      "take_completed_frame (tid=%zu)\n",
+      "[ffmpeg-braw trace] main: frame %llu — packet on main; deferred COM (if any) drained in take_completed_frame "
+      "(tid=%zu)\n",
       static_cast<unsigned long long>(i), braw_trace_tid_hash());
     std::fflush(stderr);
 
