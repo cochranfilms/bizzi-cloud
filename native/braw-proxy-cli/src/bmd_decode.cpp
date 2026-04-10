@@ -181,9 +181,9 @@ struct FrameHandoffPacket {
 /**
  * Codec callback matching ProcessClipCPU: COM refcounting, ReadComplete → decode+process job,
  * ProcessComplete copies CPU RGBA8 while IBlackmagicRawProcessedImage is still alive.
- * Job/processedImage COM Release is deferred to the main decode thread: steal pointers under mu_, then
- * IUnknown::Release with mu_ unlocked (avoids SDK deadlocks). take_completed_frame releases after moving
- * the pixel packet; ProcessComplete may release only the prior swapped-out pair (normally null).
+ * Success path: Release job+processedImage immediately after publishing pixels — otherwise FlushJobs() on the
+ * main thread can block forever waiting for those COM refs while the main thread is still inside FlushJobs.
+ * Error / edge paths: defer job+image to main (deferred_*) for take_completed_frame / cleanup to Release.
  */
 class DecodeCallback final : public IBlackmagicRawCallback {
  public:
@@ -226,13 +226,14 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void set_handoff_timeout_sec(int sec) { handoff_timeout_sec_ = sec; }
   void set_debug_trace(bool on) { debug_trace_ = on; }
 
-  bool wait_processed();
+  bool wait_processed(uint64_t frame_index);
 
   /**
    * After successful wait_processed(), move the completed frame out of the callback under mu_.
    * Caller writes to FFmpeg after this returns (no callback locks held).
    */
-  bool take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h);
+  bool take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h,
+    uint64_t frame_index);
 
   /** If wait_processed() fails, still release any job/img ProcessComplete deferred (main thread). */
   void release_deferred_process_sdk_main();
@@ -253,8 +254,17 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   ~DecodeCallback();
 };
 
-bool DecodeCallback::wait_processed() {
+bool DecodeCallback::wait_processed(uint64_t frame_index) {
+  std::fprintf(stderr, "braw-proxy-cli: consumer: enter wait_processed (frame=%llu timeout_sec=%d tid=%zu)\n",
+    static_cast<unsigned long long>(frame_index), handoff_timeout_sec_, braw_trace_tid_hash());
+  std::fflush(stderr);
   std::unique_lock<std::mutex> lk(mu_);
+  const bool already_ready = frame_ready_;
+  std::fprintf(stderr,
+    "braw-proxy-cli: consumer: wait mutex acquired (frame=%llu packet_already_ready=%d valid=%d hr=0x%08x tid=%zu)\n",
+    static_cast<unsigned long long>(frame_index), already_ready ? 1 : 0, pending_.valid ? 1 : 0,
+    static_cast<unsigned int>(last_hr_), braw_trace_tid_hash());
+  std::fflush(stderr);
   bool woke = false;
   if (handoff_timeout_sec_ <= 0) {
     cv_.wait(lk, [&] { return frame_ready_; });
@@ -262,10 +272,16 @@ bool DecodeCallback::wait_processed() {
   } else {
     woke = cv_.wait_for(lk, std::chrono::seconds(handoff_timeout_sec_), [&] { return frame_ready_; });
   }
+  const bool packet_ok = woke && frame_ready_ && SUCCEEDED(last_hr_) && pending_.valid;
+  std::fprintf(stderr,
+    "braw-proxy-cli: consumer: wait_processed exit (frame=%llu woke=%d ready=%d valid=%d hr=0x%08x "
+    "packet_ok=%d tid=%zu)\n",
+    static_cast<unsigned long long>(frame_index), woke ? 1 : 0, frame_ready_ ? 1 : 0, pending_.valid ? 1 : 0,
+    static_cast<unsigned int>(last_hr_), packet_ok ? 1 : 0, braw_trace_tid_hash());
+  std::fflush(stderr);
   if (debug_trace_) {
     std::fprintf(stderr,
-      "braw-proxy-cli: trace: consumer wake (ready=%d last_hr=0x%08x valid=%d timed_wait=%s)\n",
-      frame_ready_ ? 1 : 0, static_cast<unsigned int>(last_hr_), pending_.valid ? 1 : 0,
+      "braw-proxy-cli: trace: consumer wake detail (timed_wait=%s)\n",
       handoff_timeout_sec_ <= 0 ? "off" : "on");
     std::fflush(stderr);
   }
@@ -275,7 +291,7 @@ bool DecodeCallback::wait_processed() {
       static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid), braw_trace_tid_hash());
     std::fflush(stderr);
   }
-  return woke && frame_ready_ && SUCCEEDED(last_hr_) && pending_.valid;
+  return packet_ok;
 }
 
 DecodeCallback::~DecodeCallback() {
@@ -323,16 +339,21 @@ void DecodeCallback::release_deferred_process_sdk_main() {
   release_bmd_deferred_sdk_pair(j, im, "wait_processed failed cleanup");
 }
 
-bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h) {
+bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h,
+  uint64_t frame_index) {
   IBlackmagicRawJob* rel_j = nullptr;
   IBlackmagicRawProcessedImage* rel_im = nullptr;
   bool ok = false;
 
   {
     std::lock_guard<std::mutex> lk(mu_);
+    std::fprintf(stderr, "braw-proxy-cli: consumer: dequeue enter (frame=%llu tid=%zu)\n",
+      static_cast<unsigned long long>(frame_index), braw_trace_tid_hash());
     std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: enter (tid=%zu)\n", braw_trace_tid_hash());
     std::fflush(stderr);
     if (!frame_ready_) {
+      std::fprintf(stderr, "braw-proxy-cli: consumer: dequeue abort !frame_ready (frame=%llu)\n",
+        static_cast<unsigned long long>(frame_index));
       std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: !frame_ready_\n");
       std::fflush(stderr);
       return false;
@@ -386,6 +407,10 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
         std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n",
           owned.size(), braw_trace_tid_hash());
         std::fflush(stderr);
+        std::fprintf(stderr,
+          "braw-proxy-cli: consumer: dequeue OK (frame=%llu bytes=%zu w=%u h=%u row_bytes=%u tid=%zu)\n",
+          static_cast<unsigned long long>(frame_index), owned.size(), w, h, row_bytes, braw_trace_tid_hash());
+        std::fflush(stderr);
         if (debug_trace_) {
           std::fprintf(stderr,
             "braw-proxy-cli: trace: packet dequeue (bytes=%zu w=%u h=%u row_bytes=%u)\n", owned.size(), w, h,
@@ -402,6 +427,10 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
     std::fprintf(stderr,
       "[ffmpeg-braw trace] take_completed_frame: SDK deferred pair released on main; members already null (tid=%zu)\n",
       braw_trace_tid_hash());
+    std::fflush(stderr);
+  } else {
+    std::fprintf(stderr, "braw-proxy-cli: consumer: dequeue FAILED (frame=%llu tid=%zu)\n",
+      static_cast<unsigned long long>(frame_index), braw_trace_tid_hash());
     std::fflush(stderr);
   }
   return ok;
@@ -519,7 +548,7 @@ void DecodeCallback::ProcessComplete(
   std::fprintf(stderr, "[ffmpeg-braw trace] 8 processed image callback entered (tid=%zu)\n", braw_trace_tid_hash());
   std::fflush(stderr);
 
-  /* SDK pointers: defer Release to main thread whenever we have self (after callback returns). */
+  /* Success path releases job+image after copy; error paths defer to main (see class comment). */
   IBlackmagicRawJob* rel_job = job;
   IBlackmagicRawProcessedImage* rel_img = processedImage;
 
@@ -740,12 +769,9 @@ void DecodeCallback::ProcessComplete(
       std::fflush(stderr);
       prev_j = self->deferred_process_job_;
       prev_im = self->deferred_process_image_;
-      self->deferred_process_job_ = rel_job;
-      self->deferred_process_image_ = rel_img;
-      std::fprintf(stderr,
-        "[ffmpeg-braw trace] handoff: deferred install for main Release after packet move (job=%p img=%p tid=%zu)\n",
-        static_cast<void*>(rel_job), static_cast<void*>(rel_img), braw_trace_tid_hash());
-      std::fflush(stderr);
+      /* Success path: do not defer job/img to main — FlushJobs() on main would deadlock waiting for Release. */
+      self->deferred_process_job_ = nullptr;
+      self->deferred_process_image_ = nullptr;
       self->pending_ = FrameHandoffPacket{};
       self->pending_.pixels = std::move(plane);
       self->pending_.w = width;
@@ -756,15 +782,21 @@ void DecodeCallback::ProcessComplete(
       self->frame_ready_ = true;
       std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
       std::fflush(stderr);
-      self->cv_.notify_one();
+      self->cv_.notify_all();
       std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
       std::fflush(stderr);
     }
     release_bmd_deferred_sdk_pair(prev_j, prev_im, "ProcessComplete(swap prior success handoff)");
+    std::fprintf(stderr,
+      "braw-proxy-cli: producer: releasing process job+image after handoff (job=%p img=%p tid=%zu) so FlushJobs can "
+      "finish\n",
+      static_cast<void*>(rel_job), static_cast<void*>(rel_img), braw_trace_tid_hash());
+    std::fflush(stderr);
+    release_bmd_deferred_sdk_pair(rel_job, rel_img, "ProcessComplete(success immediate Release after pixel copy)");
   }
 
   std::fprintf(stderr,
-    "[ffmpeg-braw trace] ProcessComplete: returning to SDK — new job/img held in deferred_* for main only (tid=%zu)\n",
+    "[ffmpeg-braw trace] ProcessComplete: returning to SDK (success path; COM objects released) (tid=%zu)\n",
     braw_trace_tid_hash());
   std::fflush(stderr);
 }
@@ -962,7 +994,13 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       return EX_DECODE;
     }
 
+    std::fprintf(stderr, "braw-proxy-cli: consumer: before FlushJobs (frame=%llu tid=%zu)\n",
+      static_cast<unsigned long long>(i), braw_trace_tid_hash());
+    std::fflush(stderr);
     hr = codec->FlushJobs();
+    std::fprintf(stderr, "braw-proxy-cli: consumer: after FlushJobs (frame=%llu hr=0x%08x tid=%zu)\n",
+      static_cast<unsigned long long>(i), static_cast<unsigned int>(hr), braw_trace_tid_hash());
+    std::fflush(stderr);
     if (FAILED(hr)) {
       safe_release(clip_attrs);
       safe_release(clip);
@@ -972,7 +1010,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       return EX_DECODE;
     }
 
-    if (!callback->wait_processed()) {
+    if (!callback->wait_processed(i)) {
       std::fprintf(stderr,
         "braw-proxy-cli: handoff wait failed or timed out (frame_index=%llu timeout_sec=%d)\n",
         static_cast<unsigned long long>(i), cfg.handoff_timeout_sec);
@@ -994,7 +1032,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     uint32_t rb = 0;
     uint32_t ow = 0;
     uint32_t oh = 0;
-    if (!callback->take_completed_frame(frame_owned, rb, ow, oh)) {
+    if (!callback->take_completed_frame(frame_owned, rb, ow, oh, i)) {
       safe_release(clip_attrs);
       safe_release(clip);
       safe_release(codec);
@@ -1009,7 +1047,15 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       static_cast<unsigned long long>(i), braw_trace_tid_hash());
     std::fflush(stderr);
 
+    std::fprintf(stderr,
+      "braw-proxy-cli: consumer: calling on_frame (frame=%llu bytes=%zu row=%u %ux%u tid=%zu)\n",
+      static_cast<unsigned long long>(i), frame_owned.size(), static_cast<unsigned>(rb), static_cast<unsigned>(ow),
+      static_cast<unsigned>(oh), braw_trace_tid_hash());
+    std::fflush(stderr);
     if (!on_frame(frame_owned.data(), rb, ow, oh, i)) {
+      std::fprintf(stderr, "braw-proxy-cli: consumer: on_frame returned false (frame=%llu)\n",
+        static_cast<unsigned long long>(i));
+      std::fflush(stderr);
       safe_release(clip_attrs);
       safe_release(clip);
       safe_release(codec);
@@ -1017,6 +1063,9 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       safe_release(factory);
       return EX_DECODE;
     }
+    std::fprintf(stderr, "braw-proxy-cli: consumer: on_frame OK; loop continues past frame %llu\n",
+      static_cast<unsigned long long>(i));
+    std::fflush(stderr);
     if (cfg.debug_trace) {
       std::fprintf(stderr, "braw-proxy-cli: trace: frame index increment past %llu\n",
         static_cast<unsigned long long>(i));
@@ -1024,6 +1073,8 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     }
   }
 
+  std::fprintf(stderr, "braw-proxy-cli: consumer: frame loop exit (all frames done)\n");
+  std::fflush(stderr);
   std::fprintf(stderr, "[ffmpeg-braw trace] 12 frame loop completed\n");
   std::fflush(stderr);
 

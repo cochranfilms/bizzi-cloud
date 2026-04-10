@@ -301,6 +301,8 @@ int main(int argc, char** argv) {
       }
       std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write complete (frame=%llu nbytes=%zu)\n",
         static_cast<unsigned long long>(frame_index), nbytes);
+      std::fprintf(stderr, "braw-proxy-cli: consumer: write_all complete (frame_index=%llu nbytes=%zu)\n",
+        static_cast<unsigned long long>(frame_index), static_cast<unsigned long long>(nbytes));
       std::fflush(stderr);
       if (opt.debug) {
         std::fprintf(stderr, "braw-proxy-cli: trace: bytes written to ffmpeg stdin: %zu (frame_index=%llu)\n", nbytes,
@@ -328,16 +330,15 @@ int main(int argc, char** argv) {
     return EX_FFMPEG_EXIT;
   }
 
-  if (opt.debug) {
-    if (WIFEXITED(status)) {
-      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child exit code %d\n", WEXITSTATUS(status));
-    } else if (WIFSIGNALED(status)) {
-      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child killed by signal %d\n", WTERMSIG(status));
-    } else {
-      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child wait status %#x\n", static_cast<unsigned int>(status));
-    }
-    std::fflush(stderr);
+  if (WIFEXITED(status)) {
+    std::fprintf(stderr, "braw-proxy-cli: consumer: ffmpeg child exit code %d\n", WEXITSTATUS(status));
+  } else if (WIFSIGNALED(status)) {
+    std::fprintf(stderr, "braw-proxy-cli: consumer: ffmpeg child killed by signal %d\n", WTERMSIG(status));
+  } else {
+    std::fprintf(stderr, "braw-proxy-cli: consumer: ffmpeg child wait status %#x\n",
+      static_cast<unsigned int>(status));
   }
+  std::fflush(stderr);
 
   if (dr != 0)
     return dr;
