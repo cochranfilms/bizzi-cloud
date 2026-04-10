@@ -100,10 +100,14 @@ static void release_bmd_deferred_sdk_pair(IBlackmagicRawJob* job, IBlackmagicRaw
 
 static constexpr uint64_t kUnknownFrameIndex = (std::numeric_limits<uint64_t>::max)();
 
+class DecodeCallback;
+static std::string frame_index_label(uint64_t frame_index);
+
 struct DeferredSdkPairSlot {
   std::mutex mu;
   IBlackmagicRawJob* job = nullptr;
   IBlackmagicRawProcessedImage* img = nullptr;
+  DecodeCallback* callback = nullptr;
   uint64_t frame_index = kUnknownFrameIndex;
 };
 
@@ -112,33 +116,36 @@ static DeferredSdkPairSlot& deferred_sdk_pair_slot() {
   return slot;
 }
 
-static void store_external_deferred_sdk_pair(
-  IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* img, uint64_t frame_index, const char* ctx) {
+static void store_external_deferred_sdk_pair(IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* img,
+  DecodeCallback* callback, uint64_t frame_index, const char* ctx) {
   auto& slot = deferred_sdk_pair_slot();
   std::lock_guard<std::mutex> lk(slot.mu);
-  if (slot.job != nullptr || slot.img != nullptr) {
+  if (slot.job != nullptr || slot.img != nullptr || slot.callback != nullptr) {
     std::fprintf(stderr,
       "braw-proxy-cli: release: external deferred slot overwrite blocked ctx=%s old_frame=%llu old_job=%p "
-      "old_img=%p new_frame=%llu new_job=%p new_img=%p tid=%zu\n",
+      "old_img=%p old_cb=%p new_frame=%llu new_job=%p new_img=%p new_cb=%p tid=%zu\n",
       ctx != nullptr ? ctx : "(null)", static_cast<unsigned long long>(slot.frame_index), static_cast<void*>(slot.job),
-      static_cast<void*>(slot.img), static_cast<unsigned long long>(frame_index), static_cast<void*>(job),
-      static_cast<void*>(img), braw_trace_tid_hash());
+      static_cast<void*>(slot.img), static_cast<void*>(slot.callback), static_cast<unsigned long long>(frame_index),
+      static_cast<void*>(job), static_cast<void*>(img), static_cast<void*>(callback), braw_trace_tid_hash());
     std::fflush(stderr);
   }
   slot.job = job;
   slot.img = img;
+  slot.callback = callback;
   slot.frame_index = frame_index;
 }
 
-static void steal_external_deferred_sdk_pair(
-  IBlackmagicRawJob*& job, IBlackmagicRawProcessedImage*& img, uint64_t& frame_index) {
+static void steal_external_deferred_sdk_pair(IBlackmagicRawJob*& job, IBlackmagicRawProcessedImage*& img,
+  DecodeCallback*& callback, uint64_t& frame_index) {
   auto& slot = deferred_sdk_pair_slot();
   std::lock_guard<std::mutex> lk(slot.mu);
   job = slot.job;
   img = slot.img;
+  callback = slot.callback;
   frame_index = slot.frame_index;
   slot.job = nullptr;
   slot.img = nullptr;
+  slot.callback = nullptr;
   slot.frame_index = kUnknownFrameIndex;
 }
 
@@ -147,23 +154,26 @@ static std::string frame_index_label(uint64_t frame_index) {
 }
 
 static void merge_external_deferred_sdk_pair(
-  IBlackmagicRawJob*& job, IBlackmagicRawProcessedImage*& img, const char* ctx) {
+  IBlackmagicRawJob*& job, IBlackmagicRawProcessedImage*& img, DecodeCallback*& callback, const char* ctx) {
   IBlackmagicRawJob* ext_job = nullptr;
   IBlackmagicRawProcessedImage* ext_img = nullptr;
+  DecodeCallback* ext_callback = nullptr;
   uint64_t ext_frame = kUnknownFrameIndex;
-  steal_external_deferred_sdk_pair(ext_job, ext_img, ext_frame);
-  if (ext_job == nullptr && ext_img == nullptr)
+  steal_external_deferred_sdk_pair(ext_job, ext_img, ext_callback, ext_frame);
+  if (ext_job == nullptr && ext_img == nullptr && ext_callback == nullptr)
     return;
   if (job == nullptr && img == nullptr) {
     job = ext_job;
     img = ext_img;
+    callback = ext_callback;
     return;
   }
   std::fprintf(stderr,
-    "braw-proxy-cli: release: dual deferred pairs ctx=%s external_frame=%s local_job=%p local_img=%p "
-    "external_job=%p external_img=%p tid=%zu\n",
+    "braw-proxy-cli: release: dual deferred pairs ctx=%s external_frame=%s local_job=%p local_img=%p local_cb=%p "
+    "external_job=%p external_img=%p external_cb=%p tid=%zu\n",
     ctx != nullptr ? ctx : "(null)", frame_index_label(ext_frame).c_str(), static_cast<void*>(job),
-    static_cast<void*>(img), static_cast<void*>(ext_job), static_cast<void*>(ext_img), braw_trace_tid_hash());
+    static_cast<void*>(img), static_cast<void*>(callback), static_cast<void*>(ext_job), static_cast<void*>(ext_img),
+    static_cast<void*>(ext_callback), braw_trace_tid_hash());
   std::fflush(stderr);
   release_bmd_deferred_sdk_pair(ext_job, ext_img, "unexpected external deferred pair");
 }
@@ -369,6 +379,18 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   ~DecodeCallback();
 };
 
+static void release_deferred_callback_hold(DecodeCallback*& callback, uint64_t frame_index, const char* ctx) {
+  if (callback == nullptr)
+    return;
+  const ULONG callback_ref_after_release = callback->Release();
+  std::fprintf(stderr,
+    "[ffmpeg-braw trace] %s: callback Release after deferred async job completion (frame=%s ref=%lu tid=%zu)\n",
+    ctx != nullptr ? ctx : "deferred callback hold release", frame_index_label(frame_index).c_str(),
+    static_cast<unsigned long>(callback_ref_after_release), braw_trace_tid_hash());
+  std::fflush(stderr);
+  callback = nullptr;
+}
+
 bool DecodeCallback::wait_processed(uint64_t frame_index) {
   std::fprintf(stderr, "braw-proxy-cli: consumer: enter wait_processed (frame=%llu timeout_sec=%d tid=%zu)\n",
     static_cast<unsigned long long>(frame_index), handoff_timeout_sec_, braw_trace_tid_hash());
@@ -424,8 +446,10 @@ DecodeCallback::~DecodeCallback() {
     deferred_process_job_ = nullptr;
     deferred_process_image_ = nullptr;
   }
-  merge_external_deferred_sdk_pair(j, im, "~DecodeCallback");
+  DecodeCallback* cb = nullptr;
+  merge_external_deferred_sdk_pair(j, im, cb, "~DecodeCallback");
   release_bmd_deferred_sdk_pair(j, im, "~DecodeCallback");
+  release_deferred_callback_hold(cb, kUnknownFrameIndex, "~DecodeCallback");
 }
 
 void DecodeCallback::set_active_frame_index(uint64_t frame_index) {
@@ -450,6 +474,7 @@ uint64_t DecodeCallback::next_release_seq() { return release_seq_.fetch_add(1, s
 void DecodeCallback::reset_wait() {
   IBlackmagicRawJob* j = nullptr;
   IBlackmagicRawProcessedImage* im = nullptr;
+  DecodeCallback* cb = nullptr;
   const uint64_t active_frame = active_frame_index_.load(std::memory_order_acquire);
   {
     std::lock_guard<std::mutex> lk(mu_);
@@ -470,13 +495,15 @@ void DecodeCallback::reset_wait() {
     frame_ready_ = false;
     last_hr_ = S_OK;
   }
-  merge_external_deferred_sdk_pair(j, im, "reset_wait(between frames)");
+  merge_external_deferred_sdk_pair(j, im, cb, "reset_wait(between frames)");
   release_bmd_deferred_sdk_pair(j, im, "reset_wait(between frames)");
+  release_deferred_callback_hold(cb, active_frame, "reset_wait(between frames)");
 }
 
 void DecodeCallback::release_deferred_process_sdk_main() {
   IBlackmagicRawJob* j = nullptr;
   IBlackmagicRawProcessedImage* im = nullptr;
+  DecodeCallback* cb = nullptr;
   {
     std::lock_guard<std::mutex> lk(mu_);
     j = deferred_process_job_;
@@ -484,14 +511,16 @@ void DecodeCallback::release_deferred_process_sdk_main() {
     deferred_process_job_ = nullptr;
     deferred_process_image_ = nullptr;
   }
-  merge_external_deferred_sdk_pair(j, im, "wait_processed failed cleanup");
+  merge_external_deferred_sdk_pair(j, im, cb, "wait_processed failed cleanup");
   release_bmd_deferred_sdk_pair(j, im, "wait_processed failed cleanup");
+  release_deferred_callback_hold(cb, kUnknownFrameIndex, "wait_processed failed cleanup");
 }
 
 bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t& row_bytes, uint32_t& w, uint32_t& h,
   uint64_t frame_index) {
   IBlackmagicRawJob* rel_j = nullptr;
   IBlackmagicRawProcessedImage* rel_im = nullptr;
+  DecodeCallback* rel_cb = nullptr;
   bool ok = false;
 
   {
@@ -576,14 +605,16 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
     }
   }
 
-  merge_external_deferred_sdk_pair(rel_j, rel_im, ok ? "main after packet consumed (before on_frame / next SDK call)"
-                                                     : "main take_completed_frame error path");
+  merge_external_deferred_sdk_pair(rel_j, rel_im, rel_cb,
+    ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
   std::fprintf(stderr,
     "braw-proxy-cli: consumer: take_completed_frame Release step (frame=%llu ok=%d deferred img=%p job=%p tid=%zu)\n",
     static_cast<unsigned long long>(frame_index), ok ? 1 : 0, static_cast<void*>(rel_im), static_cast<void*>(rel_j),
     braw_trace_tid_hash());
   std::fflush(stderr);
   release_bmd_deferred_sdk_pair(rel_j, rel_im,
+    ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
+  release_deferred_callback_hold(rel_cb, frame_index,
     ok ? "main after packet consumed (before on_frame / next SDK call)" : "main take_completed_frame error path");
   if (ok) {
     std::fprintf(stderr,
@@ -752,6 +783,7 @@ void DecodeCallback::ProcessComplete(
   if (rel_job != nullptr)
     rel_job->GetUserData(reinterpret_cast<void**>(&self));
   uint64_t frame_index = kUnknownFrameIndex;
+  bool release_callback_after_return = true;
   const auto release_job_callback_ref = [&]() {
     if (self != nullptr) {
       const ULONG callback_ref_after_job_release = self->Release();
@@ -1007,7 +1039,8 @@ void DecodeCallback::ProcessComplete(
     const char* defer_ctx = same_identity
                               ? "ProcessComplete(success defer canonical job Release to main)"
                               : "ProcessComplete(success defer image+job Release to main)";
-    store_external_deferred_sdk_pair(job, same_identity ? nullptr : processedImage, frame_index, defer_ctx);
+    store_external_deferred_sdk_pair(
+      job, same_identity ? nullptr : processedImage, self, frame_index, defer_ctx);
     std::fprintf(stderr,
       "braw-proxy-cli: producer: chosen COM release strategy: %s (frame=%s img=%p job=%p tid=%zu)\n", defer_ctx,
       frame_label.c_str(), static_cast<void*>(processedImage), static_cast<void*>(job), braw_trace_tid_hash());
@@ -1016,7 +1049,11 @@ void DecodeCallback::ProcessComplete(
       "(frame=%s job=%p img=%p tid=%zu)\n",
       frame_label.c_str(), static_cast<void*>(job),
       same_identity ? nullptr : static_cast<void*>(processedImage), braw_trace_tid_hash());
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: callback Release deferred to later safe point (frame=%s self=%p tid=%zu)\n",
+      frame_label.c_str(), static_cast<void*>(self), braw_trace_tid_hash());
     std::fflush(stderr);
+    release_callback_after_return = false;
   } else {
     std::fprintf(stderr,
       "braw-proxy-cli: producer: chosen COM release strategy: %s (frame=%s img=%p job=%p tid=%zu)\n", release_ctx,
@@ -1057,7 +1094,12 @@ void DecodeCallback::ProcessComplete(
     std::fflush(stderr);
     return_path = "success callback-thread release";
   }
-  release_job_callback_ref();
+  if (release_callback_after_return) {
+    release_job_callback_ref();
+  } else {
+    self = nullptr;
+    return_path = "success deferred outside callback state + callback hold deferred";
+  }
 }
 
 /**
