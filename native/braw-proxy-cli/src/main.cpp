@@ -150,6 +150,9 @@ int main(int argc, char** argv) {
     return px;
 
   std::fprintf(stderr, "braw-proxy-cli: main: pid=%d (CLI process)\n", static_cast<int>(getpid()));
+  std::fprintf(stderr,
+    "braw-proxy-cli: main: parsed args max_frames=%d width=%d crf=%d handoff_timeout_sec=%d debug=%d\n",
+    opt.max_frames, opt.width, opt.crf, opt.handoff_timeout_sec, opt.debug ? 1 : 0);
   std::fflush(stderr);
 
   ClipMeta meta;
@@ -269,6 +272,8 @@ int main(int argc, char** argv) {
   dcfg.max_frames = opt.max_frames;
   dcfg.handoff_timeout_sec = opt.handoff_timeout_sec;
   dcfg.debug_trace = opt.debug;
+  std::fprintf(stderr, "braw-proxy-cli: main: starting full decode with max_frames=%d\n", dcfg.max_frames);
+  std::fflush(stderr);
 
   const int dr = braw_decode_frames(opt.input, dcfg, meta,
     [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index) -> bool {
