@@ -117,35 +117,39 @@ export async function openGoogleDrivePicker(options: {
     return { type: "error", message: "Google Picker is unavailable in this browser." };
   }
 
-  const view = new g.DocsView(g.ViewId.DOCS);
+  // Picker is injected by `api.js`; global `google` typings often resolve to `unknown` in CI (strict) builds.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- third-party runtime API
+  const picker = g as any;
+
+  const view = new picker.DocsView(picker.ViewId.DOCS);
   view.setIncludeFolders(true);
   view.setSelectFolderEnabled(true);
 
   return new Promise((resolve) => {
     const callback = (data: unknown) => {
       const row = data as Record<string, unknown>;
-      const action = row[g.Response.ACTION];
-      if (action === g.Action.PICKED) {
+      const action = row[picker.Response.ACTION];
+      if (action === picker.Action.PICKED) {
         const documents = mapPickerDocuments(data);
         resolve({ type: "picked", documents });
         return;
       }
-      if (action === g.Action.CANCEL) {
+      if (action === picker.Action.CANCEL) {
         resolve({ type: "cancel" });
         return;
       }
       resolve({ type: "cancel" });
     };
 
-    let builder = new g.PickerBuilder()
+    let builder = new picker.PickerBuilder()
       .addView(view)
       .setOAuthToken(accessToken)
       .setDeveloperKey(developerKey.trim())
       .setCallback(callback)
-      .enableFeature(g.Feature.SUPPORT_TEAM_DRIVES);
+      .enableFeature(picker.Feature.SUPPORT_TEAM_DRIVES);
 
     if (mode === "import") {
-      builder = builder.enableFeature(g.Feature.MULTISELECT_ENABLED);
+      builder = builder.enableFeature(picker.Feature.MULTISELECT_ENABLED);
     }
 
     builder.build().setVisible(true);
