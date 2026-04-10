@@ -115,6 +115,8 @@ ssize_t write_all(int fd, const void* buf, size_t n) {
     if (w < 0) {
       if (errno == EINTR)
         continue;
+      std::fprintf(stderr, "braw-proxy-cli: write_all failed at offset %zu/%zu: %s\n", off, n, std::strerror(errno));
+      std::fflush(stderr);
       return -1;
     }
     if (w == 0)
@@ -138,6 +140,7 @@ int validate_output_file(const std::string& path) {
 
 int main(int argc, char** argv) {
   signal(SIGPIPE, SIG_IGN);
+  std::setvbuf(stderr, nullptr, _IOLBF, 0);
 
   Options opt;
   const int px = parse_args(argc, argv, opt);
@@ -151,9 +154,27 @@ int main(int argc, char** argv) {
   if (pr != 0)
     return pr;
 
+  BrawDecodeConfig probe_cfg;
+  probe_cfg.target_width = opt.width;
+  probe_cfg.handoff_timeout_sec = opt.handoff_timeout_sec;
+  probe_cfg.debug_trace = opt.debug;
+
   uint32_t dec_w = 0;
   uint32_t dec_h = 0;
-  braw_dimensions_for_target_width(meta.clip_width, meta.clip_height, opt.width, dec_w, dec_h);
+  const int p0 = braw_probe_decoded_frame0_size(opt.input, probe_cfg, meta, dec_w, dec_h);
+  if (p0 != 0)
+    return p0;
+
+  uint32_t pred_w = 0;
+  uint32_t pred_h = 0;
+  braw_dimensions_for_target_width(meta.clip_width, meta.clip_height, opt.width, pred_w, pred_h);
+  if (pred_w != dec_w || pred_h != dec_h) {
+    std::fprintf(stderr,
+      "braw-proxy-cli: note: predicted rawvideo %ux%u != SDK decoded frame0 %ux%u (using SDK size for -video_size)\n",
+      static_cast<unsigned>(pred_w), static_cast<unsigned>(pred_h), static_cast<unsigned>(dec_w),
+      static_cast<unsigned>(dec_h));
+    std::fflush(stderr);
+  }
 
   int pipefd[2];
   if (::pipe(pipefd) != 0) {
@@ -245,22 +266,37 @@ int main(int argc, char** argv) {
 
   const int dr = braw_decode_frames(opt.input, dcfg, meta,
     [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index) -> bool {
+      if (frame_index == 0 || opt.debug) {
+        std::fprintf(stderr,
+          "braw-proxy-cli: consumer: on_frame (frame_index=%llu w=%u h=%u row_bytes=%u ptr=%p)\n",
+          static_cast<unsigned long long>(frame_index), static_cast<unsigned>(w), static_cast<unsigned>(h),
+          static_cast<unsigned>(row_bytes), static_cast<const void*>(pixels));
+        std::fflush(stderr);
+      }
       if (w != dec_w || h != dec_h) {
-        std::cerr << "Decoded frame size " << w << "x" << h << " != expected " << dec_w << "x" << dec_h << "\n";
+        std::fprintf(stderr,
+          "braw-proxy-cli: consumer: refusing write — decoded %ux%u != ffmpeg -video_size %ux%u\n",
+          static_cast<unsigned>(w), static_cast<unsigned>(h), static_cast<unsigned>(dec_w), static_cast<unsigned>(dec_h));
+        std::fflush(stderr);
         return false;
       }
       const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
       const size_t expected_tight = static_cast<size_t>(dec_w) * 4u * static_cast<size_t>(dec_h);
-      if (nbytes != expected_tight || row_bytes != dec_w * 4u) {
-        std::cerr << "RGBA plane layout mismatch for ffmpeg rawvideo (row_bytes=" << row_bytes << " w=" << w
-                  << " h=" << h << " nbytes=" << nbytes << " expected=" << expected_tight << ")\n";
+      if (nbytes != expected_tight || row_bytes != w * 4u) {
+        std::fprintf(stderr,
+          "braw-proxy-cli: consumer: refusing write — RGBA plane mismatch (row_bytes=%u w=%u h=%u nbytes=%zu "
+          "expected=%zu)\n",
+          static_cast<unsigned>(row_bytes), static_cast<unsigned>(w), static_cast<unsigned>(h), nbytes, expected_tight);
+        std::fflush(stderr);
         return false;
       }
       std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write start (frame=%llu row_bytes=%u h=%u nbytes=%zu)\n",
         static_cast<unsigned long long>(frame_index), row_bytes, h, nbytes);
       std::fflush(stderr);
       if (write_all(pipefd[1], pixels, nbytes) < 0) {
-        std::cerr << "Write to ffmpeg pipe failed (broken pipe or disk full)\n";
+        std::fprintf(stderr, "braw-proxy-cli: consumer: write_all to ffmpeg stdin failed (errno=%d %s)\n", errno,
+          std::strerror(errno));
+        std::fflush(stderr);
         return false;
       }
       std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write complete (frame=%llu nbytes=%zu)\n",
@@ -279,10 +315,9 @@ int main(int argc, char** argv) {
       return true;
     });
 
-  if (opt.debug) {
-    std::fprintf(stderr, "braw-proxy-cli: trace: closing ffmpeg stdin (write end of pipe)\n");
-    std::fflush(stderr);
-  }
+  std::fprintf(stderr, "braw-proxy-cli: consumer: decode loop finished (dr=%d), closing ffmpeg stdin (fd write end)\n",
+    dr);
+  std::fflush(stderr);
   close(pipefd[1]);
 
   int status = 0;

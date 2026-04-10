@@ -53,6 +53,14 @@ void braw_dimensions_for_target_width(uint32_t clip_w, uint32_t clip_h, int targ
 int braw_probe_clip(const std::string& input_path, ClipMeta& meta);
 
 /**
+ * Decode frame 0 only and return the processed RGBA8 width/height from the SDK.
+ * Used so FFmpeg -video_size matches the actual decoded plane (prediction can differ).
+ * @return 0 on success, EX_DECODE / same as braw_decode_frames on failure.
+ */
+int braw_probe_decoded_frame0_size(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
+  uint32_t& out_w, uint32_t& out_h);
+
+/**
  * Decode clip to CPU-processed RGBA8 and invoke on_frame for each frame in order.
  * Re-opens the clip internally. Use metadata from braw_probe_clip.
  * @return 0 on success, EX_SDK_INIT / EX_CLIP / EX_DECODE on failure.

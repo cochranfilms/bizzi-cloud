@@ -1038,3 +1038,38 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fflush(stderr);
   return 0;
 }
+
+int braw_probe_decoded_frame0_size(const std::string& input_path, const BrawDecodeConfig& cfg, const ClipMeta& meta,
+  uint32_t& out_w, uint32_t& out_h) {
+  out_w = 0;
+  out_h = 0;
+  BrawDecodeConfig one = cfg;
+  one.max_frames = 1;
+  uint32_t got_w = 0;
+  uint32_t got_h = 0;
+  const int r = braw_decode_frames(input_path, one, meta,
+    [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index) -> bool {
+      (void)pixels;
+      (void)row_bytes;
+      if (frame_index != 0)
+        return true;
+      got_w = w;
+      got_h = h;
+      std::fprintf(stderr,
+        "braw-proxy-cli: probe: decoded frame0 size from SDK: %ux%u (row_bytes=%u plane_bytes=%zu)\n",
+        static_cast<unsigned>(w), static_cast<unsigned>(h), static_cast<unsigned>(row_bytes),
+        static_cast<size_t>(row_bytes) * static_cast<size_t>(h));
+      std::fflush(stderr);
+      return true;
+    });
+  if (r != 0)
+    return r;
+  if (got_w == 0 || got_h == 0) {
+    std::fprintf(stderr, "braw-proxy-cli: probe: frame0 dimensions missing after decode\n");
+    std::fflush(stderr);
+    return EX_DECODE;
+  }
+  out_w = got_w;
+  out_h = got_h;
+  return 0;
+}
