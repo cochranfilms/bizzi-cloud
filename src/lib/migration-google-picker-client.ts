@@ -16,6 +16,29 @@ export type GoogleDrivePickerResult =
   | { type: "cancel" }
   | { type: "error"; message: string };
 
+/** Minimal fluent type for `google.picker.PickerBuilder` (loaded from api.js at runtime). */
+type GooglePickerBuilderChain = {
+  addView: (v: unknown) => GooglePickerBuilderChain;
+  setOAuthToken: (t: string) => GooglePickerBuilderChain;
+  setDeveloperKey: (k: string) => GooglePickerBuilderChain;
+  setCallback: (cb: (data: unknown) => void) => GooglePickerBuilderChain;
+  enableFeature: (f: unknown) => GooglePickerBuilderChain;
+  build: () => { setVisible: (v: boolean) => void };
+};
+
+/** Runtime shape of `window.google.picker` after `gapi.load('picker')`. */
+type GooglePickerRuntime = {
+  DocsView: new (viewId?: unknown) => {
+    setIncludeFolders: (v: boolean) => void;
+    setSelectFolderEnabled: (v: boolean) => void;
+  };
+  ViewId: { DOCS: unknown };
+  PickerBuilder: new () => GooglePickerBuilderChain;
+  Response: { ACTION: string; DOCUMENTS: string };
+  Action: { PICKED: string; CANCEL: string };
+  Feature: { MULTISELECT_ENABLED: unknown; SUPPORT_TEAM_DRIVES: unknown };
+};
+
 type GapiWindow = Window &
   typeof globalThis & {
     gapi?: { load: (api: string, opts: { callback: () => void }) => void };
@@ -117,9 +140,8 @@ export async function openGoogleDrivePicker(options: {
     return { type: "error", message: "Google Picker is unavailable in this browser." };
   }
 
-  // Picker is injected by `api.js`; global `google` typings often resolve to `unknown` in CI (strict) builds.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- third-party runtime API
-  const picker = g as any;
+  // Cast avoids `unknown` from global `google` typings in strict CI builds; shape matches Picker at runtime.
+  const picker = g as GooglePickerRuntime;
 
   const view = new picker.DocsView(picker.ViewId.DOCS);
   view.setIncludeFolders(true);
