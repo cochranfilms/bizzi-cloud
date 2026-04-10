@@ -9,6 +9,8 @@ import {
 } from "@/lib/b2";
 import ffmpegPath from "ffmpeg-static";
 import { resolveFfmpegExecutableForInput } from "@/lib/ffmpeg-binary";
+import { isBrawFile } from "@/lib/format-detection";
+import sharp from "sharp";
 
 const FFMPEG_TIMEOUT_MS = 45000;
 
@@ -26,6 +28,21 @@ export async function getTransferVideoThumbnail(objectKey: string): Promise<Buff
 
   const proxyKey = getProxyObjectKey(objectKey);
   const hasProxy = await objectExists(proxyKey);
+
+  const brawForkConfigured = Boolean(process.env.FFMPEG_BRAW_PATH?.trim());
+  if (isBrawFile(objectKey) && !hasProxy && !brawForkConfigured) {
+    return sharp({
+      create: {
+        width: 1200,
+        height: 630,
+        channels: 3,
+        background: { r: 64, g: 64, b: 64 },
+      },
+    })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+  }
+
   const effectiveKey = hasProxy ? proxyKey : objectKey;
   const presignedUrl = await createPresignedDownloadUrl(effectiveKey, 600);
 

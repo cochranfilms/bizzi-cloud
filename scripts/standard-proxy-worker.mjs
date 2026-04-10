@@ -20,6 +20,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
+import { postWorkerJson } from "./media-worker-http.mjs";
 
 const base = (process.env.BIZZI_API_BASE || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_STANDARD_WORKER_SECRET || "";
@@ -189,25 +190,7 @@ function runFfmpeg(args, ctx) {
 }
 
 async function postJson(path, body) {
-  const r = await fetch(`${base}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify(body),
-  });
-  const text = await r.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { raw: text };
-  }
-  if (!r.ok) {
-    throw new Error(`${path} ${r.status}: ${text.slice(0, 500)}`);
-  }
-  return data;
+  return postWorkerJson(base, path, secret, body);
 }
 
 async function putFile(url, filePath, headers) {
