@@ -52,6 +52,9 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --crf N            x264 CRF 0–51 (default 23)
 --ffmpeg PATH      FFmpeg binary (default /usr/bin/ffmpeg)
 --max-frames N     Decode at most N frames (debug / smoke tests; optional)
+--defer-success-release-main
+                   Temporary crash-isolation experiment: keep ProcessComplete handoff on the callback thread,
+                   but defer success-path COM Release to the main-thread safe point in `take_completed_frame()`
 --help             Print usage and exit 0
 ```
 

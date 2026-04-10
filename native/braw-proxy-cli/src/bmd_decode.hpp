@@ -26,6 +26,11 @@ struct BrawDecodeConfig {
   int handoff_timeout_sec = 120;
   /** Verbose stderr trace (consumer wake, dequeue, frame index, etc.). */
   bool debug_trace = false;
+  /**
+   * Temporary crash-isolation experiment: publish success from ProcessComplete, but defer COM Release of the
+   * process job / processed image to the main thread safe point in take_completed_frame().
+   */
+  bool defer_success_release_to_main = false;
 };
 
 struct ClipMeta {
