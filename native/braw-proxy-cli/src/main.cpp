@@ -149,6 +149,9 @@ int main(int argc, char** argv) {
   if (px != 0)
     return px;
 
+  std::fprintf(stderr, "braw-proxy-cli: main: pid=%d (CLI process)\n", static_cast<int>(getpid()));
+  std::fflush(stderr);
+
   ClipMeta meta;
   const int pr = braw_probe_clip(opt.input, meta);
   if (pr != 0)
@@ -258,6 +261,9 @@ int main(int argc, char** argv) {
     return EX_FFMPEG_SPAWN;
   }
 
+  std::fprintf(stderr, "braw-proxy-cli: main: ffmpeg child pid=%d (posix_spawn ok)\n", static_cast<int>(pid));
+  std::fflush(stderr);
+
   BrawDecodeConfig dcfg;
   dcfg.target_width = opt.width;
   dcfg.max_frames = opt.max_frames;
@@ -351,5 +357,7 @@ int main(int argc, char** argv) {
   const int vv = validate_output_file(opt.output);
   if (vv != 0)
     return vv;
+  std::fprintf(stderr, "braw-proxy-cli: main: normal exit (decode + ffmpeg + output validate OK)\n");
+  std::fflush(stderr);
   return 0;
 }
