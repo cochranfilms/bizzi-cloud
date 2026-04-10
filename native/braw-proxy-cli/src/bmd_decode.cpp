@@ -345,7 +345,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void set_handoff_timeout_sec(int sec) { handoff_timeout_sec_ = sec; }
   void set_debug_trace(bool on) { debug_trace_ = on; }
   void set_defer_success_release_to_main(bool on) { defer_success_release_to_main_ = on; }
-  void set_flush_unwind_probe(bool on) { flush_unwind_probe_ = on; }
+  void set_process_complete_experiment(int mode) { process_complete_experiment_ = mode; }
 
   bool wait_processed(uint64_t frame_index);
 
@@ -376,7 +376,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   int handoff_timeout_sec_ = 120;
   bool debug_trace_ = false;
   bool defer_success_release_to_main_ = false;
-  bool flush_unwind_probe_ = false;
+  int process_complete_experiment_ = 0;
   std::atomic<uint64_t> active_frame_index_{kUnknownFrameIndex};
   std::atomic<uint64_t> release_seq_{1};
 
@@ -973,7 +973,7 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
-  if (self->flush_unwind_probe_) {
+  if (self->process_complete_experiment_ == 1) {
     IUnknown* job_identity_probe = query_iunknown_identity(job);
     IUnknown* img_identity_probe = query_iunknown_identity(processedImage);
     const bool identities_known_probe = job_identity_probe != nullptr && img_identity_probe != nullptr;
@@ -1046,6 +1046,27 @@ void DecodeCallback::ProcessComplete(
                                 : "ProcessComplete(success callback-thread image then job Release)";
   const std::string frame_label = frame_index_label(frame_index);
 
+  const int pce = self->process_complete_experiment_;
+  const bool notify_consumers = (pce == 0 || pce == 4);
+  const bool defer_com = self->defer_success_release_to_main_ && pce == 0;
+
+  if (pce == 2) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: bisect-2 — copy only; no publish/notify; immediate callback-thread COM "
+      "release (frame=%s plane_bytes=%zu tid=%zu)\n",
+      frame_label.c_str(), plane_bytes, braw_trace_tid_hash());
+    std::fflush(stderr);
+    const char* ctx2 = same_identity ? "ProcessComplete(bisect-2 copy-only job Release only)"
+                                     : "ProcessComplete(bisect-2 copy-only image then job Release)";
+    if (same_identity)
+      release_bmd_sdk_pair_logged(job, nullptr, ctx2, frame_index, self->next_release_seq());
+    else
+      release_bmd_sdk_pair_logged(job, processedImage, ctx2, frame_index, self->next_release_seq());
+    return_path = "bisect-2 copy-only immediate COM release";
+    release_job_callback_ref();
+    return;
+  }
+
   {
     std::lock_guard<std::mutex> lk(self->mu_);
     std::fprintf(stderr, "[ffmpeg-braw trace] handoff: publish packet (pixels=%zu w=%u h=%u row=%u tid=%zu)\n",
@@ -1061,13 +1082,20 @@ void DecodeCallback::ProcessComplete(
     self->pending_.valid = true;
     self->last_hr_ = S_OK;
     self->frame_ready_ = true;
-    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
-    std::fflush(stderr);
-    self->cv_.notify_all();
-    std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
-    std::fflush(stderr);
+    if (pce == 3) {
+      std::fprintf(stderr,
+        "[ffmpeg-braw trace] ProcessComplete: bisect-3 — pending_ published under lock; cv notify skipped (tid=%zu)\n",
+        braw_trace_tid_hash());
+      std::fflush(stderr);
+    } else if (notify_consumers) {
+      std::fprintf(stderr, "[ffmpeg-braw trace] handoff: before notify (tid=%zu)\n", braw_trace_tid_hash());
+      std::fflush(stderr);
+      self->cv_.notify_all();
+      std::fprintf(stderr, "[ffmpeg-braw trace] handoff: after notify (tid=%zu)\n", braw_trace_tid_hash());
+      std::fflush(stderr);
+    }
   }
-  if (self->defer_success_release_to_main_) {
+  if (defer_com) {
     const char* defer_ctx = same_identity
                               ? "ProcessComplete(success defer canonical job Release to main)"
                               : "ProcessComplete(success defer image+job Release to main)";
@@ -1087,14 +1115,21 @@ void DecodeCallback::ProcessComplete(
     std::fflush(stderr);
     release_callback_after_return = false;
   } else {
+    const char* strategy_ctx = release_ctx;
+    if (pce == 3)
+      strategy_ctx = same_identity ? "ProcessComplete(bisect-3 publish no notify job Release only)"
+                                   : "ProcessComplete(bisect-3 publish no notify image then job Release)";
+    else if (pce == 4)
+      strategy_ctx = same_identity ? "ProcessComplete(bisect-4 notify job Release only)"
+                                   : "ProcessComplete(bisect-4 notify image then job Release)";
     std::fprintf(stderr,
-      "braw-proxy-cli: producer: chosen COM release strategy: %s (frame=%s img=%p job=%p tid=%zu)\n", release_ctx,
+      "braw-proxy-cli: producer: chosen COM release strategy: %s (frame=%s img=%p job=%p tid=%zu)\n", strategy_ctx,
       frame_label.c_str(), static_cast<void*>(processedImage), static_cast<void*>(job), braw_trace_tid_hash());
     std::fflush(stderr);
     if (same_identity)
-      release_bmd_sdk_pair_logged(job, nullptr, release_ctx, frame_index, self->next_release_seq());
+      release_bmd_sdk_pair_logged(job, nullptr, strategy_ctx, frame_index, self->next_release_seq());
     else
-      release_bmd_sdk_pair_logged(job, processedImage, release_ctx, frame_index, self->next_release_seq());
+      release_bmd_sdk_pair_logged(job, processedImage, strategy_ctx, frame_index, self->next_release_seq());
   }
 
   bool pending_valid = false;
@@ -1111,13 +1146,27 @@ void DecodeCallback::ProcessComplete(
     frame_index_label(frame_index).c_str(), pending_valid ? 1 : 0, static_cast<void*>(deferred_job),
     static_cast<void*>(deferred_img), braw_trace_tid_hash());
   std::fflush(stderr);
-  if (self->defer_success_release_to_main_) {
+  if (defer_com) {
     std::fprintf(stderr,
       "[ffmpeg-braw trace] ProcessComplete: returning to SDK (success; COM release deferred to main safe point) "
       "(tid=%zu)\n",
       braw_trace_tid_hash());
     std::fflush(stderr);
     return_path = "success deferred outside callback state";
+  } else if (pce == 3) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: returning to SDK (bisect-3 publish no notify; immediate COM on callback "
+      "thread) (tid=%zu)\n",
+      braw_trace_tid_hash());
+    std::fflush(stderr);
+    return_path = "bisect-3 publish no notify immediate COM";
+  } else if (pce == 4) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: returning to SDK (bisect-4 publish+notify; immediate COM on callback thread) "
+      "(tid=%zu)\n",
+      braw_trace_tid_hash());
+    std::fflush(stderr);
+    return_path = "bisect-4 publish notify immediate COM";
   } else {
     std::fprintf(stderr,
       "[ffmpeg-braw trace] ProcessComplete: returning to SDK (success; COM release completed on callback thread) "
@@ -1217,9 +1266,9 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr, "[ffmpeg-braw trace] 1 entering braw_decode_frames\n");
   std::fprintf(stderr,
     "braw-proxy-cli: decode: config target_width=%d max_frames=%d clip_frames=%llu "
-    "defer_success_release_main=%d flush_unwind_probe=%d tid=%zu\n",
+    "defer_success_release_main=%d process_complete_experiment=%d tid=%zu\n",
     cfg.target_width, cfg.max_frames, static_cast<unsigned long long>(meta.frame_count),
-    cfg.defer_success_release_to_main ? 1 : 0, cfg.flush_unwind_probe ? 1 : 0, braw_trace_tid_hash());
+    cfg.defer_success_release_to_main ? 1 : 0, cfg.process_complete_experiment, braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawFactory* factory = nullptr;
@@ -1260,7 +1309,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   callback->set_handoff_timeout_sec(cfg.handoff_timeout_sec);
   callback->set_debug_trace(cfg.debug_trace);
   callback->set_defer_success_release_to_main(cfg.defer_success_release_to_main);
-  callback->set_flush_unwind_probe(cfg.flush_unwind_probe);
+  callback->set_process_complete_experiment(cfg.process_complete_experiment);
 
   hr = codec->SetCallback(callback);
   if (FAILED(hr)) {

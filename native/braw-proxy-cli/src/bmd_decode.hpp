@@ -32,11 +32,14 @@ struct BrawDecodeConfig {
    */
   bool defer_success_release_to_main = false;
   /**
-   * Temporary experiment: on ProcessComplete success, skip pixel copy + handoff and release job/processedImage on
-   * the callback thread immediately. Probes whether FlushJobs() can return when no COM refs are held past callback
-   * return and no condition_variable wake occurs.
+   * ProcessComplete success-path bisect (immediate callback-thread COM release except mode 0 may use defer flag):
+   * 0 = normal production path (respect defer_success_release_to_main).
+   * 1 = flush unwind probe: no copy/publish/notify, immediate COM release (was --flush-unwind-probe).
+   * 2 = copy SDK→owned buffer only, then immediate COM release (no publish/notify).
+   * 3 = copy + publish pending_ under lock (valid/frame_ready) but no cv notify, then immediate COM release.
+   * 4 = copy + publish + notify_all + immediate COM release (ignores defer_success_release_to_main).
    */
-  bool flush_unwind_probe = false;
+  int process_complete_experiment = 0;
 };
 
 struct ClipMeta {

@@ -53,11 +53,18 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --ffmpeg PATH      FFmpeg binary (default /usr/bin/ffmpeg)
 --max-frames N     Decode at most N frames (debug / smoke tests; optional)
 --defer-success-release-main
-                   Temporary crash-isolation experiment: keep ProcessComplete handoff on the callback thread,
-                   but defer success-path COM Release to the main-thread safe point in `take_completed_frame()`
+                   Production-ish path: defer success-path COM Release to the main-thread safe point in
+                   `take_completed_frame()` (ignored for bisect modes 3–4, which always release COM on the callback thread).
 --flush-unwind-probe
-                   Temporary experiment: on ProcessComplete success, skip copy/publish and release job/processedImage
-                   on the callback thread immediately — probes whether `FlushJobs()` can return without handoff.
+                   Shorthand for `--process-complete-experiment 1` unless an explicit experiment is set.
+--process-complete-experiment N
+                   Bisect ProcessComplete success handoff vs `FlushJobs()` unwind (0–4). Callback-thread COM release
+                   is always immediate in modes 1–4; defer flag applies only to mode 0.
+ 0 — normal (honor `--defer-success-release-main`)
+                     1 — skip copy/publish/notify; immediate COM (flush unwind probe)
+                     2 — copy only; no publish/notify; immediate COM
+                     3 — copy + publish pending state under mutex; no notify; immediate COM
+                     4 — copy + publish + notify_all; immediate COM
 --help             Print usage and exit 0
 ```
 
