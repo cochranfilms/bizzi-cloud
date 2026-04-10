@@ -19,6 +19,13 @@ struct BrawDecodeConfig {
   int target_width = 1280;
   /** Cap frames for debugging; <= 0 means full clip. */
   int max_frames = 0;
+  /**
+   * Seconds to wait for ProcessComplete handoff after each read Submit+Flush.
+   * <= 0 means effectively unbounded (24h cap inside implementation for safety).
+   */
+  int handoff_timeout_sec = 120;
+  /** Verbose stderr trace (consumer wake, dequeue, frame index, etc.). */
+  bool debug_trace = false;
 };
 
 struct ClipMeta {

@@ -11,6 +11,11 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifdef __linux__
+#ifndef F_SETPIPE_SZ
+#define F_SETPIPE_SZ 1031
+#endif
+#endif
 
 #include <filesystem>
 #include <iostream>
@@ -30,12 +35,17 @@ struct Options {
   int width = 1280;
   int crf = 23;
   int max_frames = 0;
+  /** Verbose end-to-end trace on stderr (consumer path + ffmpeg I/O). */
+  bool debug = false;
+  /** Handoff wait per frame; 0 = unbounded (see BrawDecodeConfig). */
+  int handoff_timeout_sec = 120;
 };
 
 void print_usage(const char* argv0) {
   std::cerr << "Usage: " << argv0
             << " --input /path/to/file.braw --output /path/to/out.mp4"
-               " [--width 1280] [--crf 23] [--ffmpeg /usr/bin/ffmpeg] [--max-frames N]\n";
+               " [--width 1280] [--crf 23] [--ffmpeg /usr/bin/ffmpeg] [--max-frames N]"
+               " [--debug] [--handoff-timeout-sec SEC]\n";
 }
 
 int parse_args(int argc, char** argv, Options& o) {
@@ -55,6 +65,14 @@ int parse_args(int argc, char** argv, Options& o) {
       o.max_frames = std::atoi(argv[++i]);
       if (o.max_frames < 0) {
         std::cerr << "--max-frames must be non-negative\n";
+        return EX_USAGE;
+      }
+    } else if (std::strcmp(a, "--debug") == 0) {
+      o.debug = true;
+    } else if (std::strcmp(a, "--handoff-timeout-sec") == 0 && i + 1 < argc) {
+      o.handoff_timeout_sec = std::atoi(argv[++i]);
+      if (o.handoff_timeout_sec < 0) {
+        std::cerr << "--handoff-timeout-sec must be >= 0 (0 = unbounded wait)\n";
         return EX_USAGE;
       }
     } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
@@ -142,6 +160,15 @@ int main(int argc, char** argv) {
     perror("pipe");
     return EX_FFMPEG_SPAWN;
   }
+#ifdef __linux__
+  {
+    const int pipe_target = 32 * 1024 * 1024;
+    if (::fcntl(pipefd[1], F_SETPIPE_SZ, pipe_target) != -1 && opt.debug) {
+      std::fprintf(stderr, "braw-proxy-cli: trace: F_SETPIPE_SZ ok (requested=%d bytes)\n", pipe_target);
+      std::fflush(stderr);
+    }
+  }
+#endif
 
   posix_spawn_file_actions_t fa;
   if (posix_spawn_file_actions_init(&fa) != 0) {
@@ -164,7 +191,7 @@ int main(int argc, char** argv) {
   arg_store.push_back(opt.ffmpeg);
   arg_store.push_back("-hide_banner");
   arg_store.push_back("-loglevel");
-  arg_store.push_back("error");
+  arg_store.push_back(opt.debug ? "info" : "error");
   arg_store.push_back("-f");
   arg_store.push_back("rawvideo");
   arg_store.push_back("-pixel_format");
@@ -213,6 +240,8 @@ int main(int argc, char** argv) {
   BrawDecodeConfig dcfg;
   dcfg.target_width = opt.width;
   dcfg.max_frames = opt.max_frames;
+  dcfg.handoff_timeout_sec = opt.handoff_timeout_sec;
+  dcfg.debug_trace = opt.debug;
 
   const int dr = braw_decode_frames(opt.input, dcfg, meta,
     [&](const uint8_t* pixels, uint32_t row_bytes, uint32_t w, uint32_t h, uint64_t frame_index) -> bool {
@@ -221,6 +250,12 @@ int main(int argc, char** argv) {
         return false;
       }
       const size_t nbytes = static_cast<size_t>(row_bytes) * static_cast<size_t>(h);
+      const size_t expected_tight = static_cast<size_t>(dec_w) * 4u * static_cast<size_t>(dec_h);
+      if (nbytes != expected_tight || row_bytes != dec_w * 4u) {
+        std::cerr << "RGBA plane layout mismatch for ffmpeg rawvideo (row_bytes=" << row_bytes << " w=" << w
+                  << " h=" << h << " nbytes=" << nbytes << " expected=" << expected_tight << ")\n";
+        return false;
+      }
       std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write start (frame=%llu row_bytes=%u h=%u nbytes=%zu)\n",
         static_cast<unsigned long long>(frame_index), row_bytes, h, nbytes);
       std::fflush(stderr);
@@ -231,6 +266,11 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "[ffmpeg-braw trace] ffmpeg write complete (frame=%llu nbytes=%zu)\n",
         static_cast<unsigned long long>(frame_index), nbytes);
       std::fflush(stderr);
+      if (opt.debug) {
+        std::fprintf(stderr, "braw-proxy-cli: trace: bytes written to ffmpeg stdin: %zu (frame_index=%llu)\n", nbytes,
+          static_cast<unsigned long long>(frame_index));
+        std::fflush(stderr);
+      }
       if (frame_index == 0) {
         std::fprintf(stderr, "[ffmpeg-braw trace] 11 first frame written to ffmpeg stdin (%ux%u row_bytes=%u bytes=%zu)\n",
           static_cast<unsigned>(w), static_cast<unsigned>(h), row_bytes, nbytes);
@@ -239,6 +279,10 @@ int main(int argc, char** argv) {
       return true;
     });
 
+  if (opt.debug) {
+    std::fprintf(stderr, "braw-proxy-cli: trace: closing ffmpeg stdin (write end of pipe)\n");
+    std::fflush(stderr);
+  }
   close(pipefd[1]);
 
   int status = 0;
@@ -247,6 +291,17 @@ int main(int argc, char** argv) {
     if (dr != 0)
       return dr;
     return EX_FFMPEG_EXIT;
+  }
+
+  if (opt.debug) {
+    if (WIFEXITED(status)) {
+      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child exit code %d\n", WEXITSTATUS(status));
+    } else if (WIFSIGNALED(status)) {
+      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child killed by signal %d\n", WTERMSIG(status));
+    } else {
+      std::fprintf(stderr, "braw-proxy-cli: trace: ffmpeg child wait status %#x\n", static_cast<unsigned int>(status));
+    }
+    std::fflush(stderr);
   }
 
   if (dr != 0)

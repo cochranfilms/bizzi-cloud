@@ -223,17 +223,10 @@ class DecodeCallback final : public IBlackmagicRawCallback {
 
   void reset_wait();
 
-  bool wait_processed() {
-    std::unique_lock<std::mutex> lk(mu_);
-    const bool ok = cv_.wait_for(lk, std::chrono::minutes(30), [&] { return frame_ready_; });
-    if (ok) {
-      std::fprintf(stderr,
-        "[ffmpeg-braw trace] wait_processed: woke (frame_ready=1 last_hr=0x%08x valid=%d tid=%zu)\n",
-        static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid), braw_trace_tid_hash());
-      std::fflush(stderr);
-    }
-    return ok && SUCCEEDED(last_hr_) && pending_.valid;
-  }
+  void set_handoff_timeout_sec(int sec) { handoff_timeout_sec_ = sec; }
+  void set_debug_trace(bool on) { debug_trace_ = on; }
+
+  bool wait_processed();
 
   /**
    * After successful wait_processed(), move the completed frame out of the callback under mu_.
@@ -253,9 +246,37 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   FrameHandoffPacket pending_{};
   IBlackmagicRawJob* deferred_process_job_ = nullptr;
   IBlackmagicRawProcessedImage* deferred_process_image_ = nullptr;
+  /** <= 0: wait until handoff (no timed wait; avoids spurious timeout). */
+  int handoff_timeout_sec_ = 120;
+  bool debug_trace_ = false;
 
   ~DecodeCallback();
 };
+
+bool DecodeCallback::wait_processed() {
+  std::unique_lock<std::mutex> lk(mu_);
+  bool woke = false;
+  if (handoff_timeout_sec_ <= 0) {
+    cv_.wait(lk, [&] { return frame_ready_; });
+    woke = frame_ready_;
+  } else {
+    woke = cv_.wait_for(lk, std::chrono::seconds(handoff_timeout_sec_), [&] { return frame_ready_; });
+  }
+  if (debug_trace_) {
+    std::fprintf(stderr,
+      "braw-proxy-cli: trace: consumer wake (ready=%d last_hr=0x%08x valid=%d timed_wait=%s)\n",
+      frame_ready_ ? 1 : 0, static_cast<unsigned int>(last_hr_), pending_.valid ? 1 : 0,
+      handoff_timeout_sec_ <= 0 ? "off" : "on");
+    std::fflush(stderr);
+  }
+  if (woke && frame_ready_) {
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] wait_processed: woke (frame_ready=1 last_hr=0x%08x valid=%d tid=%zu)\n",
+      static_cast<unsigned int>(last_hr_), static_cast<int>(pending_.valid), braw_trace_tid_hash());
+    std::fflush(stderr);
+  }
+  return woke && frame_ready_ && SUCCEEDED(last_hr_) && pending_.valid;
+}
 
 DecodeCallback::~DecodeCallback() {
   IBlackmagicRawJob* j = nullptr;
@@ -365,6 +386,12 @@ bool DecodeCallback::take_completed_frame(std::vector<uint8_t>& owned, uint32_t&
         std::fprintf(stderr, "[ffmpeg-braw trace] take_completed_frame: after move/clear (owned=%zu tid=%zu)\n",
           owned.size(), braw_trace_tid_hash());
         std::fflush(stderr);
+        if (debug_trace_) {
+          std::fprintf(stderr,
+            "braw-proxy-cli: trace: packet dequeue (bytes=%zu w=%u h=%u row_bytes=%u)\n", owned.size(), w, h,
+            row_bytes);
+          std::fflush(stderr);
+        }
       }
     }
   }
@@ -650,9 +677,10 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
-  const uint64_t plane_u64 = static_cast<uint64_t>(rowBytes) * static_cast<uint64_t>(height);
-  if (plane_u64 == 0ULL || plane_u64 > static_cast<uint64_t>(sizeBytes)
-      || plane_u64 > static_cast<uint64_t>((std::numeric_limits<size_t>::max)())) {
+  const uint32_t tight_stride = width * 4u;
+  const uint64_t src_plane_u64 = static_cast<uint64_t>(rowBytes) * static_cast<uint64_t>(height);
+  if (src_plane_u64 == 0ULL || src_plane_u64 > static_cast<uint64_t>(sizeBytes)
+      || src_plane_u64 > static_cast<uint64_t>((std::numeric_limits<size_t>::max)())) {
     IBlackmagicRawJob* prev_j = nullptr;
     IBlackmagicRawProcessedImage* prev_im = nullptr;
     {
@@ -672,22 +700,34 @@ void DecodeCallback::ProcessComplete(
     std::fflush(stderr);
     return;
   }
-  const size_t plane_bytes = static_cast<size_t>(plane_u64);
 
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy start (src=%p plane_bytes=%zu sizeBytes=%u tid=%zu)\n",
-    static_cast<void*>(imageData), plane_bytes, sizeBytes, braw_trace_tid_hash());
-  std::fflush(stderr);
-
-  std::vector<uint8_t> plane(plane_bytes);
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned before memcpy (dst=%p src=%p tid=%zu)\n",
-    static_cast<void*>(plane.data()), static_cast<void*>(imageData), braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::memcpy(plane.data(), imageData, plane_bytes);
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned after memcpy (plane_bytes=%zu tid=%zu)\n", plane_bytes,
-    braw_trace_tid_hash());
-  std::fflush(stderr);
-  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu tid=%zu)\n", plane_bytes,
-    braw_trace_tid_hash());
+  // FFmpeg rawvideo rgba expects exactly width*4 bytes per row (no trailing row padding).
+  std::vector<uint8_t> plane;
+  size_t plane_bytes = 0;
+  if (rowBytes == tight_stride) {
+    plane_bytes = static_cast<size_t>(src_plane_u64);
+    plane.resize(plane_bytes);
+    std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy start (tight stride, plane_bytes=%zu sizeBytes=%u tid=%zu)\n",
+      plane_bytes, sizeBytes, braw_trace_tid_hash());
+    std::fflush(stderr);
+    std::memcpy(plane.data(), imageData, plane_bytes);
+  } else {
+    plane_bytes = static_cast<size_t>(tight_stride) * static_cast<size_t>(height);
+    plane.resize(plane_bytes);
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] SDK→owned tight-pack (sdk_row=%u tight_row=%u h=%u out_bytes=%zu tid=%zu)\n", rowBytes,
+      tight_stride, height, plane_bytes, braw_trace_tid_hash());
+    std::fflush(stderr);
+    const auto* src = static_cast<const uint8_t*>(imageData);
+    uint8_t* dst = plane.data();
+    for (uint32_t row = 0; row < height; ++row) {
+      std::memcpy(dst + static_cast<size_t>(row) * tight_stride, src + static_cast<size_t>(row) * rowBytes,
+        tight_stride);
+    }
+    rowBytes = tight_stride;
+  }
+  std::fprintf(stderr, "[ffmpeg-braw trace] SDK→owned copy complete (plane_bytes=%zu row_bytes_out=%u tid=%zu)\n",
+    plane_bytes, rowBytes, braw_trace_tid_hash());
   std::fflush(stderr);
 
   {
@@ -847,6 +887,8 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
 
   callback->scale = pick_resolution_scale(meta.clip_width, cfg.target_width);
   callback->clip_attrs = clip_attrs;
+  callback->set_handoff_timeout_sec(cfg.handoff_timeout_sec);
+  callback->set_debug_trace(cfg.debug_trace);
 
   hr = codec->SetCallback(callback);
   if (FAILED(hr)) {
@@ -931,6 +973,10 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
     }
 
     if (!callback->wait_processed()) {
+      std::fprintf(stderr,
+        "braw-proxy-cli: handoff wait failed or timed out (frame_index=%llu timeout_sec=%d)\n",
+        static_cast<unsigned long long>(i), cfg.handoff_timeout_sec);
+      std::fflush(stderr);
       callback->release_deferred_process_sdk_main();
       safe_release(clip_attrs);
       safe_release(clip);
@@ -970,6 +1016,11 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
       callback->Release();
       safe_release(factory);
       return EX_DECODE;
+    }
+    if (cfg.debug_trace) {
+      std::fprintf(stderr, "braw-proxy-cli: trace: frame index increment past %llu\n",
+        static_cast<unsigned long long>(i));
+      std::fflush(stderr);
     }
   }
 
