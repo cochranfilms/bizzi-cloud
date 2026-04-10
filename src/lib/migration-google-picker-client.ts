@@ -121,9 +121,6 @@ export async function openGoogleDrivePicker(options: {
   view.setIncludeFolders(true);
   view.setSelectFolderEnabled(true);
 
-  /* eslint-disable @typescript-eslint/no-explicit-any -- Google Picker is loaded from `api.js` without types */
-  const gp = g as any;
-
   return new Promise((resolve) => {
     const callback = (data: unknown) => {
       const row = data as Record<string, unknown>;
@@ -140,15 +137,15 @@ export async function openGoogleDrivePicker(options: {
       resolve({ type: "cancel" });
     };
 
-    let builder = new gp.PickerBuilder()
+    let builder = new g.PickerBuilder()
       .addView(view)
       .setOAuthToken(accessToken)
       .setDeveloperKey(developerKey.trim())
       .setCallback(callback)
-      .enableFeature(gp.Feature.SUPPORT_TEAM_DRIVES);
+      .enableFeature(g.Feature.SUPPORT_TEAM_DRIVES);
 
     if (mode === "import") {
-      builder = builder.enableFeature(gp.Feature.MULTISELECT_ENABLED);
+      builder = builder.enableFeature(g.Feature.MULTISELECT_ENABLED);
     }
 
     builder.build().setVisible(true);
