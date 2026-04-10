@@ -41,13 +41,15 @@ struct Options {
   int handoff_timeout_sec = 120;
   /** Temporary crash-isolation experiment: publish success in callback, defer COM Release to main safe point. */
   bool defer_success_release_to_main = false;
+  /** Temporary: ProcessComplete success skips publish; immediate COM release to probe FlushJobs unwind. */
+  bool flush_unwind_probe = false;
 };
 
 void print_usage(const char* argv0) {
   std::cerr << "Usage: " << argv0
             << " --input /path/to/file.braw --output /path/to/out.mp4"
                " [--width 1280] [--crf 23] [--ffmpeg /usr/bin/ffmpeg] [--max-frames N]"
-               " [--debug] [--handoff-timeout-sec SEC] [--defer-success-release-main]\n";
+               " [--debug] [--handoff-timeout-sec SEC] [--defer-success-release-main] [--flush-unwind-probe]\n";
 }
 
 int parse_args(int argc, char** argv, Options& o) {
@@ -79,6 +81,8 @@ int parse_args(int argc, char** argv, Options& o) {
       }
     } else if (std::strcmp(a, "--defer-success-release-main") == 0) {
       o.defer_success_release_to_main = true;
+    } else if (std::strcmp(a, "--flush-unwind-probe") == 0) {
+      o.flush_unwind_probe = true;
     } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
       print_usage(argv[0]);
       return kParseHelp;
@@ -156,9 +160,9 @@ int main(int argc, char** argv) {
   std::fprintf(stderr, "braw-proxy-cli: main: pid=%d (CLI process)\n", static_cast<int>(getpid()));
   std::fprintf(stderr,
     "braw-proxy-cli: main: parsed args max_frames=%d width=%d crf=%d handoff_timeout_sec=%d debug=%d "
-    "defer_success_release_main=%d\n",
+    "defer_success_release_main=%d flush_unwind_probe=%d\n",
     opt.max_frames, opt.width, opt.crf, opt.handoff_timeout_sec, opt.debug ? 1 : 0,
-    opt.defer_success_release_to_main ? 1 : 0);
+    opt.defer_success_release_to_main ? 1 : 0, opt.flush_unwind_probe ? 1 : 0);
   std::fflush(stderr);
 
   ClipMeta meta;
@@ -171,6 +175,7 @@ int main(int argc, char** argv) {
   probe_cfg.handoff_timeout_sec = opt.handoff_timeout_sec;
   probe_cfg.debug_trace = opt.debug;
   probe_cfg.defer_success_release_to_main = opt.defer_success_release_to_main;
+  probe_cfg.flush_unwind_probe = opt.flush_unwind_probe;
 
   uint32_t dec_w = 0;
   uint32_t dec_h = 0;
@@ -280,6 +285,7 @@ int main(int argc, char** argv) {
   dcfg.handoff_timeout_sec = opt.handoff_timeout_sec;
   dcfg.debug_trace = opt.debug;
   dcfg.defer_success_release_to_main = opt.defer_success_release_to_main;
+  dcfg.flush_unwind_probe = opt.flush_unwind_probe;
   std::fprintf(stderr, "braw-proxy-cli: main: starting full decode with max_frames=%d\n", dcfg.max_frames);
   std::fflush(stderr);
 

@@ -31,6 +31,12 @@ struct BrawDecodeConfig {
    * process job / processed image to the main thread safe point in take_completed_frame().
    */
   bool defer_success_release_to_main = false;
+  /**
+   * Temporary experiment: on ProcessComplete success, skip pixel copy + handoff and release job/processedImage on
+   * the callback thread immediately. Probes whether FlushJobs() can return when no COM refs are held past callback
+   * return and no condition_variable wake occurs.
+   */
+  bool flush_unwind_probe = false;
 };
 
 struct ClipMeta {

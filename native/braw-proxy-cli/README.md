@@ -55,6 +55,9 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
 --defer-success-release-main
                    Temporary crash-isolation experiment: keep ProcessComplete handoff on the callback thread,
                    but defer success-path COM Release to the main-thread safe point in `take_completed_frame()`
+--flush-unwind-probe
+                   Temporary experiment: on ProcessComplete success, skip copy/publish and release job/processedImage
+                   on the callback thread immediately — probes whether `FlushJobs()` can return without handoff.
 --help             Print usage and exit 0
 ```
 

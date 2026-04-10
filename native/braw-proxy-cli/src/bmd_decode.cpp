@@ -102,6 +102,7 @@ static constexpr uint64_t kUnknownFrameIndex = (std::numeric_limits<uint64_t>::m
 
 class DecodeCallback;
 static std::string frame_index_label(uint64_t frame_index);
+static void release_deferred_callback_hold(DecodeCallback*& callback, uint64_t frame_index, const char* ctx);
 
 struct DeferredSdkPairSlot {
   std::mutex mu;
@@ -176,6 +177,7 @@ static void merge_external_deferred_sdk_pair(
     static_cast<void*>(ext_callback), braw_trace_tid_hash());
   std::fflush(stderr);
   release_bmd_deferred_sdk_pair(ext_job, ext_img, "unexpected external deferred pair");
+  release_deferred_callback_hold(ext_callback, ext_frame, "unexpected external deferred pair");
 }
 
 static void release_bmd_sdk_pair_logged(IBlackmagicRawJob* job, IBlackmagicRawProcessedImage* img, const char* ctx,
@@ -343,6 +345,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   void set_handoff_timeout_sec(int sec) { handoff_timeout_sec_ = sec; }
   void set_debug_trace(bool on) { debug_trace_ = on; }
   void set_defer_success_release_to_main(bool on) { defer_success_release_to_main_ = on; }
+  void set_flush_unwind_probe(bool on) { flush_unwind_probe_ = on; }
 
   bool wait_processed(uint64_t frame_index);
 
@@ -373,6 +376,7 @@ class DecodeCallback final : public IBlackmagicRawCallback {
   int handoff_timeout_sec_ = 120;
   bool debug_trace_ = false;
   bool defer_success_release_to_main_ = false;
+  bool flush_unwind_probe_ = false;
   std::atomic<uint64_t> active_frame_index_{kUnknownFrameIndex};
   std::atomic<uint64_t> release_seq_{1};
 
@@ -969,6 +973,34 @@ void DecodeCallback::ProcessComplete(
     return;
   }
 
+  if (self->flush_unwind_probe_) {
+    IUnknown* job_identity_probe = query_iunknown_identity(job);
+    IUnknown* img_identity_probe = query_iunknown_identity(processedImage);
+    const bool identities_known_probe = job_identity_probe != nullptr && img_identity_probe != nullptr;
+    const bool same_identity_probe = identities_known_probe && job_identity_probe == img_identity_probe;
+    safe_release(job_identity_probe);
+    safe_release(img_identity_probe);
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: flush-unwind-probe — skip copy/publish; immediate callback-thread COM "
+      "release (frame=%s job=%p img=%p same_identity=%d tid=%zu)\n",
+      frame_index_label(frame_index).c_str(), static_cast<void*>(job), static_cast<void*>(processedImage),
+      same_identity_probe ? 1 : 0, braw_trace_tid_hash());
+    std::fflush(stderr);
+    const char* probe_ctx = same_identity_probe ? "ProcessComplete(flush-unwind-probe job Release only)"
+                                                : "ProcessComplete(flush-unwind-probe image then job Release)";
+    if (same_identity_probe)
+      release_bmd_sdk_pair_logged(job, nullptr, probe_ctx, frame_index, self->next_release_seq());
+    else
+      release_bmd_sdk_pair_logged(job, processedImage, probe_ctx, frame_index, self->next_release_seq());
+    std::fprintf(stderr,
+      "[ffmpeg-braw trace] ProcessComplete: flush-unwind-probe — COM released; returning to SDK (tid=%zu)\n",
+      braw_trace_tid_hash());
+    std::fflush(stderr);
+    return_path = "flush-unwind-probe immediate COM release no publish";
+    release_job_callback_ref();
+    return;
+  }
+
   // FFmpeg rawvideo rgba expects exactly width*4 bytes per row (no trailing row padding).
   std::vector<uint8_t> plane;
   size_t plane_bytes = 0;
@@ -1185,9 +1217,9 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   std::fprintf(stderr, "[ffmpeg-braw trace] 1 entering braw_decode_frames\n");
   std::fprintf(stderr,
     "braw-proxy-cli: decode: config target_width=%d max_frames=%d clip_frames=%llu "
-    "defer_success_release_main=%d tid=%zu\n",
+    "defer_success_release_main=%d flush_unwind_probe=%d tid=%zu\n",
     cfg.target_width, cfg.max_frames, static_cast<unsigned long long>(meta.frame_count),
-    cfg.defer_success_release_to_main ? 1 : 0, braw_trace_tid_hash());
+    cfg.defer_success_release_to_main ? 1 : 0, cfg.flush_unwind_probe ? 1 : 0, braw_trace_tid_hash());
   std::fflush(stderr);
 
   IBlackmagicRawFactory* factory = nullptr;
@@ -1228,6 +1260,7 @@ int braw_decode_frames(const std::string& input_path, const BrawDecodeConfig& cf
   callback->set_handoff_timeout_sec(cfg.handoff_timeout_sec);
   callback->set_debug_trace(cfg.debug_trace);
   callback->set_defer_success_release_to_main(cfg.defer_success_release_to_main);
+  callback->set_flush_unwind_probe(cfg.flush_unwind_probe);
 
   hr = codec->SetCallback(callback);
   if (FAILED(hr)) {
