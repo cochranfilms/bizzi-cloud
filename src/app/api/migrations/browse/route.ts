@@ -31,7 +31,18 @@ export async function POST(request: Request) {
   const db = getAdminFirestore();
 
   if (provider === "google_drive") {
-    const folderId = body.google_folder_id?.trim() || "root";
+    const raw = body.google_folder_id?.trim() || "";
+    if (!raw || raw === "root") {
+      return NextResponse.json(
+        {
+          error:
+            "Choose a folder with Google Picker first, or open a folder you already selected. Full My Drive listing requires broader access we do not request.",
+          code: "google_root_not_allowed",
+        },
+        { status: 400 }
+      );
+    }
+    const folderId = raw;
     const token = await getGoogleAccessToken(db, auth.uid);
     const { files } = await googleListChildren(token, folderId);
     const entries = files.map((f) => ({

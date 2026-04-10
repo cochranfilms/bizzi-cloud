@@ -37,6 +37,7 @@ import {
   getCachedGoogleBrowse,
   setCachedGoogleBrowse,
 } from "@/lib/migration-google-browse-cache";
+import { openGoogleDrivePicker } from "@/lib/migration-google-picker-client";
 
 type Provider = MigrationProvider;
 
@@ -401,13 +402,15 @@ export default function WorkspaceMigrationSection({
   const [browseLoading, setBrowseLoading] = useState(false);
 
   const [provider, setProvider] = useState<Provider>("google_drive");
-  const [googleFolderId, setGoogleFolderId] = useState("root");
+  const [googleFolderId, setGoogleFolderId] = useState<string | null>(null);
   const [dropboxPath, setDropboxPath] = useState("");
   const [providerEntries, setProviderEntries] = useState<ProviderEntry[]>([]);
   const [googleBrowseView, setGoogleBrowseView] = useState<"list" | "grid">("list");
-  const [providerTrail, setProviderTrail] = useState<{ id: string; name: string; dropboxPath?: string }[]>(
-    [{ id: "root", name: "Drive", dropboxPath: "" }]
-  );
+  const [providerTrail, setProviderTrail] = useState<{ id: string; name: string; dropboxPath?: string }[]>([
+    { id: "__unset__", name: "Google Drive" },
+  ]);
+
+  const [googlePickerBusy, setGooglePickerBusy] = useState(false);
 
   const [picks, setPicks] = useState<SourcePick[]>([]);
   const [destRelPath, setDestRelPath] = useState("");
@@ -495,8 +498,12 @@ export default function WorkspaceMigrationSection({
       const h = await authHeader();
       if (!h) return;
       const force = options?.force === true;
+      if (provider === "google_drive" && googleFolderId === null) {
+        setProviderEntries([]);
+        return;
+      }
       if (provider === "google_drive" && !force) {
-        const cached = getCachedGoogleBrowse<ProviderEntry[]>(googleFolderId);
+        const cached = getCachedGoogleBrowse<ProviderEntry[]>(googleFolderId!);
         if (cached !== null) {
           const list = [...cached];
           list.sort((a, b) => {
@@ -511,7 +518,7 @@ export default function WorkspaceMigrationSection({
       try {
         const body =
           provider === "google_drive"
-            ? { provider, google_folder_id: googleFolderId }
+            ? { provider, google_folder_id: googleFolderId as string }
             : { provider, dropbox_path: dropboxPath };
         const res = await fetch("/api/migrations/browse", {
           method: "POST",
@@ -528,7 +535,7 @@ export default function WorkspaceMigrationSection({
           if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
           return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
         });
-        if (provider === "google_drive") {
+        if (provider === "google_drive" && googleFolderId !== null) {
           setCachedGoogleBrowse(googleFolderId, list);
         }
         setProviderEntries(list);
@@ -541,6 +548,105 @@ export default function WorkspaceMigrationSection({
     },
     [authHeader, provider, googleFolderId, dropboxPath]
   );
+
+  const runGooglePickerImport = useCallback(async () => {
+    setGooglePickerBusy(true);
+    setMessage(null);
+    try {
+      const h = await authHeader();
+      if (!h) throw new Error("Sign in first");
+      const key = process.env.NEXT_PUBLIC_GOOGLE_MIGRATION_PICKER_KEY?.trim() ?? "";
+      if (!key) {
+        throw new Error(
+          "Google Picker is not configured. Set NEXT_PUBLIC_GOOGLE_MIGRATION_PICKER_KEY to an API key with the Google Picker API enabled (same Cloud project as migration OAuth)."
+        );
+      }
+      const tokRes = await fetch("/api/migrations/google-drive/access-token", {
+        method: "POST",
+        headers: h,
+      });
+      const tokJson = (await tokRes.json().catch(() => ({}))) as { access_token?: string; error?: string };
+      if (!tokRes.ok) throw new Error(tokJson.error ?? "Could not get Google token for Picker");
+      const accessToken = tokJson.access_token;
+      if (!accessToken) throw new Error("No access token for Picker");
+      const res = await openGoogleDrivePicker({
+        accessToken,
+        developerKey: key,
+        mode: "import",
+      });
+      if (res.type === "error") throw new Error(res.message);
+      if (res.type === "cancel") return;
+      const max = migrationMaxFoldersPerJob();
+      let limitHit = false;
+      setPicks((prev) => {
+        let next = [...prev];
+        for (const doc of res.documents) {
+          const isFolder = doc.mimeType === "application/vnd.google-apps.folder";
+          const kind = isFolder ? "folder" : "file";
+          if (next.some((p) => p.ref === doc.id && p.kind === kind)) continue;
+          if (next.length >= max) {
+            limitHit = true;
+            break;
+          }
+          next.push({ ref: doc.id, name: doc.name, kind });
+        }
+        return next;
+      });
+      if (limitHit) {
+        setMessage(`You can select at most ${migrationMaxFoldersPerJob()} items per import.`);
+      }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Picker failed");
+    } finally {
+      setGooglePickerBusy(false);
+    }
+  }, [authHeader]);
+
+  const runGooglePickerBrowse = useCallback(async () => {
+    setGooglePickerBusy(true);
+    setMessage(null);
+    try {
+      const h = await authHeader();
+      if (!h) throw new Error("Sign in first");
+      const key = process.env.NEXT_PUBLIC_GOOGLE_MIGRATION_PICKER_KEY?.trim() ?? "";
+      if (!key) {
+        throw new Error(
+          "Google Picker is not configured. Set NEXT_PUBLIC_GOOGLE_MIGRATION_PICKER_KEY to an API key with the Google Picker API enabled (same Cloud project as migration OAuth)."
+        );
+      }
+      const tokRes = await fetch("/api/migrations/google-drive/access-token", {
+        method: "POST",
+        headers: h,
+      });
+      const tokJson = (await tokRes.json().catch(() => ({}))) as { access_token?: string; error?: string };
+      if (!tokRes.ok) throw new Error(tokJson.error ?? "Could not get Google token for Picker");
+      const accessToken = tokJson.access_token;
+      if (!accessToken) throw new Error("No access token for Picker");
+      const res = await openGoogleDrivePicker({
+        accessToken,
+        developerKey: key,
+        mode: "browse",
+      });
+      if (res.type === "error") throw new Error(res.message);
+      if (res.type === "cancel") return;
+      const doc = res.documents[0];
+      if (!doc) return;
+      if (doc.mimeType !== "application/vnd.google-apps.folder") {
+        setMessage("Choose a folder to browse, or use “Add to import list” for individual files.");
+        return;
+      }
+      clearGoogleBrowseCache();
+      setGoogleFolderId(doc.id);
+      setProviderTrail([
+        { id: "__unset__", name: "Google Drive" },
+        { id: doc.id, name: doc.name },
+      ]);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Picker failed");
+    } finally {
+      setGooglePickerBusy(false);
+    }
+  }, [authHeader]);
 
   const [destFolderChoices, setDestFolderChoices] = useState<{ path: string; name: string }[]>([]);
 
@@ -581,13 +687,12 @@ export default function WorkspaceMigrationSection({
     setPicks([]);
     setProviderEntries([]);
     clearGoogleBrowseCache();
-    setProviderTrail([{ id: "root", name: provider === "google_drive" ? "My Drive" : "Dropbox", dropboxPath: "" }]);
+    setGoogleFolderId(null);
+    setDropboxPath("");
     if (provider === "google_drive") {
-      setGoogleFolderId("root");
-      setDropboxPath("");
+      setProviderTrail([{ id: "__unset__", name: "Google Drive" }]);
     } else {
-      setGoogleFolderId("root");
-      setDropboxPath("");
+      setProviderTrail([{ id: "root", name: "Dropbox", dropboxPath: "" }]);
     }
   }, [provider]);
 
@@ -610,7 +715,7 @@ export default function WorkspaceMigrationSection({
     if (!crumb) return;
     setProviderTrail((t) => t.slice(0, idx + 1));
     if (provider === "google_drive") {
-      setGoogleFolderId(crumb.id === "root" ? "root" : crumb.id);
+      setGoogleFolderId(idx === 0 ? null : crumb.id);
     } else {
       setDropboxPath(crumb.dropboxPath ?? "");
     }
@@ -754,6 +859,13 @@ export default function WorkspaceMigrationSection({
     const h = await authHeader();
     if (!h) return;
     await fetch(`/api/migrations/accounts?provider=${p}`, { method: "DELETE", headers: h });
+    if (p === "google_drive") {
+      setGoogleFolderId(null);
+      setProviderTrail([{ id: "__unset__", name: "Google Drive" }]);
+      setProviderEntries([]);
+      clearGoogleBrowseCache();
+      setPicks([]);
+    }
     await refreshAccounts();
   }
 
@@ -783,7 +895,8 @@ export default function WorkspaceMigrationSection({
             </h2>
             <p className="max-w-xl text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
               Bring Google Drive or Dropbox into your <strong className="text-bizzi-navy dark:text-white">Storage</strong>{" "}
-              space. Connect once, choose files, pick a destination — we handle the rest.
+              space. Connect once, choose files (Google opens a standard file picker), pick a destination — we handle the
+              rest.
             </p>
           </div>
         </div>
@@ -795,7 +908,10 @@ export default function WorkspaceMigrationSection({
             </span>
             Connect
           </div>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">Link the account you want to pull from.</p>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Link the account you want to pull from. If you connected Google before we switched to limited Drive access,
+            disconnect and connect again so consent includes the updated scope.
+          </p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -869,7 +985,7 @@ export default function WorkspaceMigrationSection({
               <span className="text-sm text-amber-800 dark:text-amber-200">Connect a provider in step 1 first.</span>
             ) : browseLoading ? (
               <Loader2 className="h-4 w-4 animate-spin text-bizzi-blue" />
-            ) : (
+            ) : provider === "google_drive" && googleFolderId === null ? null : (
               <button
                 type="button"
                 className="text-sm font-semibold text-bizzi-blue underline-offset-2 hover:underline dark:text-bizzi-cyan"
@@ -899,7 +1015,7 @@ export default function WorkspaceMigrationSection({
                 </span>
               ))}
             </nav>
-            {provider === "google_drive" && (
+            {provider === "google_drive" && googleFolderId !== null && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <div
                   className="inline-flex rounded-lg border border-neutral-200/80 bg-white p-0.5 shadow-sm dark:border-neutral-600 dark:bg-neutral-800"
@@ -940,7 +1056,38 @@ export default function WorkspaceMigrationSection({
                   : "max-h-[min(24rem,55vh)] divide-y divide-neutral-100 dark:divide-neutral-800"
               }`}
             >
-              {providerEntries.length === 0 && !browseLoading ? (
+              {provider === "google_drive" && googleFolderId === null ? (
+                <div className="space-y-3 p-4 text-sm text-neutral-600 dark:text-neutral-300">
+                  <p>
+                    Use Google&apos;s file chooser to grant access. We can only read files and folders you explicitly
+                    select, plus contents of folders you open below.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={googlePickerBusy || browseLoading}
+                      onClick={() => void runGooglePickerImport()}
+                      className="rounded-xl border border-bizzi-blue/40 bg-bizzi-blue/10 px-4 py-2 text-sm font-semibold text-bizzi-navy transition hover:bg-bizzi-blue/20 disabled:opacity-50 dark:border-bizzi-cyan/40 dark:bg-bizzi-blue/20 dark:text-white"
+                    >
+                      Add to import list
+                    </button>
+                    <button
+                      type="button"
+                      disabled={googlePickerBusy || browseLoading}
+                      onClick={() => void runGooglePickerBrowse()}
+                      className="rounded-xl border border-neutral-200/80 bg-white px-4 py-2 text-sm font-medium text-neutral-800 shadow-sm transition hover:border-bizzi-blue/40 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
+                    >
+                      Browse inside a folder
+                    </button>
+                  </div>
+                  {googlePickerBusy ? (
+                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Opening Google Picker…
+                    </div>
+                  ) : null}
+                </div>
+              ) : providerEntries.length === 0 && !browseLoading ? (
                 <p className="p-3 text-sm text-neutral-500">This folder is empty.</p>
               ) : provider === "dropbox" ? (
                 providerEntries.map((e) => {

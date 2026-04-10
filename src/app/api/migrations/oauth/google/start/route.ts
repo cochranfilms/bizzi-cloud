@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   });
 
   const redirectUri = `${base}/api/migrations/oauth/google/callback`;
-  const scope = encodeURIComponent("https://www.googleapis.com/auth/drive.readonly");
+  const scope = encodeURIComponent("https://www.googleapis.com/auth/drive.file");
   const url =
     `https://accounts.google.com/o/oauth2/v2/auth` +
     `?client_id=${encodeURIComponent(clientId)}` +
