@@ -1,16 +1,16 @@
 /**
  * POST /api/backup/generate-proxy
- * Production: enqueues a durable proxy_jobs row and returns immediately (no FFmpeg).
+ * Production: enqueues a durable proxy_jobs row and returns immediately (no FFmpeg on Vercel).
  * Non-production: optional sync transcode when ALLOW_SYNC_PROXY_GENERATION=true.
  */
-import { getProxyObjectKey, isB2Configured } from "@/lib/b2";
+import { getObjectMetadata, getProxyObjectKey, isB2Configured } from "@/lib/b2";
 import { verifyBackupFileAccessWithLifecycle } from "@/lib/backup-access";
 import { getAdminFirestore, verifyIdToken } from "@/lib/firebase-admin";
-import { isBrawFile } from "@/lib/format-detection";
+import { isBrawFile, MIN_PROXY_SIZE_BYTES } from "@/lib/format-detection";
 import { runProxyGeneration } from "@/lib/proxy-generation";
 import { isTerminalProxySourceInputError } from "@/lib/proxy-input-errors";
 import { queueProxyJob } from "@/lib/proxy-queue";
-import { validateStandardProxyPlayability } from "@/lib/proxy-playability";
+import { markProxyJobReadyFromProxyHead } from "@/lib/proxy-job-pipeline";
 import { NextResponse } from "next/server";
 
 const isDevAuthBypass = () =>
@@ -21,7 +21,8 @@ const allowSyncProxy =
   process.env.ALLOW_SYNC_PROXY_GENERATION === "true" &&
   process.env.NODE_ENV !== "production";
 
-export const maxDuration = 60;
+/** Enqueue-only path is fast; sync dev transcode may run longer. */
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   if (!isB2Configured()) {
@@ -95,29 +96,18 @@ export async function POST(request: Request) {
   }
 
   const proxyKey = getProxyObjectKey(resolvedPreviewKey);
-  const playability = await validateStandardProxyPlayability(proxyKey, {
-    skipFirstFrameDecode: false,
-  });
-  if (playability.ok) {
-    if (bfId) {
-      const db = getAdminFirestore();
-      await db
-        .collection("backup_files")
-        .doc(bfId)
-        .update({
-          proxy_status: "ready",
-          proxy_object_key: proxyKey,
-          proxy_size_bytes: playability.sizeBytes,
-          proxy_duration_sec: playability.durationSec,
-          proxy_generated_at: new Date().toISOString(),
-          proxy_error_reason: null,
-        })
-        .catch(() => {});
-    }
+  const headMeta = await getObjectMetadata(proxyKey);
+  if (headMeta && headMeta.contentLength >= MIN_PROXY_SIZE_BYTES && bfId) {
+    await markProxyJobReadyFromProxyHead({
+      jobRefId: bfId,
+      backupFileId: bfId,
+      sourceObjectKey: resolvedPreviewKey,
+      sizeBytes: headMeta.contentLength,
+    });
     return NextResponse.json({
       ok: true,
       alreadyExists: true,
-      validated: true,
+      headValidated: true,
     });
   }
 

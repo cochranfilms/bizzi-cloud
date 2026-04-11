@@ -8,6 +8,7 @@ import type { ProxyJobMediaWorker } from "@/lib/braw-media-worker";
 import {
   createPresignedDownloadUrl,
   createPresignedUploadUrl,
+  getObjectMetadata,
   getProxyObjectKey,
   isB2Configured,
   objectExists,
@@ -16,6 +17,7 @@ import {
   isBrawFile,
   canGenerateProxy,
   getProxyCapability,
+  MIN_PROXY_SIZE_BYTES,
 } from "@/lib/format-detection";
 import {
   presignedTtlSecondsForAttempt,
@@ -31,7 +33,6 @@ import {
   type ProxyJobCanonicalStatus,
   STANDARD_PROXY_TRANSCODE_PROFILE,
 } from "@/lib/proxy-job-config";
-import { validateStandardProxyPlayability } from "@/lib/proxy-playability";
 import type {
   DocumentReference,
   DocumentSnapshot,
@@ -150,13 +151,14 @@ async function updateBackupFileProjection(
 }
 
 /**
- * Mark job + backup_files ready when proxy already validates (enqueue fast-path / claim skip).
+ * B2 Head-only fast path: object at proxy key is large enough to skip queueing.
+ * No ffprobe — Linux workers own full media validation when a job runs.
  */
-export async function markProxyJobReadyFromValidOutput(options: {
+export async function markProxyJobReadyFromProxyHead(options: {
   jobRefId: string;
   backupFileId: string | null;
   sourceObjectKey: string;
-  playability: { durationSec: number; sizeBytes: number };
+  sizeBytes: number;
 }): Promise<void> {
   const db = getAdminFirestore();
   const proxyKey = getProxyObjectKey(options.sourceObjectKey);
@@ -185,8 +187,8 @@ export async function markProxyJobReadyFromValidOutput(options: {
     await updateBackupFileProjection(options.backupFileId, {
       proxy_status: "ready",
       proxy_object_key: proxyKey,
-      proxy_size_bytes: options.playability.sizeBytes,
-      proxy_duration_sec: options.playability.durationSec,
+      proxy_size_bytes: options.sizeBytes,
+      proxy_duration_sec: null,
       proxy_generated_at: t,
       proxy_error_reason: null,
     });
@@ -227,20 +229,19 @@ export async function enqueueProxyJob(input: ProxyJobEnqueueInput): Promise<void
   }
 
   const sourceKey = await resolveSourceObjectKey(object_key, backup_file_id ?? null);
-
-  const playability = await validateStandardProxyPlayability(getProxyObjectKey(sourceKey), {
-    skipFirstFrameDecode: false,
-  });
-  if (playability.ok) {
-    const jobDocId = backup_file_id ?? null;
-    if (jobDocId) {
-      await markProxyJobReadyFromValidOutput({
-        jobRefId: jobDocId,
-        backupFileId: backup_file_id ?? null,
-        sourceObjectKey: sourceKey,
-        playability,
-      });
-    }
+  const proxyKeyForHead = getProxyObjectKey(sourceKey);
+  const headMeta = await getObjectMetadata(proxyKeyForHead);
+  if (
+    headMeta &&
+    headMeta.contentLength >= MIN_PROXY_SIZE_BYTES &&
+    backup_file_id
+  ) {
+    await markProxyJobReadyFromProxyHead({
+      jobRefId: backup_file_id,
+      backupFileId: backup_file_id,
+      sourceObjectKey: sourceKey,
+      sizeBytes: headMeta.contentLength,
+    });
     return;
   }
 
@@ -511,60 +512,6 @@ export async function claimProxyJob(
     if (!sourceExists) continue;
 
     const proxyKey = getProxyObjectKey(objectKey);
-    const valid = await validateStandardProxyPlayability(proxyKey, { skipFirstFrameDecode: false });
-    if (valid.ok) {
-      log?.("proxy_valid_skip_tx_enter", { jobId: docSnap.id, proxyKey });
-      await db.runTransaction(async (tx) => {
-        const { jobSnap: fresh, bfRef, bfSnap, backupFileId: bid } =
-          await readProxyJobAndBackupSnapshotsInTransaction(tx, db, ref);
-        if (!fresh.exists) return;
-        const d = fresh.data()!;
-        const st = d.status as string;
-        if (
-          st !== PROXY_JOB_STATUS.QUEUED &&
-          st !== PROXY_JOB_STATUS.FAILED_RETRYABLE &&
-          st !== "pending"
-        ) {
-          return;
-        }
-        const now = nowIso();
-        tx.update(ref, {
-          status: PROXY_JOB_STATUS.READY,
-          proxy_object_key: proxyKey,
-          progress_pct: 100,
-          completed_at: now,
-          updated_at: now,
-          last_phase_at: now,
-          lease_expires_at: null,
-          max_attempt_deadline_at: null,
-          claimed_by: null,
-          claimed_at: null,
-          heartbeat_at: null,
-          retry_after_failure_wave: 0,
-          last_error: null,
-        });
-        if (bfRef && bfSnap) {
-          const projected = txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
-            proxy_status: "ready",
-            proxy_object_key: proxyKey,
-            proxy_size_bytes: valid.sizeBytes,
-            proxy_duration_sec: valid.durationSec,
-            proxy_generated_at: now,
-            proxy_error_reason: null,
-          } as Record<string, unknown>);
-          if (!projected && bid) {
-            log?.("backup_file_projection_skipped_missing_doc", {
-              jobId: docSnap.id,
-              backupFileId: bid,
-              context: "proxy_valid_skip",
-            });
-          }
-        }
-      });
-      log?.("proxy_valid_skip_tx_exit", { jobId: docSnap.id });
-      continue;
-    }
-
     log?.("tx_claim_enter", { jobId: docSnap.id });
     const tryClaim = await db.runTransaction(async (tx) => {
       const fresh = await tx.get(ref);
@@ -742,14 +689,32 @@ export async function completeProxyJobSuccess(
     if (typeof k === "string" && k.trim()) objectKey = k;
   }
   const proxyKey = getProxyObjectKey(objectKey);
-  // Worker already ran FFmpeg end-to-end; server-side first-frame decode is redundant and
-  // often fails on short-lived hosts (timeout/B2 latency). ffprobe checks remain.
-  const playability = await validateStandardProxyPlayability(proxyKey, {
-    skipFirstFrameDecode: true,
-  });
-  if (!playability.ok) {
-    return { ok: false, code: "validation_failed", error: playability.error };
+  /** B2 Head only — workers own ffprobe/encode validation on Linux. */
+  const headMeta = await getObjectMetadata(proxyKey);
+  if (!headMeta) {
+    return { ok: false, code: "validation_failed", error: "proxy_object_missing_after_upload" };
   }
+  if (headMeta.contentLength < MIN_PROXY_SIZE_BYTES) {
+    return {
+      ok: false,
+      code: "validation_failed",
+      error: `proxy_too_small:${headMeta.contentLength}`,
+    };
+  }
+  const workerSize =
+    input.proxy_size_bytes != null ? Number(input.proxy_size_bytes) : null;
+  if (
+    workerSize != null &&
+    Number.isFinite(workerSize) &&
+    workerSize > 0 &&
+    Math.abs(workerSize - headMeta.contentLength) > 512
+  ) {
+    return { ok: false, code: "validation_failed", error: "proxy_size_mismatch" };
+  }
+  const resolvedSizeBytes = workerSize ?? headMeta.contentLength;
+  const durationRaw = input.proxy_duration_sec;
+  const resolvedDurationSec =
+    durationRaw != null && Number.isFinite(Number(durationRaw)) ? Number(durationRaw) : null;
 
   try {
     await db.runTransaction(async (tx) => {
@@ -797,8 +762,8 @@ export async function completeProxyJobSuccess(
         txUpdateBackupFileIfPriorReadExists(tx, bfRef, bfSnap, {
           proxy_status: "ready",
           proxy_object_key: proxyKey,
-          proxy_size_bytes: input.proxy_size_bytes ?? playability.sizeBytes,
-          proxy_duration_sec: input.proxy_duration_sec ?? playability.durationSec,
+          proxy_size_bytes: resolvedSizeBytes,
+          proxy_duration_sec: resolvedDurationSec,
           proxy_generated_at: now,
           proxy_error_reason: null,
         } as Record<string, unknown>);

@@ -101,6 +101,55 @@ function ffmpegArgsForLog(args) {
   return args.map((a) => (/^https?:\/\//i.test(a) ? redactUrl(a) : a));
 }
 
+/** Local ffprobe duration (seconds) for complete payload — no server-side ffprobe on Vercel. */
+function ffprobeDurationSeconds(filePath) {
+  return new Promise((resolve) => {
+    const bin = ffprobeResolved.path;
+    if (!bin) {
+      resolve(null);
+      return;
+    }
+    const proc = spawn(
+      bin,
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        filePath,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let out = "";
+    proc.stdout?.on("data", (d) => {
+      out += d.toString();
+    });
+    const killTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      resolve(null);
+    }, 120_000);
+    proc.on("close", (code) => {
+      clearTimeout(killTimer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      const n = parseFloat(out.trim());
+      resolve(Number.isFinite(n) ? n : null);
+    });
+    proc.on("error", () => {
+      clearTimeout(killTimer);
+      resolve(null);
+    });
+  });
+}
+
 async function pathExists(p) {
   try {
     await access(p, fsConstants.F_OK);
@@ -341,12 +390,14 @@ async function processJob(payload) {
     });
     await putFile(uploadUrl, tmpPath, uploadHeaders);
     const st = await stat(tmpPath);
+    const proxyDurationSec = await ffprobeDurationSeconds(tmpPath);
     await postJson("/api/workers/standard-proxy/complete", {
       job_id: job.id,
       worker_id: workerId,
       claimed_at: claimIso,
       ok: true,
       proxy_size_bytes: st.size,
+      proxy_duration_sec: proxyDurationSec,
     });
   } catch (e) {
     if (e instanceof FfmpegFailureError) {

@@ -19,7 +19,7 @@
  * Example:
  *   BIZZI_API_BASE=https://example.com MEDIA_BRAW_WORKER_SECRET=xxx FFMPEG_BRAW_PATH=/opt/braw-worker/bin/ffmpeg-braw node scripts/braw-proxy-worker.mjs
  */
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { createReadStream, createWriteStream, constants as fsConstants } from "fs";
 import { stat, access, unlink } from "fs/promises";
 import * as http from "node:http";
@@ -78,6 +78,70 @@ function redactUrl(raw) {
 /** @param {string[]} args */
 function ffmpegArgsForLog(args) {
   return args.map((a) => (/^https?:\/\//i.test(a) ? redactUrl(a) : a));
+}
+
+function resolveFfprobePath() {
+  const e = (process.env.FFPROBE_PATH || "").trim();
+  if (e) return e;
+  try {
+    const p = execFileSync("sh", ["-c", "command -v ffprobe 2>/dev/null"], {
+      encoding: "utf8",
+      maxBuffer: 256,
+    }).trim();
+    if (p) return p;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Duration in seconds for complete payload (matches standard worker; no server ffprobe). */
+function ffprobeDurationSeconds(filePath) {
+  return new Promise((resolve) => {
+    const bin = resolveFfprobePath();
+    if (!bin) {
+      resolve(null);
+      return;
+    }
+    const proc = spawn(
+      bin,
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        filePath,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let out = "";
+    proc.stdout?.on("data", (d) => {
+      out += d.toString();
+    });
+    const killTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      resolve(null);
+    }, 120_000);
+    proc.on("close", (code) => {
+      clearTimeout(killTimer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      const n = parseFloat(out.trim());
+      resolve(Number.isFinite(n) ? n : null);
+    });
+    proc.on("error", () => {
+      clearTimeout(killTimer);
+      resolve(null);
+    });
+  });
 }
 
 async function pathExists(p) {
@@ -380,12 +444,14 @@ async function processJob(payload) {
     });
     await putFile(uploadUrl, tmpPath, uploadHeaders);
     const st = await stat(tmpPath);
+    const proxyDurationSec = await ffprobeDurationSeconds(tmpPath);
     await postJson("/api/workers/braw-proxy/complete", {
       job_id: job.id,
       worker_id: workerId,
       claimed_at: claimIso,
       ok: true,
       proxy_size_bytes: st.size,
+      proxy_duration_sec: proxyDurationSec,
     });
   } catch (e) {
     if (e instanceof FfmpegFailureError) {
