@@ -115,6 +115,15 @@ function resumeUploadIfNeeded(uppy: Uppy): void {
   }
 }
 
+/** With `allowMultipleUploadBatches`, `complete` fires per `upload()` wave — not when the dashboard queue is fully idle. */
+function uppyHasPendingUploadWork(uppy: Uppy): boolean {
+  for (const f of uppy.getFiles()) {
+    if (f.error) continue;
+    if (f.progress?.uploadComplete !== true) return true;
+  }
+  return false;
+}
+
 interface UppyUploadModalProps {
   open: boolean;
   onClose: () => void;
@@ -495,6 +504,10 @@ export default function UppyUploadModal({
     };
 
     uppy.on("file-added", (file) => {
+      if (autoCloseTimer != null) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
       const fileData = file.data instanceof File ? file.data : null;
       if (fileData && isLikelyFlatMacosPackageBrowserUpload(fileData)) {
         queueMicrotask(() => {
@@ -771,19 +784,23 @@ export default function UppyUploadModal({
     });
     uppy.on("complete", (result) => {
       flushProgress();
-      onUploadCompleteRef.current?.();
       if (autoCloseTimer != null) {
         clearTimeout(autoCloseTimer);
         autoCloseTimer = null;
       }
-      const successful = result?.successful ?? [];
-      const failed = result?.failed ?? [];
-      if (failed.length === 0 && successful.length > 0) {
-        autoCloseTimer = setTimeout(() => {
-          autoCloseTimer = null;
-          onCloseRef.current();
-        }, 5000);
-      }
+      // Defer so Uppy / resumeUploadIfNeeded microtasks can start the next batch before we decide.
+      setTimeout(() => {
+        if (uppyHasPendingUploadWork(uppy)) return;
+        onUploadCompleteRef.current?.();
+        const successful = result?.successful ?? [];
+        const failed = result?.failed ?? [];
+        if (failed.length === 0 && successful.length > 0) {
+          autoCloseTimer = setTimeout(() => {
+            autoCloseTimer = null;
+            onCloseRef.current();
+          }, 5000);
+        }
+      }, 0);
     });
 
     uppyRef.current = uppy;

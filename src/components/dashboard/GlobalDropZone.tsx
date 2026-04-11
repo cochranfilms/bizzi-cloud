@@ -1,21 +1,13 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Upload } from "lucide-react";
+import { Cloud } from "lucide-react";
 import { useBackup } from "@/context/BackupContext";
 import { useCurrentFolder } from "@/context/CurrentFolderContext";
 import { useEnterprise, useEnterpriseOptional } from "@/context/EnterpriseContext";
 import { useUppyUpload } from "@/context/UppyUploadContext";
 import { useAuth } from "@/context/AuthContext";
-import { useThemeResolved } from "@/context/ThemeContext";
 import { useDashboardAppearanceOptional } from "@/context/DashboardAppearanceContext";
 import { usePersonalTeamWorkspace } from "@/context/PersonalTeamWorkspaceContext";
 import { collectFilesFromDataTransfer } from "@/lib/browser-data-transfer-files";
@@ -27,14 +19,6 @@ import {
 import { creatorRawClientAllowsUploadAttempt } from "@/lib/creator-raw-upload-policy";
 import { CREATOR_RAW_REJECTION_MESSAGES } from "@/lib/creator-raw-media-config";
 import { resolveImmersiveWorkspaceAccent } from "@/lib/immersive-workspace-accent";
-import { hexToRgb, immersiveAppVariantBackdropStyle } from "@/lib/immersive-app-backdrop";
-
-/** Same veil as `ImmersiveFilePreviewShell` (app variant). */
-const IMMERSIVE_BACKDROP_BLUR = "blur(56px) saturate(1.08)";
-
-/** Lucide / `UploadCloudProgress` cloud silhouette (viewBox 0 0 24 24). */
-const DROP_OVERLAY_CLOUD_D =
-  "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z";
 
 /**
  * Global drag-and-drop zone. Overlay copy and drop target both come from
@@ -54,8 +38,6 @@ export default function GlobalDropZone() {
   const { org } = useEnterprise();
   const { user } = useAuth();
   const openPanel = useUppyUpload()?.openPanel;
-  const themeResolved = useThemeResolved();
-  const isDark = themeResolved === "dark";
   const appearance = useDashboardAppearanceOptional();
   const enterpriseOptional = useEnterpriseOptional();
   const teamWs = usePersonalTeamWorkspace();
@@ -76,24 +58,6 @@ export default function GlobalDropZone() {
       appearance?.accentColor,
     ]
   );
-
-  const accentRgb = useMemo(() => {
-    const rgb = hexToRgb(workspaceAccent);
-    return rgb ? `${rgb.r},${rgb.g},${rgb.b}` : "0,191,255";
-  }, [workspaceAccent]);
-
-  const immersiveDropBackdropStyle = useMemo((): CSSProperties => {
-    const layers = immersiveAppVariantBackdropStyle({
-      accentRgb,
-      isDark,
-      pathname,
-    });
-    return {
-      WebkitBackdropFilter: IMMERSIVE_BACKDROP_BLUR,
-      backdropFilter: IMMERSIVE_BACKDROP_BLUR,
-      ...layers,
-    };
-  }, [accentRgb, isDark, pathname]);
 
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
@@ -426,93 +390,21 @@ export default function GlobalDropZone() {
   const subtitle =
     dropOverlay?.subtitle ?? "Release to open the uploader.";
 
-  const nestedStorageDrop =
-    subtitle.startsWith("Storage Drive:") || title.includes("Storage folder");
-
-  const cloudFill: string = nestedStorageDrop
-    ? isDark
-      ? `rgba(${accentRgb},0.14)`
-      : "rgba(255,255,255,0.72)"
-    : isDark
-      ? "rgba(255,255,255,0.08)"
-      : "rgba(255,255,255,0.55)";
-
-  const cloudStroke: string = nestedStorageDrop
-    ? isDark
-      ? `rgba(${accentRgb},0.88)`
-      : `rgba(${accentRgb},0.65)`
-    : isDark
-      ? "rgba(255,255,255,0.5)"
-      : `rgba(${accentRgb},0.4)`;
-
-  const cloudShellFilter: string = nestedStorageDrop
-    ? isDark
-      ? `drop-shadow(0 0 0.5px rgba(${accentRgb},0.35)) drop-shadow(0 24px 48px rgba(0,0,0,0.52))`
-      : `drop-shadow(0 0 0.5px rgba(${accentRgb},0.22)) drop-shadow(0 20px 40px rgba(15,23,42,0.12))`
-    : isDark
-      ? `drop-shadow(0 0 0.5px rgba(${accentRgb},0.2))`
-      : `drop-shadow(0 0 0.5px rgba(${accentRgb},0.12))`;
-
-  const titleClass = nestedStorageDrop
-    ? isDark
-      ? "text-white"
-      : "text-neutral-900"
-    : isDark
-      ? "text-white"
-      : "text-neutral-900";
-
-  const subtitleClass = nestedStorageDrop
-    ? isDark
-      ? "text-white/90"
-      : "text-neutral-700"
-    : isDark
-      ? "text-white/85"
-      : "text-neutral-600";
-
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center"
-      style={immersiveDropBackdropStyle}
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px]"
       aria-hidden
     >
-      <div
-        className="relative mx-4 w-[min(92vw,26.5rem)]"
-        style={{ filter: cloudShellFilter }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          className="block h-auto w-full"
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden
-        >
-          <path d={DROP_OVERLAY_CLOUD_D} fill={cloudFill} />
-          <path
-            d={DROP_OVERLAY_CLOUD_D}
-            fill="none"
-            stroke={cloudStroke}
-            strokeWidth={0.22}
-            strokeDasharray="1.15 0.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 py-8 text-center sm:gap-5 sm:px-10 sm:py-10">
-          <Upload
-            className={`h-14 w-14 shrink-0 sm:h-16 sm:w-16 ${titleClass}`}
-            strokeWidth={1.5}
-          />
-          <p
-            className={`max-w-[16rem] text-center text-xl font-bold tracking-tight sm:max-w-md sm:text-2xl ${titleClass}`}
-          >
-            {title}
-          </p>
-          <p
-            className={`max-w-[16rem] text-center text-base font-semibold leading-snug sm:max-w-md sm:text-lg ${subtitleClass}`}
-          >
-            {subtitle}
-          </p>
-        </div>
+      <div className="mx-4 flex max-w-lg flex-col items-center gap-5 px-4 text-center sm:px-6">
+        <Cloud
+          className="h-14 w-14 shrink-0 sm:h-16 sm:w-16"
+          strokeWidth={1.5}
+          style={{ color: workspaceAccent }}
+        />
+        <p className="text-xl font-bold tracking-tight text-white sm:text-2xl">{title}</p>
+        <p className="max-w-md text-base font-semibold leading-snug text-white/85 sm:text-lg">
+          {subtitle}
+        </p>
       </div>
     </div>
   );
