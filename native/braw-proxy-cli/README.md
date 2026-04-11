@@ -76,6 +76,8 @@ Workers should invoke **`/opt/braw-worker/bin/ffmpeg-braw`** (wrapper). Adjust `
                     12 — publish through step 9, set `frame_ready_` before COM Release (two lock windows; readiness while COM alive)
 --handoff-move-pixels
                    Use std::move from `pending_.pixels` into the main-thread buffer (faster; was crash-prone on some Linux builds). Default is copy-based handoff (safe). Frame0 probe always uses copy.
+--fresh-owned-per-frame
+                   In `take_completed_frame`, allocate a new pixel vector sized exactly to the pending packet and memcpy (ignores copy vs move handoff for the transfer). Tests cross-iteration reuse of the caller-owned vector. Frame0 probe forces this off.
 --consumer-handoff-experiment N
                    Main-thread consumer bisect (0–5); composes with `--process-complete-experiment`. Frame0 probe forces0.
  0 — normal: wait → take_completed_frame → on_frame (uses copy unless `--handoff-move-pixels`)

@@ -66,6 +66,11 @@ struct BrawDecodeConfig {
    * consumer_handoff_experiment == 2 still forces copy even if this is false.
    */
   bool handoff_copy_pixels = true;
+  /**
+   * When true, take_completed_frame allocates a new pixel vector sized exactly to pending_.pixels and memcpy-copies
+   * bytes (no reuse of caller-owned capacity). --fresh-owned-per-frame
+   */
+  bool fresh_owned_per_frame = false;
 };
 
 struct ClipMeta {
