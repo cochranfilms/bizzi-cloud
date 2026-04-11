@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "bizzi-cloud"
+    "default": "bizzi-cloud",
+    "staging": "bizzi-cloud"
   },
   "targets": {},
   "etags": {}

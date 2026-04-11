@@ -20,7 +20,12 @@ import { tmpdir } from "os";
 import { join } from "path";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
-import { postWorkerJson } from "./media-worker-http.mjs";
+import {
+  idlePollMs,
+  postWorkerClaimJson,
+  postWorkerJson,
+  transportBackoffMs,
+} from "./media-worker-http.mjs";
 
 const base = (process.env.BIZZI_API_BASE || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_STANDARD_WORKER_SECRET || "";
@@ -242,6 +247,10 @@ async function postJson(path, body) {
   return postWorkerJson(base, path, secret, body);
 }
 
+async function postClaim(path, body) {
+  return postWorkerClaimJson(base, path, secret, body);
+}
+
 async function putFile(url, filePath, headers) {
   const st = await stat(filePath);
   const res = await fetch(url, {
@@ -423,19 +432,34 @@ async function processJob(payload) {
 }
 
 async function loop() {
+  let transportStreak = 0;
   for (;;) {
     try {
-      const claim = await postJson("/api/workers/standard-proxy/claim", { worker_id: workerId });
+      const claim = await postClaim("/api/workers/standard-proxy/claim", { worker_id: workerId });
+      transportStreak = 0;
       if (!claim.job) {
-        await new Promise((r) => setTimeout(r, 5000));
+        console.log("[standard-proxy-worker] claim_idle", JSON.stringify({ worker_id: workerId }));
+        await new Promise((r) => setTimeout(r, idlePollMs(5000, 2500)));
         continue;
       }
       await processJob(claim);
     } catch (e) {
-      if (!(e instanceof FfmpegFailureError)) {
-        console.error("[standard-proxy-worker]", e);
+      if (e instanceof FfmpegFailureError) {
+        await new Promise((r) => setTimeout(r, idlePollMs(4000, 2000)));
+        continue;
       }
-      await new Promise((r) => setTimeout(r, 10_000));
+      transportStreak += 1;
+      const delay = transportBackoffMs(transportStreak - 1);
+      console.error(
+        "[standard-proxy-worker] transport_error",
+        JSON.stringify({
+          worker_id: workerId,
+          streak: transportStreak,
+          delay_ms: delay,
+          message: e instanceof Error ? e.message : String(e),
+        })
+      );
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
 }

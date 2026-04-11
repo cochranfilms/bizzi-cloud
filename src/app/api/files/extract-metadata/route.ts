@@ -1,8 +1,8 @@
 /**
  * POST /api/files/extract-metadata
  * Extracts video/photo metadata and updates backup_files.
- * Invoked asynchronously after upload (fire-and-forget).
- * Can be slow for large videos (B2 fetch + ffmpeg probe) — allow up to 5 min.
+ * Large videos: enqueue metadata_extraction_jobs (Ubuntu worker ffprobe); returns fast.
+ * Small videos: bounded B2 head + ffmpeg on Vercel (legacy path).
  */
 import { spawn } from "child_process";
 import { existsSync } from "fs";
@@ -15,12 +15,13 @@ import sharp from "sharp";
 import {
   getObjectBuffer,
   getObjectHeadBuffer,
+  getObjectMetadata,
   isB2Configured,
 } from "@/lib/b2";
+import { runVideoIngestFollowup } from "@/lib/backup-file-video-ingest-followup";
 import { getAdminFirestore } from "@/lib/firebase-admin";
 import { verifyIdToken } from "@/lib/firebase-admin";
-import { logCreatorRawProxyIngest } from "@/lib/creator-raw-video-proxy-ingest";
-import { queueProxyJob } from "@/lib/proxy-queue";
+import { enqueueMetadataExtractionJob } from "@/lib/metadata-extraction-job-pipeline";
 import {
   isDocumentFile,
   isVideoFile,
@@ -32,13 +33,22 @@ import {
   shouldSkipVideoProbeForCreativePath,
 } from "@/lib/creative-file-registry";
 
-/** Allow up to 5 min for large video/image processing (B2 fetch + ffmpeg/sharp). */
+/** Allow up to 5 min for small-video probe + image processing on Vercel. */
 export const maxDuration = 300;
 
 /** Max bytes to fetch for video probe (metadata usually in first 20MB) */
 const VIDEO_PROBE_BYTES = 20 * 1024 * 1024;
 /** Max bytes for image metadata (full file for small images) */
 const IMAGE_METADATA_BYTES = 50 * 1024 * 1024;
+
+function metadataOffloadMinBytes(): number {
+  const raw = process.env.METADATA_EXTRACTION_OFFLOAD_MIN_BYTES?.trim();
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 50 * 1024 * 1024;
+}
 
 function getExtension(name: string): string {
   return path.extname(name).toLowerCase().slice(1) || "";
@@ -47,40 +57,33 @@ function getExtension(name: string): string {
 /** Parse ffmpeg stderr for video metadata */
 function parseFfmpegOutput(stderr: string, fileName: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  // Duration: 00:01:23.45
   const durationMatch = stderr.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
   if (durationMatch) {
     const [, h, m, s, cs] = durationMatch.map(Number);
     result.duration_sec = h * 3600 + m * 60 + s + cs / 100;
   }
-  // Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps ...
   const videoMatch = stderr.match(/Video:\s*\w+,.*?(\d+)x(\d+).*?(\d+(?:\.\d+)?)\s*fps/);
   if (videoMatch) {
     result.resolution_w = parseInt(videoMatch[1], 10);
     result.resolution_h = parseInt(videoMatch[2], 10);
     result.frame_rate = parseFloat(videoMatch[3]);
   }
-  // Codec from Video: h264
   const codecMatch = stderr.match(/Video:\s*(\w+)/);
   if (codecMatch) {
-    const codec = codecMatch[1].toLowerCase();
-    result.video_codec = codec;
+    result.video_codec = codecMatch[1].toLowerCase();
   }
-  // Audio stream presence
   result.has_audio = /Stream.*Audio:/i.test(stderr);
-  // Audio: aac, 48000 Hz, stereo
   const audioMatch = stderr.match(/Audio:.*?(mono|stereo|5\.1|7\.1)/i);
   if (audioMatch) {
     const ch = audioMatch[1].toLowerCase();
     result.audio_channels = ch === "mono" ? 1 : ch === "stereo" ? 2 : ch === "5.1" ? 6 : 8;
   }
-  // creation_time from Metadata block (e.g. "creation_time   : 2022-08-28 15:25:09" or "creation_time   : 2022-08-28T15:25:09.000000Z")
   const creationTimeMatch = stderr.match(
     /creation_time\s*:\s*(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z?)?)/i
   );
   if (creationTimeMatch) {
-    const raw = creationTimeMatch[1].trim().replace(/\s+/, "T");
-    const parsed = Date.parse(raw);
+    const rawT = creationTimeMatch[1].trim().replace(/\s+/, "T");
+    const parsed = Date.parse(rawT);
     if (!Number.isNaN(parsed)) result.creation_time = new Date(parsed).toISOString();
   }
   result.container_format = getExtension(fileName) || "mp4";
@@ -146,14 +149,27 @@ export async function POST(request: Request) {
   const skipProbeCreative = shouldSkipVideoProbeForCreativePath(relativePath);
   const ffmpegOnDisk =
     typeof ffmpegPath === "string" && ffmpegPath.length > 0 && existsSync(ffmpegPath);
-  const shouldProbeForVideo =
+
+  const wantsVideoProbe =
     !isDocument &&
     !skipProbeCreative &&
     !isArchive &&
-    (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName))) &&
-    ffmpegOnDisk;
+    (isVideoFile(fileName) || (isGenericType && !isImageFile(fileName)));
 
-  if (isVideoFile(fileName) && !shouldProbeForVideo) {
+  let sizeBytes: number | null =
+    typeof fileData.size_bytes === "number" && Number.isFinite(fileData.size_bytes)
+      ? fileData.size_bytes
+      : null;
+  if (wantsVideoProbe && sizeBytes == null) {
+    const meta = await getObjectMetadata(objectKey).catch(() => null);
+    if (meta?.contentLength != null) sizeBytes = meta.contentLength;
+  }
+
+  const deferToWorker =
+    wantsVideoProbe && (sizeBytes == null || sizeBytes >= metadataOffloadMinBytes());
+  const shouldProbeForVideoSync = wantsVideoProbe && ffmpegOnDisk && !deferToWorker;
+
+  if (isVideoFile(fileName) && wantsVideoProbe && !deferToWorker && !ffmpegOnDisk) {
     let reason: string;
     if (!ffmpegPath) reason = "ffmpeg_static_unresolved";
     else if (!ffmpegOnDisk)
@@ -191,8 +207,24 @@ export async function POST(request: Request) {
     updates.preview_supported = false;
   }
 
+  if (deferToWorker) {
+    if (!updates.created_at && !fileData.created_at) {
+      updates.created_at = new Date().toISOString();
+    }
+    if (Object.keys(updates).length >= 2) {
+      await fileRef.update(updates);
+    }
+    await enqueueMetadataExtractionJob({
+      backup_file_id: backupFileId,
+      object_key: objectKey,
+      user_id: uid,
+      relative_path: relativePath,
+    });
+    return NextResponse.json({ ok: true, deferred: true });
+  }
+
   try {
-    if (shouldProbeForVideo) {
+    if (shouldProbeForVideoSync) {
       const tmpDir = os.tmpdir();
       const ext = path.extname(fileName) || ".mp4";
       const tmpPath = path.join(tmpDir, `meta-${Date.now()}${ext}`);
@@ -207,7 +239,7 @@ export async function POST(request: Request) {
           proc.stderr?.on("data", (d: Buffer) => {
             stderr += d.toString();
           });
-          proc.on("close", (code) => {
+          proc.on("close", () => {
             resolve(stderr);
           });
           proc.on("error", reject);
@@ -238,94 +270,72 @@ export async function POST(request: Request) {
       try {
         const buffer = await getObjectBuffer(objectKey, IMAGE_METADATA_BYTES);
         const meta = await sharp(buffer).metadata();
-      if (meta.width) updates.width = meta.width;
-      if (meta.height) updates.height = meta.height;
-      if (meta.width) updates.resolution_w = meta.width;
-      if (meta.height) updates.resolution_h = meta.height;
-      const w0 = meta.width ?? 0;
-      const h0 = meta.height ?? 0;
-      const exifO = meta.orientation ?? 1;
-      updates.exif_orientation = exifO;
-      /** Display aspect (e.g. portrait ARW stored with landscape pixels + EXIF 6/8). */
-      let dw = w0;
-      let dh = h0;
-      if (exifO >= 5 && exifO <= 8 && w0 > 0 && h0 > 0) {
-        dw = h0;
-        dh = w0;
-      }
-      if (dw && dh) {
-        if (dw === dh) updates.orientation = "square";
-        else if (dw > dh) updates.orientation = "landscape";
-        else updates.orientation = "portrait";
-      }
-      const rawExt = getExtension(fileName);
-      if (["cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng", "raw"].includes(rawExt)) {
-        updates.raw_format = rawExt;
-      }
-      // Exiftool for camera/lens (may fail on Vercel - optional)
-      try {
-        const { exiftool } = await import("exiftool-vendored");
-        const tmpPath = path.join(os.tmpdir(), `img-${Date.now()}-${fileName}`);
-        await fs.writeFile(tmpPath, buffer);
+        if (meta.width) updates.width = meta.width;
+        if (meta.height) updates.height = meta.height;
+        if (meta.width) updates.resolution_w = meta.width;
+        if (meta.height) updates.resolution_h = meta.height;
+        const w0 = meta.width ?? 0;
+        const h0 = meta.height ?? 0;
+        const exifO = meta.orientation ?? 1;
+        updates.exif_orientation = exifO;
+        let dw = w0;
+        let dh = h0;
+        if (exifO >= 5 && exifO <= 8 && w0 > 0 && h0 > 0) {
+          dw = h0;
+          dh = w0;
+        }
+        if (dw && dh) {
+          if (dw === dh) updates.orientation = "square";
+          else if (dw > dh) updates.orientation = "landscape";
+          else updates.orientation = "portrait";
+        }
+        const rawExt = getExtension(fileName);
+        if (["cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng", "raw"].includes(rawExt)) {
+          updates.raw_format = rawExt;
+        }
         try {
-          const tags = await exiftool.read(tmpPath);
-          if (tags.Make || tags.Model) {
-            updates.camera_model = [tags.Make, tags.Model].filter(Boolean).join(" ").trim() || null;
+          const { exiftool } = await import("exiftool-vendored");
+          const tmpPath = path.join(os.tmpdir(), `img-${Date.now()}-${fileName}`);
+          await fs.writeFile(tmpPath, buffer);
+          try {
+            const tags = await exiftool.read(tmpPath);
+            if (tags.Make || tags.Model) {
+              updates.camera_model = [tags.Make, tags.Model].filter(Boolean).join(" ").trim() || null;
+            }
+            if (tags.LensModel) updates.lens_info = String(tags.LensModel);
+            if (tags.ColorSpace)
+              updates.color_profile = String(tags.ColorSpace).toLowerCase().replace(/\s/g, "_");
+            if (tags.BitDepth) updates.bit_depth = Number(tags.BitDepth);
+          } finally {
+            await fs.unlink(tmpPath).catch(() => {});
           }
-          if (tags.LensModel) updates.lens_info = String(tags.LensModel);
-          if (tags.ColorSpace) updates.color_profile = String(tags.ColorSpace).toLowerCase().replace(/\s/g, "_");
-          if (tags.BitDepth) updates.bit_depth = Number(tags.BitDepth);
-        } finally {
-          await fs.unlink(tmpPath).catch(() => {});
+        } catch {
+          /* exiftool optional */
         }
       } catch {
-        // Exiftool may not be available; dimensions from Sharp are enough
-      }
-      } catch {
-        // Sharp may fail on unsupported formats (PSD, SVG, some RAW); media_type persists
+        /* Sharp may fail */
       }
     }
   } catch (err) {
-    // Log but do NOT return 500 — we still persist media_type and created_at so files show in Storage/Recent
     console.error("[extract-metadata] Extraction failed:", err);
   }
 
   if (!updates.created_at && !fileData.created_at) {
     updates.created_at = new Date().toISOString();
   }
-  // Always persist media_type and created_at (e.g. for PDFs) even when extraction fails
   if (Object.keys(updates).length >= 2) {
     await fileRef.update(updates);
   }
 
-  // Trigger MUX asset creation and proxy for videos (including extension-less files discovered via probe)
   const isVideoNow = (updates.media_type ?? fileData.media_type) === "video";
-  if (isVideoNow && token) {
-    const base = new URL(request.url).origin;
-    const authHeader = { Authorization: `Bearer ${token}` };
-    await queueProxyJob({
-      object_key: objectKey,
-      name: fileName,
-      backup_file_id: backupFileId,
-      user_id: uid,
-      media_type: "video",
-    }).catch(() => {});
-    if (driveIsCreatorRaw) {
-      logCreatorRawProxyIngest("ingest_extract_metadata_video", {
-        backup_file_id: backupFileId,
-        object_key_prefix: objectKey.slice(0, 72),
-        note: "proxy_job_queued_with_standard_pipeline",
-      });
-    }
-    fetch(`${base}/api/mux/create-asset`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({
-        object_key: objectKey,
-        name: fileName,
-        backup_file_id: backupFileId,
-      }),
-    }).catch(() => {});
+  if (isVideoNow) {
+    await runVideoIngestFollowup({
+      objectKey,
+      fileName,
+      backupFileId,
+      userId: uid,
+      driveIsCreatorRaw,
+    });
   }
 
   return NextResponse.json({ ok: true });
