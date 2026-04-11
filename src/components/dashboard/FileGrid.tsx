@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Check, CheckSquare, ChevronLeft, Film, Filter, Images, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckSquare,
+  ChevronLeft,
+  Film,
+  Filter,
+  Images,
+  Loader2,
+  Upload,
+} from "lucide-react";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -89,6 +99,8 @@ import {
   formatGalleryMediaFolderBreadcrumb,
   galleryMediaStorageRootForCanonicalId,
 } from "@/lib/gallery-media-path";
+import { resolveUploadDestination } from "@/lib/upload-destination-resolve";
+import { useUppyUpload } from "@/context/UppyUploadContext";
 
 function mergeDisplayedFilesWithMacosPackages(
   displayedFiles: RecentFile[],
@@ -219,9 +231,18 @@ export default function FileGrid({
     refresh: refreshHearted,
     workspaceHeartsActive,
   } = useHeartedFiles({ inferWorkspaceHeartsFromRoute: inlineStorageOnFilesPage });
-  const { linkedDrives, storageVersion, fetchDrives, bumpStorageVersion, loading: backupDrivesLoading } =
-    useBackup();
+  const {
+    linkedDrives,
+    storageVersion,
+    fetchDrives,
+    bumpStorageVersion,
+    loading: backupDrivesLoading,
+    getOrCreateStorageDrive,
+    setFileUploadErrorMessage,
+    clearFileUploadError,
+  } = useBackup();
   const { org } = useEnterprise();
+  const uppyUpload = useUppyUpload();
   const { loading: subscriptionLoading } = useSubscription();
   const { hasEditor, hasGallerySuite, loading: powerUpContextLoading } = useEffectivePowerUps();
   const {
@@ -233,6 +254,7 @@ export default function FileGrid({
     storageUploadFolderLabel,
     setStorageUploadFolderLabel,
     effectiveDriveIdForFiles,
+    selectedWorkspaceId,
   } = useCurrentFolder();
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [selectedFolderKeys, setSelectedFolderKeys] = useState<Set<string>>(new Set());
@@ -301,6 +323,10 @@ export default function FileGrid({
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const isEnterpriseFilesNoDrive =
+    pathname === "/enterprise/files" &&
+    !searchParams?.get("drive") &&
+    !searchParams?.get("drive_id");
   const setFilesTopBarChrome = useContext(FilesFilterTopChromeContext)?.setChrome;
   const router = useRouter();
   /** Files landing: flat grid from filter API (no Storage/RAW/Gallery folder tiles). */
@@ -1699,6 +1725,105 @@ export default function FileGrid({
   }, []);
 
   const currentDriveId = currentDrive?.id;
+
+  const openUploadFromEmptyState = useCallback(async () => {
+    clearFileUploadError();
+    if (isEnterpriseFilesNoDrive) return;
+    const resolved = await resolveUploadDestination({
+      pathname,
+      searchParams,
+      currentDriveId: currentDriveId ?? null,
+      currentDrivePath: currentDrivePath ?? "",
+      linkedDrives,
+      sourceSurface: "filegrid_empty_state",
+      isEnterpriseFilesNoDrive,
+      isGalleryMediaDrive: false,
+      getOrCreateStorageDrive: async () => {
+        const d = await getOrCreateStorageDrive();
+        return { id: d.id, name: d.name };
+      },
+    });
+    if (!resolved.success) {
+      setFileUploadErrorMessage(resolved.userMessage);
+      return;
+    }
+    let driveId = resolved.driveId;
+    let workspaceId: string | null = null;
+    const panelOptionsBase = {
+      uploadIntent: resolved.uploadIntent,
+      lockedDestination: resolved.isLocked,
+      sourceSurface: resolved.sourceSurface,
+      destinationMode: resolved.destinationMode,
+      routeContext: resolved.routeContext,
+      targetDriveName: resolved.driveName,
+      resolvedBy: resolved.resolvedBy,
+      driveName: resolved.driveName,
+    };
+
+    if ((pathname.startsWith("/enterprise") || pathname.startsWith("/desktop")) && org?.id) {
+      try {
+        const token = await user?.getIdToken();
+        if (!token) return;
+        const params = new URLSearchParams({
+          drive_id: driveId,
+          organization_id: org.id,
+        });
+        if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+        const res = await fetch(`/api/workspaces/default-for-drive?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err.error as string) ?? "Could not resolve workspace");
+        }
+        const data = (await res.json()) as {
+          workspace_id: string;
+          drive_id: string;
+          drive_name?: string;
+          workspace_name?: string;
+          scope_label?: string;
+        };
+        workspaceId = data.workspace_id;
+        driveId = data.drive_id ?? driveId;
+        uppyUpload?.openPanel(driveId, resolved.pathPrefix, workspaceId, {
+          ...panelOptionsBase,
+          driveName: data.drive_name ?? panelOptionsBase.driveName,
+          workspaceName: data.workspace_name ?? null,
+          scopeLabel: data.scope_label ?? null,
+          storageFolderId: storageParentFolderId,
+          storageFolderDisplayName: storageUploadFolderLabel,
+        });
+        return;
+      } catch (err) {
+        console.error("Workspace resolve failed:", err);
+        setFileUploadErrorMessage("Could not resolve workspace for upload. Try again.");
+        return;
+      }
+    }
+
+    uppyUpload?.openPanel(driveId, resolved.pathPrefix, null, {
+      ...panelOptionsBase,
+      storageFolderId: storageParentFolderId,
+      storageFolderDisplayName: storageUploadFolderLabel,
+    });
+  }, [
+    clearFileUploadError,
+    currentDriveId,
+    currentDrivePath,
+    getOrCreateStorageDrive,
+    isEnterpriseFilesNoDrive,
+    linkedDrives,
+    org?.id,
+    pathname,
+    searchParams,
+    selectedWorkspaceId,
+    setFileUploadErrorMessage,
+    storageParentFolderId,
+    storageUploadFolderLabel,
+    uppyUpload,
+    user,
+  ]);
+
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       const payload = getMovePayloadFromDragSource(
@@ -2976,10 +3101,61 @@ export default function FileGrid({
             </div>
             )
           ) : (
-            <div className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              {isGalleryMediaDrive
-                ? "No gallery media yet. Upload photos in a gallery to see them organized by gallery here."
-                : "No files in this drive yet. Use New → File Upload to add files."}
+            <div className="flex min-h-[min(380px,52vh)] items-center justify-center px-3 py-10 sm:px-6">
+              <div
+                role="region"
+                aria-label={isGalleryMediaDrive ? "Empty gallery media drive" : "Empty drive"}
+                className="w-full max-w-xl rounded-2xl border-2 border-dashed border-neutral-200 bg-gradient-to-b from-neutral-50 to-white px-6 py-12 text-center shadow-sm dark:border-neutral-600 dark:from-neutral-900/55 dark:to-neutral-950/90 sm:px-10 sm:py-14"
+              >
+                <Upload
+                  className="mx-auto mb-5 h-10 w-10 text-bizzi-blue dark:text-bizzi-cyan"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                {isGalleryMediaDrive ? (
+                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400 sm:text-base">
+                    No gallery media yet. Upload photos in a gallery to see them organized by gallery
+                    here.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-xl">
+                      This drive is empty
+                    </p>
+                    <p className="mt-4 text-base leading-relaxed text-neutral-600 dark:text-neutral-300 sm:text-lg">
+                      {isStorageV2FolderBrowse ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setStoragePathCreateOpen(true)}
+                            className="font-semibold text-bizzi-blue underline-offset-4 hover:underline dark:text-bizzi-cyan"
+                          >
+                            Create folder
+                          </button>
+                          <span className="text-neutral-400 dark:text-neutral-500" aria-hidden>
+                            {" "}
+                            ·{" "}
+                          </span>
+                        </>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void openUploadFromEmptyState()}
+                        className="font-semibold text-bizzi-blue underline-offset-4 hover:underline dark:text-bizzi-cyan"
+                      >
+                        Select files
+                      </button>
+                      <span className="text-neutral-500 dark:text-neutral-400">
+                        {" "}
+                        — or drag and drop to upload.
+                      </span>
+                    </p>
+                    <p className="mt-5 text-sm text-neutral-500 dark:text-neutral-500">
+                      We recommend dragging and dropping large folders.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           )}
           </div>

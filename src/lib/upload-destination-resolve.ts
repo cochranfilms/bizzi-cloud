@@ -27,6 +27,7 @@ export type ResolvedBy =
 
 export type UploadSourceSurface =
   | "topbar_file_upload"
+  | "filegrid_empty_state"
   | "creator_global_drop"
   | "files_global_drop"
   | "home_global_drop";
